@@ -125,7 +125,7 @@ final class OnboardingModel {
 
     var confirmationMismatch: Bool { !confirmation.isEmpty && confirmation != password }
 
-    /// String(localized: "Continuer") from the "bon" level and when both fields match.
+    /// "Continuer" from the "bon" level and when both fields match.
     var passwordAccepted: Bool {
         StrengthMeter.level(forBits: passwordBits) >= 3 && password == confirmation
     }

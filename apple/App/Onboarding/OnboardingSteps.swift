@@ -96,6 +96,11 @@ enum Platform {
     static let isMac = false
     #endif
 
+    /// The Mac or the iPhone and iPad variant of a text (both literals reach the string catalog).
+    static func text(mac: LocalizedStringResource, phone: LocalizedStringResource) -> LocalizedStringResource {
+        isMac ? mac : phone
+    }
+
     /// "iPhone", "iPad" or "Mac", for texts.
     @MainActor static var deviceName: String {
         #if os(macOS)
@@ -350,9 +355,9 @@ private struct PasswordStep: View {
     var body: some View {
         StepTitle(
             title: Platform.isMac ? "Choisis ton mot de passe maître" : "Ton mot de passe maître",
-            subtitle: Platform.isMac
-                ? "C'est le seul mot de passe à retenir. Personne ne peut le récupérer pour toi, pas même nous."
-                : "Le seul à retenir. Personne ne peut le récupérer pour toi.")
+            subtitle: Platform.text(
+                mac: "C'est le seul mot de passe à retenir. Personne ne peut le récupérer pour toi, pas même nous.",
+                phone: "Le seul à retenir. Personne ne peut le récupérer pour toi."))
         #if os(macOS)
         OnboardingField(
             label: "Ton prénom (affiché seulement sur tes appareils)", prompt: "Camille",
@@ -392,9 +397,9 @@ private struct SecretKeyStep: View {
     var body: some View {
         StepTitle(
             title: "Range ta Secret Key",
-            subtitle: Platform.isMac
-                ? "Elle a été créée sur ce Mac et ne le quitte jamais. Avec ton mot de passe maître, elle protège ton coffre même si iCloud était piraté. Il te la faudra pour un nouvel appareil sans autre appareil à côté."
-                : "Créée sur cet \(Platform.deviceName), elle ne le quitte jamais. Il te la faudra pour un nouvel appareil si aucun autre n'est à côté.")
+            subtitle: Platform.text(
+                mac: "Elle a été créée sur ce Mac et ne le quitte jamais. Avec ton mot de passe maître, elle protège ton coffre même si iCloud était piraté. Il te la faudra pour un nouvel appareil sans autre appareil à côté.",
+                phone: "Créée sur cet \(Platform.deviceName), elle ne le quitte jamais. Il te la faudra pour un nouvel appareil si aucun autre n'est à côté."))
         VStack(alignment: .leading, spacing: 8) {
             Text("SECRET KEY")
                 .font(.system(size: 12, weight: .bold))
@@ -448,9 +453,9 @@ private struct BiometricsStep: View {
                 .accessibilityHidden(true)
             StepTitle(
                 title: "Déverrouiller avec \(model.biometryName)",
-                subtitle: Platform.isMac
-                    ? "La clé de déverrouillage reste dans la Secure Enclave de ce Mac. Ajouter une empreinte l'invalide : le mot de passe maître est alors redemandé. Il est aussi redemandé tous les 14 jours."
-                    : "La clé reste dans la Secure Enclave. Le mot de passe maître est redemandé tous les 14 jours et si \(model.biometryName) change.",
+                subtitle: Platform.text(
+                mac: "La clé de déverrouillage reste dans la Secure Enclave de ce Mac. Ajouter une empreinte l'invalide : le mot de passe maître est alors redemandé. Il est aussi redemandé tous les 14 jours.",
+                phone: "La clé reste dans la Secure Enclave. Le mot de passe maître est redemandé tous les 14 jours et si \(model.biometryName) change."),
                 centered: !Platform.isMac)
         }
         .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
@@ -500,9 +505,9 @@ private struct RestoreStep: View {
     var body: some View {
         StepTitle(
             title: "Utiliser ton Emergency Kit",
-            subtitle: Platform.isMac
-                ? "Tape la Secret Key imprimée sur ton kit. Minuscules, espaces et tirets oubliés sont acceptés."
-                : "Scanne le QR code du kit ou tape ta Secret Key. Minuscules, espaces et tirets oubliés sont acceptés.")
+            subtitle: Platform.text(
+                mac: "Tape la Secret Key imprimée sur ton kit. Minuscules, espaces et tirets oubliés sont acceptés.",
+                phone: "Scanne le QR code du kit ou tape ta Secret Key. Minuscules, espaces et tirets oubliés sont acceptés."))
         OnboardingField(
             label: "Secret Key", prompt: "XXXX-XXXX-XXXX-...", text: $model.restoreKey,
             monospaced: true, secretKey: true, identifier: "onboarding.restoreKey")
