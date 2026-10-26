@@ -343,11 +343,21 @@ pub struct FfiItemTypeInfo {
     pub label: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FfiTotpCode {
     pub code: String,
     pub remaining: u32,
     pub period: u32,
+}
+
+impl std::fmt::Debug for FfiTotpCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FfiTotpCode")
+            .field("code", &"**")
+            .field("remaining", &self.remaining)
+            .field("period", &self.period)
+            .finish()
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, uniffi::Record)]

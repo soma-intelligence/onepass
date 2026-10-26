@@ -181,6 +181,14 @@ impl Session {
         self.with(|repo| {
             let vault = find_vault(repo, vault_id)?;
             let stored = repo.items(&vault)?.into_iter().find(|i| i.id == item_id);
+            if stored.is_none() {
+                // A stale editor: the item moved to another vault meanwhile.
+                for other in repo.vaults()?.iter().filter(|v| v.id != vault_id) {
+                    if repo.items(other)?.iter().any(|i| i.id == item_id) {
+                        return Err(OnePassError::Conflict);
+                    }
+                }
+            }
             let kept = Kept::new(stored.as_ref(), false);
             let core = item_to_core(&item, &kept, OffsetDateTime::now_utc())?;
             model::validate(&core)?;
@@ -248,7 +256,12 @@ impl Session {
     /// return how many.
     pub fn purge_trash(&self, older_than_days: u32) -> Result<u32, OnePassError> {
         self.with(|repo| {
-            let cutoff = OffsetDateTime::now_utc() - Duration::days(i64::from(older_than_days));
+            // An age beyond the representable dates matches nothing.
+            let Some(cutoff) =
+                OffsetDateTime::now_utc().checked_sub(Duration::days(i64::from(older_than_days)))
+            else {
+                return Ok(0);
+            };
             let mut purged = 0u32;
             for v in repo.vaults()? {
                 let doomed: Vec<Id> = repo
@@ -316,6 +329,12 @@ impl SyncStoreHandle {
     }
 }
 
+/// Every key of the handle lives under this prefix, so it can never reach
+/// the device state or any other key the core reserves.
+fn handle_key(key: &str) -> String {
+    format!("sync.{key}")
+}
+
 fn kind_of(code: u8) -> Result<RecordKind, OnePassError> {
     RecordKind::from_code(code).map_err(|_| invalid("record kind"))
 }
@@ -373,11 +392,11 @@ impl SyncStoreHandle {
     }
 
     pub fn meta(&self, key: String) -> Result<Option<Vec<u8>>, OnePassError> {
-        Ok(self.guard().meta(&key)?)
+        Ok(self.guard().meta(&handle_key(&key))?)
     }
 
     pub fn set_meta(&self, key: String, value: Vec<u8>) -> Result<(), OnePassError> {
-        Ok(self.guard().set_meta(&key, &value)?)
+        Ok(self.guard().set_meta(&handle_key(&key), &value)?)
     }
 
     pub fn has_account(&self) -> Result<bool, OnePassError> {

@@ -1,6 +1,7 @@
 //! Conversions between the core model and the FFI records.
 
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
 use onepass_core::Id;
 use onepass_core::model::{
@@ -365,6 +366,8 @@ pub(crate) struct Kept<'a> {
     /// Unknown passkeys become empty ones instead of an error (validation
     /// only: such an item is never written).
     lenient: bool,
+    /// Credential ids met so far in this item: a duplicate is refused.
+    seen: RefCell<HashSet<Vec<u8>>>,
 }
 
 impl<'a> Kept<'a> {
@@ -381,6 +384,7 @@ impl<'a> Kept<'a> {
             stored,
             passkeys,
             lenient,
+            seen: RefCell::new(HashSet::new()),
         }
     }
 }
@@ -394,10 +398,15 @@ fn value_to_core(v: &FfiFieldValue, kept: &Kept<'_>) -> Result<FieldValue, OnePa
         FfiFieldValue::Email { value } => FieldValue::Email(value.clone()),
         FfiFieldValue::Phone { value } => FieldValue::Phone(value.clone()),
         FfiFieldValue::Date { value } => FieldValue::Date(date_to_core(value)?),
-        FfiFieldValue::MonthYear { year, month } => FieldValue::MonthYear {
-            year: *year,
-            month: *month,
-        },
+        FfiFieldValue::MonthYear { year, month } => {
+            if !(1..=12).contains(month) {
+                return Err(invalid("month"));
+            }
+            FieldValue::MonthYear {
+                year: *year,
+                month: *month,
+            }
+        }
         FfiFieldValue::Number { value } => FieldValue::Number(*value),
         FfiFieldValue::Money {
             minor_units,
@@ -411,15 +420,18 @@ fn value_to_core(v: &FfiFieldValue, kept: &Kept<'_>) -> Result<FieldValue, OnePa
         FfiFieldValue::Otp { value } => FieldValue::Otp(secret(value)),
         FfiFieldValue::Passkey { value } => {
             let cred_id = hex_bytes(&value.credential_id_hex).ok_or_else(|| invalid("passkey"))?;
-            let created_at = from_ts(value.created_at)?;
+            if !kept.seen.borrow_mut().insert(cred_id.clone()) {
+                return Err(invalid("passkey"));
+            }
             match kept.passkeys.get(&cred_id) {
+                // Only the display name is editable.
                 Some(old) => FieldValue::Passkey(PasskeyCredential {
-                    rp_id: value.rp_id.clone(),
+                    rp_id: old.rp_id.clone(),
                     user_name: value.user_name.clone(),
                     user_handle: old.user_handle.clone(),
                     credential_id: cred_id,
                     private_key: old.private_key.clone(),
-                    created_at,
+                    created_at: old.created_at,
                 }),
                 None if kept.lenient => FieldValue::Passkey(PasskeyCredential {
                     rp_id: value.rp_id.clone(),
@@ -427,7 +439,7 @@ fn value_to_core(v: &FfiFieldValue, kept: &Kept<'_>) -> Result<FieldValue, OnePa
                     user_handle: Vec::new(),
                     credential_id: cred_id,
                     private_key: Zeroizing::new(Vec::new()),
-                    created_at,
+                    created_at: from_ts(value.created_at)?,
                 }),
                 None => return Err(invalid("passkey")),
             }

@@ -901,3 +901,184 @@ fn unknown_ids_are_invalid_input_not_a_panic() {
         OnePassError::NotFound
     );
 }
+
+// ---- fix round 1 ----------------------------------------------------------
+
+#[test]
+fn purge_trash_huge_age_is_zero() {
+    let fx = fixture();
+    let item = saved_login(&fx, "pw-age-1");
+    fx.session.trash_item(fx.vault_id.clone(), item.id).unwrap();
+    assert_eq!(fx.session.purge_trash(u32::MAX).unwrap(), 0);
+    assert_eq!(fx.session.item_summaries().unwrap().len(), 1);
+}
+
+#[test]
+fn sync_handle_cannot_touch_device_state() {
+    let fx = fixture();
+    let handle = open_sync_store(fx.path.clone()).unwrap();
+    // The core stores the anti-rollback state under this key.
+    assert_eq!(handle.meta("device_state".into()).unwrap(), None);
+    handle
+        .set_meta("device_state".into(), vec![0xff; 4])
+        .unwrap();
+    assert_eq!(
+        handle.meta("device_state".into()).unwrap(),
+        Some(vec![0xff; 4])
+    );
+    // The session still unlocks and keeps working: its state was not replaced.
+    fx.session.lock();
+    let unlocked =
+        unlock_with_password(fx.path.clone(), PASSWORD.into(), fx.secret_key.clone()).unwrap();
+    assert_eq!(unlocked.session.vaults().unwrap().len(), 1);
+    // Reading the raw key through a plain connection shows a namespaced row.
+    let conn = rusqlite_free_keys(&fx.path);
+    assert!(conn.contains(&"sync.device_state".to_string()));
+    assert_eq!(
+        conn.iter().filter(|k| k.as_str() == "device_state").count(),
+        1,
+        "only the core's own row"
+    );
+}
+
+/// Keys of the `meta` table, read with the sqlite3 CLI-free core API: the
+/// handle cannot list keys, so ask SQLite through a second core store.
+fn rusqlite_free_keys(path: &str) -> Vec<String> {
+    let mut keys = Vec::new();
+    for k in ["device_state", "sync.device_state"] {
+        let store = onepass_core::sync::SyncStore::open(Path::new(path)).unwrap();
+        if store.meta(k).unwrap().is_some() {
+            keys.push(k.to_string());
+        }
+    }
+    keys
+}
+
+#[test]
+fn save_item_with_stale_vault_is_conflict() {
+    let fx = fixture();
+    let other = fx
+        .session
+        .create_vault(FfiVaultMeta {
+            name: "Projet Atlas".into(),
+            icon: "folder".into(),
+            color: "#336699".into(),
+            travel_safe: false,
+            mcp_access: false,
+        })
+        .unwrap();
+    let item = saved_login(&fx, "pw-stale-1");
+    fx.session
+        .move_item(item.id.clone(), fx.vault_id.clone(), other.id.clone())
+        .unwrap();
+    // A stale editor still holds the old vault id.
+    assert_eq!(
+        fx.session.save_item(item).unwrap_err(),
+        OnePassError::Conflict
+    );
+    assert_eq!(fx.session.item_summaries().unwrap().len(), 1);
+}
+
+#[test]
+fn passkey_metadata_is_not_editable_and_duplicates_are_refused() {
+    let fx = fixture();
+    let saved = saved_login(&fx, "pw-passkey-2");
+    plant_passkey(&fx, &saved.id);
+    let session = unlock_with_password(fx.path.clone(), PASSWORD.into(), fx.secret_key.clone())
+        .unwrap()
+        .session;
+    let item = session.item(fx.vault_id.clone(), saved.id.clone()).unwrap();
+    let passkey_of = |i: &FfiItem| {
+        i.sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .find_map(|f| match &f.value {
+                FfiFieldValue::Passkey { value } => Some(value.clone()),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let original = passkey_of(&item);
+
+    let mut edited = item.clone();
+    for f in edited.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if let FfiFieldValue::Passkey { value } = &mut f.value {
+            value.rp_id = "autre.exemple.fr".into();
+            value.created_at = 0;
+            value.user_name = "nouveau".into();
+        }
+    }
+    let saved = session.save_item(edited).unwrap();
+    let after = passkey_of(&saved);
+    assert_eq!(after.rp_id, original.rp_id);
+    assert_eq!(after.created_at, original.created_at);
+    assert_eq!(after.user_name, "nouveau");
+
+    // The same credential twice in one item.
+    let mut dup = saved;
+    let field = dup.sections[0]
+        .fields
+        .iter()
+        .find(|f| matches!(f.value, FfiFieldValue::Passkey { .. }))
+        .unwrap()
+        .clone();
+    dup.sections[0].fields.push(field);
+    assert_eq!(
+        session.save_item(dup).unwrap_err(),
+        OnePassError::InvalidInput {
+            what: "passkey".into()
+        }
+    );
+}
+
+#[test]
+fn month_year_month_must_be_1_to_12() {
+    let fx = fixture();
+    let mut item = fx
+        .session
+        .new_item(
+            fx.vault_id.clone(),
+            FfiItemType::CreditCard,
+            "Carte Atlas".into(),
+        )
+        .unwrap();
+    fill(&mut item);
+    for bad in [0u8, 13, 255] {
+        for f in item.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+            if let FfiFieldValue::MonthYear { month, .. } = &mut f.value {
+                *month = bad;
+            }
+        }
+        assert_eq!(
+            fx.session.save_item(item.clone()).unwrap_err(),
+            OnePassError::InvalidInput {
+                what: "month".into()
+            }
+        );
+    }
+}
+
+#[test]
+fn totp_debug_masks_the_code_and_entropy_matches_generate() {
+    let code = totp_now("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".into(), 59).unwrap();
+    assert!(!format!("{code:?}").contains("287082"));
+    // Out-of-range recipes: refused by generate, zero entropy.
+    for r in [
+        FfiPasswordRecipe::Characters {
+            length: 3,
+            digits: true,
+            symbols: true,
+            avoid_ambiguous: false,
+        },
+        FfiPasswordRecipe::Words {
+            count: 0,
+            separator: "-".into(),
+            french: false,
+            capitalize: false,
+        },
+        FfiPasswordRecipe::Pin { length: 2 },
+    ] {
+        assert!(generate_password(r.clone()).is_err());
+        assert_eq!(password_entropy_bits(r), 0.0);
+    }
+}

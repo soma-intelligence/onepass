@@ -13,14 +13,17 @@ crate-type = ["staticlib", "cdylib", "lib"]
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
+required-features = ["bindgen"]
 
 [dependencies]
 onepass-core = { path = "../onepass-core" }
-uniffi = { version = "=0.32.2", features = ["cli"] }
+uniffi = { version = "=0.32.2" }
 zeroize.workspace = true
 time = { version = "0.3", default-features = false, features = ["std"] }
 
 [features]
+# The Swift binding generator (`cargo run --features bindgen --bin uniffi-bindgen`).
+bindgen = ["uniffi/cli"]
 # Lowers the Argon2id floor in debug builds only (see onepass-core): for the
 # tests and the Swift test framework, never for a shipped build.
 dev-fast-kdf = ["onepass-core/dev-fast-kdf"]

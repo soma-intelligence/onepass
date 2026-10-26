@@ -17,6 +17,7 @@ use onepass_core::model::{self, ItemType, checks::CardBrand};
 use onepass_core::repo::Repository;
 use onepass_core::sync::SyncStore;
 use onepass_core::totp;
+use zeroize::Zeroizing;
 
 use convert::{sections_to_ffi, type_label};
 pub use error::OnePassError;
@@ -56,6 +57,7 @@ pub fn create_account(
     db_path: String,
     password: String,
 ) -> Result<FfiCreatedAccount, OnePassError> {
+    let password = Zeroizing::new(password);
     create(&db_path, &password, KdfParams::new_default()?)
 }
 
@@ -68,6 +70,7 @@ pub fn create_account_with_kdf(
     password: String,
     kdf: FfiKdfParams,
 ) -> Result<FfiCreatedAccount, OnePassError> {
+    let password = Zeroizing::new(password);
     let mut params = KdfParams::new_default()?;
     params.m_kib = kdf.m_kib;
     params.t = kdf.t;
@@ -81,6 +84,7 @@ pub fn unlock_with_password(
     password: String,
     secret_key: String,
 ) -> Result<FfiUnlocked, OnePassError> {
+    let (password, secret_key) = (Zeroizing::new(password), Zeroizing::new(secret_key));
     let store = open_store(&db_path)?;
     let secret_key = SecretKey::parse(&secret_key)?;
     let device = store.device_state()?;
@@ -94,10 +98,15 @@ pub fn unlock_with_password(
 
 #[uniffi::export]
 pub fn unlock_with_auk(db_path: String, auk: Vec<u8>) -> Result<Arc<Session>, OnePassError> {
-    let bytes: [u8; 32] = auk.try_into().map_err(|_| invalid("auk"))?;
+    let auk = Zeroizing::new(auk);
+    if auk.len() != 32 {
+        return Err(invalid("auk"));
+    }
+    let mut bytes = Zeroizing::new([0u8; 32]);
+    bytes.copy_from_slice(&auk);
     let store = open_store(&db_path)?;
     let device = store.device_state()?;
-    let mut repo = Repository::unlock_with_auk(store, &Auk::from_bytes(bytes), device)?;
+    let mut repo = Repository::unlock_with_auk(store, &Auk::from_bytes(*bytes), device)?;
     repo.persist_device_state()?;
     Session::new(repo)
 }
@@ -116,6 +125,7 @@ pub fn open_sync_store(db_path: String) -> Result<Arc<SyncStoreHandle>, OnePassE
 /// missing dashes accepted).
 #[uniffi::export]
 pub fn normalize_secret_key(text: String) -> Result<String, OnePassError> {
+    let text = Zeroizing::new(text);
     Ok(SecretKey::parse(&text)?.to_display())
 }
 
@@ -162,9 +172,17 @@ pub fn generate_password(recipe: FfiPasswordRecipe) -> Result<String, OnePassErr
     Ok(generator::generate(&recipe_to_core(&recipe)?)?.to_string())
 }
 
-/// Entropy in bits; 0 for a recipe the generator would refuse.
+/// Entropy in bits; 0 for a recipe `generate_password` would refuse.
 #[uniffi::export]
 pub fn password_entropy_bits(recipe: FfiPasswordRecipe) -> f64 {
+    let in_range = match &recipe {
+        FfiPasswordRecipe::Characters { length, .. } => (8..=100).contains(length),
+        FfiPasswordRecipe::Words { count, .. } => (3..=20).contains(count),
+        FfiPasswordRecipe::Pin { length } => (4..=12).contains(length),
+    };
+    if !in_range {
+        return 0.0;
+    }
     recipe_to_core(&recipe).map_or(0.0, |r| generator::entropy_bits(&r))
 }
 
