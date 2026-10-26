@@ -3,7 +3,7 @@ use onepass_core::repo::Repository;
 use onepass_core::store::SqliteStore;
 use onepass_core::vault::{Vault, VaultMeta};
 
-use crate::session::{CliError, Ctx, with_session};
+use crate::session::{CliError, Ctx, stored, with_session};
 
 #[derive(Subcommand)]
 pub enum VaultCmd {
@@ -16,7 +16,7 @@ pub enum VaultCmd {
 pub fn run(ctx: &Ctx, cmd: VaultCmd) -> Result<(), CliError> {
     match cmd {
         VaultCmd::List => with_session(ctx, |repo| {
-            let vaults = repo.vaults()?;
+            let vaults = stored(repo.vaults())?;
             if ctx.json {
                 let rows: Vec<_> = vaults
                     .iter()
@@ -34,13 +34,13 @@ pub fn run(ctx: &Ctx, cmd: VaultCmd) -> Result<(), CliError> {
             if name.trim().is_empty() {
                 return Err(CliError::usage("the vault name must not be empty"));
             }
-            let vault = repo.create_vault(VaultMeta {
+            let vault = stored(repo.create_vault(VaultMeta {
                 name,
                 icon: "folder".into(),
                 color: "blue".into(),
                 travel_safe: false,
                 mcp_access: false,
-            })?;
+            }))?;
             if ctx.json {
                 println!("{}", serde_json::json!({ "id": vault.id.to_string() }));
             } else {
@@ -77,5 +77,5 @@ pub fn find_vault(vaults: &[Vault], key: &str) -> Result<usize, CliError> {
 
 /// Every vault of the repository.
 pub fn all(repo: &Repository<SqliteStore>) -> Result<Vec<Vault>, CliError> {
-    Ok(repo.vaults()?)
+    stored(repo.vaults())
 }

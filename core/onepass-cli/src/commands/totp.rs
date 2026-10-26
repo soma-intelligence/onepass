@@ -2,7 +2,7 @@ use onepass_core::model::FieldValue;
 use onepass_core::reference::SecretRef;
 
 use super::item::find_item;
-use crate::session::{CliError, Ctx, with_session};
+use crate::session::{CliError, Ctx, stored, with_session};
 
 /// `onepass totp <id|name>`: the current code of the item's one-time
 /// password field.
@@ -25,7 +25,7 @@ pub fn run(ctx: &Ctx, key: &str, vault: Option<&str>) -> Result<(), CliError> {
             section: None,
             field: "totp".to_owned(),
         };
-        Ok(repo.resolve(&r)?)
+        stored(repo.resolve(&r))
     })?;
     if ctx.json {
         println!("{}", serde_json::json!({ "code": *code }));

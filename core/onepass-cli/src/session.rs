@@ -7,7 +7,7 @@
 use std::fmt;
 use std::fs;
 use std::io::{IsTerminal, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use onepass_core::Error;
@@ -114,12 +114,49 @@ fn encode(
     Ok(Zeroizing::new(bytes))
 }
 
+/// Errors of a repository call on stored data. A corrupted or tampered
+/// store can surface as `InvalidFormat`, `Store` or `Crypto` as well as
+/// `Integrity`: all of them exit 3. A wrong password stays 2, not found 4,
+/// and a rejected input (`Validation`) stays 1. Calls that only parse user
+/// input must not go through here.
+pub fn stored<T>(r: onepass_core::Result<T>) -> Result<T, CliError> {
+    r.map_err(|e| match e {
+        Error::InvalidFormat(_) | Error::Store(_) | Error::Crypto => {
+            CliError::from(Error::Integrity(onepass_core::IntegrityError::WrongKind))
+        }
+        other => CliError::from(other),
+    })
+}
+
 /// Create the data directory (and parents) with mode 0700.
 pub fn ensure_dir(dir: &Path) -> Result<(), CliError> {
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(dir)?;
+    set_mode(dir, 0o700)
+}
+
+fn set_mode(path: &Path, mode: u32) -> Result<(), CliError> {
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
+    Ok(())
+}
+
+/// Tighten an existing data directory: 0700 for the directory, 0600 for
+/// the store (with its WAL files) and `device.bin`.
+pub fn harden(ctx: &Ctx) -> Result<(), CliError> {
+    set_mode(&ctx.data_dir, 0o700)?;
+    for suffix in ["", "-wal", "-shm"] {
+        let mut p = ctx.store_path().into_os_string();
+        p.push(suffix);
+        let p = PathBuf::from(p);
+        if p.exists() {
+            set_mode(&p, 0o600)?;
+        }
+    }
+    if ctx.device_path().exists() {
+        set_mode(&ctx.device_path(), 0o600)?;
+    }
     Ok(())
 }
 
@@ -157,8 +194,9 @@ impl Session {
             .map_err(|_| CliError::usage("device.bin is unreadable"))?;
         let key = SecretKey::parse(&file.secret_key)?;
         let password = read_password("Password: ")?;
-        let store = SqliteStore::open(&ctx.store_path())?;
-        let repo = Repository::unlock(store, &password, &key, file.state)?;
+        let store = stored(SqliteStore::open(&ctx.store_path()))?;
+        harden(ctx)?;
+        let repo = stored(Repository::unlock(store, &password, &key, file.state))?;
         Ok(Session {
             repo,
             secret_key: file.secret_key,
@@ -195,7 +233,7 @@ pub fn with_session<T>(
 ) -> Result<T, CliError> {
     let mut session = Session::open(ctx)?;
     let result = f(&mut session.repo);
-    let saved = session.persist();
+    let saved = harden(ctx).and_then(|()| session.persist());
     match result {
         Ok(v) => saved.map(|()| v),
         Err(e) => Err(e),

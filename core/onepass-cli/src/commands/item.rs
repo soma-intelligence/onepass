@@ -17,7 +17,7 @@ use time::{Date, Month, OffsetDateTime};
 use zeroize::Zeroizing;
 
 use super::vault::{all, find_vault};
-use crate::session::{CliError, Ctx, with_session};
+use crate::session::{CliError, Ctx, stored, with_session};
 
 const MASK: &str = "••••••••";
 
@@ -121,14 +121,14 @@ pub fn run(ctx: &Ctx, cmd: ItemCmd) -> Result<(), CliError> {
         ItemCmd::Delete { key, vault } => {
             let vaults = all(repo)?;
             let (vi, item) = find_item(repo, &vaults, vault.as_deref(), &key)?;
-            repo.trash_item(&vaults[vi], item.id)?;
+            stored(repo.trash_item(&vaults[vi], item.id))?;
             Ok(())
         }
         ItemCmd::Move { key, to, vault } => {
             let vaults = all(repo)?;
             let (vi, item) = find_item(repo, &vaults, vault.as_deref(), &key)?;
             let ti = find_vault(&vaults, &to)?;
-            repo.move_item(item.id, &vaults[vi], &vaults[ti])?;
+            stored(repo.move_item(item.id, &vaults[vi], &vaults[ti]))?;
             Ok(())
         }
     })
@@ -149,7 +149,7 @@ pub fn find_item(
     };
     let mut live: Vec<(usize, Item)> = Vec::new();
     for vi in indexes {
-        for item in repo.items(&vaults[vi])? {
+        for item in stored(repo.items(&vaults[vi]))? {
             if item.trashed_at.is_none() {
                 live.push((vi, item));
             }
@@ -189,7 +189,7 @@ fn list(
     };
     let mut rows: Vec<(String, String, String, String)> = Vec::new();
     for vi in indexes {
-        for item in repo.items(&vaults[vi])? {
+        for item in stored(repo.items(&vaults[vi]))? {
             if item.trashed_at.is_some() || item_type.is_some_and(|t| t != item.item_type) {
                 continue;
             }
@@ -375,7 +375,7 @@ fn create(
         apply_field(&mut item, spec)?;
     }
     let id = item.id;
-    repo.save_item(&vaults[vi], item)?;
+    stored(repo.save_item(&vaults[vi], item))?;
     if ctx.json {
         println!("{}", json!({ "id": id.to_string() }));
     } else {
@@ -396,7 +396,7 @@ fn edit(
         apply_field(&mut item, spec)?;
     }
     item.updated_at = OffsetDateTime::now_utc();
-    repo.save_item(&vaults[vi], item)?;
+    stored(repo.save_item(&vaults[vi], item))?;
     Ok(())
 }
 

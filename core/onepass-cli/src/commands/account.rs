@@ -51,6 +51,7 @@ fn build(
     kdf: onepass_core::crypto::KdfParams,
 ) -> Result<zeroize::Zeroizing<String>, CliError> {
     let store = SqliteStore::open(&ctx.store_path())?;
+    session::harden(ctx)?;
     let (repo, key) = Repository::create_account(store, password, kdf)?;
     let key_text = zeroize::Zeroizing::new(key.to_display());
     Session::created(ctx, repo, &key).persist()?;

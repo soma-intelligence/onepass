@@ -377,3 +377,109 @@ fn generate_without_account() {
         .assert()
         .code(1);
 }
+
+/// Flip the last byte of the data of every record of `kind`.
+fn corrupt(dir: &Path, kind: i64, how: &str) {
+    let conn = rusqlite::Connection::open(dir.join("vault.sqlite")).unwrap();
+    let n = conn
+        .execute(
+            &format!("UPDATE records SET data = {how} WHERE kind = ?1"),
+            [kind],
+        )
+        .unwrap();
+    assert!(n >= 1);
+}
+
+#[test]
+fn damaged_records_exit_code_3() {
+    // Account params: last byte flipped (the signature).
+    let tmp = fresh();
+    corrupt(
+        tmp.path(),
+        1,
+        "substr(data, 1, length(data) - 1) || char(unicode(substr(data, -1)) + 1)",
+    );
+    let bad = run(tmp.path(), &["item", "list"]);
+    assert_eq!(bad.code, 3, "{}", bad.stderr);
+    assert!(bad.stderr.contains("possible tampering"));
+
+    // An item record cut short: a malformed header, not a failed tag.
+    let tmp = fresh();
+    corrupt(tmp.path(), 5, "substr(data, 1, 3)");
+    assert_eq!(run(tmp.path(), &["item", "list"]).code, 3);
+
+    // Garbage that is not a database at all.
+    let tmp = fresh();
+    fs::write(tmp.path().join("vault.sqlite"), vec![0x42u8; 4096]).unwrap();
+    for f in ["vault.sqlite-wal", "vault.sqlite-shm"] {
+        let _ = fs::remove_file(tmp.path().join(f));
+    }
+    assert_eq!(run(tmp.path(), &["item", "list"]).code, 3);
+
+    // Bad user input stays a usage error, never a tampering report.
+    let tmp = fresh();
+    assert_eq!(run(tmp.path(), &["read", "http://nope"]).code, 1);
+}
+
+#[test]
+fn existing_directory_is_hardened() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = fresh();
+    let d = tmp.path();
+    let set = |p: &Path, m: u32| fs::set_permissions(p, fs::Permissions::from_mode(m)).unwrap();
+    set(d, 0o755);
+    set(&d.join("vault.sqlite"), 0o644);
+    set(&d.join("device.bin"), 0o644);
+    assert_eq!(run(d, &["item", "list"]).code, 0);
+    let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(d), 0o700);
+    assert_eq!(mode(&d.join("vault.sqlite")), 0o600);
+    assert_eq!(mode(&d.join("device.bin")), 0o600);
+    for f in ["vault.sqlite-wal", "vault.sqlite-shm"] {
+        if d.join(f).exists() {
+            assert_eq!(mode(&d.join(f)), 0o600);
+        }
+    }
+}
+
+#[test]
+fn device_state_detects_a_restored_old_database() {
+    let tmp = fresh();
+    let d = tmp.path();
+    let snapshot = |from: &Path, to: &Path| {
+        for f in ["vault.sqlite", "vault.sqlite-wal", "vault.sqlite-shm"] {
+            let _ = fs::remove_file(to.join(f));
+            if from.join(f).exists() {
+                fs::copy(from.join(f), to.join(f)).unwrap();
+            }
+        }
+    };
+    // Read once so the device has seen the current manifest, then snapshot.
+    assert_eq!(run(d, &["item", "list"]).code, 0);
+    let old = tempfile::tempdir().unwrap();
+    snapshot(d, old.path());
+    let device_before = fs::read(d.join("device.bin")).unwrap();
+
+    // A write, then a read: the device remembers the newer manifest.
+    let made = run(
+        d,
+        &[
+            "item",
+            "create",
+            "login",
+            "--title",
+            "Later",
+            "--field",
+            "username=u",
+        ],
+    );
+    assert_eq!(made.code, 0, "{}", made.stderr);
+    assert_eq!(run(d, &["item", "list"]).code, 0);
+    assert_ne!(fs::read(d.join("device.bin")).unwrap(), device_before);
+
+    // The old database comes back; device.bin still knows better.
+    snapshot(old.path(), d);
+    let rolled = run(d, &["item", "list"]);
+    assert_eq!(rolled.code, 3, "{}", rolled.stderr);
+    assert!(rolled.stderr.contains("possible tampering"));
+}
