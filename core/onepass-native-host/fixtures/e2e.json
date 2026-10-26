@@ -1,0 +1,120 @@
+{
+  "_comment": "Fictional data for tests only. Passwords the E2E pages check: Atlas Cloud alex@atlas.dev = Atl4s-Pass-0001 (TOTP secret JBSWY3DPEHPK3PXP), Atlas Cloud (multi) alex.ops@atlas.dev = Atl4s-Ops-0010, Atlas admin admin@atlas.dev = Adm1n-Pass-0002, Google perso alex.perso@example.com = G-Perso-0005, Google pro alex.pro@example.com = G-Pro-0006, Atlas coffre (reprompt) = Repr-Pass-0007. Never shown: Atlas ancien (archived) = Old-Pass-0003, Atlas cache (hidden) = Hidden-Pass-0004. Test card 4242 4242 4242 4242, 04/2029, CVV 123.",
+  "account": "alex@atlas.dev",
+  "vaults": [
+    { "name": "Personnel", "color": "#5856D6" },
+    { "name": "Atlas", "color": "#34C759" }
+  ],
+  "items": [
+    {
+      "type": "login",
+      "title": "Atlas Cloud",
+      "vault": "Personnel",
+      "urls": [{ "url": "https://atlas-cloud.test", "rule": "domain" }],
+      "fields": { "username": "alex@atlas.dev", "password": "Atl4s-Pass-0001" },
+      "totp_uri": "otpauth://totp/Atlas:alex@atlas.dev?secret=JBSWY3DPEHPK3PXP&issuer=Atlas"
+    },
+    {
+      "type": "login",
+      "title": "Atlas Cloud (multi)",
+      "vault": "Atlas",
+      "urls": [{ "url": "https://atlas-cloud.test", "rule": "domain" }],
+      "fields": { "username": "alex.ops@atlas.dev", "password": "Atl4s-Ops-0010" }
+    },
+    {
+      "type": "login",
+      "title": "Atlas admin",
+      "vault": "Atlas",
+      "urls": [{ "url": "https://admin.atlas-cloud.test", "rule": "exact_host" }],
+      "fields": { "username": "admin@atlas.dev", "password": "Adm1n-Pass-0002" }
+    },
+    {
+      "type": "login",
+      "title": "Atlas ancien",
+      "vault": "Personnel",
+      "urls": [{ "url": "https://atlas-cloud.test", "rule": "domain" }],
+      "fields": { "username": "alex@atlas.dev", "password": "Old-Pass-0003" },
+      "archived": true
+    },
+    {
+      "type": "login",
+      "title": "Atlas cache",
+      "vault": "Personnel",
+      "urls": [{ "url": "https://atlas-cloud.test", "rule": "domain" }],
+      "fields": { "username": "alex@atlas.dev", "password": "Hidden-Pass-0004" },
+      "hide_from_autofill": true
+    },
+    {
+      "type": "login",
+      "title": "Atlas coffre",
+      "vault": "Personnel",
+      "urls": [{ "url": "https://vault.atlas-cloud.test", "rule": "exact_host" }],
+      "fields": { "username": "alex@atlas.dev", "password": "Repr-Pass-0007" },
+      "reprompt": true
+    },
+    {
+      "type": "crypto_wallet",
+      "title": "Atlas wallet",
+      "vault": "Personnel",
+      "urls": [{ "url": "https://atlas-cloud.test", "rule": "domain" }],
+      "fields": {
+        "name": "Atlas wallet",
+        "recovery_phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+      }
+    },
+    {
+      "type": "credit_card",
+      "title": "Carte Atlas",
+      "vault": "Personnel",
+      "fields": {
+        "cardholder": "Alex Martin",
+        "number": "4242 4242 4242 4242",
+        "expiry": "04/2029",
+        "cvv": "123"
+      }
+    },
+    {
+      "type": "identity",
+      "title": "Alex Martin",
+      "vault": "Personnel",
+      "fields": {
+        "first_name": "Alex",
+        "last_name": "Martin",
+        "email": "alex@atlas.dev",
+        "mobile_phone": "+33 6 00 00 00 00",
+        "birth_date": "1990-05-17",
+        "company": "Atlas",
+        "address": {
+          "line1": "1 rue de l'Exemple",
+          "line2": "",
+          "city": "Lyon",
+          "postal_code": "69000",
+          "region": "Rhone",
+          "country": "FR"
+        }
+      }
+    },
+    {
+      "type": "login",
+      "title": "Google perso",
+      "vault": "Personnel",
+      "urls": [{ "url": "https://accounts.google.com", "rule": "exact_host" }],
+      "fields": { "username": "alex.perso@example.com", "password": "G-Perso-0005" }
+    },
+    {
+      "type": "login",
+      "title": "Google pro",
+      "vault": "Atlas",
+      "urls": [{ "url": "https://accounts.google.com", "rule": "exact_host" }],
+      "fields": { "username": "alex.pro@example.com", "password": "G-Pro-0006" }
+    },
+    {
+      "type": "login",
+      "title": "Atlas Docs",
+      "vault": "Personnel",
+      "urls": [{ "url": "https://docs.atlas-cloud.test", "rule": "exact_host" }],
+      "fields": { "username": "alex.perso@example.com" },
+      "login_methods": [{ "provider": "google", "account_title": "Google perso" }]
+    }
+  ]
+}

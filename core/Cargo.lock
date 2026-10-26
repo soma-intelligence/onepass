@@ -1601,6 +1601,17 @@ dependencies = [
 [[package]]
 name = "onepass-native-host"
 version = "0.1.0"
+dependencies = [
+ "data-encoding",
+ "onepass-bridge",
+ "onepass-core",
+ "postcard",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "time",
+ "zeroize",
+]
 
 [[package]]
 name = "onepass-ssh-agent"
