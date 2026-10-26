@@ -64,6 +64,13 @@ describe("judge", () => {
     expect(judge(s, login, obs({ driver: "lookalike", itemOffered: true })))
       .toEqual({ verdict: "fail", cause: "offered_where_forbidden" });
   });
+  it("nofill_ignores_fields_typed_by_driver", () => {
+    // Signup on a cross-site frame: the driver types the email itself, the extension fills nothing.
+    const o = obs({ driver: "menu_fill", overlayShown: false, filled: { user: true, pw: false }, typed: ["user"] });
+    expect(judge(scenario(framed, "nofill", "menu_fill"), framed, o)).toEqual({ verdict: "pass" });
+    const o2 = obs({ driver: "menu_fill", filled: { user: true, pw: true }, typed: ["user"] });
+    expect(judge(scenario(framed, "nofill", "menu_fill"), framed, o2)).toEqual({ verdict: "fail", cause: "filled_where_forbidden" });
+  });
   it("xfail_when_goal_missed", () => {
     expect(judge(scenario(shadow, "xfail"), shadow, obs({ overlayShown: false, itemOffered: false })))
       .toEqual({ verdict: "xfail", cause: "no_overlay" });
@@ -86,7 +93,10 @@ describe("judge", () => {
   });
   it("handoff_reason_in_cause", () => {
     const o = obs({ chain: { status: "handoff", reason: "captcha" }, events: [submit(login.host, false, "wrong_password")] });
-    expect(judge(scenario(login, "pass"), login, o)).toEqual({ verdict: "fail", cause: "handoff:captcha" });
+    // The RP's refusal reason is kept next to the handoff reason.
+    expect(judge(scenario(login, "pass"), login, o)).toEqual({ verdict: "fail", cause: "handoff:captcha (rp_refused:wrong_password)" });
+    expect(judge(scenario(login, "pass"), login, obs({ chain: { status: "handoff", reason: "captcha" } })))
+      .toEqual({ verdict: "fail", cause: "handoff:captcha" });
   });
   it("fail_causes", () => {
     const s = scenario(login, "pass");

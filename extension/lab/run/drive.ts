@@ -4,23 +4,32 @@
 // chain, menu_fill through the in-field menu (trusted ArrowDown) and the
 // site's submit button, lookalike opens the trap copy and looks for the real
 // site's item, passkey_control proves the bench's WebAuthn relying party with
-// Chromium's virtual authenticator and no extension. Driver steps that the
-// page cannot satisfy are recorded as observations; only bench failures
+// Chromium's virtual authenticator and no extension. The autofill itself is
+// reached only through the Driver interface (driver.ts). Driver steps that
+// the page cannot satisfy are recorded as observations; only bench failures
 // (navigation to a lab host, browser launch, host rate limit) carry `lab:`.
 import { createPrivateKey } from "node:crypto";
 import type { Frame, Page } from "@playwright/test";
 import type { FieldSpec, Site } from "../gen/model.ts";
 import { PAGE_PATH } from "../gen/render.ts";
 import type { LabEvent } from "../server/ledger.ts";
-import { type Lab, type PlainBrowser, sleep } from "./browser.ts";
+import type { LabServer } from "../server/server.ts";
+import { type PlainBrowser, sleep } from "./browser.ts";
+import type { Driver } from "./driver.ts";
 import type { Observation } from "./oracle.ts";
+
+/** What a scenario runs against: the autofill under test, the lab server, a fresh tab. */
+export interface ScenarioEnv {
+  driver: Driver;
+  server: LabServer;
+  newPage(): Promise<Page>;
+}
 
 const OVERLAY_WAIT_MS = 15_000;
 const CHAIN_WAIT_MS = 60_000;
 const LOOKALIKE_WAIT_MS = 5_000;
 /** The menu row of the password generator (signup). */
 export const GENERATE_ROW = "Générer un mot de passe";
-const RATE_LIMITED_TEXT = "Trop de demandes";
 
 /** CSS selector of an element id (generated ids may start with a digit). */
 const byId = (id: string) => `[id="${id.replace(/["\\]/g, "\\$&")}"]`;
@@ -69,16 +78,6 @@ async function snapshotFilled(page: Page, site: Site, acc: Record<string, boolea
   }
 }
 
-/** Whether an extension frame of the page says the native host refused for rate limiting. */
-async function rateLimited(page: Page): Promise<boolean> {
-  for (const f of page.frames()) {
-    if (!f.url().startsWith("chrome-extension://")) continue;
-    const text = await f.locator("body").innerText({ timeout: 1_000 }).catch(() => "");
-    if (text.includes(RATE_LIMITED_TEXT)) return true;
-  }
-  return false;
-}
-
 /** The frame holding the site's form: its /frame document for framed sites, else the top document. */
 async function formScope(page: Page, site: Site): Promise<Frame> {
   if (!site.traits.includes("iframe_same_origin") && !site.traits.includes("iframe_cross_site")) return page.mainFrame();
@@ -93,9 +92,9 @@ async function formScope(page: Page, site: Site): Promise<Frame> {
 }
 
 /** Waits until `pred` holds over the server events, or `ms` elapse. */
-async function waitEvents(lab: Lab, pred: (e: LabEvent[]) => boolean, ms: number): Promise<void> {
+async function waitEvents(server: LabServer, pred: (e: LabEvent[]) => boolean, ms: number): Promise<void> {
   const end = Date.now() + ms;
-  while (Date.now() < end && !pred(lab.server.events())) await sleep(200);
+  while (Date.now() < end && !pred(server.events())) await sleep(200);
 }
 
 const signedIn = (site: Site) => (es: LabEvent[]) => es.some((e) => e.kind === "signin" && e.host === site.host);
@@ -116,48 +115,48 @@ async function debugDump(page: Page, o: Observation): Promise<void> {
   console.log(`[lab debug] ${name} url=${page.url()}\n  ${frames.join("\n  ")}`);
 }
 
-async function finish(lab: Lab, page: Page | undefined, o: Observation, started: number): Promise<Observation> {
-  if (page && o.error === undefined && (await rateLimited(page).catch(() => false))) o.error = "lab: rate_limited";
+async function finish(env: ScenarioEnv, page: Page | undefined, o: Observation, started: number): Promise<Observation> {
+  if (page && o.error === undefined && (await env.driver.rateLimited(page).catch(() => false))) o.error = "lab: rate_limited";
   if (page) await debugDump(page, o);
-  o.events = lab.server.events();
+  o.events = env.server.events();
   o.durationMs = Date.now() - started;
   await page?.close().catch(() => undefined);
   return o;
 }
 
-/** one_click: the overlay's "Se connecter" on the site's item, then the chain to its end. */
-export async function oneClick(lab: Lab, site: Site): Promise<Observation> {
+/** one_click: the one-click UI's sign-in with the site's item, then the sign-in progress to its end. */
+export async function oneClick(env: ScenarioEnv, site: Site): Promise<Observation> {
   const started = Date.now();
   const o = blank("one_click");
   let page: Page | undefined;
   try {
-    page = await lab.newPage();
+    page = await env.newPage();
     await goto(page, `https://${site.host}/`);
-    const overlay = await lab.waitExtFrame(page, "overlay", OVERLAY_WAIT_MS);
-    o.overlayShown = overlay !== undefined;
-    if (overlay && site.itemTitle) o.itemOffered = await lab.overlayHas(overlay, site.itemTitle);
-    if (overlay && site.itemTitle && o.itemOffered) {
-      await lab.overlayStart(overlay, site.itemTitle);
+    const ui = await env.driver.openOneClick(page, OVERLAY_WAIT_MS);
+    o.overlayShown = ui !== undefined;
+    if (ui && site.itemTitle) o.itemOffered = await ui.offers(site.itemTitle);
+    if (ui && site.itemTitle && o.itemOffered) {
+      await env.driver.pickAccount(ui, site.itemTitle);
       const end = Date.now() + CHAIN_WAIT_MS;
       for (;;) {
         await snapshotFilled(page, site, o.filled);
-        const c = await lab.chainState(site.host).catch(() => null);
-        if (c) o.chain = { status: c.status, ...(c.reason !== undefined ? { reason: c.reason } : {}) };
+        const c = await env.driver.progress(site.host);
+        if (c) o.chain = c;
         if ((c && c.status !== "running") || Date.now() >= end) {
-          if (process.env.LAB_DEBUG) console.log(`[lab debug] chain ${JSON.stringify(c)}`);
+          if (process.env.LAB_DEBUG) console.log(`[lab debug] progress ${JSON.stringify(c)} at ${page.url()}`);
           break;
         }
         await sleep(500);
       }
       // The last post can still be in flight when the chain reports done.
-      await waitEvents(lab, signedIn(site), 3_000);
+      await waitEvents(env.server, signedIn(site), 3_000);
     } else {
       await snapshotFilled(page, site, o.filled);
     }
   } catch (e) {
     o.error = message(e);
   }
-  return finish(lab, page, o, started);
+  return finish(env, page, o, started);
 }
 
 /**
@@ -182,64 +181,55 @@ async function submitForm(scope: Frame): Promise<void> {
 }
 
 /** menu_fill: focus the first field offering the menu, ArrowDown, pick the item, then submit. */
-export async function menuFill(lab: Lab, site: Site): Promise<Observation> {
+export async function menuFill(env: ScenarioEnv, site: Site): Promise<Observation> {
   const started = Date.now();
   const o = blank("menu_fill");
   let page: Page | undefined;
   try {
-    page = await lab.newPage();
+    page = await env.newPage();
     await goto(page, `https://${site.host}/`);
     const scope = await formScope(page, site);
     const { fields, title } = menuTarget(site);
     if (site.flow === "signup") {
-      // Typed by the user before asking for a generated password.
+      // Typed by the user before asking for a generated password: never counted as an extension fill.
       const email = site.fields.find((f) => f.role === "email" || f.role === "username");
-      if (email && site.account) await scope.locator(byId(email.id)).first().fill(site.account.username, { timeout: 10_000 }).catch(() => undefined);
+      if (email && site.account) {
+        o.typed = [email.name];
+        await scope.locator(byId(email.id)).first().fill(site.account.username, { timeout: 10_000 }).catch(() => undefined);
+      }
     }
-    let menu: Frame | undefined;
-    for (const [k, f] of fields.entries()) {
-      // The first field waits for delayed fields; the next ones are already there.
-      menu = await lab.openMenu(page, scope, byId(f.id), k === 0 ? 10_000 : 3_000).catch(() => undefined);
-      if (menu) break;
-    }
-    o.overlayShown = menu !== undefined;
-    if (menu && title) o.itemOffered = await lab.menuRow(menu, title);
-    if (menu && title && o.itemOffered) {
-      await lab.pickRow(menu, title);
-      await sleep(1_500);
-      if (process.env.LAB_DEBUG) await debugDump(page, o);
-    }
+    const menu = await env.driver.menuFill(page, scope, fields.map((f) => byId(f.id)), title, true);
+    o.overlayShown = menu.shown;
+    o.itemOffered = menu.offered;
+    if (menu.offered) await debugDump(page, o);
     await snapshotFilled(page, site, o.filled);
     await submitForm(scope).catch(() => undefined);
-    await waitEvents(lab, submitted(site), 10_000);
-    await waitEvents(lab, signedIn(site), site.flow === "signup" ? 3_000 : 0);
+    await waitEvents(env.server, submitted(site), 10_000);
+    await waitEvents(env.server, signedIn(site), site.flow === "signup" ? 3_000 : 0);
   } catch (e) {
     o.error = message(e);
   }
-  return finish(lab, page, o, started);
+  return finish(env, page, o, started);
 }
 
 /** lookalike: the trap copy must not get the real site's item; its form is then sent as it is. */
-export async function lookalike(lab: Lab, site: Site): Promise<Observation> {
+export async function lookalike(env: ScenarioEnv, site: Site): Promise<Observation> {
   const started = Date.now();
   const o = blank("lookalike");
   let page: Page | undefined;
   try {
     if (!site.lookalike) throw new Error("lab: the site has no lookalike host");
-    page = await lab.newPage();
+    page = await env.newPage();
     await goto(page, `https://${site.lookalike.host}/`);
     await sleep(LOOKALIKE_WAIT_MS);
-    const overlay = lab.findExtFrame(page, "overlay");
-    o.overlayShown = overlay !== undefined;
-    if (overlay && site.itemTitle) o.itemOffered = await lab.overlayHas(overlay, site.itemTitle, 1_000);
+    const ui = await env.driver.openOneClick(page, 0);
+    o.overlayShown = ui !== undefined;
+    if (ui && site.itemTitle) o.itemOffered = await ui.offers(site.itemTitle, 1_000);
     const first = site.fields.find((f) => f.role !== "otp");
     if (first) {
-      const menu = await lab.openMenu(page, page.mainFrame(), byId(first.id), 5_000).catch(() => undefined);
-      if (menu) {
-        o.overlayShown = true;
-        if (site.itemTitle && (await lab.menuRow(menu, site.itemTitle, 2_000))) o.itemOffered = true;
-        await page.keyboard.press("Escape");
-      }
+      const menu = await env.driver.menuFill(page, page.mainFrame(), [byId(first.id)], site.itemTitle, false, { first: 5_000, next: 0 });
+      if (menu.shown) o.overlayShown = true;
+      if (menu.offered) o.itemOffered = true;
     }
     await snapshotFilled(page, site, o.filled);
     await submitForm(page.mainFrame()).catch(() => undefined);
@@ -247,7 +237,7 @@ export async function lookalike(lab: Lab, site: Site): Promise<Observation> {
   } catch (e) {
     o.error = message(e);
   }
-  return finish(lab, page, o, started);
+  return finish(env, page, o, started);
 }
 
 /** PKCS#8 DER (base64) of the site's P-256 passkey, for WebAuthn.addCredential. */
@@ -276,7 +266,7 @@ async function typePassword(page: Page, site: Site): Promise<void> {
 }
 
 /** passkey_control: Chromium's virtual authenticator holds the site's key; the lab RP must accept it. */
-export async function passkeyControl(lab: Pick<Lab, "server">, plain: PlainBrowser, site: Site): Promise<Observation> {
+export async function passkeyControl(server: LabServer, plain: PlainBrowser, site: Site): Promise<Observation> {
   const started = Date.now();
   // Not an extension scenario: the UI flags hold so that a failure is explained by the RP's refusal.
   const o: Observation = { ...blank("passkey_control"), overlayShown: true, itemOffered: true };
@@ -304,14 +294,14 @@ export async function passkeyControl(lab: Pick<Lab, "server">, plain: PlainBrows
     if (!site.passkeyOnly) await typePassword(page, site);
     await page.locator(byId("lab-passkey")).first().click({ timeout: 10_000 });
     const end = Date.now() + 15_000;
-    while (Date.now() < end && !lab.server.events().some((e) => e.kind === "signin" && e.host === site.host)) {
-      if (lab.server.events().some((e) => e.kind === "submit" && e.form === "passkey" && !e.ok)) break;
+    while (Date.now() < end && !server.events().some((e) => e.kind === "signin" && e.host === site.host)) {
+      if (server.events().some((e) => e.kind === "submit" && e.form === "passkey" && !e.ok)) break;
       await sleep(200);
     }
   } catch (e) {
     o.error = message(e);
   }
-  o.events = lab.server.events();
+  o.events = server.events();
   o.durationMs = Date.now() - started;
   await page?.close().catch(() => undefined);
   return o;

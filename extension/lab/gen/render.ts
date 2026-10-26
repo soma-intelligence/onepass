@@ -214,6 +214,8 @@ export function renderSitePage(site: Site, page: PageId, ctx: PageContext): stri
       if (site.flow === "sso" && site.sso) {
         const idp = IDP_HOST[site.sso.provider];
         const href = `https://${idp}/o/oauth2/auth?client=${host}&redirect_uri=https://${host}/oauth/callback`;
+        // An sso site may also show a password form; the provider button stays.
+        if (site.fields.length > 0) parts.push(mountedForm(site, page, PAGE_PATH.entry));
         parts.push(`<a id="lab-sso" class="btn" href="${esc(href)}">${esc(site.buttons.sso ?? PROVIDER_NAME[site.sso.provider])}</a>`);
       } else if (site.flow === "login_passkey" && site.passkeyOnly) {
         parts.push(passkeyBlock(site, host, ctx));
@@ -243,8 +245,10 @@ export function renderIdpPage(provider: ProviderId, page: IdpPageId, ctx: IdpCon
   let inner: string;
   switch (page) {
     case "chooser":
-      inner = (ctx.accounts ?? []).map((a) => `<button type="submit" class="account" name="email" value="${esc(a.email)}"`
-        + ` data-lab-account="${esc(a.email)}">${esc(a.name)}<small>${esc(a.email)}</small></button>`).join("")
+      // A list of accounts, as real provider choosers show them (one email per entry).
+      inner = `<ul class="accounts">${(ctx.accounts ?? []).map((a) => `<li><button type="submit" class="account" name="email"`
+        + ` value="${esc(a.email)}" data-email="${esc(a.email)}" data-lab-account="${esc(a.email)}">${esc(a.name)}`
+        + `<small>${esc(a.email)}</small></button></li>`).join("")}</ul>`
         + `<button type="submit" class="account" name="email" value="" id="lab-other">Utiliser un autre compte</button>`;
       break;
     case "identifier":

@@ -30,6 +30,7 @@ button,.btn{display:inline-block;width:100%;margin:4px 0 0;padding:10px 14px;fon
 .otp-cell{width:44px;text-align:center}
 .account{display:block;margin:0 0 8px;color:#1d1d1f;background:#fff;border:1px solid #c7c7cc;text-align:left}
 .account small{display:block;font-weight:400;color:#6e6e73}
+.accounts{list-style:none;margin:0;padding:0}
 .muted{color:#6e6e73}
 iframe{display:block;width:100%;height:1000px;border:0}
 lab-shell{display:block}

@@ -44,7 +44,26 @@ describe("generate", () => {
   it("pinned_digest", () => {
     const w = generate("lab-smoke-1", { sites: 12, patterns: FIXED });
     const digest = createHash("sha256").update(JSON.stringify(w)).digest("hex");
-    expect(digest).toBe("390df8c28f518ed629bb18e5f88d026e67a2a8b71818fdab76f90ec579c295ca");
+    expect(digest).toBe("c6b5ee185b34e62143b190973f50bf81477314f616000f5b0b15974785ebb449");
+  });
+
+  it("sso_with_and_without_password_form", () => {
+    const w = generate("sso-variants", { sites: 300, patterns: FIXED });
+    const sso = w.sites.filter((s) => s.flow === "sso");
+    const withForm = sso.filter((s) => s.fields.length > 0);
+    // Both variants occur, roughly half and half.
+    expect(withForm.length).toBeGreaterThan(sso.length * 0.25);
+    expect(withForm.length).toBeLessThan(sso.length * 0.75);
+    for (const s of sso) {
+      expect(s.account).toBeUndefined();
+      expect(s.itemTitle).toMatch(new RegExp(`^${s.brand} via (Google|Apple|Microsoft)$`));
+      if (s.fields.length > 0) expect(s.fields.map((f) => f.role)).toEqual(["username", "password"]);
+      const item = (w.fixture.items as { urls?: { url: string }[]; fields: Record<string, string>; login_methods?: unknown[] }[])
+        .find((i) => i.urls?.[0]?.url === `https://${s.host}`)!;
+      // The vault item stays provider-only: no password, one login method.
+      expect(item.fields.password).toBeUndefined();
+      expect(item.login_methods).toHaveLength(1);
+    }
   });
 
   it("load_patterns_reads_committed_file", () => {

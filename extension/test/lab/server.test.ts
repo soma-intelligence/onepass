@@ -249,6 +249,32 @@ describe("lab server", () => {
     }
   });
 
+  it("sso_password_form_refused", async () => {
+    let w: World | undefined;
+    for (let k = 0; k < 500 && !w; k++) {
+      const c = generate(`lab-server-sso-${k}`, { sites: 10, patterns: PATTERNS });
+      if (c.sites.some((x) => x.flow === "sso" && x.fields.length > 0)) w = c;
+    }
+    const s = w!.sites.find((x) => x.flow === "sso" && x.fields.length > 0)!;
+    const d = mkdtempSync(join(tmpdir(), "lab-server-sso-"));
+    const own = await startLabServer(w!, generateCert(d, w!.hosts));
+    try {
+      const r = client(own.port);
+      const acct = w!.idp[s.sso!.provider].find((a) => a.email === s.sso!.email)!;
+      const res = await r(s.host, "/", { [field(s, "username")]: acct.email, [field(s, "password")]: "anything" });
+      expect(res.status).toBe(200);
+      expect(own.events()).toEqual([
+        { at: expect.any(Number), host: s.host, kind: "submit", form: "sso", ok: false, fields: [field(s, "username")], reason: "unknown_user" },
+      ]);
+      // The provider password posted to the site is a leak.
+      await r(s.host, "/", { [field(s, "username")]: acct.email, [field(s, "password")]: acct.password });
+      expect(own.events().some((e) => e.kind === "leak" && e.owner === IDP_HOST[s.sso!.provider])).toBe(true);
+    } finally {
+      await own.close();
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
   it("canary", async () => {
     for (const h of [world.sites[0]!.host, IDP_HOST.google, "unknown-host.test"]) {
       const r = await req(h, CANARY_PATH);

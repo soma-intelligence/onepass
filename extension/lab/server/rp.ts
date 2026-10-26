@@ -220,6 +220,13 @@ export function handleSite(site: Site, x: Exchange, st: LabState, mode: "site" |
     return signIn(user);
   }
 
+  // An sso site's password form: there is no password account, every post is an unknown user.
+  if (site.flow === "sso" && mainForm && site.fields.length > 0) {
+    const idName = nameOf(site, "username", "email") ?? "";
+    note({ form: formName, ok: false, fields: [idName], reason: "unknown_user" });
+    return page(formPage, { error: MSG.credentials });
+  }
+
   const account = accountOf(site, st);
   if (!PASSWORD_LOGIN.has(site.flow) || !account || (site.flow === "login_passkey" && site.passkeyOnly)) {
     return x.notFound();

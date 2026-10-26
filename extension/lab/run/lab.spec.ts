@@ -3,8 +3,9 @@
 // its scenarios one after the other (server reset, new tab, driver, oracle).
 // A failed scenario is replayed once in a fresh paired profile: a pass on
 // the second try is `flaky`. Every result goes to results.jsonl. A batch test
-// fails only when every one of its scenarios is a lab_error; the verdicts
-// themselves are the report's business. In smoke mode a last test compares
+// fails when any scenario leaks, when any response came from a non-loopback
+// address, or when every one of its scenarios is a lab_error; the other
+// verdicts are the report's business. In smoke mode a last test compares
 // the verdicts with lab/smoke-expected.json.
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,8 +13,9 @@ import { expect, test as base } from "@playwright/test";
 import { loadCert } from "../../e2e/cert.ts";
 import type { Scenario, Site, World } from "../gen/model.ts";
 import { type LabServer, startLabServer } from "../server/server.ts";
-import { type Lab, launchLab, launchPlain, readState, readWorld } from "./browser.ts";
-import { lookalike, menuFill, oneClick, passkeyControl } from "./drive.ts";
+import { type Lab, launchLab, launchPlain, networkViolations, readState, readWorld } from "./browser.ts";
+import { lookalike, menuFill, oneClick, passkeyControl, type ScenarioEnv } from "./drive.ts";
+import { extensionDriver } from "./driver.ts";
 import { EXT_ROOT, isSmoke, type LabState } from "./global-setup.ts";
 import { judge, type Judgement, type Observation, type Result, type Verdict } from "./oracle.ts";
 
@@ -58,6 +60,7 @@ async function pairedLab(server: LabServer): Promise<Lab> {
     await lab.pair();
     return lab;
   } catch (e) {
+    // Bench error path (the scenario becomes lab_error): the loopback registry still sees this close.
     await lab.close().catch(() => undefined);
     throw e;
   }
@@ -73,11 +76,16 @@ async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Pr
     } catch (e) {
       return labError(s.driver, e);
     }
+    let o: Observation;
     try {
-      return await passkeyControl({ server }, plain, site);
-    } finally {
+      o = await passkeyControl(server, plain, site);
+    } catch (e) {
       await plain.close().catch(() => undefined);
+      throw e;
     }
+    // A non-loopback response fails the batch test.
+    await plain.close();
+    return o;
   }
   let l: Lab;
   try {
@@ -85,17 +93,18 @@ async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Pr
   } catch (e) {
     return labError(s.driver, e);
   }
+  const env: ScenarioEnv = { driver: extensionDriver(l), server, newPage: () => l.newPage() };
   switch (s.driver) {
-    case "one_click": return oneClick(l, site);
-    case "menu_fill": return menuFill(l, site);
-    case "lookalike": return lookalike(l, site);
+    case "one_click": return oneClick(env, site);
+    case "menu_fill": return menuFill(env, site);
+    case "lookalike": return lookalike(env, site);
   }
 }
 
 function record(s: Scenario, site: Site, j: Judgement, retried: boolean, durationMs: number): Result {
   const r: Result = {
     worldSeed: world.seed, site: site.index, siteSeed: site.seed, flow: site.flow, traits: site.traits, lang: site.lang,
-    labelLang: site.labelLang, driver: s.driver, expect: s.expect, verdict: j.verdict, ...(j.cause ? { cause: j.cause } : {}),
+    labelLang: site.labelLang, driver: s.driver, expect: s.expect, ...(s.reason ? { reason: s.reason } : {}), verdict: j.verdict, ...(j.cause ? { cause: j.cause } : {}),
     retried, durationMs, repro: `npm run lab:repro -- --seed ${world.seed} --site ${site.index}`,
   };
   appendFileSync(state.results, `${JSON.stringify(r)}\n`);
@@ -108,6 +117,7 @@ batches().forEach((scenarios, k) => {
   test(`batch ${k}`, async ({ server }) => {
     // Up to ~2.5 min per scenario with its replay, plus a pairing per profile.
     test.setTimeout(scenarios.length * 180_000 + 120_000);
+    const seenViolations = networkViolations().length;
     let shared: Lab | undefined;
     const batchLab = async () => (shared ??= await pairedLab(server));
     const verdicts: Verdict[] = [];
@@ -118,7 +128,7 @@ batches().forEach((scenarios, k) => {
       let j = judge(s, site, first);
       let duration = first.durationMs;
       let retried = false;
-      // A broken profile is not reused.
+      // A broken profile is not reused (bench error path: its close error is not the verdict).
       if (j.verdict === "lab_error" && shared) {
         await shared.close().catch(() => undefined);
         shared = undefined;
@@ -127,7 +137,7 @@ batches().forEach((scenarios, k) => {
         retried = true;
         let fresh: Lab | undefined;
         const second = await attempt(s, site, server, async () => (fresh = await pairedLab(server)));
-        await fresh?.close().catch(() => undefined);
+        await fresh?.close();
         duration += second.durationMs;
         const again = judge(s, site, second);
         if (again.verdict === "pass") j = { verdict: "flaky", cause: j.cause };
@@ -137,7 +147,11 @@ batches().forEach((scenarios, k) => {
       verdicts.push(r.verdict);
       console.log(`${s.id} ${site.flow} [${site.traits.join(",")}] expect ${s.expect}: ${r.verdict}${r.cause ? ` (${r.cause})` : ""}`);
     }
-    await shared?.close().catch(() => undefined);
+    await shared?.close();
+    // Third net (e2e/fixtures.ts): no response from a non-loopback address, even on a bench-error path.
+    expect(networkViolations().slice(seenViolations), "responses from a non-loopback address").toEqual([]);
+    // Spec 11: a leak makes the run red.
+    expect(verdicts, "a scenario leaked a secret").not.toContain("leak");
     expect(verdicts.length > 0 && verdicts.every((v) => v === "lab_error"), "every scenario of the batch is a lab_error").toBe(false);
   });
 });

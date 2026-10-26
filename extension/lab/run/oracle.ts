@@ -20,6 +20,8 @@ export interface Observation {
   events: LabEvent[];
   /** Field name -> non-empty after the fill (before submit). */
   filled: Record<string, boolean>;
+  /** Fields the driver typed itself as the user would (signup email): never counted as filled by the extension. */
+  typed?: string[];
   error?: string;
   durationMs: number;
 }
@@ -28,7 +30,10 @@ export interface Judgement { verdict: Verdict; cause?: string }
 
 export interface Result {
   worldSeed: string; site: number; siteSeed: string; flow: FlowId; traits: TraitId[]; lang: Lang; labelLang: Lang;
-  driver: DriverId; expect: Expect; verdict: Verdict; cause?: string; retried: boolean; durationMs: number; repro: string;
+  driver: DriverId; expect: Expect;
+  /** The documented reason of the expectation (capabilities.ts: "R-16 passkeys", "R-10", "lookalike host"...). */
+  reason?: string;
+  verdict: Verdict; cause?: string; retried: boolean; durationMs: number; repro: string;
 }
 
 const FORM_FLOWS = new Set<FlowId>(["checkout_card", "address", "identity"]);
@@ -55,15 +60,22 @@ function rightSignin(site: Site, e: Extract<LabEvent, { kind: "signin" }>): bool
 
 const WRONG_FILL = new Set(["wrong_fields"]);
 
+/** The site's last refusal of a post, as a cause (wrong_fill or rp_refused:<reason>). */
+function refusalCause(site: Site, o: Observation): string | undefined {
+  const hosts = new Set([site.host, site.frameHost].filter((h): h is string => h !== undefined));
+  const last = o.events.filter((e): e is Extract<LabEvent, { kind: "submit" }> => e.kind === "submit" && !e.ok && hosts.has(e.host)).at(-1);
+  if (!last) return undefined;
+  return WRONG_FILL.has(last.reason ?? "") ? "wrong_fill" : `rp_refused:${last.reason ?? "unknown"}`;
+}
+
 function failCause(site: Site, o: Observation): string {
   if (!o.overlayShown) return "no_overlay";
   if (!o.itemOffered) return "no_menu_item";
-  if (o.chain?.status === "handoff") return `handoff:${o.chain.reason ?? "unknown"}`;
+  const refused = refusalCause(site, o);
+  if (o.chain?.status === "handoff") return `handoff:${o.chain.reason ?? "unknown"}${refused ? ` (${refused})` : ""}`;
   const hosts = new Set([site.host, site.frameHost].filter((h): h is string => h !== undefined));
   if (o.events.some((e) => e.kind === "signin" && hosts.has(e.host))) return "wrong_fill";
-  const refused = o.events.filter((e): e is Extract<LabEvent, { kind: "submit" }> => e.kind === "submit" && !e.ok && hosts.has(e.host));
-  const last = refused.at(-1);
-  if (last) return WRONG_FILL.has(last.reason ?? "") ? "wrong_fill" : `rp_refused:${last.reason ?? "unknown"}`;
+  if (refused) return refused;
   // The chain ended (done, stopped) short of the site's sign-in: a step it did not see.
   if (o.chain !== undefined && o.chain.status !== "running") return `chain_ended:${o.chain.status}`;
   return "timeout";
@@ -76,7 +88,8 @@ export function judge(s: Scenario, site: Site, o: Observation): Judgement {
     return { verdict: "lab_error", cause: o.error };
   }
   if (s.expect === "nofill") {
-    const filled = Object.values(o.filled).some(Boolean) || o.events.some((e) => e.kind === "signin");
+    const typed = new Set(o.typed ?? []);
+    const filled = Object.entries(o.filled).some(([name, v]) => v && !typed.has(name)) || o.events.some((e) => e.kind === "signin");
     if (filled) return { verdict: "fail", cause: "filled_where_forbidden" };
     // Spec 7.3: no overlay or menu may offer the real site's item on its lookalike.
     if (s.driver === "lookalike" && o.itemOffered) return { verdict: "fail", cause: "offered_where_forbidden" };

@@ -243,8 +243,11 @@ function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, num
   const passkeyOnly = flow === "login_passkey" ? rs.chance(0.5) : false;
   const splitExp = flow === "checkout_card" && rs.chance(0.4);
   const splitOtp = flow === "login_totp" && rs.chance(0.35);
-  const roles = rolesFor(flow, loginStyle, passkeyOnly, splitExp);
-  const traits = pickTraits(r.fork("traits"), flow, roles, langs.length, splitOtp);
+  // Half the sso sites also show an identifier + password form next to the provider button (own fork: nothing shifts).
+  const ssoForm = flow === "sso" && r.fork("sso-form").chance(0.5);
+  const roles = ssoForm ? rolesFor("login_single", undefined, false, false) : rolesFor(flow, loginStyle, passkeyOnly, splitExp);
+  // Field traits stay off sso sites, form or not: the provider button is what they test.
+  const traits = pickTraits(r.fork("traits"), flow, flow === "sso" ? [] : roles, langs.length, splitOtp);
   const labelLang = traits.includes("mixed_language")
     ? r.fork("label-lang").weighted(langs.filter(([l]) => l !== lang)) : lang;
   const fields = buildFields(r.fork("fields"), roles, patterns, labelLang, traits);

@@ -284,6 +284,15 @@ describe("renderSitePage", () => {
     expect(doc.querySelector("#lab-sso")!.textContent).toBe(site.buttons.sso);
   });
 
+  it("sso_with_form_keeps_provider_button", () => {
+    const site = [...world.sites, ...big.sites].find((s) => s.flow === "sso" && s.fields.length > 0)!;
+    const doc = parse(renderSitePage(site, "entry", {}));
+    expect(doc.querySelector("#lab-sso")).not.toBeNull();
+    const form = doc.querySelector("form#lab-form")!;
+    expect(form.getAttribute("action")).toBe("/");
+    expect([...form.querySelectorAll("input")].map((i) => i.name)).toEqual(site.fields.map((f) => f.name));
+  });
+
   it("passkey_page_calls_webauthn", () => {
     const site = world.sites.find((s) => s.flow === "login_passkey")!;
     const html = renderSitePage(site, "passkey", { challenge: "Y2hhbGxlbmdl" });
@@ -341,6 +350,11 @@ describe("renderIdpPage", () => {
     const items = [...doc.querySelectorAll<HTMLButtonElement>("form#lab-form [data-lab-account]")];
     expect(items.map((b) => b.value)).toEqual(accounts.map((a) => a.email));
     for (const [k, a] of accounts.entries()) expect(items[k]!.textContent).toContain(a.name);
+    // Entries of a list, one email each (data-email), as real provider choosers.
+    for (const [k, a] of accounts.entries()) {
+      expect(items[k]!.closest("ul")).not.toBeNull();
+      expect(items[k]!.getAttribute("data-email")).toBe(a.email);
+    }
     expect(doc.querySelector<HTMLInputElement>("input[name=client]")!.value).toBe("shop.test");
     expect(doc.querySelector("#lab-status")).not.toBeNull();
   });

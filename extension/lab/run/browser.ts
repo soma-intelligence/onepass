@@ -70,6 +70,28 @@ export interface Lab {
   close(): Promise<void>;
 }
 
+/**
+ * Every non-loopback response seen by any browser of this process. A close
+ * error can be swallowed on a bench-error path; this registry cannot, and
+ * each batch test asserts it stays empty (like e2e/fixtures.ts).
+ */
+const violations: string[] = [];
+export function networkViolations(): readonly string[] {
+  return violations;
+}
+
+/** Throws (lab:) when `remote` holds any non-loopback response. */
+function assertLoopback(remote: string[]): void {
+  if (remote.length > 0) throw new Error(`lab: responses from a non-loopback address: ${remote.join(", ")}`);
+}
+
+/** The bench error `e`, with the loopback failure of the close that followed it, if any. */
+async function closeAfter(close: () => Promise<void>, e: unknown): Promise<Error> {
+  const msg = (e as Error)?.message ?? String(e);
+  const closed = await close().then(() => "", (c: unknown) => `; ${(c as Error)?.message ?? String(c)}`);
+  return new Error(`${msg.startsWith("lab:") ? msg : `lab: ${msg}`}${closed}`);
+}
+
 /** The three nets of e2e/fixtures.ts on a context; returns the pending loopback checks. */
 function guard(ctx: BrowserContext, world: World): { remote: string[]; pending: Promise<void>[] } {
   const allowed = new Set(world.hosts);
@@ -83,7 +105,10 @@ function guard(ctx: BrowserContext, world: World): { remote: string[]; pending: 
   });
   ctx.on("response", (r) => {
     pending.push(r.serverAddr().then((a) => {
-      if (a && !LOOPBACK.has(a.ipAddress)) remote.push(`${r.url()} from ${a.ipAddress}`);
+      if (a && !LOOPBACK.has(a.ipAddress)) {
+        remote.push(`${r.url()} from ${a.ipAddress}`);
+        violations.push(`${r.url()} from ${a.ipAddress}`);
+      }
     }).catch(() => undefined));
   });
   return { remote, pending };
@@ -135,7 +160,7 @@ export async function launchLab(state: LabState, world: World, server: LabServer
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-    if (nets.remote.length > 0) throw new Error(`lab: responses from a non-loopback address: ${nets.remote.join(", ")}`);
+    assertLoopback(nets.remote);
   };
   try {
     const worker = async (): Promise<Worker> => {
@@ -222,9 +247,7 @@ export async function launchLab(state: LabState, world: World, server: LabServer
     };
     return lab;
   } catch (e) {
-    await close().catch(() => undefined);
-    const msg = (e as Error).message;
-    throw new Error(msg.startsWith("lab:") ? msg : `lab: ${msg}`);
+    throw await closeAfter(close, e);
   }
 }
 
@@ -243,13 +266,12 @@ export async function launchPlain(state: LabState, world: World, server: LabServ
     await context.close();
     await browser.close();
     await Promise.all(nets.pending);
-    if (nets.remote.length > 0) throw new Error(`lab: responses from a non-loopback address: ${nets.remote.join(", ")}`);
+    assertLoopback(nets.remote);
   };
   try {
     await canary(await context.newPage(), server);
   } catch (e) {
-    await close().catch(() => undefined);
-    throw e;
+    throw await closeAfter(close, e);
   }
   return { browser, context, close };
 }
