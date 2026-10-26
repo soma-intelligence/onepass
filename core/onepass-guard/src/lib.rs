@@ -9,6 +9,7 @@ mod approval;
 mod audit;
 mod clients;
 mod clock;
+mod control;
 mod display;
 mod grants;
 mod signed;
@@ -25,6 +26,10 @@ pub use clients::{
     CLIENTS_DOMAIN, ClientRecord, ClientRegistry, ClientRegistryLoader, load_clients, save_clients,
 };
 pub use clock::{Clock, SystemClock};
+pub use control::{
+    ACK_DOMAIN, ControlKind, ControlServer, LostFn, NOTIFY_DOMAIN, NotifyFn, NotifyOutcome,
+    SharedSigner, notify_servers,
+};
 pub use display::sanitize_for_display;
 pub use grants::{
     DEFAULT_GRANT_TTL, GRANTS_DOMAIN, Grant, GrantCheck, GrantRequest, GrantStore, MAX_GRANT_TTL,

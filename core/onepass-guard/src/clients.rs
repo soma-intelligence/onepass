@@ -7,7 +7,7 @@
 //! registry then is out of scope (same limit as the MCP policy).
 
 use crate::approval::Surface;
-use crate::signed::write_private_atomic;
+use crate::signed::{lock_sibling, write_private_atomic};
 use crate::{GuardError, LocalSigner, open_config, seal_config};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -92,20 +92,48 @@ pub fn load_clients(
     Ok(reg)
 }
 
-/// Increments the generation of `reg` and writes it signed, atomically, with
-/// mode 0600.
+/// Writes `reg` signed, atomically, with mode 0600, under an exclusive lock
+/// on `<path>.lock`. Inside the lock the file on disk is read again and the
+/// new generation is one above the highest of the disk, `reg` and `floor`,
+/// so two writers never produce two registries with the same generation. An
+/// untrusted file on disk is overwritten (it counts as generation 0).
 pub fn save_clients(
     path: &Path,
     signer: &dyn LocalSigner,
     reg: &mut ClientRegistry,
 ) -> Result<(), GuardError> {
-    reg.generation = reg
-        .generation
+    save_above(path, signer, reg, 0)
+}
+
+fn save_above(
+    path: &Path,
+    signer: &dyn LocalSigner,
+    reg: &mut ClientRegistry,
+    floor: u64,
+) -> Result<(), GuardError> {
+    let _lock = lock_sibling(path, true)?;
+    // A file that cannot be trusted (bad signature, format, other account)
+    // carries no generation worth keeping: it is replaced, from the floors
+    // known here. A running server whose floor is higher refuses the result
+    // until notified, which fails closed.
+    let disk = match load_clients(path, signer, &reg.account_id) {
+        Ok(r) => r.generation,
+        Err(GuardError::Io(kind)) => return Err(GuardError::Io(kind)),
+        Err(_) => 0,
+    };
+    let generation = disk
+        .max(reg.generation)
+        .max(floor)
         .checked_add(1)
         .ok_or(GuardError::Format("client registry generation"))?;
-    let payload = serde_json::to_string(reg).map_err(|_| GuardError::Format("client registry"))?;
+    let mut next = reg.clone();
+    next.generation = generation;
+    let payload =
+        serde_json::to_string(&next).map_err(|_| GuardError::Format("client registry"))?;
     let sealed = seal_config(signer, CLIENTS_DOMAIN, &payload)?;
-    write_private_atomic(path, sealed.as_bytes())
+    write_private_atomic(path, sealed.as_bytes())?;
+    reg.generation = generation;
+    Ok(())
 }
 
 /// Loads the registry and refuses one older than the highest generation this
@@ -137,6 +165,25 @@ impl ClientRegistryLoader {
         }
         self.generation_seen = reg.generation;
         Ok(reg)
+    }
+
+    /// Like [`save_clients`], also above the highest generation this loader
+    /// has seen; the floor then follows the written generation.
+    pub fn save(
+        &mut self,
+        path: &Path,
+        signer: &dyn LocalSigner,
+        reg: &mut ClientRegistry,
+    ) -> Result<(), GuardError> {
+        save_above(path, signer, reg, self.generation_seen)?;
+        self.generation_seen = self.generation_seen.max(reg.generation);
+        Ok(())
+    }
+
+    /// Raises the replay floor to `generation` (never lowers it). Called when
+    /// a signed control notification announces a newer registry.
+    pub fn raise_floor(&mut self, generation: u64) {
+        self.generation_seen = self.generation_seen.max(generation);
     }
 }
 
@@ -284,5 +331,43 @@ mod tests {
                 .generation,
             1
         );
+    }
+
+    #[test]
+    fn two_loaders_saving_in_turn_never_fork() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clients.json");
+        let s = TestSigner::new();
+        let mut l1 = ClientRegistryLoader::new();
+        let mut l2 = ClientRegistryLoader::new();
+        let mut r1 = l1.load(&path, &s, "acc").unwrap();
+        let mut r2 = l2.load(&path, &s, "acc").unwrap();
+        r1.clients.push(record("platform:one", Surface::Mcp));
+        r2.clients.push(record("platform:two", Surface::Ssh));
+        l1.save(&path, &s, &mut r1).unwrap();
+        assert_eq!(r1.generation, 1);
+        // r2 still says generation 0: the save goes above the disk.
+        l2.save(&path, &s, &mut r2).unwrap();
+        assert_eq!(r2.generation, 2);
+        assert_eq!(l2.generation_seen, 2);
+        let back = l1.load(&path, &s, "acc").unwrap();
+        assert_eq!(back.generation, 2);
+        assert!(back.find(Surface::Ssh, "platform:two").is_some());
+        // The free function also goes above the disk.
+        let mut stale = ClientRegistry::empty("acc");
+        save_clients(&path, &s, &mut stale).unwrap();
+        assert_eq!(stale.generation, 3);
+        // A loader with a raised floor writes above it.
+        let mut l3 = ClientRegistryLoader::new();
+        l3.raise_floor(10);
+        l3.raise_floor(4);
+        assert_eq!(l3.generation_seen, 10);
+        assert!(matches!(
+            l3.load(&path, &s, "acc"),
+            Err(GuardError::Tampered(_))
+        ));
+        l3.save(&path, &s, &mut stale).unwrap();
+        assert_eq!(stale.generation, 11);
+        assert_eq!(l3.load(&path, &s, "acc").unwrap().generation, 11);
     }
 }

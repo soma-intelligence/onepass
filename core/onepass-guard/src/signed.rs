@@ -3,10 +3,16 @@
 use crate::{GuardError, LocalSigner};
 use data_encoding::BASE64;
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File};
-use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::fs::{self, File, OpenOptions, TryLockError};
+use std::io::{ErrorKind, Write};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+/// Longest wait for a sibling lock before giving up.
+pub(crate) const LOCK_WAIT: Duration = Duration::from_secs(2);
+/// Pause between two lock attempts.
+const LOCK_RETRY: Duration = Duration::from_millis(20);
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -63,6 +69,46 @@ pub(crate) fn write_private_atomic(path: &Path, data: &[u8]) -> Result<(), Guard
     tmp.persist(path).map_err(|e| GuardError::from(e.error))?;
     File::open(dir)?.sync_all()?;
     Ok(())
+}
+
+/// The sibling lock file of `path`: `<path>.lock`.
+pub(crate) fn lock_path(path: &Path) -> PathBuf {
+    let mut p = path.as_os_str().to_owned();
+    p.push(".lock");
+    PathBuf::from(p)
+}
+
+/// Opens (creating it 0600, never through a symlink) `<path>.lock` and locks
+/// it, exclusively or shared. The wait is bounded by [`LOCK_WAIT`]: a lock
+/// still held after that gives `GuardError::Io(TimedOut)`. The lock is
+/// released when the returned file is dropped.
+pub(crate) fn lock_sibling(path: &Path, exclusive: bool) -> Result<File, GuardError> {
+    let f = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(lock_path(path))?;
+    f.set_permissions(fs::Permissions::from_mode(0o600))?;
+    let deadline = Instant::now() + LOCK_WAIT;
+    loop {
+        let r = if exclusive {
+            f.try_lock()
+        } else {
+            f.try_lock_shared()
+        };
+        match r {
+            Ok(()) => return Ok(f),
+            Err(TryLockError::WouldBlock) => {
+                if Instant::now() >= deadline {
+                    return Err(GuardError::Io(ErrorKind::TimedOut));
+                }
+                std::thread::sleep(LOCK_RETRY);
+            }
+            Err(TryLockError::Error(e)) => return Err(e.into()),
+        }
+    }
 }
 
 #[cfg(test)]

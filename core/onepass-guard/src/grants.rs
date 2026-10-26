@@ -23,14 +23,13 @@
 
 use crate::approval::Surface;
 use crate::clock::Clock;
-use crate::signed::write_private_atomic;
+use crate::signed::{lock_sibling, write_private_atomic};
 use crate::{GuardError, LocalSigner, open_config, seal_config};
 use data_encoding::HEXLOWER;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::ErrorKind;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -176,6 +175,13 @@ impl GrantStore {
         self.generation_seen
     }
 
+    /// Raises the replay floor to `generation` (never lowers it). Called when
+    /// a signed control notification announces a newer file written by
+    /// another process, so restoring an older file afterwards is refused.
+    pub fn raise_floor(&mut self, generation: u64) {
+        self.generation_seen = self.generation_seen.max(generation);
+    }
+
     /// Records a grant for `req` valid for `ttl` (clamped to
     /// [`MAX_GRANT_TTL`]) and returns it.
     pub fn add(
@@ -210,7 +216,6 @@ impl GrantStore {
         };
         file.grants.push(grant.clone());
         self.write(signer, file)?;
-        self.issued.retain(|_, deadline| *deadline > mono);
         self.issued
             .insert(grant.id.clone(), mono + Duration::from_secs(secs));
         Ok(grant)
@@ -288,7 +293,7 @@ impl GrantStore {
 
     /// The live (unexpired, unrevoked) grants.
     pub fn list(
-        &self,
+        &mut self,
         signer: &dyn LocalSigner,
         clock: &dyn Clock,
     ) -> Result<Vec<Grant>, GuardError> {
@@ -296,6 +301,7 @@ impl GrantStore {
             let _lock = self.lock(false)?;
             self.read_checked(signer)?
         };
+        self.generation_seen = self.generation_seen.max(file.generation);
         let revoked = file.revoked_ids();
         Ok(file
             .grants
@@ -321,29 +327,9 @@ impl GrantStore {
         }
     }
 
-    fn lock_path(&self) -> PathBuf {
-        let mut p = self.path.as_os_str().to_owned();
-        p.push(".lock");
-        PathBuf::from(p)
-    }
-
-    /// Opens (creating it 0600) the sibling lock file and locks it. The lock
-    /// is released when the returned file is dropped.
+    /// Locks `<path>.lock` (bounded wait, see `lock_sibling`).
     fn lock(&self, exclusive: bool) -> Result<File, GuardError> {
-        let f = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(self.lock_path())?;
-        f.set_permissions(fs::Permissions::from_mode(0o600))?;
-        if exclusive {
-            f.lock()?;
-        } else {
-            f.lock_shared()?;
-        }
-        Ok(f)
+        lock_sibling(&self.path, exclusive)
     }
 
     /// Reads and verifies the file, without the replay check. A missing file
@@ -401,6 +387,14 @@ impl GrantStore {
         let sealed = seal_config(signer, GRANTS_DOMAIN, &payload)?;
         write_private_atomic(&self.path, sealed.as_bytes())?;
         self.generation_seen = file.generation;
+        // `issued` pruning: an entry is kept as long as its grant is still in
+        // the file, even after its monotonic deadline, because dropping it
+        // would let a wall clock rolled back (but still after `created_at`)
+        // make the grant look live again to this process. Grants leave the
+        // file once expired on the wall clock (pruned on write), which bounds
+        // the map by the size of the file.
+        let ids: HashSet<&str> = file.grants.iter().map(|g| g.id.as_str()).collect();
+        self.issued.retain(|id, _| ids.contains(id.as_str()));
         Ok(())
     }
 }
@@ -777,5 +771,115 @@ mod tests {
             GrantCheck::None
         );
         assert!(matches!(mine.list(&s, &c), Err(GuardError::Tampered(_))));
+    }
+
+    #[test]
+    fn rollback_after_a_later_write_does_not_revive_grant() {
+        let (_d, path, s, c) = setup();
+        let mut st = GrantStore::open(&path, "acc");
+        st.add(&s, &c, req("platform:a", "k1"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        // The wall clock is rolled back while the monotonic clock passes the
+        // deadline; a later write must not forget that the grant is expired.
+        c.advance_monotonic(10 * MIN);
+        c.set_now_unix(T0 + 60);
+        st.add(&s, &c, req("platform:a", "k2"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        assert_eq!(
+            check(&mut st, &s, &c, "platform:a", "k1"),
+            GrantCheck::Expired
+        );
+    }
+
+    #[test]
+    fn raise_floor_and_list_raise_generation_seen() {
+        let (_d, path, s, c) = setup();
+        let mut writer = GrantStore::open(&path, "acc");
+        writer
+            .add(&s, &c, req("platform:a", "k1"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        let mut reader = GrantStore::open(&path, "acc");
+        assert_eq!(reader.list(&s, &c).unwrap().len(), 1);
+        assert_eq!(reader.generation_seen(), 1);
+        reader.raise_floor(5);
+        assert_eq!(reader.generation_seen(), 5);
+        reader.raise_floor(2);
+        assert_eq!(reader.generation_seen(), 5);
+        assert!(matches!(reader.list(&s, &c), Err(GuardError::Tampered(_))));
+        assert_eq!(
+            check(&mut reader, &s, &c, "platform:a", "k1"),
+            GrantCheck::None
+        );
+    }
+
+    #[test]
+    fn held_lock_bounds_the_wait() {
+        let (_d, path, s, c) = setup();
+        let mut st = GrantStore::open(&path, "acc");
+        st.add(&s, &c, req("platform:a", "k1"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        let holder = crate::signed::lock_sibling(&path, true).unwrap();
+        let t = Instant::now();
+        assert_eq!(check(&mut st, &s, &c, "platform:a", "k1"), GrantCheck::None);
+        assert_eq!(
+            st.add(&s, &c, req("platform:a", "k2"), DEFAULT_GRANT_TTL),
+            Err(GuardError::Io(std::io::ErrorKind::TimedOut))
+        );
+        let waited = t.elapsed();
+        assert!(waited >= 2 * crate::signed::LOCK_WAIT, "{waited:?}");
+        assert!(waited < 4 * crate::signed::LOCK_WAIT, "{waited:?}");
+        drop(holder);
+        assert!(matches!(
+            check(&mut st, &s, &c, "platform:a", "k1"),
+            GrantCheck::Valid(_)
+        ));
+    }
+
+    #[test]
+    fn concurrent_stores_keep_one_consistent_file() {
+        let (_d, path, s, c) = setup();
+        const N: usize = 15;
+        let run = |client: &'static str| {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                let s = TestSigner::new();
+                let c = FakeClock::new(T0);
+                let mut st = GrantStore::open(&path, "acc");
+                let mut ids = Vec::new();
+                for i in 0..N {
+                    let g = st
+                        .add(&s, &c, req(client, &format!("k{i}")), DEFAULT_GRANT_TTL)
+                        .unwrap();
+                    ids.push(g.id);
+                }
+                // Revoke every third grant of this client.
+                for id in ids.iter().step_by(3) {
+                    assert_eq!(st.revoke(&s, &c, Revoke::Id(id.clone())).unwrap(), 1);
+                }
+                ids
+            })
+        };
+        let a = run("platform:a");
+        let b = run("platform:b");
+        let (ids_a, ids_b) = (a.join().unwrap(), b.join().unwrap());
+        let revoked_per_client = N.div_ceil(3);
+        let mut st = GrantStore::open(&path, "acc");
+        let live = st.list(&s, &c).unwrap();
+        assert_eq!(live.len(), 2 * (N - revoked_per_client));
+        let p = payload(&path, &s);
+        assert_eq!(p["grants"].as_array().unwrap().len(), 2 * N);
+        assert_eq!(
+            p["revoked"].as_array().unwrap().len(),
+            2 * revoked_per_client
+        );
+        // One write per add and per revoke, none lost.
+        assert_eq!(
+            p["generation"].as_u64().unwrap() as usize,
+            2 * (N + revoked_per_client)
+        );
+        for (i, id) in ids_a.iter().chain(ids_b.iter()).enumerate() {
+            let expected = !(i % N).is_multiple_of(3);
+            assert_eq!(live.iter().any(|g| &g.id == id), expected);
+        }
     }
 }
