@@ -11,9 +11,23 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::agent::{Agent, ConnState, KeySource};
-use crate::peer::{effective_uid, peer_info};
+use onepass_peer::{effective_uid, exe_path, peer_cred};
+
+use crate::agent::{Agent, ConnState, KeySource, PeerInfo};
 use crate::wire::{decode_request, encode_response, read_frame};
+
+/// Credentials of the peer of `s`: uid, pid and executable path.
+pub fn peer_info(s: &UnixStream) -> PeerInfo {
+    let cred = peer_cred(s);
+    PeerInfo {
+        uid: cred.uid,
+        pid: cred.pid,
+        exe: cred
+            .pid
+            .and_then(exe_path)
+            .and_then(|p| p.into_os_string().into_string().ok()),
+    }
+}
 
 /// Pause between two non-blocking `accept` calls, when `stop` is checked.
 const POLL: Duration = Duration::from_millis(100);

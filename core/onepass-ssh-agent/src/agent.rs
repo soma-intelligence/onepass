@@ -16,11 +16,11 @@ use onepass_core::model::{FieldValue, Item, ItemType};
 use onepass_core::repo::Repository;
 use onepass_core::store::RecordStore;
 use onepass_guard::{ApprovalRequest, Approver, AuditEntry, AuditSink, Decision, Surface, Target};
+use onepass_peer::effective_uid;
 use zeroize::Zeroizing;
 
 use crate::keys::{AgentKey, fingerprint_of_blob, verify_signature};
 use crate::knownhosts::matching_hosts;
-use crate::peer::{PeerInfo, effective_uid};
 use crate::sshsig::sshsig_namespace;
 use crate::wire::{Request, Response, SSH_AGENT_RSA_SHA2_256, SSH_AGENT_RSA_SHA2_512, SshReader};
 
@@ -33,6 +33,18 @@ const KEY_FIELD: &str = "private_key";
 /// Client name when the peer's executable is unknown.
 const UNKNOWN_PROCESS: &str = "unknown process";
 const SESSION_BIND: &str = "session-bind@openssh.com";
+
+/// What the kernel says about a connected client (spec 6.3). Each part is
+/// `None` when the platform or the kernel cannot tell.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PeerInfo {
+    /// Effective uid of the peer.
+    pub uid: Option<u32>,
+    /// Pid of the peer (at connection time).
+    pub pid: Option<i32>,
+    /// Executable path of that pid. Informative: a pid can be reused.
+    pub exe: Option<String>,
+}
 
 /// A key the agent offers: public data and settings of one SSH Key item.
 #[derive(Clone, Debug, PartialEq, Eq)]
