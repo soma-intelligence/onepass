@@ -840,15 +840,24 @@ fn ignored_in(conn: &Connection) -> Result<Vec<IgnoredDeletion>> {
     bytes.map_or(Ok(Vec::new()), |b| decode_ignored(&b))
 }
 
-/// Append to the capped log, oldest entries dropped past the cap. An
-/// unreadable log (edited file) starts again empty: logging never blocks a
-/// commit.
+/// Append to the capped log, oldest entries dropped past the cap. One entry
+/// per `(kind, id)`: a record refused again moves to the end with the latest
+/// time. An unreadable log (edited file) starts again empty: logging never
+/// blocks a commit.
 fn append_ignored(conn: &Connection, new: &[(RecordKind, Id)]) -> Result<()> {
     if new.is_empty() {
         return Ok(());
     }
     let mut entries = ignored_in(conn).unwrap_or_default();
     let at = unix_now();
+    entries.retain(|e| !new.contains(&(e.kind, e.id)));
+    let mut fresh: Vec<(RecordKind, Id)> = Vec::with_capacity(new.len());
+    for key in new {
+        if !fresh.contains(key) {
+            fresh.push(*key);
+        }
+    }
+    let new = fresh;
     entries.extend(
         new.iter()
             .map(|&(kind, id)| IgnoredDeletion { kind, id, at }),
@@ -1551,6 +1560,40 @@ mod tests {
         s.commit_remote().unwrap();
         s.finish_full_fetch().unwrap();
         assert_eq!(s.ignored_deletions().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn ignored_deletion_log_keeps_one_entry_per_record_with_the_latest_time() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (a, b) = (Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::Keyset, a, 1, b"a".to_vec());
+        seed_base(&mut s, RecordKind::Keyset, b, 1, b"b".to_vec());
+        for id in [a, b] {
+            s.stage_remote(remote(RecordKind::Keyset, id, 1, None))
+                .unwrap();
+        }
+        s.commit_remote().unwrap();
+        // Backdate the log, then `a` is refused again: one entry, moved last, new time.
+        let mut old = s.ignored_deletions().unwrap();
+        for e in &mut old {
+            e.at = 1_000;
+        }
+        s.set_meta(IGNORED_DELETIONS_KEY, &encode_ignored(&old))
+            .unwrap();
+        s.stage_remote(remote(RecordKind::Keyset, a, 1, None))
+            .unwrap();
+        s.commit_remote().unwrap();
+        let log = s.ignored_deletions().unwrap();
+        assert_eq!(log.len(), 2);
+        assert_eq!((log[0].id, log[0].at), (b, 1_000));
+        assert_eq!(log[1].id, a);
+        assert!(log[1].at > 1_000);
+        // The same record under another kind is another entry.
+        seed_base(&mut s, RecordKind::AccountParams, a, 1, b"p".to_vec());
+        s.stage_remote(remote(RecordKind::AccountParams, a, 1, None))
+            .unwrap();
+        s.commit_remote().unwrap();
+        assert_eq!(s.ignored_deletions().unwrap().len(), 3);
     }
 
     #[test]
