@@ -111,6 +111,7 @@ public final class InMemoryWatchKeyStore: WatchKeyStore {
         var passcodeSet: Bool
         var isLocked = false
         var generationReadFails = false
+        var deleteFails = false
     }
 
     private let state = Mutex(State())
@@ -136,6 +137,12 @@ public final class InMemoryWatchKeyStore: WatchKeyStore {
     public var generationReadFails: Bool {
         get { switches.withLock { $0.generationReadFails } }
         set { switches.withLock { $0.generationReadFails = newValue } }
+    }
+
+    /// Only `deleteAll()` throws (and deletes nothing).
+    public var deleteFails: Bool {
+        get { switches.withLock { $0.deleteFails } }
+        set { switches.withLock { $0.deleteFails = newValue } }
     }
 
     public func loadSecret() throws -> Data? {
@@ -170,6 +177,7 @@ public final class InMemoryWatchKeyStore: WatchKeyStore {
     }
 
     public func deleteAll() throws {
+        if deleteFails { throw WatchKeyStoreError.keychain(errSecInteractionNotAllowed) }
         state.withLock { $0 = State() }
     }
 

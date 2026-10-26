@@ -437,7 +437,10 @@ final class AppModel {
         guard session.state == .unlocked, !onboardingInProgress, let route = pendingRoute else { return }
         pendingRoute = nil
         // A copy request left waiting more than 2 minutes was abandoned: no code copied later.
-        if case .copyTotp = route, Date.now.timeIntervalSince(pendingRouteAt) > 120 { return }
+        if case .copyTotp = route, Date.now.timeIntervalSince(pendingRouteAt) > 120 {
+            showToast(String(localized: "Demande de copie expirée"))
+            return
+        }
         run(route, freshUnlock: pendingRouteFresh)
     }
 
@@ -481,6 +484,8 @@ final class AppModel {
     /// once their dismissal is over. A sheet it cannot close (an item being created, a vault
     /// editor) keeps it from appearing: a message says so instead.
     private func requestTotpPassword(_ ref: ItemRef) async {
+        // The prompt for this item is already up: keep it, do not restart its 1 s check.
+        if totpPasswordRequest == ref { return }
         let covered = showSettings || showGenerator || showNewItemPicker
         showSettings = false
         showGenerator = false

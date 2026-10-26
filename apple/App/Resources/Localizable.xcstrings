@@ -428,9 +428,9 @@
     "Non disponible sur cet appareil": {},
     "Retirer de l'Apple Watch": {},
     "Retirer les données de l'Apple Watch ?": {},
-    "La montre oublie tous les éléments reçus.": {},
-    "La montre ne sait pas si elle est au poignet : ses codes restent visibles tant qu'elle est déverrouillée. Verrouille-la ou retire-la pour les protéger.": {},
-    "Efface tout ce que la montre a reçu. Elle peut recevoir de nouveau les éléments marqués ensuite.": {},
+    "La montre oublie tous les éléments reçus et l'envoi est coupé.": {},
+    "Sans la détection du poignet, les codes restent visibles tant que la montre est déverrouillée. Verrouille-la pour les protéger.": {},
+    "Efface tout ce que la montre a reçu et coupe l'envoi. Réactive « Envoyer à l'Apple Watch » pour envoyer de nouveau.": {},
     "Le dernier envoi a échoué. Il sera retenté au prochain changement.": {},
     "L'effacement n'a pas pu être envoyé : la montre garde peut-être ses données.": {},
     "Désactivé": {},
@@ -450,7 +450,8 @@
     "Génère un mot de passe aléatoire, sans l'enregistrer.": {},
     "Verrouille OnePass sur cet appareil.": {},
     "OnePass est verrouillé": {},
-    "Ouvre OnePass pour copier le code": {}
+    "Ouvre OnePass pour copier le code": {},
+    "Demande de copie expirée": {}
   },
   "version": "1.0"
 }

@@ -55,6 +55,21 @@ public final class WatchVault: WatchEntriesModel {
         }
     }
     private var missedURL: URL { payloadURL.appendingPathExtension("missed") }
+    /// A wipe was received but the keys could not be deleted: `start()` finishes it before
+    /// loading or resending any key. An empty marker file (no secret), like `missedPayload`.
+    private var pendingWipe: Bool {
+        get { FileManager.default.fileExists(atPath: wipeURL.path) }
+        set {
+            if newValue {
+                try? FileManager.default.createDirectory(
+                    at: wipeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                FileManager.default.createFile(atPath: wipeURL.path, contents: Data())
+            } else {
+                try? FileManager.default.removeItem(at: wipeURL)
+            }
+        }
+    }
+    private var wipeURL: URL { payloadURL.appendingPathExtension("wipe") }
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "companion")
 
@@ -73,6 +88,12 @@ public final class WatchVault: WatchEntriesModel {
             transport.activate()
         }
         refreshPending = false
+        if pendingWipe {
+            guard finishWipe() else {
+                close(to: .closed)
+                return
+            }
+        }
         let publicKey: Data
         do {
             publicKey = try loadOrCreateKey()
@@ -94,6 +115,11 @@ public final class WatchVault: WatchEntriesModel {
     /// Foreground: reads the key and the file and opens the vault.
     public func activate() {
         isActive = true
+        // An unfinished wipe: never open the old payload, finish the wipe and rekey instead.
+        if pendingWipe {
+            start()
+            return
+        }
         guard state != .needsPasscode else { return }
         let secret: Data
         do {
@@ -141,6 +167,11 @@ public final class WatchVault: WatchEntriesModel {
     }
 
     private func accept(_ sealed: Data) {
+        // An unfinished wipe: the old key must not open anything.
+        guard !pendingWipe else {
+            Self.log.notice("watch payload ignored: wipe pending")
+            return
+        }
         // Keychain unreadable (watch locked): not the payload's fault, so no refresh now (that
         // would loop while locked), but remember the miss for the next activate().
         let secret: Data
@@ -200,20 +231,29 @@ public final class WatchVault: WatchEntriesModel {
         if isActive { open(opened) }
     }
 
+    /// Deletes the keys first: without the secret key the sealed file is unreadable
+    /// (crypto-erase), so a failed file removal cannot leave the payload readable. A failed key
+    /// deletion leaves the pending-wipe marker, and `start()` retries before using any key.
     private func wipe() {
         close(to: .closed)
-        missedPayload = false
+        pendingWipe = true
+        guard finishWipe() else { return }
+        start()
+    }
+
+    /// Deletes the keys, then the file (best effort) and the markers. False when the keys could
+    /// not be deleted: the marker stays and the old key must not be used or resent.
+    private func finishWipe() -> Bool {
         do {
-            if FileManager.default.fileExists(atPath: payloadURL.path) {
-                try FileManager.default.removeItem(at: payloadURL)
-            }
             try keys.deleteAll()
         } catch {
-            // Never restart with the old key: that would quietly undo the wipe.
-            Self.log.error("watch wipe failed")
-            return
+            Self.log.error("watch wipe failed: keys not deleted")
+            return false
         }
-        start()
+        try? FileManager.default.removeItem(at: payloadURL)
+        missedPayload = false
+        pendingWipe = false
+        return true
     }
 
     private func loadOrCreateKey() throws -> Data {

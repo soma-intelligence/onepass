@@ -42,6 +42,8 @@ public final class PhoneCompanion {
     @ObservationIgnored private var inFlight: Task<Void, Never>?
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "companion")
+    /// Hybrid ML-KEM-1024 + X25519 public key (`companionGenerateKey().public`).
+    static let watchKeyLength = 1600
 
     /// `seal(watchPublicKey, generation)` returns the sealed payload (`Session.companionPayload`);
     /// it throws while the vault is locked.
@@ -76,7 +78,10 @@ public final class PhoneCompanion {
     /// replace the wipe. Only a different key (the rekeyed watch) resumes sending.
     /// The wipe goes through both channels: the latest-only context, and the queue, which a
     /// later context cannot replace. A failure is published in `lastError`.
+    /// The setting is turned off too: otherwise the unlocked phone would seal the same items for
+    /// the rekeyed watch seconds later. Turning it back on sends again.
     public func wipeWatch() {
+        isEnabled = false
         if let key = watchPublicKey {
             defaults.set(Self.fingerprint(key), forKey: Key.wipedKey)
         }
@@ -101,6 +106,11 @@ public final class PhoneCompanion {
         switch message {
         case .watchKey(let key):
             guard key != watchPublicKey else { return }
+            // A malformed key would make every later seal fail: never store it.
+            guard key.count == Self.watchKeyLength else {
+                Self.log.error("watch key refused: wrong length")
+                return
+            }
             if defaults.data(forKey: Key.wipedKey) == Self.fingerprint(key) {
                 Self.log.notice("wiped watch key ignored")
                 return

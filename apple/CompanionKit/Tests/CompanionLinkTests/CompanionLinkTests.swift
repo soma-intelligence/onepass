@@ -257,7 +257,72 @@ struct CompanionLinkTests {
         #expect(try rig.keys.loadGeneration() == 0)
         // The phone forgot the old key and learned the new one from the restarted watch.
         #expect(rig.phone.watchPublicKey == newKey)
+        // Sending is off: the unlocked phone does not refill the watch it just wiped.
+        #expect(!rig.phone.isEnabled)
+        #expect(rig.defaults.object(forKey: "companion.enabled") as? Bool == false)
+        let sentBefore = rig.payloads.count
         await rig.phone.settle()
+        await rig.phone.vaultChanged()
+        #expect(rig.payloads.count == sentBefore)
+        #expect(rig.watch.entries.isEmpty)
+
+        // Turning the setting back on sends to the new key.
+        rig.phone.isEnabled = true
+        await rig.phone.vaultChanged()
+        #expect(rig.payloads.count == sentBefore + 1)
+        #expect(rig.watch.entries.count == 1)
+    }
+
+    @Test func failedKeyDeletionLeavesPendingWipe() async throws {
+        let rig = try await Rig()
+        defer { rig.cleanUp() }
+        await rig.startBoth()
+        let oldKey = try #require(rig.watchKeys.first)
+        let keysSent = rig.watchKeys.count
+        #expect(rig.watch.entries.count == 1)
+
+        rig.keys.deleteFails = true
+        rig.phone.wipeWatch()
+        #expect(rig.watch.entries.isEmpty)
+        #expect(rig.watch.state == .closed)
+        // The old key is still there but never resent, and the stored payload is not reopened.
+        #expect(try rig.keys.loadPublicKey() == oldKey)
+        #expect(rig.watchKeys.count == keysSent)
+        rig.watch.activate()
+        #expect(rig.watch.entries.isEmpty)
+        rig.watch.start()
+        #expect(rig.watch.entries.isEmpty)
+        #expect(rig.watchKeys.count == keysSent)
+
+        // The keychain works again: the next start finishes the wipe and rekeys.
+        rig.keys.deleteFails = false
+        rig.watch.start()
+        #expect(!FileManager.default.fileExists(atPath: rig.payloadURL.path))
+        let newKey = try #require(rig.watchKeys.last)
+        #expect(newKey != oldKey)
+        #expect(try rig.keys.loadPublicKey() == newKey)
+        #expect(try rig.keys.loadGeneration() == 0)
+        await rig.phone.settle()
+        #expect(rig.phone.watchPublicKey == newKey)
+        #expect(rig.watch.state == .waitingForPhone)
+    }
+
+    @Test func malformedWatchKeyIsIgnored() async throws {
+        let rig = try await Rig()
+        defer { rig.cleanUp() }
+        await rig.startBoth()
+        let goodKey = try #require(rig.phone.watchPublicKey)
+        #expect(goodKey.count == 1600)
+        let sentBefore = rig.payloads.count
+
+        rig.watchLink.onMessage = nil
+        for bad in [Data(), Data(count: 1599), Data(count: 1601), Data(count: 32)] {
+            rig.watchLink.sendQueued(.watchKey(bad))
+            await rig.phone.settle()
+        }
+        #expect(rig.phone.watchPublicKey == goodKey)
+        #expect(rig.defaults.data(forKey: "companion.watchKey") == goodKey)
+        #expect(rig.payloads.count == sentBefore)
     }
 
     @Test func keyChangeTriggersSend() async throws {
@@ -383,7 +448,9 @@ struct CompanionLinkTests {
         await rig.phone.settle()
         #expect(rig.payloads.count == sentBefore)
 
-        // The rekeyed watch's new key resumes sending.
+        // The rekeyed watch's new key resumes sending once the setting is back on.
+        #expect(!rig.phone.isEnabled)
+        rig.phone.isEnabled = true
         let fresh = try companionGenerateKey()
         rig.watchLink.sendQueued(.watchKey(fresh.public))
         await rig.phone.settle()
@@ -402,6 +469,7 @@ struct CompanionLinkTests {
         #expect(rig.phoneLink.sent.last == .wipe)
 
         rig.phoneLink.sendLatestError = nil
+        rig.phone.isEnabled = true
         await rig.phone.vaultChanged()
         #expect(rig.phone.lastError == nil)
     }

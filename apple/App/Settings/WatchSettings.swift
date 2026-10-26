@@ -66,7 +66,7 @@ struct WatchSettings: View {
                     "La montre reçoit les codes à usage unique, l'identifiant d'un Login, les Wi-Fi avec leur mot de passe, les cartes de membre, la carte bancaire réduite aux 4 derniers chiffres, les codes d'accès et les pièces d'identité. Jamais le mot de passe d'un Login, le CVV, le code PIN, le numéro complet d'une carte ni les notes. Les coffres masqués sont exclus."
                 )
                 Text(
-                    "La montre ne sait pas si elle est au poignet : ses codes restent visibles tant qu'elle est déverrouillée. Verrouille-la ou retire-la pour les protéger."
+                    "Sans la détection du poignet, les codes restent visibles tant que la montre est déverrouillée. Verrouille-la pour les protéger."
                 )
             }
             .font(.footnote)
@@ -82,11 +82,11 @@ struct WatchSettings: View {
                     Button("Retirer de l'Apple Watch", role: .destructive) { phone.wipeWatch() }
                     Button("Annuler", role: .cancel) {}
                 } message: {
-                    Text("La montre oublie tous les éléments reçus.")
+                    Text("La montre oublie tous les éléments reçus et l'envoi est coupé.")
                 }
                 .accessibilityIdentifier("settings.watch.wipe")
             } footer: {
-                Text("Efface tout ce que la montre a reçu. Elle peut recevoir de nouveau les éléments marqués ensuite.")
+                Text("Efface tout ce que la montre a reçu et coupe l'envoi. Réactive « Envoyer à l'Apple Watch » pour envoyer de nouveau.")
             }
         }
     }

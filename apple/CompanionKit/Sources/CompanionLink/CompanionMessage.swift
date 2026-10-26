@@ -4,7 +4,7 @@ import Foundation
 /// (`updateApplicationContext` or `transferUserInfo`): `"kind"` names the case, `"data"` carries
 /// the bytes of `watchKey` and `payload`.
 public enum CompanionMessage: Hashable, Sendable {
-    /// Watch to iPhone: the watch public key (X25519). Sent on every watch start.
+    /// Watch to iPhone: the watch public key (ML-KEM-1024 + X25519, 1600 bytes). Sent on every watch start.
     case watchKey(Data)
     /// iPhone to watch: the sealed payload (`Session.companionPayload`).
     case payload(Data)
