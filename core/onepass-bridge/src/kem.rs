@@ -132,7 +132,7 @@ impl KemSecret {
             .map_err(|_| BridgeError::Crypto)?;
         let eph: [u8; 32] = eph.try_into().map_err(|_| BridgeError::Crypto)?;
         let ss_x = x25519_agree(&x, &eph)?;
-        Ok(combine(ct, &self.public.x25519(), ss_m.as_ref(), &ss_x))
+        combine(ct, &self.public.x25519(), ss_m.as_ref(), &ss_x)
     }
 
     /// Deterministic key pair for test vectors: `mlkem_seed` is `d || z` of
@@ -160,7 +160,12 @@ fn x25519_agree(key: &PrivateKey, peer: &[u8; 32]) -> Result<Zeroizing<Vec<u8>>>
 
 /// Spec 6.2 step 4:
 /// `HKDF-SHA256(salt = label, ikm = ss_m || ss_x, info = SHA-256(ct || pk_x))`.
-fn combine(ct: &[u8; CT_LEN], pk_x: &[u8; 32], ss_m: &[u8], ss_x: &[u8]) -> Zeroizing<[u8; 32]> {
+fn combine(
+    ct: &[u8; CT_LEN],
+    pk_x: &[u8; 32],
+    ss_m: &[u8],
+    ss_x: &[u8],
+) -> Result<Zeroizing<[u8; 32]>> {
     let mut ikm = Zeroizing::new(Vec::with_capacity(ss_m.len() + ss_x.len()));
     ikm.extend_from_slice(ss_m);
     ikm.extend_from_slice(ss_x);
@@ -186,7 +191,7 @@ fn finish_encaps(
     let mut ct = [0u8; CT_LEN];
     ct[..MLKEM_CT_LEN].copy_from_slice(ct_m);
     ct[MLKEM_CT_LEN..].copy_from_slice(&x25519_public(eph)?);
-    let ss = combine(&ct, &pk_x, ss_m, &ss_x);
+    let ss = combine(&ct, &pk_x, ss_m, &ss_x)?;
     Ok((ct, ss))
 }
 
@@ -246,8 +251,19 @@ mod tests {
     fn kem_ct_bitflip_gives_other_secret_or_error() {
         let sk = KemSecret::generate().unwrap();
         let (ct, ss) = encapsulate(&sk.public()).unwrap();
-        // One flipped byte in each half: the ML-KEM part, then the X25519 part.
-        for i in [0, 700, MLKEM_CT_LEN - 1, MLKEM_CT_LEN, CT_LEN - 1] {
+        // ML-KEM half: implicit rejection, so decapsulation must succeed
+        // and give an unrelated secret.
+        for i in [0, 700, MLKEM_CT_LEN - 1] {
+            let mut bad = ct;
+            bad[i] ^= 1;
+            let other = sk
+                .decapsulate(&bad)
+                .unwrap_or_else(|e| panic!("byte {i}: {e}"));
+            assert_ne!(*other, *ss, "byte {i}");
+        }
+        // X25519 half: a flipped point may be refused (low order) or give
+        // another secret, never the original one.
+        for i in [MLKEM_CT_LEN, CT_LEN - 1] {
             let mut bad = ct;
             bad[i] ^= 1;
             if let Ok(other) = sk.decapsulate(&bad) {
@@ -334,7 +350,7 @@ mod tests {
         h.update(&ct);
         h.update(&pk_x(&pk));
         let info = h.finish();
-        let want = crate::kdf::hkdf32(KEM_LABEL, &ikm, info.as_ref());
+        let want = crate::kdf::hkdf32(KEM_LABEL, &ikm, info.as_ref()).unwrap();
         assert_eq!(*ss, *want);
     }
 }
