@@ -48,8 +48,31 @@ struct SyncSettings: View {
                 }
                 .disabled(!canSync)
                 .accessibilityIdentifier("settings.syncNow")
+                if case .accountChanged = line {
+                    UseICloudAccountButton()
+                }
             } footer: {
                 footer
+            }
+            if model.ignoredDeletionCount > 0 {
+                Section {
+                    NavigationLink {
+                        IgnoredDeletionsView()
+                    } label: {
+                        Label {
+                            if model.ignoredDeletionCount == 1 {
+                                Text("1 suppression refusée venant d'iCloud")
+                            } else {
+                                Text("\(model.ignoredDeletionCount) suppressions refusées venant d'iCloud")
+                            }
+                        } icon: {
+                            Image(systemName: "hand.raised.fill")
+                        }
+                    }
+                    .accessibilityIdentifier("settings.ignoredDeletions")
+                } footer: {
+                    Text("OnePass a gardé ces éléments sur cet appareil.")
+                }
             }
         }
         .formStyle(.grouped)
@@ -97,7 +120,7 @@ struct SyncSettings: View {
         case .refused:
             Text("Les données reçues d'iCloud ont été refusées par OnePass. Aucune n'a été utilisée.")
         case .accountChanged:
-            Text("Cet appareil est maintenant connecté à un autre compte iCloud que celui avec lequel ton coffre se synchronisait. Par sécurité, OnePass ne lit et n'envoie plus rien vers iCloud : ton coffre reste intact sur cet appareil. Reconnecte-toi au compte iCloud d'origine dans Réglages pour reprendre la synchronisation.")
+            Text("Cet appareil est maintenant connecté à un autre compte iCloud que celui avec lequel ton coffre se synchronisait. Par sécurité, OnePass ne lit et n'envoie plus rien vers iCloud : ton coffre reste intact sur cet appareil. Reconnecte-toi au compte iCloud d'origine dans Réglages pour reprendre la synchronisation, ou utilise ce compte : OnePass vérifie d'abord qu'il ne contient pas un autre coffre.")
         default:
             Text("Tout est chiffré avant de quitter cet appareil. iCloud ne voit que des données illisibles.")
         }

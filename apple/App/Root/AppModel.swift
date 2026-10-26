@@ -24,6 +24,11 @@ final class AppModel {
     /// Built with `ONEPASS_CLOUDKIT` (signed Release-CloudKit configuration, ruling R8).
     let cloudKitEnabled: Bool
     private(set) var syncStatus: SyncStatus = .disabled
+    /// Remote deletions the store refused (core log, 100 at most), for Réglages > Sync.
+    private(set) var ignoredDeletionCount = 0
+    /// Where the onboarding starts after "Restaurer avec mon Emergency Kit" (read once by the
+    /// onboarding model).
+    var onboardingStart: OnboardingPath?
 
     /// The onboarding stays on screen until "Ouvrir OnePass", even though the account creation
     /// already unlocked the session.
@@ -133,6 +138,7 @@ final class AppModel {
         tasks.append(Task { [weak self] in
             for await status in await coordinator.statusUpdates() {
                 self?.syncStatus = status
+                self?.ignoredDeletionCount = await coordinator.ignoredDeletionCount
             }
         })
         tasks.append(Task { await coordinator.syncNow() })
@@ -243,6 +249,61 @@ final class AppModel {
         await session.reload()
         if case .failed = session.state { await session.refresh() }
     }
+
+    // MARK: - Account missing
+
+    /// "Restaurer avec mon Emergency Kit" on "Le compte a disparu du stockage", confirmed: the
+    /// unreadable local copy is cleared, then the Emergency Kit restore opens (CloudKit: the data comes
+    /// back from iCloud).
+    func recoverWithEmergencyKit() async throws {
+        try await session.resetForRecovery()
+        onboardingStart = .restore
+        onboardingInProgress = true
+    }
+
+    /// "Repartir de zéro", confirmed by typing EFFACER: the local copy is cleared and the onboarding
+    /// starts over. Nothing in iCloud is deleted.
+    func startOver() async throws {
+        try await session.resetForRecovery()
+        onboardingStart = nil
+        onboardingInProgress = true
+    }
+
+    // MARK: - iCloud account change
+
+    /// What the zone of the signed-in iCloud account holds (thrown errors: network, no account).
+    func checkAccountChange() async throws -> AccountChangeCheck {
+        guard let coordinator else { throw RemoteStoreError.accountUnavailable }
+        return try await coordinator.checkAccountChange()
+    }
+
+    /// "Utiliser ce compte iCloud", after the zone check (and the confirmation for an empty zone).
+    func acceptAccountChange() async -> AccountChangeOutcome {
+        guard let coordinator else {
+            return .failed(String(localized: "La synchronisation iCloud n'est pas active dans ce build."))
+        }
+        return await coordinator.acceptAccountChange()
+    }
+
+    // MARK: - Refused remote deletions
+
+    func ignoredDeletions() async -> [FfiIgnoredDeletion] {
+        guard let coordinator else { return [] }
+        return (try? await coordinator.ignoredDeletions()) ?? []
+    }
+
+    func clearIgnoredDeletions() async {
+        guard let coordinator else { return }
+        try? await coordinator.clearIgnoredDeletions()
+        ignoredDeletionCount = await coordinator.ignoredDeletionCount
+    }
+
+    #if DEBUG
+    /// Screenshots of the sync banners in demo mode (no coordinator there).
+    func debugSetSyncStatus(_ status: SyncStatus) {
+        syncStatus = status
+    }
+    #endif
 
     /// Lock now, without asking. Explicit locks go through `perform(.lock)`.
     func lock() {

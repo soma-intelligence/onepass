@@ -51,6 +51,12 @@ final class OnboardingModel {
         } else {
             step = .welcome
         }
+        // "Restaurer avec mon Emergency Kit" from the account-missing screen.
+        if !restoreOnly, model.onboardingStart == .restore {
+            path = .restore
+            step = .restore
+        }
+        model.onboardingStart = nil
         displayName = model.settings.displayName
         allowWatch = model.settings.allowWatchUnlock
         #if DEBUG

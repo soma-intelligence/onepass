@@ -22,6 +22,7 @@ struct HomeTab: View {
             } else {
                 List {
                     SyncRefusalSection()
+                    AccountChangedSection()
                     if !model.settings.displayName.isEmpty {
                         Text(model.settings.displayName)
                             .font(.title2.weight(.semibold))
