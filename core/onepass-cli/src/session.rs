@@ -418,3 +418,106 @@ pub fn kdf_params() -> Result<KdfParams, CliError> {
     }
     Ok(kdf)
 }
+
+/// The password of a server whose stdin and stdout carry a protocol:
+/// `ONEPASS_PASSWORD` under the same test switch as [`read_password`],
+/// otherwise a masked prompt on `/dev/tty`, never on stdin.
+pub fn read_password_tty(prompt: &str) -> Result<Zeroizing<String>, CliError> {
+    if std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").as_deref() == Ok("1")
+        && let Ok(p) = std::env::var("ONEPASS_PASSWORD")
+    {
+        return Ok(Zeroizing::new(p));
+    }
+    let no_tty = || {
+        CliError::usage(
+            "cannot open /dev/tty to read the password (stdin and stdout carry the protocol)",
+        )
+    };
+    // Tests only: behave as if there were no controlling terminal, since
+    // the one of the developer running the tests may still be reachable.
+    if cfg!(debug_assertions) && std::env::var("ONEPASS_DEV_NO_TTY").as_deref() == Ok("1") {
+        return Err(no_tty());
+    }
+    if fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")
+        .is_err()
+    {
+        return Err(no_tty());
+    }
+    let p = rpassword::prompt_password(prompt).map_err(|_| no_tty())?;
+    Ok(Zeroizing::new(p))
+}
+
+/// The device state saved in `device.bin`. The caller holds the lock.
+pub fn read_device_state(ctx: &Ctx) -> Result<DeviceState, CliError> {
+    let bytes = Zeroizing::new(fs::read(ctx.device_path())?);
+    let file: DeviceFile =
+        postcard::from_bytes(&bytes).map_err(|_| CliError::usage("device.bin is unreadable"))?;
+    Ok(file.state)
+}
+
+/// An unlocked account for a long-running server (`onepass mcp`). It is
+/// unlocked once, then every request takes the data directory lock, merges
+/// the state other commands saved in `device.bin`, runs, saves the state
+/// and releases the lock: the rest of the CLI stays usable meanwhile, and
+/// no last seen manifest ever goes back.
+pub struct LongSession {
+    session: Session,
+    ctx: Ctx,
+}
+
+impl LongSession {
+    /// Read the password on `/dev/tty` (no lock held while prompting),
+    /// then unlock under the lock and release it.
+    pub fn open(ctx: &Ctx) -> Result<LongSession, CliError> {
+        if !ctx.has_account() {
+            return Err(no_account(ctx));
+        }
+        let password = read_password_tty("Password: ")?;
+        let _lock = lock(ctx)?;
+        let session = Session::open(ctx, &password)?;
+        harden(ctx)?;
+        session.persist()?;
+        Ok(LongSession {
+            session,
+            ctx: Ctx {
+                data_dir: ctx.data_dir.clone(),
+                json: ctx.json,
+            },
+        })
+    }
+
+    /// The global options this session was opened with.
+    pub fn ctx(&self) -> &Ctx {
+        &self.ctx
+    }
+
+    /// The unlocked repository, for calls that touch neither the store nor
+    /// the device state (local signatures).
+    pub fn repo(&self) -> &Repository<SqliteStore> {
+        &self.session.repo
+    }
+
+    /// One request: lock, merge `device.bin`, run `f`, save the state
+    /// (even when `f` fails, reads move the last seen manifests too),
+    /// unlock.
+    pub fn with_repo<T>(
+        &mut self,
+        f: impl FnOnce(&mut Repository<SqliteStore>) -> Result<T, CliError>,
+    ) -> Result<T, CliError> {
+        let _lock = lock(&self.ctx)?;
+        let state = read_device_state(&self.ctx)?;
+        stored(self.session.repo.adopt_device_state(&state))?;
+        // What is on disk now (same encoding, same key), so an unchanged
+        // state is not rewritten and a changed one always is.
+        self.session.on_disk = Some(encode(&self.session.secret_key, &state)?);
+        let result = f(&mut self.session.repo);
+        let saved = harden(&self.ctx).and_then(|()| self.session.persist());
+        match result {
+            Ok(v) => saved.map(|()| v),
+            Err(e) => Err(e),
+        }
+    }
+}

@@ -9,8 +9,16 @@ use crate::session::{CliError, Ctx, stored, with_session};
 pub enum VaultCmd {
     /// List the vaults.
     List,
-    /// Create a vault.
-    Create { name: String },
+    /// Create a vault. Its flags are fixed at creation.
+    Create {
+        name: String,
+        /// Expose the vault to the MCP server.
+        #[arg(long)]
+        mcp_access: bool,
+        /// Keep the vault on the device in Travel Mode.
+        #[arg(long)]
+        travel_safe: bool,
+    },
 }
 
 pub fn run(ctx: &Ctx, cmd: VaultCmd) -> Result<(), CliError> {
@@ -30,7 +38,11 @@ pub fn run(ctx: &Ctx, cmd: VaultCmd) -> Result<(), CliError> {
             }
             Ok(())
         }),
-        VaultCmd::Create { name } => with_session(ctx, |repo| {
+        VaultCmd::Create {
+            name,
+            mcp_access,
+            travel_safe,
+        } => with_session(ctx, |repo| {
             if name.trim().is_empty() {
                 return Err(CliError::usage("the vault name must not be empty"));
             }
@@ -38,8 +50,8 @@ pub fn run(ctx: &Ctx, cmd: VaultCmd) -> Result<(), CliError> {
                 name,
                 icon: "folder".into(),
                 color: "blue".into(),
-                travel_safe: false,
-                mcp_access: false,
+                travel_safe,
+                mcp_access,
             }))?;
             if ctx.json {
                 crate::out!("{}", serde_json::json!({ "id": vault.id.to_string() }));

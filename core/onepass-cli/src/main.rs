@@ -9,6 +9,7 @@
 
 mod commands;
 mod session;
+mod signer;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -20,6 +21,7 @@ use commands::export::ExportArgs;
 use commands::generate::GenerateArgs;
 use commands::import::ImportArgs;
 use commands::item::ItemCmd;
+use commands::mcp::McpCmd;
 use commands::vault::VaultCmd;
 use commands::watchtower::WatchtowerArgs;
 use session::{CliError, Ctx};
@@ -72,6 +74,8 @@ enum Command {
     /// Create, restore or inspect a signed account backup.
     #[command(subcommand)]
     Backup(BackupCmd),
+    /// MCP server over stdio (password on /dev/tty), its policy and audit log.
+    Mcp(McpCmd),
 }
 
 #[derive(Subcommand)]
@@ -118,6 +122,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Export(a) => commands::export::run(&ctx, a),
         Command::Watchtower(a) => commands::watchtower::run(&ctx, a),
         Command::Backup(c) => commands::backup::run(&ctx, c),
+        Command::Mcp(c) => commands::mcp::run(&ctx, c),
         Command::Generate(_) => unreachable!("handled above"),
     }
 }

@@ -6,6 +6,7 @@ pub mod export;
 pub mod generate;
 pub mod import;
 pub mod item;
+pub mod mcp;
 pub mod read;
 pub mod totp;
 pub mod vault;
