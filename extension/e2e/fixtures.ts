@@ -188,7 +188,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       async openMenu(p, selector, frame) {
         const scope = frame ?? p.mainFrame();
         for (let i = 0; i < 20; i++) {
-          await scope.focus(selector);
+          await scope.focus(selector, { timeout: 10_000 });
           await p.keyboard.press("ArrowDown");
           for (let j = 0; j < 5; j++) {
             const f = findExtFrame(p, "menu");

@@ -215,6 +215,9 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
       }
       if (host === "evil.test" && path === "/frame") return send(page("Autre site", "evil/frame.html"));
       if (host === "accounts.google.com.evil.test") {
+        if (path === "/signin/identifier") {
+          return send(page("Connexion", "google/identifier.html", { chosen: "", error: "", action: path }));
+        }
         const self = (email: string) => `/signin/identifier?hint=${encodeURIComponent(email)}`;
         return send(
           page("Choisir un compte", "google/chooser.html", {
@@ -322,10 +325,12 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
           return send(page("Atlas Cloud - Validation", "atlas/push.html"));
         case "/multistep":
         case "/captcha-step":
+        case "/lookalike-login":
         case "/sso-login": {
           if (!post) return send(page("Atlas Cloud - Connexion", "atlas/identifier.html", { error: "", action: path }));
           const email = (body.email ?? "").trim().toLowerCase();
           if (path === "/sso-login") return redirect("https://sso.evil.test/login");
+          if (path === "/lookalike-login") return redirect("https://atlas-cloud.test.evil.test/login");
           if (!state.users.has(email)) {
             return send(page("Atlas Cloud - Connexion", "atlas/identifier.html", { error: "Compte introuvable", action: path }));
           }
