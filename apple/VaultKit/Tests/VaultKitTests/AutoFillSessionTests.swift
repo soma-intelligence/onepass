@@ -140,6 +140,10 @@ struct AutoFillSessionTests {
         try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
         await session.waitForAutofillIdentities()
         #expect(store.identities.count == 1)
+        // One or two replacements so far: the account creation and the new Login are two requests,
+        // merged only when the second comes within the debounce (not under a loaded test run).
+        let published = store.replaceCount
+        #expect(published >= 1)
 
         session.lock()
         await session.waitForAutofillIdentities()
@@ -149,7 +153,7 @@ struct AutoFillSessionTests {
         // Locked: a refresh request does nothing.
         session.refreshAutofillIdentities()
         await session.waitForAutofillIdentities()
-        #expect(store.replaceCount == 1)
+        #expect(store.replaceCount == published)
     }
 
     @Test func clearAutofillIdentitiesEmptiesStore() async throws {
