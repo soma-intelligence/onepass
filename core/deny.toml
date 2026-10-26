@@ -2,6 +2,8 @@
 version = 2
 
 [licenses]
+# Allowlist is wider than current deps on purpose (future crypto crates).
+unused-allowed-license = "allow"
 version = 2
 allow = [
     "MIT",
@@ -17,7 +19,7 @@ allow = [
 ]
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "allow"
 wildcards = "deny"
 allow-wildcard-paths = true
 

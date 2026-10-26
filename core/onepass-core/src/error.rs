@@ -59,6 +59,9 @@ pub enum Error {
     InvalidFormat(&'static str),
     Validation(ValidationError),
     NotFound,
+    /// Storage layer failure. The string must be non-sensitive and produced
+    /// by the store layer. It is available through `Debug` only; `Display`
+    /// never prints it.
     Store(String),
 }
 
@@ -71,7 +74,7 @@ impl fmt::Display for Error {
             Self::InvalidFormat(what) => write!(f, "invalid format: {what}"),
             Self::Validation(e) => e.fmt(f),
             Self::NotFound => f.write_str("not found"),
-            Self::Store(msg) => write!(f, "store error: {msg}"),
+            Self::Store(_) => f.write_str("store error"),
         }
     }
 }
@@ -98,3 +101,16 @@ impl From<ValidationError> for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn store_display_hides_the_detail() {
+        let e = Error::Store("secret".into());
+        assert!(!e.to_string().contains("secret"));
+        assert_eq!(e.to_string(), "store error");
+        assert!(format!("{e:?}").contains("secret"));
+    }
+}
