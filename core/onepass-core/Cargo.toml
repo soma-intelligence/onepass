@@ -14,6 +14,12 @@ zeroize.workspace = true
 data-encoding.workspace = true
 argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
 unicode-normalization = "0.1.26"
+slh-dsa = "=0.1.0"
+# Not used directly: slh-dsa 0.1.0 only builds against this prerelease
+# (later 2.3.0-pre releases moved to rand_core 0.9). Remove with slh-dsa 0.2.
+signature = "=2.3.0-pre.4"
+serde_bytes = "0.11.17"
 
 [dev-dependencies]
+postcard = { version = "1", default-features = false, features = ["alloc"] }
 proptest = "1.12"

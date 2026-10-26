@@ -20,3 +20,8 @@ data-encoding = "2.11"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# SLH-DSA-SHA2-256s hashes through sha2: unoptimized, one signature takes
+# about 35 s in debug tests instead of about 15 s.
+[profile.dev.package.sha2]
+opt-level = 3
