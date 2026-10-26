@@ -14,6 +14,7 @@ serde = { version = "1", features = ["derive"] }
 uuid = { version = "1", features = ["v7"] }
 aws-lc-rs = "1.18"
 zeroize = { version = "1.9", features = ["derive"] }
+data-encoding = "2.11"
 
 [profile.release]
 lto = true
