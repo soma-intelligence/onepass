@@ -93,7 +93,9 @@ fn same(a: &Record, b: &Record) -> bool {
     a.version == b.version && a.data == b.data
 }
 
-fn kem_context(account_id: Id) -> Vec<u8> {
+/// KEM context of the Travel state key: `"travel:" || account_id` (23
+/// bytes).
+pub(crate) fn kem_context(account_id: Id) -> Vec<u8> {
     let mut c = KEM_CONTEXT.to_vec();
     c.extend_from_slice(&account_id.0);
     c

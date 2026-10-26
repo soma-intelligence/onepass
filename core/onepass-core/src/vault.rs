@@ -62,7 +62,8 @@ impl ItemRecord {
     }
 }
 
-fn kem_context(vault_id: Id) -> Vec<u8> {
+/// KEM context of a vault key envelope: `"vault:" || vault_id` (22 bytes).
+pub(crate) fn kem_context(vault_id: Id) -> Vec<u8> {
     let mut c = b"vault:".to_vec();
     c.extend_from_slice(&vault_id.0);
     c
