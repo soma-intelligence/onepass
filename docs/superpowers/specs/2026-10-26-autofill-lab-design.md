@@ -221,7 +221,7 @@ Le premier passage complet (graine `lab-2026-10-26`, 200 sites) est commité dan
 | Commande | Effet |
 | --- | --- |
 | `npm run check` | inclut les tests unitaires du labo (`test/lab/`) : PRNG, déterminisme du générateur, rendu, robots, nettoyage, TOTP, WebAuthn, oracle, rapport |
-| `npm run lab:smoke` | navigateur, graine fixe `lab-smoke-1`, 12 sites couvrant chaque flux, 4 à 6 minutes |
+| `npm run lab:smoke` | navigateur, graine fixe `lab-smoke-18`, 12 sites couvrant chaque flux et les pièges structurels, 4 à 6 minutes |
 | `npm run lab -- --seed <s> --sites <n>` | passage aléatoire complet, rapport dans `lab/out/` |
 | `npm run lab:repro -- --seed <s> --site <i>` | rejoue un site d'un monde |
 | `npm run lab:corpus` | relevé du corpus (réseau réel, lent, rarement) puis distillation |

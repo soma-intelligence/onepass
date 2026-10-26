@@ -32,7 +32,7 @@ Le passage du laboratoire lui-même n'utilise aucun réseau externe : tous les h
 | Commande | Effet |
 | --- | --- |
 | `npm run check` | typage, tests unitaires (dont `test/lab/`), compilation. Sans navigateur. |
-| `npm run lab:smoke` | navigateur, graine fixe `lab-smoke-1`, 12 sites couvrant chaque flux ; compare au résultat épinglé `smoke-expected.json` |
+| `npm run lab:smoke` | navigateur, graine fixe `lab-smoke-18`, 12 sites couvrant chaque flux et les pièges structurels (cadre inter-sites, shadow DOM fermé, rerendu SPA, OTP découpé, sosie) ; compare au résultat épinglé `smoke-expected.json` |
 | `npm run lab -- --seed <s> --sites <n> [--workers 4] [--report <md>]` | passage complet ; rapport dans `lab/out/<s>/report.md`, copié dans `<md>` si demandé. Code de sortie 1 s'il y a une fuite. |
 | `npm run lab:repro -- --seed <s> --site <i> [--sites <n>]` | rejoue un seul site du monde ; résultats dans `lab/out/<s>-repro-<i>/` |
 | `npm run lab:corpus` | relevé du corpus (réseau réel, lent, rarement) puis distillation |
