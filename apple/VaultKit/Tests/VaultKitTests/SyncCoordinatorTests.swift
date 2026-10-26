@@ -802,12 +802,13 @@ struct SyncCoordinatorTests {
 
     @Test func triggersDuringARoundCoalesce() async throws {
         let remote = InMemoryRemote()
-        let probe = ProbeRemote(remote, fetchDelay: .milliseconds(200))
+        let probe = ProbeRemote(remote, fetchDelay: .seconds(1))
         let device = try SyncDevice(name: "A", client: probe)
         defer { device.cleanUp() }
         let coordinator = device.coordinator
 
-        // A round is fetching; six more triggers come in: one more round, not six.
+        // A round is fetching (1 s, so the six triggers land during it even on a loaded machine);
+        // six more triggers come in: one more round, not six.
         let first = Task { await coordinator.syncNow() }
         #expect(await eventually { probe.fetches == 1 })
         await withTaskGroup(of: Void.self) { group in
