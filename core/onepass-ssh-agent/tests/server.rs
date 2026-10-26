@@ -63,6 +63,19 @@ fn bind_replaces_stale_socket_but_not_a_regular_file() {
 }
 
 #[test]
+fn bind_refuses_a_socket_that_answers() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("agent").join("s.sock");
+    let live = bind_socket(&path).unwrap();
+    let err = bind_socket(&path).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::AddrInUse);
+    assert_eq!(err.to_string(), "another agent is serving this socket");
+    // The live socket was left in place and still accepts connections.
+    let _c = UnixStream::connect(&path).unwrap();
+    assert!(live.accept().is_ok());
+}
+
+#[test]
 fn socket_and_parent_modes() {
     let dir = TempDir::new().unwrap();
     let parent = dir.path().join("new").join("deeper");

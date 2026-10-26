@@ -20,9 +20,10 @@ const POLL: Duration = Duration::from_millis(100);
 
 /// Creates the socket at `path`, which must name its directory. The parent
 /// directory is created `0700` if missing, and set to `0700` if it exists
-/// and belongs to this user. An existing socket at `path` (a stale agent) is replaced; anything else
-/// there is left alone and the call fails with `AlreadyExists`. The socket
-/// is `0600`.
+/// and belongs to this user. An existing socket at `path` is replaced only
+/// when nothing answers on it (a stale agent); if a connection succeeds the
+/// call fails with `AddrInUse`. Anything else at `path` is left alone and
+/// the call fails with `AlreadyExists`. The socket is `0600`.
 pub fn bind_socket(path: &Path) -> io::Result<UnixListener> {
     // A bare file name would make the current directory the parent and
     // change its mode: ask for an explicit directory instead.
@@ -58,7 +59,15 @@ pub fn bind_socket(path: &Path) -> io::Result<UnixListener> {
         Err(e) => return Err(e),
     }
     match fs::symlink_metadata(path) {
-        Ok(m) if m.file_type().is_socket() => fs::remove_file(path)?,
+        Ok(m) if m.file_type().is_socket() => {
+            if UnixStream::connect(path).is_ok() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AddrInUse,
+                    "another agent is serving this socket",
+                ));
+            }
+            fs::remove_file(path)?
+        }
         Ok(_) => {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,

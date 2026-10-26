@@ -449,10 +449,18 @@ fn ssh_connects_to_local_sshd() {
         .output()
         .unwrap();
     if !out.status.success() {
-        eprintln!(
-            "sshd log:\n{}",
-            fs::read_to_string(agent.home().join("sshd.log")).unwrap_or_default()
-        );
+        let log = fs::read_to_string(agent.home().join("sshd.log")).unwrap_or_default();
+        eprintln!("sshd log:\n{log}");
+        // A signature or agent error always fails the test.
+        let agent_failed = agent
+            .audit
+            .entries()
+            .iter()
+            .any(|e| e.action == "ssh_sign" && e.outcome != "ok");
+        if !agent_failed && let Some(reason) = environmental_refusal(&log) {
+            eprintln!("skipping: the test sshd refused the session ({reason})");
+            return;
+        }
     }
     check(&out, "ssh to the test sshd");
 
@@ -476,4 +484,51 @@ fn ssh_connects_to_local_sshd() {
         })
         .expect("a bound signature request");
     assert_eq!(destination, format!("{host_fp} (127.0.0.1)"));
+}
+
+/// Reasons the local `sshd` may refuse a session that have nothing to do with
+/// the agent (CI accounts that are locked, privilege separation or PAM set
+/// up differently, file ownership checks). `None` when the log shows none.
+fn environmental_refusal(sshd_log: &str) -> Option<&'static str> {
+    const PATTERNS: [(&str, &str); 9] = [
+        ("account is locked", "account locked"),
+        ("account has expired", "account expired"),
+        ("not allowed because", "user not allowed"),
+        ("user not allowed", "user not allowed"),
+        ("privilege separation", "privilege separation"),
+        ("privsep", "privilege separation"),
+        ("pam", "PAM"),
+        ("bad ownership or modes", "permissions or ownership"),
+        ("bad permissions", "permissions or ownership"),
+    ];
+    let log = sshd_log.to_ascii_lowercase();
+    PATTERNS
+        .iter()
+        .find(|(needle, _)| log.contains(needle))
+        .map(|(_, reason)| *reason)
+}
+
+#[test]
+fn environmental_refusals_are_recognized() {
+    assert_eq!(
+        environmental_refusal("User runner not allowed because account is locked"),
+        Some("account locked")
+    );
+    assert_eq!(
+        environmental_refusal("fatal: Privilege separation user sshd does not exist"),
+        Some("privilege separation")
+    );
+    assert_eq!(
+        environmental_refusal("Authentication refused: bad ownership or modes for directory /x"),
+        Some("permissions or ownership")
+    );
+    assert_eq!(
+        environmental_refusal("error: PAM: Authentication failure for runner"),
+        Some("PAM")
+    );
+    assert_eq!(
+        environmental_refusal("Failed publickey for runner from 127.0.0.1: signature mismatch"),
+        None
+    );
+    assert_eq!(environmental_refusal(""), None);
 }
