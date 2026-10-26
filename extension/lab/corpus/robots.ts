@@ -49,3 +49,17 @@ export function isAllowed(rules: RobotsRules, agent: string, path: string): bool
   }
   return best ? best.allow : true;
 }
+
+/** What a robots.txt fetch means: rules, null (no file, 404: allow all) or "deny" (unreadable). */
+export type RobotsEntry = RobotsRules | null | "deny";
+
+/**
+ * The entry of a robots.txt response. A failed fetch denies; so does a file
+ * redirected to anything but plain text (a login or home page is no robots.txt).
+ */
+export function robotsEntry(res: { status: number; ok: boolean; redirected: boolean; contentType: string }, text: () => string): RobotsEntry {
+  if (res.status === 404) return null;
+  if (!res.ok) return "deny";
+  if (res.redirected && !res.contentType.trim().toLowerCase().startsWith("text/plain")) return "deny";
+  return parseRobots(text());
+}

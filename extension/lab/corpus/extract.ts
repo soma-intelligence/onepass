@@ -4,8 +4,8 @@
 // Usage: node --experimental-strip-types lab/corpus/extract.ts --sites <json> --out <dir> [--only <host>] [--delay-ms 5000]
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { ProviderId } from "../gen/model.ts";
-import { isAllowed, parseRobots } from "./robots.ts";
-import type { RobotsRules } from "./robots.ts";
+import { isAllowed, robotsEntry } from "./robots.ts";
+import type { RobotsEntry } from "./robots.ts";
 import { classifyRole } from "./roles.ts";
 import { sanitizeOrigin, sanitizeText, sanitizeToken } from "./sanitize.ts";
 import { stableJson } from "./types.ts";
@@ -135,8 +135,6 @@ function hostSite(a: string, b: string): boolean {
   return base(a) === base(b);
 }
 
-type RobotsEntry = RobotsRules | null | "deny"; // null: no robots.txt (404), "deny": unreadable
-
 const robotsCache = new Map<string, RobotsEntry>();
 
 async function getRobots(origin: string): Promise<RobotsEntry> {
@@ -145,7 +143,8 @@ async function getRobots(origin: string): Promise<RobotsEntry> {
   let entry: RobotsEntry;
   try {
     const res = await fetch(origin + "/robots.txt", { headers: { "user-agent": USER_AGENT }, signal: AbortSignal.timeout(10_000) });
-    entry = res.status === 404 ? null : res.ok ? parseRobots(await res.text()) : "deny";
+    const text = res.ok ? await res.text() : "";
+    entry = robotsEntry({ status: res.status, ok: res.ok, redirected: res.redirected, contentType: res.headers.get("content-type") ?? "" }, () => text);
   } catch {
     entry = "deny";
   }
@@ -202,9 +201,9 @@ async function main(): Promise<void> {
         sample = { ...base, status: "skipped: robots" };
       } else {
         const ctx = await browser.newContext({ userAgent: USER_AGENT, serviceWorkers: "block" });
-        const deadline = setTimeout(() => { timedOut = true; ctx.close().catch(() => {}); }, 30_000); // covers goto, wait and evaluate
         let blocked = false;
         let timedOut = false;
+        const deadline = setTimeout(() => { timedOut = true; ctx.close().catch(() => {}); }, 30_000); // covers goto, wait and evaluate
         try {
           const page = await ctx.newPage();
           await page.route("**/*", async (route: any) => {
