@@ -50,7 +50,7 @@ final class SyncDevice {
     let sleeper: ManualSleeper
 
     convenience init(remote: InMemoryRemote?, name: String) throws {
-        try self.init(name: name, client: remote.map { $0.client(name) })
+        try self.init(name: name, client: remote)
     }
 
     init(name: String, client: (any RemoteRecordStore)?, sleeper: ManualSleeper = ManualSleeper()) throws {
@@ -112,6 +112,7 @@ final class ProbeRemote: RemoteRecordStore {
         var maxInFlight = 0
         var results: [[SendResult]] = []
         var hook: (@Sendable () async -> Void)?
+        var failingFetch: Int?
     }
     let inner: any RemoteRecordStore
     let fetchDelay: Duration
@@ -126,17 +127,25 @@ final class ProbeRemote: RemoteRecordStore {
     var sends: Int { state.withLock { $0.sends } }
     var maxInFlight: Int { state.withLock { $0.maxInFlight } }
     var results: [[SendResult]] { state.withLock { $0.results } }
+    var maxBatchRecords: Int { inner.maxBatchRecords }
+    var maxBatchBytes: Int { inner.maxBatchBytes }
+    /// The `number`th fetch (counting from the first one ever) throws `.offline`.
+    func failFetch(number: Int) { state.withLock { $0.failingFetch = number } }
     func beforeFirstSend(_ hook: @escaping @Sendable () async -> Void) { state.withLock { $0.hook = hook } }
 
-    func fetchChanges() async throws -> RemoteBatch {
+    func fetchChanges(since token: Data?) async throws -> RemoteBatch {
+        let failing = state.withLock { s -> Bool in
+            s.fetches += 1
+            return s.fetches == s.failingFetch
+        }
+        if failing { throw RemoteStoreError.offline }
         state.withLock {
-            $0.fetches += 1
             $0.inFlight += 1
             $0.maxInFlight = max($0.maxInFlight, $0.inFlight)
         }
         defer { state.withLock { $0.inFlight -= 1 } }
         if fetchDelay > .zero { try await Task.sleep(for: fetchDelay) }
-        return try await inner.fetchChanges()
+        return try await inner.fetchChanges(since: token)
     }
 
     func send(_ changes: [RemoteRecord]) async throws -> [SendResult] {
@@ -258,7 +267,7 @@ struct SyncCoordinatorTests {
     @Test func conflictOnSendIsRestagedAndResent() async throws {
         let remote = InMemoryRemote()
         let a = try SyncDevice(remote: remote, name: "A")
-        let probe = ProbeRemote(remote.client("B"))
+        let probe = ProbeRemote(remote)
         let b = try SyncDevice(name: "B", client: probe)
         defer { a.cleanUp(); b.cleanUp() }
 
@@ -495,16 +504,20 @@ struct SyncCoordinatorTests {
 
     @Test func triggersDuringARoundCoalesce() async throws {
         let remote = InMemoryRemote()
-        let probe = ProbeRemote(remote.client("A"), fetchDelay: .milliseconds(200))
+        let probe = ProbeRemote(remote, fetchDelay: .milliseconds(200))
         let device = try SyncDevice(name: "A", client: probe)
         defer { device.cleanUp() }
         let coordinator = device.coordinator
 
+        // A round is fetching; six more triggers come in: one more round, not six.
+        let first = Task { await coordinator.syncNow() }
+        #expect(await eventually { probe.fetches == 1 })
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<6 { group.addTask { await coordinator.syncNow() } }
         }
+        await first.value
         #expect(probe.maxInFlight == 1)
-        #expect(probe.fetches <= 2)
+        #expect(probe.fetches == 2)
         #expect(await coordinator.status.isIdle)
     }
 
@@ -522,6 +535,227 @@ struct SyncCoordinatorTests {
     }
 }
 
+/// A remote that serves fixed pages (token = page index) and answers sends with a closure.
+final class ScriptedRemote: RemoteRecordStore {
+    private struct State {
+        var sinces: [Data?] = []
+        var sent: [[RemoteRecord]] = []
+    }
+    let pages: [[RemoteRecord]]
+    let answer: @Sendable ([RemoteRecord]) -> [SendResult]
+    private let state = Mutex(State())
+    let maxBatchRecords = 400
+    let maxBatchBytes = 1_572_864
+
+    init(pages: [[RemoteRecord]], answer: @escaping @Sendable ([RemoteRecord]) -> [SendResult] = { _ in [] }) {
+        self.pages = pages
+        self.answer = answer
+    }
+
+    var sinces: [Data?] { state.withLock { $0.sinces } }
+    var sent: [[RemoteRecord]] { state.withLock { $0.sent } }
+
+    static func token(_ index: Int) -> Data { Data([UInt8(index)]) }
+
+    func fetchChanges(since token: Data?) async throws -> RemoteBatch {
+        state.withLock { $0.sinces.append(token) }
+        let index = token.map { Int($0[0]) } ?? 0
+        guard index < pages.count else { return RemoteBatch(changes: [], moreComing: false, token: token) }
+        return RemoteBatch(changes: pages[index], moreComing: index + 1 < pages.count, token: Self.token(index + 1))
+    }
+
+    func send(_ changes: [RemoteRecord]) async throws -> [SendResult] {
+        state.withLock { $0.sent.append(changes) }
+        return answer(changes)
+    }
+
+    func accountAvailable() async -> Bool { true }
+}
+
+struct StagingFailure: Error {}
+
+@MainActor
+@Suite("Sync coordinator, store safety", .timeLimit(.minutes(2)))
+struct SyncCoordinatorStoreSafetyTests {
+    static func hex(_ n: Int) -> String { String(format: "%032x", n) }
+
+    static func readToken(_ store: SyncStoreHandle) async throws -> Data? {
+        try await CoreThread.run { try store.meta(key: SyncCoordinator.tokenKey) }
+    }
+
+    static func serverMeta(_ store: SyncStoreHandle, _ name: RecordName) async throws -> Data? {
+        try await CoreThread.run { try store.serverMeta(kind: name.kind, id: name.id) }
+    }
+
+    /// I1: a fetch interrupted after page 1 leaves rows in staging; the next complete fetch commits them
+    /// before our deletion is pushed, so no later commit brings the deleted record back.
+    @Test func interruptedFetchNeverResurrectsAPushedDeletion() async throws {
+        let remote = InMemoryRemote(pageSize: 1)
+        let probe = ProbeRemote(remote)
+        let a = try SyncDevice(name: "A", client: probe)
+        defer { a.cleanUp() }
+        _ = try await a.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        let item = try await addItem(a.session, title: "Projet Atlas")
+        await a.sync()
+        let blob = try #require(await remote.tags().keys.first { $0.kind == 5 })
+        let manifest = RecordName(kind: 6, id: item.vaultId)
+
+        // The server rewrites the blob then the manifest (same content, new tags): two pages.
+        await remote.replay(name: blob, version: try #require(await remote.record(blob)?.version))
+        await remote.replay(name: manifest, version: try #require(await remote.record(manifest)?.version))
+        let tokenBefore = try await Self.readToken(a.store)
+        probe.failFetch(number: probe.fetches + 2)
+        await a.coordinator.syncNow()
+        #expect(await a.coordinator.status == .offline)
+        let tokenAfterPage1 = try await Self.readToken(a.store)
+        #expect(tokenAfterPage1 != nil && tokenAfterPage1 != tokenBefore)
+
+        // Our deletion of the blob is pushed (unconditional), then more server changes come in.
+        try await a.session.deletePermanently(itemID: item.id, vaultID: item.vaultId)
+        await a.sync()
+        #expect(await a.coordinator.status.isIdle)
+        #expect(await remote.record(blob) == nil)
+        #expect(try await Self.serverMeta(a.store, blob) == nil)
+
+        await remote.replay(name: manifest, version: try #require(await remote.record(manifest)?.version))
+        await a.coordinator.syncNow()
+        #expect(try await Self.serverMeta(a.store, blob) == nil)
+        #expect(try await a.pendingChanges().isEmpty)
+        await a.session.reload()
+        #expect(a.session.state == .unlocked)
+        #expect(a.session.summaries.isEmpty)
+    }
+
+    /// I2: unknown kinds and malformed records are skipped (the rest of the page is staged).
+    @Test func unknownRecordsAreSkipped() async throws {
+        let meta = InMemoryRemote.serverMeta(tag: 7)
+        let good = RemoteRecord(name: RecordName(kind: 4, id: Self.hex(1)), version: 1, data: Data([1, 2]), serverMeta: meta)
+        let page = [
+            RemoteRecord(name: RecordName(kind: 9, id: Self.hex(2)), version: 1, data: Data([1]), serverMeta: meta),
+            RemoteRecord(name: RecordName(kind: 5, id: "pas-un-identifiant"), version: 1, data: Data([1]), serverMeta: meta),
+            RemoteRecord(name: RecordName(kind: 5, id: Self.hex(3)), version: .max, data: Data([1]), serverMeta: meta),
+            good,
+        ]
+        let remote = ScriptedRemote(pages: [page])
+        let device = try SyncDevice(name: "A", client: remote)
+        defer { device.cleanUp() }
+        await device.coordinator.syncNow()
+        #expect(await device.coordinator.status.isIdle)
+        #expect(try await Self.serverMeta(device.store, good.name) == meta)
+        #expect(try await Self.serverMeta(device.store, RecordName(kind: 5, id: Self.hex(3))) == nil)
+        #expect(try await Self.readToken(device.store) == ScriptedRemote.token(1))
+    }
+
+    /// I2: the token moves only once a page is staged; a crash in between fetches the page again.
+    @Test func tokenIsNotAdvancedWhenStagingFails() async throws {
+        let meta = InMemoryRemote.serverMeta(tag: 1)
+        let pages = (1...2).map { n in
+            [RemoteRecord(name: RecordName(kind: 4, id: Self.hex(n)), version: 1, data: Data([UInt8(n)]), serverMeta: meta)]
+        }
+        let remote = ScriptedRemote(pages: pages)
+        let device = try SyncDevice(name: "A", client: remote)
+        defer { device.cleanUp() }
+
+        await device.coordinator.setAfterPageStaged { throw StagingFailure() }
+        await device.coordinator.syncNow()
+        if case .error = await device.coordinator.status {} else { Issue.record("status") }
+        #expect(try await Self.readToken(device.store) == nil)
+
+        await device.coordinator.setAfterPageStaged(nil)
+        await device.coordinator.syncNow()
+        #expect(await device.coordinator.status.isIdle)
+        #expect(remote.sinces == [nil, nil, ScriptedRemote.token(1)])
+        #expect(try await Self.readToken(device.store) == ScriptedRemote.token(2))
+        for n in 1...2 {
+            #expect(try await Self.serverMeta(device.store, RecordName(kind: 4, id: Self.hex(n))) == meta)
+        }
+    }
+
+    /// I3: past the batch limit the send is split, a manifest never before the items it lists.
+    @Test func largeSendIsSplitWithItemsBeforeTheirManifest() async throws {
+        let remote = InMemoryRemote(maxBatchRecords: 3)
+        let a = try SyncDevice(remote: remote, name: "A")
+        let b = try SyncDevice(remote: remote, name: "B")
+        defer { a.cleanUp(); b.cleanUp() }
+        _ = try await a.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        await a.sync()
+        #expect(await remote.sentBatches.count > 1)  // account records alone exceed 3
+        let sentBefore = await remote.sentBatches.count
+        let titles = ["Projet Atlas", "Camille Durand", "Note 1", "Note 2", "Note 3"]
+        for title in titles { try await addItem(a.session, title: title) }
+        await a.sync()
+        #expect(await a.coordinator.status.isIdle)
+        #expect(try await a.pendingChanges().isEmpty)
+
+        // One round: five item records and the manifest, in two batches, the manifest last.
+        let batches = Array(await remote.sentBatches.dropFirst(sentBefore))
+        #expect(batches.count == 2)
+        #expect(batches.flatMap { $0 }.filter { $0.kind == 6 }.count == 1)
+        #expect(batches.allSatisfy { $0.count <= 3 })
+        #expect(batches.flatMap { $0 }.last?.kind == 6)
+
+        #expect(try await b.coordinator.remoteHasAccount())
+        await b.session.reload()
+        try await b.session.restore(secretKey: try #require(a.secretKey), password: testPassword)
+        #expect(b.titles == Set(titles))
+    }
+
+    /// M4: a busy server's delay is honored.
+    @Test func retryableErrorWaitsTheServerDelay() async throws {
+        let remote = InMemoryRemote()
+        let device = try SyncDevice(remote: remote, name: "A")
+        defer { device.cleanUp() }
+        await remote.failNext(with: .retryable(after: .seconds(7)))
+        await device.coordinator.syncNow()
+        if case .error = await device.coordinator.status {} else { Issue.record("status") }
+        #expect(device.sleeper.requests == [.seconds(7)])
+        #expect(await eventually {
+            device.sleeper.fire()
+            return await device.coordinator.status.isIdle
+        })
+    }
+
+    /// M5: a save confirmed without server metadata is not marked pushed.
+    @Test func saveWithoutServerMetaStaysPending() async throws {
+        let remote = ScriptedRemote(pages: []) { changes in
+            changes.map { .saved(name: $0.name, serverMeta: nil) }
+        }
+        let device = try SyncDevice(name: "A", client: remote)
+        defer { device.cleanUp() }
+        _ = try await device.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        let before = try await device.pendingChanges().count
+        #expect(before > 0)
+        await device.sync()
+        #expect(try await device.pendingChanges().count == before)
+        if case .error = await device.coordinator.status {} else { Issue.record("status") }
+    }
+
+    /// M6: a locked round keeps the refusal; only a rebase can clear it.
+    @Test func lockedRoundKeepsRefusal() async throws {
+        let remote = InMemoryRemote()
+        let (a, b, atlas) = try await twoSyncedDevices(remote: remote)
+        defer { a.cleanUp(); b.cleanUp() }
+        let manifest = RecordName(kind: 6, id: atlas.vaultId)
+        let synced = try #require(await remote.record(manifest)?.version)
+        try await addItem(a.session, title: "Note A")
+        await a.sync()
+        await b.sync()
+        try await addItem(b.session, title: "Note B")
+
+        // The server serves the older manifest again: B's held vault cannot be rebased onto it.
+        await remote.replay(name: manifest, version: synced)
+        await b.sync()
+        guard case .refused(let kind) = await b.coordinator.status else {
+            Issue.record("status \(await b.coordinator.status)")
+            return
+        }
+        b.session.lock()
+        await b.session.waitForSyncNotifications()
+        await b.coordinator.syncNow()
+        #expect(await b.coordinator.status == .refused(kind: kind))
+    }
+}
+
 @Suite("In-memory remote")
 struct InMemoryRemoteTests {
     static func name(_ n: Int) -> RecordName {
@@ -534,18 +768,16 @@ struct InMemoryRemoteTests {
 
     @Test func staleTagFailsTheWholeBatch() async throws {
         let remote = InMemoryRemote()
-        let x = remote.client("X")
-        let y = remote.client("Y")
 
-        let saved = try await x.send([Self.record(1)])
+        let saved = try await remote.send([Self.record(1)])
         guard case .saved(let name, let meta?) = saved.first, name == Self.name(1) else {
             Issue.record("\(saved)")
             return
         }
         #expect(meta.count == 8)
 
-        // Y did not see record 1: its save of 1 conflicts, its new record 2 fails with it.
-        let results = try await y.send([Self.record(1, version: 2), Self.record(2)])
+        // A device that did not see record 1: its save of 1 conflicts, its new record 2 fails with it.
+        let results = try await remote.send([Self.record(1, version: 2), Self.record(2)])
         #expect(results.count == 2)
         guard case .conflict(let server) = results[0] else {
             Issue.record("\(results)")
@@ -553,44 +785,54 @@ struct InMemoryRemoteTests {
         }
         #expect(server.name == Self.name(1) && server.serverMeta == meta && server.version == 1)
         #expect(results[1] == .failed(name: Self.name(2)))
-        #expect(await remote.tags().keys.sorted { $0.string < $1.string } == [Self.name(1)])
+        #expect(Set(await remote.tags().keys) == [Self.name(1)])
 
         // With the current tag the save goes through; a deletion needs no tag.
-        let retried = try await y.send([
+        let retried = try await remote.send([
             Self.record(1, version: 2, meta: meta), Self.record(2),
             RemoteRecord(name: Self.name(3), version: 1, data: nil, serverMeta: nil),
         ])
         #expect(retried.allSatisfy { if case .saved = $0 { true } else { false } })
-        let deleted = try await x.send([RemoteRecord(name: Self.name(1), version: 2, data: nil, serverMeta: nil)])
+        let deleted = try await remote.send([RemoteRecord(name: Self.name(1), version: 2, data: nil, serverMeta: nil)])
         #expect(deleted == [.saved(name: Self.name(1), serverMeta: nil)])
         #expect(Set(await remote.tags().keys) == [Self.name(2)])
     }
 
-    @Test func fetchPagesPerClient() async throws {
+    @Test func fetchPagesFromTheCallersToken() async throws {
         let remote = InMemoryRemote(pageSize: 2)
-        let x = remote.client("X")
-        _ = try await x.send([Self.record(1), Self.record(2), Self.record(3)])
+        _ = try await remote.send([Self.record(1), Self.record(2), Self.record(3)])
 
         var seen: [RecordName] = []
+        var token: Data?
         var pages = 0
         while true {
-            let batch = try await x.fetchChanges()
+            let batch = try await remote.fetchChanges(since: token)
             pages += 1
             seen += batch.changes.map(\.name)
+            token = batch.token
             if !batch.moreComing { break }
         }
         #expect(pages == 2)
         #expect(Set(seen) == [Self.name(1), Self.name(2), Self.name(3)])
-        #expect(try await x.fetchChanges().changes.isEmpty)
+        #expect(try await remote.fetchChanges(since: token).changes.isEmpty)
 
-        // Another client has its own cursor; a deletion is a change too.
-        let y = remote.client("Y")
-        #expect(try await y.fetchChanges().changes.count == 2)
-        _ = try await x.send([RemoteRecord(name: Self.name(2), version: 2, data: nil, serverMeta: nil)])
-        let x2 = try await x.fetchChanges()
-        #expect(x2.changes.map(\.name) == [Self.name(2)] && x2.changes[0].data == nil)
+        // Another device starts from its own (nil) token; a deletion is a change too.
+        #expect(try await remote.fetchChanges(since: nil).changes.count == 2)
+        _ = try await remote.send([RemoteRecord(name: Self.name(2), version: 2, data: nil, serverMeta: nil)])
+        let next = try await remote.fetchChanges(since: token)
+        #expect(next.changes.map(\.name) == [Self.name(2)] && next.changes[0].data == nil)
 
         await remote.setOffline(true)
-        await #expect(throws: RemoteStoreError.offline) { try await y.fetchChanges() }
+        await #expect(throws: RemoteStoreError.offline) { try await remote.fetchChanges(since: nil) }
+    }
+
+    @Test func oversizedBatchIsRefused() async throws {
+        let remote = InMemoryRemote(maxBatchRecords: 2, maxBatchBytes: 100)
+        await #expect(throws: RemoteStoreError.self) {
+            _ = try await remote.send([Self.record(1), Self.record(2), Self.record(3)])
+        }
+        let big = RemoteRecord(name: Self.name(4), version: 1, data: Data(count: 200), serverMeta: nil)
+        await #expect(throws: RemoteStoreError.self) { _ = try await remote.send([big]) }
+        #expect(await remote.tags().isEmpty)
     }
 }

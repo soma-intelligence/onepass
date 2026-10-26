@@ -33,34 +33,52 @@ public enum SendResult: Sendable, Equatable {
     }
 }
 
-/// One page of server changes since the last fetch of this client.
-public struct RemoteBatch: Sendable, Equatable {
-    public var changes: [RemoteRecord]
-    public var moreComing: Bool
-
-    public init(changes: [RemoteRecord], moreComing: Bool) {
-        self.changes = changes
-        self.moreComing = moreComing
+extension RemoteRecord {
+    /// What this record weighs in a batch: data, server metadata and name.
+    public var batchBytes: Int {
+        (data?.count ?? 0) + (serverMeta?.count ?? 0) + name.string.utf8.count
     }
 }
 
-/// Errors of a remote. `offline` (or a `URLError`) makes the coordinator retry later.
+/// One page of server changes after `token`. `token` is where the next fetch starts (nil: unchanged).
+public struct RemoteBatch: Sendable, Equatable {
+    public var changes: [RemoteRecord]
+    public var moreComing: Bool
+    public var token: Data?
+
+    public init(changes: [RemoteRecord], moreComing: Bool, token: Data?) {
+        self.changes = changes
+        self.moreComing = moreComing
+        self.token = token
+    }
+}
+
+/// Errors of a remote. `offline` (or a `URLError`) and `retryable` make the coordinator retry later.
 public enum RemoteStoreError: Error, Equatable, Sendable {
     case offline
     case accountUnavailable
+    /// Busy or rate limited server: retry, after the given delay when the server gave one.
+    case retryable(after: Duration?)
     /// French message for the UI, never a record content.
     case other(String)
 }
 
 /// The server side of sync (CloudKit in the apps, `InMemoryRemote` in tests and previews).
 ///
-/// - `fetchChanges` returns the changes since the previous call of this client (the remote keeps its
-///   change token), one page at a time; the caller calls again while `moreComing`.
+/// - `fetchChanges(since:)` returns one page of the changes after `token` (nil: from the start) and the
+///   token of that page; the caller calls again while `moreComing`. The caller owns the token: it
+///   persists it once the page is staged in the local store. A remote never keeps or persists a cursor
+///   of its own, so a page lost before it was staged is served again.
 /// - `send` stores a batch atomically: every save is conditional on its `serverMeta` (nil = the record
 ///   must not exist), deletions are unconditional. One refused save fails the whole batch: the refused
-///   records come back as `conflict(server:)`, the others as `failed`.
+///   records come back as `conflict(server:)`, the others as `failed`. A saved record with data always
+///   comes back with a non-nil `serverMeta`.
+/// - A batch never holds more than `maxBatchRecords` records or `maxBatchBytes` bytes
+///   (`RemoteRecord.batchBytes`); the caller splits larger sends.
 public protocol RemoteRecordStore: Sendable {
-    func fetchChanges() async throws -> RemoteBatch
+    var maxBatchRecords: Int { get }
+    var maxBatchBytes: Int { get }
+    func fetchChanges(since token: Data?) async throws -> RemoteBatch
     func send(_ changes: [RemoteRecord]) async throws -> [SendResult]
     func accountAvailable() async -> Bool
 }

@@ -3,12 +3,13 @@ import os
 
 /// Runs sync rounds between the local store and a remote (spec 3.5 and 4 point 7).
 ///
-/// A round: fetch every page (`stage_remote` each change, then one `commit_remote`), `rebase_all` when
-/// a session is unlocked, then send every pending change as one atomic batch (`mark_pushed` on `saved`).
-/// A conflict stages the server records and starts a new turn (fetch, rebase, send), three turns at
-/// most: the staged records are committed with the fetch of that turn, in the same `commit_remote`, so a
-/// conflicting manifest never lands in `base` before the items it lists. A network error sets `.offline` and retries after 30 s, 2 min, then every
-/// 10 min; an integrity error from the rebase sets `.refused(kind)`.
+/// A round: fetch every page from the stored change token (each page validated, staged, then its token
+/// persisted), one `commit_remote` after the last page, `rebase_all` when a session is unlocked, then
+/// send every pending change as one atomic batch (split only past the remote's limits, items always
+/// before their manifest) and `mark_pushed` each saved record. A conflict stages the server records and
+/// starts a new turn (fetch and commit, rebase, send), three turns at most. A network or busy error
+/// retries after 30 s, 2 min, then every 10 min (or after the delay the server asked for); an integrity
+/// error from the rebase sets `.refused(kind)`, kept until a rebase succeeds.
 ///
 /// One round at a time: every store call (fetch, commit, rebase, send) runs inside the round, so a
 /// rebase never overlaps a commit. Triggers that come during a round coalesce into one more round.
@@ -17,6 +18,8 @@ import os
 public actor SyncCoordinator: SyncTrigger {
     public static let retryDelays: [Duration] = [.seconds(30), .seconds(120), .seconds(600)]
     static let maxTurns = 3
+    /// Store meta key of the remote change token (the handle namespaces it under `sync.`).
+    static let tokenKey = "remote.token"
 
     private let store: SyncStoreHandle
     private let remote: (any RemoteRecordStore)?
@@ -39,8 +42,10 @@ public actor SyncCoordinator: SyncTrigger {
     private var debounceTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
     private var retryAttempt = 0
-    /// Conflicting server records staged by a send, committed by the next fetch.
-    private var stagedConflicts = false
+    /// Kind of the last integrity refusal of a rebase, until a rebase succeeds.
+    private var refusal: String?
+    /// Tests: runs on the core thread after a page is staged, before its token is saved.
+    var afterPageStaged: (@Sendable () throws -> Void)?
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "sync")
 
@@ -81,8 +86,8 @@ public actor SyncCoordinator: SyncTrigger {
         return stream
     }
 
-    /// One element per applied remote change set (records that differ from what the store knew) and
-    /// per rebase: the app reloads its `VaultSession` on each.
+    /// One element per applied remote change set (records that differ from what the store knew, or a
+    /// commit that changed manifests) and per rebase: the app reloads its `VaultSession` on each.
     public func remoteChanges() -> AsyncStream<Void> {
         let (stream, continuation) = AsyncStream<Void>.makeStream()
         let id = UUID()
@@ -102,6 +107,11 @@ public actor SyncCoordinator: SyncTrigger {
         try await fetchAll(remote)
         let store = store
         return try await CoreThread.run { try store.hasAccount() }
+    }
+
+    /// Tests: simulates a crash between staging a page and saving its token.
+    func setAfterPageStaged(_ hook: (@Sendable () throws -> Void)?) {
+        afterPageStaged = hook
     }
 
     // MARK: - SyncTrigger
@@ -182,59 +192,81 @@ public actor SyncCoordinator: SyncTrigger {
             retryAttempt = 0
             retryTask?.cancel()
             retryTask = nil
-            setStatus(.idle(lastSync: now()))
+            // A locked round cannot clear a refusal: the refused vault is still held.
+            setStatus(refusal.map { .refused(kind: $0) } ?? .idle(lastSync: now()))
         } catch RemoteStoreError.offline {
             setStatus(.offline)
-            scheduleRetry()
+            scheduleRetry(after: nil)
         } catch is URLError {
             setStatus(.offline)
-            scheduleRetry()
+            scheduleRetry(after: nil)
+        } catch RemoteStoreError.retryable(let after) {
+            setStatus(.error("Le serveur est momentanément indisponible, nouvel essai bientôt."))
+            scheduleRetry(after: after)
         } catch RoundError.unsettled {
             Self.log.notice("sync round ended with conflicts left")
             setStatus(.error("La synchronisation n'a pas abouti, nouvel essai bientôt."))
-            scheduleRetry()
+            scheduleRetry(after: nil)
         } catch OnePassError.Integrity(let kind) {
             Self.log.error("remote data refused: \(kind, privacy: .public)")
+            refusal = kind
             setStatus(.refused(kind: kind))
         } catch let error as RemoteStoreError {
             switch error {
             case .accountUnavailable: setStatus(.error("Aucun compte iCloud n'est disponible."))
             case .other(let message): setStatus(.error(message))
-            case .offline: setStatus(.offline)
+            case .offline, .retryable: setStatus(.offline)
             }
         } catch {
             setStatus(.error(VaultError(error).localizedMessage))
         }
     }
 
-    /// Every page, staged, then committed at once (a manifest never shows without its items).
-    /// Records whose `serverMeta` matches what the store already holds are skipped (our own pushes
-    /// coming back): the remaining ones are the applied change set.
+    /// Every page from the stored token: each page is validated, staged, then its token saved (a page
+    /// lost before staging is fetched again). After the last page, always one `commit_remote`, which
+    /// also applies anything left in `staging` (an interrupted fetch, conflicting records of a send),
+    /// so staged rows never outlive a complete fetch. Records whose `serverMeta` matches the stored one
+    /// (our own pushes coming back) are not staged; deletions are always staged.
     private func fetchAll(_ remote: any RemoteRecordStore) async throws {
         let store = store
-        var staged = 0
+        let hook = afterPageStaged
+        var token = try await CoreThread.run { try store.meta(key: Self.tokenKey) }
+        var changed = 0
         while true {
-            let batch = try await remote.fetchChanges()
-            if !batch.changes.isEmpty {
-                let changes = batch.changes
-                staged += try await CoreThread.run {
-                    var count = 0
-                    for change in changes {
-                        let known = try store.serverMeta(kind: change.name.kind, id: change.name.id)
-                        if change.serverMeta != nil, known == change.serverMeta { continue }
-                        if change.serverMeta == nil, change.data == nil, known == nil { continue }
-                        try store.stageRemote(record: FfiRemoteRecord(change))
+            let batch = try await remote.fetchChanges(since: token)
+            let valid = batch.changes.filter(Self.isValid)
+            if valid.count < batch.changes.count {
+                Self.log.notice("skipped \(batch.changes.count - valid.count, privacy: .public) unknown remote records")
+            }
+            let next = batch.token
+            changed += try await CoreThread.run {
+                var count = 0
+                for change in valid {
+                    let known = try store.serverMeta(kind: change.name.kind, id: change.name.id)
+                    if change.data != nil {
+                        if let meta = change.serverMeta, meta == known { continue }
+                        count += 1
+                    } else if known != nil {
                         count += 1
                     }
-                    return count
+                    try store.stageRemote(record: FfiRemoteRecord(change))
                 }
+                try hook?()
+                if let next { try store.setMeta(key: Self.tokenKey, value: next) }
+                return count
             }
+            if let next { token = next }
             if !batch.moreComing { break }
         }
-        guard staged > 0 || stagedConflicts else { return }
-        _ = try await CoreThread.run { try store.commitRemote() }
-        stagedConflicts = false
-        emitRemoteChange()
+        let vaults = try await CoreThread.run { try store.commitRemote() }
+        if changed > 0 || !vaults.isEmpty { emitRemoteChange() }
+    }
+
+    /// A record the core can stage: known kind (1 to 6), canonical id, version that fits SQLite.
+    static func isValid(_ record: RemoteRecord) -> Bool {
+        (1...6).contains(record.name.kind)
+            && RecordName(string: record.name.string) == record.name
+            && record.version <= UInt64(Int64.max)
     }
 
     /// Unlocked only. A session locked meanwhile is dropped (`Locked`), the round goes on without it.
@@ -242,57 +274,127 @@ public actor SyncCoordinator: SyncTrigger {
         guard let session else { return }
         do {
             let rebased = try await CoreThread.run { try session.rebaseAll() }
+            refusal = nil
             if !rebased.isEmpty { emitRemoteChange() }
         } catch OnePassError.Locked {
             if self.session === session { self.session = nil }
         }
     }
 
-    /// Sends every pending change as one atomic batch. Returns true when nothing is left to retry.
+    private struct Outgoing: Sendable {
+        var change: FfiRecordChange
+        var record: RemoteRecord
+    }
+
+    /// Sends every pending change, as one atomic batch unless the remote's limits force a split.
+    /// Returns true when nothing is left to retry; stops at the first batch that is not fully saved.
     private func sendPending(_ remote: any RemoteRecordStore) async throws -> Bool {
         let store = store
-        let outgoing: [(change: FfiRecordChange, record: RemoteRecord)] = try await CoreThread.run {
+        let outgoing: [Outgoing] = try await CoreThread.run {
             try store.pendingChanges().map { change in
                 let name = RecordName(kind: change.kind, id: change.id)
                 let meta = try store.serverMeta(kind: change.kind, id: change.id)
-                return (change, RemoteRecord(name: name, version: change.version, data: change.data, serverMeta: meta))
+                return Outgoing(
+                    change: change,
+                    record: RemoteRecord(name: name, version: change.version, data: change.data, serverMeta: meta))
             }
         }
         guard !outgoing.isEmpty else { return true }
-        let results = try await remote.send(outgoing.map(\.record))
+        let batches = Self.split(
+            Self.ordered(outgoing), maxRecords: remote.maxBatchRecords, maxBytes: remote.maxBatchBytes)
+        for batch in batches {
+            if try await !send(batch, to: remote) { return false }
+        }
+        return true
+    }
 
-        let byName = Dictionary(outgoing.map { ($0.record.name, $0.change) }, uniquingKeysWith: { first, _ in first })
+    /// One batch: `mark_pushed` for each saved record, conflicting server records staged (committed
+    /// by the next fetch). A data save without `serverMeta` counts as failed.
+    private func send(_ batch: [Outgoing], to remote: any RemoteRecordStore) async throws -> Bool {
+        let results = try await remote.send(batch.map(\.record))
+        let byName = Dictionary(batch.map { ($0.record.name, $0.change) }, uniquingKeysWith: { first, _ in first })
         var pushed: [(FfiRecordChange, Data?)] = []
         var conflicts: [RemoteRecord] = []
-        var settled = true
+        var settled = results.count >= batch.count
         for result in results {
             switch result {
             case .saved(let name, let meta):
-                if let change = byName[name] { pushed.append((change, meta)) }
+                guard let change = byName[name] else { continue }
+                if change.data != nil, meta == nil {
+                    settled = false
+                } else {
+                    pushed.append((change, meta))
+                }
             case .conflict(let server):
-                conflicts.append(server)
+                if Self.isValid(server) { conflicts.append(server) }
                 settled = false
             case .failed:
                 settled = false
             }
         }
-        if results.count < outgoing.count { settled = false }
-        let toPush = pushed
-        let toStage = conflicts
+        let store = store
+        let (toPush, toStage) = (pushed, conflicts)
         try await CoreThread.run {
             for (change, meta) in toPush {
                 try store.markPushed(kind: change.kind, id: change.id, version: change.version, serverMeta: meta)
             }
             for server in toStage { try store.stageRemote(record: FfiRemoteRecord(server)) }
         }
-        if !toStage.isEmpty { stagedConflicts = true }
         return settled
     }
 
-    private func scheduleRetry() {
+    /// Pending order regrouped per vault: records outside vaults (account, keysets, vault keys and
+    /// metas), then for each vault with a pending manifest its items followed by its manifest, then
+    /// items without a pending manifest, then deletions in core order (after every manifest).
+    private static func ordered(_ outgoing: [Outgoing]) -> [Outgoing] {
+        let writes = outgoing.filter { $0.change.data != nil }
+        let deletions = outgoing.filter { $0.change.data == nil }
+        var result = writes.filter { $0.change.kind < 5 }
+        var items: [String: [Outgoing]] = [:]
+        var itemOrder: [String] = []
+        for item in writes where item.change.kind == 5 {
+            let vault = item.change.data.map { $0.prefix(16).map { String(format: "%02x", $0) }.joined() } ?? ""
+            if items[vault] == nil { itemOrder.append(vault) }
+            items[vault, default: []].append(item)
+        }
+        for manifest in writes where manifest.change.kind == 6 {
+            result += items.removeValue(forKey: manifest.change.id) ?? []
+            result.append(manifest)
+        }
+        for vault in itemOrder { result += items[vault] ?? [] }
+        result += writes.filter { $0.change.kind > 6 }
+        return result + deletions
+    }
+
+    /// Consecutive slices within the limits (a single oversized record goes alone).
+    private static func split(_ outgoing: [Outgoing], maxRecords: Int, maxBytes: Int) -> [[Outgoing]] {
+        var batches: [[Outgoing]] = []
+        var current: [Outgoing] = []
+        var bytes = 0
+        for item in outgoing {
+            let size = item.record.batchBytes
+            if !current.isEmpty, current.count >= max(1, maxRecords) || bytes + size > maxBytes {
+                batches.append(current)
+                current = []
+                bytes = 0
+            }
+            current.append(item)
+            bytes += size
+        }
+        if !current.isEmpty { batches.append(current) }
+        return batches
+    }
+
+    /// `after`: the server's delay, used as is. Otherwise the next step of the backoff.
+    private func scheduleRetry(after: Duration?) {
         retryTask?.cancel()
-        let delay = retryDelays[min(retryAttempt, retryDelays.count - 1)]
-        retryAttempt += 1
+        let delay: Duration
+        if let after {
+            delay = after
+        } else {
+            delay = retryDelays[min(retryAttempt, retryDelays.count - 1)]
+            retryAttempt += 1
+        }
         let sleep = self.sleep
         retryTask = Task { [weak self] in
             do { try await sleep(delay) } catch { return }

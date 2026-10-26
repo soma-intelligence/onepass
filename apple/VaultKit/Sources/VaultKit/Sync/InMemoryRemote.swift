@@ -1,12 +1,12 @@
 import Foundation
 
-/// A fake server for tests and previews, shared by several coordinators to simulate several devices
-/// (`client(_:)` gives each one its own change cursor).
+/// A fake server for tests and previews, shared by several coordinators to simulate several devices.
 ///
 /// Models what the coordinator relies on from CloudKit: a tag per record (`serverMeta`, a `UInt64` in
 /// 8 little-endian bytes) that changes on every write, atomic batches with conditional saves and
-/// unconditional deletions, a change cursor per client and paged fetches. It can also attack:
-/// `tamper`, `withhold` and `replay`.
+/// unconditional deletions, a change log read through tokens (the position in the log, 8 bytes; each
+/// device keeps its own in its store, the server keeps no cursor), paged fetches and batch limits
+/// (a larger batch is refused). It can also attack: `tamper`, `withhold` and `replay`.
 public actor InMemoryRemote: RemoteRecordStore {
     private struct Stored {
         var version: UInt64
@@ -20,61 +20,58 @@ public actor InMemoryRemote: RemoteRecordStore {
     }
 
     public let pageSize: Int
+    public nonisolated let maxBatchRecords: Int
+    public nonisolated let maxBatchBytes: Int
     private var records: [RecordName: Stored] = [:]
     private var withheld: Set<RecordName> = []
-    private var cursors: [String: UInt64] = [:]
     private var sequence: UInt64 = 0
     private var lastTag: UInt64 = 0
     private var offline = false
     private var available = true
+    private var nextFailure: RemoteStoreError?
+    /// Every batch received, in order (names only).
+    public private(set) var sentBatches: [[RecordName]] = []
 
-    public init(pageSize: Int = 400) {
+    public init(pageSize: Int = 400, maxBatchRecords: Int = 400, maxBatchBytes: Int = 1_572_864) {
         self.pageSize = max(1, pageSize)
+        self.maxBatchRecords = max(1, maxBatchRecords)
+        self.maxBatchBytes = max(1, maxBatchBytes)
     }
 
-    /// One device's view of this server.
-    public nonisolated func client(_ id: String) -> InMemoryRemoteClient {
-        InMemoryRemoteClient(server: self, clientID: id)
-    }
-
-    /// The tag in its `serverMeta` form.
+    /// The tag in its `serverMeta` form (also the token form of a log position).
     public static func serverMeta(tag: UInt64) -> Data {
         withUnsafeBytes(of: tag.littleEndian) { Data($0) }
     }
 
-    static func tag(of serverMeta: Data?) -> UInt64? {
-        guard let serverMeta, serverMeta.count == 8 else { return nil }
-        return serverMeta.reduce(into: (value: UInt64(0), shift: UInt64(0))) { acc, byte in
-            acc.value |= UInt64(byte) << acc.shift
-            acc.shift += 8
-        }.value
+    static func decode(_ bytes: Data?) -> UInt64? {
+        guard let bytes, bytes.count == 8 else { return nil }
+        return bytes.reversed().reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
     }
 
-    // MARK: - RemoteRecordStore (as the "default" client)
+    // MARK: - RemoteRecordStore
 
-    public func fetchChanges() async throws -> RemoteBatch { try fetch(client: "default") }
-    public func send(_ changes: [RemoteRecord]) async throws -> [SendResult] { try save(changes) }
-    public func accountAvailable() async -> Bool { available }
-
-    // MARK: - Server
-
-    func fetch(client: String) throws -> RemoteBatch {
-        if offline { throw RemoteStoreError.offline }
-        let cursor = cursors[client] ?? 0
+    public func fetchChanges(since token: Data?) async throws -> RemoteBatch {
+        try checkFailure()
+        let cursor = Self.decode(token) ?? 0
         let changed = records
             .filter { $0.value.sequence > cursor && !withheld.contains($0.key) }
             .sorted { $0.value.sequence < $1.value.sequence }
         let page = changed.prefix(pageSize)
-        if let last = page.last { cursors[client] = last.value.sequence }
+        let next = page.last?.value.sequence ?? cursor
         return RemoteBatch(
             changes: page.map { remoteRecord($0.key, $0.value) },
-            moreComing: changed.count > page.count)
+            moreComing: changed.count > page.count,
+            token: Self.serverMeta(tag: next))
     }
 
-    func save(_ changes: [RemoteRecord]) throws -> [SendResult] {
-        if offline { throw RemoteStoreError.offline }
+    public func send(_ changes: [RemoteRecord]) async throws -> [SendResult] {
+        try checkFailure()
+        guard changes.count <= maxBatchRecords, changes.reduce(0, { $0 + $1.batchBytes }) <= maxBatchBytes else {
+            throw RemoteStoreError.other("Lot trop volumineux pour le serveur.")
+        }
+        sentBatches.append(changes.map(\.name))
         let refused = Set(changes.filter { change in
-            change.data != nil && Self.tag(of: change.serverMeta) != records[change.name]?.tag
+            change.data != nil && Self.decode(change.serverMeta) != records[change.name]?.tag
         }.map(\.name))
         guard refused.isEmpty else {
             return changes.map { change in
@@ -109,13 +106,23 @@ public actor InMemoryRemote: RemoteRecordStore {
         }
     }
 
+    public func accountAvailable() async -> Bool { available }
+
+    private func checkFailure() throws {
+        if offline { throw RemoteStoreError.offline }
+        if let failure = nextFailure {
+            nextFailure = nil
+            throw failure
+        }
+    }
+
     private func remoteRecord(_ name: RecordName, _ stored: Stored) -> RemoteRecord {
         RemoteRecord(
             name: name, version: stored.version, data: stored.data,
             serverMeta: stored.tag.map(Self.serverMeta(tag:)))
     }
 
-    /// Rewrites a stored record with a new tag, so every client fetches it again.
+    /// Rewrites a stored record with a new tag, so every device fetches it again.
     private func rewrite(_ name: RecordName, _ change: (inout Stored) -> Void) {
         guard var stored = records[name] else { return }
         change(&stored)
@@ -143,7 +150,7 @@ public actor InMemoryRemote: RemoteRecordStore {
         withheld.insert(name)
     }
 
-    /// Serves an older saved version of the record again.
+    /// Serves an older (or the same) saved version of the record again, with a new tag.
     public func replay(name: RecordName, version: UInt64) {
         guard let old = records[name]?.history[version] else { return }
         rewrite(name) { stored in
@@ -155,6 +162,11 @@ public actor InMemoryRemote: RemoteRecordStore {
     /// While offline, fetches and sends throw `RemoteStoreError.offline`.
     public func setOffline(_ offline: Bool) {
         self.offline = offline
+    }
+
+    /// The next fetch or send throws `error`, once.
+    public func failNext(with error: RemoteStoreError) {
+        nextFailure = error
     }
 
     public func setAccountAvailable(_ available: Bool) {
@@ -170,23 +182,5 @@ public actor InMemoryRemote: RemoteRecordStore {
     /// Tag of every live record.
     public func tags() -> [RecordName: UInt64] {
         records.compactMapValues(\.tag)
-    }
-}
-
-/// One client of an `InMemoryRemote`, with its own change cursor.
-public struct InMemoryRemoteClient: RemoteRecordStore {
-    public let server: InMemoryRemote
-    public let clientID: String
-
-    public func fetchChanges() async throws -> RemoteBatch {
-        try await server.fetch(client: clientID)
-    }
-
-    public func send(_ changes: [RemoteRecord]) async throws -> [SendResult] {
-        try await server.save(changes)
-    }
-
-    public func accountAvailable() async -> Bool {
-        await server.accountAvailable()
     }
 }
