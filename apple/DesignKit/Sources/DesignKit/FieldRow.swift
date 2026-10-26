@@ -2,7 +2,10 @@ import Foundation
 import SwiftUI
 
 /// Label, value and a menu (Copier, Révéler, Afficher en grand). A secret
-/// value is drawn as bullets and announced as "masqué" until revealed.
+/// value is drawn as bullets and announced as "masqué" until revealed. A revealed secret is masked
+/// again after `autoHideAfter`, when the row leaves the screen, and whenever `concealToken` changes
+/// (the session bumps it on lock and when the scene leaves the foreground). While `captured` (screen
+/// recording, mirroring, AirPlay) a secret stays drawn as bullets even if revealed.
 public struct FieldRow: View {
     private let label: String
     private let value: String
@@ -13,6 +16,8 @@ public struct FieldRow: View {
     private let onReveal: ((Bool) -> Void)?
     private let copyIdentifier: String?
     private let allowsLarge: Bool
+    private let concealToken: Int
+    private let captured: Bool
 
     /// What a masked value shows (spec: the mockup's eleven bullets).
     public static let mask = "•••••••••••"
@@ -23,6 +28,7 @@ public struct FieldRow: View {
         label: String, value: String, isSecret: Bool, monospaced: Bool,
         autoHideAfter: TimeInterval = 30,
         copyIdentifier: String? = nil, allowsLarge: Bool = true,
+        concealToken: Int = 0, captured: Bool = false,
         onCopy: @escaping () -> Void, onReveal: ((Bool) -> Void)?
     ) {
         self.label = label
@@ -34,10 +40,12 @@ public struct FieldRow: View {
         self.onReveal = onReveal
         self.copyIdentifier = copyIdentifier
         self.allowsLarge = allowsLarge
+        self.concealToken = concealToken
+        self.captured = captured
     }
 
     private var revealed: Bool { disclosure.revealed }
-    private var hidden: Bool { isSecret && !revealed }
+    private var hidden: Bool { isSecret && (!revealed || captured) }
     private var largeBinding: Binding<Bool> {
         Binding(get: { disclosure.large && !hidden }, set: { disclosure.large = $0 })
     }
@@ -83,6 +91,7 @@ public struct FieldRow: View {
             }
         }
         .onDisappear { if disclosure.revealed { setRevealed(false) } }
+        .onChange(of: concealToken) { if disclosure.revealed { setRevealed(false) } }
         .sheet(isPresented: largeBinding) {
             VStack(spacing: 16) {
                 Text(label).font(.headline)

@@ -209,13 +209,16 @@ struct LockView: View {
 
     // MARK: - Actions
 
-    /// The password is passed as typed, never trimmed (the core normalizes it).
+    /// The password is passed as typed, never trimmed (the core normalizes it). The field is emptied
+    /// on submission, before the check runs, so the view state never outlives it (success or not);
+    /// the local copy lives for the call only (`String`, R5).
     private func unlockWithPassword() async {
         guard !password.isEmpty, !unlocking, !lockedOut else { return }
         message = nil
+        let typed = password
+        password = ""
         do {
-            try await session.unlock(password: password)
-            password = ""
+            try await session.unlock(password: typed)
         } catch {
             let failure = VaultError(error)
             switch failure {
@@ -229,7 +232,6 @@ struct LockView: View {
             default:
                 message = failure.localizedMessage
             }
-            password = ""
             fieldFocused = true
         }
     }

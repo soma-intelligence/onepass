@@ -19,6 +19,17 @@ public struct SecretKeyVault: Sendable {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Stores the Secret Key from a wipeable buffer (the temporary `Data` is overwritten after the write).
+    public func store(_ secretKey: SecretBytes, accountID: String) throws {
+        try secretKey.withData { try keychain.write(Self.key(for: accountID), $0) }
+    }
+
+    /// The stored Secret Key in a wipeable buffer; the keychain's `Data` is overwritten once copied.
+    public func loadBytes(accountID: String) throws -> SecretBytes? {
+        guard var data = try keychain.read(Self.key(for: accountID)) else { return nil }
+        return SecretBytes(taking: &data)
+    }
+
     /// Whether a Secret Key is stored, without loading it. Throws when the keychain is unavailable.
     public func contains(accountID: String) throws -> Bool {
         try keychain.contains(Self.key(for: accountID))

@@ -3,10 +3,17 @@ import SwiftUI
 import VaultKit
 
 /// One non-empty field in the detail view, drawn for its kind. Secrets are masked (`FieldRow`,
-/// 30 s re-mask); copies go through the session clipboard (90 s, local only, concealed).
+/// 30 s re-mask, masked again on lock and when the scene leaves the foreground, kept masked while
+/// the screen is captured on iOS and visionOS); copies go through the session clipboard (90 s,
+/// local only, concealed).
 struct FieldValueView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
+    #if os(iOS) || os(visionOS)
+    @Environment(\.isSceneCaptured) private var captured
+    #else
+    private let captured = false
+    #endif
     let field: FfiField
     /// Tells the detail a value was copied (toast).
     let onCopied: (String) -> Void
@@ -16,7 +23,7 @@ struct FieldValueView: View {
     var body: some View {
         switch field.value {
         case .otp(let secret):
-            TotpFieldView(field: field) { code in copy(code, concealed: true) }
+            TotpFieldView(field: field, captured: captured) { code in copy(code, concealed: true) }
                 .id(secret)
                 .privacySensitive()
         case .password(let value):
@@ -48,6 +55,7 @@ struct FieldValueView: View {
                     FieldRow(
                         label: "\(field.label) (clé privée)", value: key.privatePem, isSecret: true, monospaced: true,
                         copyIdentifier: "field.copy.\(field.id)", allowsLarge: false,
+                        concealToken: session.concealGeneration, captured: captured,
                         onCopy: { copy(key.privatePem, concealed: true) }, onReveal: reveal)
                         .privacySensitive()
                 }
@@ -85,6 +93,7 @@ struct FieldValueView: View {
             copyIdentifier: "field.copy.\(field.id)",
             // "Afficher en grand" for passwords (barcodes have their own row).
             allowsLarge: field.kind == .password,
+            concealToken: session.concealGeneration, captured: captured,
             onCopy: { copy(value, concealed: secret) },
             onReveal: onReveal)
             .privacySensitive(secret)

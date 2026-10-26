@@ -13,7 +13,9 @@ enum OnboardingPath: Sendable {
 }
 
 /// The onboarding state machine (spec 7): create an account, or restore one with the Emergency Kit.
-/// The master password stays in memory only until the last step (biometric enrollment needs it).
+/// The typed fields are emptied as soon as they are submitted. The master password then stays in
+/// a wipeable buffer until the last step (biometric enrollment needs it), as does the new Secret Key
+/// (shown once and put in the Emergency Kit); both are wiped at the end or on lock.
 @MainActor
 @Observable
 final class OnboardingModel {
@@ -26,7 +28,11 @@ final class OnboardingModel {
     var displayName = ""
     var password = ""
     var confirmation = ""
-    private(set) var secretKey: String?
+    /// The new account's Secret Key. Only `secretKey` (a transient `String` for the view and the
+    /// Emergency Kit) reads it.
+    private var secretKeyBytes: SecretBytes?
+    /// The master password once submitted, for the biometric enrollment step only.
+    @ObservationIgnored private var enrollmentPassword: SecretBytes?
     var kitStoredOffline = false
     var allowWatch = false
     private(set) var biometricsEnabled = false
@@ -129,6 +135,9 @@ final class OnboardingModel {
 
     var passwordBits: Double { estimatedBits(password) }
 
+    /// The Secret Key in display form, decoded on each read (never stored as a `String`).
+    var secretKey: String? { secretKeyBytes?.string() }
+
     var confirmationMismatch: Bool { !confirmation.isEmpty && confirmation != password }
 
     /// "Continuer" from the "bon" level and when both fields match.
@@ -199,10 +208,16 @@ final class OnboardingModel {
             return
         }
         busyMessage = String(localized: "Création du coffre...")
+        // Submitted: both fields are emptied now, whatever the outcome. The local copy lives for the
+        // call only (`String`, R5; Part B passes bytes to the core).
+        let typed = password
+        password = ""
+        confirmation = ""
         do {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-            secretKey = try await session.createAccount(password: password, displayName: name, mode: mode)
-            confirmation = ""
+            let key = try await session.createAccount(password: typed, displayName: name, mode: mode)
+            secretKeyBytes = SecretBytes(utf8: key)
+            enrollmentPassword = SecretBytes(utf8: typed)
             advance()
         } catch {
             errorMessage = VaultError(error).localizedMessage
@@ -213,8 +228,12 @@ final class OnboardingModel {
         busyMessage = String(localized: "Activation de \(biometryName)...")
         defer { busyMessage = nil }
         model.settings.allowWatchUnlock = allowWatch
+        guard let typed = enrollmentPassword?.string() else {
+            errorMessage = VaultError.passwordRequired.localizedMessage
+            return
+        }
         do {
-            try await session.enrollBiometrics(password: password)
+            try await session.enrollBiometrics(password: typed)
             biometricsEnabled = true
             advance()
         } catch {
@@ -250,20 +269,24 @@ final class OnboardingModel {
             return
         }
         busyMessage = String(localized: "Déverrouillage...")
+        // The password field is emptied on submission, whatever the outcome. The Secret Key field
+        // is kept after a failure (a typo or a wrong password), so the long key need not be typed
+        // again, and emptied on success.
+        let typedPassword = restorePassword
+        restorePassword = ""
         do {
-            try await session.restore(secretKey: restoreKey, password: restorePassword)
+            try await session.restore(secretKey: restoreKey, password: typedPassword)
         } catch {
             errorMessage = VaultError(error).localizedMessage
             return
         }
+        restoreKey = ""
+        enrollmentPassword = SecretBytes(utf8: typedPassword)
         if !restoreOnly { session.setDeviceMode(mode) }
         #if os(macOS)
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty { model.settings.displayName = name }
         #endif
-        password = restorePassword
-        restorePassword = ""
-        restoreKey = ""
         advance()
     }
 
@@ -283,7 +306,7 @@ final class OnboardingModel {
         confirmation = ""
         restorePassword = ""
         restoreKey = ""
-        secretKey = nil
+        wipeSecrets()
         errorMessage = nil
         model.onboardingInProgress = false
     }
@@ -292,8 +315,16 @@ final class OnboardingModel {
         password = ""
         confirmation = ""
         restorePassword = ""
-        secretKey = nil
+        wipeSecrets()
         model.onboardingInProgress = false
+    }
+
+    /// Overwrites the kept master password and Secret Key.
+    private func wipeSecrets() {
+        enrollmentPassword?.wipe()
+        enrollmentPassword = nil
+        secretKeyBytes?.wipe()
+        secretKeyBytes = nil
     }
 
     // MARK: - Emergency Kit

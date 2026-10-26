@@ -296,16 +296,16 @@ struct PasswordPromptSheet: View {
         guard !password.isEmpty, !busy else { return }
         busy = true
         errorMessage = nil
+        // Emptied on submission (success or not): the local copy lives for the call only (R5).
         let value = password
+        password = ""
         Task {
             defer { busy = false }
             do {
                 try await submit(value)
-                password = ""
                 dismiss()
             } catch {
                 errorMessage = VaultError(error).localizedMessage
-                password = ""
                 focused = true
             }
         }

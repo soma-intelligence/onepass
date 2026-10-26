@@ -270,7 +270,9 @@ struct ItemDetailView: View {
     private func verifyPassword() {
         guard !password.isEmpty, !checking else { return }
         checking = true
+        // Emptied on submission (success or not): the local copy lives for the call only (R5).
         let typed = password
+        password = ""
         Task {
             defer { checking = false }
             do {
@@ -279,7 +281,6 @@ struct ItemDetailView: View {
             } catch {
                 repromptError = VaultError(error).localizedMessage
             }
-            password = ""
         }
     }
 

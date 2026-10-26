@@ -4,8 +4,10 @@ import VaultKit
 
 /// Concealed, password, one-time code and recovery phrase fields: a secure field with Révéler.
 /// Password: "Générer" (generator sheet) and the strength meter. OTP: a base32 secret or an
-/// `otpauth://` URI, with a live preview of the code. Masked again after 30 s and when it goes away.
+/// `otpauth://` URI, with a live preview of the code. Masked again after 30 s, when it goes away, on lock and
+/// when the scene leaves the foreground.
 struct SecretFieldEditor: View {
+    @Environment(AppModel.self) private var model
     let field: FfiField
     @Binding var value: FfiFieldValue
     @State private var revealed = false
@@ -54,6 +56,8 @@ struct SecretFieldEditor: View {
             if !Task.isCancelled { revealed = false }
         }
         .onDisappear { revealed = false }
+        // Lock, or the scene left the foreground (`VaultSession.concealGeneration`).
+        .onChange(of: model.session.concealGeneration) { revealed = false }
         #if DEBUG
         .task {
             if field.kind == .password, field.id == "password",
@@ -84,6 +88,7 @@ struct SecretFieldEditor: View {
 /// multi-line editor that keeps its line breaks, masked again after 30 s). The public key and the
 /// fingerprint are shown when present. Generation comes later (milestone 7).
 struct SshKeyEditor: View {
+    @Environment(AppModel.self) private var model
     let field: FfiField
     @Binding var value: FfiFieldValue
     @State private var revealed = false
@@ -158,5 +163,7 @@ struct SshKeyEditor: View {
             if !Task.isCancelled { revealed = false }
         }
         .onDisappear { revealed = false }
+        // Lock, or the scene left the foreground (`VaultSession.concealGeneration`).
+        .onChange(of: model.session.concealGeneration) { revealed = false }
     }
 }

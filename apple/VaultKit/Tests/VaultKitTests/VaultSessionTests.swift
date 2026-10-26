@@ -543,6 +543,48 @@ struct VaultSessionHardeningTests {
         await #expect(throws: VaultError.lockedOut(until: until)) { try await session.unlock(password: testPassword) }
     }
 
+    @Test func backgroundClearsACopiedSecretButNotAPlainValue() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        session.copy("valeur-fictive", concealed: true)
+        session.scenePhaseChanged(.inactive)
+        #expect(h.pasteboard.snapshot.contents == "valeur-fictive")
+        session.scenePhaseChanged(.background)
+        #expect(h.pasteboard.snapshot.contents == nil)
+        #expect(session.state == .unlocked)
+
+        session.scenePhaseChanged(.active)
+        session.copy("adresse-fictive@exemple.fr", concealed: false)
+        session.scenePhaseChanged(.background)
+        #expect(h.pasteboard.snapshot.contents == "adresse-fictive@exemple.fr")
+    }
+
+    /// Revealed values are masked again when the scene leaves the foreground and on lock
+    /// (views watch `concealGeneration`); coming back to the foreground reveals nothing.
+    @Test func revealResetsOnBackgroundInactiveAndLock() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        var last = session.concealGeneration
+
+        session.scenePhaseChanged(.inactive)
+        #expect(session.concealGeneration != last)
+        last = session.concealGeneration
+
+        session.scenePhaseChanged(.background)
+        #expect(session.concealGeneration != last)
+        last = session.concealGeneration
+
+        session.scenePhaseChanged(.active)
+        #expect(session.concealGeneration == last)
+
+        session.lock()
+        #expect(session.concealGeneration != last)
+    }
+
     @Test func lockClearsOurClipboardValue() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }

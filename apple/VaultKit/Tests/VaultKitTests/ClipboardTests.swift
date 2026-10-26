@@ -53,6 +53,45 @@ struct ClipboardTests {
         #expect(pasteboard.snapshot.contents == nil)
     }
 
+    @Test func backgroundClearsASecretCopy() {
+        let pasteboard = FakePasteboard()
+        let clipboard = Clipboard(pasteboard: pasteboard, clock: FakeClock())
+        clipboard.copy("motdepasse-fictif", concealed: true)
+        clipboard.clearIfConcealed()
+        #expect(pasteboard.snapshot.contents == nil)
+    }
+
+    @Test func backgroundKeepsAPlainCopy() {
+        let pasteboard = FakePasteboard()
+        let clock = FakeClock()
+        let clipboard = Clipboard(pasteboard: pasteboard, clock: clock)
+        clipboard.copy("adresse-fictive@exemple.fr", concealed: false)
+        clipboard.clearIfConcealed()
+        #expect(pasteboard.snapshot.contents == "adresse-fictive@exemple.fr")
+        // Still cleared after its 90 s.
+        clock.advance(90)
+        clipboard.clearIfExpired()
+        #expect(pasteboard.snapshot.contents == nil)
+    }
+
+    @Test func backgroundKeepsWhatAnotherAppCopied() {
+        let pasteboard = FakePasteboard()
+        let clipboard = Clipboard(pasteboard: pasteboard, clock: FakeClock())
+        clipboard.copy("motdepasse-fictif", concealed: true)
+        pasteboard.externalWrite("adresse copiée ailleurs")
+        clipboard.clearIfConcealed()
+        #expect(pasteboard.snapshot.contents == "adresse copiée ailleurs")
+    }
+
+    @Test func aPlainCopyAfterASecretIsNotClearedOnBackground() {
+        let pasteboard = FakePasteboard()
+        let clipboard = Clipboard(pasteboard: pasteboard, clock: FakeClock())
+        clipboard.copy("motdepasse-fictif", concealed: true)
+        clipboard.copy("identifiant-fictif", concealed: false)
+        clipboard.clearIfConcealed()
+        #expect(pasteboard.snapshot.contents == "identifiant-fictif")
+    }
+
     #if os(macOS)
     /// Real `NSPasteboard`, on a private named pasteboard (never the user's).
     @Test func systemPasteboardMarksConcealedAndClearsIfUnchanged() {

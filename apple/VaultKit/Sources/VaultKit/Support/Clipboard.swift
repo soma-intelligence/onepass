@@ -76,6 +76,7 @@ public final class SystemPasteboard: PasteboardWriter {
 }
 
 /// Copies a value and clears it after `clearAfter` seconds (90 s) unless something else was copied.
+/// A concealed (secret) value is also cleared when the app leaves the screen (`clearIfConcealed`).
 @MainActor
 public final class Clipboard {
     public static let defaultClearAfter: TimeInterval = 90
@@ -84,6 +85,8 @@ public final class Clipboard {
     private let clock: any BootClock
     private let clearAfter: TimeInterval
     private var expiresAt: Date?
+    /// The value we last copied is a secret (cleared on background too).
+    private var concealed = false
     private var timer: Task<Void, Never>?
 
     public init(pasteboard: any PasteboardWriter, clock: any BootClock, clearAfter: TimeInterval = Clipboard.defaultClearAfter) {
@@ -94,6 +97,7 @@ public final class Clipboard {
 
     public func copy(_ value: String, concealed: Bool) {
         pasteboard.write(value, concealed: concealed, expiresAfter: clearAfter)
+        self.concealed = concealed
         expiresAt = clock.now.addingTimeInterval(clearAfter)
         timer?.cancel()
         let delay = clearAfter
@@ -107,6 +111,13 @@ public final class Clipboard {
     /// Clears now if our value is still there (called on lock).
     public func clear() { clearNow() }
 
+    /// Clears now if our last copy was a secret and is still there (called when the app goes to the
+    /// background). A non-secret copy (an address, a URL) keeps its 90 s.
+    public func clearIfConcealed() {
+        guard concealed else { return }
+        clearNow()
+    }
+
     /// Clears when the delay has passed on the injected clock (also call it when the app becomes active:
     /// a suspended app does not run its timer).
     public func clearIfExpired() {
@@ -118,6 +129,7 @@ public final class Clipboard {
         guard expiresAt != nil else { return }
         pasteboard.clearIfUnchanged()
         expiresAt = nil
+        concealed = false
         timer?.cancel()
         timer = nil
     }
