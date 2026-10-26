@@ -38,7 +38,7 @@ struct SearchTab: View {
                     }
                 }
                 if results.isEmpty {
-                    Text(trimmed.isEmpty ? String(localized: "Aucun élément ne correspond.")
+                    Text(trimmed.isEmpty ? String(localized: "Ce coffre est vide")
                         : String(localized: "Aucun résultat pour « \(trimmed) »"))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

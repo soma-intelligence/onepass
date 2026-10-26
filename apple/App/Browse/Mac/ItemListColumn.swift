@@ -177,18 +177,10 @@ struct ItemListColumn: View {
         count == 1 ? String(localized: "1 élément") : String(localized: "\(count) éléments")
     }
 
-    @ViewBuilder private var emptyState: some View {
-        let message: String =
-            if !query.trimmingCharacters(in: .whitespaces).isEmpty {
-                String(localized: "Essaie avec d'autres mots.")
-            } else if model.selection == .trash {
-                String(localized: "Les éléments mis à la corbeille restent ici 30 jours.")
-            } else if model.selection == .archive {
-                String(localized: "Les éléments archivés apparaîtront ici.")
-            } else {
-                String(localized: "Crée un élément avec « Nouvel élément ».")
-            }
-        EmptyState(title: String(localized: "Aucun élément ne correspond."), systemImage: "magnifyingglass", message: message)
+    private var emptyState: some View {
+        ItemListEmptyState(reason: EmptyListReason(filter: model.selection, query: query)) {
+            model.showNewItemPicker = true
+        }
     }
 
     // MARK: - Months
@@ -214,5 +206,41 @@ struct ItemListColumn: View {
             }
         }
         return result
+    }
+}
+
+/// Empty item list: "Aucun élément ne correspond." only for a search; an empty scope says so and,
+/// where items can be created, offers "Nouvel élément" (Mac, iPad and iPhone lists).
+struct ItemListEmptyState: View {
+    let reason: EmptyListReason
+    let newItem: () -> Void
+
+    var body: some View {
+        switch reason {
+        case .noMatch:
+            EmptyState(
+                title: String(localized: "Aucun élément ne correspond."), systemImage: "magnifyingglass",
+                message: String(localized: "Essaie avec d'autres mots."))
+            .accessibilityIdentifier("list.empty.search")
+        case .emptyLibrary:
+            EmptyState(
+                title: String(localized: "Ce coffre est vide"), systemImage: "tray",
+                message: String(localized: "Crée ton premier élément : un identifiant, une carte, une note..."),
+                actionTitle: String(localized: "Nouvel élément"), actionIdentifier: "list.empty.newItem",
+                action: newItem)
+            .accessibilityIdentifier("list.empty.library")
+        case .noFavorites:
+            EmptyState(
+                title: String(localized: "Aucun favori"), systemImage: "star",
+                message: String(localized: "Marque un élément comme favori pour le retrouver ici."))
+        case .emptyArchive:
+            EmptyState(
+                title: String(localized: "Archive vide"), systemImage: "archivebox",
+                message: String(localized: "Les éléments archivés apparaîtront ici."))
+        case .emptyTrash:
+            EmptyState(
+                title: String(localized: "Corbeille vide"), systemImage: "trash",
+                message: String(localized: "Les éléments mis à la corbeille restent ici 30 jours."))
+        }
     }
 }
