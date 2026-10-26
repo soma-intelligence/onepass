@@ -12,3 +12,17 @@ path = "src/main.rs"
 
 [dependencies]
 onepass-core = { path = "../onepass-core" }
+serde.workspace = true
+zeroize.workspace = true
+clap = { version = "4", features = ["derive"] }
+rpassword = "7"
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+serde_json = "1"
+time = { version = "0.3", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+rusqlite = { version = "0.41", features = ["bundled"] }
+serde_json = "1"
