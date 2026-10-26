@@ -246,6 +246,21 @@ Fonctions :
 - TOTP collé dans le champ du code à l'étape suivante, ou copié.
 - Passkeys via l'interception de l'API WebAuthn de la page.
 
+Connexion en un clic (overlay) :
+
+- Sur une page de connexion reconnue, une carte en overlay (iframe de l'origine de l'extension) affiche le ou les comptes du site, avec un bouton "Se connecter".
+- Un clic enchaîne toute la chaîne d'authentification : identifiant, soumission, page suivante, mot de passe, soumission, code TOTP, soumission, option "se souvenir de cet appareil" selon le réglage de l'item. Fonctionne aussi sur les formulaires en une seule page et les champs dans une modale.
+- Avec un compte fournisseur : clic sur "Continuer avec Google" (ou autre), choix du bon compte sur la page du fournisseur, mot de passe, 2FA du fournisseur, puis retour sur le site.
+- Avec une passkey : la connexion passkey est proposée en premier si le site la supporte.
+- L'état de la chaîne vit dans le service worker de l'extension, jamais dans la page.
+- Garde-fous :
+  - démarrage seulement par un clic de l'utilisateur ;
+  - à chaque étape, le domaine doit correspondre au site de l'item ou au domaine officiel du fournisseur lié, sinon arrêt ;
+  - arrêt et main rendue à l'utilisateur sur une étape inconnue, un CAPTCHA (jamais résolu automatiquement), une validation push ou un code SMS ;
+  - délai maximal de 60 s, bouton "Arrêter" visible pendant toute la chaîne ;
+  - soumission automatique activable par item (activée par défaut, désactivable).
+- Apprentissage : quand une étape n'est pas reconnue et que l'utilisateur la termine à la main, l'extension mémorise localement (chiffré) les sélecteurs de cette étape pour ce site.
+
 Connexion via un fournisseur :
 
 - Détection d'un clic sur "Continuer avec Google" (ou autre fournisseur) et de la redirection OAuth/OIDC (`accounts.google.com/o/oauth2…`, `appleid.apple.com/auth…`, `login.microsoftonline.com…`, etc.), avec le site d'origine.
