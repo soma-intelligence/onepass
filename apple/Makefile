@@ -22,7 +22,7 @@ core-test:
 test: core-test
 	ONEPASS_FFI_XCFRAMEWORK="$(TEST_XCFRAMEWORK)" swift test --package-path "$(APPLE_DIR)/VaultKit"
 	@if [ -d "$(APPLE_DIR)/DesignKit" ]; then \
-		swift test --package-path "$(APPLE_DIR)/DesignKit"; \
+		ONEPASS_FFI_XCFRAMEWORK="$(TEST_XCFRAMEWORK)" swift test --package-path "$(APPLE_DIR)/DesignKit"; \
 	fi
 
 ## Xcode project from project.yml.
