@@ -25,7 +25,10 @@ impl SecretKey {
     /// Base32 (RFC 4648, no padding, upper case) plus one check character,
     /// grouped by 4 with `-`.
     pub fn to_display(&self) -> String {
-        let mut body: Zeroizing<String> = Zeroizing::new(BASE32_NOPAD.encode(&self.0));
+        // Capacity for body plus check char up front: no reallocation, so no
+        // unwiped copy of the key is left behind.
+        let mut body: Zeroizing<String> = Zeroizing::new(String::with_capacity(BODY_LEN + 1));
+        BASE32_NOPAD.encode_append(&self.0, &mut body);
         let check = checksum_char(body.as_bytes());
         body.push(check as char);
         let mut out = String::with_capacity(body.len() + body.len() / 4);
@@ -50,6 +53,9 @@ impl SecretKey {
         for c in s.chars() {
             if c.is_whitespace() || c == '-' {
                 continue;
+            }
+            if !c.is_ascii() {
+                return Err(Error::InvalidFormat("secret key checksum"));
             }
             clean.push(match c.to_ascii_uppercase() {
                 '0' => 'O',
@@ -164,6 +170,24 @@ mod tests {
         let bad = format!("9{}", &shown[1..]);
         assert!(matches!(
             SecretKey::parse(&bad),
+            Err(Error::InvalidFormat("secret key checksum"))
+        ));
+    }
+
+    #[test]
+    fn non_ascii_input_is_rejected_without_panic() {
+        // 51 'A' + 'e acute' is 53 bytes: split_at(52) would not be a boundary.
+        let a = format!("{}\u{e9}", "A".repeat(51));
+        assert_eq!(a.len(), 53);
+        assert!(matches!(
+            SecretKey::parse(&a),
+            Err(Error::InvalidFormat("secret key checksum"))
+        ));
+        // 51 'A' + a 3-byte char is 54 bytes.
+        let b = format!("{}\u{20ac}", "A".repeat(51));
+        assert_eq!(b.len(), 54);
+        assert!(matches!(
+            SecretKey::parse(&b),
             Err(Error::InvalidFormat("secret key checksum"))
         ));
     }
