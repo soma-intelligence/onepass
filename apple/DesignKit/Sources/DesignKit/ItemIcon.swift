@@ -38,7 +38,7 @@ public struct ItemIcon: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: side, height: side)
-                    .background(Color.white)
+                    .background(Color.primary.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: corner, style: .continuous)

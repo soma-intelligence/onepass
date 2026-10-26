@@ -14,7 +14,9 @@ public struct ItemCategory: Identifiable, Sendable {
     public var id: FfiItemType { type }
 
     public static func of(_ t: FfiItemType) -> ItemCategory {
-        byType[t] ?? all[0]
+        if let c = byType[t] { return c }
+        assertionFailure("ItemCategory: unknown item type")
+        return all[0]
     }
 
     /// Same order as the core's `ItemType::ALL` (and `itemTypes()`).

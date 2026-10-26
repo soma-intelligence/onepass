@@ -69,3 +69,29 @@ import VaultKit
         #expect(ItemIcon.decode(Data()) == nil)
     }
 }
+
+@Suite struct FieldDisclosureTests {
+    @Test func largeOnSecretRevealsAndNotifies() {
+        var d = FieldDisclosure()
+        let n = d.showLarge(isSecret: true)
+        #expect(n)
+        #expect(d.revealed && d.large)
+    }
+
+    @Test func remaskClosesLarge() {
+        var d = FieldDisclosure()
+        _ = d.showLarge(isSecret: true)
+        let n = d.reveal(false, isSecret: true)
+        #expect(n)
+        #expect(!d.revealed && !d.large)
+    }
+
+    @Test func plainFieldNeverNotifies() {
+        var d = FieldDisclosure()
+        let n = d.showLarge(isSecret: false)
+        #expect(!n)
+        #expect(d.large && !d.revealed)
+        let m = d.reveal(true, isSecret: false)
+        #expect(!m)
+    }
+}

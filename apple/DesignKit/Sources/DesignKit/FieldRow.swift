@@ -10,8 +10,7 @@ public struct FieldRow: View {
     private let onCopy: () -> Void
     private let onReveal: ((Bool) -> Void)?
 
-    @State private var revealed = false
-    @State private var large = false
+    @State private var disclosure = FieldDisclosure()
 
     public init(
         label: String, value: String, isSecret: Bool, monospaced: Bool,
@@ -25,14 +24,18 @@ public struct FieldRow: View {
         self.onReveal = onReveal
     }
 
+    private var revealed: Bool { disclosure.revealed }
     private var hidden: Bool { isSecret && !revealed }
+    private var largeBinding: Binding<Bool> {
+        Binding(get: { disclosure.large && !hidden }, set: { disclosure.large = $0 })
+    }
 
     public var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.footnote).foregroundStyle(.secondary)
                 Text(hidden ? "••••••••" : value)
-                    .font(monospaced || isSecret && revealed ? .body.monospaced() : .body)
+                    .font(monospaced ? .body.monospaced() : .body)
                     .textSelection(.disabled)
                     .accessibilityLabel(Text(label))
                     .accessibilityValue(Text(hidden ? "masqué" : value))
@@ -47,7 +50,7 @@ public struct FieldRow: View {
                     ) { setRevealed(!revealed) }
                 }
                 Button("Afficher en grand", systemImage: "arrow.up.left.and.arrow.down.right") {
-                    large = true
+                    showLarge()
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -57,14 +60,14 @@ public struct FieldRow: View {
             .fixedSize()
         }
         .accessibilityElement(children: .contain)
-        .sheet(isPresented: $large) {
+        .sheet(isPresented: largeBinding) {
             VStack(spacing: 16) {
                 Text(label).font(.headline)
                 Text(value)
                     .font(.system(.largeTitle, design: .monospaced))
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.4)
-                Button("Fermer") { large = false }.keyboardShortcut(.cancelAction)
+                Button("Fermer") { disclosure.large = false }.keyboardShortcut(.cancelAction)
             }
             .padding(32)
             .presentationDetents([.medium])
@@ -72,8 +75,34 @@ public struct FieldRow: View {
     }
 
     private func setRevealed(_ on: Bool) {
+        if disclosure.reveal(on, isSecret: isSecret) { onReveal?(on) }
+    }
+
+    /// A secret goes through the same reveal path before it is shown large.
+    private func showLarge() {
+        if disclosure.showLarge(isSecret: isSecret) { onReveal?(true) }
+    }
+}
+
+/// Reveal and large-display decisions of a field row, kept pure for tests.
+struct FieldDisclosure: Equatable {
+    var revealed = false
+    var large = false
+
+    /// Returns true when the host must be told (`onReveal`). Masking again
+    /// also closes the large display.
+    mutating func reveal(_ on: Bool, isSecret: Bool) -> Bool {
+        guard isSecret else { return false }
         revealed = on
-        onReveal?(on)
+        if !on { large = false }
+        return true
+    }
+
+    /// Returns true when the host must be told that the value was revealed.
+    mutating func showLarge(isSecret: Bool) -> Bool {
+        let notify = isSecret ? reveal(true, isSecret: true) : false
+        large = true
+        return notify
     }
 }
 
