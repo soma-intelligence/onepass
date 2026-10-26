@@ -815,7 +815,7 @@ fn sync_handle_sees_pending_after_save() {
 }
 
 #[test]
-fn zone_reset_requeues_missing_records_after_a_fetch() {
+fn zone_reset_requeues_missing_records_after_a_full_fetch() {
     let fx = fixture();
     let handle = open_sync_store(fx.path.clone()).unwrap();
     saved_login(&fx, "pw-requeue");
@@ -837,9 +837,9 @@ fn zone_reset_requeues_missing_records_after_a_fetch() {
     );
     assert!(handle.pending_changes().unwrap().is_empty());
 
-    assert!(handle.requeue_missing().unwrap());
+    assert!(!handle.finish_full_fetch().unwrap());
     assert_eq!(handle.pending_changes().unwrap().len(), first.len());
-    assert!(!handle.requeue_missing().unwrap());
+    assert!(!handle.finish_full_fetch().unwrap());
 }
 
 #[test]

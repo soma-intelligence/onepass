@@ -194,8 +194,10 @@ public actor SyncCoordinator: SyncTrigger {
                 } catch RemoteStoreError.zoneReset {
                     // The server lost its data: forget its tags and our token, then fetch from scratch;
                     // the records it does not hold are queued after that fetch (`fetchAll`).
-                    // At most two resets are handled per round (a third gives up as unsettled), each
-                    // restarting the turn count, so a round makes at most 3 turns per reset plus the first.
+                    // Counted here: resets thrown by the send step (or by a second one inside a fetch).
+                    // The third gives up as unsettled, so at most two are handled; each restarts the
+                    // turn count, so a round runs at most 3 turns + 2 x 3 turns = 9 turns. A fetch also
+                    // handles one reset of its own per call, without counting here (it needs no turn).
                     resets += 1
                     if resets > 2 { throw RoundError.unsettled }
                     try await resetForLostZone()
@@ -246,6 +248,9 @@ public actor SyncCoordinator: SyncTrigger {
         var token = try await CoreThread.run { try store.meta(key: Self.tokenKey) }
         // An empty token is a cleared one (a lost zone): fetch from the start.
         if token?.isEmpty == true { token = nil }
+        // A fetch from scratch carries no deletions of the past: the store forgets its server tags first
+        // and settles the rows the server did not return after the commit (`finish_full_fetch`).
+        if token == nil { try await CoreThread.run { try store.beginFullFetch() } }
         var changed = 0
         var resets = 0
         while true {
@@ -258,6 +263,7 @@ public actor SyncCoordinator: SyncTrigger {
                 token = nil
                 continue
             }
+            if batch.restartedFromScratch { try await CoreThread.run { try store.beginFullFetch() } }
             let valid = batch.changes.filter(Self.isValid)
             if valid.count < batch.changes.count {
                 Self.log.notice("skipped \(batch.changes.count - valid.count, privacy: .public) unknown remote records")
@@ -284,13 +290,13 @@ public actor SyncCoordinator: SyncTrigger {
             if let next { token = next }
             if !batch.moreComing { break }
         }
-        let vaults = try await CoreThread.run {
+        let (vaults, dropped) = try await CoreThread.run {
             let vaults = try store.commitRemote()
-            // After a zone reset: queue what the new zone did not give back (no-op otherwise).
-            _ = try store.requeueMissing()
-            return vaults
+            // After a fetch from scratch: rows the server did not return are deleted, or queued again
+            // after a zone reset (no-op otherwise).
+            return (vaults, try store.finishFullFetch())
         }
-        if changed > 0 || !vaults.isEmpty { emitRemoteChange() }
+        if changed > 0 || !vaults.isEmpty || dropped { emitRemoteChange() }
     }
 
     /// The remote lost everything. Step 1, atomic in the core: server tags, staged pages and the change

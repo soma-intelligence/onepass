@@ -403,15 +403,21 @@ impl SyncStoreHandle {
         Ok(self.guard().has_account()?)
     }
 
-    /// Step 1 of a server data loss: forget server tags and staged pages, clear the change token stored
-    /// under `token_key` and flag the requeue. Nothing is queued yet.
+    /// Start of a fetch from scratch (no token, or an expired one): forgets server tags and staged
+    /// pages. Pair with `finish_full_fetch` after the commit of the complete fetch.
+    pub fn begin_full_fetch(&self) -> Result<(), OnePassError> {
+        Ok(self.guard().begin_full_fetch()?)
+    }
+
+    /// Start of a fetch after a server data loss: like `begin_full_fetch`, plus the change token stored
+    /// under `token_key` is cleared and the records the server lacks will be queued again.
     pub fn begin_zone_reset(&self, token_key: String) -> Result<(), OnePassError> {
         Ok(self.guard().begin_zone_reset(&handle_key(&token_key))?)
     }
 
-    /// Step 2, after the commit of a complete fetch from scratch: queue the stored records the server
-    /// does not hold. A no-op (false) unless `begin_zone_reset` ran before.
-    pub fn requeue_missing(&self) -> Result<bool, OnePassError> {
-        Ok(self.guard().requeue_missing()?)
+    /// After the commit of a complete fetch from scratch: settles the rows the server did not return
+    /// (deleted, or after a reset queued again). A no-op unless a begin ran. True when rows were deleted.
+    pub fn finish_full_fetch(&self) -> Result<bool, OnePassError> {
+        Ok(self.guard().finish_full_fetch()?)
     }
 }

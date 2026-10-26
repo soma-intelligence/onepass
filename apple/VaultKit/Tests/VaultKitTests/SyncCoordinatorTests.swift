@@ -265,7 +265,7 @@ struct SyncCoordinatorTests {
     }
 
     @Test func lostZoneIsUploadedAgainAndOtherDeviceConverges() async throws {
-        let remote = InMemoryRemote()
+        let remote = InMemoryRemote(omitsTombstonesOnFullFetch: true)
         let (a, b, atlas) = try await twoSyncedDevices(remote: remote)
         defer { a.cleanUp(); b.cleanUp() }
         await b.sync()
@@ -291,7 +291,7 @@ struct SyncCoordinatorTests {
     }
 
     @Test func staleDeviceResetKeepsNewerServerVersions() async throws {
-        let remote = InMemoryRemote()
+        let remote = InMemoryRemote(omitsTombstonesOnFullFetch: true)
         let (a, b, atlas) = try await twoSyncedDevices(remote: remote)
         defer { a.cleanUp(); b.cleanUp() }
         await b.sync()
@@ -324,7 +324,7 @@ struct SyncCoordinatorTests {
     }
 
     @Test func pendingDeletionSurvivesAZoneReset() async throws {
-        let remote = InMemoryRemote()
+        let remote = InMemoryRemote(omitsTombstonesOnFullFetch: true)
         let (a, b, atlas) = try await twoSyncedDevices(remote: remote)
         defer { a.cleanUp(); b.cleanUp() }
         try await a.session.deletePermanently(itemID: atlas.id, vaultID: atlas.vaultId)
@@ -339,6 +339,80 @@ struct SyncCoordinatorTests {
         await b.session.reload()
         #expect(!b.titles.contains("Projet Atlas"))
         #expect(b.titles == a.titles)
+    }
+
+    /// A second item at version 2 on both devices, so a stale copy of it is a real integrity error once
+    /// it is deleted on the server (an unlisted record that is not a leftover of a listed item).
+    func syncedNote(_ a: SyncDevice, _ b: SyncDevice) async throws -> FfiItem {
+        let note = try await addItem(a.session, title: "Note")
+        try await rename(a.session, itemID: note.id, vaultID: note.vaultId, to: "Note v2")
+        await a.sync()
+        await b.sync()
+        return note
+    }
+
+    @Test func staleDeviceDropsItsOldItemBlobAfterAReset() async throws {
+        let remote = InMemoryRemote(omitsTombstonesOnFullFetch: true)
+        let (a, b, atlas) = try await twoSyncedDevices(remote: remote)
+        defer { a.cleanUp(); b.cleanUp() }
+        let note = try await syncedNote(a, b)
+        let itemsBefore = Set(await remote.tags().keys.filter { $0.kind == 5 })
+
+        // After the reset A deletes the note: its blob disappears from the server, and a fetch from
+        // scratch does not report a deletion.
+        await remote.simulateReset()
+        await a.sync()
+        try await a.session.deletePermanently(itemID: note.id, vaultID: note.vaultId)
+        try await rename(a.session, itemID: atlas.id, vaultID: atlas.vaultId, to: "Atlas v3")
+        await a.sync()
+        let itemsAfter = Set(await remote.tags().keys.filter { $0.kind == 5 })
+        let stale = try #require(itemsBefore.subtracting(itemsAfter).first)
+        let serverBefore = await remote.tags()
+
+        await remote.failNext(with: .zoneReset)
+        await b.sync()
+        #expect(await b.coordinator.status.isIdle)
+        #expect(await remote.tags() == serverBefore)
+        #expect(await remote.record(stale) == nil)
+        #expect(try await b.pendingChanges().isEmpty)
+        await b.session.reload()
+        await a.sync()
+        await a.session.reload()
+        #expect(a.session.state == .unlocked && b.session.state == .unlocked)
+        #expect(a.titles == b.titles && b.titles.contains("Atlas v3") && !b.titles.contains("Note v2"))
+        // The vault passes the core's integrity check from a cold unlock.
+        b.session.lock()
+        try await b.session.unlock(password: testPassword)
+        #expect(b.session.state == .unlocked && !b.titles.contains("Note v2"))
+        #expect(await a.coordinator.status.isIdle)
+    }
+
+    @Test func expiredTokenFullFetchDropsRowsDeletedOnTheServer() async throws {
+        let remote = InMemoryRemote(omitsTombstonesOnFullFetch: true)
+        let (a, b, atlas) = try await twoSyncedDevices(remote: remote)
+        defer { a.cleanUp(); b.cleanUp() }
+        let note = try await syncedNote(a, b)
+        await b.session.reload()
+        #expect(b.titles.contains("Note v2"))
+
+        try await a.session.deletePermanently(itemID: note.id, vaultID: note.vaultId)
+        try await rename(a.session, itemID: atlas.id, vaultID: atlas.vaultId, to: "Atlas v3")
+        await a.sync()
+
+        // B's token expires: the full fetch brings the live records and no deletion of the note.
+        await remote.expireTokens()
+        await b.sync()
+        #expect(await b.coordinator.status.isIdle)
+        #expect(try await b.pendingChanges().isEmpty)
+        await b.session.reload()
+        #expect(b.session.state == .unlocked)
+        #expect(b.titles.contains("Atlas v3") && !b.titles.contains("Note v2"))
+        // The vault passes the core's integrity check from a cold unlock.
+        b.session.lock()
+        try await b.session.unlock(password: testPassword)
+        #expect(b.session.state == .unlocked && !b.titles.contains("Note v2"))
+        await b.sync()
+        #expect(await b.coordinator.status.isIdle)
     }
 
     @Test func conflictOnSendIsRestagedAndResent() async throws {

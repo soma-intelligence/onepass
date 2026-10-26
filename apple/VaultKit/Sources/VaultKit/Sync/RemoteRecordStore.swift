@@ -45,11 +45,15 @@ public struct RemoteBatch: Sendable, Equatable {
     public var changes: [RemoteRecord]
     public var moreComing: Bool
     public var token: Data?
+    /// The remote ignored the given token (expired) and served the zone from the start. Like a fetch
+    /// without token, such a fetch carries live records only, never the deletions of the past.
+    public var restartedFromScratch: Bool
 
-    public init(changes: [RemoteRecord], moreComing: Bool, token: Data?) {
+    public init(changes: [RemoteRecord], moreComing: Bool, token: Data?, restartedFromScratch: Bool = false) {
         self.changes = changes
         self.moreComing = moreComing
         self.token = token
+        self.restartedFromScratch = restartedFromScratch
     }
 }
 

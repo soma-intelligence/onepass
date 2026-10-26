@@ -34,7 +34,9 @@ public actor CloudKitRemote: RemoteRecordStore {
         var restarted = false
         while true {
             do {
-                return try await fetchPage(since: cursor)
+                var batch = try await fetchPage(since: cursor)
+                batch.restartedFromScratch = restarted
+                return batch
             } catch let error as CKError where error.code == .changeTokenExpired && !restarted {
                 // The cursor is too old: serve the zone again from the start.
                 restarted = true

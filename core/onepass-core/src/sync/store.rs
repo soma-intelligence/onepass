@@ -25,7 +25,9 @@ use crate::store::{Record, RecordKind, RecordStore};
 use crate::{Error, Id, Result};
 
 const DEVICE_STATE_KEY: &str = "device_state";
-const REQUEUE_PENDING_KEY: &str = "zone.requeue_pending";
+const FETCH_MODE_KEY: &str = "zone.full_fetch";
+const FETCH_PLAIN: u8 = 1;
+const FETCH_RESET: u8 = 2;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 const SCHEMA: &str = "
@@ -150,6 +152,19 @@ fn effective_get(conn: &Connection, kind: RecordKind, id: Id) -> Result<Option<R
 
 /// Write a pending data row. A manifest write over a `base` manifest with no
 /// `ancestor` yet first keeps that `base` row as its ancestor.
+/// The persisted mode of a begun fetch from scratch (`FETCH_PLAIN` or `FETCH_RESET`).
+fn fetch_mode(conn: &Connection) -> Result<Option<u8>> {
+    let value: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            params![FETCH_MODE_KEY],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(store_err)?;
+    Ok(value.and_then(|v| v.first().copied()))
+}
+
 fn write_pending(tx: &Connection, r: &Record) -> Result<()> {
     let version = to_i64(r.version)?;
     if r.kind == RecordKind::Manifest {
@@ -373,67 +388,117 @@ impl SyncStore {
         tx.commit()
     }
 
-    /// Step 1 of a server data loss (its zone was deleted and recreated): forget
-    /// every `server_meta`, drop the staged pages (they come from the lost
-    /// zone), delete the change token stored under `token_key` and persist the
-    /// "requeue pending" flag. One transaction. Nothing becomes pending yet: a
-    /// stale local row must not overwrite a newer version another device
-    /// uploads meanwhile. See `requeue_missing`.
+    /// Marks the start of a fetch from scratch (no change token, or the token
+    /// expired): the server returns live records only, never the deletions of
+    /// the past, so every `server_meta` is forgotten and the staged pages are
+    /// dropped. Records the fetch returns get their tag back in `commit_remote`;
+    /// `finish_full_fetch` then settles the rows it did not return. The mode is
+    /// persisted (plain full fetch), so the settlement also happens after a
+    /// restart. A reset already marked stays a reset. One transaction.
+    pub fn begin_full_fetch(&mut self) -> Result<()> {
+        self.begin_fetch_mode(FETCH_PLAIN, None)
+    }
+
+    /// A server data loss (its zone was deleted and recreated): like
+    /// `begin_full_fetch`, plus the change token stored under `token_key` is
+    /// deleted and the mode is "reset". Nothing becomes pending yet: a stale
+    /// local row must not overwrite a newer version another device uploads
+    /// meanwhile. See `finish_full_fetch`.
     pub fn begin_zone_reset(&mut self, token_key: &str) -> Result<()> {
+        self.begin_fetch_mode(FETCH_RESET, Some(token_key))
+    }
+
+    fn begin_fetch_mode(&mut self, mode: u8, token_key: Option<&str>) -> Result<()> {
         let tx = self.write_tx()?;
         tx.execute("UPDATE base SET server_meta = NULL", [])
             .map_err(store_err)?;
         tx.execute("DELETE FROM staging", []).map_err(store_err)?;
-        tx.execute("DELETE FROM meta WHERE key = ?1", params![token_key])
-            .map_err(store_err)?;
+        if let Some(key) = token_key {
+            tx.execute("DELETE FROM meta WHERE key = ?1", params![key])
+                .map_err(store_err)?;
+        }
+        let current = fetch_mode(&tx)?.unwrap_or(0);
         tx.execute(
             "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
-            params![REQUEUE_PENDING_KEY, &[1u8][..]],
+            params![FETCH_MODE_KEY, &[current.max(mode)][..]],
         )
         .map_err(store_err)?;
         tx.commit()
     }
 
-    /// Whether `begin_zone_reset` ran and `requeue_missing` did not yet.
-    pub fn requeue_pending(&self) -> Result<bool> {
-        Ok(self.meta(REQUEUE_PENDING_KEY)?.is_some())
+    /// Whether a fetch from scratch was begun and not yet finished.
+    pub fn full_fetch_pending(&self) -> Result<bool> {
+        self.read(|c| Ok(fetch_mode(c)?.is_some()))
     }
 
-    /// Step 2, after the `commit_remote` of a complete fetch from scratch: every
-    /// `base` row still without `server_meta` (the server does not hold it) and
-    /// without a pending row becomes a pending row with the same version and
-    /// data, then the flag is cleared. One transaction, a no-op (false) without
-    /// the flag. A manifest keeps its `base` row as ancestor (not held). Rows
-    /// the server sent back got their `server_meta` from `commit_remote` and
-    /// are left alone; a pending tombstone stays a tombstone.
-    pub fn requeue_missing(&mut self) -> Result<bool> {
-        if !self.requeue_pending()? {
-            return Ok(false);
-        }
+    /// After the `commit_remote` of the complete fetch from scratch. Settles
+    /// every `base` row still without `server_meta` (the server did not return
+    /// it) and without a pending row, then clears the mode. One transaction; a
+    /// no-op without a begun fetch. Returns whether `base` rows were deleted.
+    ///
+    /// - Plain full fetch: the rows no longer exist on the server, they are
+    ///   deleted from `base` (the fetch carries no tombstones).
+    /// - Reset: an item row whose vault manifest the server returned is
+    ///   deleted (the server is authoritative for that vault, and a stale item
+    ///   blob next to its manifest would be refused as unexpected). Any other
+    ///   such row (the stable id kinds, items of a vault the server lacks)
+    ///   becomes a pending row with the same version and data, a manifest
+    ///   keeping its `base` row as ancestor (not held).
+    ///
+    /// A pending tombstone or edit is never touched.
+    pub fn finish_full_fetch(&mut self) -> Result<bool> {
         let tx = self.write_tx()?;
-        tx.execute(
-            "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
-             SELECT b.kind, b.id, b.version, b.data FROM base b
-             WHERE b.kind = ?1 AND b.server_meta IS NULL
-               AND NOT EXISTS (SELECT 1 FROM pending p WHERE p.kind = b.kind AND p.id = b.id)",
-            params![RecordKind::Manifest.code()],
-        )
-        .map_err(store_err)?;
-        tx.execute(
-            "INSERT INTO pending (kind, id, version, data)
-             SELECT b.kind, b.id, b.version, b.data FROM base b
-             WHERE b.server_meta IS NULL
-               AND NOT EXISTS (SELECT 1 FROM pending p WHERE p.kind = b.kind AND p.id = b.id)",
-            [],
-        )
-        .map_err(store_err)?;
-        tx.execute(
-            "DELETE FROM meta WHERE key = ?1",
-            params![REQUEUE_PENDING_KEY],
-        )
-        .map_err(store_err)?;
+        let Some(mode) = fetch_mode(&tx)? else {
+            return Ok(false);
+        };
+        let missing = "b.server_meta IS NULL AND NOT EXISTS
+             (SELECT 1 FROM pending p WHERE p.kind = b.kind AND p.id = b.id)";
+        let mut deleted = 0;
+        if mode == FETCH_RESET {
+            deleted += tx
+                .execute(
+                    &format!(
+                        "DELETE FROM base AS b WHERE b.kind = ?1 AND {missing}
+                         AND EXISTS (SELECT 1 FROM base m WHERE m.kind = ?2
+                             AND m.id = substr(b.data, 1, 16) AND m.server_meta IS NOT NULL)"
+                    ),
+                    params![RecordKind::Item.code(), RecordKind::Manifest.code()],
+                )
+                .map_err(store_err)?;
+            tx.execute(
+                &format!(
+                    "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
+                     SELECT b.kind, b.id, b.version, b.data FROM base b
+                     WHERE b.kind = ?1 AND {missing}"
+                ),
+                params![RecordKind::Manifest.code()],
+            )
+            .map_err(store_err)?;
+            tx.execute(
+                &format!(
+                    "INSERT INTO pending (kind, id, version, data)
+                     SELECT b.kind, b.id, b.version, b.data FROM base b WHERE {missing}"
+                ),
+                [],
+            )
+            .map_err(store_err)?;
+        } else {
+            tx.execute(
+                &format!(
+                    "DELETE FROM ancestor WHERE kind = ?1 AND id IN
+                     (SELECT b.id FROM base b WHERE b.kind = ?1 AND {missing})"
+                ),
+                params![RecordKind::Manifest.code()],
+            )
+            .map_err(store_err)?;
+            deleted += tx
+                .execute(&format!("DELETE FROM base AS b WHERE {missing}"), [])
+                .map_err(store_err)?;
+        }
+        tx.execute("DELETE FROM meta WHERE key = ?1", params![FETCH_MODE_KEY])
+            .map_err(store_err)?;
         tx.commit()?;
-        Ok(true)
+        Ok(deleted > 0)
     }
 
     /// Park a change received from the server. Nothing is visible until
@@ -920,16 +985,16 @@ mod tests {
         s.put(rec(b, RecordKind::Keyset, 3, b"b-newer")).unwrap();
         s.delete(RecordKind::Keyset, gone).unwrap();
 
-        // Step 1: tags, staging and token are gone, nothing is pending yet.
+        // Begin: tags, staging and token are gone, nothing is pending yet.
         let pending_before = s.pending_changes().unwrap().len();
         s.begin_zone_reset("tok").unwrap();
-        assert!(s.requeue_pending().unwrap());
+        assert!(s.full_fetch_pending().unwrap());
         assert_eq!(s.meta("tok").unwrap(), None);
         assert_eq!(count(&s, "staging"), 0);
         assert_eq!(s.pending_changes().unwrap().len(), pending_before);
         assert_eq!(s.server_meta(RecordKind::Keyset, c).unwrap(), None);
 
-        // The new zone returns a newer `a` and the manifest; they get their tags in commit_remote.
+        // The new zone returns a newer `a` and the manifest.
         s.stage_remote(RemoteChange {
             kind: RecordKind::Keyset,
             id: a,
@@ -948,9 +1013,9 @@ mod tests {
         .unwrap();
         s.commit_remote().unwrap();
 
-        // Step 2: only `c` (absent from the server, no pending row) is requeued.
-        assert!(s.requeue_missing().unwrap());
-        assert!(!s.requeue_pending().unwrap());
+        // Only `c` (absent from the server, no pending row) is requeued.
+        assert!(!s.finish_full_fetch().unwrap());
+        assert!(!s.full_fetch_pending().unwrap());
         let pending = s.pending_changes().unwrap();
         let find = |id: Id| pending.iter().find(|p| p.id == id);
         assert_eq!(find(c).unwrap().data, Some(b"c".to_vec()));
@@ -963,13 +1028,98 @@ mod tests {
             s.get(RecordKind::Keyset, a).unwrap(),
             Some(rec(a, RecordKind::Keyset, 12, b"a-newer"))
         );
-        // No flag, no change.
-        assert!(!s.requeue_missing().unwrap());
+        // No begun fetch, no change.
+        assert!(!s.finish_full_fetch().unwrap());
         assert_eq!(s.pending_changes().unwrap().len(), 3);
     }
 
     #[test]
-    fn requeued_manifest_is_not_held_and_flag_survives_reopen() {
+    fn reset_drops_stale_items_of_a_vault_the_server_returned() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (vault, other_vault) = (Id::new(), Id::new());
+        let (stale, kept, orphan, local) = (Id::new(), Id::new(), Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::Manifest, vault, 3, b"m".to_vec());
+        seed_base(&mut s, RecordKind::Item, stale, 2, item_data(vault, b"x"));
+        seed_base(&mut s, RecordKind::Item, kept, 2, item_data(vault, b"k"));
+        seed_base(
+            &mut s,
+            RecordKind::Item,
+            orphan,
+            2,
+            item_data(other_vault, b"o"),
+        );
+        seed_base(&mut s, RecordKind::Item, local, 2, item_data(vault, b"l"));
+        s.put(rec(local, RecordKind::Item, 3, &item_data(vault, b"l3")))
+            .unwrap();
+
+        s.begin_zone_reset("tok").unwrap();
+        // The server returns the vault manifest and one item, not the others.
+        for (kind, id, data, tag) in [
+            (RecordKind::Manifest, vault, b"m2".to_vec(), 1u8),
+            (RecordKind::Item, kept, item_data(vault, b"k"), 2),
+        ] {
+            s.stage_remote(RemoteChange {
+                kind,
+                id,
+                version: 4,
+                data: Some(data),
+                server_meta: Some(vec![tag]),
+            })
+            .unwrap();
+        }
+        s.commit_remote().unwrap();
+        assert!(s.finish_full_fetch().unwrap());
+
+        // The stale blob is gone (not requeued), the orphan (vault unknown to the server) is requeued.
+        assert_eq!(s.get(RecordKind::Item, stale).unwrap(), None);
+        let pending = s.pending_changes().unwrap();
+        assert!(pending.iter().all(|p| p.id != stale && p.id != kept));
+        assert!(pending.iter().any(|p| p.id == orphan));
+        assert!(pending.iter().any(|p| p.id == local && p.version == 3));
+        assert_eq!(count(&s, "base"), 4);
+    }
+
+    #[test]
+    fn plain_full_fetch_deletes_rows_the_server_no_longer_has() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (kept, gone, edited, m) = (Id::new(), Id::new(), Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::Keyset, kept, 1, b"k".to_vec());
+        seed_base(&mut s, RecordKind::Keyset, gone, 1, b"g".to_vec());
+        seed_base(&mut s, RecordKind::Keyset, edited, 1, b"e".to_vec());
+        seed_base(&mut s, RecordKind::Manifest, m, 2, b"m".to_vec());
+        s.put(rec(edited, RecordKind::Keyset, 2, b"e2")).unwrap();
+        s.set_meta("tok", &[1]).unwrap();
+
+        s.begin_full_fetch().unwrap();
+        // The token is the caller's business in this mode.
+        assert_eq!(s.meta("tok").unwrap(), Some(vec![1]));
+        assert!(s.full_fetch_pending().unwrap());
+        s.stage_remote(RemoteChange {
+            kind: RecordKind::Keyset,
+            id: kept,
+            version: 1,
+            data: Some(b"k".to_vec()),
+            server_meta: Some(vec![3]),
+        })
+        .unwrap();
+        s.commit_remote().unwrap();
+        assert!(s.finish_full_fetch().unwrap());
+
+        assert_eq!(
+            s.server_meta(RecordKind::Keyset, kept).unwrap(),
+            Some(vec![3])
+        );
+        assert_eq!(s.get(RecordKind::Keyset, gone).unwrap(), None);
+        assert_eq!(s.get(RecordKind::Manifest, m).unwrap(), None);
+        // A local edit stays (pending), nothing was requeued.
+        let pending = s.pending_changes().unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].id, edited);
+        assert!(!s.full_fetch_pending().unwrap());
+    }
+
+    #[test]
+    fn begun_fetch_survives_reopen_and_a_reset_is_not_downgraded() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.sqlite");
         let m = Id::new();
@@ -977,11 +1127,12 @@ mod tests {
             let mut s = SyncStore::open(&path).unwrap();
             seed_base(&mut s, RecordKind::Manifest, m, 4, b"m".to_vec());
             s.begin_zone_reset("tok").unwrap();
+            s.begin_full_fetch().unwrap();
         }
-        // A restart between the steps: the flag is still there.
+        // A restart in the middle of the fetch: the mode is still "reset".
         let mut s = SyncStore::open(&path).unwrap();
-        assert!(s.requeue_pending().unwrap());
-        assert!(s.requeue_missing().unwrap());
+        assert!(s.full_fetch_pending().unwrap());
+        assert!(!s.finish_full_fetch().unwrap());
         let pending = s.pending_changes().unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].data, Some(b"m".to_vec()));

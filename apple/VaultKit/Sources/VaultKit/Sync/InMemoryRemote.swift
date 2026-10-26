@@ -20,6 +20,9 @@ public actor InMemoryRemote: RemoteRecordStore {
     }
 
     public let pageSize: Int
+    /// CloudKit realism: a fetch from scratch (no token, or an expired one) returns live records only,
+    /// not the deletions of the past.
+    public let omitsTombstonesOnFullFetch: Bool
     public nonisolated let maxBatchRecords: Int
     public nonisolated let maxBatchBytes: Int
     private var records: [RecordName: Stored] = [:]
@@ -30,10 +33,15 @@ public actor InMemoryRemote: RemoteRecordStore {
     private var available = true
     private var nextFailure: RemoteStoreError?
     private var resetPending = false
+    private var tokenExpired = false
     /// Every batch received, in order (names only).
     public private(set) var sentBatches: [[RecordName]] = []
 
-    public init(pageSize: Int = 400, maxBatchRecords: Int = 400, maxBatchBytes: Int = 1_572_864) {
+    public init(
+        pageSize: Int = 400, maxBatchRecords: Int = 400, maxBatchBytes: Int = 1_572_864,
+        omitsTombstonesOnFullFetch: Bool = false
+    ) {
+        self.omitsTombstonesOnFullFetch = omitsTombstonesOnFullFetch
         self.pageSize = max(1, pageSize)
         self.maxBatchRecords = max(1, maxBatchRecords)
         self.maxBatchBytes = max(1, maxBatchBytes)
@@ -53,16 +61,24 @@ public actor InMemoryRemote: RemoteRecordStore {
 
     public func fetchChanges(since token: Data?) async throws -> RemoteBatch {
         try checkFailure()
-        let cursor = Self.decode(token) ?? 0
+        var cursor = Self.decode(token) ?? 0
+        var restarted = false
+        if tokenExpired, token != nil {
+            tokenExpired = false
+            cursor = 0
+            restarted = true
+        }
+        let fullFetch = cursor == 0
         let changed = records
             .filter { $0.value.sequence > cursor && !withheld.contains($0.key) }
+            .filter { !(fullFetch && omitsTombstonesOnFullFetch && $0.value.data == nil) }
             .sorted { $0.value.sequence < $1.value.sequence }
         let page = changed.prefix(pageSize)
         let next = page.last?.value.sequence ?? cursor
         return RemoteBatch(
             changes: page.map { remoteRecord($0.key, $0.value) },
             moreComing: changed.count > page.count,
-            token: Self.serverMeta(tag: next))
+            token: Self.serverMeta(tag: next), restartedFromScratch: restarted)
     }
 
     public func send(_ changes: [RemoteRecord]) async throws -> [SendResult] {
@@ -172,6 +188,12 @@ public actor InMemoryRemote: RemoteRecordStore {
     /// The next fetch or send throws `error`, once.
     public func failNext(with error: RemoteStoreError) {
         nextFailure = error
+    }
+
+    /// The next fetch given a token ignores it and serves the zone from the start (a CloudKit
+    /// `changeTokenExpired`), flagged `restartedFromScratch`.
+    public func expireTokens() {
+        tokenExpired = true
     }
 
     /// Simulates a lost zone: every record is wiped (log positions and tags keep growing) and the next
