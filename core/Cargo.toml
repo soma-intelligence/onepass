@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["onepass-core", "onepass-cli", "onepass-ffi", "onepass-guard"]
+members = ["onepass-core", "onepass-cli", "onepass-ffi", "onepass-guard", "onepass-mcp"]
 
 [workspace.package]
 version = "0.1.0"

@@ -1367,6 +1367,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "onepass-mcp"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "password-hash"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
