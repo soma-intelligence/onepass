@@ -1,0 +1,27 @@
+{
+  "name": "onepass-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:chromium": "node build.mjs chromium",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@noble/curves": "1.9.7",
+    "@noble/hashes": "1.8.0",
+    "@noble/post-quantum": "0.5.4",
+    "@playwright/test": "1.59.1",
+    "@types/chrome": "0.3.6",
+    "@types/node": "22.20.5",
+    "esbuild": "0.25.12",
+    "jsdom": "26.1.0",
+    "tldts": "7.4.19",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}
