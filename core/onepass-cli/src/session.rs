@@ -174,6 +174,67 @@ macro_rules! out {
 mod tests {
     use super::*;
 
+    /// A `device.bin` written before the versioned state: Secret Key "sk",
+    /// then the version 1 state inline,
+    /// `{ pinned: None, last_seen: { [1; 16]: (7, [0xab; 32]) } }`.
+    const LEGACY_DEVICE_BIN_HEX: &str = concat!(
+        "02736b",
+        "00",
+        "01",
+        "01010101010101010101010101010101",
+        "07",
+        "abababababababababababababababababababababababababababababababab",
+    );
+
+    fn from_hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    fn fixed_state() -> DeviceState {
+        let mut state = DeviceState::default();
+        state.last_seen.insert(
+            onepass_core::Id([1; 16]),
+            onepass_core::manifest::SeenManifest {
+                seq: 7,
+                hash: [0xab; 32],
+            },
+        );
+        state
+    }
+
+    #[test]
+    fn legacy_device_bin_reads() {
+        let mut bytes = from_hex(LEGACY_DEVICE_BIN_HEX);
+        let file = decode(&bytes).unwrap();
+        assert_eq!(file.secret_key.as_str(), "sk");
+        assert_eq!(file.state, fixed_state());
+        assert_eq!(file.state.epoch, 0);
+        // Rewritten in the current layout, which reads back the same.
+        let new = encode(&file.secret_key, &file.state).unwrap();
+        assert_eq!(&new[..3], b"\x02sk");
+        assert_eq!(&new[4..8], b"ODS\x02");
+        let again = decode(&new).unwrap();
+        assert_eq!(again.state, file.state);
+        bytes.push(0);
+        assert!(decode(&bytes).is_err());
+    }
+
+    #[test]
+    fn device_bin_roundtrips() {
+        let mut state = fixed_state();
+        state.epoch = 9;
+        let key = Zeroizing::new("sk".to_string());
+        let mut bytes = encode(&key, &state).unwrap();
+        let file = decode(&bytes).unwrap();
+        assert_eq!(file.secret_key.as_str(), "sk");
+        assert_eq!(file.state, state);
+        bytes.push(0);
+        assert!(decode(&bytes).is_err());
+    }
+
     #[test]
     fn only_a_broken_stdout_is_quiet() {
         use std::io::{Error as IoError, ErrorKind};
@@ -194,11 +255,37 @@ mod tests {
     }
 }
 
-/// What `device.bin` holds, encoded with postcard.
+/// What `device.bin` holds, encoded with postcard: the Secret Key, then the
+/// device state as the byte string of `DeviceState::encode` (versioned).
 #[derive(Serialize, Deserialize)]
 struct DeviceFile {
     secret_key: Zeroizing<String>,
+    #[serde(with = "onepass_core::format::device_state_bytes")]
     state: DeviceState,
+}
+
+/// `device.bin` before the versioned state: the version 1 state inline.
+/// Read only, migrated with `epoch = 0`; the next write uses `DeviceFile`.
+#[derive(Deserialize)]
+struct LegacyDeviceFile {
+    secret_key: Zeroizing<String>,
+    #[serde(deserialize_with = "onepass_core::format::device_state_v1_inline::deserialize")]
+    state: DeviceState,
+}
+
+/// Decode `device.bin`: the current layout (whole buffer), else the legacy
+/// one.
+fn decode(bytes: &[u8]) -> Result<DeviceFile, CliError> {
+    if let Ok((file, [])) = postcard::take_from_bytes::<DeviceFile>(bytes) {
+        return Ok(file);
+    }
+    match postcard::take_from_bytes::<LegacyDeviceFile>(bytes) {
+        Ok((old, [])) => Ok(DeviceFile {
+            secret_key: old.secret_key,
+            state: old.state,
+        }),
+        _ => Err(CliError::usage("device.bin is unreadable")),
+    }
 }
 
 fn encode(
@@ -209,6 +296,7 @@ fn encode(
     #[derive(Serialize)]
     struct Ref<'a> {
         secret_key: &'a str,
+        #[serde(with = "onepass_core::format::device_state_bytes")]
         state: &'a DeviceState,
     }
     let bytes = postcard::to_allocvec(&Ref { secret_key, state })
@@ -336,8 +424,7 @@ impl Session {
             return Err(no_account(ctx));
         }
         let bytes = Zeroizing::new(fs::read(&device_path)?);
-        let file: DeviceFile = postcard::from_bytes(&bytes)
-            .map_err(|_| CliError::usage("device.bin is unreadable"))?;
+        let file = decode(&bytes)?;
         let key = SecretKey::parse(&file.secret_key)?;
         let store = stored(SqliteStore::open(&ctx.store_path()))?;
         harden(ctx)?;
@@ -518,9 +605,7 @@ pub fn read_password_tty(prompt: &str) -> Result<Zeroizing<String>, CliError> {
 /// The device state saved in `device.bin`. The caller holds the lock.
 pub fn read_device_state(ctx: &Ctx) -> Result<DeviceState, CliError> {
     let bytes = Zeroizing::new(fs::read(ctx.device_path())?);
-    let file: DeviceFile =
-        postcard::from_bytes(&bytes).map_err(|_| CliError::usage("device.bin is unreadable"))?;
-    Ok(file.state)
+    Ok(decode(&bytes)?.state)
 }
 
 /// An unlocked account for a long-running server (`onepass mcp`). It is

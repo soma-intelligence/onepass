@@ -45,6 +45,58 @@ pub fn migrate_item(schema: u16, bytes: &[u8]) -> Result<Item> {
     }
 }
 
+/// Serde helper for a `DeviceState` field of a file the caller persists
+/// (`#[serde(with = "onepass_core::format::device_state_bytes")]`): the
+/// field is the byte string of `DeviceState::encode`, so the state stays
+/// versioned inside the file. The serde derive of `DeviceState` itself is
+/// not a persistence format.
+pub mod device_state_bytes {
+    use serde::de::Error as _;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    use crate::repo::DeviceState;
+
+    pub fn serialize<S: Serializer>(state: &DeviceState, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_bytes(&state.encode())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<DeviceState, D::Error> {
+        let bytes = serde_bytes::ByteBuf::deserialize(d)?;
+        DeviceState::decode(&bytes).map_err(|_| D::Error::custom("device state"))
+    }
+}
+
+/// Serde helper reading the legacy inline layout of a `DeviceState` field
+/// (`#[serde(deserialize_with = "onepass_core::format::device_state_v1_inline::deserialize")]`):
+/// the version 1 struct `{ pinned, last_seen }` serialized in place, as
+/// `device.bin` held it before [`device_state_bytes`]. Migrated with
+/// `epoch = 0`. Read only: write [`device_state_bytes`].
+pub mod device_state_v1_inline {
+    use std::collections::BTreeMap;
+
+    use serde::{Deserialize, Deserializer};
+
+    use crate::Id;
+    use crate::account::PinnedAccount;
+    use crate::manifest::SeenManifest;
+    use crate::repo::DeviceState;
+
+    #[derive(Deserialize)]
+    struct V1 {
+        pinned: Option<PinnedAccount>,
+        last_seen: BTreeMap<Id, SeenManifest>,
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<DeviceState, D::Error> {
+        let v1 = V1::deserialize(d)?;
+        Ok(DeviceState {
+            pinned: v1.pinned,
+            last_seen: v1.last_seen,
+            epoch: 0,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,5 +130,35 @@ mod tests {
             migrate_item(0, &bytes),
             Err(Error::InvalidFormat("item schema"))
         );
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+    struct File {
+        #[serde(with = "device_state_bytes")]
+        state: crate::repo::DeviceState,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct LegacyFile {
+        #[serde(deserialize_with = "device_state_v1_inline::deserialize")]
+        state: crate::repo::DeviceState,
+    }
+
+    #[test]
+    fn device_state_field_helpers() {
+        let state = crate::repo::DeviceState {
+            epoch: 3,
+            ..Default::default()
+        };
+        let file = File { state };
+        let bytes = postcard::to_allocvec(&file).unwrap();
+        // A byte string: length, then the versioned encoding.
+        assert_eq!(&bytes[1..5], b"ODS\x02");
+        assert_eq!(postcard::from_bytes::<File>(&bytes).unwrap(), file);
+        // The legacy inline layout is not a byte string of a valid state.
+        let legacy = [0u8, 0];
+        assert!(postcard::from_bytes::<File>(&legacy).is_err());
+        let old: LegacyFile = postcard::from_bytes(&legacy).unwrap();
+        assert_eq!(old.state, crate::repo::DeviceState::default());
     }
 }

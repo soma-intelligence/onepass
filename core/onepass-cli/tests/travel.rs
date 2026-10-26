@@ -279,6 +279,7 @@ fn last_seen(
     struct DeviceFile {
         #[allow(dead_code)]
         secret_key: String,
+        #[serde(with = "onepass_core::format::device_state_bytes")]
         state: onepass_core::repo::DeviceState,
     }
     let bytes = fs::read(dir.join("device.bin")).unwrap();
