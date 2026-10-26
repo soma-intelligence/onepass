@@ -7,6 +7,7 @@ mod sqlite;
 pub use memory::MemoryStore;
 pub use sqlite::SqliteStore;
 
+use crate::chain::ChainState;
 use crate::{Error, Id, Result};
 
 /// What a record holds. The numeric codes are the on-disk encoding: append
@@ -66,6 +67,14 @@ pub trait RecordStore {
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>>;
     fn list(&self, kind: RecordKind) -> Result<Vec<Record>>;
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()>;
+
+    /// The pinned chain state this store keeps for the device, read by the
+    /// `Repository` unlock functions. Only `SyncStore` persists one (meta key
+    /// `chain`); other stores give the default, so each session pins on
+    /// first use.
+    fn chain_state(&self) -> Result<ChainState> {
+        Ok(ChainState::default())
+    }
 }
 
 /// Shared behavior checks, run against every store.

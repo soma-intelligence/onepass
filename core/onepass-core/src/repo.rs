@@ -36,7 +36,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::account::{Account, Auk, NewAccount, PinnedAccount};
+use crate::account::{Account, Auk, NewAccount, PinnedAccount, Rekeyed};
+use crate::chain::ChainState;
 use zeroize::Zeroizing;
 
 use crate::crypto::{Aad, BlobKind, KdfParams, SecretKey, seal};
@@ -82,6 +83,9 @@ pub struct Repository<S: RecordStore> {
     pub(crate) store: S,
     pub(crate) account: Account,
     pub(crate) device: DeviceState,
+    /// The pinned chain state (`chain`): read from the store at unlock,
+    /// persisted with the device state by a `SyncStore`.
+    pub(crate) chain: ChainState,
 }
 
 /// The verified content of a vault.
@@ -220,10 +224,15 @@ impl<S: RecordStore> Repository<S> {
             pinned: Some(pin(&account)),
             last_seen: BTreeMap::new(),
         };
+        let chain = ChainState {
+            params_epoch: account.params.epoch,
+            ..ChainState::default()
+        };
         let mut repo = Repository {
             store,
             account,
             device,
+            chain,
         };
         repo.create_vault(personal())?;
         Ok((repo, secret_key))
@@ -234,6 +243,11 @@ impl<S: RecordStore> Repository<S> {
     /// that pinned nothing yet, the account is pinned now (trust on first
     /// use); otherwise `Account::unlock` checks it against the pin, and the
     /// pinned KDF floor is raised to the parameters just accepted.
+    ///
+    /// The params epoch is checked against the store's chain state
+    /// (`RecordStore::chain_state`): an older epoch is
+    /// `IntegrityError::ParamsRollback`, before any derivation. The epoch
+    /// accepted is pinned (it only goes up).
     pub fn unlock(
         store: S,
         password: &str,
@@ -251,22 +265,33 @@ impl<S: RecordStore> Repository<S> {
         device: DeviceState,
     ) -> Result<(Repository<S>, Auk)> {
         let (params, keyset) = account_records(&store)?;
-        let (account, auk) = Account::unlock_exporting_auk(
+        let chain = store.chain_state()?;
+        let (account, auk) = Account::unlock_exporting_auk_at(
             password,
             secret_key,
             &params.data,
             &keyset.data,
             device.pinned.as_ref(),
+            chain.params_epoch,
         )?;
-        Ok((Self::finish_unlock(store, account, &params, device)?, auk))
+        Ok((
+            Self::finish_unlock(store, account, &params, device, chain)?,
+            auk,
+        ))
     }
 
     /// Like `unlock`, from an Account Unlock Key kept from an earlier one.
     pub fn unlock_with_auk(store: S, auk: &Auk, device: DeviceState) -> Result<Repository<S>> {
         let (params, keyset) = account_records(&store)?;
-        let account =
-            Account::unlock_with_auk(auk, &params.data, &keyset.data, device.pinned.as_ref())?;
-        Self::finish_unlock(store, account, &params, device)
+        let chain = store.chain_state()?;
+        let account = Account::unlock_with_auk_at(
+            auk,
+            &params.data,
+            &keyset.data,
+            device.pinned.as_ref(),
+            chain.params_epoch,
+        )?;
+        Self::finish_unlock(store, account, &params, device, chain)
     }
 
     fn finish_unlock(
@@ -274,6 +299,7 @@ impl<S: RecordStore> Repository<S> {
         account: Account,
         params: &Record,
         mut device: DeviceState,
+        mut chain: ChainState,
     ) -> Result<Repository<S>> {
         if account.params.account_id != params.id {
             return Err(IntegrityError::WrongContext.into());
@@ -282,11 +308,104 @@ impl<S: RecordStore> Repository<S> {
             None => device.pinned = Some(pin(&account)),
             Some(p) => p.raise_floor(&account.params.kdf),
         }
+        chain.accept_params_epoch(account.params.epoch);
         Ok(Repository {
             store,
             account,
             device,
+            chain,
         })
+    }
+
+    /// Change the master password (spec 2b, 3.3). The current password and
+    /// the Secret Key are checked by opening the stored params and keyset
+    /// with every unlock check (pin, pinned epoch, floors): a wrong one is
+    /// `Error::WrongPassword` and nothing is written. Then the same keys get
+    /// v2 params at the stored epoch plus one (fresh salt, costs at least the
+    /// current ones and the floor) and a keyset resealed at that epoch under
+    /// the new Account Unlock Key, which is returned (to enroll biometrics
+    /// again).
+    ///
+    /// Writes, each conditional on the version just read: the keyset first,
+    /// then the params. A params write that loses a race puts the previous
+    /// keyset back (best effort) and gives `Error::Conflict`; so does a
+    /// keyset write that loses one. Then the new epoch is pinned and the
+    /// session goes on with the new params (same keys: vault keys, manifests
+    /// and pending writes of other devices stay valid). With a `SyncStore`
+    /// the chain state is saved by the next `persist_device_state`.
+    pub fn change_password(
+        &mut self,
+        current: &str,
+        secret_key: &SecretKey,
+        new: &str,
+    ) -> Result<Auk> {
+        let (params, keyset) = account_records(&self.store)?;
+        if params.id != self.account.params.account_id {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        let (stored, _) = Account::unlock_exporting_auk_at(
+            current,
+            secret_key,
+            &params.data,
+            &keyset.data,
+            self.device.pinned.as_ref(),
+            self.chain.params_epoch,
+        )?;
+        let Rekeyed {
+            account,
+            auk,
+            params_record,
+            keyset_record,
+        } = stored.rekey(secret_key, new)?;
+        let id = params.id;
+        let next = |r: &Record| r.version.checked_add(1).ok_or(Error::Conflict);
+        let keyset_version = next(&keyset)?;
+        self.store.put_if_version(
+            Record {
+                id,
+                kind: RecordKind::Keyset,
+                version: keyset_version,
+                data: keyset_record,
+            },
+            Some(keyset.version),
+        )?;
+        let written = self.store.put_if_version(
+            Record {
+                id,
+                kind: RecordKind::AccountParams,
+                version: next(&params)?,
+                data: params_record,
+            },
+            Some(params.version),
+        );
+        if let Err(e) = written {
+            // Never leave a new keyset beside the old params: put the
+            // previous one back, as a newer version.
+            let _ = self.store.put_if_version(
+                Record {
+                    version: keyset_version.saturating_add(1),
+                    ..keyset
+                },
+                Some(keyset_version),
+            );
+            return Err(e);
+        }
+        if let Some(p) = &mut self.device.pinned {
+            p.raise_floor(&account.params.kdf);
+        }
+        self.chain.accept_params_epoch(account.params.epoch);
+        self.account = account;
+        Ok(auk)
+    }
+
+    /// The pinned chain state, to persist with the device state.
+    pub fn chain(&self) -> &ChainState {
+        &self.chain
+    }
+
+    #[allow(dead_code)] // Used by the signed lists (milestone 2b, task 2).
+    pub(crate) fn chain_mut(&mut self) -> &mut ChainState {
+        &mut self.chain
     }
 
     /// The underlying record store, for the sync layer.
@@ -1537,5 +1656,84 @@ mod tests {
             DeviceState::decode(&[0xFF, 0xFF]),
             Err(Error::InvalidFormat("device state"))
         );
+    }
+
+    #[test]
+    fn change_password_new_works_old_fails() {
+        let (repo, sk) = Repository::create_account(MemoryStore::new(), "ancien", kdf()).unwrap();
+        let device = repo.device_state().clone();
+        let (mut repo, old_auk) =
+            Repository::unlock_exporting_auk(repo.store, "ancien", &sk, device).unwrap();
+        let v = repo.vaults().unwrap().remove(0);
+        let item = login(&v, "camille.durand@exemple.fr");
+        repo.save_item(&v, item.clone()).unwrap();
+        let before = repo.account().params.clone();
+
+        let new_auk = repo.change_password("ancien", &sk, "nouveau").unwrap();
+        let after = repo.account().params.clone();
+        assert_eq!(after.epoch, before.epoch + 1);
+        assert_eq!(repo.chain().params_epoch, after.epoch);
+        assert_ne!(after.kdf.salt, before.kdf.salt);
+        assert!(after.kdf.is_at_least(&before.kdf));
+        // Same keys: the session and the vault keep working.
+        assert_eq!(after.kem_pub, before.kem_pub);
+        assert_eq!(after.signing_pub, before.signing_pub);
+        assert_eq!(repo.items(&v).unwrap(), vec![item.clone()]);
+        assert_eq!(
+            repo.device_state().pinned.as_ref().unwrap().kdf_floor.salt,
+            after.kdf.salt
+        );
+        let device = repo.device_state().clone();
+        let store = repo.store;
+
+        assert_eq!(
+            Repository::unlock(store.clone(), "ancien", &sk, device.clone()).err(),
+            Some(Error::WrongPassword)
+        );
+        assert_eq!(
+            Repository::unlock_with_auk(store.clone(), &old_auk, device.clone()).err(),
+            Some(Error::WrongPassword)
+        );
+        let mut again =
+            Repository::unlock_with_auk(store.clone(), &new_auk, device.clone()).unwrap();
+        assert_eq!(again.items(&v).unwrap(), vec![item.clone()]);
+        let (mut again, auk) =
+            Repository::unlock_exporting_auk(store, "nouveau", &sk, device).unwrap();
+        assert_eq!(auk.as_bytes(), new_auk.as_bytes());
+        assert_eq!(again.account().params, after);
+        assert_eq!(again.items(&v).unwrap(), vec![item]);
+    }
+
+    #[test]
+    fn change_password_rejects_wrong_current() {
+        let (mut repo, sk) =
+            Repository::create_account(MemoryStore::new(), "ancien", kdf()).unwrap();
+        let params_before = repo.store.list(RecordKind::AccountParams).unwrap();
+        let keyset_before = repo.store.list(RecordKind::Keyset).unwrap();
+        assert_eq!(
+            repo.change_password("faux", &sk, "nouveau").unwrap_err(),
+            Error::WrongPassword
+        );
+        let other = SecretKey::generate().unwrap();
+        assert_eq!(
+            repo.change_password("ancien", &other, "nouveau")
+                .unwrap_err(),
+            Error::WrongPassword
+        );
+        // Nothing written, nothing pinned.
+        assert_eq!(
+            repo.store.list(RecordKind::AccountParams).unwrap(),
+            params_before
+        );
+        assert_eq!(repo.store.list(RecordKind::Keyset).unwrap(), keyset_before);
+        assert_eq!(repo.chain().params_epoch, 1);
+        assert_eq!(repo.account().params.epoch, 1);
+    }
+
+    #[test]
+    fn create_account_pins_epoch_one() {
+        let (repo, _) = Repository::create_account(MemoryStore::new(), "pw", kdf()).unwrap();
+        assert_eq!(repo.account().params.epoch, 1);
+        assert_eq!(repo.chain().params_epoch, 1);
     }
 }

@@ -396,8 +396,10 @@ fn downgrade_kdf() {
         p: 1,
         salt: random_array().unwrap(),
     };
-    // The signed fields, as `Account` signs them, under the attacker's identity.
-    let msg = postcard::to_allocvec(&(&p.account_id, &weak, &p.signing_pub, &p.kem_pub)).unwrap();
+    // The signed fields, as `Account` signs v2 params (epoch included),
+    // under the attacker's identity, at the victim's epoch.
+    let msg = postcard::to_allocvec(&(&p.account_id, &weak, &p.signing_pub, &p.kem_pub, p.epoch))
+        .unwrap();
     let identity = &f.attacker.account.keyset().identity;
     let forged = AccountParams {
         account_id: p.account_id,
@@ -405,9 +407,10 @@ fn downgrade_kdf() {
         identity_pub: identity.verifying_key(),
         signing_pub: p.signing_pub.clone(),
         kem_pub: p.kem_pub.clone(),
-        identity_sig: identity.sign(b"account-params", &msg).unwrap(),
+        identity_sig: identity.sign(b"account-params/v2", &msg).unwrap(),
+        epoch: p.epoch,
     };
-    let params = postcard::to_allocvec(&forged).unwrap();
+    let params = forged.encode().unwrap();
     assert_eq!(
         integrity(
             unlock(

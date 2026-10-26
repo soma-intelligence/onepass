@@ -72,9 +72,11 @@ impl Plan {
 }
 
 impl Repository<SyncStore> {
-    /// Save the device state in the store (`SyncStore::set_device_state`).
+    /// Save the device state and the chain state in the store, together
+    /// (`SyncStore::set_device_state`, `SyncStore::set_chain_state`).
     pub fn persist_device_state(&mut self) -> Result<()> {
-        self.store.set_device_state(&self.device)
+        self.store
+            .set_device_and_chain_state(&self.device, &self.chain)
     }
 
     /// Rebase every held vault (see the module doc) and return their ids.

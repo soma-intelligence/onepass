@@ -61,3 +61,8 @@ tempfile = "3"
 [[test]]
 name = "sync_two_devices"
 required-features = ["dev-fast-kdf"]
+
+# Password change across two devices, fast-KDF accounts: needs the dev floor.
+[[test]]
+name = "password_change"
+required-features = ["dev-fast-kdf"]

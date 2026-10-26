@@ -20,11 +20,14 @@ use rusqlite::{
 };
 
 use super::{Change, MAX_RECORD_BYTES, RemoteChange};
+use crate::chain::ChainState;
 use crate::repo::{DeviceState, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore};
 use crate::{Error, Id, Result};
 
 const DEVICE_STATE_KEY: &str = "device_state";
+/// The pinned chain state (`ChainState`), beside the device state.
+const CHAIN_STATE_KEY: &str = "chain";
 /// The capped log of remote deletions the store refused (outside the `sync.`
 /// namespace of the FFI handle, so only the core writes it).
 const IGNORED_DELETIONS_KEY: &str = "ignored_deletions";
@@ -652,6 +655,45 @@ impl SyncStore {
         self.set_meta(DEVICE_STATE_KEY, &s.encode())
     }
 
+    /// The persisted chain state, or the default one if none was saved.
+    pub fn chain_state(&self) -> Result<ChainState> {
+        match self.meta(CHAIN_STATE_KEY)? {
+            Some(bytes) => ChainState::decode(&bytes),
+            None => Ok(ChainState::default()),
+        }
+    }
+
+    pub fn set_chain_state(&self, s: &ChainState) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+                params![CHAIN_STATE_KEY, s.encode()],
+            )
+            .map_err(store_err)?;
+        Ok(())
+    }
+
+    /// Save the device state and the chain state together, in one
+    /// transaction (or in the open batch).
+    pub(crate) fn set_device_and_chain_state(
+        &mut self,
+        device: &DeviceState,
+        chain: &ChainState,
+    ) -> Result<()> {
+        let tx = self.write_tx()?;
+        for (key, value) in [
+            (DEVICE_STATE_KEY, device.encode()),
+            (CHAIN_STATE_KEY, chain.encode()),
+        ] {
+            tx.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+                params![key, value],
+            )
+            .map_err(store_err)?;
+        }
+        tx.commit()
+    }
+
     /// Whether an account params record is visible (pending or base).
     pub fn has_account(&self) -> Result<bool> {
         Ok(!self.list(RecordKind::AccountParams)?.is_empty())
@@ -993,6 +1035,10 @@ impl RecordStore for SyncStore {
             decode_row(k, id, v, d)
         })
         .collect()
+    }
+
+    fn chain_state(&self) -> Result<ChainState> {
+        SyncStore::chain_state(self)
     }
 
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {

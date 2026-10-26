@@ -16,6 +16,8 @@ pub enum IntegrityError {
     WrongContext,
     /// A vault this device already read has no key record any more.
     VaultMissing,
+    /// Account params older than the epoch this device already accepted.
+    ParamsRollback,
 }
 
 impl fmt::Display for IntegrityError {
@@ -33,6 +35,7 @@ impl fmt::Display for IntegrityError {
             Self::WrongKind => "record has an unexpected kind",
             Self::WrongContext => "record is bound to a different context",
             Self::VaultMissing => "a known vault is missing",
+            Self::ParamsRollback => "account parameters rollback detected",
         };
         f.write_str(s)
     }
@@ -127,6 +130,10 @@ mod tests {
         assert_eq!(
             IntegrityError::VaultMissing.to_string(),
             "a known vault is missing"
+        );
+        assert_eq!(
+            IntegrityError::ParamsRollback.to_string(),
+            "account parameters rollback detected"
         );
     }
 }

@@ -2,6 +2,7 @@
 
 pub mod account;
 pub mod archive;
+pub mod chain;
 pub mod companion;
 pub mod crypto;
 pub mod error;

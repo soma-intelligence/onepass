@@ -49,6 +49,7 @@ pub(crate) fn integrity_kind(e: IntegrityError) -> &'static str {
         IntegrityError::WrongKind => "wrong_kind",
         IntegrityError::WrongContext => "wrong_context",
         IntegrityError::VaultMissing => "vault_missing",
+        IntegrityError::ParamsRollback => "params_rollback",
     }
 }
 
