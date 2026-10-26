@@ -449,7 +449,7 @@ private struct SecretKeyStep: View {
         .accessibilityIdentifier("onboarding.kitWarning")
         #if os(macOS)
         .alert(
-            "Cet emplacement est dans iCloud Drive",
+            "Cet emplacement est synchronisé dans le cloud",
             isPresented: $cloudWarning
         ) {
             Button("Enregistrer quand même", role: .destructive) {
@@ -458,7 +458,7 @@ private struct SecretKeyStep: View {
             }
             Button("Annuler", role: .cancel) { cloudDestination = nil }
         } message: {
-            Text("Le fichier sera copié sur les serveurs d'iCloud et sur tes autres appareils. Avec ton mot de passe maître, il donne un accès complet à ton coffre.")
+            Text("Le fichier sera copié sur les serveurs de ce service et sur tes autres appareils. Avec ton mot de passe maître, il donne un accès complet à ton coffre.")
         }
         #endif
 
@@ -488,7 +488,9 @@ private struct SecretKeyStep: View {
                 Button("Continuer") { saveFile() }
                 Button("Annuler", role: .cancel) {}
             } message: {
-                Text("Un fichier peut quitter cet appareil sans que tu le voies : iCloud Drive, Photos, les messageries et les captures d'écran synchronisent la Secret Key ailleurs. Préfère l'impression, ou enregistre sur une clé USB que tu ranges hors ligne.")
+                Text(Platform.text(
+                    mac: "Un fichier peut quitter cet appareil sans que tu le voies : iCloud Drive, Photos, les messageries et les captures d'écran synchronisent la Secret Key ailleurs. Préfère l'impression, ou enregistre sur une clé USB que tu ranges hors ligne.",
+                    phone: "Un fichier peut quitter cet appareil sans que tu le voies : iCloud Drive, Photos, les messageries et les captures d'écran synchronisent la Secret Key ailleurs. Préfère l'impression, ou enregistre sur un support hors ligne que tu ranges en lieu sûr."))
             }
             #if os(iOS) || os(visionOS)
             .sheet(item: $sharedFile, onDismiss: { model.sharingFinished() }) { file in

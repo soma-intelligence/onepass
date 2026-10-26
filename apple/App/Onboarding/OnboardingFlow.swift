@@ -340,7 +340,7 @@ final class OnboardingModel {
 
     /// The share sheet closed: the temporary copy goes away (the PDF stays in memory for printing).
     func sharingFinished() {
-        if let kitURL { EmergencyKitFile.remove(kitURL) }
+        if let kitURL { EmergencyKitFile.remove(kitURL, under: FileManager.default.temporaryDirectory) }
         kitURL = nil
     }
 
@@ -355,9 +355,16 @@ final class OnboardingModel {
         }
     }
 
+    /// Drops the temporary file and wipes the PDF bytes (they hold the Secret Key in clear).
     func deleteKit() {
         sharingFinished()
+        guard var bytes = kitData else { return }
         kitData = nil
+        // Our copy is now the only reference, so the wipe happens in place.
+        bytes.withUnsafeMutableBytes { buffer in
+            guard let base = buffer.baseAddress else { return }
+            _ = memset_s(base, buffer.count, 0, buffer.count)
+        }
     }
 
     // MARK: - Texts

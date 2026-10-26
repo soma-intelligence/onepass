@@ -69,7 +69,7 @@ struct EmergencyKitTests {
         defer { try? FileManager.default.removeItem(at: parent) }
         let data = Data("%PDF-1.4 test".utf8)
         let file = try EmergencyKitFile.write(data, under: parent)
-        defer { EmergencyKitFile.remove(file) }
+        defer { EmergencyKitFile.remove(file, under: parent) }
         #expect(file.lastPathComponent == "Emergency Kit OnePass.pdf")
         #expect(file.deletingLastPathComponent().deletingLastPathComponent().standardizedFileURL.path
             == parent.standardizedFileURL.path)
@@ -86,9 +86,36 @@ struct EmergencyKitTests {
         let parent = try Self.scratchFolder()
         defer { try? FileManager.default.removeItem(at: parent) }
         let file = try EmergencyKitFile.write(Data("x".utf8), under: parent)
-        EmergencyKitFile.remove(file)
+        EmergencyKitFile.remove(file, under: parent)
         #expect(!FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path))
         #expect(FileManager.default.fileExists(atPath: parent.path))
+    }
+
+    @Test func removeRefusesForeignKitFolders() throws {
+        let parent = try Self.scratchFolder()
+        let elsewhere = try Self.scratchFolder()
+        defer {
+            try? FileManager.default.removeItem(at: parent)
+            try? FileManager.default.removeItem(at: elsewhere)
+        }
+        // A kit folder under another root is left alone.
+        let foreign = try EmergencyKitFile.write(Data("x".utf8), under: elsewhere)
+        EmergencyKitFile.remove(foreign, under: parent)
+        #expect(FileManager.default.fileExists(atPath: foreign.path))
+        // A kit-* folder under the right root but holding another file name is left alone.
+        let folder = parent.appendingPathComponent("kit-autre", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let other = folder.appendingPathComponent("notes.pdf")
+        try Data("x".utf8).write(to: other)
+        EmergencyKitFile.remove(other, under: parent)
+        #expect(FileManager.default.fileExists(atPath: other.path))
+        // A folder without the kit prefix is left alone.
+        let plain = parent.appendingPathComponent("documents", isDirectory: true)
+        try FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
+        let named = plain.appendingPathComponent(EmergencyKitFile.fileName)
+        try Data("x".utf8).write(to: named)
+        EmergencyKitFile.remove(named, under: parent)
+        #expect(FileManager.default.fileExists(atPath: named.path))
     }
 
     @Test func sweepRemovesOnlyKitFolders() throws {
@@ -136,6 +163,9 @@ struct EmergencyKitTests {
             "\(home)/Library/Mobile Documents/com~apple~CloudDocs/Emergency Kit OnePass.pdf",
             "\(home)/Library/Mobile Documents/com~apple~CloudDocs/Dossier/kit.pdf",
             "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/kit.pdf",
+            "\(home)/Library/CloudStorage/Dropbox/kit.pdf",
+            "\(home)/Library/CloudStorage/GoogleDrive-camille@exemple.fr/Mon Drive/kit.pdf",
+            "\(home)/Library/CloudStorage/OneDrive-Personnel/kit.pdf",
         ].map { URL(fileURLWithPath: $0) }
         for url in urls {
             #expect(KitDestination.isCloudSynced(url), "\(url.path)")
@@ -151,6 +181,7 @@ struct EmergencyKitTests {
         #expect(!KitDestination.isCloudSynced(parent.appendingPathComponent("absent.pdf")))
         #expect(!KitDestination.isCloudSynced(URL(fileURLWithPath: "/Volumes/USB/kit.pdf")))
         #expect(!KitDestination.isCloudSynced(URL(fileURLWithPath: "/Users/camille/Documents/Mobile Documents.pdf")))
+        #expect(!KitDestination.isCloudSynced(URL(fileURLWithPath: "/Users/camille/Documents/CloudStorage/kit.pdf")))
         #expect(!KitDestination.isCloudSynced(URL(string: "https://exemple.fr/kit.pdf")!))
     }
 

@@ -52,7 +52,7 @@ enum KitSavePanel {
         panel.allowedContentTypes = [.pdf]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
-        panel.message = String(localized: "Choisis un emplacement hors ligne, par exemple une clé USB. iCloud Drive synchronise la Secret Key hors de ce Mac.")
+        panel.message = String(localized: "Choisis un emplacement hors ligne, par exemple une clé USB. iCloud Drive et les autres clouds synchronisent la Secret Key hors de ce Mac.")
         let response: NSApplication.ModalResponse
         if let window = NSApp.keyWindow ?? NSApp.mainWindow {
             response = await panel.beginSheetModal(for: window)

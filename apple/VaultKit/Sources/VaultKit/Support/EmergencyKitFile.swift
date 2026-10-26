@@ -30,11 +30,19 @@ public enum EmergencyKitFile {
         }
     }
 
-    /// Removes the kit folder holding `file`. Refuses anything that is not a kit folder.
-    public static func remove(_ file: URL) {
+    /// Removes the kit folder holding `file`, only when `file` is a kit written by `write` under
+    /// `parent`: named `fileName`, in a `kit-*` folder directly inside `parent`.
+    public static func remove(_ file: URL, under parent: URL) {
         let folder = file.deletingLastPathComponent()
-        guard folder.lastPathComponent.hasPrefix(folderPrefix) else { return }
+        guard file.lastPathComponent == fileName,
+              folder.lastPathComponent.hasPrefix(folderPrefix),
+              canonical(folder.deletingLastPathComponent()) == canonical(parent)
+        else { return }
         try? FileManager.default.removeItem(at: folder)
+    }
+
+    private static func canonical(_ url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     /// Removes every kit folder left in `parent` by a previous run.
@@ -79,15 +87,18 @@ public enum EmergencyKitSharing {
 
 /// Where a saved kit would end up.
 public enum KitDestination {
-    /// Whether `url` lies in iCloud Drive: its path contains `/Library/Mobile Documents/`
-    /// (after resolving symbolic links), or it or its nearest existing ancestor is a ubiquitous
-    /// item (Desktop and Documents synced with iCloud). Non file URLs are not cloud synced.
+    /// Whether `url` lies in a synced cloud folder: its path contains `/Library/Mobile Documents/`
+    /// (iCloud Drive) or `/Library/CloudStorage/` (File Provider clouds: Dropbox, Google Drive,
+    /// OneDrive...), also after resolving symbolic links, or it or its nearest existing ancestor
+    /// is a ubiquitous item (Desktop and Documents synced with iCloud). Non file URLs are not
+    /// cloud synced.
     public static func isCloudSynced(_ url: URL) -> Bool {
         guard url.isFileURL else { return false }
-        let marker = "/Library/Mobile Documents/"
+        let markers = ["/Library/Mobile Documents/", "/Library/CloudStorage/"]
         let standardized = url.standardizedFileURL
-        if standardized.path.contains(marker) { return true }
-        if standardized.resolvingSymlinksInPath().path.contains(marker) { return true }
+        for path in [standardized.path, standardized.resolvingSymlinksInPath().path] {
+            if markers.contains(where: path.contains) { return true }
+        }
         var current = standardized
         while true {
             if FileManager.default.fileExists(atPath: current.path) {
