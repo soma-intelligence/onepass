@@ -19,6 +19,7 @@ pub mod sync;
 pub mod totp;
 pub mod vault;
 pub mod watchtower;
+pub mod webauthn;
 
 pub use error::{Error, IntegrityError, Result, ValidationError};
 pub use id::Id;
