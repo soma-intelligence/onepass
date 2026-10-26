@@ -12,6 +12,9 @@ data-encoding.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 zeroize.workspace = true
+psl.workspace = true
+url.workspace = true
+onepass-core = { path = "../onepass-core" }
 # Seeded ML-KEM for the test-vector helpers only. The production path uses
 # aws-lc-rs alone; this crate is compiled in only with feature `vectors`.
 libcrux-ml-kem = { version = "0.0.11", optional = true }
