@@ -118,7 +118,8 @@ export type UiToBg =
 
 /** Background to content script. */
 export type BgToCs =
-  | { type: "fill"; fields: { ref: string; value: string }[] }
+  /** Values keyed by role; the content script writes them into the fields of `formRef` only. */
+  | { type: "fill"; formRef: string; values: Partial<Record<FieldRole, string>> }
   | { type: "click"; ref: string }
   | { type: "submit"; ref: string }
   | { type: "show_frame"; kind: FrameKind; url: string; ref?: string }

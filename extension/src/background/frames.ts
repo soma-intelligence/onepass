@@ -1,0 +1,120 @@
+// Who is talking, and which frame a fill may reach.
+//
+// The origin of a content script is always the one the browser reports in
+// `sender` (`sender.origin`, else the origin of `sender.url`): a compromised
+// renderer controls every message field, never `sender` (spec 3). Before
+// every fill the target frame is read again from `webNavigation` (spec 8.4).
+import { parseOrigin, sameSite } from "../shared/domain";
+import type { BgExt, FrameDetails, Sender } from "./ext";
+
+/** A content script sender, as vouched for by the browser. */
+export interface CsContext {
+  tabId: number;
+  frameId: number;
+  /** Normalized origin of the frame (`parseOrigin`). */
+  origin: string;
+  /** Chromium 106+: the exact document, to detect same-origin navigations. */
+  documentId?: string;
+}
+
+/** An extension page sender (popup, or menu / overlay / save frame). */
+export interface UiContext {
+  /** Path of the page inside the extension, e.g. "menu.html". */
+  page: string;
+  /** The tab hosting the frame; absent for the popup. */
+  tabId?: number;
+}
+
+type RuntimeId = Pick<BgExt["runtime"], "id" | "getURL">;
+
+/** The extension page that sent `sender`, or null if it is not one of ours. */
+export function extensionSender(runtime: RuntimeId, sender: Sender): UiContext | null {
+  if (sender.id !== runtime.id || typeof sender.url !== "string") return null;
+  const base = runtime.getURL("");
+  if (!sender.url.startsWith(base)) return null;
+  const rest = sender.url.slice(base.length);
+  const page = rest.split(/[?#]/, 1)[0] ?? "";
+  const ctx: UiContext = { page };
+  const tabId = sender.tab?.id;
+  if (typeof tabId === "number" && Number.isSafeInteger(tabId) && tabId >= 0) ctx.tabId = tabId;
+  return ctx;
+}
+
+/** The content script frame that sent `sender`, or null. */
+export function contentSender(runtime: RuntimeId, sender: Sender): CsContext | null {
+  if (sender.id !== runtime.id || typeof sender.url !== "string") return null;
+  if (sender.url.startsWith(runtime.getURL(""))) return null;
+  const tabId = sender.tab?.id;
+  const frameId = sender.frameId;
+  if (typeof tabId !== "number" || !Number.isSafeInteger(tabId) || tabId < 0) return null;
+  if (typeof frameId !== "number" || !Number.isSafeInteger(frameId) || frameId < 0) return null;
+  let raw: string;
+  if (typeof sender.origin === "string") {
+    // An opaque origin ("null", sandboxed frame) does not parse: rejected.
+    raw = sender.origin;
+  } else {
+    try {
+      raw = new URL(sender.url).origin;
+    } catch {
+      return null;
+    }
+  }
+  const parsed = parseOrigin(raw);
+  if (!parsed) return null;
+  const ctx: CsContext = { tabId, frameId, origin: parsed.origin };
+  if (typeof sender.documentId === "string" && sender.documentId !== "") ctx.documentId = sender.documentId;
+  return ctx;
+}
+
+export type FillRefusal = "insecure_origin" | "origin_mismatch" | "cross_site_frame";
+export type FillCheck = { ok: true } | { ok: false; code: FillRefusal };
+
+export class Frames {
+  constructor(private readonly nav: Pick<BgExt["webNavigation"], "getFrame">) {}
+
+  private async frame(tabId: number, frameId: number): Promise<FrameDetails | null> {
+    try {
+      const f = await this.nav.getFrame({ tabId, frameId });
+      return f && typeof f.url === "string" ? f : null;
+    } catch {
+      // Tab or frame gone.
+      return null;
+    }
+  }
+
+  /** Current origin of a frame, or null (gone, about:, data:, ...). */
+  async frameOrigin(tabId: number, frameId: number): Promise<string | null> {
+    const f = await this.frame(tabId, frameId);
+    return f ? (parseOrigin(f.url)?.origin ?? null) : null;
+  }
+
+  /**
+   * Spec 8.4 step 2: HTTPS, still the origin (and document, when known)
+   * bound when the gesture started, and the top frame or a frame of the
+   * same registrable domain as the top frame. No exception (R-10).
+   */
+  async checkFillTarget(
+    tabId: number,
+    frameId: number,
+    expectedOrigin: string,
+    expectedDocumentId?: string,
+  ): Promise<FillCheck> {
+    const expected = parseOrigin(expectedOrigin);
+    if (!expected?.https) return { ok: false, code: "insecure_origin" };
+    const f = await this.frame(tabId, frameId);
+    const current = f ? parseOrigin(f.url) : null;
+    if (!f || !current) return { ok: false, code: "origin_mismatch" };
+    if (!current.https) return { ok: false, code: "insecure_origin" };
+    if (current.origin !== expected.origin) return { ok: false, code: "origin_mismatch" };
+    if (expectedDocumentId !== undefined && f.documentId !== undefined && f.documentId !== expectedDocumentId) {
+      return { ok: false, code: "origin_mismatch" };
+    }
+    if (frameId !== 0) {
+      const top = await this.frame(tabId, 0);
+      if (!top || !sameSite(top.url, f.url)) return { ok: false, code: "cross_site_frame" };
+      // A secure frame inside a plain HTTP page is refused as well.
+      if (parseOrigin(top.url)?.https !== true) return { ok: false, code: "insecure_origin" };
+    }
+    return { ok: true };
+  }
+}
