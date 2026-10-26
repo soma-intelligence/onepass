@@ -110,6 +110,17 @@ impl Severity {
             Severity::Info => 0.0,
         }
     }
+
+    /// [`Severity::weight`] in hundredths, for exact integer scoring.
+    pub fn weight_hundredths(self) -> u32 {
+        match self {
+            Severity::Critical => 100,
+            Severity::High => 50,
+            Severity::Medium => 25,
+            Severity::Low => 10,
+            Severity::Info => 0,
+        }
+    }
 }
 
 /// Non-secret data of a finding.
@@ -501,13 +512,18 @@ fn old_password(item: &Item, opts: &Options, out: &mut Vec<Finding>) {
     let Some((field_id, _)) = passwords(item).next() else {
         return;
     };
-    let changed = item
+    let changed_at = item
         .password_history
         .iter()
         .map(|h| h.replaced_at)
         .max()
-        .unwrap_or(item.created_at)
-        .to_offset(UtcOffset::UTC)
+        .unwrap_or(item.created_at);
+    // Imported timestamps keep their source offset; near the edges of the
+    // supported range the UTC conversion does not exist. Fall back to the
+    // date in the stored offset rather than panicking.
+    let changed = changed_at
+        .checked_to_offset(UtcOffset::UTC)
+        .unwrap_or(changed_at)
         .date();
     let days = (opts.today - changed).whole_days();
     if days >= i64::from(opts.old_password_days) {
@@ -649,6 +665,9 @@ mod tests {
             [Critical, High, Medium, Low, Info].map(Severity::weight),
             [1.0, 0.5, 0.25, 0.1, 0.0]
         );
+        for s in [Critical, High, Medium, Low, Info] {
+            assert_eq!(f64::from(s.weight_hundredths()) / 100.0, s.weight());
+        }
     }
 
     #[test]
@@ -941,6 +960,57 @@ mod tests {
         assert_eq!(old[0].item_id, never_changed.id);
         assert_eq!(old[0].detail, Detail::Age { days: 365 });
         assert_eq!(old[0].field_id.as_deref(), Some("password"));
+    }
+
+    #[test]
+    fn extreme_offsets_do_not_panic() {
+        use time::{Date as D, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
+        let at = |d: D, h: i8| {
+            PrimitiveDateTime::new(d, Time::MIDNIGHT)
+                .replace_hour(23)
+                .unwrap()
+                .assume_offset(UtcOffset::from_hms(h, 0, 0).unwrap())
+        };
+        // 9999-12-31T23:00-01:00 is 10000-01-01 in UTC: out of range.
+        let late: OffsetDateTime = at(date!(9999 - 12 - 31), -1);
+        // -9999-01-01T00:00+01:00 is -10000-12-31 in UTC.
+        let early = PrimitiveDateTime::new(D::MIN, Time::MIDNIGHT)
+            .assume_offset(UtcOffset::from_hms(1, 0, 0).unwrap());
+        assert!(late.checked_to_offset(UtcOffset::UTC).is_none());
+        assert!(early.checked_to_offset(UtcOffset::UTC).is_none());
+
+        let mut future = login("A", "alice", STRONG, "");
+        future.created_at = late;
+        let mut history = login("B", "bob", "Zq8!vT3#mL6@pW1", "");
+        history.password_history = vec![PasswordHistoryEntry {
+            value: Zeroizing::new("old-one".into()),
+            replaced_at: late,
+        }];
+        let mut ancient = login("C", "carol", "Hk2$rN7!xQ4@bV9", "");
+        ancient.created_at = early;
+        let mut far = item(ItemType::Passport, "P");
+        set(&mut far, "expiry", FieldValue::Date(D::MAX));
+        far.expires = Some(D::MIN);
+        let mut card = item(ItemType::CreditCard, "Visa");
+        set(
+            &mut card,
+            "expiry",
+            FieldValue::MonthYear {
+                year: u16::MAX,
+                month: 12,
+            },
+        );
+        let opts = Options {
+            today: D::MAX,
+            expiry_warning_days: u16::MAX,
+            old_password_days: 0,
+        };
+        let items = [future, history, ancient.clone(), far, card];
+        let r = analyze(&items, &opts, Sources::none());
+        let old = of(&r, Check::OldPassword);
+        assert!(old.iter().any(|f| f.item_id == ancient.id));
+        let opts = Options::new(D::MIN);
+        let _ = analyze(&items, &opts, Sources::none());
     }
 
     #[test]

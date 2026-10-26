@@ -1,7 +1,7 @@
 //! Host of a URL, shared by Watchtower and the importers.
 
-/// Longest host name kept (DNS limit).
-pub const MAX_HOST_LEN: usize = 253;
+/// Longest host name kept (DNS limit), the domain cap shared with import.
+pub const MAX_HOST_LEN: usize = crate::import::limits::MAX_DOMAIN_LEN;
 
 /// Scheme of `url` when it has an explicit, well-formed one (`http` in
 /// `http://x`). A `://` inside a path or a query is not a scheme.

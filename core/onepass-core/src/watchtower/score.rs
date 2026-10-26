@@ -21,46 +21,53 @@ pub struct VaultScore {
 /// Global score and per-vault scores of the analyzed items.
 ///
 /// Item health is `max(0, 1 - sum of weights)`; a score is
-/// `round(100 * mean health)`, 100 with no item. The global score averages
-/// all items, not the vault scores.
+/// `round(100 * mean health)`, half up, 100 with no item. The global score
+/// averages all items, not the vault scores. Everything is computed in
+/// integer hundredths so that ties round exactly.
 pub(crate) fn scores(items: &[&Item], findings: &[Finding]) -> (u8, Vec<VaultScore>) {
-    let mut penalty: HashMap<Id, f64> = HashMap::new();
+    let mut penalty: HashMap<Id, u32> = HashMap::new();
     for f in findings {
-        *penalty.entry(f.item_id).or_insert(0.0) += f.severity.weight();
+        let p = penalty.entry(f.item_id).or_insert(0);
+        *p = p.saturating_add(f.severity.weight_hundredths());
     }
-    let health = |item: &Item| (1.0 - penalty.get(&item.id).copied().unwrap_or(0.0)).max(0.0);
+    // Health of an item in hundredths, 0 to 100.
+    let health = |item: &Item| 100u32.saturating_sub(penalty.get(&item.id).copied().unwrap_or(0));
     // Per vault: sum of health and item count.
-    let mut by_vault: BTreeMap<Id, (f64, u32)> = BTreeMap::new();
-    let mut total = 0.0;
+    let mut by_vault: BTreeMap<Id, (u64, u64)> = BTreeMap::new();
+    let mut total: (u64, u64) = (0, 0);
     for item in items {
-        let h = health(item);
-        total += h;
-        let entry = by_vault.entry(item.vault_id).or_insert((0.0, 0));
-        entry.0 += h;
+        let h = u64::from(health(item));
+        total.0 = total.0.saturating_add(h);
+        total.1 = total.1.saturating_add(1);
+        let entry = by_vault.entry(item.vault_id).or_insert((0, 0));
+        entry.0 = entry.0.saturating_add(h);
         entry.1 = entry.1.saturating_add(1);
     }
     let vaults = by_vault
         .into_iter()
         .map(|(vault_id, (sum, n))| VaultScore {
             vault_id,
-            score: to_score(sum, f64::from(n)),
-            items: n,
+            score: to_score(sum, n),
+            items: u32::try_from(n).unwrap_or(u32::MAX),
         })
         .collect();
-    // Item counts are capped far below 2^52: the conversion is exact.
-    #[allow(clippy::cast_precision_loss)]
-    let n = items.len() as f64;
-    (to_score(total, n), vaults)
+    (to_score(total.0, total.1), vaults)
 }
 
-/// `round(100 * sum / n)`, 100 when `n` is zero.
-// The value is in 0..=100 after the clamp: the cast is exact.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn to_score(sum: f64, n: f64) -> u8 {
-    if n <= 0.0 {
+/// `round(sum / n)` half up, where `sum` adds healths in hundredths (each
+/// at most 100); 100 when `n` is zero.
+fn to_score(sum: u64, n: u64) -> u8 {
+    if n == 0 {
         return 100;
     }
-    (100.0 * sum / n).round().clamp(0.0, 100.0) as u8
+    // (2 * sum + n) / (2 * n) is floor(sum / n + 1/2). Item counts are far
+    // below 2^56, so the products do not overflow; saturate anyway.
+    let rounded = sum
+        .saturating_mul(2)
+        .saturating_add(n)
+        .checked_div(n.saturating_mul(2))
+        .unwrap_or(100);
+    u8::try_from(rounded.min(100)).unwrap_or(100)
 }
 
 #[cfg(test)]
@@ -125,6 +132,23 @@ mod tests {
         // (0.9 + 1 + 1) / 3 = 0.9666... -> 97
         let (global, _) = scores(&[&a, &b, &c], &[finding(&a, Check::OldPassword)]);
         assert_eq!(global, 97);
+    }
+
+    #[test]
+    fn exact_half_rounds_up() {
+        // Healthy + (High + Medium + Low): (100 + 15) / 2 = 57.5 -> 58.
+        // Summing f64 weights gives 57.4999... and rounds to 57.
+        let v = Id([1; 16]);
+        let a = new_item(ItemType::Login, v, "a");
+        let b = new_item(ItemType::Login, v, "b");
+        let findings = [
+            finding(&b, Check::Weak),
+            finding(&b, Check::InsecureUrl),
+            finding(&b, Check::OldPassword),
+        ];
+        let (global, vaults) = scores(&[&a, &b], &findings);
+        assert_eq!(global, 58);
+        assert_eq!(vaults[0].score, 58);
     }
 
     #[test]

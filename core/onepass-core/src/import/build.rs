@@ -23,11 +23,7 @@ use crate::model::{
 use crate::totp::parse_otpauth;
 pub(crate) use crate::watchtower::host::host_of;
 
-use super::limits::MAX_DOMAIN_LEN;
 use super::{Import, ImportedItem, Warning};
-
-// Imported hosts and Watchtower hosts share one length cap.
-const _: () = assert!(MAX_DOMAIN_LEN == crate::watchtower::host::MAX_HOST_LEN);
 
 const IMPORTED_ID: &str = "imported";
 const IMPORTED_LABEL: &str = "Importé";
