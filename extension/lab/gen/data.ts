@@ -150,5 +150,6 @@ export function lookalikeHost(rng: Rng, host: string, kind: "suffix" | "typo" | 
   const spots = [...label].map((c, i) => [c, i] as const).filter(([c]) => c in HOMOGLYPHS);
   if (spots.length === 0) return null;
   const [c, i] = rng.pick(spots);
-  return domainToASCII(`${label.slice(0, i)}${HOMOGLYPHS[c]}${label.slice(i + 1)}.test`);
+  // domainToASCII returns "" when it cannot convert: no candidate then.
+  return domainToASCII(`${label.slice(0, i)}${HOMOGLYPHS[c]}${label.slice(i + 1)}.test`) || null;
 }

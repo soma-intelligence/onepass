@@ -34,7 +34,7 @@ const TRAITS: TraitId[] = ["iframe_same_origin", "iframe_cross_site", "shadow_op
   "delayed_fields", "no_autocomplete", "obfuscated_names", "split_otp", "honeypot", "decoy_form", "lookalike", "mixed_language"];
 const TRAIT_WEIGHTS: Record<TraitId, number> = {
   iframe_same_origin: 6, iframe_cross_site: 6, shadow_open: 4, shadow_closed: 3, spa_rerender: 6, delayed_fields: 8,
-  no_autocomplete: 8, obfuscated_names: 8, split_otp: 30, honeypot: 8, decoy_form: 6, lookalike: 8, mixed_language: 6,
+  no_autocomplete: 8, obfuscated_names: 8, split_otp: 0, honeypot: 8, decoy_form: 6, lookalike: 8, mixed_language: 6,
 };
 const TRAIT_COUNT: [number, number][] = [[0, 30], [1, 35], [2, 25], [3, 10]];
 const HONEYPOT_STYLES: HoneypotStyle[] = ["display_none", "offscreen", "opacity", "one_pixel", "aria_hidden"];
@@ -108,9 +108,16 @@ export function generate(seed: string, opts: GenerateOptions): World {
   return { version: GENERATOR_VERSION, seed, sites, scenarios, idp, fixture, hosts: [...hosts].sort() };
 }
 
+/**
+ * Site languages (spec 4.2, fr and en in the majority): fr 0.4, en 0.4, and
+ * 0.2 shared by the other corpus languages in proportion to their corpus
+ * weight ("und" is never a site language).
+ */
 function selectableLangs(patterns: Patterns): [Lang, number][] {
-  const out = patterns.langs.filter(([l, w]) => l !== "und" && w > 0);
-  return out.length > 0 ? out : [["en", 1]];
+  const others = patterns.langs.filter(([l, w]) => l !== "und" && l !== "en" && l !== "fr" && w > 0);
+  const total = others.reduce((s, [, w]) => s + w, 0);
+  if (total === 0) return [["fr", 0.5], ["en", 0.5]];
+  return [["fr", 0.4], ["en", 0.4], ...others.map(([l, w]) => [l, (0.2 * w) / total] as [Lang, number])];
 }
 
 function makeIdp(rng: Rng): Record<ProviderId, IdpAccount[]> {
@@ -156,22 +163,20 @@ function rolesFor(flow: FlowId, style: LoginStyle | undefined, passkeyOnly: bool
 }
 
 function traitAllowed(t: TraitId, flow: FlowId, roles: Role[], langCount: number): boolean {
-  const hasFields = roles.length > 0;
   switch (t) {
-    case "split_otp": return flow === "login_totp";
+    case "split_otp": return false; // drawn in the site shape (login_totp), never from the pool
     case "lookalike": case "decoy_form": return PASSWORD_LOGIN.includes(flow);
-    case "honeypot": case "no_autocomplete": case "obfuscated_names": case "spa_rerender": return hasFields;
     case "mixed_language": return langCount > 1;
-    case "iframe_cross_site": return flow !== "sso";
-    default: return true;
+    // Every other trait alters form fields: none on sso or passkey-only sites.
+    default: return roles.length > 0;
   }
 }
 
 const isStructural = (t: TraitId) => t.startsWith("iframe_") || t.startsWith("shadow_");
 
-function pickTraits(r: Rng, flow: FlowId, roles: Role[], langCount: number): TraitId[] {
-  const chosen = new Set<TraitId>();
-  const count = r.weighted(TRAIT_COUNT);
+function pickTraits(r: Rng, flow: FlowId, roles: Role[], langCount: number, splitOtp: boolean): TraitId[] {
+  const chosen = new Set<TraitId>(splitOtp ? ["split_otp"] : []);
+  const count = Math.min(r.weighted(TRAIT_COUNT), 3 - chosen.size);
   for (let k = 0; k < count; k++) {
     const hasStructural = [...chosen].some(isStructural);
     const pool = TRAITS.filter((t) => !chosen.has(t) && traitAllowed(t, flow, roles, langCount) && !(hasStructural && isStructural(t)));
@@ -237,8 +242,9 @@ function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, num
     ? rs.pick<LoginStyle>(["single", "username_first", "email_then_password"]) : undefined;
   const passkeyOnly = flow === "login_passkey" ? rs.chance(0.5) : false;
   const splitExp = flow === "checkout_card" && rs.chance(0.4);
+  const splitOtp = flow === "login_totp" && rs.chance(0.35);
   const roles = rolesFor(flow, loginStyle, passkeyOnly, splitExp);
-  const traits = pickTraits(r.fork("traits"), flow, roles, langs.length);
+  const traits = pickTraits(r.fork("traits"), flow, roles, langs.length, splitOtp);
   const labelLang = traits.includes("mixed_language")
     ? r.fork("label-lang").weighted(langs.filter(([l]) => l !== lang)) : lang;
   const fields = buildFields(r.fork("fields"), roles, patterns, labelLang, traits);

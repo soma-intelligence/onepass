@@ -44,7 +44,7 @@ describe("generate", () => {
   it("pinned_digest", () => {
     const w = generate("lab-smoke-1", { sites: 12, patterns: FIXED });
     const digest = createHash("sha256").update(JSON.stringify(w)).digest("hex");
-    expect(digest).toBe("60a2c7a45d28f372b539c6093d42680971b5a364d0f69ecda6b509b69f3718ba");
+    expect(digest).toBe("390df8c28f518ed629bb18e5f88d026e67a2a8b71818fdab76f90ec579c295ca");
   });
 
   it("load_patterns_reads_committed_file", () => {
@@ -89,7 +89,33 @@ describe("generate", () => {
       expect(s.labelLang !== s.lang).toBe(s.traits.includes("mixed_language"));
       if (s.traits.includes("no_autocomplete")) for (const f of s.fields) expect(f.autocomplete).toBeUndefined();
       expect(s.lang).not.toBe("und");
+      expect(!!s.totpCells).toBe(s.traits.includes("split_otp"));
+      if (s.flow === "sso" || s.passkeyOnly) for (const t of s.traits) expect(t).toBe("mixed_language");
     }
+  });
+
+  it("trait_rates_measurable", () => {
+    const w = generate("rates", { sites: 2000, patterns: FIXED });
+    const rate = (flows: FlowId[], t: string) => {
+      const xs = w.sites.filter((s) => flows.includes(s.flow));
+      return xs.filter((s) => s.traits.includes(t as never)).length / xs.length;
+    };
+    const split = rate(["login_totp"], "split_otp");
+    expect(split).toBeGreaterThan(0.25);
+    expect(split).toBeLessThan(0.45);
+    const decoy = rate(["login_single", "login_username_first", "login_email_then_password", "login_totp"], "decoy_form");
+    expect(decoy).toBeGreaterThan(0.07);
+    expect(decoy).toBeLessThan(0.12);
+  });
+
+  it("languages_fr_en_majority", () => {
+    const w = generate("langs", { sites: 400, patterns: FIXED });
+    for (const l of ["fr", "en"]) {
+      const share = w.sites.filter((s) => s.lang === l).length / 400;
+      expect(share).toBeGreaterThanOrEqual(0.3);
+      expect(share).toBeLessThanOrEqual(0.5);
+    }
+    expect(w.sites.some((s) => s.lang === "de" || s.lang === "es")).toBe(true);
   });
 
   it("fixture_has_item_per_login_site", () => {
@@ -193,6 +219,7 @@ describe("generate", () => {
     expect(expectationFor(site({ traits: ["shadow_open"] }), "one_click")).toEqual({ expect: "xfail", reason: "shadow DOM (content/index.ts)" });
     expect(expectationFor(site({ traits: ["shadow_closed"] }), "menu_fill")).toEqual({ expect: "xfail", reason: "shadow DOM (content/index.ts)" });
     expect(expectationFor(site({ traits: ["iframe_cross_site"] }), "one_click")).toEqual({ expect: "nofill", reason: "R-10" });
+    expect(expectationFor(site({ flow: "login_passkey", traits: ["iframe_cross_site"] }), "one_click")).toEqual({ expect: "nofill", reason: "R-10" });
     expect(expectationFor(site({}), "lookalike").expect).toBe("nofill");
     expect(expectationFor(site({ flow: "login_passkey" }), "passkey_control")).toEqual({ expect: "pass" });
     expect(expectationFor(site({ traits: ["honeypot", "iframe_same_origin"] }), "one_click")).toEqual({ expect: "pass" });
