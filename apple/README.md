@@ -104,6 +104,8 @@ make -C apple uitest-autofill
 
 Limite du Simulateur iOS 27.0 : `ASCredentialIdentityStore.state()` ne joint pas `com.apple.SafariFoundation.CredentialProviderExtensionHelper` et répond "désactivé" ; `autofill.status` reste donc "Désactivé" alors que les réglages du système montrent OnePass actif. Le test le consigne dans son journal sans échouer et vérifie l'activation par les réglages du système ; la valeur "Activé" est à vérifier sur un appareil.
 
+Le test laisse OnePass actif comme fournisseur de remplissage automatique de `OnePass M3 iPhone`. L'activation n'est validée que par l'alerte système acceptée puis l'interrupteur lu dans les réglages du système, jamais basculé par le test. L'absence de la feuille "Enregistrer le mot de passe ?" est surveillée 10 s. Sur ce Simulateur, la collecte de diagnostics de XCTest après un échec peut se bloquer et `make` n'impose aucune durée maximale : pour mettre au point le test, lancer `xcodebuild ... test-without-building` avec `-test-timeouts-enabled YES -default-test-execution-time-allowance 360 -maximum-test-execution-time-allowance 360`.
+
 ### Captures d'écran
 
 ```sh

@@ -65,9 +65,10 @@ final class AutoFillUITests: XCTestCase {
         if back.exists { tap(back, in: onePass) }
         tap(onePass.buttons["settings.done"], in: onePass)
 
-        // Second Login, OnePass now the provider: no "Save Password?" sheet (spec 7).
+        // Second Login, OnePass now the provider: no "Save Password?" sheet (spec 7). Limit: an
+        // absence is only watched for 10 s (the sheet came within 3 s before activation).
         addLogin(title: Self.secondTitle, username: Self.secondUsername, password: Self.secondPassword)
-        if let sheet = saveSheet(timeout: 6) {
+        if let sheet = saveSheet(timeout: 10) {
             attachScreenshot("save-sheet-after-activation")
             XCTFail("Save Password sheet shown with OnePass as the provider: \(sheet)")
         }
@@ -178,32 +179,29 @@ final class AutoFillUITests: XCTestCase {
         require(status, in: onePass, "autofill settings page")
         // Read once the page appears: empty while the state is read.
         _ = waitForValue(status, "Désactivé", timeout: Self.uiTimeout)
-        guard onePass.buttons["autofill.enable"].waitForExistence(timeout: 3) else {
-            print("No \"Activer OnePass\": status \(String(describing: status.value))")
-            return
-        }
+        // The provider was turned off first: "Activer OnePass" is shown and asks the system.
         tap(onePass.buttons["autofill.enable"], in: onePass)
         let accept = springboard.buttons
-            .matching(Self.labelPredicate(["Allow", "Autoriser", "Turn On", "Activer", "Use", "Utiliser"])).firstMatch
-        if accept.waitForExistence(timeout: 10) {
-            attachScreenshot("activation-alert")
-            print("Activation alert: \(springboard.alerts.firstMatch.label), button \(accept.label)")
-            accept.tap()
-        } else {
-            print("No activation alert in Springboard (provider already on for the system?)")
+            .matching(Self.labelPredicate(["Turn On", "Activer", "Allow", "Autoriser"])).firstMatch
+        guard accept.waitForExistence(timeout: 10) else {
+            dump("springboard without the activation alert", springboard)
+            attachScreenshot("no-activation-alert")
+            XCTFail("no system alert after \"Activer OnePass\"")
+            return
         }
+        attachScreenshot("activation-alert")
+        print("Activation alert: \(springboard.alerts.firstMatch.label), button \(accept.label)")
+        accept.tap()
+        XCTAssertTrue(accept.waitForNonExistence(timeout: Self.uiTimeout), "activation alert still shown")
     }
 
-    /// Settings > General > AutoFill & Passwords: the OnePass switch is on (turned on here when the
-    /// alert did not do it).
+    /// Settings > General > AutoFill & Passwords: the alert turned the OnePass switch on. Only read,
+    /// never flipped here.
     private func verifyOnInSystemSettings() {
         preferences.launch()
         let toggle = systemSwitch()
-        if toggle.value as? String != "1" {
-            print("OnePass switch off in the system settings after the alert: turned on there")
-            flip(toggle)
-        }
-        XCTAssertTrue(waitForValue(toggle, "1", timeout: Self.uiTimeout), "OnePass not on in the system settings")
+        XCTAssertTrue(waitForValue(toggle, "1", timeout: Self.uiTimeout),
+                      "OnePass not on in the system settings after the alert: \(String(describing: toggle.value))")
         print("System settings: \(toggle.label) = \(String(describing: toggle.value))")
         attachScreenshot("system-autofill-settings")
     }
