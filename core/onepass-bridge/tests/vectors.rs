@@ -26,9 +26,12 @@ use std::path::PathBuf;
 
 use aws_lc_rs::digest::{SHA256, digest};
 use data_encoding::BASE64;
-use onepass_bridge::api::Request;
+use onepass_bridge::api::{Ctx, Method, Reply, Request, Response, Summary, SummaryKind};
+use onepass_bridge::kdf;
 use onepass_bridge::kem::{self, KemSecret};
+use onepass_bridge::origin::MatchQuality;
 use onepass_bridge::pairing::{ExtPairing, HostPairing};
+use onepass_bridge::provider::ProviderId;
 use onepass_bridge::session::{ext_hello_deterministic, host_accept_deterministic};
 use onepass_bridge::wire::{self, Envelope, Msg, PairConfirm, PairHello, PairOffer, PairReveal};
 use serde_json::{Map, Value, json};
@@ -91,6 +94,21 @@ fn kem_vectors() -> Value {
     ])
 }
 
+/// Code keys and the code `kdf::sas` shows for them, including values under
+/// 100 000 that need zero padding ("%03d %03d").
+fn sas_cases() -> Value {
+    let cases: Vec<Value> = [0u32, 5, 12_345, 99_999, 100_000, 999_999, 1_000_000 + 7]
+        .iter()
+        .map(|n| {
+            let mut key = [0xA5u8; 32];
+            key[..4].copy_from_slice(&n.to_be_bytes());
+            json!({"code_key": b64(&key), "sas": kdf::sas(&key)})
+        })
+        .collect();
+    assert_eq!(cases[2]["sas"], "012 345");
+    Value::Array(cases)
+}
+
 /// Pairing vectors plus the record both sides stored, reused by the session.
 fn pairing_vectors() -> (Value, onepass_bridge::pairing::PairingRecord) {
     let ext_mlkem_seed = seed::<64>("mlkem seed ext");
@@ -140,6 +158,7 @@ fn pairing_vectors() -> (Value, onepass_bridge::pairing::PairingRecord) {
         ("commit", b64(&commit)),
         ("transcript_hash", b64(&keys_host.transcript_hash)),
         ("sas", json!(sas_host.0)),
+        ("sas_cases", sas_cases()),
         ("pairing_key", b64(&keys_host.pairing_key)),
         ("confirm_key", b64(&keys_host.confirm_key)),
         ("mac_host", b64(&done.mac.0)),
@@ -195,19 +214,56 @@ fn session_vectors(record: &onepass_bridge::pairing::PairingRecord) -> Value {
     let mut host_ch = pending_host.on_finish(finish.clone(), 0).unwrap();
 
     let e2h = [
-        r#"{"id":1,"op":"status"}"#,
-        r#"{"id":2,"op":"list_for_origin","ctx":"popup","origin":"https://atlas-cloud.test"}"#,
+        Request::Status { id: 1 },
+        Request::ListForOrigin {
+            id: 2,
+            ctx: Ctx::Popup,
+            origin: "https://atlas-cloud.test".into(),
+        },
     ];
     let h2e = [
-        r#"{"id":1,"ok":{"locked":false,"account":"alex@atlas.dev","vaults":2}}"#,
-        r##"{"id":2,"ok":{"items":[{"item_id":"it_01","vault_id":"vt_01","vault_name":"Personal","title":"Atlas Cloud","subtitle":"alex@atlas.dev","kind":"login","icon_letter":"A","icon_color":"#4F46E5","has_password":true,"has_totp":false,"methods":[],"match":"exact_host"}]}}"##,
+        Reply::Ok {
+            id: 1,
+            ok: Box::new(Response::Status {
+                locked: false,
+                account: "alex@atlas.dev".into(),
+                vaults: 2,
+            }),
+        },
+        Reply::Ok {
+            id: 2,
+            ok: Box::new(Response::Items {
+                items: vec![Summary {
+                    item_id: "it_01".into(),
+                    vault_id: "vt_01".into(),
+                    vault_name: "Personal".into(),
+                    title: "Atlas Cloud".into(),
+                    subtitle: "alex@atlas.dev".into(),
+                    kind: SummaryKind::Login,
+                    icon_letter: "A".into(),
+                    icon_color: "#4F46E5".into(),
+                    has_password: true,
+                    has_totp: false,
+                    methods: vec![Method {
+                        provider: ProviderId::Google,
+                        account_email: "alex.perso@example.com".into(),
+                    }],
+                    match_quality: Some(MatchQuality::ExactHost),
+                }],
+            }),
+        },
     ];
-    // Plaintexts that claim to be API messages must parse as such.
-    for p in e2h {
+    // Plaintexts are the compact serialization of the real API types.
+    let e2h: Vec<String> = e2h
+        .iter()
+        .map(|r| serde_json::to_string(r).unwrap())
+        .collect();
+    let h2e: Vec<String> = h2e
+        .iter()
+        .map(|r| serde_json::to_string(r).unwrap())
+        .collect();
+    for p in &e2h {
         serde_json::from_str::<Request>(p).expect("e2h plaintext is a valid request");
-    }
-    for p in h2e {
-        serde_json::from_str::<Value>(p).expect("h2e plaintext is JSON");
     }
     let e2h_frames: Vec<Value> = e2h
         .iter()

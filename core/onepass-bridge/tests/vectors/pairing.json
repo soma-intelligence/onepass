@@ -55,5 +55,35 @@
   "pairing_id": "QRk811gH+MAWO8+7UuWUWQ==",
   "pairing_key": "vOZpBSkUOj+4eboJvcK8/Qb58FnErKuVUg9z7I3YWXw=",
   "sas": "585 424",
+  "sas_cases": [
+    {
+      "code_key": "AAAAAKWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaU=",
+      "sas": "000 000"
+    },
+    {
+      "code_key": "AAAABaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaU=",
+      "sas": "000 005"
+    },
+    {
+      "code_key": "AAAwOaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaU=",
+      "sas": "012 345"
+    },
+    {
+      "code_key": "AAGGn6WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaU=",
+      "sas": "099 999"
+    },
+    {
+      "code_key": "AAGGoKWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaU=",
+      "sas": "100 000"
+    },
+    {
+      "code_key": "AA9CP6WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaU=",
+      "sas": "999 999"
+    },
+    {
+      "code_key": "AA9CR6WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaU=",
+      "sas": "000 007"
+    }
+  ],
   "transcript_hash": "+nu6VSTIC02pnmRDDAi+Ye6T1NMuBKKxqRuyyOwdW4g="
 }

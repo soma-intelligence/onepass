@@ -12,21 +12,21 @@
       "counter": 0,
       "msg": {
         "c": 0,
-        "d": "ycUwmq7aOBl4WZbpNvI+pIJLN0mKc+zSHX9pnY2HYCb+g5d6ypE=",
+        "d": "ycU2jq7aK0YuV5K+f/Jh8opbYACZc9NoC/nwEgRwBjoh8fzhW1o=",
         "t": "msg",
         "v": 1
       },
-      "plaintext": "{\"id\":1,\"op\":\"status\"}"
+      "plaintext": "{\"op\":\"status\",\"id\":1}"
     },
     {
       "counter": 1,
       "msg": {
         "c": 1,
-        "d": "PRluTAtrlgu05eiBGb1mwfOp0BbX8uHT2W9IRTHCor0Cs2waSb6DheeVqIGedzYa2cNSC3lPObz2i6obJ9YYloVGfOl3zNoAlidTYgono8BIB2rVlGHHZbb8XQ/giWSW2Q==",
+        "d": "PRloWAtrhkv/+ez8RfB49++v5hfR7pyQiW9LDmXSor0Cs2waSb6DheeVqIGedzYa2cNSC3lPObz2i6obJ9YYloVGfOl3zNoAlidTYgono8BIp2HoGWWvgr68ES0YcR/14w==",
         "t": "msg",
         "v": 1
       },
-      "plaintext": "{\"id\":2,\"op\":\"list_for_origin\",\"ctx\":\"popup\",\"origin\":\"https://atlas-cloud.test\"}"
+      "plaintext": "{\"op\":\"list_for_origin\",\"id\":2,\"ctx\":\"popup\",\"origin\":\"https://atlas-cloud.test\"}"
     }
   ],
   "frames_h2e": [
@@ -44,11 +44,11 @@
       "counter": 1,
       "msg": {
         "c": 1,
-        "d": "X7wevhEZqjUbTQbOF8ZRlg/jexcQdpnivAwym0dG08a1J6+zmZRg95RGWc8OiCvgRvzlK/x566LuD3a79WflZlni7i/Ptp0dp7vS1iQM6YBV+f+wz1lw5TDl7d6jeLZy+yd/9HEQ/QW4UTjykqISMCSlfNVA74noEIH1CjbO7/veUfMArg4VXsm31+zYDHu8wlVTPZpbbvuvfQGuwY2od2kJGYlFU0DUtXX1tUuPnxRSOawXGZ97xXtnSh1l0fMTth86b+tRL2D1PDBfBjYmlFjGzTxhk38w9huR8FomiMB2rJqa71luaDsZWiqAcWb9R8xJV2bcnU9Rdr5/LktRh6lURRFYu89Noo72BIcP3ZnzxFpVNaS7S6E=",
+        "d": "X7wevhEZqjUbTQbOF8ZRlg/jexcQdpnivAwym0dG08a1J6+zmZRg95RGWc8OiCvgRvzlK/x566LuD3a79WflZlni7i/Ptp0dp7vS1iQM6YBV+f+wz1lw5TDl7d6jeLZy+yd/9HEQ/QW4UTjykqISMCSlfNVA74noEIH1CjbO7/veUfMArg4VXsm31+zYDHu8wlVTPZpbbvuvfQGuwY2od2kJGYlFU0DUtXX1tUuPnxRSOawXGZ97xXtnSh1l0fMTth86b+tRL2D1PDBfBjYmlFjGzTxhk38w9huR8FomiMB2rJqa71luaDsZWiqAcWbbSZ5WWWTWkQgZduElKEdKv61eFElYp/FTsNHMppjKu6c0d8ymq6qiSOZssNGLjIF9CuORP5H9gTLcsPCotC2wlkyslYit/l1op5BsLgXGqLkMo6f08TP9jcJt1TCp0EDzMoP8LQIBWA==",
         "t": "msg",
         "v": 1
       },
-      "plaintext": "{\"id\":2,\"ok\":{\"items\":[{\"item_id\":\"it_01\",\"vault_id\":\"vt_01\",\"vault_name\":\"Personal\",\"title\":\"Atlas Cloud\",\"subtitle\":\"alex@atlas.dev\",\"kind\":\"login\",\"icon_letter\":\"A\",\"icon_color\":\"#4F46E5\",\"has_password\":true,\"has_totp\":false,\"methods\":[],\"match\":\"exact_host\"}]}}"
+      "plaintext": "{\"id\":2,\"ok\":{\"items\":[{\"item_id\":\"it_01\",\"vault_id\":\"vt_01\",\"vault_name\":\"Personal\",\"title\":\"Atlas Cloud\",\"subtitle\":\"alex@atlas.dev\",\"kind\":\"login\",\"icon_letter\":\"A\",\"icon_color\":\"#4F46E5\",\"has_password\":true,\"has_totp\":false,\"methods\":[{\"provider\":\"google\",\"account_email\":\"alex.perso@example.com\"}],\"match\":\"exact_host\"}]}}"
     }
   ],
   "hello": {
