@@ -209,20 +209,34 @@ fn normalized(kind: ItemType, id: &str, raw: &str) -> String {
 }
 
 /// `Key:Value` pairs of the `extra` cell after the `NoteType` line, and the
-/// `Notes` text. A line with no usable key continues the previous value.
+/// `Notes` text. A line with no usable key continues the previous value;
+/// one that comes before any pair is kept in `loose`, never dropped.
 struct NoteBody {
     pairs: Vec<(String, String)>,
     notes: String,
+    loose: Vec<String>,
 }
 
 fn parse_body(lines: &[&str]) -> NoteBody {
     let mut pairs: Vec<(String, String)> = Vec::new();
+    let mut loose: Vec<String> = Vec::new();
     let mut notes = String::new();
     let mut in_notes = false;
+    // Inside a PEM block every line is part of the value, colons included
+    // (`Proc-Type: 4,ENCRYPTED`, `DEK-Info: ...`), up to `-----END`.
+    let mut in_pem = false;
     for line in lines {
         if in_notes {
             notes.push('\n');
             notes.push_str(line);
+            continue;
+        }
+        if in_pem {
+            if let Some((_, v)) = pairs.last_mut() {
+                v.push('\n');
+                v.push_str(line);
+            }
+            in_pem = !line.trim_start().starts_with("-----END");
             continue;
         }
         let key = line
@@ -231,13 +245,19 @@ fn parse_body(lines: &[&str]) -> NoteBody {
         match key {
             Some((k, v)) if k.trim() == "Notes" => {
                 in_notes = true;
-                notes.push_str(v);
+                notes.push_str(v.trim_start());
             }
-            Some((k, v)) => pairs.push((k.trim().to_owned(), v.to_owned())),
+            Some((k, v)) => {
+                let v = v.trim_start();
+                in_pem = v.starts_with("-----BEGIN") && !v.contains("-----END");
+                pairs.push((k.trim().to_owned(), v.to_owned()));
+            }
             None => {
                 if let Some((_, v)) = pairs.last_mut() {
                     v.push('\n');
                     v.push_str(line);
+                } else if !line.trim().is_empty() {
+                    loose.push((*line).to_owned());
                 }
             }
         }
@@ -246,12 +266,15 @@ fn parse_body(lines: &[&str]) -> NoteBody {
         v.truncate(v.trim_end().len());
     }
     notes.truncate(notes.trim_end().len());
-    NoteBody { pairs, notes }
+    NoteBody {
+        pairs,
+        notes,
+        loose,
+    }
 }
 
 /// Fills `d` from the note body of a known `NoteType`.
 fn fill_typed(d: &mut Draft, kind: ItemType, keys: KeyMap, body: &NoteBody, row_name: &str) {
-    let mut filled: Vec<&str> = Vec::new();
     let mut private_key = None;
     let mut public_key = String::new();
     for (key, value) in &body.pairs {
@@ -262,7 +285,6 @@ fn fill_typed(d: &mut Draft, kind: ItemType, keys: KeyMap, body: &NoteBody, row_
         match id {
             Some("private_key") => private_key = Some(Zeroizing::new(value.clone())),
             Some(id) => {
-                filled.push(id);
                 d.set(id, &normalized(kind, id, value));
             }
             None if kind == ItemType::SshKey && key.eq_ignore_ascii_case("Public Key") => {
@@ -271,7 +293,12 @@ fn fill_typed(d: &mut Draft, kind: ItemType, keys: KeyMap, body: &NoteBody, row_
             None => d.extra(key, value, false),
         }
     }
-    if let Some(private_pem) = private_key.filter(|k| !k.trim().is_empty()) {
+    let private_key = private_key.filter(|k| !k.trim().is_empty());
+    if private_key.is_none() {
+        // No key to attach it to: keep the public half.
+        d.extra("Public Key", &public_key, false);
+    }
+    if let Some(private_pem) = private_key {
         d.set_value(
             "private_key",
             FieldValue::SshKey(SshKeyValue {
@@ -282,10 +309,11 @@ fn fill_typed(d: &mut Draft, kind: ItemType, keys: KeyMap, body: &NoteBody, row_
         );
     }
     match kind {
-        ItemType::BankAccount if !filled.contains(&"holder") => d.set("holder", row_name),
+        ItemType::BankAccount => d.set("holder", row_name),
         ItemType::SoftwareLicense => d.set("software", row_name),
         _ => {}
     }
+    d.extra("note", &body.loose.join("\n"), false);
     d.notes(&body.notes);
 }
 
@@ -328,6 +356,7 @@ fn row_draft(header: &[String], row: &[String]) -> Draft {
                 for (k, v) in &body.pairs {
                     d.extra(k, v, false);
                 }
+                d.extra("note", &body.loose.join("\n"), false);
                 d.set("content", &body.notes);
             }
             None => {
@@ -376,7 +405,7 @@ pub(crate) fn parse_lastpass(b: &[u8]) -> Result<Import> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{FieldValue, Item, ItemType};
+    use crate::model::{FieldValue, Item, ItemType, template};
 
     const LASTPASS: &[u8] = include_bytes!("../../tests/fixtures/import/lastpass.csv");
 
@@ -494,11 +523,10 @@ mod tests {
         assert_eq!(item.item_type, ItemType::SshKey);
         match &item.field("private_key").unwrap().value {
             FieldValue::SshKey(k) => {
-                assert!(
-                    k.private_pem
-                        .starts_with("-----BEGIN OPENSSH PRIVATE KEY-----\n")
+                assert_eq!(
+                    k.private_pem.as_str(),
+                    "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAFAKEFAKEFAKE\n-----END OPENSSH PRIVATE KEY-----"
                 );
-                assert!(k.private_pem.ends_with("-----END OPENSSH PRIVATE KEY-----"));
                 assert_eq!(k.public_openssh, "ssh-ed25519 AAAAFAKE alice@example.com");
                 assert!(k.fingerprint_sha256.is_empty());
             }
@@ -550,5 +578,111 @@ mod tests {
             Some("2024-01-05")
         );
         assert_eq!(super::full_date("nope"), None);
+    }
+
+    fn one_note(extra: &str, name: &str) -> Import {
+        let csv = format!(
+            "url,username,password,totp,extra,name,grouping,fav\nhttp://sn,,,,\"{}\",{name},,0\n",
+            extra.replace('"', "\"\"")
+        );
+        parse_lastpass(csv.as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn encrypted_pem_headers_and_blank_lines_stay_in_the_key() {
+        let pem = "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,0123ABCD\n\nAAAAFAKE\nhttp://example.com/x\n-----END RSA PRIVATE KEY-----";
+        let imp = one_note(
+            &format!(
+                "NoteType:SSH Key\nPrivate Key: {pem}\nPublic Key:  ssh-ed25519 AAAA\nNotes:n"
+            ),
+            "K",
+        );
+        let item = &imp.items[0].item;
+        match &item.field("private_key").unwrap().value {
+            FieldValue::SshKey(k) => {
+                assert_eq!(k.private_pem.as_str(), pem);
+                assert_eq!(k.public_openssh, "ssh-ed25519 AAAA");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert_eq!(item.notes, "n");
+    }
+
+    #[test]
+    fn keyless_lines_are_kept() {
+        let imp = one_note("NoteType:Custom\n:foo\nsome prose\nA:  b", "N");
+        let item = &imp.items[0].item;
+        assert_eq!(item.item_type, ItemType::SecureNote);
+        let extra = imported(item);
+        assert!(extra.contains(&(
+            "note".to_owned(),
+            FieldValue::Text(":foo\nsome prose".into())
+        )));
+        // Leading space after the colon is dropped.
+        assert!(extra.contains(&("A".to_owned(), FieldValue::Text("b".into()))));
+    }
+
+    #[test]
+    fn public_key_without_private_key_is_kept() {
+        let imp = one_note("NoteType:SSH Key\nPublic Key:ssh-ed25519 AAAA", "P");
+        let labels: Vec<String> = imported(&imp.items[0].item)
+            .into_iter()
+            .map(|(l, _)| l)
+            .collect();
+        assert!(labels.contains(&"Public Key".to_owned()));
+    }
+
+    #[test]
+    fn note_type_table_ids_exist_in_templates() {
+        let names = [
+            "Credit Card",
+            "Bank Account",
+            "Wi-Fi Password",
+            "Server",
+            "Database",
+            "SSH Key",
+            "Passport",
+            "Driver's License",
+            "Social Security",
+            "Email Account",
+            "Software License",
+            "Membership",
+            "Insurance",
+        ];
+        for name in names {
+            let (kind, keys) = note_type(name).expect(name);
+            let ids: Vec<String> = template(kind)
+                .into_iter()
+                .flat_map(|s| s.fields.into_iter().map(|f| f.id))
+                .collect();
+            for (key, id) in keys {
+                assert!(ids.iter().any(|i| i == id), "{name}: {key} -> {id}");
+            }
+        }
+    }
+
+    #[test]
+    fn server_and_passport_notes() {
+        let imp = one_note(
+            "NoteType:Server\nHostname:db.example.com\nUsername:root\nPassword:srv-Invented-5",
+            "Srv",
+        );
+        let item = &imp.items[0].item;
+        assert_eq!(item.item_type, ItemType::Server);
+        assert_eq!(text(item, "host"), "db.example.com");
+        assert_eq!(text(item, "username"), "root");
+        assert_eq!(text(item, "password"), "srv-Invented-5");
+
+        let imp = one_note(
+            "NoteType:Passport\nNumber:X1234567\nCountry:Exampleland\nExpiration Date:January 5, 2031\nName:Example\nDate of Birth:March 2, 1990",
+            "Pass",
+        );
+        let item = &imp.items[0].item;
+        assert_eq!(item.item_type, ItemType::Passport);
+        assert_eq!(text(item, "number"), "X1234567");
+        assert_eq!(text(item, "issuing_country"), "Exampleland");
+        assert_eq!(text(item, "last_name"), "Example");
+        assert!(item.field("expiry").is_some());
+        assert!(item.field("birth_date").is_some());
     }
 }
