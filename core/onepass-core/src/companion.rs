@@ -36,6 +36,9 @@ pub const MAX_VALUE_BYTES: usize = 1024;
 pub const MAX_GLANCE_ITEMS: usize = 8;
 /// The snapshot window is capped at 24 hours.
 pub const MAX_GLANCE_WINDOW_SECS: u64 = 86_400;
+/// At most this many codes per item (24 h at 30 s): a short period keeps
+/// only the earliest codes, from the period containing `now` forward.
+pub const MAX_GLANCE_CODES_PER_ITEM: usize = 2880;
 
 const MAGIC: &[u8; 4] = b"OPC1";
 /// Magic and generation.
@@ -338,9 +341,20 @@ fn copy_fields(item: &Item) -> Vec<CompanionField> {
                 _ => None,
             },
         };
-        let Some((value, kind)) = copied else {
+        let Some((value, mut kind)) = copied else {
             continue;
         };
+        // A secret source value stays masked whatever the rule says (an
+        // imported item may hold one in a field the template calls text).
+        if kind == CompanionFieldKind::Text
+            && matches!(
+                field.value,
+                FieldValue::Concealed(_) | FieldValue::Password(_)
+            )
+            && !matches!(how, Rule::CardMask)
+        {
+            kind = CompanionFieldKind::Concealed;
+        }
         if value.len() > MAX_VALUE_BYTES {
             continue;
         }
@@ -462,9 +476,13 @@ pub fn seal_payload(payload: &CompanionPayload, recipient: &HybridKemPublic) -> 
     let fp = fingerprint(recipient);
     let key = SymmetricKey::generate()?;
     let envelope = kem::wrap_key_labeled(recipient, &key, KEM_LABEL, &kem_context(&fp))?;
-    let plain = Zeroizing::new(
-        postcard::to_allocvec(payload).map_err(|_| Error::InvalidFormat("companion payload"))?,
-    );
+    // Exact size first, then one write into a wiped buffer: no growing
+    // plain Vec leaves copies of values or seeds behind.
+    let bad = |_| Error::InvalidFormat("companion payload");
+    let size = postcard::experimental::serialized_size(payload).map_err(bad)?;
+    let mut plain = Zeroizing::new(vec![0u8; size]);
+    let used = postcard::to_slice(payload, &mut plain).map_err(bad)?.len();
+    plain.truncate(used);
     let blob = seal(
         &key,
         BlobKind::Companion,
@@ -508,8 +526,10 @@ pub fn open_payload(secret: &HybridKemSecret, sealed: &[u8]) -> Result<Companion
 
 /// The widget snapshot at `now_unix`: live favorites sorted by title (at
 /// most `MAX_GLANCE_ITEMS`) and, for those with a usable TOTP, the codes
-/// of every period that overlaps `[now, now + window]`. The window is
-/// capped at `MAX_GLANCE_WINDOW_SECS`.
+/// of every period that overlaps `[now, now + window]`, at most
+/// `MAX_GLANCE_CODES_PER_ITEM` per item. The window is capped at
+/// `MAX_GLANCE_WINDOW_SECS`; `valid_until` is not shortened by the code
+/// cap (the widget refreshes when a date has no code).
 pub fn glance_snapshot<S: RecordStore>(
     repo: &mut Repository<S>,
     now_unix: i64,
@@ -534,7 +554,7 @@ pub fn glance_snapshot<S: RecordStore>(
         let period = u64::from(cfg.period);
         let mut list = Vec::new();
         let mut start = now - now % period;
-        while start <= end {
+        while start <= end && list.len() < MAX_GLANCE_CODES_PER_ITEM {
             list.push((start as i64, totp::code_at(&cfg, start)?));
             start += period;
         }
@@ -1015,6 +1035,23 @@ mod tests {
     }
 
     #[test]
+    fn concealed_source_value_stays_concealed() {
+        let v = Id::new();
+        let mut it = new_item(ItemType::Login, v, "Importé");
+        set(&mut it, "username", concealed("camille"));
+        let mut card = new_item(ItemType::CreditCard, v, "Carte");
+        set(&mut card, "cardholder", concealed("Camille Durand"));
+        set(&mut card, "number", concealed("4970101234597890"));
+        let kinds = |i: &Item| copy_fields(i).iter().map(|f| f.kind).collect::<Vec<_>>();
+        assert_eq!(kinds(&it), vec![CompanionFieldKind::Concealed]);
+        // The card mask is computed text, not the secret number.
+        assert_eq!(
+            kinds(&card),
+            vec![CompanionFieldKind::Concealed, CompanionFieldKind::Text]
+        );
+    }
+
+    #[test]
     fn exclusions() {
         let (mut repo, v) = fixture();
         let hidden = repo.create_vault(vault_meta("Masqué")).unwrap();
@@ -1119,6 +1156,25 @@ mod tests {
     // Glance.
 
     #[test]
+    fn glance_codes_are_capped_per_item() {
+        let (mut repo, v) = fixture();
+        let uri = format!("otpauth://totp/x?secret={SEED}&period=1");
+        let mut it = login(&v, "Rapide", "camille", Some(&uri));
+        it.favorite = true;
+        save(&mut repo, &v, vec![it]);
+        let now = NOW.unix_timestamp();
+        let g = glance_snapshot(&mut repo, now, 86_400, &[]).unwrap();
+        assert_eq!(g.valid_until, now + 86_400);
+        let c = &g.codes[0];
+        assert_eq!(c.period, 1);
+        assert_eq!(c.codes.len(), MAX_GLANCE_CODES_PER_ITEM);
+        assert!(c.codes[0].0 <= now);
+        for (i, (start, _)) in c.codes.iter().enumerate() {
+            assert_eq!(*start, c.codes[0].0 + i as i64);
+        }
+    }
+
+    #[test]
     fn glance_codes_match_totp() {
         let (mut repo, v) = fixture();
         let mut items = Vec::new();
@@ -1131,6 +1187,14 @@ mod tests {
         gone.favorite = true;
         gone.trashed_at = Some(NOW);
         items.push(gone);
+        let mut archived = login(&v, "000 archivé", "camille", Some(SEED));
+        archived.favorite = true;
+        archived.archived = true;
+        items.push(archived);
+        let mut reprompt = login(&v, "000 redemander", "camille", Some(SEED));
+        reprompt.favorite = true;
+        reprompt.reprompt = true;
+        items.push(reprompt);
         let mut plain = login(&v, "Pas favori", "camille", Some(SEED));
         plain.favorite = false;
         items.push(plain);
@@ -1151,7 +1215,9 @@ mod tests {
             let (last, _) = *c.codes.last().unwrap();
             assert!(first <= now && now < first + 30);
             assert!(last <= now + MAX_GLANCE_WINDOW_SECS as i64);
-            assert!(last + 30 > now + MAX_GLANCE_WINDOW_SECS as i64);
+            // 2881 periods overlap 24 h: the cap keeps the earliest 2880.
+            assert_eq!(c.codes.len(), MAX_GLANCE_CODES_PER_ITEM);
+            assert_eq!(last, first + 30 * (MAX_GLANCE_CODES_PER_ITEM as i64 - 1));
             for (start, code) in &c.codes {
                 assert_eq!(start % 30, 0);
                 assert_eq!(code, &totp::code_at(&cfg, *start as u64).unwrap());

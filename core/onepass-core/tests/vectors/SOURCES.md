@@ -27,3 +27,12 @@ the same commit, ML-DSA-87, external interface, pure, no external mu, only the
 cases with an empty context (tgId 5 deterministic: 2 cases, tgId 17 hedged:
 1 case). Kept fields: `tcId`, `pk`, `message`, `signature` (`sk`, `rnd` and the
 rest dropped). Used to check that the expected signatures verify.
+
+# OnePass golden vectors
+
+`kem_wrap_key_v1.hex`: one `crypto::kem::wrap_key` envelope, generated once
+by OnePass itself (milestone 6, after a byte-preserving refactor of the
+combiner) and never regenerated. Lines, lower-case hex: hybrid KEM secret
+(`HybridKemSecret::to_bytes`, 3200 bytes), wrapped key (32 bytes), context,
+envelope. The test `kem::tests::wrap_key_golden_vector` opens it with
+`unwrap_key`: vault key envelopes already on disk must keep opening.

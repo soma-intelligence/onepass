@@ -537,4 +537,18 @@ mod tests {
         longer.push(0);
         assert!(HybridKemPublic::from_bytes(&longer).is_err());
     }
+
+    #[test]
+    fn wrap_key_golden_vector() {
+        const V: &str = include_str!("../../tests/vectors/kem_wrap_key_v1.hex");
+        let hex = |l: &str| data_encoding::HEXLOWER.decode(l.as_bytes()).unwrap();
+        let lines: Vec<Vec<u8>> = V.lines().map(hex).collect();
+        let [secret, key, context, envelope] = &lines[..] else {
+            panic!("four lines");
+        };
+        let sk = HybridKemSecret::from_bytes(secret).unwrap();
+        let got = unwrap_key(&sk, envelope, context).unwrap();
+        assert_eq!(&got.expose()[..], &key[..]);
+        assert!(unwrap_key_labeled(&sk, envelope, KEM_INFO, context).is_err());
+    }
 }
