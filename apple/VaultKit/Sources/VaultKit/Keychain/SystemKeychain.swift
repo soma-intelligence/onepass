@@ -16,7 +16,10 @@ public struct SystemKeychain: KeychainStore {
     public let service: String
     public let accessGroup: String?
 
-    public init(service: String = "me.somalabs.onepass", accessGroup: String?) {
+    /// The app's service. Tests use their own (`me.somalabs.onepass.uitest`, `me.somalabs.onepass.tests.*`).
+    public static let defaultService = "me.somalabs.onepass"
+
+    public init(service: String = SystemKeychain.defaultService, accessGroup: String?) {
         self.service = service
         self.accessGroup = accessGroup
     }

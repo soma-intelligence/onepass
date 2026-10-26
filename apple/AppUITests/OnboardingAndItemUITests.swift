@@ -1,7 +1,8 @@
 import XCTest
 
 /// End-to-end flow on the iPhone simulator (spec 10): create an account with the real Argon2id
-/// (256 MiB), add a Login, find it by search, lock, unlock with the master password.
+/// (256 MiB), add a Login, find it by search, lock (the lock screen asks the master password only),
+/// unlock, then relaunch the app: the same password-only lock screen.
 /// Fictional data only (`exemple.fr`, Camille Durand, Projet Atlas).
 @MainActor
 final class OnboardingAndItemUITests: XCTestCase {
@@ -13,14 +14,26 @@ final class OnboardingAndItemUITests: XCTestCase {
     private static let kdfTimeout: TimeInterval = 90
     private static let uiTimeout: TimeInterval = 15
 
+    /// Debug: the app's own test store, defaults suite and keychain service
+    /// (`me.somalabs.onepass.uitest`), never the real ones.
+    private static let isolated = ["-OnePassTestIsolation", "YES"]
+
     override func setUp() async throws {
         continueAfterFailure = false
     }
 
+    override func tearDown() async throws {
+        // Empties the isolated store, defaults suite and keychain service.
+        let cleanup = XCUIApplication()
+        cleanup.launchArguments += Self.isolated + ["-OnePassUITestReset", "YES"]
+        cleanup.launch()
+        cleanup.terminate()
+    }
+
     func testCreateAccountAddLoginLockUnlock() throws {
         let app = XCUIApplication()
-        // Debug only: empties the store, the settings and this app's keychain items first.
-        app.launchArguments += ["-OnePassUITestReset", "YES"]
+        // Starts from an empty isolated store.
+        app.launchArguments += Self.isolated + ["-OnePassUITestReset", "YES"]
         app.launch()
 
         // Bienvenue, then "Cet appareil est-il à toi ?" (personal, the default).
@@ -117,18 +130,48 @@ final class OnboardingAndItemUITests: XCTestCase {
         let lockItem = app.descendants(matching: .any)["account.lock"].firstMatch
         tap(lockItem.waitForExistence(timeout: 2) ? lockItem : app.buttons["Verrouiller"].firstMatch)
 
-        // Unlock with the master password (Argon2id again).
-        type(Self.password, into: app.secureTextFields["lock.password"])
-        tap(app.buttons["lock.unlock"])
-        let unlocked = tabButton(app, id: "tab.home", label: "Accueil").waitForExistence(timeout: Self.kdfTimeout)
-        if !unlocked, app.staticTexts["lock.error"].exists {
-            XCTFail("unlock refused: \(app.staticTexts["lock.error"].label)")
-        }
-        XCTAssertTrue(unlocked, "not unlocked")
+        // The lock screen asks the master password only, never the Secret Key.
+        assertPasswordOnlyLockScreen(app)
+        unlock(app)
 
         // The row is still there.
         tap(tabButton(app, id: "tab.search", label: "Rechercher"))
         XCTAssertTrue(row(app).waitForExistence(timeout: Self.uiTimeout), "row missing after unlock")
+
+        // Relaunched (same isolated store, no reset): the same password-only lock screen.
+        app.terminate()
+        let relaunched = XCUIApplication()
+        relaunched.launchArguments += Self.isolated
+        relaunched.launch()
+        assertPasswordOnlyLockScreen(relaunched)
+        unlock(relaunched)
+        tap(tabButton(relaunched, id: "tab.search", label: "Rechercher"))
+        XCTAssertTrue(row(relaunched).waitForExistence(timeout: Self.uiTimeout), "row missing after relaunch")
+    }
+
+    // MARK: - Lock screen
+
+    /// Exactly one secure field (the master password), no Secret Key field, no Emergency Kit screen.
+    private func assertPasswordOnlyLockScreen(
+        _ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let field = app.secureTextFields["lock.password"]
+        XCTAssertTrue(field.waitForExistence(timeout: Self.uiTimeout), "no lock screen", file: file, line: line)
+        XCTAssertEqual(app.secureTextFields.count, 1, "more than the master password field", file: file, line: line)
+        XCTAssertEqual(app.textFields.count, 0, "a text field on the lock screen", file: file, line: line)
+        XCTAssertFalse(app.textFields["onboarding.restoreKey"].exists, "Secret Key asked", file: file, line: line)
+        XCTAssertFalse(app.staticTexts["onboarding.secretKeyMissing"].exists, file: file, line: line)
+    }
+
+    /// Master password then "Déverrouiller" (Argon2id again).
+    private func unlock(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        type(Self.password, into: app.secureTextFields["lock.password"], file: file, line: line)
+        tap(app.buttons["lock.unlock"], file: file, line: line)
+        let unlocked = tabButton(app, id: "tab.home", label: "Accueil").waitForExistence(timeout: Self.kdfTimeout)
+        if !unlocked, app.staticTexts["lock.error"].exists {
+            XCTFail("unlock refused: \(app.staticTexts["lock.error"].label)", file: file, line: line)
+        }
+        XCTAssertTrue(unlocked, "not unlocked", file: file, line: line)
     }
 
     // MARK: - Helpers

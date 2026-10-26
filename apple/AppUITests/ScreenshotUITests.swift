@@ -16,7 +16,7 @@ final class ScreenshotUITests: XCTestCase {
 
     /// The list waits for its first row by title (a lazy list only exposes the rows on screen).
     private static let screens: [Screen] = [
-        Screen(name: "welcome", arguments: ["-OnePassUITestReset", "YES"], ready: "onboarding.create"),
+        Screen(name: "welcome", arguments: isolated + ["-OnePassUITestReset", "YES"], ready: "onboarding.create"),
         Screen(name: "locked", arguments: demo + ["-OnePassDemoLocked", "YES"], ready: "lock.password"),
         Screen(name: "list", arguments: demo + ["-OnePassDemoTab", "search"], ready: "list.row.API Cartes Atlas"),
         Screen(name: "detail", arguments: demo + ["-OnePassDemoItem", "Forge Atlas"], ready: "item.title"),
@@ -27,6 +27,8 @@ final class ScreenshotUITests: XCTestCase {
     ]
 
     private static let demo = ["-OnePassDemoData", "YES"]
+    /// Debug: the app's own test store, defaults suite and keychain service (never the real ones).
+    private static let isolated = ["-OnePassTestIsolation", "YES"]
 
     override func setUp() async throws {
         continueAfterFailure = false
@@ -47,6 +49,11 @@ final class ScreenshotUITests: XCTestCase {
         defer {
             XCUIDevice.shared.orientation = .portrait
             XCUIDevice.shared.appearance = .light
+            // Empties the isolated test store, defaults suite and keychain service.
+            let cleanup = XCUIApplication()
+            cleanup.launchArguments += Self.isolated + ["-OnePassUITestReset", "YES"]
+            cleanup.launch()
+            cleanup.terminate()
         }
 
         for (suffix, appearance) in [("light", XCUIDevice.Appearance.light), ("dark", .dark)] {

@@ -451,7 +451,17 @@
     "Verrouille OnePass sur cet appareil.": {},
     "OnePass est verrouillé": {},
     "Ouvre OnePass pour copier le code": {},
-    "Demande de copie expirée": {}
+    "Demande de copie expirée": {},
+    "Afficher le mot de passe": {},
+    "Archive vide": {},
+    "Aucun favori": {},
+    "Ce coffre est vide": {},
+    "Corbeille vide": {},
+    "Crée ton premier élément : un identifiant, une carte, une note...": {},
+    "Créer un nouveau coffre": {},
+    "La Secret Key de ce compte n'est plus dans le trousseau de cet appareil. Saisis-la depuis ton Emergency Kit.": {},
+    "Marque un élément comme favori pour le retrouver ici.": {},
+    "Masquer le mot de passe": {}
   },
   "version": "1.0"
 }
