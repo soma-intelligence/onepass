@@ -53,6 +53,13 @@ targets:
       # The iOS app carries the watch app; the Mac build has no watch content.
       - target: OnePassWatch
         destinationFilters: [iOS]
+      - package: CompanionKit
+        product: GlanceKit
+      - package: CompanionKit
+        product: CompanionLink
+      # Widgets and Controls: iPhone and iPad only.
+      - target: OnePassWidgets
+        destinationFilters: [iOS]
     info:
       path: App/Support/Info.plist
       properties:
@@ -70,6 +77,10 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UIBackgroundModes: [remote-notification]
+        # Deep links from the widgets and Controls (GlanceKit `OnePassLink`).
+        CFBundleURLTypes:
+          - CFBundleURLName: me.somalabs.onepass
+            CFBundleURLSchemes: [onepass]
         UISupportedInterfaceOrientations~iphone:
           - UIInterfaceOrientationPortrait
         UISupportedInterfaceOrientations~ipad:
@@ -95,6 +106,8 @@ targets:
         CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass.entitlements
+        # App Group shared with the widgets (snapshot, lock signal).
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Support/OnePass-iOS.entitlements
       configs:
         Release-CloudKit:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ONEPASS_CLOUDKIT"
@@ -104,6 +117,8 @@ targets:
           DEVELOPMENT_TEAM: ""
           CODE_SIGN_ENTITLEMENTS: App/Support/OnePass-CloudKit.entitlements
           "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass-CloudKit-macOS.entitlements
+          # Overrides the base iOS file (the CloudKit file carries the App Group too).
+          "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Support/OnePass-CloudKit.entitlements
 
   # XCUITest, iPhone simulator `OnePass M2 iPhone` (`make -C apple uitest`). The screenshot
   # tests in the same bundle are skipped unless `scripts/screenshots.sh` runs them.
@@ -193,6 +208,45 @@ targets:
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""
+
+  # iPhone and iPad widgets ("Codes", "Favoris") and Controls (spec 7 and 8). Reads the App
+  # Group snapshot through GlanceKit only: no Rust core in the extension.
+  OnePassWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+        excludes:
+          - "Info.plist"
+          - "*.entitlements"
+    dependencies:
+      - package: CompanionKit
+        product: GlanceKit
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: OnePass
+        CFBundleDevelopmentRegion: fr
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.widgets
+        PRODUCT_NAME: OnePassWidgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: Widgets/OnePassWidgets.entitlements
+      configs:
+        Release-CloudKit:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
 
 schemes:
   OnePass:

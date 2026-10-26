@@ -1,4 +1,5 @@
 import DesignKit
+import GlanceKit
 import SwiftUI
 import VaultKit
 
@@ -16,7 +17,23 @@ struct RootView: View {
             .animation(.smooth(duration: 0.25), value: route)
             .onAppear { model.start() }
             .onChange(of: model.session.state) { _, state in
-                if state != .unlocked { model.resetNavigation() }
+                model.sessionStateChanged(state)
+            }
+            // Favorites, titles and codes of the widgets follow the data.
+            .onChange(of: model.session.summaries) {
+                model.companion.sessionChanged()
+            }
+            // A vault hidden on this device leaves the widgets too.
+            .onChange(of: model.session.hiddenVaultIDs) {
+                model.companion.sessionChanged()
+            }
+            // A route kept during the onboarding (its account creation unlocks first).
+            .onChange(of: model.onboardingInProgress) { _, inProgress in
+                if !inProgress { model.consumePendingRoute() }
+            }
+            .onOpenURL { url in
+                // Anything but the three `onepass://` links is ignored.
+                if let link = OnePassLink(url: url) { model.open(link) }
             }
             #if os(iOS)
             .background { WindowSceneReader(scene: $windowScene).frame(width: 0, height: 0) }

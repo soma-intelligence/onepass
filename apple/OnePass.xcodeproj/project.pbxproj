@@ -8,14 +8,18 @@
 
 /* Begin PBXBuildFile section */
 		0283FD5F51CA58AA05D74578 /* GeneratorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F2B5C4E147CBDF5F09CD14 /* GeneratorSheet.swift */; };
+		034D7CB79ABF3119AE380303 /* CodesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7AEF89D2CEB58AAF425BA2C /* CodesWidget.swift */; };
 		06396E8300D4CC9C6331BE4A /* AboutSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89863609CCDE5B045CFDE000 /* AboutSettings.swift */; };
+		0653DC989198E82BBBFF45B3 /* OnePassWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45B0A2E7E89981FFB0AA858 /* OnePassWidgetsBundle.swift */; };
 		0B6E58B02964EE1E945B9C16 /* SearchTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */; };
 		0C7E3E6364BDD9C145810C95 /* AccountMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556B5099E4A3256C41665C0F /* AccountMenu.swift */; };
 		0CC7CE12C087FB5B9DE37825 /* MenuFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAABECC4D15FF57A4F3ABA49 /* MenuFieldEditor.swift */; };
 		1920E0C0A4999B60233A7594 /* LocationEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 129B81D637BE1364C28F598B /* LocationEditor.swift */; };
 		19B02EE7F352A2AB453481BE /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */; };
+		202111EEBD135C59DC7E515D /* OnePassWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2298C723CE7AB7505D0CCEFF /* TextFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BC40A3955486B6535DA4A9 /* TextFieldEditor.swift */; };
 		23057CC4E6C58D81940A688A /* VaultsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC87C43ECF5DD8ED3E434B1 /* VaultsSettings.swift */; };
+		2753A5E46E6521FB36D5AC02 /* GlanceMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B74CE90BFF29298F6BB9A3C /* GlanceMapping.swift */; };
 		29FC439915D5B752F395D5E2 /* ItemsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF8989DA7AFD037445B1CA6 /* ItemsTab.swift */; };
 		365D67E458DDD2161A54A8F8 /* Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B70DA81485FABCED6D9346 /* Sidebar.swift */; };
 		369F365C2C4F921040181B8B /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1D108454111E28E82A0B04F6 /* DesignKit */; };
@@ -34,27 +38,36 @@
 		53AB744F8ECC8196673DB950 /* OnePassWatchWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4A344652AA716F92A12D10F /* OnePassWatchWidgets.swift */; };
 		56B6F0937E9CFE60521A0DAE /* OnboardingSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214B39B3C661A8FF88275223 /* OnboardingSteps.swift */; };
 		57D1B84C4C839CE948AFE66B /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */; };
+		582745A6BDE935DA6DC285D3 /* LockControlIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3180B530BDCA288BB48F08A0 /* LockControlIntent.swift */; };
 		5E518F39B88F872FDCDEA3E2 /* ItemHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */; };
 		608A23FFF1AF64C0A8871372 /* PrivacyShield.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */; };
 		67FC2F53EA5276C5C3EBC00E /* ScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */; };
 		6836074F1CF5DEF5FFD74991 /* ItemListColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEFF53CC1ED0153EE5BA51E4 /* ItemListColumn.swift */; };
+		6863F79DFC524523114A633C /* Controls.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3B2F5C85FF2EA36E6C4863A /* Controls.swift */; };
+		6D1E31391256D47556236B57 /* GlanceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADC8BC0D910001EC096242B /* GlanceProvider.swift */; };
 		727572DCA29C624F6444CEEA /* SecretKeyScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F862061FDCD55EF5FD6C95 /* SecretKeyScanner.swift */; };
 		7D0DDE3FABB48308DBAC99CD /* OnePassApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D64EBFE57E2DE8181340998 /* OnePassApp.swift */; };
 		7DF62A388EF15365E18729D9 /* FieldValueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7347C36F3EBEC57C4780E87 /* FieldValueView.swift */; };
+		7ED93210A934374EA1850A74 /* FavoritesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68FAA9A80B992B1D8AA9DA62 /* FavoritesWidget.swift */; };
 		7FFA5A905F221E281C2B3934 /* UrlListEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E2BC05B539890907CE2714F /* UrlListEditor.swift */; };
+		80FA3B25AF70952D5B793680 /* CompanionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D93279993588E6596ACA28A1 /* CompanionCoordinator.swift */; };
 		88252B461F361E3E77E3BC1A /* SyncSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E7C87AC5BA6F2B579609522 /* SyncSettings.swift */; };
 		8DA415577E16E2A2EC1F29F0 /* VaultEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 530DC4BC2A94EFF67DD9F0EF /* VaultEditorView.swift */; };
 		92506BF8D288BB8AE298D980 /* VisibleVaultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BFEBDCF2AC2C6C2D8E999C5 /* VisibleVaultsView.swift */; };
+		9320F3B7178A6EBB186C26AA /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0225137765C7E51FD0667F /* AppRoute.swift */; };
 		94730FD823AB696BB6E8741F /* EntryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D8BD3F7692AE36317D569D /* EntryDetailView.swift */; };
 		9765AD0D3EA5E87488F3A218 /* ItemLinkPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F391F505B02B771276A46D5 /* ItemLinkPicker.swift */; };
+		97B944EA80F34D9BEC0D8DEF /* GlanceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D0707F2A1FF871B7D086F5 /* GlanceViews.swift */; };
 		9961C39F1CDB1708FB598A68 /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA59281B681069BA80A59493 /* Snapshot.swift */; };
 		9D7B0465F8F84A1BC0F77CAA /* AddressEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD7A17DB13CA04B2F0C4933 /* AddressEditor.swift */; };
 		9DE84FC2711722167F45A359 /* MoneyNumberEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEB4C1C28B12B7DB3CEF256 /* MoneyNumberEditor.swift */; };
 		9E735A256691AD70E64876A6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */; };
+		A01A958E22C1E8ABA30D30A9 /* CompanionLink in Frameworks */ = {isa = PBXBuildFile; productRef = 1BEDA96F4982E21986971703 /* CompanionLink */; };
 		A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CBA904F1F157D072B427852 /* ReadOnlyFieldView.swift */; };
 		A4AF77CCB8C26E750F66D3DF /* GeneralSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257C8A4056D753F50F27FF62 /* GeneralSettings.swift */; };
 		A5E46306C491074581373B73 /* ItemEditorModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600D7CCE7887C2B9308B4DA4 /* ItemEditorModel.swift */; };
 		AD29CFEF6D3AB96633FA488F /* SplitBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83485D924585FA30495DE07 /* SplitBrowseView.swift */; };
+		AF0461461E7B8ECC023C804A /* GlanceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3FCA6BEE85156D42B867CBF8 /* GlanceKit */; };
 		B19D7967A80446677BDC9032 /* PhoneTabsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4681AE91A8FB719ABD3F23AC /* PhoneTabsView.swift */; };
 		B2F387C1CCCBB83AC30E1E16 /* BarcodeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0151B9E949BF8C50E53F3176 /* BarcodeEditor.swift */; };
 		B4E15F549C1237B3AF03FA6B /* SecretFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79113AA7B53A92888B8DEF34 /* SecretFieldEditor.swift */; };
@@ -78,6 +91,7 @@
 		F1CAB3F52569075B0D61123D /* OnePassWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = B96B079FC65D9E279C86B5C8 /* OnePassWatch.app */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F40BBE052065BF7A31B7C236 /* ItemListRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9119720BF7C06235BF6ED5AC /* ItemListRow.swift */; };
 		F5E7599D30A18148EE9AD7D7 /* OnePassWatchWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DF4D9AF4B114E1B41881EA27 /* OnePassWatchWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F7ED18E1061488E44AB2E8F5 /* GlanceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 55B85CDB4BCDFD6D0AE89FF0 /* GlanceKit */; };
 		F9F1D47BCFAE40F3A44CC777 /* OnePassWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70D198370DE24CFF6A929681 /* OnePassWatchApp.swift */; };
 		FB411F7806F39B54F7C84C1D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 63F69FE9CD92A7C0ACFAF883 /* Assets.xcassets */; };
 		FE293B57FD1438D41BA37D51 /* EntryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89189A5B59E73F9B657D77B /* EntryListView.swift */; };
@@ -85,6 +99,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		2F9C172F4CE5748ACAA967B9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EE2C0F282791D003988755A4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9612434974A2C09A66EEA302;
+			remoteInfo = OnePassWidgets;
+		};
 		5DDFE54C05C165799925891D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = EE2C0F282791D003988755A4 /* Project object */;
@@ -118,6 +139,17 @@
 				F1CAB3F52569075B0D61123D /* OnePassWatch.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8332D7C9C44DBF496583CC6C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				202111EEBD135C59DC7E515D /* OnePassWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		981E396D4822CA47AB23DEC8 /* Embed Foundation Extensions */ = {
@@ -157,6 +189,7 @@
 		2F4807ECE87FEA8C5106548F /* DemoWatchModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoWatchModel.swift; sourceTree = "<group>"; };
 		2F6BE31F836D55C599C46C49 /* MoveToVaultMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveToVaultMenu.swift; sourceTree = "<group>"; };
 		30039937E6F1542ACCE29B1D /* TotpFieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TotpFieldView.swift; sourceTree = "<group>"; };
+		3180B530BDCA288BB48F08A0 /* LockControlIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockControlIntent.swift; sourceTree = "<group>"; };
 		330D495CC522DCE23D31E82D /* WatchRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRootView.swift; sourceTree = "<group>"; };
 		3BC87C43ECF5DD8ED3E434B1 /* VaultsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultsSettings.swift; sourceTree = "<group>"; };
 		3E5A4B3BD06C13AC7742D5DB /* HomeTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeTab.swift; sourceTree = "<group>"; };
@@ -168,6 +201,7 @@
 		46D1ACF819F71AF4273989AD /* ConcealedValueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConcealedValueView.swift; sourceTree = "<group>"; };
 		488E4CE89D1B50E9FFA9002E /* DateFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFieldEditor.swift; sourceTree = "<group>"; };
 		4CEB4C1C28B12B7DB3CEF256 /* MoneyNumberEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyNumberEditor.swift; sourceTree = "<group>"; };
+		4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OnePassWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		530DC4BC2A94EFF67DD9F0EF /* VaultEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultEditorView.swift; sourceTree = "<group>"; };
 		556B5099E4A3256C41665C0F /* AccountMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountMenu.swift; sourceTree = "<group>"; };
 		5D40167C0D7679C74A6D594D /* LockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockView.swift; sourceTree = "<group>"; };
@@ -175,6 +209,8 @@
 		63A4EEE56330F9F390B44838 /* PasswordHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordHistoryView.swift; sourceTree = "<group>"; };
 		63F69FE9CD92A7C0ACFAF883 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		64165D82E996859B750AAF94 /* OnePass.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OnePass.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		68FAA9A80B992B1D8AA9DA62 /* FavoritesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesWidget.swift; sourceTree = "<group>"; };
+		6B74CE90BFF29298F6BB9A3C /* GlanceMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceMapping.swift; sourceTree = "<group>"; };
 		70D198370DE24CFF6A929681 /* OnePassWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWatchApp.swift; sourceTree = "<group>"; };
 		73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
 		73396E5534184EF7CE76A170 /* SecuritySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecuritySettings.swift; sourceTree = "<group>"; };
@@ -182,6 +218,7 @@
 		782CA900B64928632D2B1890 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		79113AA7B53A92888B8DEF34 /* SecretFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretFieldEditor.swift; sourceTree = "<group>"; };
 		7FE4F3CB0CFA4BB2988A5A3B /* DesignKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignKit; path = DesignKit; sourceTree = SOURCE_ROOT; };
+		87D0707F2A1FF871B7D086F5 /* GlanceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceViews.swift; sourceTree = "<group>"; };
 		89863609CCDE5B045CFDE000 /* AboutSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutSettings.swift; sourceTree = "<group>"; };
 		8E2BC05B539890907CE2714F /* UrlListEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UrlListEditor.swift; sourceTree = "<group>"; };
 		9119720BF7C06235BF6ED5AC /* ItemListRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemListRow.swift; sourceTree = "<group>"; };
@@ -189,6 +226,7 @@
 		9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotUITests.swift; sourceTree = "<group>"; };
 		A375FC8CB067AC2E4C863B5E /* OnboardingAndItemUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingAndItemUITests.swift; sourceTree = "<group>"; };
 		A3F2B5C4E147CBDF5F09CD14 /* GeneratorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratorSheet.swift; sourceTree = "<group>"; };
+		AADC8BC0D910001EC096242B /* GlanceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceProvider.swift; sourceTree = "<group>"; };
 		B96B079FC65D9E279C86B5C8 /* OnePassWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OnePassWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C09CB3FCA94E45F15C4C5C10 /* CategoryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryListView.swift; sourceTree = "<group>"; };
 		C4A344652AA716F92A12D10F /* OnePassWatchWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWatchWidgets.swift; sourceTree = "<group>"; };
@@ -196,23 +234,36 @@
 		C89189A5B59E73F9B657D77B /* EntryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryListView.swift; sourceTree = "<group>"; };
 		CFF11DA958080038BA1B310F /* IntegrityFailureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrityFailureView.swift; sourceTree = "<group>"; };
 		D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemHeader.swift; sourceTree = "<group>"; };
+		D45B0A2E7E89981FFB0AA858 /* OnePassWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWidgetsBundle.swift; sourceTree = "<group>"; };
 		D53F785E56AE55B95035986B /* CompanionKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CompanionKit; path = CompanionKit; sourceTree = SOURCE_ROOT; };
+		D93279993588E6596ACA28A1 /* CompanionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionCoordinator.swift; sourceTree = "<group>"; };
 		DA59281B681069BA80A59493 /* Snapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snapshot.swift; sourceTree = "<group>"; };
 		DAABECC4D15FF57A4F3ABA49 /* MenuFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuFieldEditor.swift; sourceTree = "<group>"; };
 		DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyShield.swift; sourceTree = "<group>"; };
 		DF4D9AF4B114E1B41881EA27 /* OnePassWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OnePassWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E7AEF89D2CEB58AAF425BA2C /* CodesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodesWidget.swift; sourceTree = "<group>"; };
 		E9BC40A3955486B6535DA4A9 /* TextFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextFieldEditor.swift; sourceTree = "<group>"; };
 		EAF8989DA7AFD037445B1CA6 /* ItemsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemsTab.swift; sourceTree = "<group>"; };
+		EC0225137765C7E51FD0667F /* AppRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoute.swift; sourceTree = "<group>"; };
 		EDB2F5985704FFAAE54D3FEF /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
 		EEFF53CC1ED0153EE5BA51E4 /* ItemListColumn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemListColumn.swift; sourceTree = "<group>"; };
 		F0B70DA81485FABCED6D9346 /* Sidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sidebar.swift; sourceTree = "<group>"; };
 		F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Commands.swift; sourceTree = "<group>"; };
+		F3B2F5C85FF2EA36E6C4863A /* Controls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Controls.swift; sourceTree = "<group>"; };
 		F7347C36F3EBEC57C4780E87 /* FieldValueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValueView.swift; sourceTree = "<group>"; };
 		FDEA14A7E048E4F8837BDCA3 /* AccountChangeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountChangeViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		57A068262EE992865C7E2E74 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F7ED18E1061488E44AB2E8F5 /* GlanceKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9A4A90731D49430BA16F95C3 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -228,16 +279,33 @@
 			files = (
 				DE6D3F92CC51AA33603525A4 /* VaultKit in Frameworks */,
 				369F365C2C4F921040181B8B /* DesignKit in Frameworks */,
+				AF0461461E7B8ECC023C804A /* GlanceKit in Frameworks */,
+				A01A958E22C1E8ABA30D30A9 /* CompanionLink in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0509E2F506F523BC7E788AE2 /* Widgets */ = {
+			isa = PBXGroup;
+			children = (
+				E7AEF89D2CEB58AAF425BA2C /* CodesWidget.swift */,
+				F3B2F5C85FF2EA36E6C4863A /* Controls.swift */,
+				68FAA9A80B992B1D8AA9DA62 /* FavoritesWidget.swift */,
+				AADC8BC0D910001EC096242B /* GlanceProvider.swift */,
+				87D0707F2A1FF871B7D086F5 /* GlanceViews.swift */,
+				3180B530BDCA288BB48F08A0 /* LockControlIntent.swift */,
+				D45B0A2E7E89981FFB0AA858 /* OnePassWidgetsBundle.swift */,
+			);
+			path = Widgets;
+			sourceTree = "<group>";
+		};
 		13825139A0DF10EEAB8A16BC /* App */ = {
 			isa = PBXGroup;
 			children = (
 				B53E277EF63DCA4F11F5B4EF /* Browse */,
+				B91261539A051F152835530A /* Companion */,
 				EF248DFE5EAE39FFEBC390E8 /* Item */,
 				E8C09A0EF7A6D69680E63744 /* Lock */,
 				8915B6635929BCE87278EB13 /* Onboarding */,
@@ -279,6 +347,7 @@
 				6EFD3AF6EFDA445E47D0BC4C /* Packages */,
 				5B8625C49FA65D1ED7468A5D /* Watch */,
 				69E6280029A59E04F4E9890E /* WatchWidgets */,
+				0509E2F506F523BC7E788AE2 /* Widgets */,
 				B1C26DF3EFF5A88D1D2D533A /* Products */,
 			);
 			sourceTree = "<group>";
@@ -356,6 +425,7 @@
 			children = (
 				FDEA14A7E048E4F8837BDCA3 /* AccountChangeViews.swift */,
 				9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */,
+				EC0225137765C7E51FD0667F /* AppRoute.swift */,
 				20B8451FA00D38A8278D9655 /* DebugItems.swift */,
 				3FFB44CC51A27D430FC17378 /* DemoData.swift */,
 				CFF11DA958080038BA1B310F /* IntegrityFailureView.swift */,
@@ -383,6 +453,7 @@
 				15DA91325D7B74C10AFBA3A6 /* OnePassUITests.xctest */,
 				B96B079FC65D9E279C86B5C8 /* OnePassWatch.app */,
 				DF4D9AF4B114E1B41881EA27 /* OnePassWatchWidgets.appex */,
+				4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -396,6 +467,15 @@
 				F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */,
 			);
 			path = Browse;
+			sourceTree = "<group>";
+		};
+		B91261539A051F152835530A /* Companion */ = {
+			isa = PBXGroup;
+			children = (
+				D93279993588E6596ACA28A1 /* CompanionCoordinator.swift */,
+				6B74CE90BFF29298F6BB9A3C /* GlanceMapping.swift */,
+			);
+			path = Companion;
 			sourceTree = "<group>";
 		};
 		C7818EBDE5C979CF7710DA09 /* Phone */ = {
@@ -462,21 +542,44 @@
 				9B2AC3F3A1BFE1D5A3C21C0F /* Sources */,
 				7F6FE6B9681652E855A4ED76 /* Resources */,
 				BEF0711806BF64102FB9DA30 /* Frameworks */,
+				8332D7C9C44DBF496583CC6C /* Embed Foundation Extensions */,
 				6A2741E9AD67E21DC1480F06 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				09165EC70450C7630BE88BDD /* PBXTargetDependency */,
+				A4A820DF26E2B04758270D0E /* PBXTargetDependency */,
 			);
 			name = OnePass;
 			packageProductDependencies = (
 				4184F03FCF4EBB67CF1EFCEA /* VaultKit */,
 				1D108454111E28E82A0B04F6 /* DesignKit */,
+				3FCA6BEE85156D42B867CBF8 /* GlanceKit */,
+				1BEDA96F4982E21986971703 /* CompanionLink */,
 			);
 			productName = OnePass;
 			productReference = 64165D82E996859B750AAF94 /* OnePass.app */;
 			productType = "com.apple.product-type.application";
+		};
+		9612434974A2C09A66EEA302 /* OnePassWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EED2369C180193D0D94E3B5D /* Build configuration list for PBXNativeTarget "OnePassWidgets" */;
+			buildPhases = (
+				37DAD1D8EDAC6571C1562D25 /* Sources */,
+				57A068262EE992865C7E2E74 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OnePassWidgets;
+			packageProductDependencies = (
+				55B85CDB4BCDFD6D0AE89FF0 /* GlanceKit */,
+			);
+			productName = OnePassWidgets;
+			productReference = 4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 		A939BCC0FC42F4841AE98589 /* OnePassWatch */ = {
 			isa = PBXNativeTarget;
@@ -548,6 +651,9 @@
 					8393ECD4BFF4D241F435C84D = {
 						DevelopmentTeam = "";
 					};
+					9612434974A2C09A66EEA302 = {
+						DevelopmentTeam = "";
+					};
 					A939BCC0FC42F4841AE98589 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Manual;
@@ -586,6 +692,7 @@
 				E7921CD4F6414DD4FA0B5EFF /* OnePassUITests */,
 				A939BCC0FC42F4841AE98589 /* OnePassWatch */,
 				E03D05702AF6113E6F23D2DA /* OnePassWatchWidgets */,
+				9612434974A2C09A66EEA302 /* OnePassWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -611,6 +718,20 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		37DAD1D8EDAC6571C1562D25 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				034D7CB79ABF3119AE380303 /* CodesWidget.swift in Sources */,
+				6863F79DFC524523114A633C /* Controls.swift in Sources */,
+				7ED93210A934374EA1850A74 /* FavoritesWidget.swift in Sources */,
+				6D1E31391256D47556236B57 /* GlanceProvider.swift in Sources */,
+				97B944EA80F34D9BEC0D8DEF /* GlanceViews.swift in Sources */,
+				582745A6BDE935DA6DC285D3 /* LockControlIntent.swift in Sources */,
+				0653DC989198E82BBBFF45B3 /* OnePassWidgetsBundle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		55E221C6C73823A8661A8B68 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -643,16 +764,19 @@
 				0C7E3E6364BDD9C145810C95 /* AccountMenu.swift in Sources */,
 				9D7B0465F8F84A1BC0F77CAA /* AddressEditor.swift in Sources */,
 				19B02EE7F352A2AB453481BE /* AppModel.swift in Sources */,
+				9320F3B7178A6EBB186C26AA /* AppRoute.swift in Sources */,
 				B2F387C1CCCBB83AC30E1E16 /* BarcodeEditor.swift in Sources */,
 				3B5912DB886A1E8510C4F27E /* BrowseRoot.swift in Sources */,
 				C4550C8291E1A38748E6FC67 /* CategoryListView.swift in Sources */,
 				D5C5B1A5817808ED47A986E0 /* Commands.swift in Sources */,
+				80FA3B25AF70952D5B793680 /* CompanionCoordinator.swift in Sources */,
 				FE604CA8F8BDE5C06A3E588A /* DateFieldEditor.swift in Sources */,
 				5156E543C4981476E3C13656 /* DebugItems.swift in Sources */,
 				E62C0A437934476CA1395891 /* DemoData.swift in Sources */,
 				7DF62A388EF15365E18729D9 /* FieldValueView.swift in Sources */,
 				A4AF77CCB8C26E750F66D3DF /* GeneralSettings.swift in Sources */,
 				0283FD5F51CA58AA05D74578 /* GeneratorSheet.swift in Sources */,
+				2753A5E46E6521FB36D5AC02 /* GlanceMapping.swift in Sources */,
 				3DA9195F5E3C77FBE22E96EE /* HomeTab.swift in Sources */,
 				BEE689BB8A0E7E69B6AF46DB /* IntegrityFailureView.swift in Sources */,
 				57D1B84C4C839CE948AFE66B /* ItemDetailView.swift in Sources */,
@@ -721,6 +845,14 @@
 			target = E03D05702AF6113E6F23D2DA /* OnePassWatchWidgets */;
 			targetProxy = 5DDFE54C05C165799925891D /* PBXContainerItemProxy */;
 		};
+		A4A820DF26E2B04758270D0E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilters = (
+				ios,
+			);
+			target = 9612434974A2C09A66EEA302 /* OnePassWidgets */;
+			targetProxy = 2F9C172F4CE5748ACAA967B9 /* PBXContainerItemProxy */;
+		};
 		EB9EEC67B847526762180E1C /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 8393ECD4BFF4D241F435C84D /* OnePass */;
@@ -729,6 +861,28 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		279C6E55B0DCFCE9076EE3FD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Widgets/OnePassWidgets.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.widgets;
+				PRODUCT_NAME = OnePassWidgets;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		2C3C5A585B7F4F5B0B165BB5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -779,6 +933,7 @@
 				"ARCHS[sdk=macosx*]" = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Support/OnePass-iOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/Support/OnePass.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
@@ -938,12 +1093,35 @@
 			};
 			name = Release;
 		};
+		B05D7283E72F49FB34A66091 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Widgets/OnePassWidgets.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.widgets;
+				PRODUCT_NAME = OnePassWidgets;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		B78E4959EDE1FFD570888D6E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				"ARCHS[sdk=macosx*]" = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Support/OnePass-iOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/Support/OnePass.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
@@ -1168,6 +1346,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "App/Support/OnePass-CloudKit.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Support/OnePass-CloudKit.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/Support/OnePass-CloudKit-macOS.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -1211,6 +1390,28 @@
 				TEST_TARGET_NAME = OnePass;
 			};
 			name = Debug;
+		};
+		FCD869A2F311CCA56AE2FFCF /* Release-CloudKit */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Widgets/OnePassWidgets.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.widgets;
+				PRODUCT_NAME = OnePassWidgets;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Release-CloudKit";
 		};
 /* End XCBuildConfiguration section */
 
@@ -1265,6 +1466,16 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		EED2369C180193D0D94E3B5D /* Build configuration list for PBXNativeTarget "OnePassWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				279C6E55B0DCFCE9076EE3FD /* Debug */,
+				B05D7283E72F49FB34A66091 /* Release */,
+				FCD869A2F311CCA56AE2FFCF /* Release-CloudKit */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -1283,9 +1494,17 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		1BEDA96F4982E21986971703 /* CompanionLink */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CompanionLink;
+		};
 		1D108454111E28E82A0B04F6 /* DesignKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = DesignKit;
+		};
+		3FCA6BEE85156D42B867CBF8 /* GlanceKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = GlanceKit;
 		};
 		4184F03FCF4EBB67CF1EFCEA /* VaultKit */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1294,6 +1513,10 @@
 		451A77F800231FE2450B58B4 /* OnePassCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = OnePassCore;
+		};
+		55B85CDB4BCDFD6D0AE89FF0 /* GlanceKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = GlanceKit;
 		};
 		958DAB1110F5AA509D48EAC7 /* CompanionLink */ = {
 			isa = XCSwiftPackageProductDependency;

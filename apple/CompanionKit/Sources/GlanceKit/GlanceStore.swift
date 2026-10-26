@@ -37,6 +37,26 @@ public struct GlanceStore: Sendable {
         return snapshot
     }
 
+    /// What a widget can show: the snapshot, "locked" when the file exists but cannot be read
+    /// (data protection while the device is locked), or "stale" when it is absent, expired or
+    /// corrupt (the app must publish a new one).
+    public enum Status: Sendable, Hashable {
+        case available(GlanceSnapshot)
+        case locked
+        case stale
+    }
+
+    public func status(now: Date = .now) -> Status {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return .stale }
+        guard let data = try? Data(contentsOf: fileURL) else { return .locked }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        guard let snapshot = try? decoder.decode(GlanceSnapshot.self, from: data),
+            now < snapshot.validUntil
+        else { return .stale }
+        return .available(snapshot)
+    }
+
     public func clear() {
         try? FileManager.default.removeItem(at: fileURL)
     }

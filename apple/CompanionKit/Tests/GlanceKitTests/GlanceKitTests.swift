@@ -53,6 +53,25 @@ private func snapshot(validUntil: Date) -> GlanceSnapshot {
         #expect(store.read() == nil)
     }
 
+    @Test func statusDistinguishesStaleFromAvailable() throws {
+        let dir = tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = GlanceStore(directory: dir)
+        #expect(store.status() == .stale)
+
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data([0xde, 0xad]).write(to: dir.appendingPathComponent("glance.json"))
+        #expect(store.status() == .stale)
+
+        try store.write(snapshot(validUntil: Date.now.addingTimeInterval(-1)))
+        #expect(store.status() == .stale)
+
+        let fresh = snapshot(validUntil: Date(timeIntervalSince1970: (Date.now.timeIntervalSince1970 + 600).rounded()))
+        try store.write(fresh)
+        #expect(store.status() == .available(fresh))
+        #expect(store.status(now: fresh.validUntil) == .stale)
+    }
+
     @Test func codeLookupByDate() {
         let start = Date(timeIntervalSince1970: 1_000)
         let codes = GlanceCodes(

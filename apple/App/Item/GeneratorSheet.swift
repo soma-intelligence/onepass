@@ -18,7 +18,14 @@ struct GeneratorSheet: View {
         }
     }
 
+    /// `.use` fills a field of an item ("Utiliser"); `.copy` is the standalone generator opened by
+    /// the "Générer un mot de passe" Control, whose value only goes to the clipboard ("Copier").
+    enum Purpose {
+        case use, copy
+    }
+
     let onUse: (String) -> Void
+    var purpose: Purpose = .use
     @Environment(\.dismiss) private var dismiss
 
     @State private var mode: Mode = .characters
@@ -99,10 +106,10 @@ struct GeneratorSheet: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annuler") { dismiss() }
+                    Button(purpose == .copy ? "Fermer" : "Annuler") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Utiliser") {
+                    Button(purpose == .copy ? "Copier" : "Utiliser") {
                         onUse(generated)
                         dismiss()
                     }

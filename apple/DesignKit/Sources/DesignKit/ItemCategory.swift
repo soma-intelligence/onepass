@@ -10,6 +10,8 @@ public struct ItemCategory: Identifiable, Sendable {
     public let singular: String
     public let color: Color
     public let symbol: String
+    /// The tile color as 0xRRGGBB (for targets that cannot link DesignKit, such as widgets).
+    public let hex: UInt32
 
     public var id: FfiItemType { type }
 
@@ -55,6 +57,7 @@ public struct ItemCategory: Identifiable, Sendable {
     private static func make(
         _ type: FfiItemType, _ plural: String, _ singular: String, _ hex: UInt32, _ symbol: String
     ) -> ItemCategory {
-        ItemCategory(type: type, plural: plural, singular: singular, color: Color(hex: hex), symbol: symbol)
+        ItemCategory(
+            type: type, plural: plural, singular: singular, color: Color(hex: hex), symbol: symbol, hex: hex)
     }
 }

@@ -19,6 +19,25 @@ struct BrowseRoot: View {
                 SettingsView()
             }
             #endif
+            // "Générer un mot de passe" Control (`onepass://generator`): the value is only copied.
+            .sheet(isPresented: $model.showGenerator) {
+                GeneratorSheet(
+                    onUse: { value in
+                        model.session.copy(value, concealed: true)
+                        model.showToast(String(localized: "Copié · effacé dans 90 s"))
+                    },
+                    purpose: .copy)
+            }
+            // The split view shows a revealed item through the selection, and searches through
+            // `searchFocusRequest`; the iPhone tabs handle the reveal themselves.
+            .onChange(of: model.browseReveal, initial: true) { _, reveal in
+                guard let reveal, !handlesRevealInTabs else { return }
+                model.browseReveal = nil
+                if reveal == .search {
+                    // The list column may appear in this same update: asked again once it is there.
+                    Task { model.searchFocusRequest &+= 1 }
+                }
+            }
             // On iPhone the new item sheet carries its own confirmation (shown over the sheet).
             .discardConfirmation(active: !phoneNewItemShown)
             .overlay(alignment: .bottom) {
@@ -61,6 +80,14 @@ struct BrowseRoot: View {
     #if os(iOS)
     private var usesTabs: Bool { !(UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular) }
     #endif
+
+    private var handlesRevealInTabs: Bool {
+        #if os(iOS)
+        usesTabs
+        #else
+        false
+        #endif
+    }
 
     private var phoneNewItemShown: Bool {
         #if os(iOS)

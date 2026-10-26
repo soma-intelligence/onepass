@@ -1,4 +1,5 @@
 import Foundation
+import GlanceKit
 import Observation
 import Security
 import SwiftUI
@@ -18,6 +19,8 @@ struct ItemRef: Hashable, Sendable {
 final class AppModel {
     let session: VaultSession
     @ObservationIgnored let coordinator: SyncCoordinator?
+    /// Widget snapshot (and, from Task 8, the watch payload) while unlocked.
+    @ObservationIgnored let companion: CompanionCoordinator
     @ObservationIgnored let iconLoader: SiteIconLoader
     @ObservationIgnored private let remote: (any RemoteRecordStore)?
 
@@ -60,6 +63,27 @@ final class AppModel {
     private(set) var remoteRevision = 0
     /// Short confirmation shown at the bottom of the browse screens ("Mis à la corbeille").
     private(set) var toast: String?
+
+    // Routes from outside the app (widgets, Controls, App Intents).
+    /// A route that arrived while locked: runs right after the next unlock.
+    private(set) var pendingRoute: AppRoute?
+    /// The standalone password generator ("Générer un mot de passe" Control).
+    var showGenerator = false
+    /// When the session last became unlocked (lock requests from a Control older than this are spent).
+    private(set) var lastUnlockAt: Date?
+    /// What the browse screens should bring forward (iPhone: the tab to select). Cleared by the
+    /// screen that handled it.
+    var browseReveal: BrowseReveal?
+
+    enum BrowseReveal: Equatable {
+        case item(ItemRef)
+        case search
+    }
+
+    /// "Verrouiller OnePass" Control: shared with the widget extension through the App Group.
+    @ObservationIgnored private let lockSignal = LockSignal(
+        defaults: UserDefaults(suiteName: AppGroup.identifier) ?? .standard)
+    @ObservationIgnored private var lockObservation: LockSignalObservation?
 
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var started = false
@@ -105,6 +129,9 @@ final class AppModel {
         self.coordinator = coordinator
         self.remote = remote
         session = VaultSession(environment: environment)
+        // Demo data never reaches the widgets.
+        companion = CompanionCoordinator(
+            session: session, glanceStore: demo == nil ? GlanceStore.shared() : nil, phone: nil)
 
         let settings = environment.settings
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -128,6 +155,12 @@ final class AppModel {
             openDebugItemIfRequested()
         }
         #endif
+        // A "Verrouiller OnePass" Control while the app runs: the Darwin notification locks now.
+        lockObservation = LockSignal.observe { [weak self] in
+            Task { @MainActor in self?.lockIfRequested() }
+        }
+        lockIfRequested()
+        companion.start()
         guard let coordinator else { return }
         tasks.append(Task { [weak self] in
             for await _ in await coordinator.remoteChanges() {
@@ -150,6 +183,9 @@ final class AppModel {
         case .active:
             autoBiometricsPending = true
             session.scenePhaseChanged(.active)
+            // A lock asked by a Control while the app was in the background or not notified.
+            lockIfRequested()
+            companion.sessionChanged()
             if let coordinator { Task { await coordinator.syncNow() } }
         case .inactive:
             session.scenePhaseChanged(.inactive)
@@ -311,6 +347,75 @@ final class AppModel {
         session.lock()
     }
 
+    /// Locks when a "Verrouiller OnePass" request is newer than the last unlock.
+    func lockIfRequested() {
+        guard session.state == .unlocked, lockSignal.isPending(unlockedAt: lastUnlockAt) else { return }
+        Self.log.info("lock requested from a Control")
+        lock()
+    }
+
+    /// The session state changed (root view): records the unlock time, runs a waiting route,
+    /// refreshes the widgets.
+    func sessionStateChanged(_ state: VaultSession.State) {
+        if state == .unlocked {
+            lastUnlockAt = .now
+            consumePendingRoute()
+        } else {
+            resetNavigation()
+        }
+        companion.sessionChanged()
+    }
+
+    // MARK: - Routes from outside the app
+
+    /// A deep link (`onepass://`), from a widget, a Control or the system.
+    func open(_ link: OnePassLink) {
+        handle(.link(link))
+    }
+
+    /// Runs the route now when unlocked, else keeps it for after the unlock (the newest wins).
+    func handle(_ route: AppRoute) {
+        guard session.state == .unlocked, !onboardingInProgress else {
+            pendingRoute = route
+            return
+        }
+        run(route, freshUnlock: false)
+    }
+
+    /// After an unlock: the waiting route, if any.
+    func consumePendingRoute() {
+        guard session.state == .unlocked, !onboardingInProgress, let route = pendingRoute else { return }
+        pendingRoute = nil
+        run(route, freshUnlock: true)
+    }
+
+    private func run(_ route: AppRoute, freshUnlock: Bool) {
+        switch route {
+        case .link(.item(let vaultID, let itemID)):
+            let ref = ItemRef(vaultID: vaultID, itemID: itemID)
+            guard session.summaries.contains(where: { $0.id == itemID && $0.vaultId == vaultID }) else {
+                showToast(String(localized: "Élément introuvable"))
+                return
+            }
+            perform(.reveal(ref))
+        case .link(.generator):
+            showSettings = false
+            showGenerator = true
+        case .link(.search):
+            showSettings = false
+            browseReveal = .search
+            searchFocusRequest &+= 1
+        case .copyTotp(let ref):
+            Task { await copyTotp(ref, freshUnlock: freshUnlock) }
+        }
+    }
+
+    /// "Copier le code à usage unique" (App Intent). Implemented in Task 9; until then nothing
+    /// is copied.
+    func copyTotp(_ ref: ItemRef, freshUnlock: Bool) async {
+        showToast(String(localized: "Bientôt disponible"))
+    }
+
     /// Drops every item-bearing navigation state (the new item's draft holds typed values).
     /// Also run when the session leaves `unlocked` on its own (auto-lock, background, failure).
     func resetNavigation() {
@@ -321,6 +426,8 @@ final class AppModel {
         pendingDiscard = nil
         showNewItemPicker = false
         showSettings = false
+        showGenerator = false
+        browseReveal = nil
     }
 
     /// Changes a local setting and restarts the auto-lock clock (a new delay applies from now).
@@ -342,6 +449,8 @@ final class AppModel {
         case lock
         case select(ItemRef?)
         case newItem(FfiItemType)
+        /// A deep link to an item: shown in the full list (iPhone: the Éléments tab).
+        case reveal(ItemRef)
     }
 
     /// An item editor (existing or new item) is on screen.
@@ -375,6 +484,20 @@ final class AppModel {
             selectedItem = ref
         case .newItem(let type):
             startNewItem(type)
+        case .reveal(let ref):
+            newItemDraft = nil
+            showNewItemPicker = false
+            showSettings = false
+            showGenerator = false
+            editing = false
+            editorDirty = false
+            // The list that holds it (split view), so `keepSelection` does not drop it.
+            let summary = session.summaries.first { $0.id == ref.itemID && $0.vaultId == ref.vaultID }
+            if let summary, !selection.matches(summary) {
+                selection = summary.trashedAt != nil ? .trash : summary.archived ? .archive : .all
+            }
+            browseReveal = .item(ref)
+            selectedItem = ref
         }
     }
 
