@@ -462,3 +462,92 @@ impl From<onepass_core::sync::AccountState> for FfiStoreState {
         }
     }
 }
+
+/// What an AutoFill identity offers the system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, uniffi::Enum)]
+pub enum FfiAutofillKind {
+    Password,
+    OneTimeCode,
+    Passkey,
+}
+
+/// One entry of the system credential identity store (see
+/// `Session::autofill_identities`). Never a secret: the user handle is the
+/// only passkey datum besides the credential id, and the system requires it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiAutofillIdentity {
+    pub kind: FfiAutofillKind,
+    /// Host of the URL, or the relying party id of a passkey.
+    pub service: String,
+    pub user: String,
+    /// `"<vault hex>:<item hex>"`.
+    pub record_id: String,
+    pub favorite: bool,
+    /// Empty unless `kind` is `Passkey`.
+    pub credential_id: Vec<u8>,
+    /// Empty unless `kind` is `Passkey`.
+    pub user_handle: Vec<u8>,
+}
+
+/// How well a Login matches the requested site, best first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, uniffi::Enum)]
+pub enum FfiMatchQuality {
+    ExactHost,
+    Domain,
+    Other,
+}
+
+/// A passkey of a candidate, without its user handle or key.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiPasskeyRef {
+    pub rp_id: String,
+    pub user_name: String,
+    pub credential_id: Vec<u8>,
+}
+
+/// A Login offered for a site (see `Session::autofill_candidates`). No
+/// secret value: only whether a password or a TOTP is there.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiAutofillCandidate {
+    pub vault_id: String,
+    pub item_id: String,
+    pub title: String,
+    pub user: String,
+    /// The URL that matched, or the first URL for `Other`.
+    pub url: Option<String>,
+    pub quality: FfiMatchQuality,
+    pub has_password: bool,
+    pub has_totp: bool,
+    pub passkeys: Vec<FfiPasskeyRef>,
+}
+
+/// A passkey registration request from the system. `item_id` names the Login
+/// to add it to; `None` creates a new Login in `vault_id`.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiPasskeyCreation {
+    pub vault_id: String,
+    pub item_id: Option<String>,
+    pub rp_id: String,
+    pub user_name: String,
+    pub user_handle: Vec<u8>,
+    pub client_data_hash: Vec<u8>,
+    pub excluded_credential_ids: Vec<Vec<u8>>,
+}
+
+/// What the system needs to complete a passkey registration.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiPasskeyRegistration {
+    pub vault_id: String,
+    pub item_id: String,
+    pub credential_id: Vec<u8>,
+    pub attestation_object: Vec<u8>,
+}
+
+/// What the system needs to complete a passkey sign-in.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiPasskeyAssertion {
+    pub user_handle: Vec<u8>,
+    pub authenticator_data: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub credential_id: Vec<u8>,
+}

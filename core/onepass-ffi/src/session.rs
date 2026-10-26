@@ -14,7 +14,7 @@ use crate::convert::*;
 use crate::error::{OnePassError, invalid};
 use crate::types::*;
 
-type Repo = onepass_core::repo::Repository<SyncStore>;
+pub(crate) type Repo = onepass_core::repo::Repository<SyncStore>;
 
 /// An unlocked account. The only writer of pending rows and device state.
 /// `lock` drops the repository, which wipes every key it holds.
@@ -61,14 +61,14 @@ impl Session {
     }
 }
 
-fn find_vault(repo: &Repo, id: Id) -> Result<Vault, OnePassError> {
+pub(crate) fn find_vault(repo: &Repo, id: Id) -> Result<Vault, OnePassError> {
     repo.vaults()?
         .into_iter()
         .find(|v| v.id == id)
         .ok_or(OnePassError::NotFound)
 }
 
-fn find_item(repo: &mut Repo, vault: &Vault, id: Id) -> Result<Item, OnePassError> {
+pub(crate) fn find_item(repo: &mut Repo, vault: &Vault, id: Id) -> Result<Item, OnePassError> {
     repo.items(vault)?
         .into_iter()
         .find(|i| i.id == id)

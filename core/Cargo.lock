@@ -1564,10 +1564,13 @@ dependencies = [
 name = "onepass-ffi"
 version = "0.1.0"
 dependencies = [
+ "aws-lc-rs",
  "onepass-core",
+ "psl",
  "tempfile",
  "time",
  "uniffi",
+ "url",
  "zeroize",
 ]
 

@@ -15,6 +15,7 @@ pub enum OnePassError {
     InvalidInput { what: String },
     Store,
     Crypto,
+    PasskeyExcluded,
 }
 
 impl fmt::Display for OnePassError {
@@ -29,6 +30,9 @@ impl fmt::Display for OnePassError {
             Self::InvalidInput { what } => write!(f, "invalid input: {what}"),
             Self::Store => f.write_str("store error"),
             Self::Crypto => f.write_str("cryptographic operation failed"),
+            Self::PasskeyExcluded => {
+                f.write_str("a passkey the relying party excluded already exists")
+            }
         }
     }
 }

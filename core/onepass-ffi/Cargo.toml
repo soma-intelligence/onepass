@@ -20,6 +20,9 @@ onepass-core = { path = "../onepass-core" }
 uniffi = { version = "=0.32.2" }
 zeroize.workspace = true
 time = { version = "0.3", default-features = false, features = ["std"] }
+# Domain matching of AutoFill: the Public Suffix List and URL parsing.
+psl = "2"
+url = "2"
 
 [features]
 # The Swift binding generator (`cargo run --features bindgen --bin uniffi-bindgen`).
@@ -30,6 +33,8 @@ dev-fast-kdf = ["onepass-core/dev-fast-kdf"]
 
 [dev-dependencies]
 tempfile = "3"
+# Verifies passkey assertion signatures in the AutoFill tests.
+aws-lc-rs.workspace = true
 # The integration tests make fast-KDF accounts: they need the dev floor of the
 # core (debug builds only) whichever way the tests are invoked.
 onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }

@@ -2,6 +2,7 @@
 //! sees vault keys, item keys or the keyset: it gets decrypted items for
 //! display and editing only.
 
+mod autofill;
 mod companion;
 mod convert;
 mod error;
