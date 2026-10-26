@@ -1,9 +1,17 @@
 //! OnePass MCP server: JSON-RPC 2.0 over stdio. The protocol layer lives in
-//! [`protocol`]; tools plug in behind the [`ToolHost`] trait.
+//! [`protocol`]; tools plug in behind the [`ToolHost`] trait. [`tools`]
+//! holds the OnePass tools, which reach the vaults only through a
+//! [`VaultPort`] and under a signed [`Policy`].
 
+pub mod policy;
+pub mod port;
 pub mod protocol;
+pub mod tools;
 
+pub use policy::{Narrowing, Policy, PolicyError, Scope, effective, load_policy, save_policy};
+pub use port::{PortError, RepoPort, VaultInfo, VaultPort};
 pub use protocol::{
     ClientInfo, MAX_LINE, PROTOCOL_VERSIONS, Session, ToolHost, ToolOutcome, ToolSpec, handle_line,
     serve,
 };
+pub use tools::McpTools;
