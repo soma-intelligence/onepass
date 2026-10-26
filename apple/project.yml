@@ -99,6 +99,25 @@ targets:
           CODE_SIGN_ENTITLEMENTS: App/Support/OnePass-CloudKit.entitlements
           "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass-CloudKit-macOS.entitlements
 
+  # XCUITest, iPhone simulator `OnePass M2 iPhone` (`make -C apple uitest`). The screenshot
+  # tests in the same bundle are skipped unless `scripts/screenshots.sh` runs them.
+  OnePassUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AppUITests
+    dependencies:
+      - target: OnePass
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        TEST_TARGET_NAME: OnePass
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+
 schemes:
   OnePass:
     build:
@@ -116,5 +135,9 @@ schemes:
             fi
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - OnePassUITests
     archive:
       config: Release

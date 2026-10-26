@@ -51,13 +51,19 @@ build-mac: core
 		-destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData \
 		CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
 
+## XCUITest on the dedicated iPhone simulator (real Argon2id: account creation takes seconds).
+## Signed ad hoc: an iOS app built with CODE_SIGNING_ALLOWED=NO has no keychain at all (-34018), so
+## its Secret Key could not be stored and the test could not unlock after locking.
 uitest: core simulators
 	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
 		-destination '$(IOS_DESTINATION)' -derivedDataPath DerivedData \
-		CODE_SIGNING_ALLOWED=NO test
+		CODE_SIGN_IDENTITY=- test
 
-screenshots: project
-	"$(APPLE_DIR)/scripts/screenshots.sh"
+## Screenshots (iPhone, iPad landscape, Mac) with the demo data: `make screenshots OUT=<folder>`,
+## a folder outside the repository.
+screenshots: core simulators
+	@if [ -z "$(OUT)" ]; then echo "usage: make -C apple screenshots OUT=<folder>" >&2; exit 64; fi
+	"$(APPLE_DIR)/scripts/screenshots.sh" "$(OUT)"
 
 clean:
 	rm -rf "$(APPLE_DIR)/build" "$(APPLE_DIR)/DerivedData" "$(APPLE_DIR)/VaultKit/.build" \

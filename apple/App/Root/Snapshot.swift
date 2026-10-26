@@ -6,6 +6,8 @@ import VaultKit
 /// `-OnePassSnapshot <folder>` (Debug, Mac): with the demo data, renders the app's own window
 /// (frame and toolbar included) into PNGs at 1280 x 820, light then dark, then quits. Uses
 /// `cacheDisplay`, so no screen recording permission is needed. Fictional data only.
+/// Screens: list and detail, edit, vault by date, trash, search, Bienvenue, Réglages (its own
+/// window), then the lock screen last (`scripts/screenshots.sh`).
 @MainActor
 enum Snapshot {
     static func run(model: AppModel, directory: URL) async {
@@ -57,8 +59,50 @@ enum Snapshot {
             try? await Task.sleep(for: .milliseconds(600))
             DemoTrace.log("search again: first responder %@", mainWindow?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil")
             if let table = itemTable { mainWindow?.makeFirstResponder(table) }
+
+            // Bienvenue: the onboarding's first step, shown over the unlocked demo session.
+            model.selectedItem = nil
+            model.onboardingInProgress = true
+            await capture(directory, "mac-welcome-\(suffix)")
+            model.onboardingInProgress = false
+
+            await captureSettings(directory, "mac-settings-\(suffix)")
+        }
+        // The lock screen last: the demo session is not unlocked again.
+        model.lock()
+        for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            NSApp.appearance = NSAppearance(named: appearance)
+            await capture(directory, "mac-locked-\(suffix)")
         }
         NSApp.terminate(nil)
+    }
+
+    /// Opens the `Settings` window through its menu item (⌘,), renders it, then closes it.
+    private static func captureSettings(_ directory: URL, _ name: String) async {
+        func find(_ menu: NSMenu) -> NSMenuItem? {
+            for item in menu.items {
+                if item.keyEquivalent == ",", item.keyEquivalentModifierMask.contains(.command) { return item }
+                if let sub = item.submenu, let found = find(sub) { return found }
+            }
+            return nil
+        }
+        guard let main = NSApp.mainMenu, let item = find(main), let menu = item.menu else {
+            DemoTrace.log("snapshot: no settings menu item")
+            return
+        }
+        let index = menu.index(of: item)
+        let appWindow = mainWindow
+        menu.performActionForItem(at: index)
+        try? await Task.sleep(for: .milliseconds(1500))
+        // The settings window is created once, then reused (hidden) by the next ⌘,.
+        guard let window = NSApp.windows.first(where: { $0.isVisible && $0 !== appWindow && $0.contentView != nil })
+        else {
+            DemoTrace.log("snapshot: settings window not found")
+            return
+        }
+        render(window, directory, name)
+        window.close()
+        try? await Task.sleep(for: .milliseconds(300))
     }
 
     /// Menu items bound to ⌘F and ⌘⌫, to check that each has one owner.
@@ -106,10 +150,16 @@ enum Snapshot {
 
     private static func capture(_ directory: URL, _ name: String) async {
         try? await Task.sleep(for: .milliseconds(1500))
-        guard let frameView = mainWindow?.contentView?.superview else {
+        guard let window = mainWindow else {
             DemoTrace.log("snapshot: no window (%d windows)", NSApp.windows.count)
             return
         }
+        render(window, directory, name)
+    }
+
+    /// Renders a window, frame and toolbar included, into `<directory>/<name>.png`.
+    private static func render(_ window: NSWindow, _ directory: URL, _ name: String) {
+        guard let frameView = window.contentView?.superview else { return }
         frameView.layoutSubtreeIfNeeded()
         frameView.displayIfNeeded()
         let bounds = frameView.bounds

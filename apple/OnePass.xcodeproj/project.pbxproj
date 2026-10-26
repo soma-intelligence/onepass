@@ -26,11 +26,13 @@
 		469D03A44C80D8C1010565D6 /* ItemEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4590FC000AF13D1212563044 /* ItemEditorView.swift */; };
 		4D11257A2AB715CC77BA22C1 /* SecuritySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73396E5534184EF7CE76A170 /* SecuritySettings.swift */; };
 		4D18C9E35394FE4B518B4CBE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */; };
+		4FC983E3F5EEF45E81E52160 /* OnboardingAndItemUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A375FC8CB067AC2E4C863B5E /* OnboardingAndItemUITests.swift */; };
 		5156E543C4981476E3C13656 /* DebugItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20B8451FA00D38A8278D9655 /* DebugItems.swift */; };
 		56B6F0937E9CFE60521A0DAE /* OnboardingSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214B39B3C661A8FF88275223 /* OnboardingSteps.swift */; };
 		57D1B84C4C839CE948AFE66B /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */; };
 		5E518F39B88F872FDCDEA3E2 /* ItemHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */; };
 		608A23FFF1AF64C0A8871372 /* PrivacyShield.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */; };
+		67FC2F53EA5276C5C3EBC00E /* ScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */; };
 		6836074F1CF5DEF5FFD74991 /* ItemListColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEFF53CC1ED0153EE5BA51E4 /* ItemListColumn.swift */; };
 		727572DCA29C624F6444CEEA /* SecretKeyScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F862061FDCD55EF5FD6C95 /* SecretKeyScanner.swift */; };
 		7D0DDE3FABB48308DBAC99CD /* OnePassApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D64EBFE57E2DE8181340998 /* OnePassApp.swift */; };
@@ -68,6 +70,16 @@
 		FE604CA8F8BDE5C06A3E588A /* DateFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488E4CE89D1B50E9FFA9002E /* DateFieldEditor.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		F6835E6592069C650A8AC11B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EE2C0F282791D003988755A4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8393ECD4BFF4D241F435C84D;
+			remoteInfo = OnePass;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		013A476F2676DCA4286E22C9 /* VaultKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = VaultKit; path = VaultKit; sourceTree = SOURCE_ROOT; };
 		0151B9E949BF8C50E53F3176 /* BarcodeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeEditor.swift; sourceTree = "<group>"; };
@@ -79,6 +91,7 @@
 		0D64EBFE57E2DE8181340998 /* OnePassApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassApp.swift; sourceTree = "<group>"; };
 		0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		129B81D637BE1364C28F598B /* LocationEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationEditor.swift; sourceTree = "<group>"; };
+		15DA91325D7B74C10AFBA3A6 /* OnePassUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OnePassUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		19D9899D8B640FB4F5F8B0E6 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		1BD14548F52D76A5B6DD1923 /* NewItemMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewItemMenu.swift; sourceTree = "<group>"; };
 		1F391F505B02B771276A46D5 /* ItemLinkPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemLinkPicker.swift; sourceTree = "<group>"; };
@@ -113,6 +126,8 @@
 		8E2BC05B539890907CE2714F /* UrlListEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UrlListEditor.swift; sourceTree = "<group>"; };
 		9119720BF7C06235BF6ED5AC /* ItemListRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemListRow.swift; sourceTree = "<group>"; };
 		9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotUITests.swift; sourceTree = "<group>"; };
+		A375FC8CB067AC2E4C863B5E /* OnboardingAndItemUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingAndItemUITests.swift; sourceTree = "<group>"; };
 		A3F2B5C4E147CBDF5F09CD14 /* GeneratorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratorSheet.swift; sourceTree = "<group>"; };
 		C09CB3FCA94E45F15C4C5C10 /* CategoryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryListView.swift; sourceTree = "<group>"; };
 		C83485D924585FA30495DE07 /* SplitBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitBrowseView.swift; sourceTree = "<group>"; };
@@ -185,6 +200,7 @@
 			isa = PBXGroup;
 			children = (
 				13825139A0DF10EEAB8A16BC /* App */,
+				61037CBF9FBBBB926778B242 /* AppUITests */,
 				6EFD3AF6EFDA445E47D0BC4C /* Packages */,
 				B1C26DF3EFF5A88D1D2D533A /* Products */,
 			);
@@ -197,6 +213,15 @@
 				19D9899D8B640FB4F5F8B0E6 /* Localizable.xcstrings */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		61037CBF9FBBBB926778B242 /* AppUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A375FC8CB067AC2E4C863B5E /* OnboardingAndItemUITests.swift */,
+				9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */,
+			);
+			path = AppUITests;
 			sourceTree = "<group>";
 		};
 		62D4DDCD9735058F9697F671 /* FieldEditors */ = {
@@ -253,6 +278,7 @@
 			isa = PBXGroup;
 			children = (
 				64165D82E996859B750AAF94 /* OnePass.app */,
+				15DA91325D7B74C10AFBA3A6 /* OnePassUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -346,6 +372,24 @@
 			productReference = 64165D82E996859B750AAF94 /* OnePass.app */;
 			productType = "com.apple.product-type.application";
 		};
+		E7921CD4F6414DD4FA0B5EFF /* OnePassUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E89D4C634FA3E97BA544A1B8 /* Build configuration list for PBXNativeTarget "OnePassUITests" */;
+			buildPhases = (
+				768BDB3C2AFD69D8AA3CF58D /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EB9EEC67B847526762180E1C /* PBXTargetDependency */,
+			);
+			name = OnePassUITests;
+			packageProductDependencies = (
+			);
+			productName = OnePassUITests;
+			productReference = 15DA91325D7B74C10AFBA3A6 /* OnePassUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -357,6 +401,11 @@
 				TargetAttributes = {
 					8393ECD4BFF4D241F435C84D = {
 						DevelopmentTeam = "";
+					};
+					E7921CD4F6414DD4FA0B5EFF = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+						TestTargetID = 8393ECD4BFF4D241F435C84D;
 					};
 				};
 			};
@@ -379,6 +428,7 @@
 			projectRoot = "";
 			targets = (
 				8393ECD4BFF4D241F435C84D /* OnePass */,
+				E7921CD4F6414DD4FA0B5EFF /* OnePassUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -396,6 +446,15 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		768BDB3C2AFD69D8AA3CF58D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4FC983E3F5EEF45E81E52160 /* OnboardingAndItemUITests.swift in Sources */,
+				67FC2F53EA5276C5C3EBC00E /* ScreenshotUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9B2AC3F3A1BFE1D5A3C21C0F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -460,7 +519,35 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		EB9EEC67B847526762180E1C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8393ECD4BFF4D241F435C84D /* OnePass */;
+			targetProxy = F6835E6592069C650A8AC11B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		32FABEA4AE93845480FAE2FB /* Release-CloudKit */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = OnePass;
+			};
+			name = "Release-CloudKit";
+		};
 		481305E7992E755F934F78E7 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -551,7 +638,6 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -560,6 +646,26 @@
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
+		};
+		ACA9AF2BE35D83448E13672C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = OnePass;
+			};
+			name = Release;
 		};
 		B78E4959EDE1FFD570888D6E /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -644,7 +750,6 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -708,7 +813,6 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -749,6 +853,26 @@
 			};
 			name = "Release-CloudKit";
 		};
+		FB8279DC0FB0BAFE1ED2825E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = OnePass;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -768,6 +892,16 @@
 				481305E7992E755F934F78E7 /* Debug */,
 				B78E4959EDE1FFD570888D6E /* Release */,
 				F23F3EAC566979F46EE5227C /* Release-CloudKit */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E89D4C634FA3E97BA544A1B8 /* Build configuration list for PBXNativeTarget "OnePassUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FB8279DC0FB0BAFE1ED2825E /* Debug */,
+				ACA9AF2BE35D83448E13672C /* Release */,
+				32FABEA4AE93845480FAE2FB /* Release-CloudKit */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

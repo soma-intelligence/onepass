@@ -108,3 +108,50 @@ Au jalon 1 la CLI fonctionne en **mode développement autonome**. C'est un écar
 - Le mot de passe est lu sur le terminal, masqué. Il n'existe pas de mode non interactif réel. Pour les tests seulement, `ONEPASS_DEV_ALLOW_ENV_PASSWORD=1` autorise `ONEPASS_PASSWORD`, et `ONEPASS_DEV_FAST_KDF=1` abaisse le coût d'Argon2id (refusé dans un build release).
 - Pas de verrouillage automatique, pas de biométrie, pas de synchronisation, pas de `mlock` des pages secrètes.
 - Ne mettez pas de vrais secrets dans un compte de développement.
+
+## Crate `onepass-ffi` (jalon 2)
+
+Interface UniFFI du noyau pour les apps Apple (`apple/`), membre du workspace. UniFFI `=0.32.2` en proc-macros, sans fichier UDL. La crate se compile en `staticlib` pour `aarch64-apple-ios`, `aarch64-apple-ios-sim` et `aarch64-apple-darwin`, assemblée en XCFramework par `make -C apple core` (`apple/scripts/build-core.sh`), qui génère aussi les liaisons Swift :
+
+```sh
+cd core
+cargo test -p onepass-ffi
+cargo run -p onepass-ffi --features bindgen --bin uniffi-bindgen -- --help
+```
+
+- Fonctions libres : `create_account` (refuse un magasin qui contient déjà un compte), `create_account_with_kdf` (paramètres Argon2id explicites ; sous le plancher, refusé sauf build debug avec `dev-fast-kdf`), `unlock_with_password` (rend la session et l'AUK, pour l'enrôlement biométrique), `unlock_with_auk`, `has_account`, `open_sync_store`, `normalize_secret_key`, `generate_password`, `password_entropy_bits`, `totp_now`, `item_types`, `template`, `menu_options`, `card_brand`, `validate_item`.
+- Objet `Session` (thread-safe, `Mutex` interne) : vaults (`vaults`, `create_vault`, `update_vault`), items (`item_summaries` sans aucune valeur secrète, `item`, `new_item`, `save_item` qui valide d'abord et tient l'historique des mots de passe, corbeille, archive, favori, déplacement, suppression, `purge_trash`, `password_history`), `rebase_all`, `lock` (clés effacées par `zeroize`, tout appel suivant rend `Locked`).
+- Objet `SyncStoreHandle`, ouvrable sans déverrouiller : `pending_changes`, `mark_pushed`, `stage_remote`, `commit_remote`, `server_meta`, `meta` et `set_meta`, `begin_full_fetch`, `begin_zone_reset`, `finish_full_fetch`. La récupération et l'envoi tournent donc appareil verrouillé ; seul le rebase demande une session. Il ne peut pas toucher à l'état de l'appareil (`DeviceState`).
+- Identifiants en hexadécimal de 32 caractères, dates en secondes Unix ou `{year, month, day}`.
+- Erreurs : `OnePassError` (`WrongPassword`, `NotFound`, `Conflict`, `Validation { field, reason }`, `Integrity { kind }`, `InvalidInput { what }`, `Store`, `Crypto`, `Locked`). Aucune ne contient de valeur de champ ; les erreurs SQLite ne portent que leur code.
+- Feature `bindgen` : le générateur de liaisons (`uniffi/cli`), seulement à la construction (voir l'entrée `advisories.ignore` de `deny.toml`). Feature `dev-fast-kdf` : abaisse le plancher Argon2id dans un build debug, pour les tests Rust et l'XCFramework de test des apps (`make -C apple core-test`), jamais pour un build livré.
+
+Tests (`onepass-ffi/tests/ffi.rs`) : création puis déverrouillage par mot de passe et par AUK, accents composés et décomposés, refus d'un compte existant et d'un KDF sous le plancher, aller-retour des 26 types, historique des mots de passe, erreurs de validation qui nomment le champ sans sa valeur, Document sans fichier, cycle de vie des items, résumés sans secret, session verrouillée, sync par `SyncStoreHandle` verrouillé et réinitialisation de zone.
+
+## Module `sync` de `onepass-core` (jalon 2)
+
+`onepass-core/src/sync/` : synchronisation "hors ligne d'abord". Le `Repository` reste synchrone et ignore le réseau ; il travaille sur `SyncStore`, un magasin SQLite à couches qui implémente `RecordStore`. Le transport (CloudKit) vit côté Swift.
+
+Tables (un seul fichier, transactions) :
+
+| Table | Rôle |
+| --- | --- |
+| `base` | dernier état connu du serveur, avec `server_meta` (champs système CloudKit encodés par Swift, opaques pour le Rust) |
+| `pending` | écritures locales pas encore confirmées ; `data NULL` est une suppression |
+| `staging` | changements reçus pendant une récupération, appliqués d'un coup |
+| `ancestor` | pour un manifeste en attente, la version `base` sur laquelle il s'appuyait |
+| `meta` | état de l'appareil, jeton de changement, mode de récupération |
+
+Lecture : `pending` masque `base`. Écriture : toujours dans `pending` ; `put_if_version` compare à la version effective. Un enregistrement de plus de 900 Kio (`MAX_RECORD_BYTES`) est refusé.
+
+Opérations :
+
+1. `pending_changes` : les écritures à envoyer, items avant le manifeste de leur vault, suppressions après. Un vault dont le `base` a avancé depuis l'écriture locale est **retenu** (`vaults_needing_rebase`) : il n'envoie rien, ni items ni manifeste.
+2. `mark_pushed` : la version confirmée passe de `pending` à `base`.
+3. `stage_remote` puis `commit_remote` : les changements reçus entrent dans `base` en une transaction à la fin de la récupération, pour qu'un manifeste n'apparaisse jamais sans ses items. `commit_remote` tourne à chaque fin de récupération complète.
+4. `Repository::rebase` (déverrouillé) : par vault retenu, vérifie le manifeste du serveur contre l'ancêtre, recalcule les intentions locales par différence, les rejoue par `save_item` ou `delete_item`, dans une transaction par vault. Le plus récent `updated_at` gagne, égalité tranchée par l'ordre des octets du hash. Un vault en échec n'empêche pas les autres.
+5. `begin_full_fetch`, `begin_zone_reset`, `finish_full_fetch` : récupération depuis zéro (jeton expiré, "Réessayer" après un refus d'intégrité) et réinitialisation de zone. À la fin, `base` est réconcilié avec le serveur ; après une réinitialisation, seules les lignes absentes du serveur repartent dans `pending`, sans jamais toucher une écriture en attente.
+
+Tests : `onepass-core/tests/sync_two_devices.rs`, deux appareils et un faux serveur sans réseau (écritures dans les deux sens, items différents ou identiques modifiés en même temps, suppression contre modification, vault retenu qui n'envoie rien, rejeu d'un vieux manifeste, item retenu par le serveur, coupures entre l'envoi et la confirmation, appareil longtemps hors ligne, déplacement contre modification), plus les tests unitaires de `sync/store.rs` et `sync/rebase.rs`. Ils tournent avec `cargo test --workspace`.
+
+Les règles de sécurité de la sync (ce que voit le serveur, rebase, réinitialisation de zone) sont dans la section 7 de [`docs/security/README.md`](../docs/security/README.md).

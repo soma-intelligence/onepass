@@ -57,7 +57,20 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "E7921CD4F6414DD4FA0B5EFF"
+               BuildableName = "OnePassUITests.xctest"
+               BlueprintName = "OnePassUITests"
+               ReferencedContainer = "container:OnePass.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

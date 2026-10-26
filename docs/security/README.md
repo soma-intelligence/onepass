@@ -179,3 +179,80 @@ Les décodeurs qu'un stockage hostile atteint avant toute authentification sont 
 7. **CLI** : la section 9.1 de la spec prévoit un passage par l'app Mac avec Touch ID. Au jalon 1 la CLI est en mode développement autonome (Secret Key en clair dans `device.bin`), écart assumé.
 8. **Liste des vaults non signée** : la spec (4.4) protège chaque vault par son manifeste, pas la liste des vaults du compte. Au jalon 1 cette liste n'est pas authentifiée : un vault planté est refusé (pas de manifeste signé valide), un vault déjà lu par l'appareil puis masqué est détecté (`VaultMissing`), mais un vault jamais lu par l'appareil peut être masqué sans détection. Liste signée prévue au jalon 2.
 9. **Fuzzing** : la spec dit "tous les parseurs". Le jalon 1 fuzze les sept points d'entrée listés en section 4, pas les parseurs d'import et d'export, qui n'existent pas encore.
+
+## 7. Jalon 2 : apps Apple
+
+Cette section décrit ce qu'ajoutent les apps iPhone, iPad et Mac (`apple/`, paquet `VaultKit`) et la crate `onepass-ffi` au jalon 2. La cryptographie des sections 2 à 5 est inchangée : toutes les clés restent dans le Rust. Swift ne voit jamais une clé de vault, une clé d'item ni le keyset ; il reçoit des items déchiffrés pour l'affichage et l'édition. Les seuls secrets cryptographiques côté Swift sont la Secret Key et l'AUK enveloppée par la Secure Enclave, tous deux dans le Keychain.
+
+### 7.1 Déverrouillage biométrique
+
+- **Ce qui est enveloppé : l'AUK** (32 octets, section 3.1), pas le keyset déchiffré (ruling R4). `unlock_with_password` rend l'AUK au moment de l'enrôlement ; `unlock_with_auk` ouvre ensuite le keyset avec exactement les mêmes contrôles que le mot de passe (signature des paramètres, épingle, plancher et plafond Argon2id, cohérence du keyset), sans dérivation Argon2id. Aucune clé privée du compte ne sort du Rust.
+- **Clé de la Secure Enclave** : une clé P-256 par compte (étiquette `me.somalabs.onepass.auk.<id du compte>`), créée dans la Secure Enclave, jamais exportable, contrôle d'accès `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` avec `.privateKeyUsage` et `.biometryCurrentSet`. Sur Mac, avec le réglage "Accepter aussi l'Apple Watch", `.biometryCurrentSet` OU `.companion`. L'AUK est chiffrée vers la clé publique par `eciesEncryptionCofactorVariableIVX963SHA256AESGCM` ; le texte chiffré est rangé dans le Keychain. Le déchiffrer demande Face ID, Touch ID (ou la montre) à chaque fois.
+- **`.biometryCurrentSet`** : ajouter ou retirer un doigt ou un visage invalide la clé. Le déchiffrement échoue, l'enrôlement est supprimé et le mot de passe maître est demandé.
+- **Redémarrage** : à l'enrôlement et à chaque saisie du mot de passe, l'app enregistre l'identifiant de la session de démarrage (`kern.bootsessionuuid`, un UUID par démarrage, sans tolérance d'horloge). S'il a changé, ou s'il est illisible, la biométrie est refusée et l'enrôlement supprimé.
+- **14 jours** : le mot de passe maître est redemandé si la dernière saisie date de plus de 14 jours (réglable), ou si l'horloge a reculé de plus de 5 min depuis.
+- Après un de ces refus, la clé est recréée automatiquement au prochain déverrouillage réussi par mot de passe si l'utilisateur avait activé la biométrie. L'utilisateur qui choisit "Saisir le mot de passe" dans la feuille système, ou une biométrie bloquée temporairement par le système, garde son enrôlement.
+- Sans Secure Enclave (Simulateur) ou en mode partagé, la biométrie n'est pas proposée. Aucun cas n'est une impasse : le mot de passe maître reste toujours possible.
+- Mot de passe faux : après 5 échecs, attente de 30 s, puis 1 min, puis 5 min à chaque nouvel échec, comptée localement (un attaquant qui copie la base hors de l'appareil n'est pas freiné par ce compteur, seulement par Argon2id).
+
+### 7.2 Keychain
+
+Éléments génériques du keychain à protection de données (`kSecUseDataProtectionKeychain`, y compris sur Mac), service `me.somalabs.onepass`, groupe d'accès partagé `$(AppIdentifierPrefix)me.somalabs.onepass.shared` dans un build signé :
+
+| Élément | Contenu | Classe |
+| --- | --- | --- |
+| `secretkey.<id du compte>` | Secret Key en clair | `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` |
+| `biometric.enrollment.<id du compte>` | AUK chiffrée par la Secure Enclave, dates d'enrôlement et de dernière saisie du mot de passe, identifiant de démarrage | `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` |
+| clé privée `me.somalabs.onepass.auk.<id>` | clé P-256 de la Secure Enclave (référence seulement) | `WhenUnlockedThisDeviceOnly` + biométrie |
+| `prefix-probe` (service `me.somalabs.onepass.prefix-probe`) | aucun secret, sert à lire le préfixe d'équipe | `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` |
+
+`ThisDeviceOnly` : rien n'est copié dans une sauvegarde restaurable sur un autre appareil ni dans le trousseau iCloud (l'option "Secret Key dans le trousseau iCloud" est hors périmètre). Un build local non signé n'a pas le droit d'accès au keychain à protection de données (erreur `-34018`) : en Debug seulement, l'app se replie alors sur le trousseau classique sans groupe d'accès ; un build Release ne se replie jamais.
+
+### 7.3 Presse-papiers, écran, journaux
+
+- **Presse-papiers** : copie locale seulement, jamais par le presse-papiers universel (iOS : option `localOnly` et date d'expiration système ; macOS : `currentHostOnly` et type `org.nspasteboard.ConcealedType` pour que les gestionnaires de presse-papiers l'ignorent). Effacé après 90 s, seulement si rien d'autre n'a été copié entre-temps.
+- **Écran** : sur iPhone et iPad, une fenêtre de confidentialité couvre l'app dès que la scène devient inactive (sélecteur d'apps, centre de contrôle), au-dessus des feuilles et alertes. Les champs révélés repassent masqués après 30 s ou à la sortie de l'écran. Les champs secrets sont marqués `privacySensitive`.
+- **Journaux** : `os.Logger`, identifiants en `privacy: .private`, jamais de valeur de champ. Les erreurs (`OnePassError` du Rust, `VaultError` côté Swift) ne contiennent jamais de valeur de champ.
+- **Mémoire** : l'item complet n'est gardé que par la vue de détail et l'éditeur, et oublié au verrouillage ; les listes ne portent que des résumés sans secret ; la liste des récents vit en mémoire et est vidée au verrouillage. Limite assumée (R5) : Swift ne garantit pas l'effacement des copies de `String`.
+- **Verrouillage automatique** : 15 min par défaut en mode personnel (1, 5, 15, 60 min ou jamais) ; en mode partagé, le plus court entre le délai choisi et 5 min, sans biométrie, avec des vaults masqués au choix. Un verrouillage (bouton, arrière-plan, délai) pendant un déverrouillage ou un enregistrement finit toujours verrouillé, sans item en mémoire.
+
+### 7.4 Stockage local
+
+- **Base** : `Application Support/OnePass/vault.sqlite` dans le conteneur de l'app (sandbox sur Mac). Elle contient les tables du module `sync` (`base`, `pending`, `staging`, `ancestor`, `meta`) : les enregistrements y sont les blobs déjà chiffrés et signés par le core (section 3), exactement ce que voit le serveur. S'y ajoutent l'état de l'appareil (`DeviceState` : épingle du compte, derniers manifestes vus), le jeton de changement CloudKit et, par enregistrement, les champs système CloudKit (`server_meta`, nom et étiquette de version de l'enregistrement). Aucun secret en clair : sans la Secret Key (Keychain) et le mot de passe maître, la base ne s'ouvre pas.
+- **Protection de fichiers** (iOS et iPadOS) : le dossier est en `NSFileProtectionCompleteUntilFirstUserAuthentication`, pour que la récupération et l'envoi tournent appareil verrouillé. Le contenu étant déjà chiffré par le core, la classe `Complete` n'apporterait qu'une défense en profondeur au prix de la sync en arrière-plan. macOS n'a pas de classes de protection de fichiers : la base repose sur le conteneur sandboxé et FileVault.
+- **Réglages** (`UserDefaults`, en clair) : nom affiché, identifiant du compte, mode d'appareil, délais, vaults masqués, compteur et fin d'attente des échecs de mot de passe, souhait de biométrie. Aucun secret, mais le nom affiché et l'identifiant du compte sont lisibles par qui lit le conteneur.
+- **Icônes de site** : récupérées directement sur le site de l'URL principale (HTTPS seulement, session éphémère sans cookies, 256 Kio au plus), cache local nommé par hash du domaine, fichiers en `completeFileProtectionUnlessOpen`. La récupération révèle au site qu'un item existe pour lui ; un réglage la coupe (ruling R10). Quelqu'un qui lit le cache peut tester si un domaine connu y figure.
+- **Emergency Kit** : PDF produit sur l'appareil (Secret Key en clair et QR code), écrit dans un dossier temporaire (`NSFileProtectionComplete` sur iOS), partagé par la feuille système, supprimé quand l'étape disparaît, et les restes d'une exécution interrompue sont supprimés au lancement suivant.
+
+### 7.5 Ce que voit iCloud
+
+Base privée CloudKit de l'utilisateur, zone `OnePass`, type d'enregistrement `OPRecord`. Pour chaque enregistrement du core :
+
+- **nom** : `"<code de type>.<id hex>"` (type de 1 à 6 et identifiant UUIDv7 de 16 octets, opaque) ;
+- **champs en clair** : `kind` (le même code) et `version` ;
+- **`data`** : le blob du core dans `encryptedValues`, donc chiffré une seconde fois par CloudKit ; cette couche d'Apple n'est pas comptée dans le modèle de menace ;
+- les champs système de CloudKit : dates de création et de modification, appareil, étiquette de version.
+
+Le serveur apprend donc ce que décrit la section 1 (nombre d'items par vault, vault de chaque item, tailles arrondies, versions, numéros de séquence des manifestes), plus les dates et le rythme des écritures. Il ne lit ni titre, ni URL, ni type d'item, ni tag, ni contenu. Un enregistrement de plus de 900 Kio est refusé par le Rust avant d'être écrit.
+
+### 7.6 Sync, rebase et vaults retenus
+
+- **Écriture** : toujours dans `pending`, jamais directement dans `base`. L'envoi est conditionnel (`savePolicy: .ifServerRecordUnchanged`, atomique) et ordonné pour qu'un manifeste n'arrive jamais avant ses items. Un lot qui dépasse les limites de CloudKit (400 enregistrements, 1,5 Mio) est découpé dans cet ordre ; dans ce cas rare, un autre appareil qui récupère entre deux lots peut voir un refus d'intégrité transitoire jusqu'à la récupération suivante.
+- **Récupération** : les changements reçus vont dans `staging` puis dans `base` en une transaction à la fin de la récupération : un manifeste n'apparaît jamais sans ses items. Le jeton de changement est enregistré juste après chaque page.
+- **Rebase** : quand le manifeste du serveur a avancé alors qu'un manifeste local en attente part de l'ancien, le vault est **retenu** : il n'envoie rien, ni items ni manifeste, tant qu'il n'a pas été rebasé. La récupération continue appareil verrouillé, mais le rebase demande la session déverrouillée. Le rebase vérifie le manifeste du serveur contre l'ancêtre gardé (il doit s'y enchaîner, sinon `ManifestRollback`), recalcule les intentions locales et les rejoue, dans une transaction SQLite par vault. Fusion au niveau de l'item : le `updated_at` le plus récent gagne, égalité tranchée par l'ordre des octets du hash. Une suppression locale d'un item modifié ensuite ailleurs est abandonnée ; une modification locale d'un item supprimé ailleurs le fait revenir.
+- **Vault créé ici sans envoi confirmé** : l'ancêtre manque, le manifeste du serveur est accepté sans historique pour ce vault (confiance au premier usage, toujours vérifié par sa signature). Pour ce vault seulement, un serveur hostile pourrait servir une fois un ancien manifeste valide.
+- **Récupération complète et réconciliation** : un jeton expiré, le bouton "Réessayer" de l'écran "Données refusées" ou une réinitialisation de zone relancent une récupération depuis zéro. À la fin, `base` est réconcilié avec le serveur : une ligne que le serveur n'a pas rendue est supprimée, et les items d'un vault dont le manifeste est revenu suivent le serveur (le serveur fait foi par vault). Les écritures locales en attente ne sont jamais touchées.
+- **Réinitialisation de zone** (zone supprimée par l'utilisateur, ou recréée après `zoneNotFound`) : l'appareil efface ses métadonnées serveur et son jeton, récupère tout, puis renvoie seulement ce que le serveur n'a plus (pour un vault, seulement si son manifeste manque aussi), pour qu'un appareil en retard ne fasse pas régresser le serveur. La copie locale est la seule copie complète : elle n'est pas perdue en silence. Conséquence : un effacement volontaire des données iCloud est défait par le prochain appareil qui synchronise, et un vault supprimé pourrait être ressuscité par un appareil en retard (un réglage "Effacer les données iCloud" arrive au jalon 5).
+- **Données altérées** : toute erreur d'intégrité du core affiche l'écran "Données refusées" avec le type d'attaque, sans aucune donnée tant qu'elle persiste ; le stockage n'est jamais réparé automatiquement.
+
+### 7.7 Limites du jalon 2
+
+- **R1** : pas de connexion par QR code, ni de liste signée des appareils ou de révocation ; un nouvel appareil passe par l'Emergency Kit. Reporté au jalon 2b.
+- **R2** : pas de mode public (session déléguée). Reporté au jalon 2b.
+- **R8** : la sync CloudKit réelle n'est compilée que dans la configuration signée `Release-CloudKit` et n'a pas été vérifiée faute d'équipe Apple. Les builds non signés tournent en local seulement. La logique de sync est couverte par les tests Rust à deux appareils et par les tests Swift contre `InMemoryRemote` (rejeu, rétention, altération).
+- **R9** : pas de pièces jointes ; le type de blob `Attachment` reste réservé.
+- **R12** : pas de changement du mot de passe maître. Une AUK enveloppée reste valable tant que le mot de passe et la Secret Key ne changent pas ; rien à invalider au jalon 2.
+- **R14** : pas de suppression de vault. La liste des vaults du compte n'est toujours pas signée (section 1, écart 8) : elle n'est pas livrée au jalon 2 et passe au jalon 2b.
+- iOS peut afficher sa feuille "Save Password?" (enregistrer dans les mots de passe du système) quand l'éditeur d'un item avec un champ mot de passe se ferme. L'éditeur ne marque plus ses champs en `.password` ni `.oneTimeCode`, mais l'heuristique du système se déclenche encore sur un champ sécurisé : il faut refuser, sinon la valeur sort du chiffrement de OnePass. À supprimer avant le lancement.
+- Mode partagé : des vaults masqués ne sont qu'une règle d'affichage locale, pas une frontière cryptographique (le keyset ouvre tous les vaults).
+- Aucun audit externe des apps.
