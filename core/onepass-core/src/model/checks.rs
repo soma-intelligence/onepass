@@ -117,34 +117,110 @@ pub fn card_brand(number: &str) -> CardBrand {
     CardBrand::Unknown
 }
 
-/// IBAN length by country code (SWIFT registry).
+/// IBAN total length by country code (SWIFT registry).
+const IBAN_LENGTHS: &[(&str, usize)] = &[
+    ("NO", 15),
+    ("BE", 16),
+    ("BI", 16),
+    ("DK", 18),
+    ("FI", 18),
+    ("FK", 18),
+    ("FO", 18),
+    ("GL", 18),
+    ("NL", 18),
+    ("SD", 18),
+    ("MK", 19),
+    ("SI", 19),
+    ("AT", 20),
+    ("BA", 20),
+    ("EE", 20),
+    ("KZ", 20),
+    ("LT", 20),
+    ("LU", 20),
+    ("MN", 20),
+    ("XK", 20),
+    ("CH", 21),
+    ("HR", 21),
+    ("LI", 21),
+    ("LV", 21),
+    ("BG", 22),
+    ("BH", 22),
+    ("CR", 22),
+    ("DE", 22),
+    ("GB", 22),
+    ("GE", 22),
+    ("IE", 22),
+    ("ME", 22),
+    ("RS", 22),
+    ("VA", 22),
+    ("AE", 23),
+    ("GI", 23),
+    ("IL", 23),
+    ("IQ", 23),
+    ("OM", 23),
+    ("SO", 23),
+    ("TL", 23),
+    ("AD", 24),
+    ("CZ", 24),
+    ("ES", 24),
+    ("MD", 24),
+    ("PK", 24),
+    ("RO", 24),
+    ("SA", 24),
+    ("SE", 24),
+    ("SK", 24),
+    ("TN", 24),
+    ("VG", 24),
+    ("LY", 25),
+    ("PT", 25),
+    ("ST", 25),
+    ("IS", 26),
+    ("TR", 26),
+    ("DJ", 27),
+    ("FR", 27),
+    ("GR", 27),
+    ("IT", 27),
+    ("MC", 27),
+    ("MR", 27),
+    ("SM", 27),
+    ("AL", 28),
+    ("AZ", 28),
+    ("BY", 28),
+    ("CY", 28),
+    ("DO", 28),
+    ("GT", 28),
+    ("HN", 28),
+    ("HU", 28),
+    ("LB", 28),
+    ("NI", 28),
+    ("PL", 28),
+    ("SV", 28),
+    ("BR", 29),
+    ("EG", 29),
+    ("PS", 29),
+    ("QA", 29),
+    ("UA", 29),
+    ("JO", 30),
+    ("KW", 30),
+    ("MU", 30),
+    ("YE", 30),
+    ("MT", 31),
+    ("SC", 31),
+    ("LC", 32),
+    ("RU", 33),
+];
+
 fn iban_length(country: &str) -> Option<usize> {
-    let n = match country {
-        "NO" => 15,
-        "BE" => 16,
-        "DK" | "FI" | "FO" | "GL" | "NL" => 18,
-        "MK" | "SI" => 19,
-        "AT" | "BA" | "EE" | "KZ" | "LT" | "LU" => 20,
-        "CH" | "CR" | "HR" | "LI" | "LV" => 21,
-        "BG" | "BH" | "DE" | "GB" | "GE" | "IE" | "ME" | "RS" | "VA" => 22,
-        "AE" | "GI" | "IL" | "IQ" | "TL" => 23,
-        "AD" | "CZ" | "ES" | "MD" | "PK" | "RO" | "SA" | "SE" | "SK" | "TN" | "VG" => 24,
-        "LY" | "PT" | "ST" => 25,
-        "IS" | "TR" => 26,
-        "FR" | "GR" | "IT" | "MC" | "MR" | "SM" => 27,
-        "AL" | "AZ" | "BY" | "CY" | "DO" | "GT" | "HU" | "LB" | "PL" | "SV" => 28,
-        "BR" | "EG" | "PS" | "QA" | "UA" => 29,
-        "JO" | "KW" | "MU" => 30,
-        "MT" | "SC" => 31,
-        "LC" => 32,
-        "XK" => 20,
-        _ => return None,
-    };
-    Some(n)
+    IBAN_LENGTHS
+        .iter()
+        .find(|(c, _)| *c == country)
+        .map(|(_, n)| *n)
 }
 
-/// IBAN check: spaces ignored, case ignored, length per country, ISO 7064
-/// mod 97 equal to 1.
+/// IBAN check: spaces ignored, case ignored, ISO 7064 mod 97 equal to 1.
+/// Countries in the registry table must have their exact length. A country
+/// missing from the table is accepted at any length from 15 to 34 so that a
+/// real IBAN is never blocked by an outdated table.
 pub fn iban_valid(iban: &str) -> bool {
     let s: Vec<u8> = iban
         .bytes()
@@ -162,7 +238,11 @@ pub fn iban_valid(iban: &str) -> bool {
     let Ok(country) = std::str::from_utf8(country) else {
         return false;
     };
-    if iban_length(country) != Some(s.len()) {
+    let length_ok = match iban_length(country) {
+        Some(n) => n == s.len(),
+        None => (15..=34).contains(&s.len()),
+    };
+    if !length_ok {
         return false;
     }
     // Move the first four characters to the end, letters count as 10..=35.
@@ -409,10 +489,69 @@ mod tests {
         assert!(iban_valid("NL91ABNA0417164300"));
         // Right checksum would need the right length: too short for FR.
         assert!(!iban_valid("FR7630006000011234567890"));
-        assert!(!iban_valid("XX82WEST12345698765432"));
         assert!(!iban_valid(""));
         assert!(!iban_valid("GB82-WEST-1234-5698-7654-32"));
         assert!(!iban_valid("GB82WEST1234569876543é"));
+    }
+
+    /// Synthetic IBAN: country, computed check digits, zero-padded BBAN.
+    fn synthetic_iban(country: &str, len: usize) -> String {
+        let bban = "0".repeat(len - 4);
+        let numeric: String = format!("{bban}{country}00")
+            .chars()
+            .map(|c| match c.to_digit(36) {
+                Some(d) => d.to_string(),
+                None => unreachable!(),
+            })
+            .collect();
+        let rem = numeric
+            .bytes()
+            .fold(0u32, |r, b| (r * 10 + u32::from(b - b'0')) % 97);
+        format!("{country}{:02}{bban}", 98 - rem)
+    }
+
+    #[test]
+    fn iban_costa_rica_is_22() {
+        assert!(iban_valid("CR05015202001026284066"));
+        assert!(!iban_valid("CR0501520200102628406"));
+    }
+
+    #[test]
+    fn iban_every_table_entry_accepts_its_length_only() {
+        for &(country, len) in super::IBAN_LENGTHS {
+            let ok = synthetic_iban(country, len);
+            assert_eq!(ok.len(), len, "{country}");
+            assert!(iban_valid(&ok), "{country} at {len}");
+        }
+        for &(country, len) in super::IBAN_LENGTHS.iter().step_by(7) {
+            assert!(
+                !iban_valid(&synthetic_iban(country, len + 1)),
+                "{country} long"
+            );
+            assert!(
+                !iban_valid(&synthetic_iban(country, len - 1)),
+                "{country} short"
+            );
+        }
+        for c in [
+            "RU", "NI", "HN", "MN", "OM", "SO", "SD", "FK", "BI", "DJ", "YE",
+        ] {
+            assert!(super::iban_length(c).is_some(), "{c}");
+        }
+        assert_eq!(super::iban_length("RU"), Some(33));
+    }
+
+    #[test]
+    fn iban_unlisted_country_is_accepted_by_length_range_and_checksum() {
+        assert!(super::iban_length("ZZ").is_none());
+        for len in [15, 22, 34] {
+            assert!(iban_valid(&synthetic_iban("ZZ", len)), "{len}");
+        }
+        assert!(!iban_valid(&synthetic_iban("ZZ", 14)));
+        assert!(!iban_valid(&synthetic_iban("ZZ", 35)));
+        let mut bad = synthetic_iban("ZZ", 22);
+        bad.replace_range(2..4, "00");
+        assert!(!iban_valid(&bad));
     }
 
     const ABOUT: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
