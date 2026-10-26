@@ -20,6 +20,7 @@ use std::str::FromStr;
 use core_foundation::base::{CFType, TCFType};
 use core_foundation::data::CFData;
 use core_foundation::dictionary::CFDictionary;
+use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
 use core_foundation::url::CFURL;
 use core_foundation_sys::base::OSStatus;
@@ -45,6 +46,12 @@ const CS_OPS_STATUS: libc::c_uint = 0;
 const CS_OPS_CDHASH: libc::c_uint = 5;
 /// `CS_VALID`: the kernel still holds the running image for valid.
 const CS_VALID: u32 = 0x1;
+/// `CS_RUNTIME`: the hardened runtime is on (same bit in the code directory
+/// flags, `kSecCodeSignatureRuntime`).
+const CS_RUNTIME: u32 = 0x1_0000;
+/// `CS_DEBUGGED`: the process was debugged and may run code that is not
+/// its own.
+const CS_DEBUGGED: u32 = 0x1000_0000;
 /// `CS_CDHASH_LEN`: a cdhash is 20 bytes (truncated SHA-256 or SHA-1).
 const CDHASH_LEN: usize = 20;
 
@@ -61,6 +68,7 @@ unsafe extern "C" {
     static kSecCodeInfoIdentifier: CFStringRef;
     static kSecCodeInfoTeamIdentifier: CFStringRef;
     static kSecCodeInfoUnique: CFStringRef;
+    static kSecCodeInfoFlags: CFStringRef;
 }
 
 // System calls of libsystem_kernel (`<sys/codesign.h>`), stable since
@@ -112,22 +120,26 @@ fn kernel_csops(guest: Guest, ops: libc::c_uint, out: &mut [u8]) -> Result<(), P
     }
     match std::io::Error::last_os_error().raw_os_error() {
         Some(libc::ESRCH) => Err(PeerError::Gone),
-        _ => Err(PeerError::Unreadable("unsigned code")),
+        // The kernel has no signature blob for the image: unsigned code
+        // (Intel only).
+        Some(libc::EBADEXEC) if ops == CS_OPS_CDHASH => Err(PeerError::Unreadable("unsigned code")),
+        _ => Err(PeerError::Unreadable("code signature unreadable")),
     }
 }
 
-/// The kernel's cdhash of the image `guest` runs, refused unless the kernel
-/// still holds that image for valid.
-fn kernel_cdhash(guest: Guest) -> Result<String, PeerError> {
+/// The kernel's cdhash of the image `guest` runs and its code-signing
+/// status flags, refused unless the kernel still holds that image for valid.
+fn kernel_cdhash(guest: Guest) -> Result<(String, u32), PeerError> {
     // Code without any signature (Intel only) has no cdhash: refused.
     let mut cdhash = [0u8; CDHASH_LEN];
     kernel_csops(guest, CS_OPS_CDHASH, &mut cdhash)?;
     let mut status = [0u8; 4];
     kernel_csops(guest, CS_OPS_STATUS, &mut status)?;
-    if u32::from_ne_bytes(status) & CS_VALID == 0 {
+    let status = u32::from_ne_bytes(status);
+    if status & CS_VALID == 0 {
         return Err(PeerError::Unreadable("invalid code signature"));
     }
-    Ok(data_encoding::HEXLOWER.encode(&cdhash))
+    Ok((data_encoding::HEXLOWER.encode(&cdhash), status))
 }
 
 /// Code identity of the running process `guest`, and the path of its
@@ -149,15 +161,24 @@ pub(crate) fn identify_running(guest: Guest) -> Result<(CodeIdentity, Option<Pat
             PeerError::Unreadable("code lookup")
         }
     })?;
-    let cdhash = kernel_cdhash(guest)?;
+    let (cdhash, status) = kernel_cdhash(guest)?;
     let path = code.path(Flags::NONE).ok().and_then(|url| url.to_path());
     let check = |req: &SecRequirement| code.check_validity(Flags::NONE, req).is_ok();
     let info = || signing_info(code.as_concrete_TypeRef().cast());
     let identity = classify(&cdhash, check, info)?;
-    let identity = identity.unwrap_or(CodeIdentity::AdHoc {
-        path: path.clone().unwrap_or_default(),
-        cdhash,
-    });
+    let identity = match identity {
+        Some(signed) => signed,
+        // An ad hoc pin trusts the code the kernel loaded; a debugged
+        // process may run other code under the same cdhash.
+        None if status & CS_DEBUGGED != 0 => {
+            return Err(PeerError::Unreadable("debugged or injectable code"));
+        }
+        None => CodeIdentity::AdHoc {
+            path: path.clone().unwrap_or_default(),
+            cdhash,
+            hardened: status & CS_RUNTIME != 0,
+        },
+    };
     Ok((identity, path))
 }
 
@@ -169,6 +190,7 @@ pub(crate) fn identify_file(path: &Path) -> Result<CodeIdentity, PeerError> {
         .map_err(|_| PeerError::Unreadable("executable file"))?;
     let info = signing_info(code.as_concrete_TypeRef())?;
     let cdhash = info.cdhash.ok_or(PeerError::Unreadable("unsigned code"))?;
+    let hardened = info.flags & CS_RUNTIME != 0;
     let check = |req: &SecRequirement| code.check_validity(Flags::NONE, req).is_ok();
     // A static check validates every page against the code directory: a
     // file modified in place fails here instead of passing for its cdhash.
@@ -179,6 +201,7 @@ pub(crate) fn identify_file(path: &Path) -> Result<CodeIdentity, PeerError> {
     Ok(identity.unwrap_or(CodeIdentity::AdHoc {
         path: path.to_path_buf(),
         cdhash,
+        hardened,
     }))
 }
 
@@ -242,6 +265,8 @@ struct SigningInfo {
     team_id: Option<String>,
     /// Hex cdhash of the static code (`kSecCodeInfoUnique`).
     cdhash: Option<String>,
+    /// Code directory flags (`kSecCodeInfoFlags`), 0 when absent.
+    flags: u32,
 }
 
 /// Identifier, team identifier and cdhash from the signing information of
@@ -274,11 +299,12 @@ fn signing_info(code: SecStaticCodeRef) -> Result<SigningInfo, PeerError> {
             .filter(|s| !s.is_empty())
     };
     // SAFETY: reading extern statics exported by the linked framework.
-    let (id_key, team_key, unique_key) = unsafe {
+    let (id_key, team_key, unique_key, flags_key) = unsafe {
         (
             kSecCodeInfoIdentifier,
             kSecCodeInfoTeamIdentifier,
             kSecCodeInfoUnique,
+            kSecCodeInfoFlags,
         )
     };
     let cdhash = value(unique_key)
@@ -289,5 +315,10 @@ fn signing_info(code: SecStaticCodeRef) -> Result<SigningInfo, PeerError> {
         identifier: string(id_key),
         team_id: string(team_key),
         cdhash,
+        flags: value(flags_key)
+            .and_then(|v| v.downcast::<CFNumber>())
+            .and_then(|n| n.to_i64())
+            .and_then(|n| u32::try_from(n).ok())
+            .unwrap_or(0),
     })
 }

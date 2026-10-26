@@ -43,7 +43,14 @@ pub enum CodeIdentity {
     /// macOS code signed ad hoc (every locally built binary on Apple
     /// Silicon), or whose developer signature does not hold: pinned by the
     /// kernel's code directory hash of the running image, never by the file.
-    AdHoc { path: PathBuf, cdhash: String },
+    /// `hardened` tells whether it runs with the hardened runtime: without
+    /// it, the tool may load any library (`DYLD_INSERT_LIBRARIES`) under the
+    /// same cdhash. Not part of the client id.
+    AdHoc {
+        path: PathBuf,
+        cdhash: String,
+        hardened: bool,
+    },
     /// Linux only, where nothing is signed: pinned by the SHA-256 of the
     /// running image (`/proc/<pid>/exe`).
     Unsigned { path: PathBuf, sha256: String },
@@ -77,9 +84,11 @@ impl CodeIdentity {
     fn is_launcher(&self) -> bool {
         match self {
             CodeIdentity::Platform { identifier } => LAUNCHERS.contains(&identifier.as_str()),
-            CodeIdentity::Unsigned { path, .. } => path
-                .to_str()
-                .is_some_and(|p| LINUX_LAUNCHER_PATHS.contains(&p)),
+            // After an upgrade, `/proc/<pid>/exe` of a running shell reads
+            // "<path> (deleted)".
+            CodeIdentity::Unsigned { path, .. } => path.to_str().is_some_and(|p| {
+                LINUX_LAUNCHER_PATHS.contains(&p.strip_suffix(" (deleted)").unwrap_or(p))
+            }),
             _ => false,
         }
     }
@@ -343,7 +352,7 @@ mod tests {
     fn walk_skips_linux_launchers_by_path() {
         let ids = |pid| {
             Ok(match pid {
-                10 => unsigned(pid, "/usr/bin/dash"),
+                10 => unsigned(pid, "/usr/bin/dash (deleted)"),
                 11 => unsigned(pid, "/usr/bin/env"),
                 _ => unsigned(pid, "/usr/lib/host/host"),
             })

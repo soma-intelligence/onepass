@@ -117,6 +117,11 @@ fn client_id_formats() {
         team_id: "ABCDE12345".into(),
         identifier: "com.example.client".into(),
     };
+    let adhoc = CodeIdentity::AdHoc {
+        path: PathBuf::from("/tmp/x"),
+        cdhash: "cd".repeat(20),
+        hardened: true,
+    };
     let unsigned = CodeIdentity::Unsigned {
         path: PathBuf::from("/tmp/x"),
         sha256: "ab".repeat(32),
@@ -127,8 +132,11 @@ fn client_id_formats() {
         unsigned.client_id(),
         format!("unsigned:{}", "ab".repeat(32))
     );
+    // `hardened` is reported, not part of the pin.
+    assert_eq!(adhoc.client_id(), format!("adhoc:{}", "cd".repeat(20)));
     assert!(platform.is_signed());
     assert!(team.is_signed());
+    assert!(!adhoc.is_signed());
     assert!(!unsigned.is_signed());
 }
 
@@ -264,6 +272,35 @@ fn modified_binary_changes_identity() {
     assert_ne!(a.code.client_id(), b.code.client_id());
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn hardened_runtime_is_reported_for_ad_hoc_code() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let plain = dir.path().join("peer-plain");
+    let hardened = dir.path().join("peer-hardened");
+    std::fs::copy(current_exe(), &plain).expect("copy");
+    std::fs::copy(current_exe(), &hardened).expect("copy");
+    run_ok(
+        Command::new("/usr/bin/codesign")
+            .args(["--force", "--sign", "-", "--options", "runtime"])
+            .arg(&hardened),
+    );
+    let flag = |code: &CodeIdentity| match code {
+        CodeIdentity::AdHoc { hardened, .. } => *hardened,
+        other => panic!("expected an ad hoc identity, got {other:?}"),
+    };
+    for (exe, expected) in [(&plain, false), (&hardened, true)] {
+        let child = helper_command(exe, "sleep").spawn().expect("spawn copy");
+        let id = identify_pid(child.id() as i32);
+        kill(child);
+        let id = id.expect("identify copy");
+        assert_eq!(flag(&id.code), expected, "{exe:?}");
+        let file = identity_of_file(exe).expect("file identity");
+        assert_eq!(flag(&file), expected, "{exe:?}");
+        assert_eq!(file.client_id(), id.code.client_id());
+    }
+}
+
 #[test]
 fn renaming_over_a_running_binary_keeps_its_identity() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -285,7 +322,9 @@ fn renaming_over_a_running_binary_keeps_its_identity() {
     renamed.expect("rename over");
     let (before, after) = (before.expect("before"), after.expect("after"));
 
-    assert_eq!(after.code, before.code);
+    // Compare pins, not paths: on Linux the running image's path now
+    // reads "<path> (deleted)".
+    assert_eq!(after.code.client_id(), before.code.client_id());
     assert!(!after.code.is_signed());
     let file = identity_of_file(&victim).expect("replacement identity");
     assert_ne!(file.client_id(), after.code.client_id());
