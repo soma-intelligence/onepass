@@ -365,7 +365,7 @@ Deux cibles s'ajoutent : `mcp_line` (une ligne JSON-RPC arbitraire sur un hôte 
 
 ## 12. Extension navigateur (jalon 4)
 
-Cette section décrit la sécurité de l'extension et de son pont vers l'app. Spec : `docs/superpowers/specs/2026-10-25-milestone-4-extension-design.md`. Code : `core/onepass-bridge` (protocole, correspondance d'origine), `core/onepass-native-host` (hôte natif de développement), `extension/`. Les sections 1 à 6 ci-dessus ne changent pas.
+Cette section décrit la sécurité de l'extension et de son pont vers l'app. Spec : `docs/superpowers/specs/2026-10-25-milestone-4-extension-design.md`. Code : `core/onepass-bridge` (protocole, correspondance d'origine), `core/onepass-native-host` (hôte natif de développement), `extension/`. Les sections 1 à 11 ci-dessus ne changent pas.
 
 ### 12.1 Modèle de menace de l'extension
 
@@ -411,7 +411,7 @@ Chaque décision de correspondance est **refaite par l'hôte** ; l'extension ne 
 - **Correspondance d'origine.** HTTPS obligatoire, sans exception de développement (R-18) : `insecure_origin` sinon. Domaine enregistrable par la Public Suffix List (crate `psl` en Rust, `tldts` en TypeScript, vecteurs communs). Règles `Domain`, `ExactHost`, `ExactUrl`, `Never`. Un port explicite dans l'URL de l'item doit être égal. Comparaison sur la forme ASCII (punycode) : un sosie IDN ne correspond jamais. `origin_mismatch` en cas d'écart.
 - **Items exclus de l'autofill.** Archivés, à la corbeille, `hide_from_autofill`, Crypto Wallet, champs dont `autofill = false`.
 - **Contexte (`ctx`).** Chaque requête dit d'où vient l'action (`popup`, `menu`, `overlay`, `save_prompt`, `chain`). `search` et `reveal` sont réservés à `popup` (`not_allowed` sinon), `reveal` aux champs autorisés à l'autofill.
-- **Limite de débit.** 60 requêtes de secrets par minute et par session (écritures comprises) ; au-delà `rate_limited`.
+- **Limite de débit.** 60 requêtes par minute et par session parmi `fill_*`, `totp`, `reveal`, `check_credentials`, `update_password` et `link_provider` (`save_login` n'est pas compté) ; au-delà `rate_limited`.
 - **Nouvelle authentification (`reprompt`).** Les items qui l'exigent sont refusés par l'hôte de développement avec `reprompt_required` sauf configuration contraire ; l'app réelle redemande Touch ID. Les écritures sur ces items sont soumises à la même règle.
 - **Journal d'audit.** Chaque réponse contenant un secret est journalisée localement (opération, item, origine, contexte, horodatage), sans la valeur.
 
@@ -442,19 +442,19 @@ Les tests de bout en bout sont dans `extension/e2e/security.spec.ts` (Chromium, 
 | S1 | La page lit le DOM du menu ou de l'overlay | e2e `S1_page_cannot_read_menu_or_overlay` ; `test/content/content.test.ts` (racine fantôme fermée) ; `test/ui/safety.test.ts` |
 | S2 | Clic synthétique sur l'icône | e2e `S2_synthetic_click_on_icon_is_ignored` ; `content.test.ts` (`icon_ignores_untrusted_click`) |
 | S3 | `postMessage` vers le menu | e2e `S3_postmessage_to_menu_is_ignored` ; `test/ui/safety.test.ts` (`no_message_listener_on_window`) |
-| S4 | Domaine sosie | e2e `S4_lookalike_*` ; `test/domain.test.ts` ; `core/onepass-bridge/tests/psl_vectors.rs` ; `core/onepass-native-host/tests/host.rs` (`fill_login_mismatch_origin`) |
-| S5 | Page `http:` | e2e `S5_http_page_gets_nothing` ; `test/background/fill.test.ts` (`fill_refused_http`) ; hôte `fill_login_http_rejected` |
+| S4 | Domaine sosie | e2e `S4_lookalike_*` ; `test/domain.test.ts` ; `core/onepass-bridge/tests/psl_vectors.rs` ; `core/onepass-bridge/tests/service.rs` (`fill_login_mismatch_origin`) |
+| S5 | Page `http:` | e2e `S5_http_page_gets_nothing` ; `test/background/fill.test.ts` (`fill_refused_http`) ; `core/onepass-bridge/tests/service.rs` (`fill_login_http_rejected`) |
 | S6 | Formulaire dans une iframe d'un autre site | e2e `S6_no_fill_in_cross_site_iframe` ; `fill.test.ts` (`fill_refused_cross_site_frame`) |
 | S7 | Formulaire invisible | e2e `S7_invisible_form_stays_empty` ; `content.test.ts` (`invisible_field_not_filled`) ; `test/detect/visibility.test.ts` |
 | S8 | Remplissage au chargement | e2e `S8_nothing_filled_on_load` |
 | S9 | Navigation entre la demande et le remplissage | e2e `S9_navigation_between_request_and_fill_is_refused` ; `fill.test.ts` (`fill_refused_after_navigation`) |
 | S10 | Chaîne redirigée vers un autre domaine | e2e `S10_chain_redirected_to_other_domain_stops` ; `test/background/chain/machine.test.ts`, `driver.test.ts` |
-| S11 | Faux domaine de fournisseur | e2e `S11_fake_provider_domain_is_not_google` ; `machine.test.ts`, `provider-flow.test.ts` ; hôte `fill_provider_requires_official_host` |
+| S11 | Faux domaine de fournisseur | e2e `S11_fake_provider_domain_is_not_google` ; `machine.test.ts`, `provider-flow.test.ts` ; `core/onepass-bridge/tests/service.rs` (`fill_provider_requires_official_host`) |
 | S12 | CAPTCHA pendant la chaîne | e2e `S12_captcha_during_chain_stops` ; `test/detect/captcha.test.ts`, `machine.test.ts` |
 | S13 | Client sans appairage, `PK` faux, trame rejouée ou modifiée | `core/onepass-bridge/tests/session.rs`, `pairing.rs` ; `core/onepass-native-host/tests/host.rs` (`unknown_pairing_error`, `tampered_session_frame_closes`, `wrong_finish_mac_closes`) ; `test/bridge/session.test.ts`, `client.test.ts`, `pairing.test.ts` |
-| S14 | Script de contenu compromis qui demande un item d'un autre site | e2e `S14_compromised_content_script_cannot_get_other_site_item` ; `test/background/router.test.ts` (`origin_taken_from_sender_not_message`) ; hôte `fill_login_mismatch_origin` |
-| S15 | `reveal` ou `search` hors de la popup | e2e `S15_reveal_and_search_refused_outside_popup` ; hôte `reveal_only_from_popup`, `search_only_from_popup` ; `router.test.ts` |
-| S16 | Secret dans les résumés | e2e `S16_menu_summaries_hold_no_secret` ; hôte `summaries_contain_no_secret` |
+| S14 | Script de contenu compromis qui demande un item d'un autre site | e2e `S14_compromised_content_script_cannot_get_other_site_item` ; `test/background/router.test.ts` (`origin_taken_from_sender_not_message`) ; `core/onepass-bridge/tests/service.rs` (`fill_login_mismatch_origin`) |
+| S15 | `reveal` ou `search` hors de la popup | e2e `S15_reveal_and_search_refused_outside_popup` ; `core/onepass-bridge/tests/service.rs` (`reveal_only_from_popup`, `search_only_from_popup`) ; `router.test.ts` |
+| S16 | Secret dans les résumés | e2e `S16_menu_summaries_hold_no_secret` ; `core/onepass-bridge/tests/service.rs` (`summaries_contain_no_secret`) |
 | S17 | URL fixe d'une ressource de l'extension | e2e `S17_fixed_extension_url_not_reachable` ; `test/manifest.test.ts` (`chromium: service worker and dynamic url`) |
 
 Lancer : `cd extension && npm run check && npm run e2e`, puis `cd core && cargo test -p onepass-bridge -p onepass-native-host` et `cargo test -p onepass-bridge --features vectors --test vectors`.

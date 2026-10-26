@@ -87,7 +87,7 @@ node scripts/install-dev-host.mjs --browser chrome --extension-id <identifiant> 
 node scripts/install-dev-host.mjs --browser firefox --config <fichier>
 ```
 
-Sans `--profile`, les manifestes vont dans les dossiers utilisateur du navigateur. Pour essayer sans toucher à un profil réel : `--browser chromium --profile <dossier-temporaire>` écrit `<dossier>/NativeMessagingHosts/me.somalabs.onepass.dev.json` (famille Chromium seulement ; `--profile` avec Firefox est refusé).
+Sans `--profile`, les manifestes vont dans les dossiers utilisateur du navigateur. Même contrainte pour l'installateur : si le dépôt est sous `~/Desktop`, `~/Documents` ou `~/Downloads`, le navigateur ne pourra pas lancer `core/target/debug/onepass-native-host`; passer une copie du binaire située ailleurs avec `--host <binaire>`. Pour essayer sans toucher à un profil réel : `--browser chromium --profile <dossier-temporaire>` écrit `<dossier>/NativeMessagingHosts/me.somalabs.onepass.dev.json` (famille Chromium seulement ; `--profile` avec Firefox est refusé).
 
 ## Appairage
 
@@ -123,7 +123,7 @@ cargo test -p onepass-bridge -p onepass-native-host
 cargo test -p onepass-bridge --features vectors --test vectors   # vecteurs croisés Rust/TypeScript à jour
 ```
 
-`npm run e2e` demande `cargo` (il construit l'hôte avec `cargo build --locked -p onepass-native-host` au démarrage), `openssl`, et Chromium de Playwright : `npx playwright install chromium` une fois. Rien n'est écrit dans les profils de l'utilisateur et aucune requête ne sort de la machine.
+`npm run e2e` demande `cargo` (il construit l'hôte avec `cargo build --locked -p onepass-native-host` au démarrage), `openssl`, et Chromium de Playwright : `npx playwright install chromium` une fois. Le harnais lance l'hôte depuis une copie temporaire, car macOS interdit à Chromium sans interface de lancer un binaire situé sous `~/Desktop`, `~/Documents` ou `~/Downloads`. Rien n'est écrit dans les profils de l'utilisateur et aucune requête ne sort de la machine.
 
 ## Harnais visuel
 
