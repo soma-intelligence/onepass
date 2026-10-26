@@ -87,6 +87,18 @@ public final class VaultSession {
         }
     }
 
+    /// After a remote change set or a rebase (`SyncCoordinator.remoteChanges()`). Unlocked: reloads vaults
+    /// and summaries (an integrity error ends in `.failed(.integrity)` with nothing in memory). No account
+    /// or locked: re-reads the store, a fetch may have brought the account. Unlocking or failed: unchanged
+    /// (only `refresh` retries after "Données refusées").
+    public func reload() async {
+        switch state {
+        case .unlocked: await refresh()
+        case .noAccount, .locked: evaluateStoredAccount()
+        case .unlocking, .failed: break
+        }
+    }
+
     private func evaluateStoredAccount() {
         do {
             let exists = try hasAccount(dbPath: dbPath)
