@@ -198,7 +198,10 @@ pub fn verify_manifest(
 ) -> Result<Manifest> {
     verifier.verify(DOMAIN, &sm.blob, &sm.sig)?;
     let plain = open(vault.key(), BlobKind::Manifest, &aad(vault.id), &sm.blob)?;
-    let m: Manifest = postcard::from_bytes(&plain).map_err(|_| BAD)?;
+    let m: Manifest = match postcard::take_from_bytes(&plain) {
+        Ok((m, [])) => m,
+        _ => return Err(BAD),
+    };
     check_shape(vault, &m)?;
     if let Some(last) = last_seen {
         let consistent = if m.seq < last.seq {
@@ -398,6 +401,23 @@ mod tests {
         let m2 = Manifest::next(Some(&m1), v.id, vec![entry(1)]);
         assert_eq!(m2.seq, 2);
         assert_eq!(m2.prev_hash, sha(&[&postcard::to_allocvec(&m1).unwrap()]));
+    }
+
+    #[test]
+    fn trailing_bytes_after_the_manifest_are_refused() {
+        let v = vault();
+        let m = Manifest::next(None, v.id, vec![entry(1)]);
+        let mut plain = postcard::to_allocvec(&m).unwrap();
+        plain.push(0);
+        let aad = Aad {
+            blob_id: v.id,
+            vault_id: Some(v.id),
+            schema: 1,
+        };
+        let blob = seal(v.key(), BlobKind::Manifest, &aad, &plain).unwrap();
+        let sig = signer().sign(b"manifest", &blob).unwrap();
+        let sm = SignedManifest { blob, sig };
+        assert_eq!(verify_manifest(&v, &verifier(), &sm, None), Err(BAD));
     }
 
     #[test]

@@ -98,8 +98,10 @@ impl Vault {
     pub fn open(account: &Account, id: Id, key_envelope: &[u8], meta_blob: &[u8]) -> Result<Vault> {
         let key = unwrap_key(&account.keyset().kem, key_envelope, &kem_context(id))?;
         let plain = open(&key, BlobKind::VaultMeta, &meta_aad(id), meta_blob)?;
-        let meta: VaultMeta =
-            postcard::from_bytes(&plain).map_err(|_| Error::InvalidFormat("vault meta"))?;
+        let meta: VaultMeta = match postcard::take_from_bytes(&plain) {
+            Ok((meta, [])) => meta,
+            _ => return Err(Error::InvalidFormat("vault meta")),
+        };
         Ok(Vault { id, meta, key })
     }
 
@@ -155,8 +157,10 @@ impl Vault {
             &item_aad(rec.item_id, self.id),
             &rec.blob,
         )?;
-        let (version, item): (u64, Item) =
-            postcard::from_bytes(&plain).map_err(|_| Error::InvalidFormat("item"))?;
+        let (version, item): (u64, Item) = match postcard::take_from_bytes(&plain) {
+            Ok((value, [])) => value,
+            _ => return Err(Error::InvalidFormat("item")),
+        };
         if version != rec.version || item.vault_id != self.id || item.id != rec.item_id {
             return Err(IntegrityError::WrongContext.into());
         }
@@ -306,6 +310,29 @@ mod tests {
         let (v, _, _) = vault("A");
         let item = new_item(ItemType::CreditCard, v.id, "Visa");
         assert!(matches!(v.seal_item(&item, 1), Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn trailing_bytes_in_item_and_meta_are_refused() {
+        let (v, env, _) = vault("A");
+        let item = login(&v);
+        let rec = v.seal_item(&item, 1).unwrap();
+        let item_key = v.unwrap_item_key(&rec).unwrap();
+        let mut plain = encode_item(1, &item).unwrap().to_vec();
+        plain.push(0);
+        let bad = ItemRecord {
+            blob: seal(&item_key, BlobKind::Item, &item_aad(item.id, v.id), &plain).unwrap(),
+            ..rec
+        };
+        assert_eq!(v.open_item(&bad), Err(Error::InvalidFormat("item")));
+
+        let mut meta = postcard::to_allocvec(&v.meta).unwrap();
+        meta.push(0);
+        let blob = seal(v.key(), BlobKind::VaultMeta, &meta_aad(v.id), &meta).unwrap();
+        assert_eq!(
+            Vault::open(&shared().account, v.id, &env, &blob).err(),
+            Some(Error::InvalidFormat("vault meta"))
+        );
     }
 
     #[test]
