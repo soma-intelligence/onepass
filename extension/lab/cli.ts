@@ -54,13 +54,20 @@ function readResults(out: string): Result[] {
   return readFileSync(file, "utf8").split("\n").filter((l) => l.trim() !== "").map((l) => JSON.parse(l) as Result);
 }
 
+/** Date, commit and duration of the run, as written by `lab` (empty for an old run without them). */
+function readMeta(out: string): { date?: string; commit?: string; durationMin?: number } {
+  try {
+    return JSON.parse(readFileSync(join(out, "run-meta.json"), "utf8")) as { date?: string; commit?: string; durationMin?: number };
+  } catch {
+    return {};
+  }
+}
+
 /** Write <out>/report.md (and `md` when given); returns the number of leaks. */
-function writeReport(out: string, md: string | undefined, durationMin: number): number {
+function writeReport(out: string, md: string | undefined): number {
   const world = JSON.parse(readFileSync(join(out, "world.json"), "utf8")) as { seed: string; sites: unknown[] };
   const summary = summarize(readResults(out));
-  const text = renderReport({ seed: world.seed, sites: world.sites.length }, summary, {
-    date: new Date().toISOString().slice(0, 10), commit: commit(), durationMin,
-  });
+  const text = renderReport({ seed: world.seed, sites: world.sites.length }, summary, readMeta(out));
   writeFileSync(join(out, "report.md"), text);
   if (md !== undefined) {
     const target = absolute(md);
@@ -87,7 +94,9 @@ function runLab(env: Record<string, string>, out: string, workers: string | unde
     console.error("lab: the run produced no results (setup failed?)");
     return 1;
   }
-  const leaks = writeReport(out, md, minutes);
+  const meta = { date: new Date().toISOString().slice(0, 10), commit: commit(), durationMin: minutes };
+  writeFileSync(join(out, "run-meta.json"), JSON.stringify(meta, null, 2));
+  const leaks = writeReport(out, md);
   return leaks > 0 || status !== 0 ? 1 : 0;
 }
 
@@ -117,7 +126,7 @@ function main(argv: string[]): number {
     return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_ONLY: String(site), LAB_OUT: reproOut }, reproOut, a.workers, a.report);
   }
   if (cmd === "report") {
-    return writeReport(absolute(need(a, "out")), a.md, 0) > 0 ? 1 : 0;
+    return writeReport(absolute(need(a, "out")), a.md) > 0 ? 1 : 0;
   }
   console.error("usage: lab --seed <s> --sites <n> [--workers 4] [--report <md>] | repro --seed <s> --site <i> [--sites <n>] | report --out <dir> [--md <file>]");
   return 2;

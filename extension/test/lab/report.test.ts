@@ -73,6 +73,26 @@ describe("lab report", () => {
     for (const x of real) expect(md).not.toContain(x);
   });
 
+  it("xfail_grouped_by_reason_with_cause_fallback", () => {
+    const s = summarize([
+      res(0, "xfail", { reason: "R-16 passkeys", cause: "no_overlay" }),
+      res(1, "xfail", { reason: "R-16 passkeys", cause: "timeout" }),
+      res(2, "xfail", { cause: "chain_ended:done" }),
+      res(3, "fail", { cause: "timeout" }),
+    ]);
+    const md = renderReport(world, s, meta);
+    expect(md).toContain("- R-16 passkeys : 2 scénario(s)");
+    expect(md).toContain("- chain_ended:done : 1 scénario(s)");
+    expect(md).toContain("Causes d'échec récurrentes");
+  });
+
+  it("missing_meta_prints_unknown", () => {
+    const md = renderReport(world, summarize([res(0, "pass")]), {});
+    expect(md).toContain("Date : inconnue");
+    expect(md).toContain("Commit : inconnu");
+    expect(md).toContain("Durée : inconnue");
+  });
+
   it("leaks_section", () => {
     const clean = renderReport(world, summarize([res(0, "pass")]), meta);
     expect(clean).toMatch(/## Fuites\n\nAucune\./);

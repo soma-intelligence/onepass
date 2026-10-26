@@ -99,11 +99,11 @@ function countBy<T>(items: T[], key: (t: T) => string): [string, T[]][] {
   return [...m.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
 }
 
-export function renderReport(world: { seed: string; sites: number }, s: Summary, meta: { date: string; commit: string; durationMin: number }): string {
+export function renderReport(world: { seed: string; sites: number }, s: Summary, meta: { date?: string; commit?: string; durationMin?: number }): string {
   const o = s.overall;
   const l: string[] = [];
   l.push(`# Rapport du laboratoire d'autofill`, "");
-  l.push(`- Graine du monde : \`${world.seed}\``, `- Date : ${meta.date}`, `- Commit : \`${meta.commit}\``, `- Durée : ${meta.durationMin} min`, "");
+  l.push(`- Graine du monde : \`${world.seed}\``, `- Date : ${meta.date ?? "inconnue"}`, `- Commit : ${meta.commit !== undefined ? `\`${meta.commit}\`` : "inconnu"}`, `- Durée : ${meta.durationMin !== undefined ? `${meta.durationMin} min` : "inconnue"}`, "");
   l.push("## Résumé", "");
   l.push(`- Sites : ${world.sites}`, `- Scénarios : ${o.total}`);
   l.push(`- Taux de réussite global (hors attendus, inattendus et erreurs du labo) : ${pct(o.rate)}`);
@@ -126,8 +126,8 @@ export function renderReport(world: { seed: string; sites: number }, s: Summary,
   const xfail = s.expected.filter((r) => r.verdict === "xfail");
   if (xfail.length === 0) l.push("Aucun échec attendu dans ce passage.", "");
   else {
-    l.push("Échecs attendus, regroupés par cause :", "");
-    for (const [cause, rs] of countBy(xfail, (r) => r.cause ?? "sans cause")) {
+    l.push("Échecs attendus, regroupés par raison documentée (à défaut, par cause) :", "");
+    for (const [cause, rs] of countBy(xfail, (r) => r.reason ?? r.cause ?? "sans cause")) {
       const flows = [...new Set(rs.map((r) => r.flow))].sort().join(", ");
       const traits = [...new Set(rs.flatMap((r) => r.traits))].sort().join(", ") || "aucun";
       l.push(`- ${cause} : ${rs.length} scénario(s), flux : ${flows}, traits : ${traits}`);
