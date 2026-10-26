@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Label, value and a menu (Copier, Révéler, Afficher en grand). A secret
@@ -7,6 +8,7 @@ public struct FieldRow: View {
     private let value: String
     private let isSecret: Bool
     private let monospaced: Bool
+    private let autoHideAfter: TimeInterval
     private let onCopy: () -> Void
     private let onReveal: ((Bool) -> Void)?
 
@@ -14,12 +16,14 @@ public struct FieldRow: View {
 
     public init(
         label: String, value: String, isSecret: Bool, monospaced: Bool,
+        autoHideAfter: TimeInterval = 30,
         onCopy: @escaping () -> Void, onReveal: ((Bool) -> Void)?
     ) {
         self.label = label
         self.value = value
         self.isSecret = isSecret
         self.monospaced = monospaced
+        self.autoHideAfter = autoHideAfter
         self.onCopy = onCopy
         self.onReveal = onReveal
     }
@@ -60,6 +64,14 @@ public struct FieldRow: View {
             .fixedSize()
         }
         .accessibilityElement(children: .contain)
+        .task(id: disclosure.revealedAt) {
+            guard disclosure.revealedAt != nil else { return }
+            try? await Task.sleep(for: .seconds(autoHideAfter))
+            if !Task.isCancelled, disclosure.shouldRemask(now: Date(), after: autoHideAfter) {
+                setRevealed(false)
+            }
+        }
+        .onDisappear { if disclosure.revealed { setRevealed(false) } }
         .sheet(isPresented: largeBinding) {
             VStack(spacing: 16) {
                 Text(label).font(.headline)
@@ -75,7 +87,7 @@ public struct FieldRow: View {
     }
 
     private func setRevealed(_ on: Bool) {
-        if disclosure.reveal(on, isSecret: isSecret) { onReveal?(on) }
+        if disclosure.reveal(on, isSecret: isSecret, now: Date()) { onReveal?(on) }
     }
 
     /// A secret goes through the same reveal path before it is shown large.
@@ -88,19 +100,28 @@ public struct FieldRow: View {
 struct FieldDisclosure: Equatable {
     var revealed = false
     var large = false
+    /// When the value was last revealed; nil while masked.
+    var revealedAt: Date?
 
     /// Returns true when the host must be told (`onReveal`). Masking again
     /// also closes the large display.
-    mutating func reveal(_ on: Bool, isSecret: Bool) -> Bool {
+    mutating func reveal(_ on: Bool, isSecret: Bool, now: Date = Date()) -> Bool {
         guard isSecret else { return false }
         revealed = on
+        revealedAt = on ? now : nil
         if !on { large = false }
         return true
     }
 
+    /// True when a revealed secret has been visible for at least `delay`.
+    func shouldRemask(now: Date, after delay: TimeInterval) -> Bool {
+        guard revealed, let at = revealedAt else { return false }
+        return now.timeIntervalSince(at) >= delay
+    }
+
     /// Returns true when the host must be told that the value was revealed.
-    mutating func showLarge(isSecret: Bool) -> Bool {
-        let notify = isSecret ? reveal(true, isSecret: true) : false
+    mutating func showLarge(isSecret: Bool, now: Date = Date()) -> Bool {
+        let notify = isSecret ? reveal(true, isSecret: true, now: now) : false
         large = true
         return notify
     }

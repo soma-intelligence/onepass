@@ -95,3 +95,28 @@ import VaultKit
         #expect(!m)
     }
 }
+
+@Suite struct FieldAutoRemaskTests {
+    @Test func remasksAfterDelayOnly() {
+        let t0 = Date(timeIntervalSince1970: 1000)
+        var d = FieldDisclosure()
+        _ = d.reveal(true, isSecret: true, now: t0)
+        #expect(!d.shouldRemask(now: t0.addingTimeInterval(29.9), after: 30))
+        #expect(d.shouldRemask(now: t0.addingTimeInterval(30), after: 30))
+    }
+
+    @Test func largeDisplayCountsAndRemaskClosesIt() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        var d = FieldDisclosure()
+        _ = d.showLarge(isSecret: true, now: t0)
+        #expect(d.shouldRemask(now: t0.addingTimeInterval(31), after: 30))
+        _ = d.reveal(false, isSecret: true, now: t0.addingTimeInterval(31))
+        #expect(!d.large && d.revealedAt == nil)
+        #expect(!d.shouldRemask(now: t0.addingTimeInterval(99), after: 30))
+    }
+
+    @Test func maskedOrPlainNeverRemask() {
+        let d = FieldDisclosure()
+        #expect(!d.shouldRemask(now: Date.distantFuture, after: 30))
+    }
+}
