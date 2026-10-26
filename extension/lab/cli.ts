@@ -75,8 +75,9 @@ function writeReport(out: string, md: string | undefined): number {
     writeFileSync(target, text);
   }
   const o = summary.overall;
-  console.log(`lab report: ${o.total} scenarios, rate ${(o.rate * 100).toFixed(1)} %, ${o.fail} fail, ${o.leak} leak -> ${join(out, "report.md")}`);
-  return o.leak;
+  const leaks = summary.leaks.length;
+  console.log(`lab report: ${o.total} scenarios (+${summary.control.total} control), rate ${(o.rate * 100).toFixed(1)} %, ${o.fail} fail, ${leaks} leak -> ${join(out, "report.md")}`);
+  return leaks;
 }
 
 function runPlaywright(env: Record<string, string>, workers: string | undefined): number {

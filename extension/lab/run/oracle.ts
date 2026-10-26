@@ -71,7 +71,8 @@ function refusalCause(site: Site, o: Observation): string | undefined {
 }
 
 function failCause(site: Site, o: Observation): string {
-  if (!o.overlayShown) return "no_overlay";
+  // menu_fill has no overlay: its in-field menu never opened.
+  if (!o.overlayShown) return o.driver === "menu_fill" ? "no_menu" : "no_overlay";
   if (!o.itemOffered) return "no_menu_item";
   const refused = refusalCause(site, o);
   if (o.chain?.status === "handoff") return `handoff:${o.chain.reason ?? "unknown"}${refused ? ` (${refused})` : ""}`;

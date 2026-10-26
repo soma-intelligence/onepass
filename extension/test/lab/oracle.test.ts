@@ -116,6 +116,11 @@ describe("judge", () => {
     const s = scenario(login, "pass");
     expect(judge(s, login, obs({ overlayShown: false, itemOffered: false }))).toEqual({ verdict: "fail", cause: "no_overlay" });
     expect(judge(s, login, obs({ itemOffered: false }))).toEqual({ verdict: "fail", cause: "no_menu_item" });
+    // menu_fill has no overlay: an in-field menu that never opened is no_menu.
+    const m = scenario(login, "pass", "menu_fill");
+    expect(judge(m, login, obs({ driver: "menu_fill", overlayShown: false, itemOffered: false }))).toEqual({ verdict: "fail", cause: "no_menu" });
+    expect(judge(scenario(shadow, "xfail", "menu_fill"), shadow, obs({ driver: "menu_fill", overlayShown: false, itemOffered: false })))
+      .toEqual({ verdict: "xfail", cause: "no_menu" });
     expect(judge(s, login, obs({ events: [submit(login.host, false, "honeypot")] })))
       .toEqual({ verdict: "fail", cause: "rp_refused:honeypot" });
     expect(judge(s, login, obs({ events: [submit(login.host, false, "wrong_fields")] }))).toEqual({ verdict: "fail", cause: "wrong_fill" });

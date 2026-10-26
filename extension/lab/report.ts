@@ -16,8 +16,13 @@ export interface Summary {
   byTrait: Record<string, Rate>;
   byLang: Record<string, Rate>;
   byDriver: Record<string, Rate>;
-  /** fail and leak verdicts. */
+  /** The bench self-check (driver passkey_control, no extension): out of every rate above but byDriver. */
+  control: Rate;
+  /** fail, leak and lab_error verdicts of the bench self-check. */
+  controlFailures: Result[];
+  /** fail and leak verdicts (bench self-check excluded). */
   failures: Result[];
+  /** leak verdicts of every driver. */
   leaks: Result[];
   /** xfail and xpass verdicts. */
   expected: Result[];
@@ -61,19 +66,30 @@ function bySiteDriver(results: Result[]): Result[] {
   return [...results].sort((a, b) => a.site - b.site || a.driver.localeCompare(b.driver));
 }
 
-export function summarize(results: Result[]): Summary {
+/** The bench self-check driver: proves the lab's relying party, measures nothing of the extension. */
+export const CONTROL_DRIVER = "passkey_control";
+
+export function summarize(all: Result[]): Summary {
+  const results = all.filter((r) => r.driver !== CONTROL_DRIVER);
+  const checks = all.filter((r) => r.driver === CONTROL_DRIVER);
   const overall = emptyRate();
   for (const r of results) add(overall, r.verdict);
   finish(overall);
+  const control = emptyRate();
+  for (const r of checks) add(control, r.verdict);
+  finish(control);
   return {
     overall,
     byFlow: group(results, (r) => [r.flow]),
     // A site with several traits counts once under each of them.
     byTrait: group(results, (r) => (r.traits.length > 0 ? r.traits : ["(aucun)"])),
     byLang: group(results, (r) => [r.lang]),
-    byDriver: group(results, (r) => [r.driver]),
+    byDriver: group(all, (r) => [r.driver]),
+    control,
+    controlFailures: bySiteDriver(checks.filter((r) => r.verdict === "fail" || r.verdict === "leak" || r.verdict === "lab_error")),
     failures: bySiteDriver(results.filter((r) => r.verdict === "fail" || r.verdict === "leak")),
-    leaks: bySiteDriver(results.filter((r) => r.verdict === "leak")),
+    // Every leak, the bench self-check's included: a leak is never out of the count.
+    leaks: bySiteDriver(all.filter((r) => r.verdict === "leak")),
     expected: bySiteDriver(results.filter((r) => r.verdict === "xfail" || r.verdict === "xpass")),
     flaky: bySiteDriver(results.filter((r) => r.verdict === "flaky")),
   };
@@ -110,12 +126,23 @@ export function renderReport(world: { seed: string; sites: number }, s: Summary,
   l.push(`# Rapport du laboratoire d'autofill`, "");
   l.push(`- Graine du monde : \`${world.seed}\``, `- Date : ${meta.date ?? "inconnue"}`, `- Commit : ${meta.commit !== undefined ? `\`${meta.commit}\`` : "inconnu"}`, `- Durée : ${meta.durationMin !== undefined ? `${meta.durationMin} min` : "inconnue"}`, "");
   l.push("## Résumé", "");
-  l.push(`- Sites : ${world.sites}`, `- Scénarios : ${o.total}`);
+  l.push(`- Sites : ${world.sites}`, `- Scénarios : ${o.total} (plus ${s.control.total} de contrôle du banc, comptés à part)`);
   l.push(`- Taux de réussite global (hors attendus, inattendus et erreurs du labo) : ${pct(o.rate)}`);
   l.push(`- Réussis : ${o.pass}, échecs : ${o.fail}, instables : ${o.flaky}, échecs attendus : ${o.xfail}, réussites inattendues : ${o.xpass}, erreurs du labo : ${o.labError}`);
-  l.push(`- Fuites : ${o.leak}${o.leak > 0 ? " (le passage est rouge)" : ""}`, "");
+  const leaks = s.leaks.length;
+  l.push(`- Fuites : ${leaks}${leaks > 0 ? " (le passage est rouge)" : ""}`, "");
   l.push("## Taux de réussite", "");
   l.push(...table("Par flux", s.byFlow), ...table("Par trait", s.byTrait), ...table("Par langue", s.byLang), ...table("Par pilote", s.byDriver));
+
+  l.push("## Contrôle du banc", "");
+  const c = s.control;
+  if (c.total === 0) l.push("Aucun scénario de contrôle dans ce passage.", "");
+  else {
+    l.push("Scénarios `passkey_control` : sans l'extension, l'authentificateur virtuel de Chromium tient la clé du site et la RP du labo doit accepter l'assertion. Hors des taux ci-dessus (sauf par pilote).", "");
+    l.push(`- Scénarios : ${c.total}, réussis : ${c.pass}, échecs : ${c.fail}, instables : ${c.flaky}, erreurs du labo : ${c.labError}`, "");
+    if (s.controlFailures.length === 0) l.push("Aucun échec : la RP du labo vérifie les passkeys comme prévu.", "");
+    else l.push("Échecs du contrôle (défaut du banc à corriger avant de lire les échecs passkey) :", "", ...s.controlFailures.map(scenarioLine), "");
+  }
 
   l.push("## Échecs", "");
   const fails = s.failures.filter((r) => r.verdict === "fail");

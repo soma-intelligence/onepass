@@ -103,6 +103,41 @@ describe("lab report", () => {
     expect(md).toContain("leak:password:pw@evil.test");
     expect(md).not.toMatch(/## Fuites\n\nAucune\./);
   });
+  it("passkey_control_is_a_bench_check_outside_the_rates", () => {
+    const control = (n: number, verdict: Verdict, over: Partial<Result> = {}) =>
+      res(n, verdict, { flow: "login_passkey", driver: "passkey_control", traits: ["iframe_same_origin"], lang: "fr", ...over });
+    const s = summarize([
+      res(0, "pass", { flow: "login_passkey", traits: ["iframe_same_origin"], lang: "fr" }),
+      res(1, "fail", { cause: "timeout" }),
+      control(0, "pass"), control(2, "fail", { cause: "rp_refused:bad_signature" }),
+    ]);
+    // Out of the overall, flow, trait and language rates...
+    expect(s.overall.total).toBe(2);
+    expect(s.overall.rate).toBeCloseTo(1 / 2);
+    expect(s.byFlow.login_passkey!.total).toBe(1);
+    expect(s.byTrait.iframe_same_origin!.total).toBe(1);
+    expect(s.byLang.fr!.total).toBe(1);
+    expect(s.failures.map((r) => r.driver)).toEqual(["one_click"]);
+    // ...kept per driver and in its own section.
+    expect(s.byDriver.passkey_control!.total).toBe(2);
+    expect(s.control.total).toBe(2);
+    expect(s.control.fail).toBe(1);
+    expect(s.controlFailures.map((r) => r.site)).toEqual([2]);
+    const md = renderReport(world, s, meta);
+    expect(md).toContain("## Contrôle du banc");
+    expect(md).toMatch(/## Contrôle du banc\n\n[^#]*Scénarios : 2, réussis : 1, échecs : 1/);
+    expect(md).toMatch(/## Contrôle du banc\n[^#]*- site 2 \(login_passkey, passkey_control[^\n]*rp_refused:bad_signature/);
+    const fails = md.slice(md.indexOf("## Échecs"), md.indexOf("## Réussites inattendues"));
+    expect(fails).not.toContain("passkey_control");
+    // A leak is never hidden, whichever driver saw it.
+    const leaky = summarize([res(0, "pass"), control(0, "leak", { cause: "leak:password:pw@frame.test" })]);
+    expect(leaky.leaks).toHaveLength(1);
+    expect(renderReport(world, leaky, meta)).toContain("- Fuites : 1 (le passage est rouge)");
+    const clean = renderReport(world, summarize([control(0, "pass")]), meta);
+    expect(clean).toMatch(/## Contrôle du banc\n[^#]*Aucun échec/);
+    expect(renderReport(world, summarize([res(0, "pass")]), meta)).toMatch(/## Contrôle du banc\n\nAucun scénario/);
+  });
+
   it("lists_are_byte_stable_in_any_result_order", () => {
     const results = [
       res(3, "fail", { cause: "timeout" }), res(1, "leak", { cause: "leak:password:pw@evil.test", driver: "lookalike" }),
