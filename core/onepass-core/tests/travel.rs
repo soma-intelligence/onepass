@@ -553,3 +553,115 @@ fn travel_safe_vaults_and_account_untouched() {
     // The upstream is only read.
     assert_eq!(f.upstream.all(), upstream);
 }
+
+#[test]
+fn exit_verifies_a_parked_vault_already_present_locally() {
+    let mut f = fx();
+    mirror(&f.local, &f.upstream);
+    let old_perso = f.upstream.vault_records(f.perso.id);
+    f.repo
+        .save_item(&f.perso, login(f.perso.id, "perso 2"))
+        .unwrap();
+    mirror(&f.local, &f.upstream);
+    let state = f.repo.enter_travel(&f.upstream).unwrap();
+
+    // The local store gets an old authentic copy of "Perso" (a hostile
+    // store, or an exit cut short): exit must not take it as restored.
+    f.local.put_all(&old_perso);
+    let records = f.local.all();
+    let device = f.repo.device_state().clone();
+    assert_eq!(
+        integrity(f.repo.exit_travel(&f.upstream, &state)),
+        IntegrityError::ManifestRollback
+    );
+    assert_eq!(f.repo.device_state(), &device);
+    assert_eq!(f.local.all(), records);
+}
+
+#[test]
+fn exit_after_an_interrupted_exit_succeeds() {
+    let mut f = fx();
+    let before = snapshot(&mut f);
+    mirror(&f.local, &f.upstream);
+    let state = f.repo.enter_travel(&f.upstream).unwrap();
+    // A previous exit copied everything, then stopped before verifying.
+    f.local.put_all(&f.upstream.vault_records(f.perso.id));
+    f.repo.exit_travel(&f.upstream, &state).unwrap();
+    assert!(f.repo.device_state().last_seen.contains_key(&f.perso.id));
+    assert_eq!(snapshot(&mut f), before);
+}
+
+#[test]
+fn exit_refuses_item_injected_by_upstream() {
+    let mut f = fx();
+    mirror(&f.local, &f.upstream);
+    let state = f.repo.enter_travel(&f.upstream).unwrap();
+    let travel_records = f.local.all();
+    let travel_device = f.repo.device_state().clone();
+    let mut extra = f
+        .upstream
+        .vault_records(f.perso.id)
+        .into_iter()
+        .find(|r| r.kind == RecordKind::Item)
+        .unwrap();
+    extra.id = Id::new();
+    f.upstream.put_all(&[extra]);
+    assert_eq!(
+        integrity(f.repo.exit_travel(&f.upstream, &state)),
+        IntegrityError::ManifestUnexpectedItem
+    );
+    assert_eq!(f.local.all(), travel_records);
+    assert_eq!(f.repo.device_state(), &travel_device);
+}
+
+#[test]
+fn unpinned_exit_refuses_a_foreign_vault() {
+    let mut f = fx();
+    mirror(&f.local, &f.upstream);
+    let _state = f.repo.enter_travel(&f.upstream).unwrap();
+    // A vault of another account, which this account cannot open.
+    let (_, n2) = accounts();
+    let store = Shared::default();
+    write_account(&store, n2);
+    let mut other = Repository::unlock(
+        store.clone(),
+        PASSWORD,
+        &n2.secret_key,
+        DeviceState::default(),
+    )
+    .unwrap();
+    let foreign = other.create_vault(meta("Foreign", false)).unwrap();
+    other
+        .save_item(&foreign, login(foreign.id, "foreign"))
+        .unwrap();
+    f.upstream.put_all(&store.vault_records(foreign.id));
+
+    let travel_records = f.local.all();
+    let travel_device = f.repo.device_state().clone();
+    assert!(f.repo.exit_travel_unpinned(&f.upstream).is_err());
+    assert_eq!(f.local.all(), travel_records);
+    assert_eq!(f.repo.device_state(), &travel_device);
+    assert!(f.local.vault_records(foreign.id).is_empty());
+    assert!(f.local.vault_records(f.perso.id).is_empty());
+}
+
+#[test]
+fn unpinned_exit_refuses_a_manifest_that_does_not_verify() {
+    let mut f = fx();
+    mirror(&f.local, &f.upstream);
+    let _state = f.repo.enter_travel(&f.upstream).unwrap();
+    let mut m = f
+        .upstream
+        .get(RecordKind::Manifest, f.perso.id)
+        .unwrap()
+        .unwrap();
+    let last = m.data.len() - 1;
+    m.data[last] ^= 0x01;
+    f.upstream.put_all(&[m]);
+    let travel_records = f.local.all();
+    let travel_device = f.repo.device_state().clone();
+    assert!(f.repo.exit_travel_unpinned(&f.upstream).is_err());
+    assert_eq!(f.local.all(), travel_records);
+    assert_eq!(f.repo.device_state(), &travel_device);
+    assert!(f.local.vault_records(f.perso.id).is_empty());
+}

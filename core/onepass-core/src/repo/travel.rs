@@ -57,6 +57,14 @@ pub struct TravelState {
     pub entered_at: i64,
 }
 
+/// A vault to bring back: its parked last manifest seen, if any, and
+/// whether its records are copied from the upstream (false: already local).
+struct Restore {
+    id: Id,
+    parked: Option<SeenManifest>,
+    copy: bool,
+}
+
 /// The vault kinds keyed by the vault id, in deletion order: the key first,
 /// so a vault cut halfway is no longer listed.
 const VAULT_KINDS: [RecordKind; 3] = [
@@ -122,19 +130,20 @@ impl<S: RecordStore> Repository<S> {
             for (_, r) in &loaded.records {
                 vault.open_item(r)?;
             }
+            let items: Vec<&Record> = items_of(&local_items, vault.id).collect();
             let mut records = Vec::new();
             for kind in VAULT_KINDS {
                 // `vaults()` and `load` just read them.
                 records.push(self.store.get(kind, vault.id)?.ok_or(Error::NotFound)?);
             }
-            records.extend(items_of(&local_items, vault.id).cloned());
+            records.extend(items.iter().map(|r| (*r).clone()));
             for r in &records {
                 match upstream.get(r.kind, r.id)? {
                     Some(u) if same(&u, r) => {}
                     _ => return Err(UPSTREAM_MISMATCH),
                 }
             }
-            let local_ids: BTreeSet<Id> = items_of(&local_items, vault.id).map(|r| r.id).collect();
+            let local_ids: BTreeSet<Id> = items.iter().map(|r| r.id).collect();
             let upstream_ids: BTreeSet<Id> =
                 items_of(&upstream_items, vault.id).map(|r| r.id).collect();
             if local_ids != upstream_ids {
@@ -147,10 +156,18 @@ impl<S: RecordStore> Repository<S> {
         for (_, _, records) in &plan {
             for r in records {
                 if let Err(e) = self.store.delete(r.kind, r.id) {
-                    // Put back what was deleted: the device stays as it was.
-                    for d in deleted {
-                        let _ = self.store.put(d);
+                    // Put back what was deleted (reverse order: items before
+                    // the key), best effort over every record. If a put
+                    // fails too, the device is not as it was: that error is
+                    // returned instead of `e`, so the caller does not take
+                    // the device for unchanged.
+                    let mut rollback = Ok(());
+                    for d in deleted.into_iter().rev() {
+                        if let Err(e2) = self.store.put(d) {
+                            rollback = rollback.and(Err(e2));
+                        }
                     }
+                    rollback?;
                     return Err(e);
                 }
                 deleted.push(r.clone());
@@ -171,17 +188,25 @@ impl<S: RecordStore> Repository<S> {
     /// normal use, against their parked last manifest seen: an older
     /// manifest, a fork at the same seq or a dropped item is refused with
     /// the core's error, and a newer manifest (written by another device
-    /// meanwhile) is accepted. A parked vault already present locally is
-    /// left as it is.
+    /// meanwhile) is accepted.
+    ///
+    /// A parked vault already present locally (an exit cut short, or records
+    /// planted in the local store) is not copied again but still verified
+    /// against its parked last manifest seen: the local one is kept only if
+    /// its seq is at least the parked one, and the same seq with another
+    /// hash is a fork (`ManifestRollback`).
     ///
     /// On failure, the records copied are deleted and the device state is
     /// restored: `state` stays valid for another attempt.
     pub fn exit_travel<U: RecordStore>(&mut self, upstream: &U, state: &TravelState) -> Result<()> {
         let mut todo = Vec::new();
         for (id, seen) in &state.parked {
-            if self.store.get(RecordKind::VaultKey, *id)?.is_none() {
-                todo.push((*id, Some(seen.clone())));
-            }
+            let present = self.store.get(RecordKind::VaultKey, *id)?.is_some();
+            todo.push(Restore {
+                id: *id,
+                parked: Some(seen.clone()),
+                copy: !present,
+            });
         }
         self.restore(upstream, &todo)
     }
@@ -204,29 +229,46 @@ impl<S: RecordStore> Repository<S> {
             .map(|r| r.id)
             .filter(|id| !local.contains(id))
             .collect();
-        let todo: Vec<(Id, Option<SeenManifest>)> = missing.iter().map(|id| (*id, None)).collect();
+        let todo: Vec<Restore> = missing
+            .iter()
+            .map(|id| Restore {
+                id: *id,
+                parked: None,
+                copy: true,
+            })
+            .collect();
         self.restore(upstream, &todo)?;
         Ok(missing.into_iter().collect())
     }
 
-    /// Copy the records of `vaults` from `upstream`, set the given last
-    /// manifest seen, then verify through `vaults()` and `items()`. Undo
-    /// everything on failure.
-    fn restore<U: RecordStore>(
-        &mut self,
-        upstream: &U,
-        vaults: &[(Id, Option<SeenManifest>)],
-    ) -> Result<()> {
+    /// Copy the records of the vaults to `copy` from `upstream`, merge the
+    /// parked last manifest seen, then verify every vault of `vaults`
+    /// through `vaults()` and `items()`. Undo everything on failure.
+    ///
+    /// Rollback is best effort over every step. If one of its steps fails,
+    /// the store is not back to its previous state: that failure is
+    /// returned instead of the original error, so the caller never takes
+    /// a partial rollback for a clean one.
+    fn restore<U: RecordStore>(&mut self, upstream: &U, vaults: &[Restore]) -> Result<()> {
         if vaults.is_empty() {
             return Ok(());
+        }
+        // A fork against the device's own pin is refused before anything.
+        for v in vaults {
+            if let (Some(p), Some(mine)) = (&v.parked, self.device.last_seen.get(&v.id))
+                && mine.seq == p.seq
+                && mine.hash != p.hash
+            {
+                return Err(IntegrityError::ManifestRollback.into());
+            }
         }
         // Items first and the key last, so a vault cut halfway is not listed.
         let upstream_items = upstream.list(RecordKind::Item)?;
         let mut copy = Vec::new();
-        for (id, _) in vaults {
-            copy.extend(items_of(&upstream_items, *id).cloned());
+        for v in vaults.iter().filter(|v| v.copy) {
+            copy.extend(items_of(&upstream_items, v.id).cloned());
             for kind in VAULT_KINDS.iter().rev() {
-                if let Some(r) = upstream.get(*kind, *id)? {
+                if let Some(r) = upstream.get(*kind, v.id)? {
                     copy.push(r);
                 }
             }
@@ -245,21 +287,26 @@ impl<S: RecordStore> Repository<S> {
 
         let before: Vec<(Id, Option<SeenManifest>)> = vaults
             .iter()
-            .map(|(id, _)| (*id, self.device.last_seen.get(id).cloned()))
+            .map(|v| (v.id, self.device.last_seen.get(&v.id).cloned()))
             .collect();
         let mut copied = Vec::new();
         let result = self.copy_and_verify(to_put, vaults, &mut copied);
         if result.is_err() {
-            for (kind, id) in copied {
-                // Best effort: a leftover without its key is never listed.
-                let _ = self.store.delete(kind, id);
-            }
             for (id, seen) in before {
                 match seen {
                     Some(s) => self.device.last_seen.insert(id, s),
                     None => self.device.last_seen.remove(&id),
                 };
             }
+            // Reverse copy order: the key goes first, so a rollback cut
+            // short never leaves a listed vault without its items.
+            let mut rollback = Ok(());
+            for (kind, id) in copied.into_iter().rev() {
+                if let Err(e) = self.store.delete(kind, id) {
+                    rollback = rollback.and(Err(e));
+                }
+            }
+            rollback?;
         }
         result
     }
@@ -267,7 +314,7 @@ impl<S: RecordStore> Repository<S> {
     fn copy_and_verify(
         &mut self,
         to_put: Vec<Record>,
-        vaults: &[(Id, Option<SeenManifest>)],
+        vaults: &[Restore],
         copied: &mut Vec<(RecordKind, Id)>,
     ) -> Result<()> {
         for r in to_put {
@@ -275,23 +322,23 @@ impl<S: RecordStore> Repository<S> {
             self.store.put(r)?;
             copied.push(key);
         }
-        for (id, parked) in vaults {
-            if let Some(p) = parked {
+        for v in vaults {
+            if let Some(p) = &v.parked {
                 let keep = self
                     .device
                     .last_seen
-                    .get(id)
+                    .get(&v.id)
                     .is_some_and(|mine| mine.seq >= p.seq);
                 if !keep {
-                    self.device.last_seen.insert(*id, p.clone());
+                    self.device.last_seen.insert(v.id, p.clone());
                 }
             }
         }
         let listed = self.vaults()?;
-        for (id, _) in vaults {
+        for v in vaults {
             let vault = listed
                 .iter()
-                .find(|v| v.id == *id)
+                .find(|l| l.id == v.id)
                 .ok_or(IntegrityError::VaultMissing)?;
             self.items(vault)?;
         }
