@@ -1,0 +1,6 @@
+type,number,name,issue_date,expiration_date,place_of_issue,state
+card,ID-123456,Alice Example,2020-01-15,2030-01-14,France,
+passport,P1234567,Alice Example,2019-05-01,2029-04-30,France,
+license,DL-998877,Alice Example,2018-03-03,2028-03-02,US,CA
+social_security,078-05-1120,Alice Example,,,US,
+fiscal,TAX-1,Alice Example,,,,
