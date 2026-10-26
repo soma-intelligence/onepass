@@ -19,6 +19,7 @@ use crate::error::{Error, Result};
 use crate::model::{FieldValue, ItemType, PasskeyCredential};
 
 use super::build::{Draft, otpauth_from_parts};
+use super::json::{Lenient, Slots};
 use super::limits::{MAX_INPUT, MAX_RECORDS};
 use super::{Import, Warning};
 
@@ -77,15 +78,13 @@ fn lenient_obj<'de, D: Deserializer<'de>, T: DeserializeOwned + Default>(
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct Root {
-    #[serde(deserialize_with = "lenient_vec")]
-    accounts: Vec<Account>,
+    accounts: Lenient<Account>,
 }
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct Account {
-    #[serde(deserialize_with = "lenient_vec")]
-    items: Vec<RawItem>,
+    items: Slots<RawItem>,
 }
 
 #[derive(Deserialize, Default)]
@@ -101,8 +100,7 @@ struct RawItem {
     scope: Scope,
     #[serde(deserialize_with = "lenient_vec")]
     tags: Vec<F>,
-    #[serde(deserialize_with = "lenient_vec")]
-    credentials: Vec<Cred>,
+    credentials: Lenient<Cred>,
 }
 
 #[derive(Deserialize, Default)]
@@ -334,7 +332,15 @@ fn kind_of(c: &Cred) -> Kind {
 /// One CXF item. Login first, then Router, CreditCard, SecureNote: the
 /// data of the other credentials goes to `imported` or the notes.
 fn item(raw: &RawItem, entry: u32, out: &mut Import) {
-    let kinds: Vec<Kind> = raw.credentials.iter().map(kind_of).collect();
+    // A credential that does not decode counts as an unknown one.
+    let dropped = std::iter::repeat_n(Kind::Unknown, raw.credentials.dropped as usize);
+    let kinds: Vec<Kind> = raw
+        .credentials
+        .list
+        .iter()
+        .map(kind_of)
+        .chain(dropped)
+        .collect();
     let has = |k: Kind| kinds.contains(&k);
     for _ in kinds.iter().filter(|k| **k == Kind::Unknown) {
         out.warnings.push(Warning {
@@ -383,7 +389,7 @@ fn item(raw: &RawItem, entry: u32, out: &mut Import) {
     );
     let created = timestamp(raw.creation_at.get());
     let (mut wifi_done, mut card_done, mut note_done) = (false, false, false);
-    for (c, kind) in raw.credentials.iter().zip(&kinds) {
+    for (c, kind) in raw.credentials.list.iter().zip(&kinds) {
         match kind {
             Kind::Login => match c.kind.get().trim().to_ascii_lowercase().as_str() {
                 "basic-auth" => {
@@ -426,17 +432,32 @@ pub(crate) fn parse_cxf(b: &[u8]) -> Result<Import> {
         return Err(Error::InvalidFormat("cxf json"));
     }
     let root: Root = serde_json::from_slice(b).map_err(|_| Error::InvalidFormat("cxf json"))?;
-    let mut out = Import::default();
+    // Accounts that do not decode are unsupported entries.
+    let mut out = Import {
+        skipped: root.accounts.dropped,
+        ..Import::default()
+    };
     for (entry, raw) in root
         .accounts
+        .list
         .iter()
-        .flat_map(|a| a.items.iter())
+        .flat_map(|a| a.items.0.iter())
         .enumerate()
     {
         if entry >= MAX_RECORDS {
             return Err(Error::InvalidFormat("too many cxf items"));
         }
-        item(raw, u32::try_from(entry).unwrap_or(u32::MAX), &mut out);
+        let entry = u32::try_from(entry).unwrap_or(u32::MAX);
+        match raw {
+            Some(raw) => item(raw, entry, &mut out),
+            None => {
+                out.skipped += 1;
+                out.warnings.push(Warning {
+                    entry,
+                    code: "unsupported_entry",
+                });
+            }
+        }
     }
     Ok(out)
 }
@@ -662,5 +683,25 @@ mod tests {
         let item = &imp.items[0].item;
         assert!(item.field("passkeys").is_some());
         assert!(imp.warnings.iter().any(|w| w.code == "field_moved"));
+    }
+
+    #[test]
+    fn undecodable_items_and_credentials_are_counted() {
+        let imp = parse(
+            r#"{"accounts":[3,{"items":["x",{"title":"N","credentials":[
+                {"type":"note","content":"hello"},7]}]}]}"#,
+        );
+        assert_eq!(imp.items.len(), 1);
+        assert_eq!(imp.skipped, 2);
+        let codes: Vec<_> = imp.warnings.iter().map(|w| (w.entry, w.code)).collect();
+        assert_eq!(
+            codes,
+            vec![(0, "unsupported_entry"), (1, "unsupported_entry")]
+        );
+        // Only an undecodable credential: skipped, one warning.
+        let imp = parse(r#"{"accounts":[{"items":[{"title":"Z","credentials":[false]}]}]}"#);
+        assert!(imp.items.is_empty());
+        assert_eq!(imp.skipped, 1);
+        assert_eq!(imp.warnings.len(), 1);
     }
 }

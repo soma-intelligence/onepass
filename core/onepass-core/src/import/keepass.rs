@@ -149,11 +149,12 @@ struct State {
     out: Import,
 }
 
-/// KeePass 2 XML: entries of `Root/Group` as logins. Depth over 256 or
-/// more than a million entries is `InvalidFormat`.
 /// First eight bytes of a KDBX (KeePass 2 binary) file.
 pub(crate) const KDBX_MAGIC: [u8; 8] = [0x03, 0xD9, 0xA2, 0x9A, 0x67, 0xFB, 0x4B, 0xB5];
 
+/// KeePass 2 XML: entries of `Root/Group` as logins. Depth over 256 or
+/// more than a million entries is `InvalidFormat`. A KDBX file is refused
+/// with an explicit message.
 pub(crate) fn parse_keepass_xml(b: &[u8]) -> Result<Import> {
     if b.len() > MAX_INPUT {
         return Err(Error::InvalidFormat("import file too large"));

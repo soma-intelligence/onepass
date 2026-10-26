@@ -20,6 +20,7 @@ use crate::error::{Error, Result};
 use crate::model::{Address, FieldType, FieldValue, ItemType, SshKeyValue, template};
 
 use super::build::Draft;
+use super::json::{Lenient, Slots};
 use super::limits::{MAX_RECORDS, zip_entries};
 use super::{Import, Warning};
 
@@ -273,15 +274,13 @@ fn scalar(v: Value) -> Option<Zeroizing<String>> {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct Root {
-    #[serde(deserialize_with = "lenient_vec")]
-    accounts: Vec<Account>,
+    accounts: Lenient<Account>,
 }
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct Account {
-    #[serde(deserialize_with = "lenient_vec")]
-    vaults: Vec<Vault>,
+    vaults: Lenient<Vault>,
 }
 
 #[derive(Deserialize, Default)]
@@ -289,8 +288,7 @@ struct Account {
 struct Vault {
     #[serde(deserialize_with = "lenient_obj")]
     attrs: VaultAttrs,
-    #[serde(deserialize_with = "lenient_vec")]
-    items: Vec<RawItem>,
+    items: Slots<RawItem>,
 }
 
 #[derive(Deserialize, Default)]
@@ -322,16 +320,15 @@ struct RawItem {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct Details {
-    #[serde(rename = "loginFields", deserialize_with = "lenient_vec")]
-    login_fields: Vec<LoginField>,
+    #[serde(rename = "loginFields")]
+    login_fields: Lenient<LoginField>,
     #[serde(rename = "notesPlain", deserialize_with = "lenient")]
     notes_plain: Option<String>,
     #[serde(deserialize_with = "lenient_secret")]
     password: Option<Zeroizing<String>>,
-    #[serde(deserialize_with = "lenient_vec")]
-    sections: Vec<RawSection>,
-    #[serde(rename = "passwordHistory", deserialize_with = "lenient_vec")]
-    password_history: Vec<HistoryEntry>,
+    sections: Lenient<RawSection>,
+    #[serde(rename = "passwordHistory")]
+    password_history: Lenient<HistoryEntry>,
 }
 
 #[derive(Deserialize, Default)]
@@ -350,8 +347,7 @@ struct LoginField {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct RawSection {
-    #[serde(deserialize_with = "lenient_vec")]
-    fields: Vec<RawField>,
+    fields: Lenient<RawField>,
 }
 
 #[derive(Deserialize, Default)]
@@ -381,8 +377,7 @@ struct Overview {
     title: Option<String>,
     #[serde(deserialize_with = "lenient")]
     url: Option<String>,
-    #[serde(deserialize_with = "lenient_vec")]
-    urls: Vec<OverviewUrl>,
+    urls: Lenient<OverviewUrl>,
     #[serde(deserialize_with = "lenient_vec")]
     tags: Vec<Value>,
 }
@@ -409,26 +404,53 @@ pub(crate) fn parse_1pux(b: &[u8]) -> Result<Import> {
         serde_json::from_slice(data).map_err(|_| Error::InvalidFormat("1pux export.data json"))?;
     let total = root
         .accounts
+        .list
         .iter()
-        .flat_map(|a| &a.vaults)
-        .map(|v| v.items.len())
+        .flat_map(|a| &a.vaults.list)
+        .map(|v| v.items.0.len())
         .fold(0usize, usize::saturating_add);
     if total > MAX_RECORDS {
         return Err(Error::InvalidFormat("too many 1pux items"));
     }
-    let mut out = Import::default();
+    // Accounts and vaults that do not decode are unsupported entries.
+    let skipped = root
+        .accounts
+        .list
+        .iter()
+        .fold(root.accounts.dropped, |n, a| {
+            n.saturating_add(a.vaults.dropped)
+        });
+    let mut out = Import {
+        skipped,
+        ..Import::default()
+    };
     let mut index: u32 = 0;
-    for vault in root.accounts.into_iter().flat_map(|a| a.vaults) {
+    for vault in root.accounts.list.into_iter().flat_map(|a| a.vaults.list) {
         let folder = vault.attrs.name.unwrap_or_default();
-        for raw in vault.items {
+        for raw in vault.items.0 {
             let entry = index;
             index = index.saturating_add(1);
+            let Some(raw) = raw else {
+                out.skipped += 1;
+                out.warnings.push(Warning {
+                    entry,
+                    code: "unsupported_entry",
+                });
+                continue;
+            };
             if matches!(
                 raw.state.as_deref().map(str::trim),
                 Some("trashed" | "deleted")
             ) {
                 out.skipped += 1;
                 continue;
+            }
+            // Nested list elements that do not decode are reported once.
+            if dropped(&raw) > 0 {
+                out.warnings.push(Warning {
+                    entry,
+                    code: "unsupported_entry",
+                });
             }
             let mut d = item_draft(raw);
             d.folder(&folder);
@@ -446,6 +468,22 @@ pub(crate) fn parse_1pux(b: &[u8]) -> Result<Import> {
         });
     }
     Ok(out)
+}
+
+/// Elements of the item's nested lists that did not decode.
+fn dropped(raw: &RawItem) -> u32 {
+    let d = &raw.details;
+    d.sections
+        .list
+        .iter()
+        .map(|s| s.fields.dropped)
+        .chain([
+            d.login_fields.dropped,
+            d.sections.dropped,
+            d.password_history.dropped,
+            raw.overview.urls.dropped,
+        ])
+        .fold(0, u32::saturating_add)
 }
 
 fn unix(s: &str) -> Option<OffsetDateTime> {
@@ -504,7 +542,7 @@ fn item_draft(raw: RawItem) -> Draft {
     }
     let mut seen: Vec<String> = Vec::new();
     for url in std::iter::once(some(&overview.url))
-        .chain(overview.urls.iter().map(|u| some(&u.url)))
+        .chain(overview.urls.list.iter().map(|u| some(&u.url)))
         .map(str::trim)
     {
         if !url.is_empty() && !seen.iter().any(|s| s == url) {
@@ -533,7 +571,7 @@ fn item_draft(raw: RawItem) -> Draft {
     );
 
     let mut filled: Vec<&'static str> = Vec::new();
-    for f in &details.login_fields {
+    for f in &details.login_fields.list {
         let value = secret(&f.value);
         match f.designation.as_deref().map(str::trim) {
             Some(id @ ("username" | "password")) if !value.trim().is_empty() => {
@@ -559,7 +597,12 @@ fn item_draft(raw: RawItem) -> Draft {
         }
     }
     let mut first_email: Option<String> = None;
-    for field in details.sections.into_iter().flat_map(|s| s.fields) {
+    for field in details
+        .sections
+        .list
+        .into_iter()
+        .flat_map(|s| s.fields.list)
+    {
         let id = some(&field.id).trim().to_owned();
         let label = match (some(&field.title).trim(), id.as_str()) {
             ("", "") => "Champ".to_owned(),
@@ -608,7 +651,7 @@ fn item_draft(raw: RawItem) -> Draft {
         .and_then(unix)
         .or_else(|| created_at.as_deref().and_then(unix))
         .unwrap_or(OffsetDateTime::UNIX_EPOCH);
-    for h in &details.password_history {
+    for h in &details.password_history.list {
         let when = h.time.as_deref().and_then(unix).unwrap_or(item_time);
         d.history(secret(&h.value), when);
     }
@@ -1542,5 +1585,27 @@ mod tests {
         let data = r#"{"accounts":[{"vaults":null},{"vaults":[{"attrs":null,"items":null}]}]}"#;
         let imp = parse_1pux(&zip_of(&[("export.data", data.as_bytes())])).unwrap();
         assert!(imp.items.is_empty());
+    }
+
+    #[test]
+    fn undecodable_elements_are_counted() {
+        let nested = r#"{"categoryUuid":"001","overview":{"title":"N","urls":[7]},
+            "details":{"loginFields":[{"value":"u","designation":"username"},"x"],
+              "sections":[{"fields":[1,{"id":"a","value":{"string":"v"}}]}]}}"#;
+        let imp = export(&[("V", &format!("42,\"str\",{nested}"))]);
+        assert_eq!(imp.skipped, 2);
+        assert_eq!(imp.items.len(), 1);
+        assert_eq!(
+            codes(&imp),
+            vec![
+                (0, "unsupported_entry"),
+                (1, "unsupported_entry"),
+                (2, "unsupported_entry")
+            ]
+        );
+        assert_eq!(text(&imp.items[0].item, "username"), "u");
+        let data = r#"{"accounts":[1,{"vaults":["v",{"items":[]}]}]}"#;
+        let imp = parse_1pux(&zip_of(&[("export.data", data.as_bytes())])).unwrap();
+        assert_eq!(imp.skipped, 2);
     }
 }

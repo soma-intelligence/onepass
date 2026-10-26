@@ -15,6 +15,7 @@ pub(crate) mod build;
 pub(crate) mod csv_logins;
 pub(crate) mod cxf;
 pub(crate) mod dashlane;
+pub(crate) mod json;
 pub(crate) mod keepass;
 pub(crate) mod lastpass;
 pub(crate) mod limits;
@@ -50,11 +51,13 @@ pub enum Format {
     /// Encrypted OnePass archive: opened by the `archive` module, which
     /// needs a passphrase.
     OnePassArchive,
+    /// OnePass plaintext CSV export (`export::csv_plaintext`).
+    OnePassCsv,
 }
 
 impl Format {
     /// Every format, in declaration order.
-    pub const ALL: [Format; 16] = [
+    pub const ALL: [Format; 17] = [
         Format::OnePasswordPux,
         Format::OnePasswordCsv,
         Format::BitwardenJson,
@@ -71,6 +74,7 @@ impl Format {
         Format::OtpAuthUris,
         Format::WifiQr,
         Format::OnePassArchive,
+        Format::OnePassCsv,
     ];
 
     /// Stable kebab-case name (CLI flag value).
@@ -92,6 +96,7 @@ impl Format {
             Format::OtpAuthUris => "otpauth",
             Format::WifiQr => "wifi-qr",
             Format::OnePassArchive => "onepass",
+            Format::OnePassCsv => "onepass-csv",
         }
     }
 
@@ -286,6 +291,7 @@ pub fn parse(format: Format, bytes: &[u8]) -> Result<Import> {
         Format::OtpAuthUris => text::parse_otpauth_lines(bytes),
         Format::WifiQr => text::parse_wifi_qr_lines(bytes),
         Format::OnePassArchive => Err(Error::InvalidFormat("OnePass archive: use archive::open")),
+        Format::OnePassCsv => csv_logins::parse_onepass_csv(bytes),
     }?;
     if import.items.len() > limits::MAX_RECORDS {
         return Err(Error::InvalidFormat("too many items"));
@@ -299,13 +305,14 @@ mod tests {
 
     #[test]
     fn format_names_roundtrip() {
-        assert_eq!(Format::ALL.len(), 16);
+        assert_eq!(Format::ALL.len(), 17);
         for f in Format::ALL {
             assert_eq!(Format::from_name(f.name()), Some(f));
         }
         assert_eq!(Format::OnePasswordPux.name(), "1pux");
         assert_eq!(Format::CredentialExchange.name(), "cxf");
         assert_eq!(Format::OnePassArchive.name(), "onepass");
+        assert_eq!(Format::OnePassCsv.name(), "onepass-csv");
         assert_eq!(Format::from_name("nope"), None);
         assert_eq!(Format::from_name("1PUX"), None);
     }

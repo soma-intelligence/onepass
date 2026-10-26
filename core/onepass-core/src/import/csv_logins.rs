@@ -1,5 +1,6 @@
 //! CSV login exports (spec 4.3): Chrome/Edge/Brave, Safari/Apple, Firefox,
-//! 1Password CSV, Bitwarden CSV and Proton Pass CSV.
+//! 1Password CSV, Bitwarden CSV, Proton Pass CSV and the OnePass CSV
+//! export (`export::csv_plaintext`).
 
 use time::OffsetDateTime;
 
@@ -20,6 +21,16 @@ type Apply = fn(&mut Draft, ItemType, &str, &str) -> bool;
 /// is an unsupported entry); without it every row is a login.
 fn login_rows(bytes: &[u8], kind_col: Option<&str>, apply: Apply) -> Result<Import> {
     let (header, rows) = csv_records(bytes)?;
+    Ok(login_records(&header, &rows, kind_col, apply))
+}
+
+/// [`login_rows`] over already read records.
+fn login_records(
+    header: &[String],
+    rows: &[Vec<String>],
+    kind_col: Option<&str>,
+    apply: Apply,
+) -> Import {
     let mut out = Import::default();
     for (index, row) in rows.iter().enumerate() {
         let entry = u32::try_from(index).unwrap_or(u32::MAX);
@@ -56,9 +67,13 @@ fn login_rows(bytes: &[u8], kind_col: Option<&str>, apply: Apply) -> Result<Impo
                 d.extra(col, val, false);
             }
         }
+        // Cells past the header width are kept, named by position.
+        for (i, val) in row.iter().enumerate().skip(header.len()) {
+            d.extra(&format!("column {}", i + 1), val, false);
+        }
         d.finish(entry, &mut out);
     }
-    Ok(out)
+    out
 }
 
 fn truthy(s: &str) -> bool {
@@ -194,6 +209,63 @@ fn protonpass_apply(d: &mut Draft, kind: ItemType, col: &str, val: &str) -> bool
     true
 }
 
+/// Whether `key` looks like a field id written by the OnePass export
+/// (`id=value` lines of the `extra` column).
+fn is_extra_key(key: &str) -> bool {
+    !key.is_empty()
+        && key.len() <= 64
+        && key
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | ' ' | '.'))
+}
+
+/// The `extra` cell of the OnePass export: `id=value` lines. A line that
+/// does not start with an id continues the previous value (multi-line
+/// values such as notes or keys). `url` lines are extra URLs; every other
+/// value lands in `imported`, masked.
+fn onepass_extra(d: &mut Draft, val: &str) {
+    let mut entries: Vec<(String, String)> = Vec::new();
+    for line in val.split('\n') {
+        match (line.split_once('='), entries.last_mut()) {
+            (Some((key, value)), _) if is_extra_key(key) => {
+                entries.push((key.to_owned(), value.to_owned()));
+            }
+            (_, Some((_, value))) => {
+                value.push('\n');
+                value.push_str(line);
+            }
+            (_, None) => entries.push(("extra".to_owned(), line.to_owned())),
+        }
+    }
+    for (key, value) in entries {
+        if key == "url" {
+            d.url(&value);
+        } else {
+            d.extra(&key, &value, true);
+        }
+    }
+}
+
+fn onepass_apply(d: &mut Draft, _: ItemType, col: &str, val: &str) -> bool {
+    match col {
+        "title" => d.title(val),
+        "type" if val.trim().eq_ignore_ascii_case("login") => {}
+        "type" => d.extra("type", val.trim(), false),
+        "vault" => d.folder(val),
+        "otpauth" => d.set("totp", val),
+        "notes" => d.notes(val),
+        "tags" => val.split(';').for_each(|t| d.tag(t)),
+        "extra" => onepass_extra(d, val),
+        _ => return common(d, col, val).is_some(),
+    }
+    true
+}
+
+/// Columns of the OnePass CSV export, in order.
+const ONEPASS_HEADER: [&str; 10] = [
+    "title", "type", "vault", "url", "username", "password", "otpauth", "notes", "tags", "extra",
+];
+
 /// Chrome, Edge and Brave: `name,url,username,password[,note]`.
 pub(crate) fn parse_chrome(b: &[u8]) -> Result<Import> {
     login_rows(b, None, chrome_apply)
@@ -217,11 +289,42 @@ pub(crate) fn parse_bitwarden_csv(b: &[u8]) -> Result<Import> {
     login_rows(b, Some("type"), bitwarden_apply)
 }
 
+/// Proton Pass: a login row with an empty username and an email uses the
+/// email as username (the email field is kept too).
 pub(crate) fn parse_protonpass_csv(b: &[u8]) -> Result<Import> {
-    login_rows(b, Some("type"), protonpass_apply)
+    let (header, mut rows) = csv_records(b)?;
+    let col = |name: &str| header.iter().position(|h| h == name);
+    if let (Some(email), Some(user)) = (col("email"), col("username")) {
+        for row in &mut rows {
+            let is_login = col("type")
+                .and_then(|t| row.get(t))
+                .is_some_and(|t| t.trim().eq_ignore_ascii_case("login"));
+            if !is_login {
+                continue;
+            }
+            let email = row.get(email).filter(|e| !e.trim().is_empty()).cloned();
+            if let (Some(email), Some(cell)) = (email, row.get_mut(user))
+                && cell.trim().is_empty()
+            {
+                *cell = email;
+            }
+        }
+    }
+    Ok(login_records(
+        &header,
+        &rows,
+        Some("type"),
+        protonpass_apply,
+    ))
 }
 
-/// Format of a lower-cased CSV header among the six of this module, or
+/// OnePass CSV export. Every row is read as a login; a row of another type
+/// keeps its type name in `imported` and falls back per the builder rules.
+pub(crate) fn parse_onepass_csv(b: &[u8]) -> Result<Import> {
+    login_rows(b, None, onepass_apply)
+}
+
+/// Format of a lower-cased CSV header among the seven of this module, or
 /// `None` (LastPass and Dashlane are told apart by the dispatcher). Chrome
 /// and Safari need the exact column set; the others are recognised by
 /// their distinctive columns.
@@ -229,7 +332,9 @@ pub(crate) fn sniff(header: &[String]) -> Option<Format> {
     let has = |c: &str| header.iter().any(|h| h == c);
     let all = |cs: &[&str]| cs.iter().all(|c| has(c));
     let exactly = |cs: &[&str]| header.len() == cs.len() && all(cs);
-    if all(&[
+    if header == ONEPASS_HEADER {
+        Some(Format::OnePassCsv)
+    } else if all(&[
         "folder",
         "favorite",
         "type",
@@ -475,6 +580,75 @@ mod tests {
         assert_eq!(imported_labels(&imp.items[0].item), vec!["timecreated"]);
     }
 
+    #[test]
+    fn cells_past_header_width_are_kept() {
+        let imp = parse_chrome(b"name,url,username,password\nA,,u,p,spare,more\n").unwrap();
+        assert_eq!(
+            imported_labels(&imp.items[0].item),
+            vec!["column 5", "column 6"]
+        );
+    }
+
+    #[test]
+    fn proton_empty_username_takes_email() {
+        let imp = parse_protonpass_csv(
+            b"type,name,url,email,username,password,note,totp,createTime,modifyTime,vault\n\
+              login,Mail,https://mail.example.com,bob@example.com,,Pw-Invented-2,,,,,\n",
+        )
+        .unwrap();
+        let it = &imp.items[0].item;
+        assert_eq!(it.item_type, ItemType::Login);
+        assert_eq!(text(it, "username"), "bob@example.com");
+        assert_eq!(text(it, "email"), "bob@example.com");
+    }
+
+    const ONEPASS_HEAD: &str = "title,type,vault,url,username,password,otpauth,notes,tags,extra\n";
+
+    #[test]
+    fn onepass_csv_login_row() {
+        let csv = format!(
+            "{ONEPASS_HEAD}Mail,login,Perso,https://mail.example.com,alice,Pw-Invented-1,\
+             otpauth://totp/x?secret=JBSWY3DPEHPK3PXP,hello,a;b,\"pin=1234\nurl=https://alt.example.com\nnote=line one\nline two\"\n"
+        );
+        let imp = parse_onepass_csv(csv.as_bytes()).unwrap();
+        assert_eq!(imp.items.len(), 1);
+        let it = &imp.items[0].item;
+        assert_eq!(it.item_type, ItemType::Login);
+        assert_eq!(it.title, "Mail");
+        assert_eq!(imp.items[0].folder.as_deref(), Some("Perso"));
+        assert_eq!(text(it, "username"), "alice");
+        assert_eq!(text(it, "password"), "Pw-Invented-1");
+        assert!(text(it, "totp").starts_with("otpauth://totp/"));
+        assert_eq!(it.notes, "hello");
+        assert_eq!(it.tags, vec!["a", "b"]);
+        assert_eq!(it.urls.len(), 2);
+        assert_eq!(it.urls[1].url, "https://alt.example.com");
+        let imported: Vec<_> = it
+            .sections
+            .iter()
+            .filter(|s| s.id == "imported")
+            .flat_map(|s| s.fields.iter())
+            .map(|f| (f.label.clone(), f.value.clone()))
+            .collect();
+        assert!(
+            imported
+                .iter()
+                .any(|(l, v)| l == "pin" && *v == FieldValue::Concealed("1234".to_owned().into()))
+        );
+        assert!(imported.iter().any(|(l, v)| l == "note"
+            && *v == FieldValue::Concealed("line one\nline two".to_owned().into())));
+    }
+
+    #[test]
+    fn onepass_csv_other_type_keeps_type_name() {
+        let csv = format!("{ONEPASS_HEAD}Card,credit-card,Perso,,,,,,,number=4111\n");
+        let imp = parse_onepass_csv(csv.as_bytes()).unwrap();
+        let it = &imp.items[0].item;
+        assert!(imported_labels(it).contains(&"type".to_owned()));
+        assert!(imported_labels(it).contains(&"number".to_owned()));
+        assert!(crate::model::validate(it).is_ok());
+    }
+
     fn header(b: &[u8]) -> Vec<String> {
         csv_records(b).unwrap().0
     }
@@ -491,6 +665,10 @@ mod tests {
         assert_eq!(sniff(&header(ONEPASSWORD)), Some(Format::OnePasswordCsv));
         assert_eq!(sniff(&header(BITWARDEN)), Some(Format::BitwardenCsv));
         assert_eq!(sniff(&header(PROTON)), Some(Format::ProtonPassCsv));
+        assert_eq!(
+            sniff(&header(ONEPASS_HEAD.as_bytes())),
+            Some(Format::OnePassCsv)
+        );
         assert_eq!(sniff(&header(b"a,b,c\n")), None);
         assert_eq!(sniff(&[]), None);
         // LastPass and Dashlane are told apart by the dispatcher.

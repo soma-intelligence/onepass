@@ -2,8 +2,12 @@
 
 use std::io::Write;
 
+use onepass_core::Id;
+use onepass_core::archive::ArchivedVault;
+use onepass_core::export::csv_plaintext;
 use onepass_core::import::{Format, detect, parse};
-use onepass_core::model::validate;
+use onepass_core::model::{FieldValue, Item, ItemType, ItemUrl, MatchRule, new_item, validate};
+use onepass_core::vault::VaultMeta;
 use proptest::prelude::*;
 use zip::write::SimpleFileOptions;
 
@@ -118,6 +122,11 @@ fn cases() -> Vec<(&'static str, Vec<u8>, Format)> {
             Format::OtpAuthUris,
         ),
         ("wifi-qr.txt", v(fixture!("wifi-qr.txt")), Format::WifiQr),
+        (
+            "onepass.csv",
+            v(fixture!("onepass.csv")),
+            Format::OnePassCsv,
+        ),
     ]
 }
 
@@ -278,5 +287,69 @@ proptest! {
             }
         }
         let _ = detect("x", &bytes);
+    }
+
+    /// Spec 10: the plaintext CSV export reads back through the OnePass
+    /// CSV importer with titles, usernames, passwords and URLs intact.
+    #[test]
+    fn onepass_csv_export_roundtrip(
+        logins in proptest::collection::vec(
+            ("[A-Za-z0-9][A-Za-z0-9 ,\"']{0,20}[A-Za-z0-9]", "[a-z0-9._@-]{1,20}", "[!-~]{1,32}", "[a-z0-9]{1,12}"),
+            1..12,
+        ),
+    ) {
+        let items: Vec<Item> = logins
+            .iter()
+            .map(|(title, user, pw, host)| login(title, user, pw, &format!("https://{host}.example.com")))
+            .collect();
+        let vault = ArchivedVault {
+            id: Id::new(),
+            meta: VaultMeta {
+                name: "Perso".into(),
+                icon: String::new(),
+                color: String::new(),
+                travel_safe: false,
+                mcp_access: false,
+            },
+            items: items.clone(),
+        };
+        let csv = csv_plaintext(&[vault]).unwrap();
+        prop_assert_eq!(detect("x", &csv), Some(Format::OnePassCsv));
+        let back = parse(Format::OnePassCsv, &csv).unwrap();
+        prop_assert_eq!(back.items.len(), items.len());
+        for (a, b) in items.iter().zip(&back.items) {
+            let b = &b.item;
+            prop_assert_eq!(&a.title, &b.title);
+            prop_assert_eq!(b.item_type, ItemType::Login);
+            prop_assert_eq!(text(a, "username"), text(b, "username"));
+            prop_assert_eq!(text(a, "password"), text(b, "password"));
+            let urls = |i: &Item| i.urls.iter().map(|u| u.url.clone()).collect::<Vec<_>>();
+            prop_assert_eq!(urls(a), urls(b));
+        }
+    }
+}
+
+fn login(title: &str, user: &str, pw: &str, url: &str) -> Item {
+    let mut it = new_item(ItemType::Login, Id::new(), title);
+    it.urls = vec![ItemUrl {
+        label: String::new(),
+        url: url.into(),
+        rule: MatchRule::Domain,
+        primary: true,
+    }];
+    if let Some(f) = it.field_mut("username") {
+        f.value = FieldValue::Text(user.into());
+    }
+    if let Some(f) = it.field_mut("password") {
+        f.value = FieldValue::Password(pw.to_owned().into());
+    }
+    it
+}
+
+fn text(item: &Item, id: &str) -> String {
+    match item.field(id).map(|f| &f.value) {
+        Some(FieldValue::Text(s)) => s.clone(),
+        Some(FieldValue::Password(s)) => s.to_string(),
+        _ => String::new(),
     }
 }

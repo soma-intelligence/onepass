@@ -40,13 +40,22 @@ impl fmt::Debug for WifiNetwork {
     }
 }
 
+/// Whether `n` is an open network that still carries a password (QR code
+/// `T:nopass` with a `P:`): the password then goes to `imported`.
+fn open_with_password(n: &WifiNetwork) -> bool {
+    n.security == "ouvert" && n.password.is_some()
+}
+
 /// Router draft for a network: SSID, password, security and hidden flag.
+/// The password of an open network is kept, masked, in `imported`.
 pub(crate) fn router_draft(n: &WifiNetwork) -> Draft {
     let mut d = Draft::new(ItemType::Router);
     d.title(&n.ssid);
     d.set("ssid", &n.ssid);
-    if let Some(p) = &n.password {
-        d.set("wifi_password", p);
+    match &n.password {
+        Some(p) if open_with_password(n) => d.extra("Mot de passe Wi-Fi", p, true),
+        Some(p) => d.set("wifi_password", p),
+        None => {}
     }
     d.set("security", &n.security);
     d.set("hidden", if n.hidden { "oui" } else { "non" });
@@ -87,7 +96,9 @@ fn unescape(raw: &str) -> Zeroizing<String> {
 }
 
 /// `WIFI:` QR string: `S:`, `T:`, `P:`, `H:` pairs in any order, ended by
-/// `;;`. Escapes: backslash before `; , : \ "`.
+/// `;;`. Escapes: backslash before `; , : \ "`. An empty `T:` with a
+/// password is `WPA`; `T:nopass` is `ouvert` and keeps a `P:` password,
+/// which the importer moves to `imported` (warning `field_moved`).
 pub fn parse_wifi_qr(line: &str) -> Result<WifiNetwork> {
     const BAD: Error = Error::InvalidFormat("wifi qr");
     let t = line.trim();
@@ -147,7 +158,7 @@ pub fn parse_wifi_qr(line: &str) -> Result<WifiNetwork> {
     };
     Ok(WifiNetwork {
         ssid: ssid.to_string(),
-        password: if security == "ouvert" { None } else { password },
+        password,
         security: security.to_owned(),
         hidden,
     })
@@ -184,7 +195,15 @@ pub(crate) fn parse_wifi_qr_lines(b: &[u8]) -> Result<Import> {
         }
         let entry = u32::try_from(index).unwrap_or(u32::MAX);
         match parse_wifi_qr(line) {
-            Ok(n) => router_draft(&n).finish(entry, &mut out),
+            Ok(n) => {
+                if open_with_password(&n) {
+                    out.warnings.push(Warning {
+                        entry,
+                        code: "field_moved",
+                    });
+                }
+                router_draft(&n).finish(entry, &mut out);
+            }
             Err(_) => unsupported(entry, &mut out),
         }
     }
@@ -413,6 +432,38 @@ mod tests {
         assert!(parse_wifi_qr("WIFI:T:WPA;P:x;;").is_err());
         assert!(parse_wifi_qr("HTTP:S:x;;").is_err());
         assert!(parse_wifi_qr(r"WIFI:S:bad\").is_err());
+    }
+
+    #[test]
+    fn wifi_qr_nopass_with_password_keeps_it_in_imported() {
+        let imp = parse_wifi_qr_lines(b"WIFI:S:Cafe;T:nopass;P:Invented-1;;\n").unwrap();
+        let it = &imp.items[0].item;
+        validate(it).unwrap();
+        assert_eq!(text(it, "security").as_deref(), Some("ouvert"));
+        assert_eq!(text(it, "wifi_password"), None);
+        let moved = it
+            .sections
+            .iter()
+            .filter(|s| s.id == "imported")
+            .flat_map(|s| s.fields.iter())
+            .find(|f| f.label == "Mot de passe Wi-Fi")
+            .map(|f| f.value.clone());
+        assert_eq!(
+            moved,
+            Some(FieldValue::Concealed(Zeroizing::new("Invented-1".into())))
+        );
+        let codes: Vec<(u32, &str)> = imp.warnings.iter().map(|w| (w.entry, w.code)).collect();
+        assert_eq!(codes, [(0, "field_moved")]);
+    }
+
+    #[test]
+    fn wifi_qr_empty_type_with_password_is_wpa() {
+        let n = parse_wifi_qr("WIFI:S:Home;T:;P:Invented-2;;").unwrap();
+        assert_eq!(n.security, "WPA");
+        assert_eq!(
+            n.password.as_deref().map(String::as_str),
+            Some("Invented-2")
+        );
     }
 
     #[test]
