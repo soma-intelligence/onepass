@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { type BrowserContext, type Frame, type Page, type Worker, test as base, chromium, expect } from "@playwright/test";
 import { loadCert, type TestCert } from "./cert";
 import type { E2EState } from "./global-setup";
-import { type InstalledHost, installHost } from "./host";
+import { type InstalledHost, installHost, type StagedHost } from "./host";
 import { CANARY_PATH, startServer, type TestServer } from "./server";
 import { MOVE_GUARD_MS } from "../src/content/frames";
 import { CLICK_GUARD_MS } from "../src/ui/components";
@@ -94,7 +94,7 @@ export interface Ext {
 }
 
 interface WorkerFixtures {
-  env: { cert: TestCert; server: TestServer; cache: string };
+  env: { cert: TestCert; server: TestServer; cache: string; staged: StagedHost };
 }
 
 interface TestFixtures {
@@ -108,14 +108,14 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       const s = state();
       const cert = loadCert(s.certDir);
       const server = await startServer(cert);
-      await use({ cert, server, cache: s.cache });
+      await use({ cert, server, cache: s.cache, staged: s.host });
       await server.close();
     },
     { scope: "worker" },
   ],
   build: ["regular", { option: true }],
   ext: async ({ env, build }, use) => {
-    const { server, cert, cache } = env;
+    const { server, cert, cache, staged } = env;
     server.reset();
     const dir = mkdtempSync(join(tmpdir(), "onepass-e2e-test-"));
     const profile = join(dir, "profile");
@@ -175,7 +175,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       }
       // The browser reads the host manifest at connectNative time: writing it
       // now, before the first connection, is enough.
-      const host = installHost(dir, join(profile, "NativeMessagingHosts"), id, cache);
+      const host = installHost(dir, join(profile, "NativeMessagingHosts"), id, cache, staged);
       const page = ctx.pages()[0] ?? (await ctx.newPage());
       // Canary: the local server (this nonce) answers for a real provider name.
       const canary = await page.goto(`https://accounts.google.com${CANARY_PATH}`);
@@ -205,7 +205,17 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         async pair() {
           const popup = await ctx.newPage();
           await popup.goto(`chrome-extension://${id}/popup.html`);
+          expect(popup.url(), "the popup tab must show the extension popup").toBe(`chrome-extension://${id}/popup.html`);
           await popup.getByRole("button", { name: "Appairer avec OnePass" }).click();
+          // The host logs its banner first thing: if it never does, Chromium
+          // could not start it (manifest, extension id, or an exec blocked by
+          // the OS), and waiting for the code below would only time out.
+          await expect
+            .poll(() => host.log().includes("DEV MODE"), {
+              timeout: 15_000,
+              message: `native host never started (wrapper ${host.wrapper}, manifest ${host.manifest}, extension ${id})`,
+            })
+            .toBe(true);
           const sas = popup.locator(".sas");
           await expect(sas).toHaveText(/^\d{3} \d{3}$/, { timeout: 60_000 });
           const shown = (await sas.textContent())?.trim() ?? "";

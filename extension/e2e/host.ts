@@ -4,7 +4,7 @@
 // as the native messaging host `me.somalabs.onepass.dev` of a Chromium
 // profile.
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,11 +42,36 @@ export interface HostConfig {
   reprompt: "deny";
 }
 
-export function hostConfig(dataDir: string, extensionId: string): HostConfig {
+/** The host binary and fixture vault the browser runs, copied out of the repository. */
+export interface StagedHost {
+  bin: string;
+  fixture: string;
+}
+
+/**
+ * Copies the host binary and the fixture vault into `dir` (a temporary
+ * directory). The browser must never exec the binary from the checkout:
+ * when the repository lives in a privacy-protected folder (~/Desktop,
+ * ~/Documents, ~/Downloads on macOS), the native host process inherits the
+ * browser as its responsible app, and dyld's open() of its own executable
+ * blocks on a folder-access consent that headless Chromium never answers.
+ * The host then never starts and pairing hangs with no host log at all.
+ */
+export function stageHost(dir: string): StagedHost {
+  mkdirSync(dir, { recursive: true });
+  const bin = join(dir, "onepass-native-host");
+  copyFileSync(HOST_BIN, bin);
+  chmodSync(bin, 0o755);
+  const fixture = join(dir, "e2e.json");
+  copyFileSync(FIXTURE, fixture);
+  return { bin, fixture };
+}
+
+export function hostConfig(dataDir: string, extensionId: string, fixture: string): HostConfig {
   return {
     data_dir: dataDir,
     allowed_extensions: [extensionId],
-    source: { kind: "fixture", path: FIXTURE },
+    source: { kind: "fixture", path: fixture },
     approval: "auto",
     unlocked: true,
     reprompt: "deny",
@@ -58,12 +83,12 @@ export function hostConfig(dataDir: string, extensionId: string): HostConfig {
  * pairing and opening one session with the TypeScript client; each test then
  * starts from a copy of `<dir>/data/fixture-cache.bin`.
  */
-export async function prebuildFixtureCache(dir: string): Promise<string> {
+export async function prebuildFixtureCache(dir: string, staged: StagedHost): Promise<string> {
   mkdirSync(dir, { recursive: true });
   const dataDir = join(dir, "data");
   const config = join(dir, "native-host.json");
-  writeFileSync(config, JSON.stringify(hostConfig(dataDir, "e2e-prebuild")));
-  const t = new NodeTransport(HOST_BIN, ["chrome-extension://e2e-prebuild/"], {
+  writeFileSync(config, JSON.stringify(hostConfig(dataDir, "e2e-prebuild", staged.fixture)));
+  const t = new NodeTransport(staged.bin, ["chrome-extension://e2e-prebuild/"], {
     ...process.env,
     ONEPASS_NATIVE_HOST_CONFIG: config,
   });
@@ -97,14 +122,20 @@ export interface InstalledHost {
  * cache), config, wrapper script (Chrome passes no custom arguments) and the
  * host manifest in `<manifestDir>/me.somalabs.onepass.dev.json`.
  */
-export function installHost(dir: string, manifestDir: string, extensionId: string, cache: string): InstalledHost {
+export function installHost(
+  dir: string,
+  manifestDir: string,
+  extensionId: string,
+  cache: string,
+  staged: StagedHost,
+): InstalledHost {
   const dataDir = join(dir, "host-data");
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   copyFileSync(cache, join(dataDir, FIXTURE_CACHE));
   const config = join(dir, "native-host.json");
-  writeFileSync(config, JSON.stringify(hostConfig(dataDir, extensionId)));
+  writeFileSync(config, JSON.stringify(hostConfig(dataDir, extensionId, staged.fixture)));
   const wrapper = join(dir, "onepass-native-host.sh");
-  writeFileSync(wrapper, `#!/bin/sh\nexec "${HOST_BIN}" --config "${config}" "$@"\n`, { mode: 0o755 });
+  writeFileSync(wrapper, `#!/bin/sh\nexec "${staged.bin}" --config "${config}" "$@"\n`, { mode: 0o755 });
   mkdirSync(manifestDir, { recursive: true });
   const manifest = join(manifestDir, `${NATIVE_HOST}.json`);
   writeFileSync(
