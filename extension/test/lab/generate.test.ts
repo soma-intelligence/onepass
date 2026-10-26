@@ -193,9 +193,21 @@ describe("generate", () => {
     for (const s of big.sites) {
       const drivers = big.scenarios.filter((x) => x.site === s.index).map((x) => x.driver);
       const main = LOGIN_FLOWS.includes(s.flow) ? "one_click" : "menu_fill";
-      const want = [main, ...(s.lookalike ? ["lookalike"] : []), ...(s.flow === "login_passkey" ? ["passkey_control"] : [])];
+      // The control needs a passkey step on the site's own host: a cross-site widget has none.
+      const control = s.flow === "login_passkey" && (s.passkeyOnly === true || !s.traits.includes("iframe_cross_site"));
+      const want = [main, ...(s.lookalike ? ["lookalike"] : []), ...(control ? ["passkey_control"] : [])];
       expect(drivers).toEqual(want);
     }
+  });
+
+  it("no_passkey_control_behind_cross_site_password_widget", () => {
+    // lab-2026-10-26 site 88: password in a cross-site frame, then a passkey the frame host cannot ask for.
+    const w = generate("lab-2026-10-26", { sites: 89, patterns: loadPatterns() });
+    const s = w.sites[88]!;
+    expect(s.flow).toBe("login_passkey");
+    expect(s.passkeyOnly).toBe(false);
+    expect(s.traits).toContain("iframe_cross_site");
+    expect(w.scenarios.filter((x) => x.site === 88).map((x) => x.driver)).toEqual(["one_click"]);
   });
 
   it("passkey_public_matches_private", () => {

@@ -94,7 +94,10 @@ export function generate(seed: string, opts: GenerateOptions): World {
   for (const s of sites) {
     const drivers: DriverId[] = [ONE_CLICK.includes(s.flow) ? "one_click" : "menu_fill"];
     if (s.lookalike) drivers.push("lookalike");
-    if (s.flow === "login_passkey") drivers.push("passkey_control");
+    // The control needs the passkey step on the site's own host: a cross-site
+    // password widget leads to none (its frame host cannot ask for the site's key).
+    const crossSiteWidget = !s.passkeyOnly && s.traits.includes("iframe_cross_site");
+    if (s.flow === "login_passkey" && !crossSiteWidget) drivers.push("passkey_control");
     for (const driver of drivers) scenarios.push({ id: `${s.index}:${driver}`, site: s.index, driver, ...expectationFor(s, driver) });
   }
   const fixture: FixtureFile = {

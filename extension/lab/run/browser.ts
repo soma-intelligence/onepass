@@ -179,7 +179,7 @@ export async function shadowField(scope: Frame, selector: string): Promise<{ x: 
  * the field, else (closed shadow root) with a mouse click in the middle of
  * the box the page hook reports. Throws after `timeout` ms.
  */
-async function focusField(p: Page, scope: Frame, selector: string, timeout: number): Promise<void> {
+export async function focusField(p: Page, scope: Frame, selector: string, timeout: number): Promise<void> {
   const end = Date.now() + timeout;
   const field = scope.locator(selector).first();
   for (;;) {

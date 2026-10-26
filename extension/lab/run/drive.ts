@@ -14,7 +14,7 @@ import type { FieldSpec, Site } from "../gen/model.ts";
 import { PAGE_PATH } from "../gen/render.ts";
 import type { LabEvent } from "../server/ledger.ts";
 import type { LabServer } from "../server/server.ts";
-import { type PlainBrowser, shadowField, sleep } from "./browser.ts";
+import { focusField, type PlainBrowser, shadowField, sleep } from "./browser.ts";
 import type { Driver } from "./driver.ts";
 import type { Observation } from "./oracle.ts";
 
@@ -178,21 +178,27 @@ function menuTarget(site: Site): { fields: FieldSpec[]; title: string | undefine
   return { fields: site.fields, title: site.cardTitle ?? site.identityTitle ?? site.itemTitle };
 }
 
+/** How long a field of `site` may take to show: its delayed_fields delay plus a margin. */
+const fieldWait = (site: Site): number => (site.delayMs ?? 0) + 10_000;
+
 /**
- * Types `value` into the field `id` as a user would: through its locator, or
- * (closed shadow root) by clicking the box its page hook reports and typing.
+ * Types `value` into the field `id` of `scope` (the form's frame) as a user
+ * would: through its locator, or (closed shadow root) by clicking the box its
+ * page hook reports (offset by the frame) and typing. Waits up to `timeoutMs`
+ * for a delayed field.
  */
-async function typeField(page: Page, scope: Frame, id: string, value: string): Promise<void> {
-  const field = scope.locator(byId(id)).first();
-  const end = Date.now() + 10_000;
+async function typeField(page: Page, scope: Frame, id: string, value: string, timeoutMs = 10_000): Promise<void> {
+  const sel = byId(id);
+  const field = scope.locator(sel).first();
+  const end = Date.now() + timeoutMs;
   for (;;) {
     if ((await field.count().catch(() => 0)) > 0) {
       await field.fill(value, { timeout: Math.max(1, end - Date.now()) });
       return;
     }
-    const box = await shadowField(scope, byId(id));
+    const box = await shadowField(scope, sel);
     if (box && box.width > 0 && box.height > 0) {
-      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await focusField(page, scope, sel, 1_000);
       await page.keyboard.type(value);
       return;
     }
@@ -235,7 +241,7 @@ export async function menuFill(env: ScenarioEnv, site: Site): Promise<Observatio
       const email = site.fields.find((f) => f.role === "email" || f.role === "username");
       if (email && site.account) {
         o.typed = [email.name];
-        await typeField(page, scope, email.id, site.account.username).catch(() => undefined);
+        await typeField(page, scope, email.id, site.account.username, fieldWait(site)).catch(() => undefined);
       }
     }
     const menu = await env.driver.menuFill(page, scope, fields.map((f) => byId(f.id)), title, true);
@@ -286,26 +292,72 @@ export function passkeyPkcs8(key: { d: string; x: string; y: string }): string {
   return createPrivateKey({ key: jwk, format: "jwk" }).export({ type: "pkcs8", format: "der" }).toString("base64");
 }
 
-/** Types the password step by hand (passkey control: no extension), in the site's login style. */
-async function typePassword(page: Page, site: Site): Promise<void> {
+const pathOf = (f: Frame): string => {
+  try {
+    return new URL(f.url()).pathname;
+  } catch {
+    return "";
+  }
+};
+
+/** Waits until `scope` (top document or the form's frame) shows the page at `path`. */
+async function waitPath(scope: Frame, path: string, ms: number): Promise<boolean> {
+  const end = Date.now() + ms;
+  while (pathOf(scope) !== path) {
+    if (Date.now() >= end) return false;
+    await sleep(200);
+  }
+  return true;
+}
+
+/** A refused post of the site (its host or its frame host) since the scenario began. */
+const refused = (server: LabServer, site: Site) =>
+  server.events().some((e) => e.kind === "submit" && !e.ok && (e.host === site.host || e.host === site.frameHost));
+
+/**
+ * Types the password step by hand (passkey control: no extension), in the
+ * site's login style, where the other drivers reach the form: inside its
+ * frame for framed sites, after its delay for delayed fields, through the
+ * page hooks in a closed shadow root. Returns false when the RP refused a
+ * step (the oracle then reads its refusal); throws `lab:` when the RP served
+ * no next step.
+ */
+async function typePassword(page: Page, server: LabServer, site: Site): Promise<boolean> {
   const account = site.account!;
   const id = site.fields.find((f) => f.role === "username" || f.role === "email");
   const pw = site.fields.find((f) => f.role === "password");
   if (!id || !pw) throw new Error("lab: password-then-passkey site without identifier or password field");
-  const top = page.mainFrame();
-  await typeField(page, top, id.id, account.username);
+  const scope = await formScope(page, site);
+  await typeField(page, scope, id.id, account.username, fieldWait(site));
   if (site.loginStyle === "username_first") {
-    await submitForm(top);
-    await page.waitForURL((u) => u.pathname === PAGE_PATH.password, { timeout: 10_000 });
+    await submitForm(scope);
+    if (!(await waitPath(scope, PAGE_PATH.password, 10_000))) {
+      if (refused(server, site)) return false;
+      throw new Error(`lab: no password step after the identifier (at ${scope.url()})`);
+    }
   } else if (site.loginStyle === "email_then_password") {
-    const next = page.locator(byId("lab-next")).first();
+    const next = scope.locator(byId("lab-next")).first();
     // Out of reach in a closed shadow root: Enter in the identifier reveals the password step too.
     if ((await next.count()) > 0) await next.click();
     else await page.keyboard.press("Enter");
   }
-  await typeField(page, top, pw.id, account.password);
-  await submitForm(top);
-  await page.waitForURL((u) => u.pathname === PAGE_PATH.passkey, { timeout: 10_000 });
+  await typeField(page, scope, pw.id, account.password, fieldWait(site));
+  await submitForm(scope);
+  return true;
+}
+
+/** The passkey button of the page, in whichever frame the site shows it (framed sites: the frame). */
+async function passkeyButton(page: Page, ms: number): Promise<ReturnType<Page["locator"]> | undefined> {
+  const end = Date.now() + ms;
+  for (;;) {
+    for (const f of page.frames()) {
+      if (f.url().startsWith("chrome-extension://")) continue;
+      const b = f.locator(byId("lab-passkey")).first();
+      if ((await b.count().catch(() => 0)) > 0) return b;
+    }
+    if (Date.now() >= end) return undefined;
+    await sleep(200);
+  }
 }
 
 /** passkey_control: Chromium's virtual authenticator holds the site's key; the lab RP must accept it. */
@@ -334,9 +386,14 @@ export async function passkeyControl(server: LabServer, plain: PlainBrowser, sit
       },
     });
     await goto(page, `https://${site.host}/`);
-    if (!site.passkeyOnly) await typePassword(page, site);
-    await page.locator(byId("lab-passkey")).first().click({ timeout: 10_000 });
-    const end = Date.now() + 15_000;
+    const typed = site.passkeyOnly ? true : await typePassword(page, server, site);
+    const button = typed ? await passkeyButton(page, 10_000) : undefined;
+    // No passkey step: the RP refused the password (the oracle reads why) or served none (a bench defect).
+    if (typed && !button && !refused(server, site)) {
+      throw new Error(`lab: no passkey step served (at ${page.frames().map((f) => f.url()).join(", ")})`);
+    }
+    if (button) await button.click({ timeout: 10_000 });
+    const end = button ? Date.now() + 15_000 : 0;
     while (Date.now() < end && !server.events().some((e) => e.kind === "signin" && e.host === site.host)) {
       if (server.events().some((e) => e.kind === "submit" && e.form === "passkey" && !e.ok)) break;
       await sleep(200);
