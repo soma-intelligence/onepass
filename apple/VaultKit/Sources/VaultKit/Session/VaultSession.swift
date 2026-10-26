@@ -48,6 +48,10 @@ public final class VaultSession {
     @ObservationIgnored private var releaseChain: Task<Void, Never>?
     /// Bumped when the biometric enrollment may have changed (`canUseBiometrics` reads the keychain).
     private var biometricsRevision = 0
+    /// Publishes the AutoFill identities to the system store (debounced).
+    @ObservationIgnored private let identitySync: IdentityStoreSync
+    /// Identity store requests (refresh, clear), forwarded in order.
+    @ObservationIgnored private var identityChain: Task<Void, Never>?
 
     static let maxRecents = 20
     nonisolated static let trashRetentionDays: UInt32 = 30
@@ -61,7 +65,9 @@ public final class VaultSession {
         hiddenVaultIDs = environment.settings.hiddenVaultIDs
         autoLock = AutoLock(now: environment.clock.now)
         clipboard = Clipboard(pasteboard: environment.pasteboard, clock: environment.clock)
+        identitySync = IdentityStoreSync(client: environment.identityStore, debounce: environment.identityDebounce)
         evaluateStoredAccount()
+        observeStoreChanges()
     }
 
     private var settings: VaultSettings { environment.settings }
@@ -93,7 +99,9 @@ public final class VaultSession {
     /// (only `refresh` retries after "Données refusées").
     public func reload() async {
         switch state {
-        case .unlocked: await refresh()
+        case .unlocked:
+            await refresh()
+            refreshAutofillIdentities()
         case .noAccount, .locked: evaluateStoredAccount()
         case .unlocking, .failed: break
         }
@@ -516,6 +524,7 @@ public final class VaultSession {
             if let accountID = settings.accountID { biometrics.disable(accountID: accountID) }
         }
         biometricsRevision += 1
+        refreshAutofillIdentities()
     }
 
     /// At least one vault stays visible: hiding the last visible vault is refused (no change).
@@ -525,6 +534,7 @@ public final class VaultSession {
         if hidden { ids.insert(vaultID) } else { ids.remove(vaultID) }
         settings.hiddenVaultIDs = ids
         hiddenVaultIDs = ids
+        refreshAutofillIdentities()
     }
 
     // MARK: - Lock
@@ -727,6 +737,105 @@ public final class VaultSession {
         noteActivity()
     }
 
+    // MARK: - AutoFill
+
+    // Execution ruling: the AutoFill extension reuses `VaultSession` (same unlock, failure counter,
+    // biometric policy and integrity handling) instead of a separate `AutoFillUnlocker`.
+
+    /// The Logins matching `service` (a domain or URL from the system), best match first; `includeAll`
+    /// appends every other Login (explicit choice). Hidden vaults are left out.
+    public func autofillCandidates(service: String, includeAll: Bool) async throws -> [FfiAutofillCandidate] {
+        let excluded = excludedVaultIDs
+        return try await read {
+            try $0.autofillCandidates(service: service, includeAll: includeAll, excludedVaultIds: excluded)
+        }
+    }
+
+    /// Creates a passkey (key pair generated and kept by the core) in an existing Login or a new one,
+    /// then reloads the lists and publishes the new identity. `.other` when the relying party already
+    /// holds one of `excludedCredentialIds` (`PasskeyExcluded`).
+    public func createPasskey(_ request: FfiPasskeyCreation) async throws -> FfiPasskeyRegistration {
+        try await write { try $0.createPasskey(request: request) }
+    }
+
+    /// Signs a passkey assertion with the passkey `credentialID` of a live Login (signature by the core).
+    public func passkeyAssertion(
+        vaultID: String, itemID: String, credentialID: Data, clientDataHash: Data
+    ) async throws -> FfiPasskeyAssertion {
+        try await read {
+            try $0.passkeyAssertion(
+                vaultId: vaultID, itemId: itemID, credentialId: credentialID, clientDataHash: clientDataHash)
+        }
+    }
+
+    /// Publishes the AutoFill identities (debounced). Does nothing unless unlocked with the
+    /// "Suggestions au-dessus du clavier" setting on. A lock keeps what was published: suggestions
+    /// must work while OnePass is locked.
+    public func refreshAutofillIdentities() {
+        guard state == .unlocked, let session, settings.quickTypeSuggestions else { return }
+        let excluded = excludedVaultIDs
+        let settings = settings
+        let sync = identitySync
+        enqueueIdentity {
+            await sync.schedule {
+                // The setting may have been turned off meanwhile; a locked session throws.
+                guard settings.quickTypeSuggestions else { throw CancellationError() }
+                return try await CoreThread.run { try session.autofillIdentities(excludedVaultIds: excluded) }
+            }
+        }
+    }
+
+    /// "Suggestions au-dessus du clavier": off empties the system store, on publishes again (if unlocked).
+    public func setQuickTypeSuggestions(_ on: Bool) {
+        settings.quickTypeSuggestions = on
+        if on {
+            refreshAutofillIdentities()
+        } else {
+            clearAutofillIdentities()
+        }
+    }
+
+    /// Empties the system identity store (setting turned off, account reset or erased).
+    public func clearAutofillIdentities() {
+        let sync = identitySync
+        enqueueIdentity { await sync.clear() }
+    }
+
+    /// Tests: waits until every identity store request sent so far has run.
+    func waitForAutofillIdentities() async {
+        await identityChain?.value
+        await identitySync.waitForIdle()
+    }
+
+    private var excludedVaultIDs: [String] { hiddenVaultIDs.sorted() }
+
+    private func enqueueIdentity(_ op: @escaping @Sendable () async -> Void) {
+        let previous = identityChain
+        identityChain = Task {
+            await previous?.value
+            await op()
+        }
+    }
+
+    /// Another process (the AutoFill extension) wrote to the store: unlocked, reload the lists and let
+    /// the sync layer send the change. This session never posts, so this cannot loop.
+    private func observeStoreChanges() {
+        let changes = environment.storeChanges.changes()
+        Task { [weak self] in
+            for await _ in changes {
+                guard let self else { return }
+                await self.storeChanged()
+            }
+        }
+    }
+
+    private func storeChanged() async {
+        guard state == .unlocked else { return }
+        await reload()
+        guard state == .unlocked else { return }
+        notifySync { await $0.localChangesWritten() }
+    }
+
     // MARK: - Plumbing
 
     /// Lists loaded after an unlock or a write.
@@ -803,6 +912,7 @@ public final class VaultSession {
         startAutoLockTimer()
         notifySync { await $0.sessionUnlocked(session) }
         if snapshot.purged > 0 { notifySync { await $0.localChangesWritten() } }
+        refreshAutofillIdentities()
     }
 
     private func apply(_ snapshot: Snapshot) {
@@ -908,6 +1018,7 @@ public final class VaultSession {
         guard gen == generation else { throw fail(.passwordRequired) }
         apply(result.snapshot)
         notifySync { await $0.localChangesWritten() }
+        refreshAutofillIdentities()
         return result.value
     }
 

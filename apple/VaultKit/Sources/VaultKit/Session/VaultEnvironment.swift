@@ -38,12 +38,19 @@ public struct VaultEnvironment: Sendable {
     public var accountKdf: FfiKdfParams?
     /// Confirms the user before a `reprompt` item shows its secrets.
     public var presence: any PresenceChecker
+    /// The system credential identity store (QuickType suggestions). `NoIdentityStore` by default.
+    public var identityStore: any IdentityStoreClient
+    /// Debounce of the identity store refresh (tests shorten it).
+    public var identityDebounce: Duration = .seconds(1)
+    /// Darwin notification of a write by another process (the AutoFill extension).
+    public var storeChanges = StoreChangeNotifier()
 
     public init(
         databaseURL: URL, keychain: any KeychainStore, biometrics: BiometricUnlock,
         settings: VaultSettings, sync: any SyncTrigger, clock: any BootClock,
         pasteboard: any PasteboardWriter, accountKdf: FfiKdfParams? = nil,
-        presence: any PresenceChecker = SystemPresenceChecker()
+        presence: any PresenceChecker = SystemPresenceChecker(),
+        identityStore: any IdentityStoreClient = NoIdentityStore()
     ) {
         self.databaseURL = databaseURL
         self.keychain = keychain
@@ -54,6 +61,7 @@ public struct VaultEnvironment: Sendable {
         self.pasteboard = pasteboard
         self.accountKdf = accountKdf
         self.presence = presence
+        self.identityStore = identityStore
     }
 
     /// Suffix of the shared keychain access group `$(AppIdentifierPrefix)me.somalabs.onepass.shared`.
@@ -61,7 +69,7 @@ public struct VaultEnvironment: Sendable {
 
     /// The app's environment: store and settings in the shared container (App Group, or the milestone 2
     /// locations without one), system keychain in the shared access group, Secure Enclave biometrics,
-    /// system pasteboard, no sync (Task 8 plugs it).
+    /// system pasteboard, system credential identity store, no sync (Task 8 plugs it).
     ///
     /// UI tests and screenshots (Debug builds of the app) pass their own store, settings and keychain
     /// service so they never touch the user's: `databaseURL`, `settings`, `keychainService` (each one
@@ -82,7 +90,8 @@ public struct VaultEnvironment: Sendable {
             settings: settings,
             sync: sync,
             clock: clock,
-            pasteboard: SystemPasteboard())
+            pasteboard: SystemPasteboard(),
+            identityStore: SystemIdentityStore())
     }
 
     /// The store path of `SharedContainer.resolve()`. The folder is created on first use; on iOS it is
