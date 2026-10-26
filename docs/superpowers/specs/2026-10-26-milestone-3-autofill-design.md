@@ -13,7 +13,7 @@ Sur iPhone et iPad (iOS et iPadOS 26.0 minimum, certaines fonctions en 26.2), et
 5. **Enregistrer un mot de passe tapé** (iOS et iPadOS 26.2+). Quand l'utilisateur tape un nouveau compte dans une app ou Safari, iOS demande à OnePass de l'enregistrer : feuille OnePass avec titre, vault, et "Mettre à jour" si le compte existe déjà avec un autre mot de passe.
 6. **Mot de passe fort proposé** (iOS et iPadOS 26.2+) : dans un formulaire d'inscription, la suggestion de mot de passe vient du générateur de OnePass et respecte les règles du site.
 7. **Insertion de texte** (iOS et iPadOS 18+ : menu "Remplissage automatique" du champ) : n'importe quel champ d'un item (numéro de carte, IBAN, adresse, numéro de membre) inséré dans n'importe quel champ.
-8. **Fin de la feuille "Enregistrer le mot de passe ?"** après l'enregistrement d'un Login dans OnePass (limite E20 du jalon 2) : quand OnePass est le fournisseur, la demande d'enregistrement arrive à OnePass, qui reconnaît qu'elle vient de lui-même et la referme sans rien demander.
+8. **Fin de la feuille "Enregistrer le mot de passe ?"** après l'enregistrement d'un Login dans OnePass (limite E20 du jalon 2) : quand OnePass est le fournisseur, la demande d'enregistrement arrive à OnePass, qui reconnaît qu'elle vient de lui-même (service de type app égal à OnePass) et la referme sans rien demander ; une valeur identique à un Login déjà stocké se referme juste après le déverrouillage, sans feuille.
 
 Ce que l'icône dans le champ devient (consigne "expérience icône dans le champ") : iOS et macOS ne laissent aucun fournisseur dessiner dans les champs des autres apps. L'expérience système est la barre QuickType (suggestion du compte avec le nom de OnePass), la touche clé et la feuille passkey. L'icône dans le champ des pages web arrive avec l'extension Safari du jalon 4 (ruling A12).
 
@@ -95,8 +95,8 @@ Flux (le modèle `AutoFillModel` les porte, l'interface ne fait qu'afficher) :
 | `prepareInterfaceToProvideCredential(for:)` | déverrouillage (Face ID d'emblée si possible), puis remplit directement l'enregistrement demandé (`recordIdentifier`) ; enregistrement disparu : retour à la liste |
 | `prepareOneTimeCodeCredentialList(for:)` | déverrouillage, Logins avec TOTP du site, code courant |
 | `prepareInterfaceForPasskeyRegistration(_:)` | déverrouillage, feuille "Enregistrer une passkey pour <rp>" : "Ajouter à <Login>" (Logins du domaine dont l'identifiant est égal ou vide), sinon "Nouvel élément" dans le vault choisi ; ES256 absent des algorithmes acceptés : échec |
-| `performPasskeyRegistrationWithoutUserInteractionIfPossible` | refusé (pas de création silencieuse, ruling A9) |
-| `prepareInterfaceForSavePasswordRequest` (26.2+) | demande venant de OnePass lui-même (service de type app dont l'identifiant est celui de l'app, ou identique à un Login existant : même hôte, même identifiant, même mot de passe) : fin immédiate sans rien écrire ; sinon déverrouillage et feuille Enregistrer ou Mettre à jour |
+| `performPasskeyRegistrationWithoutUserInteractionIfPossible` | `failed` (pas de création silencieuse, rulings A9 et X21) |
+| `prepareInterfaceForSavePasswordRequest` (26.2+) | demande venant de OnePass lui-même (service de type app dont l'identifiant est celui de l'app) ou mot de passe généré rempli : fin immédiate sans interface ni écriture ; valeur identique à un Login existant (même hôte, même identifiant à la casse près, même mot de passe) : fin juste après le déverrouillage, sans feuille ni écriture ; sinon déverrouillage et feuille Enregistrer ou Mettre à jour |
 | `performSavePasswordRequestWithoutUserInteractionIfPossible` (26.2+) | demande de OnePass lui-même : fin immédiate ; mot de passe généré rempli (`generatedPasswordFilled`) : fin sans écrire (l'événement suivant porte la même valeur) ; sinon `userInteractionRequired` |
 | `performGeneratePasswordsRequestWithoutUserInteraction` (26.2+) | `password_from_rules` (règles du champ, du champ de confirmation, des correctifs du système), un seul mot de passe `strong` ; aucune donnée du coffre lue |
 | `prepareInterfaceForUserChoosingTextToInsert` (iOS 18+) | déverrouillage, liste de tous les items (sauf Crypto Wallet), puis champs de l'item ; le champ choisi est inséré |
@@ -123,7 +123,7 @@ Règles communes :
 
 Cause (jalon 2, E20) : l'heuristique d'iOS voit un champ sécurisé disparaître après l'enregistrement d'un Login et propose d'enregistrer la valeur dans le fournisseur actif. Correction :
 
-- OnePass actif comme fournisseur (iOS 26.2+) : la demande arrive à l'extension avec un service de type app égal à l'identifiant de OnePass, ou une valeur identique à un Login déjà stocké ; l'extension la referme sans interface et sans écriture.
+- OnePass actif comme fournisseur (iOS 26.2+) : la demande arrive à l'extension avec un service de type app égal à l'identifiant de OnePass ; l'extension la referme sans interface et sans écriture. Une valeur identique à un Login déjà stocké (autre service) se referme juste après le déverrouillage, sans feuille ni écriture.
 - OnePass n'est pas le fournisseur, ou iOS 26.0 et 26.1 : la feuille peut encore apparaître (vers le fournisseur actif) ; la carte d'activation de la section 6 pousse l'utilisateur à faire de OnePass le fournisseur. Le test UI garde sa fermeture défensive pour ce cas.
 
 ## 8. Sécurité
@@ -209,16 +209,19 @@ Décisions prises pendant l'implémentation, au même format.
 - Ruling X18: l'état du fournisseur affiché "Désactivé" dans le Simulateur est une limite du Simulateur (service d'état de `ASCredentialIdentityStore` injoignable, "No such process") - l'interrupteur des réglages du système prouve l'activation - l'affichage "Activé" n'est vérifié que sur un appareil.
 - Ruling X19: sur iOS 27, les lignes de la page Réglages n'ouvraient pas leur page (geste tactile d'activité sur `SettingsView`) ; remplacé par `onChange(of: path)` - la navigation fonctionne - un toucher dans une page de réglages ne repousse plus le verrouillage automatique.
 - Ruling X20: la clé de dédoublonnage des identités du système contient l'identifiant de credential (type, service, nom d'utilisateur, identifiant d'enregistrement, identifiant de credential) - sans lui, deux passkeys d'un même Login pour le même site et le même nom seraient fusionnées et l'une disparaîtrait de la feuille passkey - aucun.
+- Ruling X21: l'enregistrement conditionnel d'une passkey sans interface (`performWithoutUserInteractionIfPossible(passkeyRegistration:)`) répond `.failed` au lieu de `userInteractionRequired` - ruling A9 : jamais de passkey créée automatiquement - les mises à niveau automatiques des sites n'obtiennent jamais de passkey OnePass.
+- Ruling X22: un Login vivant et non caché qui porte une passkey dont le `rp_id` est l'hôte demandé (même normalisation, casse ignorée) est un candidat `ExactHost` même sans URL correspondante - le système a déjà vérifié le `rp_id` - aucun.
+- Ruling X23: un double échec de la migration (le retour en arrière échoue aussi) lève `SharedContainerMigrationError.rollbackFailed` et l'app n'ouvre aucune base pour ce lancement (écran "Données refusées", "Réessayer" n'ouvre rien) - ni l'ancienne base sans son WAL ni la base partagée absente (accueil de création de compte) ne sont sûres - il faut relancer OnePass, la migration suivante ramène les fichiers annexes égarés et reprend.
 
-Points laissés ouverts (mineurs différés, à reprendre après la revue finale) :
+Points laissés ouverts (mineurs différés) :
 
 - `cbor_head` tronque en silence les longueurs de 65536 et plus : plafonner l'identifiant de credential à 1023 octets (maximum WebAuthn) ou refuser.
 - Pas de test de signature négatif ni de contrôle du hash du `rp_id` dans le test d'assertion ; l'effacement du PKCS#8 en mémoire n'est pas confirmé dans la documentation.
-- `rebase.rs` : la persistance finale avec `force` est redondante et peut faire reculer une écriture concurrente de l'extension (utiliser une persistance non forcée) ; la documentation sur l'épingle est périmée.
 - Une session verrouillée avec un identifiant mal formé rend `InvalidInput` au lieu de `Locked`.
 - La cible `uitest-autofill` du `Makefile` code en dur le chemin `Debug-iphonesimulator`.
-- Migration : doit tourner avant toute ouverture par `VaultSession` ou l'extension (câblage de la tâche 10) ; `resolve()` sonde à chaque appel (à mettre en cache) ; un sidecar de destination périmé n'est pas testé ; `isShared` vrai avec une suite nulle est permis ; l'échec du retour en arrière est silencieux (`try?`) et le repli pourrait ouvrir l'ancienne base sans son WAL.
+- Migration : `resolve()` sonde à chaque appel (mis en cache par lancement dans `AppModel`, pas dans l'extension) ; un sidecar de destination périmé n'est pas testé ; `isShared` vrai avec une suite nulle est permis.
 - L'extension recharge sa session après sa propre notification (sans conséquence).
 - Un `viewDidDisappear` tardif d'un contrôleur réutilisé peut abandonner la requête suivante ; `abandon()` ne signale pas une écriture encore en cours.
 - La carte d'activation est absente d'un Accueil vide ; double republication lors d'un rafraîchissement concurrent de l'état (anti-rebond, sans conséquence).
-- `VaultSessionTests` ligne 90 : `cleanUp` manquant.
+- Risque `0xdead10cc` (base WAL dans le conteneur partagé, connexions longues de l'app) : à vérifier sur appareil, mitigation prévue (tâche d'arrière-plan autour des écritures et de la sync, ou point de contrôle et fermeture au passage en arrière-plan), non implémentée.
+- Pas de test d'entrelacement d'une écriture de l'extension au milieu d'un `rebase()` (pas de point d'accroche entre `rebase_vault` et la fin) : la persistance finale non forcée est couverte par les tests de rebase existants.
