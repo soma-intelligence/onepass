@@ -36,8 +36,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::account::{Account, NewAccount, PinnedAccount};
-use crate::crypto::{KdfParams, SecretKey};
+use crate::account::{Account, Auk, NewAccount, PinnedAccount};
+use zeroize::Zeroizing;
+
+use crate::crypto::{Aad, BlobKind, KdfParams, SecretKey, seal};
 use crate::manifest::{
     Manifest, ManifestEntry, SeenManifest, SignedManifest, check_records, manifest_hash,
     record_hash, sign_manifest, verify_manifest,
@@ -55,16 +57,33 @@ pub struct DeviceState {
     pub last_seen: BTreeMap<Id, SeenManifest>,
 }
 
+impl DeviceState {
+    /// Postcard encoding, for the device to persist between sessions.
+    pub fn encode(&self) -> Vec<u8> {
+        // Plain data (options, maps of ids and hashes): encoding cannot fail.
+        postcard::to_allocvec(self).expect("device state encodes")
+    }
+
+    /// Decode what `encode` wrote: the whole buffer, trailing bytes refused
+    /// (`InvalidFormat("device state")`).
+    pub fn decode(bytes: &[u8]) -> Result<DeviceState> {
+        match postcard::take_from_bytes::<DeviceState>(bytes) {
+            Ok((state, [])) => Ok(state),
+            _ => Err(Error::InvalidFormat("device state")),
+        }
+    }
+}
+
 /// An unlocked account over a record store it does not trust.
 pub struct Repository<S: RecordStore> {
-    store: S,
-    account: Account,
-    device: DeviceState,
+    pub(crate) store: S,
+    pub(crate) account: Account,
+    pub(crate) device: DeviceState,
 }
 
 /// The verified content of a vault.
-struct Loaded {
-    manifest: Manifest,
+pub(crate) struct Loaded {
+    pub(crate) manifest: Manifest,
     /// Records matching the manifest, sorted by item id, with their blob ids.
     records: Vec<(Id, ItemRecord)>,
     /// Records ignored on load, interrupted writes and stale leftovers:
@@ -73,7 +92,7 @@ struct Loaded {
 }
 
 impl Loaded {
-    fn listed(&self, item_id: Id) -> Option<&(Id, ItemRecord)> {
+    pub(crate) fn listed(&self, item_id: Id) -> Option<&(Id, ItemRecord)> {
         self.records.iter().find(|(_, r)| r.item_id == item_id)
     }
 
@@ -113,7 +132,7 @@ fn pin(account: &Account) -> PinnedAccount {
     }
 }
 
-fn seen(m: &Manifest) -> SeenManifest {
+pub(crate) fn seen(m: &Manifest) -> SeenManifest {
     SeenManifest {
         seq: m.seq,
         hash: manifest_hash(m),
@@ -138,6 +157,21 @@ pub fn split_item_record(data: &[u8]) -> Result<(Id, &[u8])> {
     let mut id = [0u8; 16];
     id.copy_from_slice(prefix);
     Ok((Id(id), body))
+}
+
+/// The single account's params and keyset records (`NotFound` if there is
+/// none, `InvalidFormat("account params")` if there are several).
+fn account_records<S: RecordStore>(store: &S) -> Result<(Record, Record)> {
+    let mut found = store.list(RecordKind::AccountParams)?;
+    let params = match found.len() {
+        0 => return Err(Error::NotFound),
+        1 => found.remove(0),
+        _ => return Err(Error::InvalidFormat("account params")),
+    };
+    let keyset = store
+        .get(RecordKind::Keyset, params.id)?
+        .ok_or(Error::NotFound)?;
+    Ok((params, keyset))
 }
 
 fn personal() -> VaultMeta {
@@ -201,24 +235,43 @@ impl<S: RecordStore> Repository<S> {
         store: S,
         password: &str,
         secret_key: &SecretKey,
-        mut device: DeviceState,
+        device: DeviceState,
     ) -> Result<Repository<S>> {
-        let mut found = store.list(RecordKind::AccountParams)?;
-        let params = match found.len() {
-            0 => return Err(Error::NotFound),
-            1 => found.remove(0),
-            _ => return Err(Error::InvalidFormat("account params")),
-        };
-        let keyset = store
-            .get(RecordKind::Keyset, params.id)?
-            .ok_or(Error::NotFound)?;
-        let account = Account::unlock(
+        Ok(Self::unlock_exporting_auk(store, password, secret_key, device)?.0)
+    }
+
+    /// Like `unlock`, and also hand back the Account Unlock Key.
+    pub fn unlock_exporting_auk(
+        store: S,
+        password: &str,
+        secret_key: &SecretKey,
+        device: DeviceState,
+    ) -> Result<(Repository<S>, Auk)> {
+        let (params, keyset) = account_records(&store)?;
+        let (account, auk) = Account::unlock_exporting_auk(
             password,
             secret_key,
             &params.data,
             &keyset.data,
             device.pinned.as_ref(),
         )?;
+        Ok((Self::finish_unlock(store, account, &params, device)?, auk))
+    }
+
+    /// Like `unlock`, from an Account Unlock Key kept from an earlier one.
+    pub fn unlock_with_auk(store: S, auk: &Auk, device: DeviceState) -> Result<Repository<S>> {
+        let (params, keyset) = account_records(&store)?;
+        let account =
+            Account::unlock_with_auk(auk, &params.data, &keyset.data, device.pinned.as_ref())?;
+        Self::finish_unlock(store, account, &params, device)
+    }
+
+    fn finish_unlock(
+        store: S,
+        account: Account,
+        params: &Record,
+        mut device: DeviceState,
+    ) -> Result<Repository<S>> {
         if account.params.account_id != params.id {
             return Err(IntegrityError::WrongContext.into());
         }
@@ -231,6 +284,15 @@ impl<S: RecordStore> Repository<S> {
             account,
             device,
         })
+    }
+
+    /// The underlying record store, for the sync layer.
+    pub fn store(&self) -> &S {
+        &self.store
+    }
+
+    pub fn store_mut(&mut self) -> &mut S {
+        &mut self.store
     }
 
     /// The state to persist on the device after each session.
@@ -300,6 +362,49 @@ impl<S: RecordStore> Repository<S> {
         }
         self.device.last_seen.insert(vault.id, seen);
         Ok(vault)
+    }
+
+    /// Replace the display settings of a vault (name, icon, color, flags).
+    /// `vault` is the state the caller read: if the stored meta is no longer
+    /// the same, another writer got there first and the result is
+    /// `Error::Conflict`. The write itself is conditional on the version of
+    /// the stored `VaultMeta` record, so two racing updates cannot both win.
+    pub fn update_vault_meta(&mut self, vault: &Vault, meta: VaultMeta) -> Result<Vault> {
+        let key = self
+            .store
+            .get(RecordKind::VaultKey, vault.id)?
+            .ok_or(Error::NotFound)?;
+        let current = self
+            .store
+            .get(RecordKind::VaultMeta, vault.id)?
+            .ok_or(Error::InvalidFormat("vault meta"))?;
+        let stored = Vault::open(&self.account, vault.id, &key.data, &current.data)?;
+        if stored.meta != vault.meta {
+            return Err(Error::Conflict);
+        }
+        let plain = Zeroizing::new(
+            postcard::to_allocvec(&meta).map_err(|_| Error::InvalidFormat("vault meta"))?,
+        );
+        // Same context as `Vault::create`: blob id and vault id are the
+        // vault id, schema 1. Reopening below proves they agree.
+        let aad = Aad {
+            blob_id: vault.id,
+            vault_id: Some(vault.id),
+            schema: 1,
+        };
+        let blob = seal(vault.key(), BlobKind::VaultMeta, &aad, &plain)?;
+        let updated = Vault::open(&self.account, vault.id, &key.data, &blob)?;
+        let version = current.version.checked_add(1).ok_or(Error::Conflict)?;
+        self.store.put_if_version(
+            Record {
+                id: vault.id,
+                kind: RecordKind::VaultMeta,
+                version,
+                data: blob,
+            },
+            Some(current.version),
+        )?;
+        Ok(updated)
     }
 
     /// The items of a vault, sorted by id, after verifying the manifest
@@ -416,7 +521,7 @@ impl<S: RecordStore> Repository<S> {
     /// the 16 byte vault prefix is `InvalidFormat("item record")`; a record
     /// with this vault's prefix that does not decode is
     /// `ManifestUnexpectedItem`. Then `verify_manifest` and `check_records`.
-    fn load(&self, vault: &Vault) -> Result<Loaded> {
+    pub(crate) fn load(&self, vault: &Vault) -> Result<Loaded> {
         let manifest = self.read_manifest(vault, self.device.last_seen.get(&vault.id))?;
 
         let mut records = Vec::new();
@@ -1364,5 +1469,70 @@ mod tests {
         assert_eq!(repo.items(&b).unwrap(), vec![expected]);
         assert_eq!(repo.store.list(RecordKind::Item).unwrap().len(), 2);
         assert_eq!(repo.move_item(item.id, &a, &b), Err(Error::NotFound));
+    }
+
+    #[test]
+    fn update_vault_meta_roundtrips() {
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let updated = repo.update_vault_meta(&v, meta("B")).unwrap();
+        assert_eq!(updated.id, v.id);
+        assert_eq!(updated.meta.name, "B");
+        let listed = repo.vaults().unwrap();
+        let names: Vec<_> = listed
+            .iter()
+            .filter(|x| x.id == v.id)
+            .map(|x| x.meta.name.clone())
+            .collect();
+        assert_eq!(names, vec!["B".to_string()]);
+        // The vault still opens its items.
+        assert_eq!(repo.items(&updated).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn update_vault_meta_conflicts_on_stale_version() {
+        let (mut repo, v) = fresh(MemoryStore::new());
+        repo.update_vault_meta(&v, meta("B")).unwrap();
+        assert!(matches!(
+            repo.update_vault_meta(&v, meta("C")),
+            Err(Error::Conflict)
+        ));
+        let listed = repo.vaults().unwrap();
+        assert!(listed.iter().any(|x| x.meta.name == "B"));
+    }
+
+    #[test]
+    fn unlock_exporting_auk_then_unlock_with_auk() {
+        let (repo, sk) = Repository::create_account(MemoryStore::new(), "pw", kdf()).unwrap();
+        let device = repo.device_state().clone();
+        let (repo, auk) =
+            Repository::unlock_exporting_auk(repo.store, "pw", &sk, device.clone()).unwrap();
+        let again = Repository::unlock_with_auk(repo.store, &auk, device).unwrap();
+        assert_eq!(again.vaults().unwrap().len(), 1);
+        assert!(again.store().list(RecordKind::Keyset).unwrap().len() == 1);
+    }
+
+    #[test]
+    fn device_state_roundtrips() {
+        let (mut repo, v) = fresh(MemoryStore::new());
+        repo.items(&v).unwrap();
+        let device = repo.device_state().clone();
+        assert!(device.pinned.is_some() && !device.last_seen.is_empty());
+        assert_eq!(DeviceState::decode(&device.encode()).unwrap(), device);
+        let empty = DeviceState::default();
+        assert_eq!(DeviceState::decode(&empty.encode()).unwrap(), empty);
+    }
+
+    #[test]
+    fn device_state_rejects_trailing_bytes() {
+        let mut bytes = DeviceState::default().encode();
+        bytes.push(0);
+        assert_eq!(
+            DeviceState::decode(&bytes),
+            Err(Error::InvalidFormat("device state"))
+        );
+        assert_eq!(
+            DeviceState::decode(&[0xFF, 0xFF]),
+            Err(Error::InvalidFormat("device state"))
+        );
     }
 }

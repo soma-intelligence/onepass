@@ -189,54 +189,122 @@ impl Account {
         keyset_record: &[u8],
         pinned: Option<&PinnedAccount>,
     ) -> Result<Account> {
-        let params = AccountParams::decode(params_record)?;
-        let unsigned = Error::Integrity(IntegrityError::ParamsUnsigned);
-        let msg = signed_message(
-            &params.account_id,
-            &params.kdf,
-            &params.signing_pub,
-            &params.kem_pub,
-        )?;
-        params
-            .identity_pub
-            .verify(PARAMS_DOMAIN, &msg, &params.identity_sig)
-            .map_err(|_| unsigned.clone())?;
-        if let Some(pin) = pinned {
-            if pin.account_id != params.account_id || pin.identity_pub != params.identity_pub {
-                return Err(unsigned);
-            }
-            if !params.kdf.is_at_least(&pin.kdf_floor) {
-                return Err(IntegrityError::ParamsDowngrade.into());
-            }
-        }
-        if !above_floor(&params.kdf) {
-            return Err(IntegrityError::ParamsDowngrade.into());
-        }
-        if !within_ceiling(&params.kdf) {
-            return Err(Error::InvalidFormat("kdf params"));
-        }
-
+        let params = verify_params(params_record, pinned)?;
         let auk = derive_auk(password, secret_key, &params.kdf)?;
-        let plaintext = open_detailed(
-            &auk,
-            BlobKind::Keyset,
-            &keyset_aad(params.account_id),
+        open_keyset(&auk, params, keyset_record)
+    }
+
+    /// Like `unlock`, and also hand back the derived Account Unlock Key, so
+    /// that a device can keep it (in the Keychain, behind biometrics) and
+    /// reopen the account later without the password and Secret Key.
+    pub fn unlock_exporting_auk(
+        password: &str,
+        secret_key: &SecretKey,
+        params_record: &[u8],
+        keyset_record: &[u8],
+        pinned: Option<&PinnedAccount>,
+    ) -> Result<(Account, Auk)> {
+        let params = verify_params(params_record, pinned)?;
+        let key = derive_auk(password, secret_key, &params.kdf)?;
+        let auk = Auk::from_bytes(*key.expose());
+        let account = open_keyset(&key, params, keyset_record)?;
+        Ok((account, auk))
+    }
+
+    /// Unlock with an Account Unlock Key kept from an earlier unlock. The
+    /// same checks as `unlock` apply, in the same order (steps 1 to 5), only
+    /// the derivation is skipped. A key that does not open the keyset is
+    /// `Error::WrongPassword`.
+    pub fn unlock_with_auk(
+        auk: &Auk,
+        params_record: &[u8],
+        keyset_record: &[u8],
+        pinned: Option<&PinnedAccount>,
+    ) -> Result<Account> {
+        let params = verify_params(params_record, pinned)?;
+        open_keyset(
+            &SymmetricKey::from_bytes(*auk.as_bytes()),
+            params,
             keyset_record,
         )
-        .map_err(|(stage, e)| match stage {
-            OpenStage::Commitment => Error::WrongPassword,
-            _ => e,
-        })?;
-        let keyset = decode_keyset(&plaintext)?;
-
-        if keyset.kem.public()? != params.kem_pub
-            || keyset.signing.verifying_key()? != params.signing_pub
-            || keyset.identity.verifying_key() != params.identity_pub
-        {
-            return Err(IntegrityError::Signature.into());
-        }
-        Ok(Account { params, keyset })
     }
+}
+
+/// The Account Unlock Key: what `derive_auk` yields from the password and
+/// the Secret Key. Whoever holds it can open the account, so it is wiped on
+/// drop and never printed.
+pub struct Auk(Zeroizing<[u8; 32]>);
+
+impl Auk {
+    pub fn from_bytes(b: [u8; 32]) -> Auk {
+        Auk(Zeroizing::new(b))
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for Auk {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Auk(**)")
+    }
+}
+
+/// Steps 1 to 3 of `Account::unlock`, before any derivation: decode and
+/// verify the signed parameters, check the pin, the floors and the ceiling.
+fn verify_params(params_record: &[u8], pinned: Option<&PinnedAccount>) -> Result<AccountParams> {
+    let params = AccountParams::decode(params_record)?;
+    let unsigned = Error::Integrity(IntegrityError::ParamsUnsigned);
+    let msg = signed_message(
+        &params.account_id,
+        &params.kdf,
+        &params.signing_pub,
+        &params.kem_pub,
+    )?;
+    params
+        .identity_pub
+        .verify(PARAMS_DOMAIN, &msg, &params.identity_sig)
+        .map_err(|_| unsigned.clone())?;
+    if let Some(pin) = pinned {
+        if pin.account_id != params.account_id || pin.identity_pub != params.identity_pub {
+            return Err(unsigned);
+        }
+        if !params.kdf.is_at_least(&pin.kdf_floor) {
+            return Err(IntegrityError::ParamsDowngrade.into());
+        }
+    }
+    if !above_floor(&params.kdf) {
+        return Err(IntegrityError::ParamsDowngrade.into());
+    }
+    if !within_ceiling(&params.kdf) {
+        return Err(Error::InvalidFormat("kdf params"));
+    }
+    Ok(params)
+}
+
+/// Steps 4 and 5 of `Account::unlock`: open the keyset blob under `auk` and
+/// check it against the signed public keys.
+fn open_keyset(auk: &SymmetricKey, params: AccountParams, keyset_record: &[u8]) -> Result<Account> {
+    let plaintext = open_detailed(
+        auk,
+        BlobKind::Keyset,
+        &keyset_aad(params.account_id),
+        keyset_record,
+    )
+    .map_err(|(stage, e)| match stage {
+        OpenStage::Commitment => Error::WrongPassword,
+        _ => e,
+    })?;
+    let keyset = decode_keyset(&plaintext)?;
+
+    if keyset.kem.public()? != params.kem_pub
+        || keyset.signing.verifying_key()? != params.signing_pub
+        || keyset.identity.verifying_key() != params.identity_pub
+    {
+        return Err(IntegrityError::Signature.into());
+    }
+    Ok(Account { params, keyset })
 }
 
 fn within_ceiling(kdf: &KdfParams) -> bool {
@@ -667,5 +735,80 @@ mod tests {
         let n = shared();
         assert_eq!(format!("{:?}", n.account.keyset()), "Keyset(**)");
         assert!(!format!("{n:?}").contains(&n.secret_key.to_display()));
+    }
+
+    #[test]
+    fn unlock_with_auk_matches_password_unlock() {
+        let n = shared();
+        let (a, auk) = Account::unlock_exporting_auk(
+            "pw",
+            &n.secret_key,
+            &n.params_record,
+            &n.keyset_record,
+            None,
+        )
+        .unwrap();
+        let b = Account::unlock_with_auk(&auk, &n.params_record, &n.keyset_record, None).unwrap();
+        assert_eq!(a.params, b.params);
+        assert_eq!(b.params, n.account.params);
+        assert_eq!(format!("{auk:?}"), "Auk(**)");
+        let again = Auk::from_bytes(*auk.as_bytes());
+        assert_eq!(again.as_bytes(), auk.as_bytes());
+    }
+
+    #[test]
+    fn unlock_with_auk_rejects_wrong_auk() {
+        let n = shared();
+        let auk = Auk::from_bytes(random_array().unwrap());
+        assert_eq!(
+            Account::unlock_with_auk(&auk, &n.params_record, &n.keyset_record, None).unwrap_err(),
+            Error::WrongPassword
+        );
+    }
+
+    #[test]
+    fn unlock_with_auk_checks_pin() {
+        let n = shared();
+        let (_, auk) = Account::unlock_exporting_auk(
+            "pw",
+            &n.secret_key,
+            &n.params_record,
+            &n.keyset_record,
+            None,
+        )
+        .unwrap();
+        let other = PinnedAccount {
+            account_id: Id::new(),
+            ..pin(n)
+        };
+        assert_eq!(
+            Account::unlock_with_auk(&auk, &n.params_record, &n.keyset_record, Some(&other))
+                .unwrap_err(),
+            Error::Integrity(IntegrityError::ParamsUnsigned)
+        );
+    }
+
+    #[test]
+    fn unlock_with_auk_enforces_floor() {
+        let n = shared();
+        let p = &n.account.params;
+        let weak = KdfParams {
+            m_kib: DEV_KDF_FLOOR.0 / 2,
+            ..p.kdf.clone()
+        };
+        let params = sign_params(
+            p.account_id,
+            weak,
+            p.signing_pub.clone(),
+            p.kem_pub.clone(),
+            &n.account.keyset().identity,
+        )
+        .unwrap();
+        let record = postcard::to_allocvec(&params).unwrap();
+        let auk = Auk::from_bytes([1u8; 32]);
+        assert_eq!(
+            Account::unlock_with_auk(&auk, &record, &n.keyset_record, None).unwrap_err(),
+            Error::Integrity(IntegrityError::ParamsDowngrade)
+        );
     }
 }

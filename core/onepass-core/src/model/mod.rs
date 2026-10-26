@@ -3,6 +3,7 @@
 pub mod checks;
 pub mod field;
 pub mod item;
+pub mod menus;
 pub mod templates;
 pub mod validate;
 
@@ -11,6 +12,7 @@ pub use field::{
     PasswordHistoryEntry, Section, SshKeyValue,
 };
 pub use item::{Item, ItemUrl, Location, LoginMethod, MatchRule, Provider};
+pub use menus::menu_options;
 pub use templates::{ItemType, new_item, template};
 pub use validate::validate;
 

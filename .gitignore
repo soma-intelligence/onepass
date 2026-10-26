@@ -4,3 +4,9 @@ core/fuzz/target
 core/fuzz/corpus
 core/fuzz/artifacts
 .DS_Store
+
+# Apple
+apple/build/
+apple/VaultKit/Sources/OnePassCore/
+apple/**/.build/
+apple/DerivedData/
