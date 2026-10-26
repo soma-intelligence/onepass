@@ -16,6 +16,7 @@ pub(crate) mod csv_logins;
 pub(crate) mod dashlane;
 pub(crate) mod lastpass;
 pub(crate) mod limits;
+pub(crate) mod onepux;
 
 use serde::Serialize;
 

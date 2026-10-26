@@ -1,0 +1,385 @@
+{
+  "accounts": [
+    {
+      "attrs": { "accountName": "Invented", "name": "Alice Example", "email": "alice@example.com", "uuid": "ACC1", "domain": "https://example.com/" },
+      "vaults": [
+        {
+          "attrs": { "uuid": "v-personal", "name": "Personal", "type": "P" },
+          "items": [
+            {
+              "uuid": "i-login", "favIndex": 1, "createdAt": 1650000000, "updatedAt": 1710000000,
+              "state": "active", "categoryUuid": "001",
+              "details": {
+                "loginFields": [
+                  { "value": "alice@example.com", "id": "", "name": "username", "fieldType": "T", "designation": "username" },
+                  { "value": "Px-Invented-1", "id": "", "name": "password", "fieldType": "P", "designation": "password" },
+                  { "value": "Remember-Invented", "id": "", "name": "remember token", "fieldType": "P" }
+                ],
+                "notesPlain": "Main mailbox",
+                "sections": [
+                  {
+                    "title": "Security", "name": "sec1",
+                    "fields": [
+                      { "title": "one-time password", "id": "TOTP_abc", "value": { "totp": "otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example" } },
+                      { "title": "Mystery", "id": "m1", "value": { "futureKind": { "a": 1, "b": "x" } } },
+                      { "title": "Odd number", "id": "m2", "value": { "futureScalar": 42 } },
+                      { "title": "Linked", "id": "r1", "value": { "reference": "i-card" } }
+                    ]
+                  }
+                ],
+                "passwordHistory": [ { "value": "Old-Invented-0", "time": 1600000000 } ]
+              },
+              "overview": {
+                "subtitle": "alice@example.com", "title": "Example Mail",
+                "url": "https://mail.example.com",
+                "urls": [
+                  { "label": "", "url": "https://mail.example.com" },
+                  { "label": "web", "url": "https://webmail.example.com" }
+                ],
+                "tags": [ "mail", "work" ]
+              }
+            },
+            {
+              "uuid": "i-card", "favIndex": 0, "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "002",
+              "details": { "loginFields": [], "notesPlain": "", "sections": [ { "title": "", "fields": [
+                { "title": "cardholder name", "id": "cardholder", "value": { "string": "Alice Example" } },
+                { "title": "type", "id": "type", "value": { "creditCardType": "visa" } },
+                { "title": "number", "id": "ccnum", "value": { "creditCardNumber": "4111111111111111" } },
+                { "title": "verification number", "id": "cvv", "value": { "concealed": "123" } },
+                { "title": "expiry date", "id": "expiry", "value": { "monthYear": 203012 } },
+                { "title": "valid from", "id": "validFrom", "value": { "monthYear": 202001 } },
+                { "title": "issuing bank", "id": "bank", "value": { "string": "Example Bank" } },
+                { "title": "PIN", "id": "pin", "value": { "concealed": "0000" } }
+              ] } ], "passwordHistory": [] },
+              "overview": { "title": "Example Visa", "url": "", "tags": [] }
+            },
+            {
+              "uuid": "i-note", "favIndex": 0, "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "003",
+              "details": { "notesPlain": "Note body" },
+              "overview": { "title": "Plain note" }
+            },
+            {
+              "uuid": "i-identity", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "004",
+              "details": { "sections": [
+                { "title": "Identification", "name": "name", "fields": [
+                  { "title": "first name", "id": "firstname", "value": { "string": "Alice" } },
+                  { "title": "initial", "id": "initial", "value": { "string": "B" } },
+                  { "title": "last name", "id": "lastname", "value": { "string": "Example" } },
+                  { "title": "sex", "id": "sex", "value": { "gender": "female" } },
+                  { "title": "birth date", "id": "birthdate", "value": { "date": 631152000 } },
+                  { "title": "occupation", "id": "occupation", "value": { "string": "Tester" } },
+                  { "title": "company", "id": "company", "value": { "string": "Example Corp" } },
+                  { "title": "job title", "id": "jobtitle", "value": { "string": "Engineer" } }
+                ] },
+                { "title": "Address", "name": "address", "fields": [
+                  { "title": "address", "id": "address", "value": { "address": { "street": "1 Example Street", "city": "Example City", "country": "fr", "zip": "75000", "state": "IDF" } } },
+                  { "title": "cell", "id": "cellphone", "value": { "phone": "+33 6 00 00 00 00" } }
+                ] },
+                { "title": "Internet Details", "name": "internet", "fields": [
+                  { "title": "email", "id": "email", "value": { "email": { "email_address": "alice@example.com", "provider": null } } },
+                  { "title": "website", "id": "website", "value": { "url": "https://alice.example.com" } }
+                ] }
+              ] },
+              "overview": { "title": "Alice Identity" }
+            },
+            {
+              "uuid": "i-password", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "005",
+              "details": { "password": "Pw-Invented-5", "passwordHistory": [] },
+              "overview": { "title": "Garage code" }
+            },
+            {
+              "uuid": "i-document", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "006",
+              "details": { "notesPlain": "contract scan", "documentAttributes": { "fileName": "contract.pdf", "documentId": "doc1", "decryptedSize": 10 } },
+              "overview": { "title": "Scanned contract" }
+            },
+            {
+              "uuid": "i-license", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "100",
+              "details": { "sections": [
+                { "title": "", "fields": [
+                  { "title": "version", "id": "product_version", "value": { "string": "3.1" } },
+                  { "title": "license key", "id": "reg_code", "value": { "string": "AAAA-BBBB-INVENTED" } }
+                ] },
+                { "title": "Customer", "fields": [
+                  { "title": "licensed to", "id": "reg_name", "value": { "string": "Alice Example" } },
+                  { "title": "registered email", "id": "reg_email", "value": { "email": "alice@example.com" } },
+                  { "title": "company", "id": "company", "value": { "string": "Example Corp" } }
+                ] },
+                { "title": "Order", "fields": [
+                  { "title": "download page", "id": "download_link", "value": { "url": "https://example.com/download" } },
+                  { "title": "purchase date", "id": "order_date", "value": { "date": 1640995200 } },
+                  { "title": "order number", "id": "order_number", "value": { "string": "ORD-1" } }
+                ] }
+              ] },
+              "overview": { "title": "Example Editor" }
+            },
+            {
+              "uuid": "i-bank", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "101",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "bank name", "id": "bankName", "value": { "string": "Example Bank" } },
+                { "title": "name on account", "id": "owner", "value": { "string": "Alice Example" } },
+                { "title": "type", "id": "accountType", "value": { "menu": "checking" } },
+                { "title": "routing number", "id": "routingNo", "value": { "string": "000000000" } },
+                { "title": "account number", "id": "accountNo", "value": { "string": "12345678" } },
+                { "title": "SWIFT", "id": "swift", "value": { "string": "EXAMFRPP" } },
+                { "title": "IBAN", "id": "iban", "value": { "string": "FR76 3000 6000 0112 3456 7890 189" } },
+                { "title": "PIN", "id": "telephonePin", "value": { "concealed": "4321" } }
+              ] } ] },
+              "overview": { "title": "Example Checking" }
+            },
+            {
+              "uuid": "i-db", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "102",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "type", "id": "database_type", "value": { "menu": "mysql" } },
+                { "title": "server", "id": "hostname", "value": { "string": "db.example.com" } },
+                { "title": "port", "id": "port", "value": { "string": "3306" } },
+                { "title": "database", "id": "database", "value": { "string": "app" } },
+                { "title": "username", "id": "username", "value": { "string": "app_user" } },
+                { "title": "password", "id": "password", "value": { "concealed": "Db-Invented-1" } },
+                { "title": "SID", "id": "sid", "value": { "string": "ORCL" } },
+                { "title": "alias", "id": "alias", "value": { "string": "main" } },
+                { "title": "connection options", "id": "options", "value": { "string": "sslmode=require" } }
+              ] } ] },
+              "overview": { "title": "Example DB" }
+            },
+            {
+              "uuid": "i-dl", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "103",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "full name", "id": "fullname", "value": { "string": "Alice Example" } },
+                { "title": "address", "id": "address", "value": { "string": "1 Example Street" } },
+                { "title": "date of birth", "id": "birthdate", "value": { "date": 631152000 } },
+                { "title": "sex", "id": "sex", "value": { "gender": "female" } },
+                { "title": "height", "id": "height", "value": { "string": "170" } },
+                { "title": "number", "id": "number", "value": { "string": "DL-INVENTED-1" } },
+                { "title": "license class", "id": "class", "value": { "string": "B" } },
+                { "title": "conditions / restrictions", "id": "conditions", "value": { "string": "glasses" } },
+                { "title": "state", "id": "state", "value": { "string": "IDF" } },
+                { "title": "country", "id": "country", "value": { "string": "France" } },
+                { "title": "expiry date", "id": "expiry_date", "value": { "monthYear": 203005 } }
+              ] } ] },
+              "overview": { "title": "Alice DL" }
+            },
+            {
+              "uuid": "i-outdoor", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "104",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "full name", "id": "name", "value": { "string": "Alice Example" } },
+                { "title": "valid from", "id": "valid_from", "value": { "date": 1640995200 } },
+                { "title": "approved wildlife", "id": "game", "value": { "string": "trout" } },
+                { "title": "country", "id": "country", "value": { "string": "France" } }
+              ] } ] },
+              "overview": { "title": "Fishing permit" }
+            },
+            {
+              "uuid": "i-membership", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "105",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "group", "id": "org_name", "value": { "string": "Example Gym" } },
+                { "title": "website", "id": "website", "value": { "url": "https://gym.example.com" } },
+                { "title": "telephone", "id": "phone", "value": { "phone": "+33 1 00 00 00 00" } },
+                { "title": "member name", "id": "member_name", "value": { "string": "Alice Example" } },
+                { "title": "member since", "id": "member_since", "value": { "monthYear": 201901 } },
+                { "title": "expiry date", "id": "expiry_date", "value": { "monthYear": 202712 } },
+                { "title": "member ID", "id": "membership_no", "value": { "string": "M-0001" } },
+                { "title": "PIN", "id": "pin", "value": { "concealed": "1111" } }
+              ] } ] },
+              "overview": { "title": "Example Gym" }
+            },
+            {
+              "uuid": "i-passport", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "106",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "type", "id": "type", "value": { "menu": "P" } },
+                { "title": "issuing country", "id": "issuing_country", "value": { "string": "France" } },
+                { "title": "number", "id": "number", "value": { "string": "00XX00000" } },
+                { "title": "full name", "id": "fullname", "value": { "string": "Example" } },
+                { "title": "sex", "id": "sex", "value": { "gender": "female" } },
+                { "title": "nationality", "id": "nationality", "value": { "string": "French" } },
+                { "title": "issuing authority", "id": "issuing_authority", "value": { "string": "Prefecture" } },
+                { "title": "date of birth", "id": "birthdate", "value": { "date": 631152000 } },
+                { "title": "place of birth", "id": "birthplace", "value": { "string": "Example City" } },
+                { "title": "issued on", "id": "issue_date", "value": { "date": 1577836800 } },
+                { "title": "expiry date", "id": "expiry_date", "value": { "date": 1893456000 } }
+              ] } ] },
+              "overview": { "title": "Alice Passport" }
+            },
+            {
+              "uuid": "i-reward", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "107",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "company name", "id": "company_name", "value": { "string": "Example Air" } },
+                { "title": "member name", "id": "member_name", "value": { "string": "Alice Example" } },
+                { "title": "member ID", "id": "membership_no", "value": { "string": "R-0001" } },
+                { "title": "PIN", "id": "pin", "value": { "concealed": "2222" } },
+                { "title": "mileage", "id": "mileage", "value": { "string": "1000" } }
+              ] } ] },
+              "overview": { "title": "Example Miles" }
+            },
+            {
+              "uuid": "i-ssn", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "108",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "name", "id": "name", "value": { "string": "Alice Example" } },
+                { "title": "number", "id": "number", "value": { "concealed": "000-00-0000" } }
+              ] } ] },
+              "overview": { "title": "Alice SSN" }
+            },
+            {
+              "uuid": "i-router", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "109",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "base station name", "id": "name", "value": { "string": "Example Base" } },
+                { "title": "base station password", "id": "password", "value": { "concealed": "Admin-Invented-1" } },
+                { "title": "server / IP address", "id": "server", "value": { "string": "192.168.1.1" } },
+                { "title": "AirPort ID", "id": "airport_id", "value": { "string": "AA:BB:CC:DD:EE:FF" } },
+                { "title": "network name", "id": "network_name", "value": { "string": "ExampleNet" } },
+                { "title": "wireless security", "id": "wireless_security", "value": { "menu": "wpa2p" } },
+                { "title": "wireless network password", "id": "wireless_password", "value": { "concealed": "Wifi-Invented-1" } },
+                { "title": "attached storage password", "id": "disk_password", "value": { "concealed": "Disk-Invented-1" } }
+              ] } ] },
+              "overview": { "title": "Home Wi-Fi" }
+            },
+            {
+              "uuid": "i-server", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "110",
+              "details": { "sections": [
+                { "title": "", "fields": [
+                  { "title": "URL", "id": "url", "value": { "string": "srv.example.com" } },
+                  { "title": "username", "id": "username", "value": { "string": "root" } },
+                  { "title": "password", "id": "password", "value": { "concealed": "Srv-Invented-1" } }
+                ] },
+                { "title": "Admin Console", "fields": [
+                  { "title": "admin console URL", "id": "admin_console_url", "value": { "url": "https://admin.example.com" } },
+                  { "title": "admin console username", "id": "admin_console_username", "value": { "string": "admin" } },
+                  { "title": "console password", "id": "admin_console_password", "value": { "concealed": "Console-Invented-1" } }
+                ] },
+                { "title": "Hosting Provider", "fields": [
+                  { "title": "name", "id": "name", "value": { "string": "Example Hosting" } },
+                  { "title": "website", "id": "website", "value": { "url": "https://hosting.example.com" } },
+                  { "title": "support phone", "id": "support_contact_phone", "value": { "phone": "+1 555 0100" } }
+                ] }
+              ] },
+              "overview": { "title": "Example Host" }
+            },
+            {
+              "uuid": "i-email", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "111",
+              "details": { "sections": [
+                { "title": "", "fields": [
+                  { "title": "type", "id": "pop_type", "value": { "menu": "imap" } },
+                  { "title": "username", "id": "pop_username", "value": { "string": "alice@example.com" } },
+                  { "title": "server", "id": "pop_server", "value": { "string": "imap.example.com" } },
+                  { "title": "port number", "id": "pop_port", "value": { "string": "993" } },
+                  { "title": "password", "id": "pop_password", "value": { "concealed": "Mail-Invented-1" } }
+                ] },
+                { "title": "SMTP", "fields": [
+                  { "title": "SMTP server", "id": "smtp_server", "value": { "string": "smtp.example.com" } },
+                  { "title": "port number", "id": "smtp_port", "value": { "string": "587" } },
+                  { "title": "username", "id": "smtp_username", "value": { "string": "alice@example.com" } },
+                  { "title": "password", "id": "smtp_password", "value": { "concealed": "Smtp-Invented-1" } }
+                ] },
+                { "title": "Contact Information", "fields": [
+                  { "title": "provider", "id": "provider", "value": { "string": "Example Mail Co" } }
+                ] }
+              ] },
+              "overview": { "title": "Alice Mail Account" }
+            },
+            {
+              "uuid": "i-api", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "112",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "username", "id": "username", "value": { "string": "client-1" } },
+                { "title": "credential", "id": "credential", "value": { "concealed": "api-invented-token" } },
+                { "title": "type", "id": "type", "value": { "menu": "bearer" } },
+                { "title": "filename", "id": "filename", "value": { "string": "key.json" } },
+                { "title": "valid from", "id": "validFrom", "value": { "date": 1640995200 } },
+                { "title": "expires", "id": "expires", "value": { "date": 1893456000 } },
+                { "title": "hostname", "id": "hostname", "value": { "string": "https://api.example.com" } }
+              ] } ] },
+              "overview": { "title": "Example API" }
+            },
+            {
+              "uuid": "i-medical", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "113",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "date", "id": "date", "value": { "date": 1704067200 } },
+                { "title": "location", "id": "location", "value": { "string": "Example Clinic" } },
+                { "title": "healthcare professional", "id": "healthcareprofessional", "value": { "string": "Dr Example" } },
+                { "title": "reason for visit", "id": "reason", "value": { "string": "checkup" } }
+              ] } ] },
+              "overview": { "title": "Checkup 2024" }
+            },
+            {
+              "uuid": "i-ssh", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "114",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "private key", "id": "private_key", "value": { "sshKey": {
+                  "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nINVENTED\n-----END OPENSSH PRIVATE KEY-----\n",
+                  "metadata": { "privateKey": "ignored", "publicKey": "ssh-ed25519 AAAAINVENTED alice@example.com", "fingerprint": "SHA256:INVENTED", "keyType": "ed25519" }
+                } } }
+              ] } ] },
+              "overview": { "title": "Deploy key" }
+            },
+            {
+              "uuid": "i-wallet", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "115",
+              "details": { "sections": [ { "title": "", "fields": [
+                { "title": "recovery phrase", "id": "recoveryPhrase", "value": { "concealed": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about" } },
+                { "title": "password", "id": "password", "value": { "concealed": "Wallet-Invented-1" } },
+                { "title": "wallet address", "id": "walletAddress", "value": { "string": "bc1qinvented" } }
+              ] } ] },
+              "overview": { "title": "Cold wallet" }
+            },
+            {
+              "uuid": "i-archived", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "archived", "categoryUuid": "001",
+              "details": { "loginFields": [
+                { "value": "bob", "name": "username", "fieldType": "T", "designation": "username" },
+                { "value": "Old-Forum-1", "name": "password", "fieldType": "P", "designation": "password" }
+              ] },
+              "overview": { "title": "Old forum", "url": "https://forum.example.org" }
+            },
+            {
+              "uuid": "i-trashed", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "trashed", "categoryUuid": "001",
+              "details": { "loginFields": [
+                { "value": "carol", "name": "username", "fieldType": "T", "designation": "username" }
+              ] },
+              "overview": { "title": "Trashed login" }
+            },
+            {
+              "uuid": "i-unknown", "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "999",
+              "details": { "notesPlain": "future category", "sections": [ { "title": "", "fields": [
+                { "title": "serial", "id": "serial", "value": { "string": "SN-1" } }
+              ] } ] },
+              "overview": { "title": "Mystery item" }
+            }
+          ]
+        },
+        {
+          "attrs": { "uuid": "v-work", "name": "Work", "type": "E" },
+          "items": [
+            {
+              "uuid": "i-work", "favIndex": 0, "createdAt": 1650000000, "updatedAt": 1650000000,
+              "state": "active", "categoryUuid": "001",
+              "details": { "loginFields": [
+                { "value": "alice.work", "name": "username", "fieldType": "T", "designation": "username" },
+                { "value": "Work-Invented-1", "name": "password", "fieldType": "P", "designation": "password" }
+              ] },
+              "overview": { "title": "Work Portal", "url": "https://portal.example.net" }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
