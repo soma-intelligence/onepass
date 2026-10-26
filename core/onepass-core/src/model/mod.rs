@@ -1,5 +1,6 @@
 //! Plaintext data model of vault items. No cryptography lives here.
 
+pub mod checks;
 pub mod field;
 pub mod item;
 pub mod templates;
