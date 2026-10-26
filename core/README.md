@@ -51,12 +51,15 @@ La signature SLH-DSA est lente (environ 15 s en optimisé, plus en debug). Le pr
 
 ## Fuzzing
 
-Quatre cibles, chacune exige seulement l'absence de panique :
+Sept cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'un stockage hostile atteint avant toute authentification :
 
 | Cible | Entrée |
 | --- | --- |
-| `blob_open` | octets arbitraires passés à `open`, avec une clé fixe, bruts puis derrière un en-tête valide |
-| `manifest_decode` | octets arbitraires décodés en `Manifest` (postcard) |
+| `blob_open` | octets arbitraires passés à `open`, avec une clé fixe, bruts, derrière un en-tête valide, puis en mutation d'un blob valide |
+| `signed_manifest` | enregistrement de manifeste : `SignedManifest::decode`, puis vérification de la signature avec une clé fixe |
+| `account_params` | enregistrement de paramètres de compte : `AccountParams::decode`, puis `Account::unlock` (signature d'identité, plancher, plafond) |
+| `item_record` | enregistrement d'item : `split_item_record`, `ItemRecord::decode`, hash et confrontation à un manifeste |
+| `signature_verify` | `HybridVerifyingKey::verify` et `IdentityVerifyingKey::verify` sur des clés et signatures arbitraires, encodées (postcard) et aux longueurs exactes |
 | `otpauth_parse` | texte UTF-8 passé à `parse_otpauth` |
 | `reference_parse` | texte UTF-8 passé à `parse_ref` |
 
@@ -71,7 +74,7 @@ Le fuzzing demande la toolchain `nightly` : la toolchain épinglée ne le suppor
 
 ## CI
 
-`.github/workflows/core.yml` : sur `macos-latest` et `ubuntu-latest`, formatage, `clippy`, tests, test différentiel en release, `cargo deny check` et `cargo audit`. Un job séparé fuzze chaque cible 30 s.
+`.github/workflows/core.yml` : sur `macos-latest` et `ubuntu-latest`, formatage, `clippy`, tests, test différentiel en release, `cargo deny check` et `cargo audit`. `cargo audit` est informatif (`continue-on-error`) : une nouvelle alerte RustSec peut le faire échouer sans aucun changement de code, il ne doit pas bloquer une fusion. Un job séparé fuzze chaque cible 30 s.
 
 ## CLI de développement
 

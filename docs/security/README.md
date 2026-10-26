@@ -134,7 +134,7 @@ Aucun message d'erreur ne contient de secret ni de contenu d'item (`Error`, `Int
 
 ## 4. Validation des entrées
 
-Les parseurs qui lisent des données non fiables sont fuzzés (`core/fuzz`) : ouverture de blob, décodage de manifeste, `parse_otpauth` et `parse_ref`. Chaque cible exige seulement l'absence de panique. Les 4 cibles ont tourné 60 s sans plantage au moment de la livraison, puis tournent 30 s à chaque exécution de la CI.
+Les décodeurs qu'un stockage hostile atteint avant toute authentification sont fuzzés (`core/fuzz`) : ouverture de blob, enregistrement de manifeste signé (décodage puis signature), paramètres de compte (décodage puis `Account::unlock`), enregistrement d'item (préfixe de vault, `ItemRecord`, confrontation au manifeste), vérification des signatures hybride et d'identité sur des clés et signatures arbitraires, plus `parse_otpauth` et `parse_ref`. Le décodage de `Manifest` n'est pas une cible : il ne lit qu'un clair déjà authentifié. Chaque cible exige seulement l'absence de panique. Toutes ont tourné 60 s sans plantage au moment de la livraison, puis tournent 30 s à chaque exécution de la CI.
 
 ## 5. Attaques testées
 
@@ -178,4 +178,4 @@ Les parseurs qui lisent des données non fiables sont fuzzés (`core/fuzz`) : ou
 6. **Modèle formel** : la spec prévoit un modèle Tamarin ou ProVerif vérifié en CI. Il n'existe pas encore.
 7. **CLI** : la section 9.1 de la spec prévoit un passage par l'app Mac avec Touch ID. Au jalon 1 la CLI est en mode développement autonome (Secret Key en clair dans `device.bin`), écart assumé.
 8. **Liste des vaults non signée** : la spec (4.4) protège chaque vault par son manifeste, pas la liste des vaults du compte. Au jalon 1 cette liste n'est pas authentifiée : un vault planté est refusé (pas de manifeste signé valide), un vault déjà lu par l'appareil puis masqué est détecté (`VaultMissing`), mais un vault jamais lu par l'appareil peut être masqué sans détection. Liste signée prévue au jalon 2.
-9. **Fuzzing** : la spec dit "tous les parseurs". Le jalon 1 fuzze les quatre points d'entrée listés en section 4, pas les parseurs d'import et d'export, qui n'existent pas encore.
+9. **Fuzzing** : la spec dit "tous les parseurs". Le jalon 1 fuzze les sept points d'entrée listés en section 4, pas les parseurs d'import et d'export, qui n'existent pas encore.

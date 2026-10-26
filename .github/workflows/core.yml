@@ -48,8 +48,11 @@ jobs:
         run: cargo test --release -p onepass-core --test differential
       - name: Licenses, bans and sources
         run: cargo deny check
+      # Informative only: a new RustSec advisory can turn this red without
+      # any change here. It must not block a merge; read it and act.
       - name: Advisories
         run: cargo audit
+        continue-on-error: true
 
   fuzz:
     name: fuzz (${{ matrix.target }})
@@ -57,7 +60,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [blob_open, manifest_decode, otpauth_parse, reference_parse]
+        target:
+          - blob_open
+          - signed_manifest
+          - account_params
+          - item_record
+          - signature_verify
+          - otpauth_parse
+          - reference_parse
     defaults:
       run:
         working-directory: core

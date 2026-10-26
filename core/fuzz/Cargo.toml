@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 postcard = { version = "1", default-features = false, features = ["alloc"] }
+serde_bytes = "0.11"
 onepass-core = { path = "../onepass-core" }
 
 [workspace]
@@ -22,8 +23,29 @@ doc = false
 bench = false
 
 [[bin]]
-name = "manifest_decode"
-path = "fuzz_targets/manifest_decode.rs"
+name = "signed_manifest"
+path = "fuzz_targets/signed_manifest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "account_params"
+path = "fuzz_targets/account_params.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "item_record"
+path = "fuzz_targets/item_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "signature_verify"
+path = "fuzz_targets/signature_verify.rs"
 test = false
 doc = false
 bench = false

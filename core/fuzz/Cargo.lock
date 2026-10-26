@@ -482,6 +482,7 @@ dependencies = [
  "libfuzzer-sys",
  "onepass-core",
  "postcard",
+ "serde_bytes",
 ]
 
 [[package]]

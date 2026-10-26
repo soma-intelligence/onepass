@@ -40,6 +40,19 @@ pub struct SignedManifest {
     pub sig: HybridSignature,
 }
 
+impl SignedManifest {
+    /// Decode a stored manifest record, which may come from a hostile
+    /// store: the whole buffer, trailing bytes refused
+    /// (`InvalidFormat("manifest")`). Nothing is verified here; see
+    /// `verify_manifest`.
+    pub fn decode(bytes: &[u8]) -> Result<SignedManifest> {
+        match postcard::take_from_bytes(bytes) {
+            Ok((sm, [])) => Ok(sm),
+            _ => Err(BAD),
+        }
+    }
+}
+
 /// What the device remembers of the last manifest it accepted for a vault.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SeenManifest {

@@ -50,6 +50,18 @@ pub struct ItemRecord {
     pub blob: Vec<u8>,
 }
 
+impl ItemRecord {
+    /// Decode an item record body, which may come from a hostile store: the
+    /// whole buffer, trailing bytes refused (`InvalidFormat("item record")`).
+    /// Nothing is verified here: the manifest and `Vault::open_item` do.
+    pub fn decode(bytes: &[u8]) -> Result<ItemRecord> {
+        match postcard::take_from_bytes(bytes) {
+            Ok((rec, [])) => Ok(rec),
+            _ => Err(Error::InvalidFormat("item record")),
+        }
+    }
+}
+
 fn kem_context(vault_id: Id) -> Vec<u8> {
     let mut c = b"vault:".to_vec();
     c.extend_from_slice(&vault_id.0);

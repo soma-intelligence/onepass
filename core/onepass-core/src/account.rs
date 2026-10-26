@@ -189,7 +189,7 @@ impl Account {
         keyset_record: &[u8],
         pinned: Option<&PinnedAccount>,
     ) -> Result<Account> {
-        let params = decode_params(params_record)?;
+        let params = AccountParams::decode(params_record)?;
         let unsigned = Error::Integrity(IntegrityError::ParamsUnsigned);
         let msg = signed_message(
             &params.account_id,
@@ -274,11 +274,16 @@ fn sign_params(
     })
 }
 
-/// Decode the whole record: trailing bytes are rejected.
-fn decode_params(record: &[u8]) -> Result<AccountParams> {
-    match postcard::take_from_bytes::<AccountParams>(record) {
-        Ok((params, [])) => Ok(params),
-        _ => Err(Error::InvalidFormat("account params")),
+impl AccountParams {
+    /// Decode a stored params record, which may come from a hostile store:
+    /// the whole buffer, trailing bytes refused
+    /// (`InvalidFormat("account params")`). Nothing is verified here; see
+    /// `Account::unlock`.
+    pub fn decode(record: &[u8]) -> Result<AccountParams> {
+        match postcard::take_from_bytes::<AccountParams>(record) {
+            Ok((params, [])) => Ok(params),
+            _ => Err(Error::InvalidFormat("account params")),
+        }
     }
 }
 

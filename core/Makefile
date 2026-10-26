@@ -2,7 +2,7 @@
 
 # Seconds per fuzz target (override: make fuzz FUZZ_SECONDS=300).
 FUZZ_SECONDS ?= 60
-FUZZ_TARGETS = blob_open manifest_decode otpauth_parse reference_parse
+FUZZ_TARGETS = blob_open signed_manifest account_params item_record signature_verify otpauth_parse reference_parse
 
 check: fmt-check lint test deny
 

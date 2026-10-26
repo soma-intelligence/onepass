@@ -27,7 +27,6 @@
 
 use std::collections::BTreeMap;
 
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -123,12 +122,16 @@ fn entry(rec: &ItemRecord) -> ManifestEntry {
     }
 }
 
-/// Decode the whole buffer: trailing bytes are refused.
-fn decode_all<T: DeserializeOwned>(bytes: &[u8]) -> Option<T> {
-    match postcard::take_from_bytes(bytes) {
-        Ok((value, [])) => Some(value),
-        _ => None,
-    }
+/// Split a stored item record into its vault id prefix and its
+/// `ItemRecord` body (see the layout above). Shorter than the 16-byte
+/// prefix is `InvalidFormat("item record")`. The body is not decoded.
+pub fn split_item_record(data: &[u8]) -> Result<(Id, &[u8])> {
+    let (prefix, body) = data
+        .split_at_checked(16)
+        .ok_or(Error::InvalidFormat("item record"))?;
+    let mut id = [0u8; 16];
+    id.copy_from_slice(prefix);
+    Ok((Id(id), body))
 }
 
 fn personal() -> VaultMeta {
@@ -401,15 +404,12 @@ impl<S: RecordStore> Repository<S> {
         let mut records = Vec::new();
         let mut ignored = Vec::new();
         for r in self.store.list(RecordKind::Item)? {
-            let (prefix, body) = r
-                .data
-                .split_at_checked(16)
-                .ok_or(Error::InvalidFormat("item record"))?;
-            if prefix != vault.id.0 {
+            let (prefix, body) = split_item_record(&r.data)?;
+            if prefix != vault.id {
                 continue;
             }
-            let item: ItemRecord =
-                decode_all(body).ok_or(IntegrityError::ManifestUnexpectedItem)?;
+            let item =
+                ItemRecord::decode(body).map_err(|_| IntegrityError::ManifestUnexpectedItem)?;
             if interrupted_write(vault, &manifest, &item) {
                 ignored.push((r.id, item.item_id));
             } else {
@@ -452,7 +452,7 @@ impl<S: RecordStore> Repository<S> {
             .store
             .get(RecordKind::Manifest, vault.id)?
             .ok_or(IntegrityError::ManifestMissingItem)?;
-        let sm: SignedManifest = decode_all(&rec.data).ok_or(Error::InvalidFormat("manifest"))?;
+        let sm = SignedManifest::decode(&rec.data)?;
         verify_manifest(vault, &self.account.params.signing_pub, &sm, last_seen)
     }
 
@@ -785,6 +785,27 @@ mod tests {
         assert!(get(c.id).trashed_at.is_none());
         assert_eq!(repo.store.list(RecordKind::Item).unwrap().len(), 2);
         assert_eq!(repo.delete_item(&v, a.id), Err(Error::NotFound));
+    }
+
+    #[test]
+    fn item_record_decoders_are_strict() {
+        assert_eq!(
+            split_item_record(&[0; 15]).unwrap_err(),
+            Error::InvalidFormat("item record")
+        );
+        let (repo, v) = fresh(MemoryStore::new());
+        let rec = v.seal_item(&login(&v, "a"), 1).unwrap();
+        let mut data = v.id.0.to_vec();
+        data.extend(postcard::to_allocvec(&rec).unwrap());
+        let (prefix, body) = split_item_record(&data).unwrap();
+        assert_eq!(prefix, v.id);
+        assert_eq!(ItemRecord::decode(body).unwrap(), rec);
+        data.push(0);
+        assert_eq!(
+            ItemRecord::decode(&data[16..]).unwrap_err(),
+            Error::InvalidFormat("item record")
+        );
+        drop(repo);
     }
 
     #[test]
