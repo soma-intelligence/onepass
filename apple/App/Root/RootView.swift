@@ -15,6 +15,9 @@ struct RootView: View {
         content
             .animation(.smooth(duration: 0.25), value: route)
             .onAppear { model.start() }
+            .onChange(of: model.session.state) { _, state in
+                if state != .unlocked { model.resetNavigation() }
+            }
             #if os(iOS)
             .background { WindowSceneReader(scene: $windowScene).frame(width: 0, height: 0) }
             .onChange(of: scenePhase, initial: true) { _, phase in
@@ -63,57 +66,5 @@ struct RootView: View {
                 IntegrityFailureView(error: error)
             }
         }
-    }
-}
-
-/// The unlocked app. Placeholder until the browse screens land (Tasks 14 and 15): shows the
-/// selected item's detail when there is one.
-struct BrowseRoot: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        NavigationStack {
-            content
-                .toolbar {
-                    // Hidden while an editor is shown: it owns the bar (Annuler, Enregistrer), and a
-                    // lock from here would drop unsaved changes without asking. Rule for Tasks 14/15:
-                    // an explicit lock during edition asks first when the draft is dirty.
-                    if !isEditing {
-                        ToolbarItem(placement: .navigation) {
-                            Button("Verrouiller", systemImage: "lock") { model.lock() }
-                                .accessibilityIdentifier("app.lock")
-                        }
-                    }
-                }
-        }
-        .onTapGesture { model.session.noteActivity() }
-    }
-
-    @ViewBuilder private var content: some View {
-        if let ref = model.selectedItem {
-            ItemDetailView(ref: ref).id(ref)
-        } else if let draft = debugDraft {
-            ItemEditorView(draft: draft, isNew: true) { saved in
-                #if DEBUG
-                model.debugNewDraft = nil
-                #endif
-                if let saved { model.selectedItem = ItemRef(vaultID: saved.vaultId, itemID: saved.id) }
-            }
-        } else {
-            EmptyState(
-                title: String(localized: "OnePass est déverrouillé"), systemImage: "lock.open",
-                message: String(localized: "Les coffres et les éléments s'afficheront ici."))
-                .navigationTitle("OnePass")
-        }
-    }
-
-    private var isEditing: Bool { model.editing || debugDraft != nil }
-
-    private var debugDraft: ItemDraft? {
-        #if DEBUG
-        model.debugNewDraft
-        #else
-        nil
-        #endif
     }
 }

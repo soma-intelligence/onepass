@@ -33,10 +33,18 @@ final class AppModel {
     var selection: ItemFilter = .all
     var selectedItem: ItemRef?
     var editing = false
-    #if DEBUG
-    /// `-OnePassDebugNewItem`: a new item's editor shown by the placeholder browse screen.
-    var debugNewDraft: ItemDraft?
-    #endif
+    /// A new item's editor, shown in place of the detail until saved or cancelled.
+    var newItemDraft: ItemDraft?
+    /// Reported by the editor on screen: its draft has unsaved changes.
+    var editorDirty = false
+    /// An action that would drop a dirty draft, waiting for "Abandonner les modifications ?".
+    var pendingDiscard: GuardedAction?
+    /// ⌘N: the type picker of a new item.
+    var showNewItemPicker = false
+    // Menu commands handled by the views on screen (bumped, observed with `onChange`).
+    var editRequest = 0
+    var saveRequest = 0
+    var searchFocusRequest = 0
 
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var started = false
@@ -50,25 +58,37 @@ final class AppModel {
         DebugReset.applyIfRequested()
         #endif
         Self.sweepEmergencyKits()
-        let databaseURL = VaultEnvironment.defaultDatabaseURL()
+        #if DEBUG
+        let demo = DemoData.requested ? DemoData.environment() : nil
+        #else
+        let demo: VaultEnvironment? = nil
+        #endif
         var coordinator: SyncCoordinator?
         #if ONEPASS_CLOUDKIT
-        let remote: (any RemoteRecordStore)? = CloudKitRemote(containerIdentifier: "iCloud.me.somalabs.onepass")
-        cloudKitEnabled = true
+        let remote: (any RemoteRecordStore)? = demo == nil
+            ? CloudKitRemote(containerIdentifier: "iCloud.me.somalabs.onepass") : nil
+        cloudKitEnabled = demo == nil
         #else
         let remote: (any RemoteRecordStore)? = nil
         cloudKitEnabled = false
         #endif
-        do {
-            let store = try openSyncStore(dbPath: databaseURL.path)
-            coordinator = SyncCoordinator(store: store, remote: remote)
-        } catch {
-            Self.log.error("sync store not opened, sync disabled")
+        let environment: VaultEnvironment
+        if let demo {
+            // Demonstration store (Debug): temporary database, no sync.
+            environment = demo
+        } else {
+            let databaseURL = VaultEnvironment.defaultDatabaseURL()
+            do {
+                let store = try openSyncStore(dbPath: databaseURL.path)
+                coordinator = SyncCoordinator(store: store, remote: remote)
+            } catch {
+                Self.log.error("sync store not opened, sync disabled")
+            }
+            // `live` uses the same `defaultDatabaseURL()` as the sync store.
+            environment = VaultEnvironment.live(sync: coordinator ?? NoSync())
         }
         self.coordinator = coordinator
         self.remote = remote
-        // `live` uses the same `defaultDatabaseURL()` as the sync store.
-        let environment = VaultEnvironment.live(sync: coordinator ?? NoSync())
         session = VaultSession(environment: environment)
 
         let settings = environment.settings
@@ -86,8 +106,12 @@ final class AppModel {
         guard !started else { return }
         started = true
         #if DEBUG
-        seedAccountIfRequested()
-        openDebugItemIfRequested()
+        if DemoData.requested {
+            seedDemoData()
+        } else {
+            seedAccountIfRequested()
+            openDebugItemIfRequested()
+        }
         #endif
         guard let coordinator else { return }
         tasks.append(Task { [weak self] in
@@ -172,11 +196,107 @@ final class AppModel {
         if case .failed = session.state { await session.refresh() }
     }
 
-    /// Lock button and menu command.
+    /// Lock now, without asking. Explicit locks go through `perform(.lock)`.
     func lock() {
+        resetNavigation()
+        session.lock()
+    }
+
+    /// Drops every item-bearing navigation state (the new item's draft holds typed values).
+    /// Also run when the session leaves `unlocked` on its own (auto-lock, background, failure).
+    func resetNavigation() {
         selectedItem = nil
         editing = false
-        session.lock()
+        newItemDraft = nil
+        editorDirty = false
+        pendingDiscard = nil
+        showNewItemPicker = false
+    }
+
+    // MARK: - Navigation guarded by the editor
+
+    /// What would replace an editor with unsaved changes.
+    enum GuardedAction: Equatable {
+        case lock
+        case select(ItemRef?)
+        case newItem(FfiItemType)
+    }
+
+    /// An item editor (existing or new item) is on screen.
+    var isEditing: Bool { editing || newItemDraft != nil }
+
+    /// Runs the action, or asks first when it would drop a dirty draft (rule of Task 13).
+    func perform(_ action: GuardedAction) {
+        if isEditing, editorDirty {
+            if case .select(let ref) = action, ref == selectedItem, newItemDraft == nil { return }
+            pendingDiscard = action
+            return
+        }
+        apply(action)
+    }
+
+    /// "Abandonner" in the confirmation.
+    func confirmDiscard() {
+        guard let action = pendingDiscard else { return }
+        pendingDiscard = nil
+        apply(action)
+    }
+
+    private func apply(_ action: GuardedAction) {
+        switch action {
+        case .lock:
+            lock()
+        case .select(let ref):
+            newItemDraft = nil
+            if ref != selectedItem { editing = false }
+            editorDirty = false
+            selectedItem = ref
+        case .newItem(let type):
+            startNewItem(type)
+        }
+    }
+
+    /// The vault of a new item: the vault shown in the list, else the first visible one.
+    var vaultForNewItem: String? {
+        if case .vault(let id) = selection, session.vaults.contains(where: { $0.id == id }) { return id }
+        return session.vaults.first?.id
+    }
+
+    private func startNewItem(_ type: FfiItemType) {
+        guard let vaultID = vaultForNewItem else { return }
+        do {
+            let item = try session.newItem(type: type, vaultID: vaultID)
+            editing = false
+            editorDirty = false
+            newItemDraft = ItemDraft(item: item)
+        } catch {
+            Self.log.error("new item not created")
+        }
+    }
+
+    /// The new item's editor closed: shows the saved item, or what was shown before.
+    func finishNewItem(_ saved: FfiItem?) {
+        newItemDraft = nil
+        editorDirty = false
+        if let saved { selectedItem = ItemRef(vaultID: saved.vaultId, itemID: saved.id) }
+    }
+
+    /// ⌘⌫: the selected item goes to Supprimés récemment (not while editing, not twice).
+    var canTrashSelection: Bool {
+        guard !isEditing, let ref = selectedItem else { return false }
+        return session.summaries.contains { $0.id == ref.itemID && $0.trashedAt == nil }
+    }
+
+    func trashSelection() {
+        guard canTrashSelection, let ref = selectedItem else { return }
+        Task {
+            do {
+                try await session.trash(itemID: ref.itemID, vaultID: ref.vaultID)
+                if selectedItem == ref { selectedItem = nil }
+            } catch {
+                session.lastError = VaultError(error)
+            }
+        }
     }
 
     /// Initials for the account badge ("Camille Durand" gives "CD"), empty without a name.

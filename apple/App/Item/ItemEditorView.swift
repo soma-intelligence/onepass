@@ -77,8 +77,8 @@ struct ItemEditorView: View {
                     .accessibilityIdentifier("editor.cancel")
             }
             ToolbarItem(placement: .confirmationAction) {
+                // ⌘S is the "Enregistrer" menu command (`BrowseCommands`).
                 Button("Enregistrer", action: save)
-                    .keyboardShortcut("s", modifiers: .command)
                     .disabled(editor.saving)
                     .accessibilityIdentifier("editor.save")
             }
@@ -88,6 +88,10 @@ struct ItemEditorView: View {
             Button("Continuer la modification", role: .cancel) {}
         }
         .interactiveDismissDisabled(editor.isDirty)
+        // A lock or a navigation asks first while the draft has unsaved changes (`AppModel.perform`).
+        .onChange(of: editor.isDirty, initial: true) { _, dirty in model.editorDirty = dirty }
+        .onDisappear { model.editorDirty = false }
+        .onChange(of: model.saveRequest) { save() }
         .task {
             #if DEBUG
             if UserDefaults.standard.bool(forKey: "OnePassDebugAutoSave") {

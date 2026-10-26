@@ -13,8 +13,10 @@ struct OnePassApp: App {
     /// Aggregate phase of every scene: drives auto-lock and sync, once for the whole app.
     @Environment(\.scenePhase) private var scenePhase
 
+    static let mainWindowID = "main"
+
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: Self.mainWindowID) {
             RootView()
                 .environment(model)
                 .tint(Theme.accent)
@@ -31,11 +33,7 @@ struct OnePassApp: App {
             model.scenePhaseChanged(phase)
         }
         .commands {
-            CommandGroup(after: .appSettings) {
-                Button("Verrouiller OnePass") { model.lock() }
-                    .keyboardShortcut("l", modifiers: [.command, .shift])
-                    .disabled(model.session.state != .unlocked)
-            }
+            BrowseCommands(model: model)
         }
     }
 }

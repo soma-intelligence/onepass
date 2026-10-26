@@ -34,7 +34,7 @@ extension AppModel {
                             label: "Bureau Atlas", address: "12 rue de l'Exemple, Paris", lat: 48.85661,
                             lon: 2.35222, radiusM: 100, suggestNearby: false)))
                     }
-                    debugNewDraft = ItemDraft(item: item)
+                    newItemDraft = ItemDraft(item: item)
                 } else if let wanted, let title = titles[wanted],
                     let summary = session.summaries.first(where: { $0.title == title })
                 {
@@ -128,7 +128,7 @@ extension AppModel {
 
 extension FfiItem {
     /// First field with this id, any section.
-    fileprivate mutating func set(_ fieldID: String, _ value: FfiFieldValue) {
+    mutating func set(_ fieldID: String, _ value: FfiFieldValue) {
         for s in sections.indices {
             if let f = sections[s].fields.firstIndex(where: { $0.id == fieldID }) {
                 sections[s].fields[f].value = value

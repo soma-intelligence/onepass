@@ -47,6 +47,9 @@ struct ItemDetailView: View {
             }
         }
         .task(id: ref) { await load() }
+        .onChange(of: model.editRequest) {
+            if let item, model.selectedItem == ref { startEditing(item) }
+        }
         .onDisappear { model.editing = false }
     }
 
@@ -263,16 +266,9 @@ struct ItemDetailView: View {
     @ToolbarContentBuilder private func toolbar(_ item: FfiItem) -> some ToolbarContent {
         if item.trashedAt == nil {
             ToolbarItem(placement: .primaryAction) {
-                Button("Modifier") {
-                    if locked(item) {
-                        editAfterConfirm = true
-                        Task { await confirmPresence() }
-                    } else {
-                        model.editing = true
-                    }
-                }
-                .keyboardShortcut("e", modifiers: .command)
-                .accessibilityIdentifier("item.edit")
+                // ⌘E is the "Modifier" menu command (`BrowseCommands`).
+                Button("Modifier") { startEditing(item) }
+                    .accessibilityIdentifier("item.edit")
             }
         }
         ToolbarItem(placement: .primaryAction) {
@@ -324,6 +320,16 @@ struct ItemDetailView: View {
                 run(clearsSelection: true) { try await session.trash(itemID: item.id, vaultID: item.vaultId) }
             }
             .accessibilityIdentifier("item.trash")
+        }
+    }
+
+    private func startEditing(_ item: FfiItem) {
+        guard item.trashedAt == nil, !model.editing else { return }
+        if locked(item) {
+            editAfterConfirm = true
+            Task { await confirmPresence() }
+        } else {
+            model.editing = true
         }
     }
 
