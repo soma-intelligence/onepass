@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:11:56.562Z",
+  "category": "signup",
+  "extractor": 1,
+  "host": "demo.nopcommerce.com",
+  "source_url": "https://demo.nopcommerce.com/register",
+  "status": "skipped: robots"
+}

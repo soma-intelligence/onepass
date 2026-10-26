@@ -1,0 +1,34 @@
+{
+  "captured_at": "2026-10-26T21:09:20.927Z",
+  "category": "login",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "label": "Wonach suchst du?",
+          "maxlength": 150,
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "www.otto.de",
+  "iframes": [],
+  "lang": "de",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 1,
+  "source_url": "https://www.otto.de/user/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:06:37.751Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "medium.com",
+  "source_url": "https://medium.com/m/signin",
+  "status": "skipped: robots"
+}

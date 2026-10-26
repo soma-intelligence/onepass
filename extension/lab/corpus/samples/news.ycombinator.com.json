@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:05:33.077Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "news.ycombinator.com",
+  "source_url": "https://news.ycombinator.com/login",
+  "status": "skipped: robots"
+}

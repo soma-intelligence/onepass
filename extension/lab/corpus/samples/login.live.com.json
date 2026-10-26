@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-26T21:06:12.819Z",
+  "category": "login",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Create one!",
+        "Next"
+      ],
+      "fields": [
+        {
+          "autocomplete": "username webauthn",
+          "hasPattern": false,
+          "id": "<redacted>",
+          "label": "Enter your email, phone, or Skype.",
+          "maxlength": 113,
+          "name": "loginfmt",
+          "required": false,
+          "role": "username",
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "host": "login.live.com",
+  "iframes": [
+    {
+      "origin": "https://fpt.live.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://login.live.com/",
+  "status": "ok",
+  "webauthnCalls": [
+    "get"
+  ]
+}

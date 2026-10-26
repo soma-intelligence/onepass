@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:06:22.238Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "appleid.apple.com",
+  "source_url": "https://appleid.apple.com/sign-in",
+  "status": "skipped: robots"
+}

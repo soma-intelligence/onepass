@@ -1,0 +1,61 @@
+{
+  "captured_at": "2026-10-26T21:10:58.734Z",
+  "category": "signup",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "@proton.me",
+        "Use your current email instead",
+        "More info: You will need a Proton address to use Proton Mail",
+        "Sign in"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "id": "username",
+          "label": "Username",
+          "required": false,
+          "role": "username",
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "autocomplete": "new-password",
+          "hasPattern": false,
+          "id": "password",
+          "label": "Password",
+          "required": false,
+          "role": "new_password",
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "password"
+    }
+  ],
+  "host": "account.proton.me",
+  "iframes": [
+    {
+      "origin": "https://account-api.proton.me",
+      "sameSite": true
+    },
+    {
+      "origin": "https://account-api.proton.me",
+      "sameSite": true
+    },
+    {
+      "origin": "https://account-api.proton.me",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://account.proton.me/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

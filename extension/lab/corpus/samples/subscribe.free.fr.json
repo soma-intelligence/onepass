@@ -1,0 +1,47 @@
+{
+  "captured_at": "2026-10-26T21:07:51.654Z",
+  "category": "login",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "",
+        "visibility",
+        "Se connecter"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "login_b",
+          "label": "Identifiant",
+          "name": "login",
+          "required": true,
+          "role": "username",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "id": "pass_b",
+          "label": "Mot de passe",
+          "name": "pass",
+          "required": true,
+          "role": "password",
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "host": "subscribe.free.fr",
+  "iframes": [],
+  "lang": "fr",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://subscribe.free.fr/login/",
+  "status": "ok",
+  "webauthnCalls": []
+}

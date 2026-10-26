@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:06:56.796Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "www.twitch.tv",
+  "source_url": "https://www.twitch.tv/login",
+  "status": "skipped: robots"
+}

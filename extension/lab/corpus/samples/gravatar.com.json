@@ -1,0 +1,38 @@
+{
+  "captured_at": "2026-10-26T21:13:26.080Z",
+  "category": "identity",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Continue"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "label": "Enter your email address",
+          "name": "usernameOrEmail",
+          "required": false,
+          "role": "email",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "host": "gravatar.com",
+  "iframes": [
+    {
+      "origin": "https://public-api.wordpress.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://gravatar.com/connect/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,91 @@
+{
+  "captured_at": "2026-10-26T21:05:21.122Z",
+  "category": "login",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Sign in"
+      ],
+      "fields": [
+        {
+          "autocomplete": "username",
+          "hasPattern": false,
+          "id": "login_field",
+          "label": "Username or email address",
+          "name": "login",
+          "required": true,
+          "role": "username",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "current-password",
+          "hasPattern": false,
+          "id": "password",
+          "label": "Password",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "name": "required_field_5ff0",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "hasPattern": false,
+          "name": "required_field_a309",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Continue with passkey"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "name": "required_field_4f74",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "github.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source_url": "https://github.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

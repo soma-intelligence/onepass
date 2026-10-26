@@ -10,7 +10,7 @@
         "Next"
       ],
       "es": [
-        "Continuar",
+        "CONTINUAR",
         "Siguiente"
       ],
       "fr": [
@@ -25,6 +25,7 @@
         "Passkey verwenden"
       ],
       "en": [
+        "Continue with passkey",
         "Sign in with a passkey",
         "Use passkey"
       ],
@@ -46,6 +47,7 @@
       "en": [
         "Pay",
         "Pay now",
+        "Pay €25.96",
         "Place order"
       ],
       "es": [
@@ -71,7 +73,8 @@
       ],
       "es": [
         "Guardar",
-        "Guardar cambios"
+        "Guardar cambios",
+        "GUARDAR CONFIGURACIÓN"
       ],
       "fr": [
         "Enregistrer",
@@ -85,6 +88,7 @@
         "Einloggen"
       ],
       "en": [
+        "Already have an account? Log in",
         "Log in",
         "Login",
         "Sign in"
@@ -106,9 +110,10 @@
         "Registrieren"
       ],
       "en": [
-        "Create account",
+        "Create Account",
         "Register",
-        "Sign up"
+        "Sign up",
+        "Signup"
       ],
       "es": [
         "Crear cuenta",
@@ -124,24 +129,28 @@
   "langs": [
     [
       "en",
-      0.4
+      0.7931034482758621
     ],
     [
       "fr",
-      0.25
+      0.10344827586206896
     ],
     [
       "de",
-      0.2
+      0.034482758620689655
     ],
     [
       "es",
-      0.15
+      0.034482758620689655
+    ],
+    [
+      "und",
+      0.034482758620689655
     ]
   ],
   "roles": {
     "address_line1": {
-      "autocompleteRate": 0.7,
+      "autocompleteRate": 0.5384615384615384,
       "labels": {
         "de": [
           "Adresse",
@@ -149,6 +158,7 @@
           "Straße und Hausnummer"
         ],
         "en": [
+          "*Street Address",
           "Address",
           "Address line 1",
           "Street address"
@@ -156,7 +166,8 @@
         "es": [
           "Calle y número",
           "Dirección",
-          "Dirección línea 1"
+          "Dirección línea 1",
+          "Escribe aquí una dirección"
         ],
         "fr": [
           "Adresse",
@@ -171,11 +182,12 @@
         "address_line1",
         "adresse",
         "street",
-        "street-address"
+        "street-address",
+        "taddress"
       ]
     },
     "address_line2": {
-      "autocompleteRate": 0.55,
+      "autocompleteRate": 0.5,
       "labels": {
         "de": [
           "Adresszeile 2",
@@ -183,7 +195,8 @@
         ],
         "en": [
           "Address line 2",
-          "Apartment, suite, etc."
+          "Apartment, suite, etc.",
+          "Apt/Suite/Other"
         ],
         "es": [
           "Dirección línea 2",
@@ -200,7 +213,8 @@
         "address_line2",
         "apartment",
         "complement",
-        "suite"
+        "suite",
+        "tapt"
       ]
     },
     "birth_date": {
@@ -412,7 +426,7 @@
       ]
     },
     "city": {
-      "autocompleteRate": 0.7,
+      "autocompleteRate": 0.5833333333333334,
       "labels": {
         "de": [
           "Ort",
@@ -436,12 +450,13 @@
         "locality",
         "ort",
         "stadt",
+        "tcity",
         "town",
         "ville"
       ]
     },
     "country": {
-      "autocompleteRate": 0.7,
+      "autocompleteRate": 0.6363636363636364,
       "labels": {
         "de": [
           "Land",
@@ -449,6 +464,7 @@
         ],
         "en": [
           "Country",
+          "Country Australia Austria Belgium Brazil Canada China Denmar",
           "Country or region"
         ],
         "es": [
@@ -469,15 +485,19 @@
       ]
     },
     "email": {
-      "autocompleteRate": 0.85,
+      "autocompleteRate": 0.5526315789473685,
       "labels": {
         "de": [
           "E-Mail-Adresse"
         ],
         "en": [
+          "Account ID or email address *",
           "E-mail address",
           "Email",
-          "Email address"
+          "Email Address",
+          "Enter your email address",
+          "New email",
+          "Your email address"
         ],
         "es": [
           "Correo electrónico",
@@ -493,12 +513,17 @@
         ]
       },
       "tokens": [
+        "account",
         "courriel",
         "e-mail",
         "email",
         "emailaddress",
         "mail",
-        "user_email"
+        "new email",
+        "susbscribe_email",
+        "user_email",
+        "usernameinput",
+        "usernameoremail"
       ]
     },
     "family_name": {
@@ -559,7 +584,7 @@
       ]
     },
     "new_password": {
-      "autocompleteRate": 0.7,
+      "autocompleteRate": 0.7692307692307693,
       "labels": {
         "de": [
           "Neues Passwort",
@@ -570,7 +595,8 @@
           "Choose a password",
           "Confirm password",
           "Create a password",
-          "New password"
+          "New password",
+          "Password"
         ],
         "es": [
           "Confirmar contraseña",
@@ -587,12 +613,14 @@
         "confirm_password",
         "new_password",
         "newpassword",
+        "password",
         "password2",
-        "password_confirmation"
+        "password_confirmation",
+        "uid_17"
       ]
     },
     "organization": {
-      "autocompleteRate": 0.4,
+      "autocompleteRate": 0.36363636363636365,
       "labels": {
         "de": [
           "Firma",
@@ -621,7 +649,8 @@
         "firma",
         "organisation",
         "organization",
-        "societe"
+        "societe",
+        "tcompany"
       ]
     },
     "otp": {
@@ -661,7 +690,7 @@
       ]
     },
     "password": {
-      "autocompleteRate": 0.8,
+      "autocompleteRate": 0.5882352941176471,
       "labels": {
         "de": [
           "Kennwort",
@@ -669,6 +698,7 @@
         ],
         "en": [
           "Password",
+          "Password *",
           "Your password"
         ],
         "es": [
@@ -682,15 +712,17 @@
       },
       "tokens": [
         "current_password",
+        "eec0b766",
         "motdepasse",
         "pass",
+        "pass_b",
         "passwd",
         "password",
         "pwd"
       ]
     },
     "postal_code": {
-      "autocompleteRate": 0.75,
+      "autocompleteRate": 0.5666666666666667,
       "labels": {
         "de": [
           "Plz",
@@ -699,27 +731,36 @@
         "en": [
           "Postal code",
           "Postcode",
-          "Zip code"
+          "Search the Postal Store: Keyword or SKU",
+          "ZIP",
+          "Zip code",
+          "ZIP Code™"
         ],
         "es": [
           "Código postal"
         ],
         "fr": [
-          "Code postal"
+          "Code postal",
+          "Indiquez un code postal ou une ville *"
         ]
       },
       "tokens": [
+        "citycode",
         "codepostal",
+        "global-header--search-track-store",
         "plz",
         "postal",
+        "postal_code",
         "postalcode",
         "postcode",
+        "q",
+        "tzip-byaddress",
         "zip",
         "zipcode"
       ]
     },
     "tel": {
-      "autocompleteRate": 0.65,
+      "autocompleteRate": 0.6818181818181818,
       "labels": {
         "de": [
           "Handynummer",
@@ -729,7 +770,8 @@
         "en": [
           "Mobile phone",
           "Phone",
-          "Phone number"
+          "Phone number",
+          "Phone number or email"
         ],
         "es": [
           "Móvil",
@@ -746,13 +788,14 @@
         "mobile",
         "msisdn",
         "phone",
+        "phone-or-email",
         "phonenumber",
         "tel",
         "telephone"
       ]
     },
     "username": {
-      "autocompleteRate": 0.8,
+      "autocompleteRate": 0.6666666666666666,
       "labels": {
         "de": [
           "Anmeldename",
@@ -761,10 +804,15 @@
           "Nutzername"
         ],
         "en": [
+          "Display Name",
+          "Email",
+          "Email address",
+          "Enter your email, phone, or Skype.",
           "Login",
           "User ID",
           "User name",
-          "Username"
+          "Username",
+          "Username or email address"
         ],
         "es": [
           "Identificador",
@@ -779,28 +827,39 @@
         ]
       },
       "tokens": [
+        ":r4:",
+        "email",
+        "global_name",
         "identifiant",
         "login",
+        "login_b",
+        "login_field",
+        "loginfmt",
+        "susi_email",
+        "uid_14",
+        "uid_15",
+        "uid_16",
         "uname",
         "user",
+        "user-name",
         "user_name",
         "userid",
         "username"
       ]
     }
   },
-  "samples": 0,
+  "samples": 29,
   "structure": {
-    "identifierFirst": 0.35,
-    "iframe": 0.08,
-    "shadow": 0.03,
-    "splitOtp": 0.1,
+    "identifierFirst": 0.2948717948717949,
+    "iframe": 0.3794871794871795,
+    "shadow": 0.03333333333333333,
+    "splitOtp": 0.02564102564102564,
     "sso": {
-      "apple": 0.25,
-      "google": 0.45,
-      "microsoft": 0.1
+      "apple": 0.2692307692307692,
+      "google": 0.21794871794871795,
+      "microsoft": 0.07692307692307693
     },
-    "webauthn": 0.15
+    "webauthn": 0.08974358974358974
   },
   "version": 1
 }

@@ -1,0 +1,38 @@
+{
+  "captured_at": "2026-10-26T21:13:15.510Z",
+  "category": "identity",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "label": "Search apple.com",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "www.apple.com",
+  "iframes": [
+    {
+      "origin": "https://idmsa.apple.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source_url": "https://www.apple.com/shop/account/home",
+  "status": "ok",
+  "webauthnCalls": []
+}
