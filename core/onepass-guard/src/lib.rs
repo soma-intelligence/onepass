@@ -7,21 +7,38 @@
 
 mod approval;
 mod audit;
+mod clients;
+mod clock;
 mod display;
+mod grants;
 mod signed;
 
 pub use approval::{
     ApprovalRequest, Approver, CHALLENGE_ALPHABET, Decision, DevAutoApprover, Surface, Target,
-    TtyApprover, challenge_code, dev_auto_approver_from_env, parse_answer, render_prompt, testing,
+    TtyApprover, challenge_code, dev_auto_approver_from_env, parse_answer, render_prompt,
 };
 pub use audit::{
     AuditEntry, AuditLog, AuditRecord, AuditSink, AuditVerification, SignedAuditSink, head_path,
     verify_log,
 };
+pub use clients::{
+    CLIENTS_DOMAIN, ClientRecord, ClientRegistry, ClientRegistryLoader, load_clients, save_clients,
+};
+pub use clock::{Clock, SystemClock};
 pub use display::sanitize_for_display;
+pub use grants::{
+    DEFAULT_GRANT_TTL, GRANTS_DOMAIN, Grant, GrantCheck, GrantRequest, GrantStore, MAX_GRANT_TTL,
+    Revoke,
+};
 pub use signed::{open_config, seal_config};
 
 use std::fmt;
+
+/// Test doubles: a scripted approver and a hand-driven clock.
+pub mod testing {
+    pub use crate::approval::testing::*;
+    pub use crate::clock::testing::FakeClock;
+}
 
 /// Signs and verifies local data with a key owned by the caller (for example
 /// the account's local signature key). `domain` separates uses of the key.

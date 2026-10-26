@@ -3,6 +3,10 @@
 use crate::{GuardError, LocalSigner};
 use data_encoding::BASE64;
 use serde::{Deserialize, Serialize};
+use std::fs::{self, File};
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -40,6 +44,25 @@ pub fn open_config(
         .map_err(|_| GuardError::Format("signature encoding"))?;
     signer.verify(domain, env.payload.as_bytes(), &sig)?;
     Ok(env.payload)
+}
+
+/// Writes `data` to `path` atomically with mode 0600: a fresh, randomly named
+/// file created with O_EXCL in the same directory (a planted file or symlink
+/// cannot redirect the write), synced, renamed over `path`, then the
+/// directory synced.
+pub(crate) fn write_private_atomic(path: &Path, data: &[u8]) -> Result<(), GuardError> {
+    let dir = match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    };
+    let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
+    tmp.as_file()
+        .set_permissions(fs::Permissions::from_mode(0o600))?;
+    tmp.write_all(data)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path).map_err(|e| GuardError::from(e.error))?;
+    File::open(dir)?.sync_all()?;
+    Ok(())
 }
 
 #[cfg(test)]
