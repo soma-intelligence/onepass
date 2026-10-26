@@ -102,6 +102,42 @@ Tout est chiffré : titres, URL, types, tags, nombre de champs, dates. Les seule
 
 Sans mot de passe maître et sans Secret Key, rien n'est récupérable. L'Emergency Kit est proposé à la création du compte et rappelé ensuite. Les codes de récupération viendront avec le serveur.
 
+### 4.9 Connexion d'un nouvel appareil par QR code
+
+Question posée en premier sur le nouvel appareil : "Cet appareil est-il à toi, partagé ou public ?". La réponse choisit le mode (4.10).
+
+Déroulé :
+
+1. Le nouvel appareil crée une paire de clés éphémère hybride ML-KEM-1024 + X25519. Il affiche un QR code qui contient : version du protocole, id de session, hash (32 octets) de sa clé publique éphémère, nom et type de l'appareil, expiration. Le QR expire après 2 minutes et change toutes les 30 s.
+2. La clé publique complète passe par un point de rendez-vous : une zone "appairage" dans la base CloudKit privée du même compte iCloud. Sur Windows et Linux, l'extension y accède après la connexion Apple ID qu'elle demande déjà.
+3. Sur un appareil déjà connecté et déverrouillé, l'utilisateur scanne le QR **avec le scanner de l'app** (jamais l'appareil photo du système), après Face ID ou Touch ID.
+4. L'appareil connecté récupère la clé publique, vérifie qu'elle correspond au hash du QR, encapsule une clé de session et ouvre un canal chiffré.
+5. **Code de vérification** : les deux écrans affichent le même code à 6 chiffres, dérivé de toute la transcription de l'échange. L'utilisateur confirme qu'ils sont identiques. Bloque l'attaquant qui se placerait au milieu.
+6. **Preuve de proximité** : les deux appareils doivent se détecter en Bluetooth LE (et en UWB quand le matériel le permet). Bloque l'attaque principale des connexions par QR : un pirate qui envoie à distance son propre QR en demandant de le "scanner pour se connecter".
+7. L'écran d'approbation affiche le type d'appareil, son nom, le mode choisi et l'avertissement "Ne scanne jamais un QR code qu'on t'a envoyé". L'approbation demande une deuxième biométrie.
+8. Mode personnel ou partagé : l'appareil connecté envoie par le canal l'id du compte, la Secret Key, les paramètres Argon2 signés et une autorisation d'appareil signée par la clé d'identité du compte. Le nouvel appareil demande ensuite le mot de passe maître : il faut donc à la fois un appareil de confiance et le mot de passe.
+9. Le nouvel appareil crée ses propres clés d'appareil, qui sont ajoutées à la **liste signée des appareils** du compte. Tous les autres appareils reçoivent une notification "Nouvel appareil connecté".
+
+Sans appareil de confiance : Emergency Kit (scan du QR ou saisie de la Secret Key) puis mot de passe maître. Option "délai de sécurité" (activée par défaut) : les vaults marqués sensibles restent verrouillés 24 h après une connexion par ce chemin, avec une alerte sur tous les appareils, qui peuvent annuler la connexion.
+
+Gestion des appareils :
+
+- Liste dans les réglages : nom, type, mode, première connexion, dernière activité.
+- Révocation d'un appareil : il est retiré de la liste signée, reçoit un ordre d'effacement, et les clés de tous les vaults qu'il connaissait sont renouvelées. Ainsi, même s'il ignore l'ordre d'effacement, il ne lit plus aucune donnée future.
+
+### 4.10 Modes d'appareil : personnel, partagé, public
+
+- **Personnel** : inscription complète (Secret Key stockée, Face ID, cache local chiffré, autofill complet).
+- **Partagé** (ordinateur de la famille, poste au bureau) : inscription complète, mais pas de biométrie, verrouillage après 5 min d'inactivité, mot de passe maître à chaque déverrouillage, vaults visibles choisis à la connexion.
+- **Public** (ordinateur d'hôtel, de bibliothèque, d'un tiers) : **session déléguée**, sans inscription.
+  - Le mot de passe maître n'est **jamais tapé** sur l'appareil public, ce qui neutralise les keyloggers. La Secret Key ne quitte jamais le téléphone.
+  - Sur le téléphone, l'utilisateur choisit les vaults ou les items à ouvrir, la durée (15 min par défaut, 1 h maximum) et lecture seule oui/non.
+  - Le téléphone n'envoie que les clés de ces vaults ou items, enveloppées pour la clé éphémère de la session. Aucune autorisation d'appareil n'est créée.
+  - Rien sur le disque : ni cache, ni clé, ni historique, ni proposition d'enregistrer un mot de passe. Presse-papiers effacé après 30 s.
+  - Fin de session automatique à l'expiration, à la fermeture du navigateur ou après 5 min d'inactivité. Fin à distance depuis le téléphone à tout moment, avec un compteur de temps restant affiché sur les deux appareils.
+  - Le téléphone garde un journal de la session : items ouverts, champs copiés ou remplis.
+  - Limite affichée honnêtement : un ordinateur public compromis peut voir ce qui est ouvert pendant la session. D'où l'ouverture du strict nécessaire.
+
 ## 5. Vaults et items
 
 ### 5.1 Vaults
@@ -364,6 +400,7 @@ Calculs locaux dans `core`.
 - Crypto : vecteurs officiels NIST pour ML-KEM, ML-DSA et SLH-DSA ; test différentiel `aws-lc-rs` contre `libcrux`.
 - Formats et import : tests property-based (`proptest`), fuzzing (`cargo-fuzz`) sur tous les parseurs.
 - Suite "stockage malveillant" : un test par classe d'attaque (paramètres KDF affaiblis, rollback, items intervertis, item supprimé, clé injectée, manifeste ancien). Chaque cas doit être détecté et refusé.
+- Appairage QR : QR expiré ou rejoué, clé publique qui ne correspond pas au hash, codes de vérification différents, absence de proximité Bluetooth, session publique utilisée après expiration ou fin à distance, appareil révoqué qui tente de lire des données après rotation.
 - Modèle Tamarin ou ProVerif vérifié en CI.
 - Apple : Swift Testing pour `VaultKit`, tests UI des flux AutoFill.
 - Extension : Playwright sur des pages piégées (iframe d'un autre site, formulaire invisible, page HTTP, domaine sosie, flux OAuth simulé).
