@@ -135,6 +135,23 @@ private func snapshot(validUntil: Date) -> GlanceSnapshot {
         #expect(signal.isPending(unlockedAt: t.addingTimeInterval(20)) == false)
     }
 
+    @Test func lockRequestsBeforeLaunchAreSpent() {
+        let launch = Date(timeIntervalSince1970: 10_000)
+        // No request, or one from a previous run: nothing to do, unlocked or not yet stamped.
+        #expect(!LockSignal.shouldLock(request: nil, unlockedAt: nil, launchedAt: launch))
+        #expect(!LockSignal.shouldLock(request: launch.addingTimeInterval(-60), unlockedAt: nil, launchedAt: launch))
+        #expect(!LockSignal.shouldLock(request: launch, unlockedAt: nil, launchedAt: launch))
+        // After the launch, before any recorded unlock: lock.
+        #expect(LockSignal.shouldLock(request: launch.addingTimeInterval(5), unlockedAt: nil, launchedAt: launch))
+        // Relative to the last unlock.
+        let unlock = launch.addingTimeInterval(100)
+        #expect(!LockSignal.shouldLock(request: launch.addingTimeInterval(50), unlockedAt: unlock, launchedAt: launch))
+        #expect(LockSignal.shouldLock(request: unlock.addingTimeInterval(1), unlockedAt: unlock, launchedAt: launch))
+        // An unlock stamp older than the launch never revives an old request.
+        #expect(!LockSignal.shouldLock(
+            request: launch.addingTimeInterval(-1), unlockedAt: launch.addingTimeInterval(-100), launchedAt: launch))
+    }
+
     @Test func lockSignalDarwinDelivery() async throws {
         let name = "test.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!

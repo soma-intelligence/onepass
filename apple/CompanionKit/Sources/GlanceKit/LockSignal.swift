@@ -30,6 +30,15 @@ public struct LockSignal: @unchecked Sendable {
         return requested > unlockedAt
     }
 
+    /// Whether the app should lock now: a request newer than both its last unlock and its
+    /// launch. A request from before the launch is spent (an app that was not running held no
+    /// key), so the first unlock after a relaunch is never undone by an old request.
+    public static func shouldLock(request: Date?, unlockedAt: Date?, launchedAt: Date) -> Bool {
+        guard let request else { return false }
+        let baseline = max(unlockedAt ?? launchedAt, launchedAt)
+        return request > baseline
+    }
+
     public static func observe(_ handler: @escaping @Sendable () -> Void) -> LockSignalObservation {
         LockSignalObservation(handler: handler)
     }

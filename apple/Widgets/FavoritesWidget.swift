@@ -35,18 +35,33 @@ struct FavoritesWidgetView: View {
     }
 
     @ViewBuilder private func list(_ favorites: [GlanceItem]) -> some View {
-        let shown = Array(favorites.prefix(family == .systemMedium ? 6 : 3))
-        let columns = family == .systemMedium
-            ? [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
-            : [GridItem(.flexible())]
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-            ForEach(shown) { item in
-                Link(destination: item.link.url) {
-                    FavoriteRow(item: item)
+        if family == .systemMedium {
+            let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                ForEach(Array(favorites.prefix(6))) { item in
+                    Link(destination: item.link.url) {
+                        FavoriteRow(item: item)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        } else if let first = favorites.first {
+            // A small widget is one tap target: the first favorite only.
+            VStack(alignment: .leading, spacing: 8) {
+                GlanceTile(item: first, size: 32)
+                Spacer(minLength: 0)
+                Text(first.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .privacySensitive()
+                if favorites.count > 1 {
+                    Text("+ \(favorites.count - 1) autres")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .widgetURL(first.link.url)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .widgetURL(shown.first?.link.url)
     }
 }

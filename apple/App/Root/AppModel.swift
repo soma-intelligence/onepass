@@ -70,7 +70,7 @@ final class AppModel {
     /// The standalone password generator ("Générer un mot de passe" Control).
     var showGenerator = false
     /// When the session last became unlocked (lock requests from a Control older than this are spent).
-    private(set) var lastUnlockAt: Date?
+    @ObservationIgnored private(set) var lastUnlockAt: Date?
     /// What the browse screens should bring forward (iPhone: the tab to select). Cleared by the
     /// screen that handled it.
     var browseReveal: BrowseReveal?
@@ -84,6 +84,10 @@ final class AppModel {
     @ObservationIgnored private let lockSignal = LockSignal(
         defaults: UserDefaults(suiteName: AppGroup.identifier) ?? .standard)
     @ObservationIgnored private var lockObservation: LockSignalObservation?
+    /// Requests older than this process are spent: an app that was not running held no key.
+    @ObservationIgnored private let launchedAt = Date.now
+    /// The newest request seen while not unlocked (spent: there was nothing to lock).
+    @ObservationIgnored private var spentLockRequest: Date?
 
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var started = false
@@ -155,11 +159,14 @@ final class AppModel {
             openDebugItemIfRequested()
         }
         #endif
+        #if os(iOS)
         // A "Verrouiller OnePass" Control while the app runs: the Darwin notification locks now.
         lockObservation = LockSignal.observe { [weak self] in
             Task { @MainActor in self?.lockIfRequested() }
         }
+        trackUnlocks()
         lockIfRequested()
+        #endif
         companion.start()
         guard let coordinator else { return }
         tasks.append(Task { [weak self] in
@@ -347,18 +354,47 @@ final class AppModel {
         session.lock()
     }
 
-    /// Locks when a "Verrouiller OnePass" request is newer than the last unlock.
+    /// Locks when a "Verrouiller OnePass" request is newer than the last unlock, this launch and
+    /// any request already seen while locked. iOS only (the Controls exist only there).
     func lockIfRequested() {
-        guard session.state == .unlocked, lockSignal.isPending(unlockedAt: lastUnlockAt) else { return }
+        #if os(iOS)
+        let request = lockSignal.lastRequest
+        guard session.state == .unlocked else {
+            // Nothing to lock: this request is spent, the next unlock must not undo itself.
+            if let request { spentLockRequest = max(spentLockRequest ?? request, request) }
+            return
+        }
+        let baseline = [lastUnlockAt, spentLockRequest].compactMap { $0 }.max()
+        guard LockSignal.shouldLock(request: request, unlockedAt: baseline, launchedAt: launchedAt) else { return }
         Self.log.info("lock requested from a Control")
         lock()
+        #endif
     }
+
+    #if os(iOS)
+    /// Stamps `lastUnlockAt` from the model itself, whatever view is on screen.
+    private func trackUnlocks() {
+        withObservationTracking {
+            _ = session.state
+        } onChange: { [weak self] in
+            // Called before the change: the new state is read on the next main actor turn.
+            Task { @MainActor in
+                guard let self else { return }
+                let unlocked = self.session.state == .unlocked
+                if unlocked, self.wasLocked { self.lastUnlockAt = .now }
+                self.wasLocked = !unlocked
+                self.trackUnlocks()
+            }
+        }
+    }
+    /// The session was not unlocked at the last observed change.
+    @ObservationIgnored private var wasLocked = true
+    #endif
 
     /// The session state changed (root view): records the unlock time, runs a waiting route,
     /// refreshes the widgets.
     func sessionStateChanged(_ state: VaultSession.State) {
         if state == .unlocked {
-            lastUnlockAt = .now
             consumePendingRoute()
         } else {
             resetNavigation()
