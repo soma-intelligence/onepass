@@ -396,6 +396,16 @@ paired("S17_fixed_extension_url_not_reachable", async ({ ext }) => {
     return out;
   }, ext.id);
   for (const v of Object.values(results)) expect(v).toBe("blocked");
+  // Nor can the page frame it to probe for the extension.
+  await page.evaluate((id) => {
+    const f = document.createElement("iframe");
+    f.src = `chrome-extension://${id}/menu.html#AAAAAAAAAAAAAAAAAAAAAA`;
+    document.body.appendChild(f);
+  }, ext.id);
+  await ext.settle(1500);
+  const probe = page.frames().find((f) => f.parentFrame() === page.mainFrame() && !f.url().startsWith("chrome-extension://"));
+  expect(probe?.url()).toMatch(/^chrome-error:/);
+  expect(page.frames().filter((f) => new URL(f.url()).pathname === "/menu.html")).toHaveLength(0);
 });
 
 paired.describe("with the worker handle (e2e build)", () => {
