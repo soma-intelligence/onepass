@@ -210,8 +210,17 @@ describe("save prompt", () => {
     expect(pwd.value).toBe("");
     // Nothing to reveal: the worker holds no password yet.
     expect(() => button(r, "Afficher")).toThrow();
+    // No password yet: nothing can be saved.
+    expect(button(r, "Enregistrer").disabled).toBe(true);
     user.value = "alex@atlas.dev";
     user.dispatchEvent(new Event("input"));
+    expect(button(r, "Enregistrer").disabled).toBe(true);
+    pwd.value = "Typed-Pass-9";
+    pwd.dispatchEvent(new Event("input"));
+    expect(button(r, "Enregistrer").disabled).toBe(false);
+    pwd.value = "";
+    pwd.dispatchEvent(new Event("input"));
+    expect(button(r, "Enregistrer").disabled).toBe(true);
     pwd.value = "Typed-Pass-9";
     pwd.dispatchEvent(new Event("input"));
     await click("Enregistrer");
@@ -229,6 +238,7 @@ describe("save prompt", () => {
     await click("Générer");
     const pwd = r.querySelector<HTMLInputElement>("input[aria-label=\"mot de passe\"]")!;
     expect(pwd.value).toBe("Gen-Pass-123");
+    expect(button(r, "Enregistrer").disabled).toBe(false);
     await click("Enregistrer");
     // The generated one is held by the worker: not sent back.
     expect((worker.sent.at(-1) as { edits: { password: string } }).edits.password).toBe("");

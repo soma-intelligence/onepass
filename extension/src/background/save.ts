@@ -162,14 +162,17 @@ export class SavePrompts {
           });
         } else {
           if (!edits) throw new BgError("invalid");
+          // Empty: the password typed on the page (never sent to the prompt unless revealed).
+          const password = edits.password === "" ? rec.password : edits.password;
+          // A login without a password is never saved (new login from the menu, nothing typed).
+          if (password === "") throw new BgError("invalid");
           await this.deps.session.request({
             op: "save_login",
             ctx: "save_prompt",
             origin: rec.origin,
             title: edits.title.trim() === "" ? titleFromSite(parseOrigin(rec.origin)?.site ?? rec.origin) : edits.title,
             username: edits.username,
-            // Empty: the password typed on the page (never sent to the prompt unless revealed).
-            password: edits.password === "" ? rec.password : edits.password,
+            password,
             vault_id: edits.vaultId,
             rule: edits.rule,
             tags: edits.tags,

@@ -131,11 +131,21 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     return sel;
   };
 
+  /** "Enregistrer" of the current view; disabled while nothing can be saved. */
+  let saveBtn: HTMLButtonElement | null = null;
+  /** New login from the menu: no password typed or generated yet. */
+  const noPassword = (d: Draft) => init?.view === "edit" && d.typed === "" && d.password === null;
+  const updateSave = (d: Draft) => {
+    if (saveBtn) saveBtn.disabled = (init?.vaults.length ?? 0) === 0 || noPassword(d);
+  };
+
   /** Vault choice and "Enregistrer"; with no vault, nothing can be saved. */
   const saveActions = (cls: string, err: HTMLElement, d: Draft) => {
     const save = btn("Enregistrer", "btn btn-primary", () =>
       void decide("save", err, () => renderSaved(`${d.title} enregistré`, `Dans ${vaultName()}`)),
     );
+    saveBtn = save;
+    updateSave(d);
     if ((init?.vaults.length ?? 0) > 0) return h("div", { class: cls }, vaultSelect(), save);
     save.disabled = true;
     return h("div", { class: cls }, h("span", { class: "stack note no-vault" }, "Aucun coffre disponible"), save);
@@ -307,6 +317,9 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       input.value = d.password ?? d.typed;
       input.addEventListener("input", () => {
         d.typed = input.value;
+        // Cleared after a generation: the generated one is no longer shown, nor saved.
+        if (input.value === "") d.password = null;
+        updateSave(d);
       });
       pwd = input;
     } else {

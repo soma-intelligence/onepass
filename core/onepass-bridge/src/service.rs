@@ -626,6 +626,11 @@ impl<V: VaultAccess> Service<V> {
 
     fn save_login(&mut self, ctx: Ctx, o: &str, new: NewLogin<'_>, now: u64) -> OpResult<Response> {
         let page = origin(o)?;
+        // A login is never saved without a password (defense in depth: the
+        // extension refuses it too).
+        if new.password.0.is_empty() {
+            return Err(AppErrorCode::Invalid);
+        }
         let vault_id = parse_id(new.vault_id)?;
         if !self
             .vault

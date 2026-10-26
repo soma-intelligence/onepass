@@ -378,6 +378,17 @@ fn save_then_list() {
 }
 
 #[test]
+fn save_login_refuses_empty_password() {
+    let mut h = H::new();
+    let perso = h.ids.perso;
+    let before = h.vault().items.len();
+    let empty = json!({"op":"save_login","ctx":"save_prompt","origin":ATLAS,"title":"Atlas",
+        "username":"alex@atlas.dev","password":"","vault_id":id(perso),"rule":"domain","tags":[]});
+    assert_eq!(err(&h.call(empty)), "invalid");
+    assert_eq!(h.vault().items.len(), before);
+}
+
+#[test]
 fn update_password_keeps_history() {
     let mut h = H::new();
     let atlas = h.ids.atlas;

@@ -361,6 +361,15 @@ describe("save and link proposals (wired)", () => {
       ok: Record<string, unknown>;
     };
     expect(init.ok).toMatchObject({ origin: SITE, username: "", status: "new", kind: "login", view: "edit" });
+    // Nothing typed nor generated: a login without a password is refused.
+    const edits = { title: "Atlas Cloud", username: "alex@atlas.dev", password: "", vaultId: "v1", rule: "domain", tags: [] };
+    const saveUi = uiSender(`save.html#${saveToken}`, 7);
+    expect(await t.ext.send({ type: "save_decide", token: saveToken, decision: "save", edits }, saveUi)).toEqual({ err: "invalid" });
+    expect(ops(t)).not.toContain("save_login");
+    expect(
+      await t.ext.send({ type: "save_decide", token: saveToken, decision: "save", edits: { ...edits, password: "Typed-Pass-9" } }, saveUi),
+    ).toEqual({ ok: {} });
+    expect(ops(t)).toContain("save_login");
   });
 
   it("back on the site after Google without a form: Enregistrer le lien prompt", async () => {
