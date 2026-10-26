@@ -67,7 +67,9 @@ struct FieldValueView: View {
             BarcodeRow(field: field, value: value, format: format) { copy(value, concealed: false) }
         case .itemLink(let id):
             itemLinkRow(id)
-        case .passkey, .file:
+        case .passkey(let passkey):
+            PasskeyRow(field: field, passkey: passkey)
+        case .file:
             VStack(alignment: .leading, spacing: 2) {
                 Text(field.label).font(.footnote).foregroundStyle(.secondary)
                 ReadOnlyFieldView(field: field)
@@ -154,6 +156,42 @@ struct FieldValueView: View {
                 Text("Élément introuvable").foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// A passkey of a Login (spec 6): the site it signs in to, the account name and the creation date.
+/// Nothing secret: the private key never leaves the core.
+private struct PasskeyRow: View {
+    let field: FfiField
+    let passkey: FfiPasskey
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "person.badge.key.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(field.label).font(.footnote).foregroundStyle(.secondary)
+                Text(passkey.rpId.isEmpty ? String(localized: "Site inconnu") : passkey.rpId)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if !passkey.userName.isEmpty {
+                    Text(passkey.userName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Text("Créée le \(FieldDates.day(passkey.createdAt))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("field.passkey.\(field.id)")
     }
 }
 

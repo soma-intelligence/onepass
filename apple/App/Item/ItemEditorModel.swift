@@ -61,6 +61,26 @@ final class ItemEditorModel {
         fieldKeys[sectionID]?.remove(at: fieldIndex)
     }
 
+    /// Removes a passkey (spec 6, after a confirmation in the view). The first occurrence of the
+    /// field is not removable as a row: it takes the next passkey's value, or becomes empty when it
+    /// was the only one.
+    func removePasskey(sectionID: String, fieldIndex: Int) {
+        if draft.isRemovable(sectionID: sectionID, fieldIndex: fieldIndex) {
+            removeField(sectionID: sectionID, fieldIndex: fieldIndex)
+            return
+        }
+        guard let fields = draft.item.sections.first(where: { $0.id == sectionID })?.fields,
+            fields.indices.contains(fieldIndex)
+        else { return }
+        let id = fields[fieldIndex].id
+        if let next = fields.indices.first(where: { $0 > fieldIndex && fields[$0].id == id }) {
+            draft.setValue(fields[next].value, sectionID: sectionID, fieldIndex: fieldIndex)
+            removeField(sectionID: sectionID, fieldIndex: next)
+        } else {
+            draft.setValue(.empty, sectionID: sectionID, fieldIndex: fieldIndex)
+        }
+    }
+
     func addCustomField(kind: FfiFieldType) {
         draft.addCustomField(kind: kind, label: ItemDraft.defaultLabel(kind))
         fieldKeys[ItemDraft.customSectionID, default: []].append(UUID())

@@ -30,6 +30,11 @@ struct HomeTab: View {
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
                     }
+                    if model.showsAutoFillTip {
+                        Section {
+                            AutoFillTipCard()
+                        }
+                    }
                     HomeSection(
                         title: "Favoris", systemImage: "star.fill", color: .orange, isOpen: $favoritesOpen,
                         items: favorites, emptyText: "Touche l'étoile d'un élément pour le retrouver ici.",

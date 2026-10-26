@@ -12,6 +12,8 @@ struct ItemEditorView: View {
     @State private var confirmDiscard = false
     /// The generator asked by a password field (presented here, not from the field's row).
     @State private var generatorRequest: GeneratorRequest?
+    /// A passkey whose removal waits for "Supprimer la passkey ?" (section id, row key).
+    @State private var passkeyRemoval: PasskeyRemoval?
     @FocusState private var titleFocused: Bool
     private let onDone: (FfiItem?) -> Void
 
@@ -95,6 +97,22 @@ struct ItemEditorView: View {
             Button("Abandonner", role: .destructive) { onDone(nil) }
             Button("Continuer la modification", role: .cancel) {}
         }
+        .confirmationDialog(
+            "Supprimer la passkey ?",
+            isPresented: Binding(get: { passkeyRemoval != nil }, set: { if !$0 { passkeyRemoval = nil } }),
+            titleVisibility: .visible, presenting: passkeyRemoval
+        ) { removal in
+            Button("Supprimer la passkey", role: .destructive) {
+                if let i = editor.index(of: removal.key, sectionID: removal.sectionID) {
+                    editor.removePasskey(sectionID: removal.sectionID, fieldIndex: i)
+                }
+                passkeyRemoval = nil
+            }
+            .accessibilityIdentifier("editor.passkey.confirmRemove")
+            Button("Annuler", role: .cancel) { passkeyRemoval = nil }
+        } message: { _ in
+            Text("Après l'enregistrement, tu ne pourras plus te connecter à ce site avec cette passkey. Le site la garde dans ton compte : supprime-la aussi dans ses réglages.")
+        }
         .interactiveDismissDisabled(editor.isDirty)
         // A lock or a navigation asks first while the draft has unsaved changes (`AppModel.perform`).
         .onChange(of: editor.isDirty, initial: true) { _, dirty in model.editorDirty = dirty }
@@ -174,7 +192,18 @@ struct ItemEditorView: View {
         let index = editor.index(of: key, sectionID: sectionID) ?? 0
         let removable = editor.draft.isRemovable(sectionID: sectionID, fieldIndex: index)
         HStack(alignment: .top, spacing: 10) {
-            if removable {
+            if field.kind == .passkey, field.value != .empty {
+                // Spec 6: a passkey is removed here, after a confirmation, whatever its position.
+                Button {
+                    passkeyRemoval = PasskeyRemoval(sectionID: sectionID, key: key)
+                } label: {
+                    Image(systemName: "minus.circle.fill").foregroundStyle(.red)
+                }
+                .buttonStyle(.borderless)
+                .padding(.top, 2)
+                .accessibilityLabel(Text("Supprimer la passkey"))
+                .accessibilityIdentifier("editor.remove.\(field.id)")
+            } else if removable {
                 Button {
                     if let i = editor.index(of: key, sectionID: sectionID) {
                         editor.removeField(sectionID: sectionID, fieldIndex: i)
@@ -235,6 +264,11 @@ struct ItemEditorView: View {
 
     /// Looks the row up by its stable key on every access: after a removal the binding of a row
     /// that went away reads `.empty` and writes nothing.
+    private struct PasskeyRemoval: Equatable {
+        var sectionID: String
+        var key: UUID
+    }
+
     private func valueBinding(_ sectionID: String, _ key: UUID) -> Binding<FfiFieldValue> {
         Binding(
             get: {

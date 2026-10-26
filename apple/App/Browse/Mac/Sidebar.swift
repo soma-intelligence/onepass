@@ -67,6 +67,13 @@ struct Sidebar: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 Divider()
+                if model.showsAutoFillTip {
+                    AutoFillTipCard()
+                        .padding(12)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                }
                 if case .accountChanged = model.syncStatus {
                     AccountChangedCard(compact: true).padding(10)
                 } else {

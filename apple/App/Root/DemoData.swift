@@ -91,7 +91,10 @@ enum DemoData {
             settings: VaultSettings(defaults: defaults),
             sync: NoSync(),
             clock: clock,
-            pasteboard: SystemPasteboard())
+            pasteboard: SystemPasteboard(),
+            // Never the system identity store: the demo's fictional Logins stay out of QuickType.
+            // Off at launch, so the AutoFill tip card shows; "Activer" turns it on in memory.
+            identityStore: InMemoryIdentityStore(enabled: false))
     }
 }
 

@@ -63,6 +63,9 @@ final class AppModel {
     private(set) var remoteRevision = 0
     /// Short confirmation shown at the bottom of the browse screens ("Mis à la corbeille").
     private(set) var toast: String?
+    /// OnePass is the system AutoFill provider; nil until the first read. Read again on every return
+    /// to the foreground and after an activation request.
+    private(set) var autofillEnabled: Bool?
 
     // Routes from outside the app (widgets, Controls, App Intents).
     /// A route that arrived while locked: runs right after the next unlock.
@@ -106,8 +109,11 @@ final class AppModel {
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "app")
 
     init() {
+        // Resolved once per launch (the probe touches the disk): the same value serves the reset,
+        // the migration, the sync store and the session.
+        let resolved = SharedContainer.resolve()
         #if DEBUG
-        DebugReset.applyIfRequested()
+        let wasReset = DebugReset.applyIfRequested()
         #endif
         Self.sweepEmergencyKits()
         #if DEBUG
@@ -131,10 +137,14 @@ final class AppModel {
             // Demonstration store (Debug): temporary database, no sync.
             environment = demo
         } else {
+            // Before anything opens the store: the extension and the app share the moved database.
+            // UI tests (Debug, `TestIsolation`) never move nor open the user's store.
             #if DEBUG
-            let databaseURL = isolated ? TestIsolation.databaseURL : VaultEnvironment.defaultDatabaseURL()
+            let container = isolated ? resolved : Self.migrateToSharedContainer(resolved)
+            let databaseURL = isolated ? TestIsolation.databaseURL : container.databaseURL
             #else
-            let databaseURL = VaultEnvironment.defaultDatabaseURL()
+            let container = Self.migrateToSharedContainer(resolved)
+            let databaseURL = container.databaseURL
             #endif
             do {
                 let store = try openSyncStore(dbPath: databaseURL.path)
@@ -144,17 +154,20 @@ final class AppModel {
             }
             #if DEBUG
             if isolated {
-                // UI tests: their own store, settings and keychain service (never the user's).
-                environment = VaultEnvironment.live(
-                    sync: coordinator ?? NoSync(), databaseURL: databaseURL,
+                // UI tests: their own store, settings and keychain service (never the user's), and
+                // nothing published to the system identity store.
+                var isolatedEnvironment = VaultEnvironment.live(
+                    sync: coordinator ?? NoSync(), container: container, databaseURL: databaseURL,
                     settings: VaultSettings(defaults: TestIsolation.defaults),
                     keychainService: TestIsolation.keychainService)
+                isolatedEnvironment.identityStore = NoIdentityStore()
+                environment = isolatedEnvironment
             } else {
-                environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), databaseURL: databaseURL)
+                environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), container: container)
             }
             #else
-            // `live` uses the same database as the sync store.
-            environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), databaseURL: databaseURL)
+            // `live` uses the same container as the sync store.
+            environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), container: container)
             #endif
         }
         self.coordinator = coordinator
@@ -164,6 +177,10 @@ final class AppModel {
         companion = CompanionCoordinator(
             session: session, glanceStore: demo == nil && !isolated ? GlanceStore.shared() : nil,
             phone: demo == nil && !isolated ? CompanionCoordinator.makePhone(session: session) : nil)
+        #if DEBUG
+        // A wiped account must not leave its identities in the system store.
+        if wasReset { session.clearAutofillIdentities() }
+        #endif
 
         let settings = environment.settings
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -174,6 +191,30 @@ final class AppModel {
     }
 
     var settings: VaultSettings { session.environment.settings }
+
+    /// The milestone 2 store location (`Application Support/OnePass/vault.sqlite` of the app's own
+    /// container) and settings (`UserDefaults.standard`).
+    nonisolated static var legacyContainer: SharedContainer {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return SharedContainer(root: support, isShared: false, defaultsSuite: nil)
+    }
+
+    /// Moves the milestone 2 store and settings into the shared container (ruling A3). If the move
+    /// fails, this launch keeps the legacy store and settings (the database file moves last, so it is
+    /// still in place): the vault stays usable in the app, and the AutoFill extension sees no vault
+    /// until a later launch completes the move.
+    private static func migrateToSharedContainer(_ container: SharedContainer) -> SharedContainer {
+        guard container.isShared else { return container }
+        let legacy = legacyContainer
+        do {
+            try SharedContainerMigration.run(
+                from: legacy.databaseURL, legacyDefaults: .standard, to: container)
+            return container
+        } catch {
+            log.error("shared container migration failed, legacy store kept for this launch")
+            return legacy
+        }
+    }
 
     /// Starts listening to the sync layer and runs a first round. Called once by the root view.
     func start() {
@@ -197,6 +238,7 @@ final class AppModel {
         lockIfRequested()
         #endif
         companion.start()
+        tasks.append(Task { [weak self] in await self?.refreshAutoFillStatus() })
         guard let coordinator else { return }
         tasks.append(Task { [weak self] in
             for await _ in await coordinator.remoteChanges() {
@@ -223,6 +265,8 @@ final class AppModel {
             lockIfRequested()
             companion.sessionChanged()
             if let coordinator { Task { await coordinator.syncNow() } }
+            // The provider may have been turned on or off in the system settings meanwhile.
+            Task { await refreshAutoFillStatus() }
         case .inactive:
             session.scenePhaseChanged(.inactive)
         case .background:
@@ -593,6 +637,48 @@ final class AppModel {
         session.noteActivity()
     }
 
+    // MARK: - AutoFill
+
+    /// Reads the provider state. When it turns on, the identities are published again: refreshes made
+    /// while the provider was off were dropped by the system store.
+    func refreshAutoFillStatus() async {
+        let enabled = await providerEnabled()
+        let turnedOn = enabled && autofillEnabled != true
+        autofillEnabled = enabled
+        if turnedOn { session.refreshAutofillIdentities() }
+    }
+
+    /// "Activer OnePass": the system prompt, then the state is read again.
+    func requestAutoFillActivation() async {
+        #if DEBUG
+        // Demo data: the in-memory store stands for the system, nothing is asked.
+        if let demo = session.environment.identityStore as? InMemoryIdentityStore {
+            demo.enabled = true
+            await refreshAutoFillStatus()
+            return
+        }
+        #endif
+        _ = await AutoFillStatus.requestActivation()
+        await refreshAutoFillStatus()
+    }
+
+    /// The tip card of Accueil and of the sidebar: while the provider is off, until closed once.
+    var showsAutoFillTip: Bool {
+        _ = settingsRevision
+        return autofillEnabled == false && !settings.autofillTipDismissed
+    }
+
+    func dismissAutoFillTip() {
+        updateSettings { $0.autofillTipDismissed = true }
+    }
+
+    private func providerEnabled() async -> Bool {
+        #if DEBUG
+        if let demo = session.environment.identityStore as? InMemoryIdentityStore { return await demo.isEnabled() }
+        #endif
+        return await AutoFillStatus.isEnabled()
+    }
+
     // MARK: - Navigation guarded by the editor
 
     /// What would replace an editor with unsaved changes.
@@ -793,15 +879,18 @@ enum TestIsolation {
 /// UI tests, with `-OnePassTestIsolation YES` only: `-OnePassUITestReset YES` starts from an empty
 /// isolated store (also how a test cleans up after itself: a last launch with it, then terminate).
 /// Without isolation it is ignored: the user's store, settings and keychain are never wiped.
+/// Returns whether it ran (the caller then empties the identity store of the session).
 enum DebugReset {
-    static func applyIfRequested() {
-        guard UserDefaults.standard.bool(forKey: "OnePassUITestReset") else { return }
+    @discardableResult
+    static func applyIfRequested() -> Bool {
+        guard UserDefaults.standard.bool(forKey: "OnePassUITestReset") else { return false }
         guard TestIsolation.isActive else {
             Logger(subsystem: "me.somalabs.onepass", category: "app")
                 .error("UI test reset ignored without -OnePassTestIsolation")
-            return
+            return false
         }
         TestIsolation.wipe()
+        return true
     }
 }
 #endif

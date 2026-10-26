@@ -1,7 +1,7 @@
 import SwiftUI
 import VaultKit
 
-/// Passkeys (created in milestone 3) and files (attachments in milestone 5) are read only.
+/// Passkeys (created by the AutoFill extension) and files (attachments in milestone 5) are read only.
 struct ReadOnlyFieldView: View {
     let field: FfiField
 
@@ -25,7 +25,7 @@ struct ReadOnlyFieldView: View {
             return "\(f.name) · \(ByteCountFormatter.string(fromByteCount: Int64(f.size), countStyle: .file))"
         default:
             return kind == .passkey
-                ? String(localized: "Création des passkeys au jalon 3")
+                ? String(localized: "Aucune passkey : elle s'ajoute quand un site t'en fait créer une")
                 : String(localized: "Pièces jointes au jalon 5")
         }
     }
