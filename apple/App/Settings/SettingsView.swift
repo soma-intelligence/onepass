@@ -108,7 +108,9 @@ struct SettingsView: View {
                 }
             }
         }
-        .simultaneousGesture(TapGesture().onEnded { model.session.noteActivity() })
+        // Not a tap gesture on the stack or the pages: on iOS 27 it swallows the taps of the
+        // navigation rows and pickers below it. Opening or leaving a page counts as activity.
+        .onChange(of: path) { model.session.noteActivity() }
     }
 
     #if os(iOS)
