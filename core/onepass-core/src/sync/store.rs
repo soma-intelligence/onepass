@@ -437,8 +437,6 @@ impl SyncStore {
         Ok(held_vaults(&self.conn)?.into_iter().collect())
     }
 
-    // Used by the rebase (next task).
-    #[allow(dead_code)]
     /// The `base` manifest a pending manifest of `vault` was built on.
     pub(crate) fn ancestor_manifest(&self, vault: Id) -> Result<Option<Record>> {
         self.conn
@@ -460,39 +458,104 @@ impl SyncStore {
             .transpose()
     }
 
-    // Used by the rebase (next task).
-    #[allow(dead_code)]
     /// Remove every pending row of `vault` (its manifest and its items,
     /// deletions included) and the manifest's ancestor, so the next local
     /// write starts again from the current `base`. Read
-    /// `ancestor_manifest` first.
-    pub(crate) fn drop_pending_vault(&mut self, vault: Id) -> Result<()> {
+    /// `ancestor_manifest` first. Returns what was removed, for
+    /// `restore_pending_vault`.
+    pub(crate) fn drop_pending_vault(&mut self, vault: Id) -> Result<PendingVault> {
         let tx = self.write_tx()?;
-        let manifest = RecordKind::Manifest.code();
-        let item = RecordKind::Item.code();
-        tx.execute(
-            "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
-            params![manifest, &vault.0[..]],
-        )
-        .map_err(store_err)?;
-        tx.execute(
-            "DELETE FROM pending WHERE kind = ?1 AND data IS NOT NULL
-             AND substr(data, 1, 16) = ?2",
-            params![item, &vault.0[..]],
-        )
-        .map_err(store_err)?;
-        tx.execute(
-            "DELETE FROM pending WHERE kind = ?1 AND data IS NULL AND vault = ?2",
-            params![item, &vault.0[..]],
-        )
-        .map_err(store_err)?;
-        tx.execute(
-            "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2",
-            params![manifest, &vault.0[..]],
-        )
-        .map_err(store_err)?;
+        let id = &vault.0[..];
+        let codes = (RecordKind::Manifest.code(), RecordKind::Item.code());
+        let rows: Vec<PendingRow> = {
+            let mut stmt = tx
+                .prepare(&format!(
+                    "SELECT kind, id, version, data, vault FROM pending WHERE {VAULT_ROWS}"
+                ))
+                .map_err(store_err)?;
+            let rows = stmt
+                .query_map(params![codes.0, codes.1, id], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+                })
+                .map_err(store_err)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(store_err)?
+        };
+        let ancestor: Option<(i64, Vec<u8>)> = tx
+            .query_row(
+                "SELECT version, data FROM ancestor WHERE kind = ?1 AND id = ?2",
+                params![codes.0, id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(store_err)?;
+        delete_vault_rows(&tx, vault)?;
+        tx.commit().map_err(store_err)?;
+        Ok(PendingVault {
+            vault,
+            rows,
+            ancestor,
+        })
+    }
+
+    /// Put back what `drop_pending_vault` removed, replacing any pending
+    /// row of that vault written since (a rebase that failed half way).
+    pub(crate) fn restore_pending_vault(&mut self, snapshot: PendingVault) -> Result<()> {
+        let tx = self.write_tx()?;
+        delete_vault_rows(&tx, snapshot.vault)?;
+        for (kind, id, version, data, vault) in snapshot.rows {
+            tx.execute(
+                "INSERT INTO pending (kind, id, version, data, vault) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![kind, id, version, data, vault],
+            )
+            .map_err(store_err)?;
+        }
+        if let Some((version, data)) = snapshot.ancestor {
+            tx.execute(
+                "INSERT INTO ancestor (kind, id, version, data) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    RecordKind::Manifest.code(),
+                    &snapshot.vault.0[..],
+                    version,
+                    data
+                ],
+            )
+            .map_err(store_err)?;
+        }
         tx.commit().map_err(store_err)
     }
+}
+
+/// The pending rows of one vault, `?3`: its manifest (kind `?1`), its item
+/// records by vault prefix and its item tombstones by their vault (kind
+/// `?2`).
+const VAULT_ROWS: &str = "(kind = ?1 AND id = ?3)
+    OR (kind = ?2 AND data IS NOT NULL AND substr(data, 1, 16) = ?3)
+    OR (kind = ?2 AND data IS NULL AND vault = ?3)";
+
+/// A `pending` row: `(kind, id, version, data, vault)`.
+type PendingRow = (i64, Vec<u8>, i64, Option<Vec<u8>>, Option<Vec<u8>>);
+
+/// What `drop_pending_vault` removed: the vault's pending rows and its
+/// manifest's ancestor row (`version, data`).
+pub(crate) struct PendingVault {
+    vault: Id,
+    rows: Vec<PendingRow>,
+    ancestor: Option<(i64, Vec<u8>)>,
+}
+
+fn delete_vault_rows(tx: &Transaction<'_>, vault: Id) -> Result<()> {
+    let codes = (RecordKind::Manifest.code(), RecordKind::Item.code());
+    tx.execute(
+        &format!("DELETE FROM pending WHERE {VAULT_ROWS}"),
+        params![codes.0, codes.1, &vault.0[..]],
+    )
+    .map_err(store_err)?;
+    tx.execute(
+        "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2",
+        params![codes.0, &vault.0[..]],
+    )
+    .map_err(store_err)?;
+    Ok(())
 }
 
 impl RecordStore for SyncStore {
@@ -990,5 +1053,45 @@ mod tests {
         assert_eq!(s.pending_changes().unwrap(), vec![]);
         s.drop_pending_vault(vault).unwrap();
         assert_eq!(count(&s, "pending"), 0);
+    }
+
+    #[test]
+    fn restore_puts_back_exactly_what_drop_removed() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (held, free) = (Id::new(), Id::new());
+        let (item, old) = (Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::Manifest, held, 2, b"m2".to_vec());
+        seed_base(&mut s, RecordKind::Item, old, 1, item_data(held, b"old"));
+        s.put(rec(held, RecordKind::Manifest, 3, b"local")).unwrap();
+        s.put(rec(item, RecordKind::Item, 2, &item_data(held, b"new")))
+            .unwrap();
+        s.delete(RecordKind::Item, old).unwrap();
+        s.put(rec(free, RecordKind::Manifest, 1, b"f1")).unwrap();
+        seed_base(&mut s, RecordKind::Manifest, held, 3, b"remote".to_vec());
+        let before = (
+            s.pending_changes().unwrap(),
+            s.vaults_needing_rebase().unwrap(),
+            s.ancestor_manifest(held).unwrap(),
+        );
+        let local = s.get(RecordKind::Manifest, held).unwrap();
+
+        let snapshot = s.drop_pending_vault(held).unwrap();
+        assert_eq!(count(&s, "pending"), 1);
+        // A rebase that wrote again before failing.
+        s.put(rec(held, RecordKind::Manifest, 4, b"half")).unwrap();
+        s.put(rec(Id::new(), RecordKind::Item, 1, &item_data(held, b"h")))
+            .unwrap();
+        s.restore_pending_vault(snapshot).unwrap();
+
+        let after = (
+            s.pending_changes().unwrap(),
+            s.vaults_needing_rebase().unwrap(),
+            s.ancestor_manifest(held).unwrap(),
+        );
+        assert_eq!(after, before);
+        assert_eq!(after.1, vec![held]);
+        assert_eq!(s.get(RecordKind::Manifest, held).unwrap(), local);
+        assert_eq!(s.get(RecordKind::Item, old).unwrap(), None);
+        assert_eq!(count(&s, "pending"), 4);
     }
 }

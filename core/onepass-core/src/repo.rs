@@ -76,14 +76,14 @@ impl DeviceState {
 
 /// An unlocked account over a record store it does not trust.
 pub struct Repository<S: RecordStore> {
-    store: S,
-    account: Account,
-    device: DeviceState,
+    pub(crate) store: S,
+    pub(crate) account: Account,
+    pub(crate) device: DeviceState,
 }
 
 /// The verified content of a vault.
-struct Loaded {
-    manifest: Manifest,
+pub(crate) struct Loaded {
+    pub(crate) manifest: Manifest,
     /// Records matching the manifest, sorted by item id, with their blob ids.
     records: Vec<(Id, ItemRecord)>,
     /// Records ignored on load, interrupted writes and stale leftovers:
@@ -92,7 +92,7 @@ struct Loaded {
 }
 
 impl Loaded {
-    fn listed(&self, item_id: Id) -> Option<&(Id, ItemRecord)> {
+    pub(crate) fn listed(&self, item_id: Id) -> Option<&(Id, ItemRecord)> {
         self.records.iter().find(|(_, r)| r.item_id == item_id)
     }
 
@@ -132,7 +132,7 @@ fn pin(account: &Account) -> PinnedAccount {
     }
 }
 
-fn seen(m: &Manifest) -> SeenManifest {
+pub(crate) fn seen(m: &Manifest) -> SeenManifest {
     SeenManifest {
         seq: m.seq,
         hash: manifest_hash(m),
@@ -516,7 +516,7 @@ impl<S: RecordStore> Repository<S> {
     /// the 16 byte vault prefix is `InvalidFormat("item record")`; a record
     /// with this vault's prefix that does not decode is
     /// `ManifestUnexpectedItem`. Then `verify_manifest` and `check_records`.
-    fn load(&self, vault: &Vault) -> Result<Loaded> {
+    pub(crate) fn load(&self, vault: &Vault) -> Result<Loaded> {
         let manifest = self.read_manifest(vault, self.device.last_seen.get(&vault.id))?;
 
         let mut records = Vec::new();

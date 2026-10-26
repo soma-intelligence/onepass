@@ -2,6 +2,7 @@
 //! `Repository` and a remote (CloudKit). The `Repository` stays synchronous
 //! and unaware of the network; see `store` for the layers.
 
+mod rebase;
 mod store;
 
 pub use store::SyncStore;
