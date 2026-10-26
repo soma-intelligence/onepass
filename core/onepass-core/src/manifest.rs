@@ -40,6 +40,14 @@ pub struct SignedManifest {
     pub sig: HybridSignature,
 }
 
+/// What the device remembers of the last manifest it accepted for a vault.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeenManifest {
+    pub seq: u64,
+    /// `manifest_hash` of that manifest.
+    pub hash: [u8; 32],
+}
+
 /// Signature domain of manifests.
 const DOMAIN: &[u8] = b"manifest";
 const SCHEMA: u16 = 1;
@@ -67,6 +75,12 @@ fn hash_postcard<T: Serialize>(prefix: &[u8], value: &T) -> [u8; 32] {
 /// SHA-256 of `postcard(rec)`, the `record_hash` of its manifest entry.
 pub fn record_hash(rec: &ItemRecord) -> [u8; 32] {
     hash_postcard(&[], rec)
+}
+
+/// SHA-256 of `postcard(m)`: the `prev_hash` of the next manifest and the
+/// `hash` of a `SeenManifest`.
+pub fn manifest_hash(m: &Manifest) -> [u8; 32] {
+    hash_postcard(&[], m)
 }
 
 /// Merkle root of the entries, in the given order. Leaf
@@ -140,7 +154,7 @@ impl Manifest {
     ) -> Manifest {
         entries.sort_by_key(|e| e.item_id);
         let (seq, prev_hash) = match prev {
-            Some(p) => (p.seq + 1, hash_postcard(&[], p)),
+            Some(p) => (p.seq + 1, manifest_hash(p)),
             None => (1, [0u8; 32]),
         };
         let merkle_root = merkle_root(&entries);
@@ -172,20 +186,33 @@ pub fn sign_manifest(
 /// Verify, in order: the signature over the blob, the opening with the vault
 /// key, the decoding, the vault id (`WrongContext`), sorted unique entries
 /// (`InvalidFormat("manifest")`), the Merkle root (`ManifestItemMismatch`),
-/// then `seq >= last_seen_seq` (`ManifestRollback`; equal is the same
-/// manifest read again).
+/// then the history against the last manifest seen (`ManifestRollback`):
+/// an older seq is refused; the same seq must be the very same manifest
+/// (else a fork); the next seq must chain to it through `prev_hash`; a
+/// larger gap cannot be chained and is accepted.
 pub fn verify_manifest(
     vault: &Vault,
     verifier: &HybridVerifyingKey,
     sm: &SignedManifest,
-    last_seen_seq: Option<u64>,
+    last_seen: Option<&SeenManifest>,
 ) -> Result<Manifest> {
     verifier.verify(DOMAIN, &sm.blob, &sm.sig)?;
     let plain = open(vault.key(), BlobKind::Manifest, &aad(vault.id), &sm.blob)?;
     let m: Manifest = postcard::from_bytes(&plain).map_err(|_| BAD)?;
     check_shape(vault, &m)?;
-    if last_seen_seq.is_some_and(|last| m.seq < last) {
-        return Err(IntegrityError::ManifestRollback.into());
+    if let Some(last) = last_seen {
+        let consistent = if m.seq < last.seq {
+            false
+        } else if m.seq == last.seq {
+            manifest_hash(&m) == last.hash
+        } else if m.seq - last.seq == 1 {
+            m.prev_hash == last.hash
+        } else {
+            true
+        };
+        if !consistent {
+            return Err(IntegrityError::ManifestRollback.into());
+        }
     }
     Ok(m)
 }
@@ -313,6 +340,13 @@ mod tests {
         SignedManifest { blob, sig }
     }
 
+    fn seen(m: &Manifest) -> SeenManifest {
+        SeenManifest {
+            seq: m.seq,
+            hash: manifest_hash(m),
+        }
+    }
+
     fn verifier() -> HybridVerifyingKey {
         signer().verifying_key().unwrap()
     }
@@ -373,12 +407,15 @@ mod tests {
         let sm = sign_manifest(&v, signer(), &m).unwrap();
         assert_eq!(verify_manifest(&v, &verifier(), &sm, None).unwrap(), m);
         // The same manifest read again is accepted.
-        assert_eq!(verify_manifest(&v, &verifier(), &sm, Some(1)).unwrap(), m);
+        assert_eq!(
+            verify_manifest(&v, &verifier(), &sm, Some(&seen(&m))).unwrap(),
+            m
+        );
         // Empty vault.
         let empty = Manifest::next(Some(&m), v.id, vec![]);
         let sm = sign_manifest(&v, signer(), &empty).unwrap();
         assert_eq!(
-            verify_manifest(&v, &verifier(), &sm, Some(1)).unwrap(),
+            verify_manifest(&v, &verifier(), &sm, Some(&seen(&m))).unwrap(),
             empty
         );
     }
@@ -390,10 +427,76 @@ mod tests {
         let m2 = Manifest::next(Some(&m1), v.id, vec![entry(1), entry(2)]);
         let s1 = sign_manifest(&v, signer(), &m1).unwrap();
         let s2 = sign_manifest(&v, signer(), &m2).unwrap();
-        assert_eq!(verify_manifest(&v, &verifier(), &s2, Some(1)).unwrap(), m2);
         assert_eq!(
-            integrity(verify_manifest(&v, &verifier(), &s1, Some(2))),
+            verify_manifest(&v, &verifier(), &s2, Some(&seen(&m1))).unwrap(),
+            m2
+        );
+        assert_eq!(
+            integrity(verify_manifest(&v, &verifier(), &s1, Some(&seen(&m2)))),
             IntegrityError::ManifestRollback
+        );
+    }
+
+    #[test]
+    fn manifest_hash_is_sha256_of_postcard() {
+        let m = Manifest::next(None, Id([9; 16]), vec![entry(1)]);
+        assert_eq!(
+            manifest_hash(&m),
+            sha(&[&postcard::to_allocvec(&m).unwrap()])
+        );
+        assert_eq!(
+            Manifest::next(Some(&m), m.vault_id, vec![]).prev_hash,
+            manifest_hash(&m)
+        );
+    }
+
+    #[test]
+    fn same_seq_with_other_content_is_refused() {
+        let v = vault();
+        let m1 = Manifest::next(None, v.id, vec![entry(1), entry(2)]);
+        // A fork at the same seq that silently drops an item.
+        let fork = Manifest::next(None, v.id, vec![entry(1)]);
+        assert_eq!(fork.seq, m1.seq);
+        let sf = sign_manifest(&v, signer(), &fork).unwrap();
+        assert_eq!(
+            integrity(verify_manifest(&v, &verifier(), &sf, Some(&seen(&m1)))),
+            IntegrityError::ManifestRollback
+        );
+        // The very manifest that was seen is accepted again.
+        let s1 = sign_manifest(&v, signer(), &m1).unwrap();
+        assert_eq!(
+            verify_manifest(&v, &verifier(), &s1, Some(&seen(&m1))).unwrap(),
+            m1
+        );
+    }
+
+    #[test]
+    fn next_seq_must_chain_to_the_seen_manifest() {
+        let v = vault();
+        let m1 = Manifest::next(None, v.id, vec![entry(1)]);
+        let fork = Manifest::next(None, v.id, vec![entry(2)]);
+        // seq 2 built on a fork of seq 1, not on the manifest that was seen.
+        let off = Manifest::next(Some(&fork), v.id, vec![entry(2)]);
+        assert_eq!(off.seq, 2);
+        let so = sign_manifest(&v, signer(), &off).unwrap();
+        assert_eq!(
+            integrity(verify_manifest(&v, &verifier(), &so, Some(&seen(&m1)))),
+            IntegrityError::ManifestRollback
+        );
+        // The correct chain is accepted.
+        let m2 = Manifest::next(Some(&m1), v.id, vec![entry(1), entry(2)]);
+        let s2 = sign_manifest(&v, signer(), &m2).unwrap();
+        assert_eq!(
+            verify_manifest(&v, &verifier(), &s2, Some(&seen(&m1))).unwrap(),
+            m2
+        );
+        // A gap (seq 3 seen from seq 1) cannot be chained, and is accepted.
+        let m3 = Manifest::next(Some(&off), v.id, vec![]);
+        assert_eq!(m3.seq, 3);
+        let s3 = sign_manifest(&v, signer(), &m3).unwrap();
+        assert_eq!(
+            verify_manifest(&v, &verifier(), &s3, Some(&seen(&m1))).unwrap(),
+            m3
         );
     }
 
