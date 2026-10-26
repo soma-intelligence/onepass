@@ -1,4 +1,4 @@
-.PHONY: check fmt-check test lint deny audit fuzz miri
+.PHONY: check fmt-check test lint deny audit vet sbom fuzz miri
 
 # Seconds per fuzz target (override: make fuzz FUZZ_SECONDS=300).
 FUZZ_SECONDS ?= 60
@@ -20,6 +20,18 @@ deny:
 
 audit:
 	cargo audit
+
+# Supply-chain audits (supply-chain/). Not part of `check`: it fetches the
+# imported audit sets from the network. CI runs it.
+vet:
+	cargo vet
+
+# CycloneDX SBOM per workspace crate, written next to each crate then moved to
+# target/sbom/. Needs cargo-cyclonedx (cargo install --locked cargo-cyclonedx).
+sbom:
+	rm -rf target/sbom && mkdir -p target/sbom
+	cargo cyclonedx --format json --spec-version 1.5 --all
+	for f in $$(find . -path ./target -prune -o -name '*.cdx.json' -print); do mv "$$f" target/sbom/; done
 
 # Needs the nightly toolchain and cargo-fuzz (cargo install cargo-fuzz).
 fuzz:
