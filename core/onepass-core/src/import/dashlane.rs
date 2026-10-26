@@ -9,9 +9,6 @@
 //! `unsupported_entry` raised for an unknown zip entry, which carries the
 //! zero-based position of that entry in the archive.
 
-// The parsers are consumed by the import dispatcher (task 9).
-#![allow(dead_code)]
-
 use crate::error::{Error, Result};
 use crate::model::{Address, FieldValue, ItemType};
 
@@ -97,6 +94,17 @@ fn kind_of_header(h: &[String]) -> Option<Kind> {
     } else {
         None
     }
+}
+
+/// Whether a lower-cased CSV header is one of the five Dashlane files.
+pub(crate) fn is_dashlane_header(header: &[String]) -> bool {
+    kind_of_header(header).is_some()
+}
+
+/// Whether a zip entry name is one of the five Dashlane CSV files.
+pub(crate) fn is_dashlane_entry(name: &str) -> bool {
+    let base = base_name(name);
+    ZIP_FILES.iter().any(|(_, n)| *n == base)
 }
 
 /// One Dashlane CSV file, recognised by its header.

@@ -10,8 +10,6 @@
 
 // The format parsers (tasks 2 to 9) are the callers; until they land, only
 // the tests use the builder.
-#![allow(dead_code)]
-
 use time::{Date, Month, OffsetDateTime};
 use zeroize::Zeroizing;
 

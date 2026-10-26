@@ -6,9 +6,6 @@
 //! `Zeroizing` as soon as they are deserialized; the parser's transient
 //! copies inside serde_json are the limit of that guarantee.
 
-// `parse_bitwarden_json` is consumed by the import dispatcher (task 9).
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 
 use data_encoding::{BASE64_NOPAD, BASE64URL_NOPAD};

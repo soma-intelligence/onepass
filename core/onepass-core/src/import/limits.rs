@@ -4,8 +4,6 @@
 
 // The format parsers (tasks 2 to 9) and the CSV export are the callers;
 // until they land, only the tests use these readers.
-#![allow(dead_code)]
-
 use std::io::{Cursor, Read};
 
 use zeroize::Zeroizing;

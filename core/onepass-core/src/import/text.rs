@@ -2,9 +2,6 @@
 //! parsers of the `networksetup` outputs used by the Wi-Fi keychain import
 //! (spec 4.3 and 4.5).
 
-// The parsers are consumed by the import dispatcher (task 9) and the CLI.
-#![allow(dead_code)]
-
 use std::fmt;
 
 use data_encoding::BASE32_NOPAD;

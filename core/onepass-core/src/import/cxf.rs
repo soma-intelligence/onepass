@@ -7,9 +7,6 @@
 //! they are moved into `Zeroizing`: the parser's transient copies are the
 //! limit of that guarantee.
 
-// `parse_cxf` is consumed by the import dispatcher (task 9).
-#![allow(dead_code)]
-
 use data_encoding::{BASE64_NOPAD, BASE64URL_NOPAD};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};

@@ -10,9 +10,6 @@
 //! `Zeroizing` without a copy; the parser's transient buffers inside
 //! serde_json are the limit of that guarantee.
 
-// `parse_1pux` is consumed by the import dispatcher (task 9).
-#![allow(dead_code)]
-
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value};

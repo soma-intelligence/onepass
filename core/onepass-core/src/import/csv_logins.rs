@@ -1,9 +1,6 @@
 //! CSV login exports (spec 4.3): Chrome/Edge/Brave, Safari/Apple, Firefox,
 //! 1Password CSV, Bitwarden CSV and Proton Pass CSV.
 
-// `sniff` and the parsers are consumed by the import dispatcher (task 9).
-#![allow(dead_code)]
-
 use time::OffsetDateTime;
 
 use crate::error::Result;
@@ -496,7 +493,7 @@ mod tests {
         assert_eq!(sniff(&header(PROTON)), Some(Format::ProtonPassCsv));
         assert_eq!(sniff(&header(b"a,b,c\n")), None);
         assert_eq!(sniff(&[]), None);
-        // LastPass and Dashlane belong to task 9.
+        // LastPass and Dashlane are told apart by the dispatcher.
         assert_eq!(
             sniff(&header(b"url,username,password,extra,name,grouping,fav\n")),
             None

@@ -7,9 +7,6 @@
 //! predefined entities and character references are decoded: any other
 //! entity reference is refused, so a DTD cannot expand anything.
 
-// `parse_keepass_xml` is consumed by the import dispatcher (task 9).
-#![allow(dead_code)]
-
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
 use std::borrow::Cow;

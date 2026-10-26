@@ -6,9 +6,6 @@
 //! every line after it, and a line without a key continues the previous
 //! value (SSH private keys span lines).
 
-// `parse_lastpass` is consumed by the import dispatcher (task 9).
-#![allow(dead_code)]
-
 use zeroize::Zeroizing;
 
 use crate::error::Result;
@@ -388,6 +385,18 @@ fn row_draft(header: &[String], row: &[String]) -> Draft {
 }
 
 /// LastPass CSV: logins, and secure notes mapped by their `NoteType`.
+/// Whether a lower-cased CSV header is a LastPass export (older exports
+/// lack the `totp` column).
+pub(crate) fn is_lastpass_header(header: &[String]) -> bool {
+    const NEW: [&str; 8] = [
+        "url", "username", "password", "totp", "extra", "name", "grouping", "fav",
+    ];
+    const OLD: [&str; 7] = [
+        "url", "username", "password", "extra", "name", "grouping", "fav",
+    ];
+    header.iter().map(String::as_str).eq(NEW) || header.iter().map(String::as_str).eq(OLD)
+}
+
 pub(crate) fn parse_lastpass(b: &[u8]) -> Result<Import> {
     let (header, rows) = csv_records(b)?;
     let mut out = Import::default();
