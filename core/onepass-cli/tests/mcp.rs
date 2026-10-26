@@ -276,6 +276,12 @@ fn mcp_stdio_end_to_end() {
     assert!(!stderr.contains(SERVER_PW));
 }
 
+/// Start `onepass mcp` with an empty stdin: exit code and stderr.
+fn start_and_eof(dir: &Path) -> (Option<i32>, String) {
+    let o = onepass(dir).arg("mcp").write_stdin("").output().unwrap();
+    (o.status.code(), String::from_utf8(o.stderr).unwrap())
+}
+
 #[test]
 fn mcp_refuses_tampered_policy() {
     let tmp = fresh();
@@ -287,21 +293,69 @@ fn mcp_refuses_tampered_policy() {
         ],
     );
     let path = d.join("mcp-policy.json");
-    let mut bytes = fs::read(&path).unwrap();
-    let at = bytes
-        .windows(8)
-        .position(|w| w == b"metadata")
-        .expect("the scope in the payload");
-    bytes[at] = b'n';
-    fs::write(&path, bytes).unwrap();
-    let o = onepass(d).arg("mcp").write_stdin("").output().unwrap();
-    assert_eq!(o.status.code(), Some(3));
-    let stderr = String::from_utf8(o.stderr).unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    // A well-formed policy that grants more: only the signature can tell.
+    let edited = text.replacen(r#"\"metadata\""#, r#"\"reveal\""#, 1);
+    assert_ne!(edited, text, "the scope in the signed payload");
+    let envelope: Value = serde_json::from_str(&edited).unwrap();
+    let payload: Value = serde_json::from_str(envelope["payload"].as_str().unwrap()).unwrap();
+    assert!(
+        payload["vaults"].to_string().contains("reveal"),
+        "{payload}"
+    );
+    fs::write(&path, edited).unwrap();
+
+    let (code, stderr) = start_and_eof(d);
+    assert_eq!(code, Some(3), "{stderr}");
     assert!(
         stderr.contains("mcp policy failed verification"),
         "{stderr}"
     );
-    // policy show refuses it too.
+    // policy show and policy set refuse it too.
+    assert_eq!(run(d, &["mcp", "policy", "show"]).code, 3);
+    assert_eq!(
+        run(
+            d,
+            &["mcp", "policy", "set", "--vault", "Dev", "--scopes", "use"]
+        )
+        .code,
+        3
+    );
+}
+
+/// A second account, with an MCP vault `Dev` and a signed policy.
+fn other_account() -> &'static PathBuf {
+    static T: OnceLock<PathBuf> = OnceLock::new();
+    T.get_or_init(|| {
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("mcp-other-account");
+        let _ = fs::remove_dir_all(&dir);
+        ok(&dir, &["account", "create"]);
+        ok(&dir, &["vault", "create", "Dev", "--mcp-access"]);
+        ok(
+            &dir,
+            &[
+                "mcp", "policy", "set", "--vault", "Dev", "--scopes", "reveal",
+            ],
+        );
+        dir
+    })
+}
+
+#[test]
+fn mcp_refuses_policy_of_another_account() {
+    let tmp = fresh();
+    let d = tmp.path();
+    fs::copy(
+        other_account().join("mcp-policy.json"),
+        d.join("mcp-policy.json"),
+    )
+    .unwrap();
+    let (code, stderr) = start_and_eof(d);
+    assert_eq!(code, Some(3), "{stderr}");
+    assert!(
+        stderr.contains("mcp policy failed verification"),
+        "{stderr}"
+    );
     assert_eq!(run(d, &["mcp", "policy", "show"]).code, 3);
 }
 
@@ -444,6 +498,13 @@ fn mcp_audit_verify() {
         !o.stdout.contains("list_itemz"),
         "no unverified entry shown"
     );
+
+    // A log that cannot be read is an i/o error (1), not tampering (3).
+    fs::remove_file(&log).unwrap();
+    fs::create_dir(&log).unwrap();
+    let o = run(d, &["mcp", "audit", "--verify"]);
+    assert_eq!(o.code, 1, "{}", o.stderr);
+    assert!(o.stderr.contains("cannot read audit log"), "{}", o.stderr);
 }
 
 #[test]

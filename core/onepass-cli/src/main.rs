@@ -5,7 +5,9 @@
 //! Exit codes: 0 success, 1 usage error, 2 wrong password, 3 integrity
 //! error, 4 not found, 5 concurrent write (nothing was saved, retry).
 //! Commands that open the data directory hold its lock (`<data-dir>/lock`)
-//! for their whole run, so 5 only comes from a writer that bypasses it.
+//! for their whole run, except the long-running `onepass mcp`, which holds
+//! it for each request only (the rest of the CLI stays usable meanwhile).
+//! So 5 only comes from a writer that bypasses the lock.
 
 mod commands;
 mod session;
@@ -75,6 +77,7 @@ enum Command {
     #[command(subcommand)]
     Backup(BackupCmd),
     /// MCP server over stdio (password on /dev/tty), its policy and audit log.
+    /// Policy changes apply on the next server start.
     Mcp(McpCmd),
 }
 

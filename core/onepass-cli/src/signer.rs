@@ -70,3 +70,106 @@ impl LocalSigner for SharedSigner {
         verify(self.0.borrow().repo(), domain, msg, sig)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::OnceLock;
+
+    use onepass_core::account::{Account, NewAccount};
+    use onepass_core::crypto::{KdfParams, random_array};
+    use onepass_core::repo::DeviceState;
+    use onepass_core::store::{MemoryStore, Record, RecordKind};
+
+    const PW: &str = "signer test pw";
+
+    fn new_account() -> NewAccount {
+        let kdf = KdfParams {
+            m_kib: 8192,
+            t: 1,
+            p: 1,
+            salt: random_array().unwrap(),
+        };
+        Account::create_with_params(PW, kdf).unwrap()
+    }
+
+    /// Two accounts per test binary: SLH-DSA creation is slow in debug.
+    fn accounts() -> &'static (NewAccount, NewAccount) {
+        static A: OnceLock<(NewAccount, NewAccount)> = OnceLock::new();
+        A.get_or_init(|| (new_account(), new_account()))
+    }
+
+    fn repo(n: &NewAccount) -> Repository<MemoryStore> {
+        let id = n.account.params.account_id;
+        let mut store = MemoryStore::new();
+        for (kind, data) in [
+            (RecordKind::AccountParams, &n.params_record),
+            (RecordKind::Keyset, &n.keyset_record),
+        ] {
+            store
+                .put(Record {
+                    id,
+                    kind,
+                    version: 1,
+                    data: data.clone(),
+                })
+                .unwrap();
+        }
+        Repository::unlock(store, PW, &n.secret_key, DeviceState::default()).unwrap()
+    }
+
+    #[test]
+    fn roundtrip_and_refusals() {
+        let (a, b) = accounts();
+        let ra = repo(a);
+        let rb = repo(b);
+        let s = RepoSigner(&ra);
+        let sig = s.sign(b"mcp-policy", b"payload").unwrap();
+        assert_eq!(s.verify(b"mcp-policy", b"payload", &sig), Ok(()));
+        // Wrong domain, wrong message.
+        assert_eq!(
+            s.verify(b"audit-head", b"payload", &sig),
+            Err(GuardError::Signature)
+        );
+        assert_eq!(
+            s.verify(b"mcp-policy", b"payloaD", &sig),
+            Err(GuardError::Signature)
+        );
+        // Trailing bytes, truncation, garbage.
+        let mut longer = sig.clone();
+        longer.push(0);
+        assert_eq!(
+            s.verify(b"mcp-policy", b"payload", &longer),
+            Err(GuardError::Signature)
+        );
+        assert_eq!(
+            s.verify(b"mcp-policy", b"payload", &sig[..sig.len() - 1]),
+            Err(GuardError::Signature)
+        );
+        assert_eq!(
+            s.verify(b"mcp-policy", b"payload", b"junk"),
+            Err(GuardError::Signature)
+        );
+        // A signature of another account is refused, both ways.
+        let other = RepoSigner(&rb);
+        assert_eq!(
+            other.verify(b"mcp-policy", b"payload", &sig),
+            Err(GuardError::Signature)
+        );
+        let sig_b = other.sign(b"mcp-policy", b"payload").unwrap();
+        assert_eq!(
+            s.verify(b"mcp-policy", b"payload", &sig_b),
+            Err(GuardError::Signature)
+        );
+    }
+
+    #[test]
+    fn domains_do_not_collide_with_the_message() {
+        // "ab" + "c" and "a" + "bc" must not share a signature.
+        let (a, _) = accounts();
+        let ra = repo(a);
+        let s = RepoSigner(&ra);
+        let sig = s.sign(b"ab", b"c").unwrap();
+        assert_eq!(s.verify(b"a", b"bc", &sig), Err(GuardError::Signature));
+    }
+}

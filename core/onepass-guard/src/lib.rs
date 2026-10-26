@@ -15,7 +15,8 @@ pub use approval::{
     dev_auto_approver_from_env, parse_answer, render_prompt, testing,
 };
 pub use audit::{
-    AuditEntry, AuditLog, AuditRecord, AuditSink, AuditVerification, SignedAuditSink, verify_log,
+    AuditEntry, AuditLog, AuditRecord, AuditSink, AuditVerification, SignedAuditSink, head_path,
+    verify_log,
 };
 pub use display::sanitize_for_display;
 pub use signed::{open_config, seal_config};

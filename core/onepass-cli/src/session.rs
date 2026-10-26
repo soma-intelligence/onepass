@@ -358,6 +358,13 @@ pub fn with_session<T>(
     let _lock = lock(ctx)?;
     let mut session = Session::open(ctx, &password)?;
     let result = f(&mut session.repo);
+    save_after(ctx, &session, result)
+}
+
+/// The tail of a locked request: harden the directory and save the device
+/// state whatever `result` is (reads move the last seen manifests too),
+/// then return `result`, or the save error if only the save failed.
+fn save_after<T>(ctx: &Ctx, session: &Session, result: Result<T, CliError>) -> Result<T, CliError> {
     let saved = harden(ctx).and_then(|()| session.persist());
     match result {
         Ok(v) => saved.map(|()| v),
@@ -514,10 +521,6 @@ impl LongSession {
         // state is not rewritten and a changed one always is.
         self.session.on_disk = Some(encode(&self.session.secret_key, &state)?);
         let result = f(&mut self.session.repo);
-        let saved = harden(&self.ctx).and_then(|()| self.session.persist());
-        match result {
-            Ok(v) => saved.map(|()| v),
-            Err(e) => Err(e),
-        }
+        save_after(&self.ctx, &self.session, result)
     }
 }

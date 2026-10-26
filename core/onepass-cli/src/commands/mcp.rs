@@ -20,8 +20,8 @@ use onepass_core::repo::Repository;
 use onepass_core::store::SqliteStore;
 use onepass_core::vault::Vault;
 use onepass_guard::{
-    Approver, AuditLog, AuditVerification, SignedAuditSink, TtyApprover,
-    dev_auto_approver_from_env, sanitize_for_display, verify_log,
+    Approver, AuditLog, AuditRecord, AuditVerification, GuardError, SignedAuditSink, TtyApprover,
+    dev_auto_approver_from_env, head_path, sanitize_for_display, verify_log,
 };
 use onepass_mcp::{
     McpTools, Narrowing, Policy, PolicyError, PortError, RepoPort, Scope, VaultInfo, VaultPort,
@@ -67,7 +67,8 @@ enum McpSub {
 enum PolicyCmd {
     /// The scopes in force on each MCP vault.
     Show,
-    /// Set the scopes of an MCP vault (re-signs the policy).
+    /// Set the scopes of an MCP vault (re-signs the policy). A running
+    /// server keeps its policy: changes apply on its next start.
     Set {
         /// MCP vault name or id.
         #[arg(long)]
@@ -233,20 +234,21 @@ fn audit(ctx: &Ctx, verify_only: bool) -> Result<(), CliError> {
             msg: "audit log failed verification".into(),
         };
         let verification = if path.exists() {
-            verify_log(&path, &RepoSigner(&*repo)).map_err(|_| failed())?
+            verify_log(&path, &RepoSigner(&*repo)).map_err(|e| match e {
+                GuardError::Io(kind) => CliError::usage(format!("cannot read audit log: {kind}")),
+                GuardError::Format(_) | GuardError::Signature | GuardError::Tampered(_) => failed(),
+            })?
+        } else if head_path(&path).exists() {
+            // A head without its log: the log was removed.
+            return Err(failed());
         } else {
-            let mut head = path.clone().into_os_string();
-            head.push(".head");
-            if PathBuf::from(head).exists() {
-                return Err(failed());
-            }
             AuditVerification {
                 records: Vec::new(),
                 unsealed_tail: false,
             }
         };
         if !verify_only {
-            let (vault_names, titles) = names(repo)?;
+            let (vault_names, titles) = names(repo, &verification.records)?;
             let show = |id: &Option<String>, names: &BTreeMap<String, String>| match id {
                 None => "-".to_owned(),
                 Some(i) => names
@@ -287,17 +289,36 @@ fn audit(ctx: &Ctx, verify_only: bool) -> Result<(), CliError> {
     })
 }
 
-/// Vault names and item titles by id, every vault and item included.
+/// Vault names and item titles by id, for the audit display.
 type Names = (BTreeMap<String, String>, BTreeMap<String, String>);
 
-fn names(repo: &mut Repository<SqliteStore>) -> Result<Names, CliError> {
+/// Names of what the log mentions, MCP vaults only: an entry about any
+/// other vault or item shows its bare id. The core opens a vault as a
+/// whole, so only MCP vaults named in the log are opened, and only the
+/// titles of logged items are kept.
+fn names(repo: &mut Repository<SqliteStore>, records: &[AuditRecord]) -> Result<Names, CliError> {
+    let logged_vaults: BTreeSet<&str> = records
+        .iter()
+        .filter_map(|r| r.entry.vault_id.as_deref())
+        .collect();
+    let logged_items: BTreeSet<&str> = records
+        .iter()
+        .filter_map(|r| r.entry.item_id.as_deref())
+        .collect();
     let mut vault_names = BTreeMap::new();
     let mut titles = BTreeMap::new();
-    for v in stored(repo.vaults())? {
-        for item in stored(repo.items(&v))? {
-            titles.insert(item.id.to_string(), item.title.clone());
+    for v in mcp_vaults(repo)? {
+        let id = v.id.to_string();
+        if !logged_vaults.contains(id.as_str()) {
+            continue;
         }
-        vault_names.insert(v.id.to_string(), v.meta.name.clone());
+        for item in stored(repo.items(&v))? {
+            let item_id = item.id.to_string();
+            if logged_items.contains(item_id.as_str()) {
+                titles.insert(item_id, item.title.clone());
+            }
+        }
+        vault_names.insert(id, v.meta.name.clone());
     }
     Ok((vault_names, titles))
 }

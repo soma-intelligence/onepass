@@ -103,8 +103,8 @@ fn hash_line(line: &str) -> String {
     HEXLOWER.encode(digest::digest(&digest::SHA256, line.as_bytes()).as_ref())
 }
 
-/// Path of the signed head file for a log.
-fn head_path(log: &Path) -> PathBuf {
+/// Path of the signed head file of the log at `log` (`<log>.head`).
+pub fn head_path(log: &Path) -> PathBuf {
     let mut s = log.as_os_str().to_owned();
     s.push(".head");
     PathBuf::from(s)
@@ -653,5 +653,13 @@ mod tests {
         ));
         fs::remove_file(&path).unwrap();
         assert!(verify_log(&path, &signer).is_err());
+    }
+
+    #[test]
+    fn head_path_is_next_to_the_log() {
+        assert_eq!(
+            head_path(Path::new("/data/audit.log")),
+            PathBuf::from("/data/audit.log.head")
+        );
     }
 }
