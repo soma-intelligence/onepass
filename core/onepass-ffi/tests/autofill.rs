@@ -420,6 +420,96 @@ fn candidates_never_offer_hidden_logins() {
 }
 
 #[test]
+fn candidates_include_passkeys_by_rp_id() {
+    let fx = fixture();
+    let bare = login(&fx, "sans URL", &[]);
+    fx.session
+        .create_passkey(creation(
+            &fx.vault_id,
+            Some(bare.id.clone()),
+            "example.com",
+            "camille",
+        ))
+        .unwrap();
+    let mut hidden = login(&fx, "cachée", &[]);
+    hidden = fx
+        .session
+        .item(
+            fx.vault_id.clone(),
+            fx.session
+                .create_passkey(creation(
+                    &fx.vault_id,
+                    Some(hidden.id.clone()),
+                    "example.com",
+                    "dominique",
+                ))
+                .unwrap()
+                .item_id,
+        )
+        .unwrap();
+    hidden.hide_from_autofill = true;
+    fx.session.save_item(hidden).unwrap();
+    // A Login whose URL only shares the registrable domain is upgraded by its passkey.
+    let near = login(&fx, "domaine", &["https://www.example.com"]);
+    fx.session
+        .create_passkey(creation(
+            &fx.vault_id,
+            Some(near.id.clone()),
+            "example.com",
+            "alex",
+        ))
+        .unwrap();
+
+    for service in ["example.com", "https://EXAMPLE.com/login", "Example.COM."] {
+        let c = fx
+            .session
+            .autofill_candidates(service.into(), false, Vec::new())
+            .unwrap();
+        let mut got = titles(&c);
+        got.sort();
+        assert_eq!(
+            got,
+            [
+                ("domaine".to_owned(), FfiMatchQuality::ExactHost),
+                ("sans URL".to_owned(), FfiMatchQuality::ExactHost),
+            ],
+            "{service}"
+        );
+        let bare_c = c.iter().find(|c| c.title == "sans URL").unwrap();
+        assert_eq!(bare_c.url, None);
+        assert_eq!(bare_c.passkeys.len(), 1);
+    }
+    for service in ["other.com", "a.example.com", "example.com.evil.net"] {
+        let c = fx
+            .session
+            .autofill_candidates(service.into(), false, Vec::new())
+            .unwrap();
+        assert!(c.iter().all(|c| c.title != "sans URL"), "{service}: {c:?}");
+    }
+}
+
+#[test]
+fn hidden_record_ids_cover_every_item_type() {
+    let fx = fixture();
+    let visible = login(&fx, "visible", &["https://example.com"]);
+    let mut hidden = login(&fx, "cachée", &["https://example.com"]);
+    hidden.hide_from_autofill = true;
+    let hidden = fx.session.save_item(hidden).unwrap();
+    let mut note = other_item(&fx, FfiItemType::SecureNote, "https://example.com");
+    note.hide_from_autofill = true;
+    let note = fx.session.save_item(note).unwrap();
+    let mut ids = fx.session.autofill_hidden_record_ids().unwrap();
+    ids.sort();
+    let mut expected = vec![
+        record_id(&fx.vault_id, &hidden.id),
+        record_id(&fx.vault_id, &note.id),
+    ];
+    expected.sort();
+    assert_eq!(ids, expected);
+    assert!(!ids.contains(&record_id(&fx.vault_id, &visible.id)));
+}
+
+#[test]
 fn candidates_allow_http_on_local_hosts() {
     let fx = fixture();
     login(&fx, "dev", &["http://localhost:8080/login"]);

@@ -80,12 +80,26 @@ fn url_quality(service: &Site, url: &ItemUrl) -> Option<FfiMatchQuality> {
     (ours == theirs).then_some(FfiMatchQuality::Domain)
 }
 
-/// Best match of a Login and the URL that gave it.
-fn item_quality<'a>(service: &Site, item: &'a Item) -> Option<(FfiMatchQuality, &'a str)> {
-    item.urls
+/// Best match of a Login and the URL that gave it. A passkey whose relying
+/// party is the requested host makes the Login an `ExactHost` match even
+/// without such a URL: the system has already verified the rp id (the URL
+/// returned is then the best matching one, else the first).
+fn item_quality<'a>(service: &Site, item: &'a Item) -> Option<(FfiMatchQuality, Option<&'a str>)> {
+    let by_url = item
+        .urls
         .iter()
         .filter_map(|u| url_quality(service, u).map(|q| (q, u.url.as_str())))
-        .min_by_key(|(q, _)| *q)
+        .min_by_key(|(q, _)| *q);
+    let by_rp = passkeys(item).any(|p| site(&p.rp_id).is_some_and(|s| s.host == service.host));
+    match by_url {
+        Some((q, url)) if !by_rp || q <= FfiMatchQuality::ExactHost => Some((q, Some(url))),
+        Some((_, url)) => Some((FfiMatchQuality::ExactHost, Some(url))),
+        None if by_rp => Some((
+            FfiMatchQuality::ExactHost,
+            item.urls.first().map(|u| u.url.as_str()),
+        )),
+        None => None,
+    }
 }
 
 fn filled(item: &Item, id: &str) -> bool {
@@ -317,8 +331,22 @@ impl Session {
         })
     }
 
+    /// The items of any type hidden from AutoFill, as record ids
+    /// `"<vault id>:<item id>"` (trashed and archived ones included). Text
+    /// insertion lists every item but these (ruling X3: never offered).
+    pub fn autofill_hidden_record_ids(&self) -> Result<Vec<String>, OnePassError> {
+        self.with(|repo| {
+            Ok(visible_items(repo, &HashSet::new())?
+                .iter()
+                .filter(|i| i.hide_from_autofill)
+                .map(record_id)
+                .collect())
+        })
+    }
+
     /// The Logins matching `service` (a domain or a URL from the system;
-    /// empty for none), same host first, then same registrable domain, then
+    /// empty for none), same host first (a URL of that host, or a passkey
+    /// whose rp id is that host), then same registrable domain, then
     /// favorites, then most recently updated. `include_all` appends every
     /// other live Login as `Other` (manual choice). Logins hidden from
     /// AutoFill are never returned.
@@ -338,7 +366,7 @@ impl Session {
                 }
                 let best = target.as_ref().and_then(|t| item_quality(t, &item));
                 let c = match best {
-                    Some((q, url)) => candidate(&item, q, Some(url)),
+                    Some((q, url)) => candidate(&item, q, url),
                     None if include_all => candidate(
                         &item,
                         FfiMatchQuality::Other,
