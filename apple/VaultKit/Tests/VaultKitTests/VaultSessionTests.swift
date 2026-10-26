@@ -86,6 +86,17 @@ func fillRequired(_ item: inout FfiItem) {
 @MainActor
 @Suite("Vault session")
 struct VaultSessionTests {
+    /// The AutoFill extension must not create the shared store before the app migrated into it.
+    @Test func missingStoreIsNoAccountAndIsNotCreated() async throws {
+        let h = try SessionHarness()
+        let session = h.makeSession()
+        #expect(session.state == .noAccount)
+        await session.refresh()
+        await session.reload()
+        #expect(session.state == .noAccount)
+        #expect(!FileManager.default.fileExists(atPath: h.environment.databaseURL.path))
+    }
+
     @Test func createAccountStoresSecretKeyAndUnlocks() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }

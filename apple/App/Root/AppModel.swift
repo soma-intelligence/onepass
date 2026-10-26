@@ -200,9 +200,10 @@ final class AppModel {
     }
 
     /// Moves the milestone 2 store and settings into the shared container (ruling A3). If the move
-    /// fails, this launch keeps the legacy store and settings (the database file moves last, so it is
-    /// still in place): the vault stays usable in the app, and the AutoFill extension sees no vault
-    /// until a later launch completes the move.
+    /// fails, the migration has put back every file it moved (database, `-wal` and `-shm` together),
+    /// and this launch keeps the legacy store and settings: the vault stays usable in the app. The
+    /// AutoFill extension finds no shared store and never creates one (it shows "open OnePass"), so a
+    /// later launch completes the move; an empty shared store left by an older extension is set aside.
     private static func migrateToSharedContainer(_ container: SharedContainer) -> SharedContainer {
         guard container.isShared else { return container }
         let legacy = legacyContainer

@@ -116,9 +116,15 @@ public final class VaultSession {
     /// Re-reads what the store holds. An account this device knew (pinned by the core, or named in
     /// the settings) that disappeared from the store is an integrity failure, never "no account": the
     /// onboarding would otherwise invite the user to create a second account over the first one.
+    ///
+    /// A missing database file is read as an empty store without calling the core, which would create
+    /// it: the AutoFill extension must never create the shared store before the app migrated the
+    /// milestone 2 one into it (the migration skips an existing store holding an account).
     private func evaluateStoredAccount() {
         do {
-            switch try storeState(dbPath: dbPath) {
+            var found = FfiStoreState.empty
+            if FileManager.default.fileExists(atPath: dbPath) { found = try storeState(dbPath: dbPath) }
+            switch found {
             case .account:
                 state = .locked
                 needsSecretKey = secretKeyPresence() == .missing

@@ -121,6 +121,97 @@ struct SharedContainerTests {
         #expect(!box.exists(box.legacyDatabase))
     }
 
+    /// The testable `run`, with a fixed clock and an injected probe and move.
+    private func migrate(
+        _ box: Sandbox, holdsAccount: @escaping (URL) throws -> Bool = { try hasAccount(dbPath: $0.path) },
+        move: ((URL, URL) throws -> Void)? = nil
+    ) throws {
+        try SharedContainerMigration.run(
+            from: box.legacyDatabase, legacyDefaults: box.legacyDefaults, to: box.shared,
+            fileManager: .default, now: Date(timeIntervalSince1970: 1_800_000_000),
+            holdsAccount: holdsAccount,
+            move: move ?? { try FileManager.default.moveItem(at: $0, to: $1) })
+    }
+
+    @Test func failedDatabaseMoveRestoresLegacyStore() throws {
+        let box = try Sandbox()
+        try box.makeLegacy()
+        let target = box.shared.databaseURL
+        #expect(throws: CocoaError.self) {
+            try migrate(
+                box,
+                move: { from, to in
+                    // `-shm` and `-wal` go through, the database move fails.
+                    if to.path == target.path { throw CocoaError(.fileWriteNoPermission) }
+                    try FileManager.default.moveItem(at: from, to: to)
+                })
+        }
+        #expect(box.read(box.legacyDatabase) == "db")
+        #expect(box.read(box.sidecar(box.legacyDatabase, "-wal")) == "wal")
+        #expect(box.read(box.sidecar(box.legacyDatabase, "-shm")) == "shm")
+        #expect(!box.exists(target))
+        #expect(!box.exists(box.sidecar(target, "-wal")))
+        #expect(!box.exists(box.sidecar(target, "-shm")))
+        // Settings are not copied by a failed run: the fallback keeps the legacy ones.
+        #expect(!box.shared.defaults.bool(forKey: SharedContainerMigration.settingsMarker))
+
+        // The next launch completes the move.
+        try migrate(box)
+        #expect(box.read(target) == "db")
+        #expect(box.read(box.sidecar(target, "-wal")) == "wal")
+        #expect(box.read(box.sidecar(target, "-shm")) == "shm")
+    }
+
+    @Test func orphanSidecarIsNeverDeleted() throws {
+        let box = try Sandbox()
+        // An old cut-short move left a `-wal` in the shared folder; the legacy store has a newer one.
+        try box.makeLegacy()
+        let target = box.shared.databaseURL
+        try box.write(box.sidecar(target, "-wal"), "old-wal")
+        try migrate(box)
+        #expect(box.read(target) == "db")
+        #expect(box.read(box.sidecar(target, "-wal")) == "wal")
+        #expect(box.read(URL(fileURLWithPath: target.path + ".orphan-1800000000-wal")) == "old-wal")
+    }
+
+    @Test func emptySharedStoreIsSetAsideForTheLegacyOne() throws {
+        let box = try Sandbox()
+        try box.makeLegacy()
+        let target = box.shared.databaseURL
+        // What the extension used to do before the first migration: an empty store, created by the core.
+        try FileManager.default.createDirectory(
+            at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        #expect(try storeState(dbPath: target.path) == .empty)
+        #expect(box.exists(target))
+        try migrate(box)
+        #expect(box.read(target) == "db")
+        #expect(box.read(box.sidecar(target, "-wal")) == "wal")
+        #expect(!box.exists(box.legacyDatabase))
+        // Renamed, never deleted.
+        let aside = URL(fileURLWithPath: target.path + ".empty-1800000000")
+        #expect(box.exists(aside))
+        #expect(try hasAccount(dbPath: aside.path) == false)
+    }
+
+    @Test func sharedStoreWithAccountWins() throws {
+        let box = try Sandbox()
+        try box.makeLegacy()
+        try box.write(box.shared.databaseURL, "shared")
+        try migrate(box, holdsAccount: { _ in true })
+        #expect(box.read(box.shared.databaseURL) == "shared")
+        #expect(box.read(box.legacyDatabase) == "db")
+        #expect(box.read(box.sidecar(box.legacyDatabase, "-wal")) == "wal")
+    }
+
+    @Test func unreadableSharedStoreIsKept() throws {
+        let box = try Sandbox()
+        try box.makeLegacy()
+        try box.write(box.shared.databaseURL, "shared")
+        try migrate(box, holdsAccount: { _ in throw CocoaError(.fileReadCorruptFile) })
+        #expect(box.read(box.shared.databaseURL) == "shared")
+        #expect(box.read(box.legacyDatabase) == "db")
+    }
+
     @Test func copiesSettingsOnce() throws {
         let box = try Sandbox()
         box.legacyDefaults.set("oneHour", forKey: "onepass.autoLockDelay")

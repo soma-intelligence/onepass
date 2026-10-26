@@ -262,13 +262,14 @@ struct ItemEditorView: View {
 
     // MARK: - Bindings and actions
 
-    /// Looks the row up by its stable key on every access: after a removal the binding of a row
-    /// that went away reads `.empty` and writes nothing.
+    /// A passkey row waiting for the removal confirmation.
     private struct PasskeyRemoval: Equatable {
         var sectionID: String
         var key: UUID
     }
 
+    /// Looks the row up by its stable key on every access: after a removal the binding of a row
+    /// that went away reads `.empty` and writes nothing.
     private func valueBinding(_ sectionID: String, _ key: UUID) -> Binding<FfiFieldValue> {
         Binding(
             get: {
