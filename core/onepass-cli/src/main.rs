@@ -15,11 +15,13 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+use commands::backup::BackupCmd;
 use commands::export::ExportArgs;
 use commands::generate::GenerateArgs;
 use commands::import::ImportArgs;
 use commands::item::ItemCmd;
 use commands::vault::VaultCmd;
+use commands::watchtower::WatchtowerArgs;
 use session::{CliError, Ctx};
 
 #[derive(Parser)]
@@ -65,6 +67,11 @@ enum Command {
     Import(ImportArgs),
     /// Export items to an encrypted archive or, with --plaintext, a CSV.
     Export(ExportArgs),
+    /// Check passwords and sites: breaches, reuse, strength, 2FA, expiry.
+    Watchtower(WatchtowerArgs),
+    /// Create, restore or inspect a signed account backup.
+    #[command(subcommand)]
+    Backup(BackupCmd),
 }
 
 #[derive(Subcommand)]
@@ -80,14 +87,19 @@ fn default_data_dir() -> Result<PathBuf, CliError> {
 }
 
 fn run(cli: Cli) -> Result<(), CliError> {
-    // `generate` needs no data directory: no banner, no directory.
-    if let Command::Generate(args) = cli.command {
-        let ctx = Ctx {
-            data_dir: PathBuf::new(),
-            json: cli.json,
-        };
-        return commands::generate::run(&ctx, args);
-    }
+    // `generate` and `backup inspect` need no data directory: no banner,
+    // no directory, no password.
+    let detached = Ctx {
+        data_dir: PathBuf::new(),
+        json: cli.json,
+    };
+    let command = match cli.command {
+        Command::Generate(args) => return commands::generate::run(&detached, args),
+        Command::Backup(BackupCmd::Inspect { file }) => {
+            return commands::backup::inspect(&detached, &file);
+        }
+        other => other,
+    };
     let ctx = Ctx {
         data_dir: match cli.data_dir {
             Some(d) => d,
@@ -96,7 +108,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         json: cli.json,
     };
     ctx.banner();
-    match cli.command {
+    match command {
         Command::Account(AccountCmd::Create) => commands::account::create(&ctx),
         Command::Vault(c) => commands::vault::run(&ctx, c),
         Command::Item(c) => commands::item::run(&ctx, c),
@@ -104,6 +116,8 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Totp { key, vault } => commands::totp::run(&ctx, &key, vault.as_deref()),
         Command::Import(a) => commands::import::run(&ctx, a),
         Command::Export(a) => commands::export::run(&ctx, a),
+        Command::Watchtower(a) => commands::watchtower::run(&ctx, a),
+        Command::Backup(c) => commands::backup::run(&ctx, c),
         Command::Generate(_) => unreachable!("handled above"),
     }
 }

@@ -1,4 +1,5 @@
 pub mod account;
+pub mod backup;
 pub mod exec;
 pub mod export;
 pub mod generate;
@@ -7,3 +8,4 @@ pub mod item;
 pub mod read;
 pub mod totp;
 pub mod vault;
+pub mod watchtower;
