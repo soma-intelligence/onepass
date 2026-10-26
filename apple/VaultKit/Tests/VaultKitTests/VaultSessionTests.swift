@@ -420,6 +420,36 @@ struct VaultSessionTests {
         #expect(session.state == .locked)
     }
 
+    @Test func switchingToSharedClearsBiometricsWanted() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await session.enrollBiometrics(password: testPassword)
+        #expect(h.settings.biometricsWanted)
+
+        session.setDeviceMode(.shared)
+        #expect(!h.settings.biometricsWanted)
+        session.setDeviceMode(.personal)
+        session.lock()
+        try await session.unlock(password: testPassword)
+        #expect(!session.canUseBiometrics)
+    }
+
+    @Test func lastVisibleVaultCannotBeHidden() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .shared)
+        try await session.createVault(FfiVaultMeta(
+            name: "Projet Atlas", icon: "briefcase", color: "orange", travelSafe: false, mcpAccess: false))
+        let ids = session.allVaults.map(\.id)
+        session.setVaultHidden(ids[0], hidden: true)
+        session.setVaultHidden(ids[1], hidden: true)
+        #expect(session.vaults.map(\.id) == [ids[1]])
+        #expect(h.settings.hiddenVaultIDs == [ids[0]])
+    }
+
     @Test func copyUsesConcealedLocalPasteboard() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }

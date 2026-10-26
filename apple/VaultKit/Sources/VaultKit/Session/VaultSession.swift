@@ -388,13 +388,17 @@ public final class VaultSession {
     /// Shared mode drops the biometric enrollment and caps auto-lock at 5 minutes.
     public func setDeviceMode(_ mode: DeviceMode) {
         settings.deviceMode = mode
-        if !mode.biometricsAllowed, let accountID = settings.accountID {
-            biometrics.disable(accountID: accountID)
+        if !mode.biometricsAllowed {
+            // Not wanted any more either: back in personal mode, a password unlock must not enroll again.
+            settings.biometricsWanted = false
+            if let accountID = settings.accountID { biometrics.disable(accountID: accountID) }
         }
         biometricsRevision += 1
     }
 
+    /// At least one vault stays visible: hiding the last visible vault is refused (no change).
     public func setVaultHidden(_ vaultID: String, hidden: Bool) {
+        if hidden, !allVaults.contains(where: { $0.id != vaultID && !hiddenVaultIDs.contains($0.id) }) { return }
         var ids = hiddenVaultIDs
         if hidden { ids.insert(vaultID) } else { ids.remove(vaultID) }
         settings.hiddenVaultIDs = ids

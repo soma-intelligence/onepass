@@ -246,6 +246,7 @@ struct PasswordPromptSheet: View {
                         .focused($focused)
                         .onSubmit(run)
                         .textContentType(.password)
+                        .privacySensitive()
                         .accessibilityIdentifier("settings.prompt.password")
                 } footer: {
                     Text("Le mot de passe maître est demandé pour changer ce réglage.")
@@ -293,6 +294,8 @@ struct PasswordPromptSheet: View {
                 dismiss()
             } catch {
                 errorMessage = VaultError(error).localizedMessage
+                password = ""
+                focused = true
             }
         }
     }

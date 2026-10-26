@@ -131,7 +131,8 @@ struct MacSettingsView: View {
                 TabView {
                     ForEach(SettingsPage.allCases) { page in
                         Tab {
-                            page.content
+                            // A stack per tab, so pushed pages ("Coffres visibles") work.
+                            NavigationStack { page.content }
                         } label: {
                             Label {
                                 Text(page.title)

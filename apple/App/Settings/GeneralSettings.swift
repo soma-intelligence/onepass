@@ -10,7 +10,7 @@ struct GeneralSettings: View {
 
     /// Shared devices lock after 5 minutes at most: longer delays are not offered.
     private var delays: [AutoLockDelay] {
-        shared ? [.oneMinute, .fiveMinutes] : AutoLockDelay.allCases
+        shared ? [settings.autoLockDelay == .oneMinute ? .oneMinute : .fiveMinutes] : AutoLockDelay.allCases
     }
 
     var body: some View {
@@ -26,10 +26,11 @@ struct GeneralSettings: View {
                         Text(delay.label).tag(delay)
                     }
                 }
+                .disabled(shared)
                 .accessibilityIdentifier("settings.autoLock")
             } footer: {
                 if shared {
-                    Text("Appareil partagé : OnePass se verrouille après 5 minutes d'inactivité au plus.")
+                    Text("Appareil partagé : le délai est imposé (5 minutes au plus). Repasse en mode personnel pour le régler.")
                 } else {
                     Text("OnePass se verrouille après ce délai d'inactivité et quand l'app reste en arrière-plan aussi longtemps.")
                 }
