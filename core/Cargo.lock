@@ -1355,6 +1355,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "onepass-guard"
+version = "0.1.0"
+dependencies = [
+ "aws-lc-rs",
+ "data-encoding",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "time",
+ "zeroize",
+]
+
+[[package]]
 name = "password-hash"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,18 @@
+[package]
+name = "onepass-guard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+zeroize.workspace = true
+aws-lc-rs.workspace = true
+data-encoding.workspace = true
+serde_json = "1"
+time = { version = "0.3", default-features = false, features = ["std", "formatting"] }
+
+[dev-dependencies]
+tempfile = "3"
