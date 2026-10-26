@@ -1,4 +1,4 @@
-.PHONY: check fmt-check test lint deny audit fuzz
+.PHONY: check fmt-check test lint deny audit fuzz miri
 
 # Seconds per fuzz target (override: make fuzz FUZZ_SECONDS=300).
 FUZZ_SECONDS ?= 60
@@ -26,3 +26,9 @@ fuzz:
 	for t in $(FUZZ_TARGETS); do \
 		cargo +nightly fuzz run $$t -- -max_total_time=$(FUZZ_SECONDS) || exit 1; \
 	done
+
+# Needs the nightly toolchain with Miri (rustup +nightly component add miri).
+# mlock and sysconf are stubbed under cfg(miri). Pool pages are never freed
+# by design, hence the leak check is off.
+miri:
+	MIRIFLAGS="-Zmiri-ignore-leaks" cargo +nightly miri test -p onepass-core --lib crypto::locked

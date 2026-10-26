@@ -29,6 +29,10 @@ serde_json = "1"
 quick-xml = "0.42.0"
 zip = { version = "9.1.1", default-features = false, features = ["deflate"] }
 
+# mlock for the page-locked key slots (crypto::locked).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [features]
 # Lowers the enforced Argon2id floor to DEV_KDF_FLOOR, in builds with debug
 # assertions only (a release build ignores it). For the dev CLI and the

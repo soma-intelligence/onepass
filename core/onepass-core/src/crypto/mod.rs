@@ -4,6 +4,9 @@ pub mod aead;
 pub mod kdf;
 pub mod kem;
 pub mod key;
+// The only module of the crate allowed to use `unsafe`.
+#[allow(unsafe_code)]
+pub mod locked;
 pub mod random;
 pub mod secret_key;
 pub mod sign;

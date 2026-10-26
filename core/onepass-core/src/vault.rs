@@ -157,8 +157,8 @@ impl Vault {
             return Err(Error::InvalidFormat("item key length"));
         }
         // Straight into the key buffer: no [u8; 32] temporary.
-        let mut key = SymmetricKey::from_bytes([0u8; 32]);
-        key.0.copy_from_slice(&plain);
+        let mut key = SymmetricKey::zeroed();
+        key.bytes_mut().copy_from_slice(&plain);
         Ok(key)
     }
 

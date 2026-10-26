@@ -1539,6 +1539,7 @@ dependencies = [
  "aws-lc-rs",
  "csv",
  "data-encoding",
+ "libc",
  "libcrux-ml-dsa",
  "libcrux-ml-kem",
  "postcard",

@@ -1,5 +1,8 @@
 //! Core library of OnePass: a post-quantum password manager.
 
+// Only crypto::locked may use `unsafe` (page-locked key slots).
+#![deny(unsafe_code)]
+
 pub mod account;
 pub mod archive;
 pub mod companion;
