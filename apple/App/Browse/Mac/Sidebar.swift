@@ -9,6 +9,11 @@ import VaultKit
 struct Sidebar: View {
     @Environment(AppModel.self) private var model
     @State private var creatingVault = false
+    #if os(macOS)
+    /// Height of the window's title bar and toolbar, which the sidebar column does not report as
+    /// a safe area (macOS 26): the account header starts below it.
+    @State private var titlebarHeight: CGFloat = 52
+    #endif
 
     private var session: VaultSession { model.session }
 
@@ -19,11 +24,31 @@ struct Sidebar: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        // Mac: the sidebar column reports no top safe area, so a list there starts under the traffic
+        // lights. The account header sits above the list, below the title bar (its height read from
+        // the window): never under the window buttons, its menu stays clickable.
+        VStack(spacing: 0) {
+            AccountHeader()
+                .padding(.horizontal, 18)
+                .padding(.top, titlebarHeight + 4)
+                .padding(.bottom, 8)
+            list
+        }
+        .background { TitlebarHeightReader(height: $titlebarHeight) }
+        #else
+        list
+        #endif
+    }
+
+    private var list: some View {
         let counts = session.counts()
-        List(selection: selection) {
+        return List(selection: selection) {
+            #if !os(macOS)
             Section {
                 AccountHeader()
             }
+            #endif
             Section {
                 row("Tous les éléments", systemImage: "square.grid.2x2", count: counts.all, filter: .all, id: "library.all")
                 row("Favoris", systemImage: "star", count: counts.favorites, filter: .favorites, id: "library.favorites")
@@ -305,3 +330,39 @@ struct SettingsRow: View {
         .padding(.vertical, 10)
     }
 }
+
+#if os(macOS)
+/// Reads how much of the window the title bar and the toolbar cover (`contentLayoutRect`).
+private struct TitlebarHeightReader: NSViewRepresentable {
+    @Binding var height: CGFloat
+
+    func makeNSView(context: Context) -> ReaderView {
+        let view = ReaderView()
+        view.onChange = { value in if abs(value - height) > 0.5 { height = value } }
+        return view
+    }
+
+    func updateNSView(_ nsView: ReaderView, context: Context) {}
+
+    final class ReaderView: NSView {
+        var onChange: ((CGFloat) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            report()
+        }
+
+        override func layout() {
+            super.layout()
+            report()
+        }
+
+        private func report() {
+            guard let window, let content = window.contentView else { return }
+            let top = content.bounds.height - window.contentLayoutRect.maxY
+            guard top > 0 else { return }
+            DispatchQueue.main.async { [onChange] in onChange?(top) }
+        }
+    }
+}
+#endif
