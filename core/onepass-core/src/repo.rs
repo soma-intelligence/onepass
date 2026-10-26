@@ -17,9 +17,10 @@
 //! version 1 of an item the manifest does not list. Any other record that
 //! does not match the manifest is reported, as `check_records` does.
 //!
-//! Known limit: a crash after the manifest is written but before the old
-//! record is deleted leaves a stale record, reported as
-//! `ManifestUnexpectedItem` on the next load (the data is intact).
+//! A crash after the manifest but before the old record is deleted leaves a
+//! stale record: an older version of a listed item. It is ignored when the
+//! exact current record (same version and hash) is present; served instead
+//! of the current one, it stays an error.
 
 use std::collections::BTreeMap;
 
@@ -58,8 +59,9 @@ struct Loaded {
     manifest: Manifest,
     /// Records matching the manifest, sorted by item id, with their blob ids.
     records: Vec<(Id, ItemRecord)>,
-    /// Interrupted writes: `(blob id, item id)`, ignored on load.
-    pending: Vec<(Id, Id)>,
+    /// Records ignored on load, interrupted writes and stale leftovers:
+    /// `(blob id, item id)`. Deleted when that item is written next.
+    ignored: Vec<(Id, Id)>,
 }
 
 impl Loaded {
@@ -77,8 +79,8 @@ impl Loaded {
         }
     }
 
-    fn pending_of(&self, item_id: Id) -> impl Iterator<Item = Id> + '_ {
-        self.pending
+    fn ignored_of(&self, item_id: Id) -> impl Iterator<Item = Id> + '_ {
+        self.ignored
             .iter()
             .filter(move |(_, i)| *i == item_id)
             .map(|(blob, _)| *blob)
@@ -222,7 +224,8 @@ impl<S: RecordStore> Repository<S> {
         &self.device
     }
 
-    /// Every vault of the account, sorted by id. A key envelope without its
+    /// Every vault of the account, sorted by id. The vault list itself is
+    /// not authenticated yet: a store can hide a whole vault undetected. A key envelope without its
     /// meta record is `InvalidFormat("vault meta")`.
     pub fn vaults(&self) -> Result<Vec<Vault>> {
         let mut out = Vec::new();
@@ -279,7 +282,7 @@ impl<S: RecordStore> Repository<S> {
         let loaded = self.load(vault)?;
         let rec = vault.seal_item(&item, loaded.next_version(item.id)?)?;
         let old = loaded.listed(item.id).map(|(blob, _)| *blob);
-        self.delete_pending(&loaded, item.id)?;
+        self.delete_ignored(&loaded, item.id)?;
         self.put_item(vault.id, &rec)?;
         let mut entries = loaded.entries_without(item.id);
         entries.push(entry(&rec));
@@ -297,7 +300,7 @@ impl<S: RecordStore> Repository<S> {
     pub fn delete_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
         let loaded = self.load(vault)?;
         let (blob, _) = *loaded.listed(item_id).ok_or(Error::NotFound)?;
-        self.delete_pending(&loaded, item_id)?;
+        self.delete_ignored(&loaded, item_id)?;
         let entries = loaded.entries_without(item_id);
         self.write_manifest(
             vault,
@@ -329,14 +332,14 @@ impl<S: RecordStore> Repository<S> {
         let dst = self.load(to)?;
         let moved = from.move_item(to, &rec, dst.next_version(item_id)?)?;
         let replaced = dst.listed(item_id).map(|(b, _)| *b);
-        self.delete_pending(&dst, item_id)?;
+        self.delete_ignored(&dst, item_id)?;
         self.put_item(to.id, &moved)?;
         let mut entries = dst.entries_without(item_id);
         entries.push(entry(&moved));
         self.write_manifest(to, &Manifest::next(Some(&dst.manifest), to.id, entries))?;
         let entries = src.entries_without(item_id);
         self.write_manifest(from, &Manifest::next(Some(&src.manifest), from.id, entries))?;
-        self.delete_pending(&src, item_id)?;
+        self.delete_ignored(&src, item_id)?;
         self.store.delete(RecordKind::Item, blob)?;
         if let Some(b) = replaced {
             self.store.delete(RecordKind::Item, b)?;
@@ -383,7 +386,7 @@ impl<S: RecordStore> Repository<S> {
         )?;
 
         let mut records = Vec::new();
-        let mut pending = Vec::new();
+        let mut ignored = Vec::new();
         for r in self.store.list(RecordKind::Item)? {
             let (prefix, body) = r
                 .data
@@ -395,23 +398,41 @@ impl<S: RecordStore> Repository<S> {
             let item: ItemRecord =
                 decode_all(body).ok_or(IntegrityError::ManifestUnexpectedItem)?;
             if interrupted_write(vault, &manifest, &item) {
-                pending.push((r.id, item.item_id));
+                ignored.push((r.id, item.item_id));
             } else {
                 records.push((r.id, item));
             }
         }
+        // Stale leftovers of a cleanup cut short: an older version of a
+        // listed item, ignored only beside the exact current record.
+        let current: Vec<Id> = manifest
+            .entries
+            .iter()
+            .filter(|e| {
+                records.iter().any(|(_, r)| {
+                    r.item_id == e.item_id
+                        && r.version == e.version
+                        && record_hash(r) == e.record_hash
+                })
+            })
+            .map(|e| e.item_id)
+            .collect();
+        let (stale, mut records): (Vec<_>, Vec<_>) = records.into_iter().partition(|(_, r)| {
+            current.contains(&r.item_id) && entry_version(&manifest, r.item_id) > Some(r.version)
+        });
+        ignored.extend(stale.iter().map(|(blob, r)| (*blob, r.item_id)));
         records.sort_by_key(|(_, r)| r.item_id);
         let plain: Vec<ItemRecord> = records.iter().map(|(_, r)| r.clone()).collect();
         check_records(&manifest, &plain)?;
         Ok(Loaded {
             manifest,
             records,
-            pending,
+            ignored,
         })
     }
 
-    fn delete_pending(&mut self, loaded: &Loaded, item_id: Id) -> Result<()> {
-        for blob in loaded.pending_of(item_id) {
+    fn delete_ignored(&mut self, loaded: &Loaded, item_id: Id) -> Result<()> {
+        for blob in loaded.ignored_of(item_id) {
             self.store.delete(RecordKind::Item, blob)?;
         }
         Ok(())
@@ -443,13 +464,21 @@ impl<S: RecordStore> Repository<S> {
     }
 }
 
+/// The version the manifest lists for this item, if any.
+fn entry_version(m: &Manifest, item_id: Id) -> Option<u64> {
+    m.entries
+        .binary_search_by_key(&item_id, |e| e.item_id)
+        .ok()
+        .map(|i| m.entries[i].version)
+}
+
 /// A record left by a write that stopped before its manifest: exactly the
 /// next version of a listed item, or version 1 of an unlisted one, and it
 /// opens under this vault's key (so the store cannot fake one).
 fn interrupted_write(vault: &Vault, m: &Manifest, rec: &ItemRecord) -> bool {
-    let expected = match m.entries.binary_search_by_key(&rec.item_id, |e| e.item_id) {
-        Ok(i) => m.entries[i].version.checked_add(1),
-        Err(_) => Some(1),
+    let expected = match entry_version(m, rec.item_id) {
+        Some(v) => v.checked_add(1),
+        None => Some(1),
     };
     expected == Some(rec.version) && vault.open_item(rec).is_ok()
 }
@@ -600,6 +629,34 @@ mod tests {
         let mut out = item.clone();
         out.field_mut("username").unwrap().value = FieldValue::Text(name.into());
         out
+    }
+
+    #[test]
+    fn stale_older_version_is_ignored_only_beside_the_current_one() {
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let item = login(&v, "v1");
+        repo.save_item(&v, item.clone()).unwrap();
+        let v1 = repo.store.list(RecordKind::Item).unwrap().pop().unwrap();
+        repo.save_item(&v, login_as(&item, "v2")).unwrap();
+        let current = repo.store.list(RecordKind::Item).unwrap().pop().unwrap();
+        // A crash between the manifest write and the delete of v1.
+        repo.store.put(v1).unwrap();
+        let items = repo.items(&v).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(user(&items[0]), "v2");
+
+        // The old version served instead of the current one stays an error.
+        repo.store.delete(RecordKind::Item, current.id).unwrap();
+        assert_eq!(
+            integrity(repo.items(&v)),
+            IntegrityError::ManifestItemMismatch
+        );
+
+        // Back to current plus stale: the next save clears the stale record.
+        repo.store.put(current).unwrap();
+        repo.save_item(&v, login_as(&item, "v3")).unwrap();
+        assert_eq!(repo.store.list(RecordKind::Item).unwrap().len(), 1);
+        assert_eq!(user(&repo.items(&v).unwrap()[0]), "v3");
     }
 
     #[test]
