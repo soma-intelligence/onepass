@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Write};
-use std::sync::mpsc;
+use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
 /// Which front end asks.
@@ -115,9 +115,15 @@ pub fn parse_answer(line: &str, remember_allowed: bool) -> Decision {
 }
 
 /// Approver that talks to the user on `/dev/tty`.
+///
+/// One long-lived reader thread per approver (started on first use) forwards
+/// typed lines on a channel. Before each prompt, stale queued lines (typeahead
+/// or an answer to a timed-out prompt) are drained, so they are never taken as
+/// an answer.
 pub struct TtyApprover {
     /// How long to wait for an answer before denying.
     pub timeout: Duration,
+    reader: Mutex<Option<mpsc::Receiver<String>>>,
 }
 
 impl TtyApprover {
@@ -125,6 +131,7 @@ impl TtyApprover {
     pub fn new() -> Self {
         TtyApprover {
             timeout: Duration::from_secs(60),
+            reader: Mutex::new(None),
         }
     }
 }
@@ -137,12 +144,35 @@ impl Default for TtyApprover {
 
 impl Approver for TtyApprover {
     fn approve(&self, req: &ApprovalRequest) -> Decision {
+        // Holding the lock also serializes concurrent prompts.
+        let mut slot = self.reader.lock().unwrap_or_else(|e| e.into_inner());
         let Ok(mut tty) = OpenOptions::new().read(true).write(true).open("/dev/tty") else {
             return Decision::Deny;
         };
-        let Ok(reader) = tty.try_clone() else {
-            return Decision::Deny;
-        };
+        if slot.is_none() {
+            let Ok(reader) = tty.try_clone() else {
+                return Decision::Deny;
+            };
+            let (tx, rx) = mpsc::channel();
+            std::thread::spawn(move || {
+                let mut r = BufReader::new(reader);
+                loop {
+                    let mut line = String::new();
+                    match r.read_line(&mut line) {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {
+                            if tx.send(line).is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+            *slot = Some(rx);
+        }
+        let rx = slot.as_ref().expect("reader started above");
+        while rx.try_recv().is_ok() {}
+
         let choices = if req.remember_allowed {
             "[y] once, [s] session, anything else denies: "
         } else {
@@ -152,18 +182,15 @@ impl Approver for TtyApprover {
         if tty.write_all(text.as_bytes()).is_err() || tty.flush().is_err() {
             return Decision::Deny;
         }
-        let (tx, rx) = mpsc::channel();
-        // The reader thread may stay blocked after a timeout; it only holds
-        // the terminal handle and ends with the process.
-        std::thread::spawn(move || {
-            let mut line = String::new();
-            let ok = BufReader::new(reader).read_line(&mut line).is_ok();
-            let _ = tx.send(if ok { line } else { String::new() });
-        });
         match rx.recv_timeout(self.timeout) {
             Ok(line) => parse_answer(&line, req.remember_allowed),
-            Err(_) => {
+            Err(mpsc::RecvTimeoutError::Timeout) => {
                 let _ = tty.write_all(b"\ntimed out, denied\n");
+                Decision::Deny
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                // The terminal closed: start a new reader next time.
+                *slot = None;
                 Decision::Deny
             }
         }
@@ -181,7 +208,7 @@ impl Approver for DevAutoApprover {
 
 /// Pure parser behind [`dev_auto_approver_from_env`]. `value` is the content
 /// of `ONEPASS_DEV_AUTO_APPROVE`; `debug` says whether debug assertions are on.
-pub fn parse_dev_auto_approve(
+pub(crate) fn parse_dev_auto_approve(
     value: Option<&str>,
     debug: bool,
 ) -> Result<Option<DevAutoApprover>, String> {
@@ -209,7 +236,6 @@ pub fn dev_auto_approver_from_env() -> Result<Option<DevAutoApprover>, String> {
 /// Helpers for tests of other crates.
 pub mod testing {
     use super::*;
-    use std::sync::Mutex;
 
     /// Approver that replays scripted answers in order, then denies, and
     /// records every request it receives.

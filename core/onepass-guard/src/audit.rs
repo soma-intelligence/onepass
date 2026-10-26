@@ -4,8 +4,19 @@
 //! bytes without the newline; `prev` holds the previous entry's hash (64 zeros
 //! for the first). The file `<log>.head` holds `{"seq":n,"hash":"<hex>"}` of
 //! the last entry, sealed with [`seal_config`], so edits, insertions,
-//! deletions and tail truncation are all detected. Known limit: replaying an
-//! old log together with its old authentic head is not detected.
+//! deletions and tail truncation are all detected.
+//!
+//! Several processes (the MCP server and the SSH agent) may append to the same
+//! log: every append takes an exclusive lock and derives the chain state from
+//! the disk, never from memory, and refuses to extend a log that does not
+//! match its signed head.
+//!
+//! Accepted cost: a crash between writing a line and rewriting the head leaves
+//! one line beyond the head. That single trailing line is accepted (and
+//! resealed by the next append) if it links to the head hash, so an attacker
+//! who can write the log can append one forged trailing entry that looks like
+//! such a crash. Truncation, edits and insertions are still detected. Replaying
+//! an old log together with its old authentic head is not detected.
 
 use crate::approval::Surface;
 use crate::{GuardError, LocalSigner, open_config, seal_config};
@@ -13,8 +24,8 @@ use aws_lc_rs::digest;
 use data_encoding::HEXLOWER;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
+use std::io::{Read, Write};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -54,6 +65,16 @@ pub struct AuditRecord {
     pub entry: AuditEntry,
 }
 
+/// Result of [`verify_log`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct AuditVerification {
+    /// All records, in order.
+    pub records: Vec<AuditRecord>,
+    /// True when the last line is not yet sealed by the head (a previous
+    /// crash between the line and the head, see the module documentation).
+    pub unsealed_tail: bool,
+}
+
 /// The on-disk line.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -89,46 +110,146 @@ fn head_path(log: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Appender for the audit log.
+fn seal_head(signer: &dyn LocalSigner, seq: u64, hash: &str) -> Result<String, GuardError> {
+    let payload = serde_json::to_string(&Head {
+        seq,
+        hash: hash.to_owned(),
+    })
+    .map_err(|_| GuardError::Format("audit head"))?;
+    seal_config(signer, HEAD_DOMAIN, &payload)
+}
+
+/// Reads and verifies the head; `None` when the file does not exist.
+fn read_head(log: &Path, signer: &dyn LocalSigner) -> Result<Option<Head>, GuardError> {
+    let text = match fs::read_to_string(head_path(log)) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    let payload = open_config(signer, HEAD_DOMAIN, &text)?;
+    serde_json::from_str(&payload)
+        .map(Some)
+        .map_err(|_| GuardError::Format("audit head"))
+}
+
+/// Chain state derived from the disk: last sequence number, last line hash,
+/// and whether that last line is still unsealed.
+struct State {
+    seq: u64,
+    hash: String,
+    unsealed: bool,
+}
+
+/// Checks the last line against the verified head. `last` is the last line
+/// with its parsed form, `lines` the total number of lines.
+fn reconcile(
+    head: Option<&Head>,
+    last: Option<(&Line, String)>,
+    lines: usize,
+) -> Result<State, GuardError> {
+    match (head, last) {
+        (None, None) => Ok(State {
+            seq: 0,
+            hash: ZERO_HASH.to_owned(),
+            unsealed: false,
+        }),
+        (None, Some((l, h))) => {
+            if lines == 1 && l.seq == 1 && l.prev == ZERO_HASH {
+                Ok(State {
+                    seq: 1,
+                    hash: h,
+                    unsealed: true,
+                })
+            } else {
+                Err(GuardError::Tampered("head file missing"))
+            }
+        }
+        (Some(_), None) => Err(GuardError::Tampered("log missing or empty but head exists")),
+        (Some(head), Some((l, h))) => {
+            if l.seq == head.seq && h == head.hash {
+                Ok(State {
+                    seq: l.seq,
+                    hash: h,
+                    unsealed: false,
+                })
+            } else if l.seq == head.seq + 1 && l.prev == head.hash {
+                Ok(State {
+                    seq: l.seq,
+                    hash: h,
+                    unsealed: true,
+                })
+            } else {
+                Err(GuardError::Tampered("log does not match signed head"))
+            }
+        }
+    }
+}
+
+/// Appender for the audit log. Holds only the path: all chain state is read
+/// from disk under an exclusive lock on every append.
 pub struct AuditLog {
     path: PathBuf,
-    seq: u64,
-    last_hash: String,
 }
 
 impl AuditLog {
-    /// Opens (creating with mode 0600 if needed) the log and resumes its
-    /// sequence number and last hash. The chain is not verified here: use
-    /// [`verify_log`].
+    /// Creates the log (mode 0600) if missing and enforces 0600 on an
+    /// existing one. The chain is not verified here: use [`verify_log`].
     pub fn open(path: &Path) -> Result<AuditLog, GuardError> {
-        OpenOptions::new()
+        let f = OpenOptions::new()
             .create(true)
             .append(true)
             .mode(0o600)
             .open(path)?;
-        let text = fs::read_to_string(path).map_err(|_| GuardError::Format("audit log"))?;
-        let (seq, last_hash) = match text.lines().rfind(|l| !l.is_empty()) {
-            None => (0, ZERO_HASH.to_owned()),
-            Some(last) => {
-                let l: Line =
-                    serde_json::from_str(last).map_err(|_| GuardError::Format("audit line"))?;
-                (l.seq, hash_line(last))
-            }
-        };
+        f.set_permissions(fs::Permissions::from_mode(0o600))?;
         Ok(AuditLog {
             path: path.to_owned(),
-            seq,
-            last_hash,
         })
     }
 
-    /// Appends `e`, then rewrites the signed head atomically.
+    /// Appends `e` and rewrites the signed head atomically.
+    ///
+    /// Under an exclusive lock it reads the last line and the head, verifies
+    /// the head signature and refuses with [`GuardError::Tampered`] (writing
+    /// nothing) if they disagree, except for one unsealed trailing line left
+    /// by a crash, which is resealed first.
     pub fn append(&mut self, signer: &dyn LocalSigner, e: &AuditEntry) -> Result<(), GuardError> {
+        let mut f = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .mode(0o600)
+            .open(&self.path)?;
+        f.lock()?;
+        let mut text = String::new();
+        f.read_to_string(&mut text)
+            .map_err(|_| GuardError::Format("audit log"))?;
+
+        let head = read_head(&self.path, signer)?;
+        let last_raw = text.lines().rfind(|l| !l.is_empty());
+        let parsed = match last_raw {
+            None => None,
+            Some(raw) => Some((
+                serde_json::from_str::<Line>(raw).map_err(|_| GuardError::Format("audit line"))?,
+                hash_line(raw),
+            )),
+        };
+        let count = text.lines().filter(|l| !l.is_empty()).count();
+        let state = reconcile(
+            head.as_ref(),
+            parsed.as_ref().map(|(l, h)| (l, h.clone())),
+            count,
+        )?;
+
+        // Never leave two lines beyond the head: reseal the tail first.
+        if state.unsealed {
+            let sealed = seal_head(signer, state.seq, &state.hash)?;
+            write_atomic(&head_path(&self.path), sealed.as_bytes())?;
+        }
+
         let ts = OffsetDateTime::now_utc()
             .format(&Rfc3339)
             .map_err(|_| GuardError::Format("timestamp"))?;
         let line = Line {
-            seq: self.seq + 1,
+            seq: state.seq + 1,
             ts,
             surface: e.surface,
             client: e.client.clone(),
@@ -138,35 +259,21 @@ impl AuditLog {
             field: e.field.clone(),
             decision: e.decision.clone(),
             outcome: e.outcome.clone(),
-            prev: self.last_hash.clone(),
+            prev: state.hash.clone(),
         };
-        let text = serde_json::to_string(&line).map_err(|_| GuardError::Format("audit line"))?;
-        let hash = hash_line(&text);
-        let head = seal_config(
-            signer,
-            HEAD_DOMAIN,
-            &serde_json::to_string(&Head {
-                seq: line.seq,
-                hash: hash.clone(),
-            })
-            .map_err(|_| GuardError::Format("audit head"))?,
-        )?;
+        let json = serde_json::to_string(&line).map_err(|_| GuardError::Format("audit line"))?;
+        let sealed = seal_head(signer, line.seq, &hash_line(&json))?;
 
-        let mut f = OpenOptions::new()
-            .append(true)
-            .mode(0o600)
-            .open(&self.path)?;
-        f.write_all(format!("{text}\n").as_bytes())?;
+        f.write_all(format!("{json}\n").as_bytes())?;
         f.sync_all()?;
-        write_atomic(&head_path(&self.path), head.as_bytes())?;
-
-        self.seq = line.seq;
-        self.last_hash = hash;
+        write_atomic(&head_path(&self.path), sealed.as_bytes())?;
+        // The lock is released when `f` is dropped.
         Ok(())
     }
 }
 
-/// Writes `data` to `path` through a temporary file and a rename.
+/// Writes `data` to `path` through a temporary file, a rename and an fsync of
+/// the parent directory.
 fn write_atomic(path: &Path, data: &[u8]) -> Result<(), GuardError> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
@@ -180,6 +287,14 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), GuardError> {
     f.write_all(data)?;
     f.sync_all()?;
     fs::rename(&tmp, path)?;
+    if let Some(dir) = path.parent() {
+        let dir = if dir.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            dir
+        };
+        File::open(dir)?.sync_all()?;
+    }
     Ok(())
 }
 
@@ -187,11 +302,13 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), GuardError> {
 ///
 /// An edited, inserted or deleted line breaks the `seq`/`prev` chain; a
 /// truncated or extended tail no longer matches the head; a head signed with
-/// another key gives [`GuardError::Signature`].
-pub fn verify_log(path: &Path, signer: &dyn LocalSigner) -> Result<Vec<AuditRecord>, GuardError> {
+/// another key gives [`GuardError::Signature`]. One trailing line that links
+/// to the head hash is accepted and reported through `unsealed_tail`.
+pub fn verify_log(path: &Path, signer: &dyn LocalSigner) -> Result<AuditVerification, GuardError> {
     let text = fs::read_to_string(path)?;
     let mut records = Vec::new();
     let mut prev = ZERO_HASH.to_owned();
+    let mut last: Option<Line> = None;
     for raw in text.lines() {
         let l: Line = serde_json::from_str(raw).map_err(|_| GuardError::Format("audit line"))?;
         if l.seq != records.len() as u64 + 1 {
@@ -203,38 +320,31 @@ pub fn verify_log(path: &Path, signer: &dyn LocalSigner) -> Result<Vec<AuditReco
         prev = hash_line(raw);
         records.push(AuditRecord {
             seq: l.seq,
-            ts: l.ts,
+            ts: l.ts.clone(),
             entry: AuditEntry {
                 surface: l.surface,
-                client: l.client,
-                action: l.action,
-                vault_id: l.vault_id,
-                item_id: l.item_id,
-                field: l.field,
-                decision: l.decision,
-                outcome: l.outcome,
+                client: l.client.clone(),
+                action: l.action.clone(),
+                vault_id: l.vault_id.clone(),
+                item_id: l.item_id.clone(),
+                field: l.field.clone(),
+                decision: l.decision.clone(),
+                outcome: l.outcome.clone(),
             },
         });
+        last = Some(l);
     }
 
-    let head_text = match fs::read_to_string(head_path(path)) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return if records.is_empty() {
-                Ok(records)
-            } else {
-                Err(GuardError::Tampered("head file missing"))
-            };
-        }
-        Err(e) => return Err(e.into()),
-    };
-    let payload = open_config(signer, HEAD_DOMAIN, &head_text)?;
-    let head: Head =
-        serde_json::from_str(&payload).map_err(|_| GuardError::Format("audit head"))?;
-    if head.seq != records.len() as u64 || (head.seq > 0 && head.hash != prev) {
-        return Err(GuardError::Tampered("log does not match signed head"));
-    }
-    Ok(records)
+    let head = read_head(path, signer)?;
+    let state = reconcile(
+        head.as_ref(),
+        last.as_ref().map(|l| (l, prev.clone())),
+        records.len(),
+    )?;
+    Ok(AuditVerification {
+        records,
+        unsealed_tail: state.unsealed,
+    })
 }
 
 /// Receives audit entries from the front ends.
@@ -315,7 +425,7 @@ mod tests {
     fn audit_chain_verifies() {
         let dir = tempfile::tempdir().unwrap();
         let (path, signer) = make(dir.path(), 3);
-        let recs = verify_log(&path, &signer).unwrap();
+        let recs = verify_log(&path, &signer).unwrap().records;
         assert_eq!(recs.len(), 3);
         for (i, r) in recs.iter().enumerate() {
             assert_eq!(r.seq, i as u64 + 1);
@@ -425,7 +535,7 @@ mod tests {
         }
         let mut log = AuditLog::open(&path).unwrap();
         log.append(&signer, &entry(3)).unwrap();
-        let recs = verify_log(&path, &signer).unwrap();
+        let recs = verify_log(&path, &signer).unwrap().records;
         assert_eq!(
             recs.iter().map(|r| r.seq).collect::<Vec<_>>(),
             vec![1, 2, 3]
@@ -450,9 +560,98 @@ mod tests {
             signer: TestSigner::new(),
         };
         sink.record(&entry(1));
-        assert_eq!(verify_log(&path, &TestSigner::new()).unwrap().len(), 1);
+        assert_eq!(
+            verify_log(&path, &TestSigner::new()).unwrap().records.len(),
+            1
+        );
         let mut v: Vec<AuditEntry> = Vec::new();
         v.record(&entry(2));
         assert_eq!(v, vec![entry(2)]);
+    }
+
+    #[test]
+    fn audit_head_write_failure_recovers() {
+        let dir = tempfile::tempdir().unwrap();
+        let (path, signer) = make(dir.path(), 1);
+        let tmp = dir.path().join("audit.log.head.tmp");
+        fs::create_dir(&tmp).unwrap();
+        let mut log = AuditLog::open(&path).unwrap();
+        assert!(log.append(&signer, &entry(2)).is_err());
+        let v = verify_log(&path, &signer).unwrap();
+        assert!(v.unsealed_tail);
+        assert_eq!(v.records.len(), 2);
+        fs::remove_dir(&tmp).unwrap();
+        log.append(&signer, &entry(3)).unwrap();
+        let v = verify_log(&path, &signer).unwrap();
+        assert!(!v.unsealed_tail);
+        assert_eq!(
+            v.records.iter().map(|r| r.seq).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn audit_truncation_then_append_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (path, signer) = make(dir.path(), 3);
+        let mut l = lines(&path);
+        l.pop();
+        write_lines(&path, &l);
+        let before = fs::read(&path).unwrap();
+        let head_before = fs::read(head_path(&path)).unwrap();
+        let mut log = AuditLog::open(&path).unwrap();
+        assert!(matches!(
+            log.append(&signer, &entry(9)),
+            Err(GuardError::Tampered(_))
+        ));
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(fs::read(head_path(&path)).unwrap(), head_before);
+    }
+
+    #[test]
+    fn audit_two_handles_share_one_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.log");
+        let signer = TestSigner::new();
+        let mut a = AuditLog::open(&path).unwrap();
+        let mut b = AuditLog::open(&path).unwrap();
+        for i in 0..3 {
+            a.append(&signer, &entry(i)).unwrap();
+            b.append(&signer, &entry(i)).unwrap();
+        }
+        let v = verify_log(&path, &signer).unwrap();
+        assert_eq!(v.records.len(), 6);
+        assert!(!v.unsealed_tail);
+    }
+
+    #[test]
+    fn audit_single_unsealed_tail_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let (path, signer) = make(dir.path(), 2);
+        let old_head = fs::read(head_path(&path)).unwrap();
+        let mut log = AuditLog::open(&path).unwrap();
+        log.append(&signer, &entry(3)).unwrap();
+        fs::write(head_path(&path), old_head).unwrap();
+        let v = verify_log(&path, &signer).unwrap();
+        assert!(v.unsealed_tail);
+        assert_eq!(v.records.len(), 3);
+        // The next append reseals the head over the tail.
+        let mut log = AuditLog::open(&path).unwrap();
+        log.append(&signer, &entry(4)).unwrap();
+        assert!(!verify_log(&path, &signer).unwrap().unsealed_tail);
+    }
+
+    #[test]
+    fn audit_head_ahead_of_log_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (path, signer) = make(dir.path(), 3);
+        let l = lines(&path);
+        write_lines(&path, &l[..1]);
+        assert!(matches!(
+            verify_log(&path, &signer),
+            Err(GuardError::Tampered(_))
+        ));
+        fs::remove_file(&path).unwrap();
+        assert!(verify_log(&path, &signer).is_err());
     }
 }

@@ -12,9 +12,11 @@ mod signed;
 
 pub use approval::{
     ApprovalRequest, Approver, Decision, DevAutoApprover, Surface, Target, TtyApprover,
-    dev_auto_approver_from_env, parse_answer, parse_dev_auto_approve, render_prompt, testing,
+    dev_auto_approver_from_env, parse_answer, render_prompt, testing,
 };
-pub use audit::{AuditEntry, AuditLog, AuditRecord, AuditSink, SignedAuditSink, verify_log};
+pub use audit::{
+    AuditEntry, AuditLog, AuditRecord, AuditSink, AuditVerification, SignedAuditSink, verify_log,
+};
 pub use display::sanitize_for_display;
 pub use signed::{open_config, seal_config};
 
@@ -22,6 +24,10 @@ use std::fmt;
 
 /// Signs and verifies local data with a key owned by the caller (for example
 /// the account's local signature key). `domain` separates uses of the key.
+///
+/// Implementations MUST bind `domain` into what they sign (for example sign
+/// `domain || 0x00 || msg`): `seal_config` passes the domain and the payload
+/// separately and relies on this for domain separation.
 pub trait LocalSigner {
     /// Signs `msg` under `domain`.
     fn sign(&self, domain: &[u8], msg: &[u8]) -> Result<Vec<u8>, GuardError>;
