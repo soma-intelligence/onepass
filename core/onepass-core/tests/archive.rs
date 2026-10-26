@@ -516,8 +516,9 @@ fn restore_skips_existing() {
     let existing = vec![(other, vec![a.id]), (v, vec![Id::new(), b.id])];
     let plan = restore_plan(&archive, &existing);
     assert!(plan.new_vaults.is_empty());
-    assert_eq!(plan.writes, vec![(v, a), (v, c)]);
-    assert_eq!(plan.skipped, 1);
+    // `a` exists in another vault of the account, `b` in the target vault.
+    assert_eq!(plan.writes, vec![(v, c)]);
+    assert_eq!(plan.skipped, 2);
     // Order of `existing` is irrelevant.
     let reversed: Vec<_> = existing.iter().rev().cloned().collect();
     assert_eq!(restore_plan(&archive, &reversed), plan);
@@ -546,4 +547,43 @@ fn restore_creates_missing_vaults() {
     assert_eq!(plan.new_vaults, vec![(fresh, meta("Neuf"))]);
     assert_eq!(plan.writes, vec![(fresh, x), (fresh, y), (kept, z)]);
     assert_eq!(plan.skipped, 0);
+}
+
+#[test]
+fn restore_writes_an_id_shared_by_two_archive_vaults_once() {
+    let v1 = Id::new();
+    let v2 = Id::new();
+    let a = item_in(v1, "a");
+    let mut a_again = a.clone();
+    a_again.vault_id = v2;
+    let b = item_in(v2, "b");
+    let archive = contents(vec![
+        ArchivedVault {
+            id: v1,
+            meta: meta("Un"),
+            items: vec![a.clone()],
+        },
+        ArchivedVault {
+            id: v2,
+            meta: meta("Deux"),
+            items: vec![a_again, b.clone()],
+        },
+    ]);
+    let plan = restore_plan(&archive, &[]);
+    assert_eq!(plan.new_vaults, vec![(v1, meta("Un")), (v2, meta("Deux"))]);
+    assert_eq!(plan.writes, vec![(v1, a), (v2, b)]);
+    assert_eq!(plan.skipped, 1);
+}
+
+#[test]
+fn passphrase_strength_scores_the_first_128_chars() {
+    let weak = Error::Validation(ValidationError {
+        field: "passphrase".into(),
+        reason: "too weak",
+    });
+    let long = "a".repeat(129);
+    assert_eq!(export(vaults(), &long, kdf()).unwrap_err(), weak);
+    // Multi-byte characters past the bound: cut on a char boundary.
+    let mixed = format!("{}é{}", "a".repeat(127), "é".repeat(10));
+    assert_eq!(export(vaults(), &mixed, kdf()).unwrap_err(), weak);
 }

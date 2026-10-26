@@ -49,7 +49,7 @@ const MAX_ITEMS: usize = 1_000_000;
 /// Largest accepted Argon2id cost on open, as `(m_kib, t, p)`: the account
 /// ceiling (2 GiB, 16 passes, 16 lanes). Checked before Argon2 runs.
 const KDF_CEILING: (u32, u32, u32) = (2097152, 16, 16);
-/// Passphrases longer than this are strong without running zxcvbn, whose
+/// zxcvbn scores at most this many leading characters of a passphrase: its
 /// cost grows with the length (same bound as the Watchtower weak check).
 const MAX_ZXCVBN_CHARS: usize = 128;
 const MIN_PASSPHRASE_SCORE: u8 = 3;
@@ -257,9 +257,14 @@ fn within_ceiling(kdf: &KdfParams) -> bool {
 
 /// Passphrase strength (zxcvbn score at least 3) and KDF bounds on create.
 fn check_passphrase(passphrase: &str, kdf: &KdfParams) -> Result<()> {
-    let strong = passphrase.chars().count() > MAX_ZXCVBN_CHARS
-        || u8::from(zxcvbn::zxcvbn(passphrase, &[]).score()) >= MIN_PASSPHRASE_SCORE;
-    if !strong {
+    // zxcvbn's cost grows with the length: score the first 128 characters
+    // (cut on a char boundary), which must be strong on their own.
+    let end = passphrase
+        .char_indices()
+        .nth(MAX_ZXCVBN_CHARS)
+        .map_or(passphrase.len(), |(i, _)| i);
+    let scored = passphrase.get(..end).unwrap_or(passphrase);
+    if u8::from(zxcvbn::zxcvbn(scored, &[]).score()) < MIN_PASSPHRASE_SCORE {
         return Err(ValidationError {
             field: "passphrase".into(),
             reason: "too weak",
@@ -605,6 +610,76 @@ mod tests {
             },
             wrapped_key: vec![1, 2, 3],
         }
+    }
+
+    const PP: &str = "quartz lantern oyster meadow 91";
+
+    /// A passphrase archive built by hand through the wire helpers, with
+    /// any KDF parameters and a payload altered after the header is fixed.
+    fn forge_passphrase(kdf: KdfParams, alter: impl FnOnce(&mut Payload)) -> Vec<u8> {
+        let k = SymmetricKey::generate().unwrap();
+        let mut h = header(vec![]);
+        h.archive_id = Id::new();
+        let wrapped_key = seal(
+            &passphrase_kek(PP, &kdf).unwrap(),
+            BlobKind::Archive,
+            &key_aad(h.archive_id),
+            k.expose(),
+        )
+        .unwrap();
+        h.recipients = vec![Recipient::Passphrase { kdf, wrapped_key }];
+        let mut p = Payload {
+            archive_id: h.archive_id,
+            kind: h.kind,
+            created_at: h.created_at,
+            payload_schema: h.payload_schema,
+            source_account: None,
+            vaults: vec![],
+        };
+        alter(&mut p);
+        let sealed = seal(
+            &k,
+            BlobKind::Archive,
+            &payload_aad(h.archive_id, h.payload_schema),
+            &postcard::to_allocvec(&p).unwrap(),
+        )
+        .unwrap();
+        encode_container(&h, &sealed).unwrap()
+    }
+
+    fn dev_kdf() -> KdfParams {
+        KdfParams {
+            m_kib: 8192,
+            t: 1,
+            p: 1,
+            salt: [5; 32],
+        }
+    }
+
+    #[test]
+    fn repeated_field_mismatch_is_wrong_context() {
+        let wrong = Error::Integrity(IntegrityError::WrongContext);
+        let unlock = Unlock::Passphrase(PP);
+        assert!(open(&forge_passphrase(dev_kdf(), |_| {}), unlock).is_ok());
+        let created = forge_passphrase(dev_kdf(), |p| p.created_at += 1);
+        assert_eq!(open(&created, unlock).unwrap_err(), wrong);
+        let kind = forge_passphrase(dev_kdf(), |p| p.kind = ArchiveKind::Backup);
+        assert_eq!(open(&kind, unlock).unwrap_err(), wrong);
+        let id = forge_passphrase(dev_kdf(), |p| p.archive_id = Id([7; 16]));
+        assert_eq!(open(&id, unlock).unwrap_err(), wrong);
+    }
+
+    #[test]
+    fn kdf_below_floor_accepted_on_open() {
+        let low = KdfParams {
+            m_kib: 4096,
+            ..dev_kdf()
+        };
+        assert!(!above_floor(&low));
+        let bytes = forge_passphrase(low, |_| {});
+        let c = open(&bytes, Unlock::Passphrase(PP)).unwrap();
+        assert_eq!(c.kind, ArchiveKind::Export);
+        assert!(c.vaults.is_empty());
     }
 
     #[test]
