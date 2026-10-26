@@ -25,9 +25,15 @@ extension URLSession {
 }
 
 /// Loads site icons straight from the item's own site. HTTPS only, same host only, public host
-/// names only (never an IP literal, `localhost`, a `.local` or single-label name: no LAN probing),
-/// 256 KiB at most per response, no cookies, image type checked by ImageIO, declared size checked
-/// before any decode, cached by host hash.
+/// names only (never an IP literal, `localhost`, a single-label name or a local network suffix such as
+/// `.local`, `.lan`, `.home.arpa` or `.internal`: no LAN probing), and the name must resolve to public
+/// addresses only (checked before any request: no private, loopback, link-local, CGNAT, unique-local
+/// or multicast address). 256 KiB at most per response, no cookies, image type checked by ImageIO,
+/// declared size checked before any decode, cached by host hash.
+///
+/// Known limit: the system resolves the name again when it connects. A DNS server that answers a
+/// public address to the check and a private one a moment later (DNS rebinding) still gets one
+/// request to the private address; it learns nothing back (HTTPS to the same host name, no cookies).
 public actor SiteIconLoader {
     static let maxBytes = 256 * 1024
     /// Largest declared width or height decoded: a small file can declare a huge bitmap.
@@ -37,15 +43,18 @@ public actor SiteIconLoader {
 
     private let cacheDirectory: URL
     private let session: URLSession
+    private let resolver: any HostResolver
     private let enabled: @Sendable () -> Bool
     private var inFlight: [String: Task<Data?, Never>] = [:]
 
     public init(
         cacheDirectory: URL, session: URLSession = .ephemeralNoCookies,
+        resolver: any HostResolver = SystemHostResolver(),
         enabled: @escaping @Sendable () -> Bool
     ) {
         self.cacheDirectory = cacheDirectory
         self.session = session
+        self.resolver = resolver
         self.enabled = enabled
     }
 
@@ -70,13 +79,21 @@ public actor SiteIconLoader {
         return result
     }
 
+    /// Suffixes of local network names (Bonjour, home routers, RFC 8375 `home.arpa`, ICANN `internal`,
+    /// common corporate and router defaults): never fetched.
+    static let localSuffixes = [
+        "localhost", "local", "lan", "home.arpa", "internal", "localdomain", "home", "intranet", "corp",
+        "private",
+    ]
+
     /// A public DNS name: not an IP literal (v4, in any of the shorthand forms resolvers accept, or
-    /// v6), not `localhost`, not a `.local` (Bonjour) name, not a single label (a LAN device name).
+    /// v6), not `localhost`, not a local network suffix (`localSuffixes`), not a single label (a LAN
+    /// device name).
     static func isFetchableHost(_ host: String) -> Bool {
         var name = host.lowercased()
         if name.hasSuffix(".") { name.removeLast() }
         guard !name.isEmpty, !name.contains(":"), !name.hasPrefix("[") else { return false }
-        if name == "localhost" || name.hasSuffix(".localhost") || name.hasSuffix(".local") { return false }
+        if localSuffixes.contains(where: { name == $0 || name.hasSuffix("." + $0) }) { return false }
         let labels = name.split(separator: ".", omittingEmptySubsequences: false)
         guard labels.count >= 2, labels.allSatisfy({ !$0.isEmpty }), let last = labels.last else { return false }
         // No top-level domain is numeric: `10.0.0.1`, `127.1`, `0x7f.1` or `192.168.1.0x1` are addresses.
@@ -94,6 +111,12 @@ public actor SiteIconLoader {
     }
 
     private func fetchAndStore(host: String) async -> Data? {
+        // Before any request: every address the name resolves to must be public.
+        guard let addresses = await resolver.addresses(for: host) else { return nil }
+        guard !addresses.isEmpty, addresses.allSatisfy(\.isPublic) else {
+            markFailure(host: host)
+            return nil
+        }
         var offline = false
         var found: Data?
         var candidates: [URL] = [

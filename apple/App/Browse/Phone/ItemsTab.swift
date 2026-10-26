@@ -21,6 +21,7 @@ struct ItemsTab: View {
         let tags = counts.byTag.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         List {
             SyncRefusalSection()
+            AccountChangedSection()
             Section {
                 if vaultsOpen {
                     ForEach(session.vaults, id: \.id) { vault in

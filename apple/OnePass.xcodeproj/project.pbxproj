@@ -22,6 +22,7 @@
 		3B5912DB886A1E8510C4F27E /* BrowseRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F8A0A14957792EE5EDF2DCD /* BrowseRoot.swift */; };
 		3DA9195F5E3C77FBE22E96EE /* HomeTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5A4B3BD06C13AC7742D5DB /* HomeTab.swift */; };
 		3DE3CD55A4E8F4D47BBB186A /* TotpFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30039937E6F1542ACCE29B1D /* TotpFieldView.swift */; };
+		4465F72DEE3CAF7791B626F7 /* AccountChangeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDEA14A7E048E4F8837BDCA3 /* AccountChangeViews.swift */; };
 		45A42F714F279F1DECDF9060 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 19D9899D8B640FB4F5F8B0E6 /* Localizable.xcstrings */; };
 		469D03A44C80D8C1010565D6 /* ItemEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4590FC000AF13D1212563044 /* ItemEditorView.swift */; };
 		4D11257A2AB715CC77BA22C1 /* SecuritySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73396E5534184EF7CE76A170 /* SecuritySettings.swift */; };
@@ -144,6 +145,7 @@
 		F0B70DA81485FABCED6D9346 /* Sidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sidebar.swift; sourceTree = "<group>"; };
 		F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Commands.swift; sourceTree = "<group>"; };
 		F7347C36F3EBEC57C4780E87 /* FieldValueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValueView.swift; sourceTree = "<group>"; };
+		FDEA14A7E048E4F8837BDCA3 /* AccountChangeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountChangeViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -253,6 +255,7 @@
 		87326541FE4E604044BF14F7 /* Root */ = {
 			isa = PBXGroup;
 			children = (
+				FDEA14A7E048E4F8837BDCA3 /* AccountChangeViews.swift */,
 				9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */,
 				20B8451FA00D38A8278D9655 /* DebugItems.swift */,
 				3FFB44CC51A27D430FC17378 /* DemoData.swift */,
@@ -460,6 +463,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				06396E8300D4CC9C6331BE4A /* AboutSettings.swift in Sources */,
+				4465F72DEE3CAF7791B626F7 /* AccountChangeViews.swift in Sources */,
 				0C7E3E6364BDD9C145810C95 /* AccountMenu.swift in Sources */,
 				9D7B0465F8F84A1BC0F77CAA /* AddressEditor.swift in Sources */,
 				19B02EE7F352A2AB453481BE /* AppModel.swift in Sources */,

@@ -14,7 +14,13 @@ import os
 /// iCloud account binding: the first round stores the remote's `accountIdentity()` in the store meta.
 /// A later round (or `remoteHasAccount`) that meets another identity touches nothing (no fetch, no
 /// send) and reports `.accountChanged` until `acceptAccountChange()`: the change token and server tags
-/// of one Apple ID must never meet the zone of another.
+/// of one Apple ID must never meet the zone of another. The identity checked by the fetch is kept;
+/// before sending, it is fetched again only if the remote signalled an account change since
+/// (`accountChangeCount`, CloudKit's `CKAccountChanged`) or if the check is older than 10 minutes, so
+/// the usual round costs no extra call. A mismatch stops the round before anything is sent.
+///
+/// Refused remote deletions are logged by the core (`ignored_deletions`); the coordinator exposes the
+/// count, and logs only the count.
 ///
 /// One round at a time: every store call (fetch, commit, rebase, send) runs inside the round, so a
 /// rebase never overlaps a commit. Triggers that come during a round coalesce into one more round.
@@ -29,6 +35,8 @@ public actor SyncCoordinator: SyncTrigger {
     static let accountKey = "remote.account"
     /// Rounds in a row that met an unreadable record before the status says so plainly.
     static let unreadableRoundsBeforeReport = 5
+    /// Age past which the identity checked by the fetch is fetched again before a send.
+    static let identityRecheckInterval: TimeInterval = 600
 
     private let store: SyncStoreHandle
     private let remote: (any RemoteRecordStore)?
@@ -55,6 +63,10 @@ public actor SyncCoordinator: SyncTrigger {
     private var refusal: String?
     /// Rounds in a row that ended on `RemoteStoreError.recordUnreadable`.
     private var unreadableRounds = 0
+    /// The identity the last check accepted, when, and the remote's account change count before it.
+    private var verifiedIdentity: (at: Date, changeCount: UInt64)?
+    /// Entries in the core's log of refused remote deletions, as last read.
+    public private(set) var ignoredDeletionCount = 0
     /// Tests: runs on the core thread after a page is staged, before its token is saved.
     var afterPageStaged: (@Sendable () throws -> Void)?
 
@@ -143,28 +155,117 @@ public actor SyncCoordinator: SyncTrigger {
         return try await CoreThread.run { try store.hasAccount() }
     }
 
-    /// The user confirmed that this store now syncs with the signed-in iCloud account (after
-    /// `.accountChanged`). The new identity is stored, the old change token and server tags are
-    /// forgotten as after a lost zone (every local record is queued again for the new account's zone
-    /// after the next complete fetch), then a round runs. Not offered in the M2 interface (status text
-    /// and explanation only). No remote: no-op.
-    public func acceptAccountChange() async {
-        guard let remote else { return }
+    /// What the zone of the signed-in iCloud account holds, for `.accountChanged`: nothing, the account
+    /// of this store (same account id), or another OnePass account. Reads the zone without touching the
+    /// store. No remote: `.emptyZone`.
+    public func checkAccountChange() async throws -> AccountChangeCheck {
+        guard let remote else { return .emptyZone }
+        await acquire()
+        defer { release() }
+        return try await inspectZone(remote)
+    }
+
+    /// The user chose "Utiliser ce compte iCloud" (after `.accountChanged`), having seen `expected`
+    /// (`checkAccountChange`, and for an empty zone the upload confirmation). The zone is inspected
+    /// again: another OnePass account is refused (`.refusedOtherVault`); a zone that no longer holds
+    /// what the user confirmed, or an identity that changed during the inspection (other identity, or
+    /// a `CKAccountChanged` signal meanwhile), is refused as `.changedDuringCheck`, so an empty zone is
+    /// never filled without its confirmation. Otherwise the new identity is stored, the old change token
+    /// and server tags are forgotten as after a lost zone (`begin_zone_reset`: every local record the
+    /// new zone lacks is queued again after the next complete fetch), then a round runs. Nothing
+    /// changes on a refusal: sync stays stopped.
+    @discardableResult
+    public func acceptAccountChange(expected: AccountChangeCheck) async -> AccountChangeOutcome {
+        guard let remote else { return .failed(Self.noAccountMessage) }
         await acquire()
         let store = store
+        let outcome: AccountChangeOutcome
         do {
+            let changeCount = await remote.accountChangeCount()
             if let identity = try await remote.accountIdentity() {
-                try await CoreThread.run {
-                    try store.setMeta(key: Self.accountKey, value: Data(identity.utf8))
-                    try store.beginZoneReset(tokenKey: Self.tokenKey)
+                let found = try await inspectZone(remote)
+                let identityAfter = try await remote.accountIdentity()
+                let changeCountAfter = await remote.accountChangeCount()
+                if found == .otherVault {
+                    outcome = .refusedOtherVault
+                } else if found != expected || identityAfter != identity || changeCountAfter != changeCount {
+                    outcome = .changedDuringCheck
+                } else {
+                    try await CoreThread.run {
+                        try store.setMeta(key: Self.accountKey, value: Data(identity.utf8))
+                        try store.beginZoneReset(tokenKey: Self.tokenKey)
+                    }
+                    verifiedIdentity = nil
+                    outcome = .accepted
                 }
+            } else {
+                outcome = .failed(Self.noAccountMessage)
             }
         } catch {
             Self.log.error("iCloud account change not accepted")
+            outcome = .failed(Self.zoneUnreadableMessage)
         }
         release()
+        guard outcome == .accepted else { return outcome }
         kick()
         await run?.value
+        return outcome
+    }
+
+    nonisolated static let noAccountMessage = "Aucun compte iCloud n'est disponible."
+    nonisolated static let zoneUnreadableMessage =
+        "Impossible de lire ce compte iCloud. Vérifie ta connexion puis réessaie."
+
+    private func inspectZone(_ remote: any RemoteRecordStore) async throws -> AccountChangeCheck {
+        let store = store
+        let ours = try await CoreThread.run { try store.accountId() }
+        let found = try await remote.accountRecordIDs()
+        if found.isEmpty { return .emptyZone }
+        if let ours, found == [ours] { return .sameVault }
+        return .otherVault
+    }
+
+    // MARK: - Refused remote deletions
+
+    /// The core's log of refused remote deletions, oldest first (100 at most).
+    public func ignoredDeletions() async throws -> [FfiIgnoredDeletion] {
+        let store = store
+        return try await CoreThread.run { try store.ignoredDeletions() }
+    }
+
+    /// "Effacer le journal".
+    public func clearIgnoredDeletions() async throws {
+        let store = store
+        try await CoreThread.run { try store.clearIgnoredDeletions() }
+        ignoredDeletionCount = 0
+    }
+
+    /// Reads the log size after a commit; a growth is logged as a count only (never ids).
+    private func refreshIgnoredDeletionCount() async {
+        let store = store
+        guard let count = try? await CoreThread.run({ try store.ignoredDeletions().count }) else { return }
+        if count > ignoredDeletionCount {
+            Self.log.notice("remote deletions refused, log holds \(count, privacy: .public)")
+        }
+        ignoredDeletionCount = count
+    }
+
+    // MARK: - Store reset
+
+    /// The local store is emptied (recovery from a missing account): no round overlaps the reset, and
+    /// everything kept about the old store (refusal, identity check, counters) is forgotten.
+    public func resetStore(with reset: @escaping @Sendable () throws -> Void) async throws {
+        await acquire()
+        defer { release() }
+        try await CoreThread.run(reset)
+        refusal = nil
+        verifiedIdentity = nil
+        unreadableRounds = 0
+        retryAttempt = 0
+        ignoredDeletionCount = 0
+        retryTask?.cancel()
+        retryTask = nil
+        if remote != nil { setStatus(.idle(lastSync: nil)) }
     }
 
     /// Tests: simulates a crash between staging a page and saving its token.
@@ -287,6 +388,7 @@ public actor SyncCoordinator: SyncTrigger {
             scheduleRetry(after: nil)
         } catch RemoteStoreError.accountChanged {
             Self.log.notice("iCloud account changed, sync stopped")
+            verifiedIdentity = nil
             setStatus(.accountChanged)
         } catch RoundError.unsettled {
             Self.log.notice("sync round ended with conflicts left")
@@ -298,7 +400,7 @@ public actor SyncCoordinator: SyncTrigger {
             setStatus(.refused(kind: kind))
         } catch let error as RemoteStoreError {
             switch error {
-            case .accountUnavailable: setStatus(.error("Aucun compte iCloud n'est disponible."))
+            case .accountUnavailable: setStatus(.error(Self.noAccountMessage))
             case .other(let message): setStatus(.error(message))
             case .offline, .retryable, .zoneReset, .recordUnreadable: setStatus(.offline)
             case .accountChanged: setStatus(.accountChanged)
@@ -373,21 +475,45 @@ public actor SyncCoordinator: SyncTrigger {
             // after a zone reset (no-op otherwise).
             return (vaults, try store.finishFullFetch())
         }
+        await refreshIgnoredDeletionCount()
         if changed > 0 || !vaults.isEmpty || dropped { emitRemoteChange() }
     }
 
     /// Binds the store to the remote's account at the first sync; throws `accountChanged` on any other
     /// account. A remote that cannot name its account (nil) is not checked.
     private func checkAccountIdentity(_ remote: any RemoteRecordStore) async throws {
-        guard let identity = try await remote.accountIdentity() else { return }
+        // Read before the identity: a change signalled during the call makes the next check fetch again.
+        let changeCount = await remote.accountChangeCount()
+        let checkedAt = now()
+        verifiedIdentity = nil
+        guard let identity = try await remote.accountIdentity() else {
+            verifiedIdentity = (checkedAt, changeCount)
+            return
+        }
         let current = Data(identity.utf8)
         let store = store
         let stored = try await CoreThread.run { try store.meta(key: Self.accountKey) }
         if let stored, !stored.isEmpty {
             if stored != current { throw RemoteStoreError.accountChanged }
+        } else {
+            try await CoreThread.run { try store.setMeta(key: Self.accountKey, value: current) }
+        }
+        verifiedIdentity = (checkedAt, changeCount)
+    }
+
+    /// Before a send: the identity checked by the fetch still holds unless the remote signalled an
+    /// account change since, or the check is older than `identityRecheckInterval`; only then is it
+    /// fetched again (a mismatch throws `accountChanged`, nothing is sent).
+    private func verifyIdentityBeforeSend(_ remote: any RemoteRecordStore) async throws {
+        // A clock set back gives a negative age: stale, like an old check.
+        if let verified = verifiedIdentity,
+            await remote.accountChangeCount() == verified.changeCount,
+            case let age = now().timeIntervalSince(verified.at),
+            age >= 0, age < Self.identityRecheckInterval
+        {
             return
         }
-        try await CoreThread.run { try store.setMeta(key: Self.accountKey, value: current) }
+        try await checkAccountIdentity(remote)
     }
 
     nonisolated static let unreadableMessage =
@@ -440,6 +566,7 @@ public actor SyncCoordinator: SyncTrigger {
             }
         }
         guard !outgoing.isEmpty else { return true }
+        try await verifyIdentityBeforeSend(remote)
         let batches = Self.split(
             Self.ordered(outgoing), maxRecords: remote.maxBatchRecords, maxBytes: remote.maxBatchBytes)
         for batch in batches {

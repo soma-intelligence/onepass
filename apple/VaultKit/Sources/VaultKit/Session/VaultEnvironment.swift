@@ -6,6 +6,15 @@ public protocol SyncTrigger: Sendable {
     func localChangesWritten() async
     func sessionUnlocked(_ session: Session) async
     func sessionLocked() async
+    /// Runs `reset` (which empties the local store) with exclusive access to the store, then forgets
+    /// whatever the sync layer kept about it. Default: runs it on the core thread.
+    func resetStore(with reset: @escaping @Sendable () throws -> Void) async throws
+}
+
+extension SyncTrigger {
+    public func resetStore(with reset: @escaping @Sendable () throws -> Void) async throws {
+        try await CoreThread.run(reset)
+    }
 }
 
 /// No sync (tests, unsigned builds).

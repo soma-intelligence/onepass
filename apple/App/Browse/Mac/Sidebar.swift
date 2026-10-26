@@ -42,7 +42,11 @@ struct Sidebar: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 Divider()
-                SyncStatusChip(status: model.syncStatus)
+                if case .accountChanged = model.syncStatus {
+                    AccountChangedCard(compact: true).padding(10)
+                } else {
+                    SyncStatusChip(status: model.syncStatus)
+                }
                 SettingsRow()
             }
             .background { SidebarFooterBackground() }

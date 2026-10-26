@@ -1261,3 +1261,77 @@ fn reset_store_empties_the_file_while_a_handle_stays_open() {
     assert!(!handle.pending_changes().unwrap().is_empty());
     created.session.lock();
 }
+
+#[test]
+fn reset_store_for_recovery_drops_the_pin_and_lets_an_account_be_created() {
+    let fx = fixture();
+    let handle = open_sync_store(fx.path.clone()).unwrap();
+    // A readable account is never wiped by the recovery path.
+    assert!(matches!(
+        reset_store_for_recovery(fx.path.clone()),
+        Err(OnePassError::InvalidInput { .. })
+    ));
+    fx.session.lock();
+    {
+        use onepass_core::store::{RecordKind, RecordStore};
+        let mut store = onepass_core::sync::SyncStore::open(Path::new(&fx.path)).unwrap();
+        let id = store.list(RecordKind::AccountParams).unwrap()[0].id;
+        store.delete(RecordKind::AccountParams, id).unwrap();
+    }
+    assert_eq!(
+        store_state(fx.path.clone()).unwrap(),
+        FfiStoreState::PinnedButMissing
+    );
+    handle.set_meta("remote.token".into(), vec![1]).unwrap();
+    reset_store_for_recovery(fx.path.clone()).unwrap();
+    // The pin is gone with everything else: the store is empty again.
+    assert_eq!(store_state(fx.path.clone()).unwrap(), FfiStoreState::Empty);
+    assert_eq!(handle.store_state().unwrap(), FfiStoreState::Empty);
+    assert_eq!(handle.meta("remote.token".into()).unwrap(), None);
+    assert_eq!(handle.account_id().unwrap(), None);
+    let created = create_account_with_kdf(fx.path.clone(), PASSWORD.into(), FAST).unwrap();
+    assert_eq!(handle.store_state().unwrap(), FfiStoreState::Account);
+    assert_eq!(
+        handle.account_id().unwrap(),
+        Some(created.account_id.clone())
+    );
+    created.session.lock();
+}
+
+#[test]
+fn ignored_deletions_are_listed_and_cleared() {
+    let fx = fixture();
+    let handle = open_sync_store(fx.path.clone()).unwrap();
+    let account_id = fx.session.account_id();
+    // Push everything so the account rows are in `base`.
+    for change in handle.pending_changes().unwrap() {
+        handle
+            .mark_pushed(change.kind, change.id, change.version, Some(vec![1]))
+            .unwrap();
+    }
+    assert!(handle.ignored_deletions().unwrap().is_empty());
+    for kind in [1u8, 2] {
+        handle
+            .stage_remote(FfiRemoteRecord {
+                kind,
+                id: account_id.clone(),
+                version: 1,
+                data: None,
+                server_meta: None,
+            })
+            .unwrap();
+    }
+    handle.commit_remote().unwrap();
+    let log = handle.ignored_deletions().unwrap();
+    assert_eq!(log.len(), 2);
+    assert_eq!((log[0].kind, log[1].kind), (1, 2));
+    assert!(log.iter().all(|e| e.id == account_id && e.at > 0));
+    handle.clear_ignored_deletions().unwrap();
+    assert!(handle.ignored_deletions().unwrap().is_empty());
+    // The log is out of reach of the handle's own meta keys.
+    handle
+        .set_meta("ignored_deletions".into(), vec![0])
+        .unwrap();
+    assert!(handle.ignored_deletions().unwrap().is_empty());
+    fx.session.lock();
+}

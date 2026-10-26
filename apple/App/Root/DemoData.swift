@@ -14,6 +14,8 @@ import UIKit
 /// - `-OnePassDemoItem <title>`: selects that item once the data is there.
 /// - `-OnePassDebugEdit YES`: also opens its editor.
 /// - `-OnePassDemoLocked YES`: locks once the data is there (lock screen captures).
+/// - `-OnePassDemoAccountMissing YES`: "Le compte a disparu du stockage" and its recovery actions.
+/// - `-OnePassDemoAccountChanged YES`: the "Le compte iCloud a changé" banner.
 /// - `-OnePassDemoLandscape YES` (iPad): asks the window scene for landscape (refused by the
 ///   system in the iPadOS 26 windowing modes; kept for full-screen setups).
 /// - `-OnePassDemoSidebar YES` (iPad): shows the sidebar once the split view is on screen.
@@ -74,6 +76,12 @@ enum DemoData {
         let defaults = Self.defaults
         // Fictional sites: no network request for their icons.
         defaults.set(false, forKey: "onepass.siteIconsEnabled")
+        // `-OnePassDemoAccountMissing YES`: the settings name an account the empty store lacks, which
+        // is how "Le compte a disparu du stockage" shows (no seeding then).
+        if UserDefaults.standard.bool(forKey: "OnePassDemoAccountMissing") {
+            defaults.set("0192f3a4b5c6d7e8f9a0b1c2d3e4f5a6", forKey: "onepass.accountID")
+            defaults.set(displayName, forKey: "onepass.displayName")
+        }
         let keychain = InMemoryKeychain()
         let clock = SystemClock()
         return VaultEnvironment(
@@ -123,6 +131,8 @@ extension AppModel {
                     editing = defaults.bool(forKey: "OnePassDebugEdit")
                 }
                 if defaults.bool(forKey: "OnePassDemoLocked") { lock() }
+                // `-OnePassDemoAccountChanged YES`: the "Le compte iCloud a changé" banner.
+                if defaults.bool(forKey: "OnePassDemoAccountChanged") { debugSetSyncStatus(.accountChanged) }
                 #if os(iOS)
                 // Screenshots: `-OnePassDemoSettings YES [-OnePassDemoSettingsPage security]`.
                 showSettings = defaults.bool(forKey: "OnePassDemoSettings")

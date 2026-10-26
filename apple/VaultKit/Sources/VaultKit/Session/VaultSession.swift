@@ -136,6 +136,49 @@ public final class VaultSession {
     /// new account over a pinned one).
     nonisolated public static let accountMissingKind = "account_missing"
 
+    /// The account is missing from the store (`account_missing`).
+    public var isAccountMissing: Bool {
+        state == .failed(.integrity(kind: Self.accountMissingKind))
+    }
+
+    /// Way out of "Le compte a disparu du stockage", once the user confirmed that the unreadable local
+    /// copy is cleared ("Restaurer avec mon Emergency Kit" or "Repartir de zéro"). Only from that
+    /// state. The store is emptied in one transaction, device state included (the pin goes: the next
+    /// unlock pins again), with the sync layer holding the store; the Secret Key and the biometric
+    /// enrollment of the vanished account are removed; the account id, name, failure throttle and
+    /// biometric wish are cleared. Ends in `.noAccount`: the app then shows the Emergency Kit restore
+    /// (the data comes back from iCloud) or the onboarding. Nothing in iCloud is deleted.
+    public func resetForRecovery() async throws {
+        guard isAccountMissing else { throw fail(.other(Self.recoveryRefused)) }
+        let path = dbPath
+        generation &+= 1
+        do {
+            try await environment.sync.resetStore { try resetStoreForRecovery(dbPath: path) }
+        } catch {
+            Self.log.error("store not reset for recovery")
+            evaluateStoredAccount()
+            throw fail(VaultError(error))
+        }
+        if let accountID = settings.accountID {
+            do {
+                try secretKeys.remove(accountID: accountID)
+            } catch {
+                Self.log.error("Secret Key of the missing account not removed")
+            }
+            biometrics.disable(accountID: accountID)
+        }
+        settings.accountID = nil
+        settings.displayName = ""
+        settings.biometricsWanted = false
+        settings.resetFailedUnlocks()
+        settings.lockoutUntil = nil
+        biometricsRevision += 1
+        evaluateStoredAccount()
+        if state == .noAccount { lastError = nil }
+    }
+
+    nonisolated static let recoveryRefused = "Cette action n'est possible que lorsque le compte a disparu du stockage."
+
     private enum Presence { case present, missing, unknown }
 
     /// Presence only, nothing loaded. `unknown` when the keychain cannot answer (device locked at a

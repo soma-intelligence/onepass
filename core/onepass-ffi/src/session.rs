@@ -425,6 +425,34 @@ impl SyncStoreHandle {
         Ok(self.guard().begin_zone_reset(&handle_key(&token_key))?)
     }
 
+    /// The id of the account whose params record the store shows, if any.
+    pub fn account_id(&self) -> Result<Option<String>, OnePassError> {
+        Ok(self
+            .guard()
+            .list(RecordKind::AccountParams)?
+            .first()
+            .map(|r| id_hex(r.id)))
+    }
+
+    /// Remote deletions the store refused (account params, keyset, rows of a
+    /// vault already read), oldest first, at most 100.
+    pub fn ignored_deletions(&self) -> Result<Vec<FfiIgnoredDeletion>, OnePassError> {
+        Ok(self
+            .guard()
+            .ignored_deletions()?
+            .into_iter()
+            .map(|e| FfiIgnoredDeletion {
+                kind: e.kind.code(),
+                id: id_hex(e.id),
+                at: e.at,
+            })
+            .collect())
+    }
+
+    pub fn clear_ignored_deletions(&self) -> Result<(), OnePassError> {
+        Ok(self.guard().clear_ignored_deletions()?)
+    }
+
     /// After the commit of a complete fetch from scratch: settles the rows the server did not return
     /// (deleted, or after a reset queued again). A no-op unless a begin ran. True when rows were deleted.
     pub fn finish_full_fetch(&self) -> Result<bool, OnePassError> {

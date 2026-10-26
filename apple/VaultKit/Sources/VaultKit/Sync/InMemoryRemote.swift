@@ -7,7 +7,7 @@ import Foundation
 /// unconditional deletions, a change log read through tokens (the position in the log, 8 bytes; each
 /// device keeps its own in its store, the server keeps no cursor), paged fetches and batch limits
 /// (a larger batch is refused). It can also attack: `tamper`, `withhold`, `replay` and `forgeDeletion`,
-/// and change the signed-in account (`setAccountIdentity`).
+/// and change the signed-in account (`setAccountIdentity`, `changeIdentityAfterNextFetch`).
 public actor InMemoryRemote: RemoteRecordStore {
     private struct Stored {
         var version: UInt64
@@ -37,6 +37,12 @@ public actor InMemoryRemote: RemoteRecordStore {
     private var resetPending = false
     private var tokenExpired = false
     private var brokenToken = false
+    private var changeCount: UInt64 = 0
+    /// Identity switched in once the next fetch has served its last page (and whether the switch is
+    /// announced through `accountChangeCount`, like `CKAccountChanged`).
+    private var identityAfterFetch: (identity: String?, announce: Bool)?
+    /// Calls to `accountIdentity()` (each one is a network call on CloudKit).
+    public private(set) var identityRequests = 0
     /// Every batch received, in order (names only).
     public private(set) var sentBatches: [[RecordName]] = []
 
@@ -82,9 +88,15 @@ public actor InMemoryRemote: RemoteRecordStore {
             brokenToken = false
             return RemoteBatch(changes: page.map { remoteRecord($0.key, $0.value) }, moreComing: true, token: nil)
         }
+        let moreComing = changed.count > page.count
+        if !moreComing, let pending = identityAfterFetch {
+            identityAfterFetch = nil
+            identity = pending.identity
+            if pending.announce { changeCount += 1 }
+        }
         return RemoteBatch(
             changes: page.map { remoteRecord($0.key, $0.value) },
-            moreComing: changed.count > page.count,
+            moreComing: moreComing,
             token: Self.serverMeta(tag: next), restartedFromScratch: restarted)
     }
 
@@ -134,8 +146,11 @@ public actor InMemoryRemote: RemoteRecordStore {
 
     public func accountIdentity() async throws -> String? {
         try checkOffline()
+        identityRequests += 1
         return identity
     }
+
+    public func accountChangeCount() async -> UInt64 { changeCount }
 
     private func checkOffline() throws {
         if offline { throw RemoteStoreError.offline }
@@ -236,6 +251,13 @@ public actor InMemoryRemote: RemoteRecordStore {
     /// Simulates another Apple ID signing in (or nil: an account the remote cannot name).
     public func setAccountIdentity(_ identity: String?) {
         self.identity = identity
+    }
+
+    /// Simulates another Apple ID signing in between the fetch and the send of a round: the identity
+    /// changes once the next fetch has served its last page. `announce`: the change is also signalled
+    /// through `accountChangeCount()` (CloudKit posts `CKAccountChanged`).
+    public func changeIdentityAfterNextFetch(to identity: String?, announce: Bool) {
+        identityAfterFetch = (identity, announce)
     }
 
     /// Serves one page that announces more pages without a token (a broken remote), once.
