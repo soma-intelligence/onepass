@@ -362,3 +362,106 @@ L'adversaire est un agent IA, ou un contenu qu'il lit (injection de prompt), qui
 ### 11.5 Fuzzing
 
 Deux cibles s'ajoutent : `mcp_line` (une ligne JSON-RPC arbitraire sur un hôte factice) et `ssh_agent_frame` (messages de l'agent et blobs de signature arbitraires).
+
+## 12. Extension navigateur (jalon 4)
+
+Cette section décrit la sécurité de l'extension et de son pont vers l'app. Spec : `docs/superpowers/specs/2026-10-25-milestone-4-extension-design.md`. Code : `core/onepass-bridge` (protocole, correspondance d'origine), `core/onepass-native-host` (hôte natif de développement), `extension/`. Les sections 1 à 6 ci-dessus ne changent pas.
+
+### 12.1 Modèle de menace de l'extension
+
+Acteurs hostiles, du plus probable au moins probable :
+
+1. **La page web.** Elle contrôle son DOM, peut créer des champs invisibles, superposer des éléments (clickjacking), envoyer des événements synthétiques et des `postMessage`, naviguer à tout moment, s'afficher sous un domaine sosie, embarquer des iframes d'autres sites.
+2. **Le processus de rendu compromis.** Le script de contenu tourne dans le processus de la page : un exploit du moteur le contrôle. Le service worker traite donc chaque message d'un script de contenu comme non fiable et ne croit que l'origine fournie par le navigateur (`sender`), jamais une origine écrite dans le message.
+3. **Une autre extension ou un processus local** qui parle à l'hôte natif ou le lance lui-même. L'hôte ne sert qu'un pair qui détient une clé d'appairage.
+4. **Un intermédiaire sur le canal** entre l'extension et l'app (binaire d'hôte remplacé). Couvert par la comparaison de code à l'appairage et par l'authentification mutuelle de chaque session.
+
+Hors périmètre : appareil compromis au niveau système. Un logiciel qui lit le profil du navigateur obtient la clé d'appairage et peut demander des secrets pour des origines précises, comme l'extension elle-même. Limite documentée, pas résolue en v1 (R-17 : signature de code de l'appelant et relais XPC au jalon 2).
+
+### 12.2 Protocole du pont
+
+Version `1`, trames JSON, plafond de 1 MiB (1 048 576 octets). Chaque trame porte `"v": 1`, toute autre version donne `{"t":"error","code":"version"}`.
+
+**Primitives.** KEM hybride ML-KEM-1024 + X25519 combinés par HKDF-SHA256 (libellé propre au pont `onepass/bridge/kem/v1`, distinct de `onepass/kem/v1` du `core`), SHA-256, HMAC-SHA256, HKDF-SHA256, AES-256-GCM. Rust : `aws-lc-rs` ; TypeScript : WebCrypto pour le symétrique, `@noble/post-quantum` et `@noble/curves` (versions exactes) pour les KEM. Les vecteurs croisés (`core/onepass-bridge/tests/vectors/`, vérifiés des deux côtés) détectent toute divergence entre les deux implémentations.
+
+**Transcript.** Concaténation, pour chaque champ dans l'ordre fixé par la spec, de `u32` grand-boutiste (longueur) et des octets, précédée du libellé `onepass/bridge/transcript/v1`. Jamais le JSON lui-même (sérialisation non canonique).
+
+**Appairage (une fois par navigateur, spec 6.4).**
+
+1. L'extension tire une paire KEM éphémère et un nonce `n_E`, et envoie un **engagement** `commit = SHA-256("onepass/bridge/commit/v1" || pk_E || n_E)` avant de voir quoi que ce soit de l'hôte.
+2. L'hôte répond avec `pairing_id`, sa propre clé KEM et son nonce. L'extension révèle `pk_E`, `n_E` et un encapsulé `ct_E`. L'hôte vérifie l'engagement.
+3. Les deux côtés calculent le transcript `T`, un **code à 6 chiffres** (`SAS`, 4 premiers octets d'un HKDF sur `T` modulo 1 000 000, affiché `123 456`) et la clé d'appairage `PK` (32 octets).
+4. L'utilisateur compare le code sur les deux écrans. Après l'approbation côté app, l'hôte envoie un MAC (`HMAC(K_c, "host" || T)`), l'extension le vérifie, attend la confirmation de l'utilisateur ("Les codes sont identiques"), répond par son MAC (`"ext"`). L'hôte n'enregistre l'appairage qu'à réception d'un MAC valide.
+5. Refus, délai de 120 s dépassé ou MAC invalide : les deux côtés effacent l'état.
+
+L'engagement empêche un intermédiaire de choisir ses valeurs après avoir vu celles de l'autre côté : chaque code vu par l'utilisateur est uniforme pour lui, une chance sur un million par tentative, et chaque tentative demande une action de l'utilisateur. Pas de code tapé (R-06) : un code de faible entropie utilisé comme clé de MAC se retrouve par force brute hors ligne.
+
+**Ouverture de session (à chaque connexion, spec 6.5).** `hello` (`pairing_id`, KEM éphémère, nonce), `welcome` (encapsulé, nonce, `session_id`, MAC hôte), `finish` (MAC extension). Clés : `HKDF(salt = T, ikm = ss_e || PK)`, étendue avec `onepass/bridge/session/e2h/v1`, `…/h2e/v1`, `…/confirm/v1`. Authentification mutuelle (seul un détenteur de `PK` dérive les clés), confidentialité persistante (`ss_e` éphémère), post-quantique (ML-KEM) avec X25519 en filet. MAC vérifiés en temps constant. Un `pairing_id` inconnu donne `unknown_pairing`.
+
+**Messages chiffrés et rejeu (spec 6.6).** `{"t":"msg","c":<compteur>,"d":...}`, AES-256-GCM, une clé par sens, nonce de 96 bits = 4 octets nuls puis compteur `u64` grand-boutiste, données associées `session_id || sens (0 extension vers hôte, 1 hôte vers extension) || compteur`. Chaque sens a son compteur, qui commence à 0 ; le récepteur exige exactement la valeur attendue. Un compteur rejoué ou sauté, une trame modifiée, réfléchie dans l'autre sens ou d'une autre session, ou un compteur qui atteindrait 2^32 ferme la session. Un `id` de requête déjà vu est refusé. Session inactive 10 minutes : l'hôte la ferme. Pas de rejeu entre sessions : un `hello` rejoué donne d'autres clés, et un attaquant sans `PK` ne peut pas répondre `finish`.
+
+### 12.3 Ce qui n'arrive jamais à l'extension
+
+Mot de passe maître, Secret Key, clés de compte, de vault ou d'item, secret TOTP (seul le code du moment sort), clés privées de passkeys et de clés SSH, phrases de récupération, notes, pièces jointes, historique des mots de passe, items qui ne correspondent pas à l'origine demandée, liste complète du coffre avec secrets. Les résumés envoyés au menu et à l'overlay ne contiennent aucun secret (S16).
+
+### 12.4 Politique de divulgation
+
+Chaque décision de correspondance est **refaite par l'hôte** ; l'extension ne fait que transmettre l'origine que le navigateur lui a donnée.
+
+- **Correspondance d'origine.** HTTPS obligatoire, sans exception de développement (R-18) : `insecure_origin` sinon. Domaine enregistrable par la Public Suffix List (crate `psl` en Rust, `tldts` en TypeScript, vecteurs communs). Règles `Domain`, `ExactHost`, `ExactUrl`, `Never`. Un port explicite dans l'URL de l'item doit être égal. Comparaison sur la forme ASCII (punycode) : un sosie IDN ne correspond jamais. `origin_mismatch` en cas d'écart.
+- **Items exclus de l'autofill.** Archivés, à la corbeille, `hide_from_autofill`, Crypto Wallet, champs dont `autofill = false`.
+- **Contexte (`ctx`).** Chaque requête dit d'où vient l'action (`popup`, `menu`, `overlay`, `save_prompt`, `chain`). `search` et `reveal` sont réservés à `popup` (`not_allowed` sinon), `reveal` aux champs autorisés à l'autofill.
+- **Limite de débit.** 60 requêtes de secrets par minute et par session (écritures comprises) ; au-delà `rate_limited`.
+- **Nouvelle authentification (`reprompt`).** Les items qui l'exigent sont refusés par l'hôte de développement avec `reprompt_required` sauf configuration contraire ; l'app réelle redemande Touch ID. Les écritures sur ces items sont soumises à la même règle.
+- **Journal d'audit.** Chaque réponse contenant un secret est journalisée localement (opération, item, origine, contexte, horodatage), sans la valeur.
+
+### 12.5 Stockage de la clé d'appairage
+
+L'extension garde `PK` dans l'**IndexedDB de l'origine de l'extension** (`extension/src/background/store.ts`), pas dans `storage.local`. Un ancien enregistrement de `storage.local` est migré puis supprimé. Les scripts de contenu et les pages web n'ont aucun accès à cette base (origine d'extension). Côté hôte de développement : `pairings.json` en 0600 dans le dossier de données (l'app réelle utilisera le trousseau). Un logiciel qui lit le profil du navigateur y accède : limite hors périmètre (section 12.1, R-17).
+
+### 12.6 Défenses dans la page
+
+- **Racine fantôme fermée** : l'icône du champ vit dans une racine fantôme fermée que la page ne peut pas atteindre.
+- **Iframes de l'extension** : le menu, l'overlay et la proposition d'enregistrement sont des pages de l'extension (origine différente de la page), jamais du DOM de la page. Aucun écouteur `message` sur ces pages, pas de lecture de la page parente, pas de `innerHTML` avec des données (test statique).
+- **Garde de clic de 300 ms** : une page peut animer un élément sous le curseur. Chaque contenu affiché ignore les clics pendant 300 ms, ré-armée à chaque nouvelle apparition (retour dans la fenêtre visible, `IntersectionObserver` v2 quand le navigateur le fournit, fermeture si le cadre sort de la vue).
+- **Événements de confiance et activation utilisateur** : seuls les événements `isTrusted` comptent (icône, menu, clavier, boutons fournisseur) ; une soumission n'est reportée à la proposition d'enregistrement que si l'utilisateur a agi (`navigator.userActivation` quand présent), jamais pour un script de la page.
+- **Épingles d'origine et `documentId`** : chaque jeton de menu, d'overlay ou de proposition est lié à l'onglet, au cadre et au document ; une navigation tue le jeton. Le remplissage et la proposition ciblent le `documentId` vérifié, à défaut le `frameId` plus une épingle d'origine que le script de contenu revérifie. Une navigation entre la demande et le remplissage annule tout (S9), sans valeur envoyée.
+- **Ressources non devinables** : sur Chromium, `use_dynamic_url` : l'URL d'une page de l'extension est différente par session (S17).
+- **Cadres d'autres sites** : aucun remplissage dans une iframe d'un autre site, sans exception (R-10, S6).
+
+### 12.7 Garde-fous de la chaîne "Connexion en un clic"
+
+Machine à états dans le service worker, une chaîne par onglet, état en mémoire de session (`storage.session`), sans secret. Démarrage seulement par un clic de l'utilisateur. À chaque analyse, le service worker revérifie le domaine fourni par `sender` contre une liste autorisée (domaine du site, plus les hôtes officiels du fournisseur pour une chaîne fournisseur ; R-11). Elle s'arrête et rend la main (`handoff`) sur : domaine hors liste (aussi sur chaque commit du cadre principal, avant toute analyse), HTTP, CAPTCHA détecté, validation push, champ de code sans TOTP, page inconnue (aucun champ reconnu 4 s après le chargement), échéance de 60 s, bouton "Arrêter", même étape répétée (mot de passe refusé). Un faux domaine de fournisseur n'est jamais traité comme le fournisseur (S11).
+
+### 12.8 Tests de sécurité S1 à S17
+
+Les tests de bout en bout sont dans `extension/e2e/security.spec.ts` (Chromium, hôte natif réel, nom de test préfixé `Sn_`). Chaque ligne cite en plus les tests unitaires qui épinglent la défense.
+
+| # | Attaque | Tests |
+| --- | --- | --- |
+| S1 | La page lit le DOM du menu ou de l'overlay | e2e `S1_page_cannot_read_menu_or_overlay` ; `test/content/content.test.ts` (racine fantôme fermée) ; `test/ui/safety.test.ts` |
+| S2 | Clic synthétique sur l'icône | e2e `S2_synthetic_click_on_icon_is_ignored` ; `content.test.ts` (`icon_ignores_untrusted_click`) |
+| S3 | `postMessage` vers le menu | e2e `S3_postmessage_to_menu_is_ignored` ; `test/ui/safety.test.ts` (`no_message_listener_on_window`) |
+| S4 | Domaine sosie | e2e `S4_lookalike_*` ; `test/domain.test.ts` ; `core/onepass-bridge/tests/psl_vectors.rs` ; `core/onepass-native-host/tests/host.rs` (`fill_login_mismatch_origin`) |
+| S5 | Page `http:` | e2e `S5_http_page_gets_nothing` ; `test/background/fill.test.ts` (`fill_refused_http`) ; hôte `fill_login_http_rejected` |
+| S6 | Formulaire dans une iframe d'un autre site | e2e `S6_no_fill_in_cross_site_iframe` ; `fill.test.ts` (`fill_refused_cross_site_frame`) |
+| S7 | Formulaire invisible | e2e `S7_invisible_form_stays_empty` ; `content.test.ts` (`invisible_field_not_filled`) ; `test/detect/visibility.test.ts` |
+| S8 | Remplissage au chargement | e2e `S8_nothing_filled_on_load` |
+| S9 | Navigation entre la demande et le remplissage | e2e `S9_navigation_between_request_and_fill_is_refused` ; `fill.test.ts` (`fill_refused_after_navigation`) |
+| S10 | Chaîne redirigée vers un autre domaine | e2e `S10_chain_redirected_to_other_domain_stops` ; `test/background/chain/machine.test.ts`, `driver.test.ts` |
+| S11 | Faux domaine de fournisseur | e2e `S11_fake_provider_domain_is_not_google` ; `machine.test.ts`, `provider-flow.test.ts` ; hôte `fill_provider_requires_official_host` |
+| S12 | CAPTCHA pendant la chaîne | e2e `S12_captcha_during_chain_stops` ; `test/detect/captcha.test.ts`, `machine.test.ts` |
+| S13 | Client sans appairage, `PK` faux, trame rejouée ou modifiée | `core/onepass-bridge/tests/session.rs`, `pairing.rs` ; `core/onepass-native-host/tests/host.rs` (`unknown_pairing_error`, `tampered_session_frame_closes`, `wrong_finish_mac_closes`) ; `test/bridge/session.test.ts`, `client.test.ts`, `pairing.test.ts` |
+| S14 | Script de contenu compromis qui demande un item d'un autre site | e2e `S14_compromised_content_script_cannot_get_other_site_item` ; `test/background/router.test.ts` (`origin_taken_from_sender_not_message`) ; hôte `fill_login_mismatch_origin` |
+| S15 | `reveal` ou `search` hors de la popup | e2e `S15_reveal_and_search_refused_outside_popup` ; hôte `reveal_only_from_popup`, `search_only_from_popup` ; `router.test.ts` |
+| S16 | Secret dans les résumés | e2e `S16_menu_summaries_hold_no_secret` ; hôte `summaries_contain_no_secret` |
+| S17 | URL fixe d'une ressource de l'extension | e2e `S17_fixed_extension_url_not_reachable` ; `test/manifest.test.ts` (`chromium: service worker and dynamic url`) |
+
+Lancer : `cd extension && npm run check && npm run e2e`, puis `cd core && cargo test -p onepass-bridge -p onepass-native-host` et `cargo test -p onepass-bridge --features vectors --test vectors`.
+
+### 12.9 Limites connues de l'extension
+
+- La clé d'appairage est lisible par un logiciel qui lit le profil du navigateur (R-17, jalon 2).
+- L'hôte de développement n'est pas pour de vrais secrets : le coffre est chargé en mémoire (R-14), la clé d'appairage est dans un fichier en 0600, la fixture est refusée par un build release.
+- Pas de passkeys (R-16), pas d'apprentissage des étapes (R-13), aucune exception aux iframes d'autres sites (R-10), chaîne arrêtée hors domaines autorisés (R-11).
+- Les tests de bout en bout ne couvrent que Chromium (R-08).

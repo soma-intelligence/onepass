@@ -13,6 +13,8 @@ Workspace Cargo (`core/Cargo.toml`) :
 - `onepass-guard` : approbation, journal d'audit chaîné, configuration signée, nettoyage d'affichage.
 - `onepass-mcp` : serveur MCP (JSON-RPC sur stdio, outils, politique, exécution masquée).
 - `onepass-ssh-agent` : agent SSH (protocole, clés, socket Unix, marque-pages).
+- `onepass-bridge` : protocole du pont entre l'extension navigateur et l'app (appairage, session, correspondance d'origine, service), sans E/S.
+- `onepass-native-host` : hôte natif de développement (stdio) au-dessus du pont, pour l'extension. Voir [`extension/README.md`](../extension/README.md).
 - `fuzz` : cibles `cargo-fuzz`, crate à part, hors du workspace.
 
 ## Prérequis
@@ -55,6 +57,18 @@ La suite couvre :
 La suite "stockage malveillant" déverrouille des comptes créés avec des paramètres Argon2id rapides : elle demande la feature `dev-fast-kdf` de `onepass-core`, que `onepass-cli` active, donc `cargo test --workspace` (et `make test`) la lance. Seule : `cargo test -p onepass-core --features dev-fast-kdf --test malicious_store`. Cette feature n'abaisse le plancher Argon2id que dans un build avec assertions de debug ; un build release impose toujours le plancher de la spec.
 
 La signature SLH-DSA est lente (environ 15 s en optimisé, plus en debug). Le profil `dev` compile donc `sha2` avec `opt-level = 3`.
+
+## Pont de l'extension navigateur
+
+Les crates `onepass-bridge` et `onepass-native-host` (jalon 4) ne modifient pas l'API de `onepass-core`. Leurs tests :
+
+```sh
+cd core
+cargo test -p onepass-bridge -p onepass-native-host
+cargo test -p onepass-bridge --features vectors --test vectors   # vecteurs croisés Rust/TypeScript à jour
+```
+
+La feature `vectors` ajoute des aides KEM déterministes réservées aux vecteurs de test : ne jamais l'activer dans un build livré. Le protocole et son modèle de menace sont décrits dans la section "Extension navigateur" de [`docs/security/README.md`](../docs/security/README.md).
 
 ## Fuzzing
 

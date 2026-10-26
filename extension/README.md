@@ -1,19 +1,103 @@
 # Extension OnePass
 
-Extension WebExtension (Manifest V3, TypeScript) pour Chromium, Firefox et Safari.
+Extension WebExtension (Manifest V3, TypeScript, sans framework, bundle `esbuild`) pour Chromium, Firefox et Safari. Elle parle à l'app (ici, l'hôte natif de développement `onepass-native-host`) par le protocole du pont décrit dans la spec du jalon 4 (`docs/superpowers/specs/2026-10-25-milestone-4-extension-design.md`) et dans la section "Extension navigateur" de [`docs/security/README.md`](../docs/security/README.md).
 
-## Commandes
+Aucune crypto de coffre dans l'extension : elle ne reçoit que ce qu'il faut pour l'action en cours, pour une origine précise, après un geste de l'utilisateur.
 
-- `npm run build` : un dossier par navigateur dans `dist/<browser>/` (`npm run build:chromium` pour un seul). Ajouter `--dev` (`node build.mjs --dev`) pour des source maps en ligne ; elles sont absentes par défaut.
-- `npm run typecheck`, `npm test`, `npm run e2e`, `npm run check` (typecheck, tests, build).
+## Prérequis
+
+- Node 22 (`npm ci` depuis `extension/`, `package-lock.json` commité, versions exactes).
+- Rust via `rustup` (toolchain fixée par `core/rust-toolchain.toml`) pour construire l'hôte natif.
+- Pour les tests de bout en bout : `openssl` (certificat auto-signé de test) et Chromium de Playwright (`npx playwright install chromium`).
+
+## Construire
+
+```sh
+cd extension
+npm ci
+npm run build              # dist/chromium, dist/firefox, dist/safari
+npm run build:chromium     # un seul navigateur
+node build.mjs firefox     # idem pour Firefox ou Safari
+node build.mjs --dev       # ajoute des source maps en ligne (absentes par défaut)
+```
 
 ## Identifiant de l'extension
 
 Le manifeste Chromium n'a pas de champ `key` : l'identifiant est calculé par Chrome à partir du chemin du dossier chargé (`dist/chromium`). Il change donc d'une machine à l'autre ; le manifeste de l'hôte natif doit lister l'identifiant effectivement obtenu. Firefox utilise `onepass@somalabs.me`.
 
+## Charger l'extension non empaquetée
+
+Construire d'abord (`npm run build`).
+
+**Chrome et Chromium.** Ouvrir `chrome://extensions`, activer le mode développeur, "Charger l'extension non empaquetée", choisir `extension/dist/chromium`. Noter l'identifiant affiché : il sert au manifeste de l'hôte (voir plus bas).
+
+**Firefox.** Ouvrir `about:debugging#/runtime/this-firefox`, "Charger un module complémentaire temporaire", choisir `extension/dist/firefox/manifest.json`. Le module est retiré à la fermeture de Firefox. Son identifiant est fixe : `onepass@somalabs.me`.
+
+Firefox MV3 n'accorde pas les permissions d'hôte à l'installation : elles sont optionnelles. Sans elles, le script de contenu ne s'injecte nulle part et aucune icône n'apparaît. Les accorder dans `about:addons` > OnePass > Permissions : activer l'accès aux données de `https://*/*` (tous les sites en HTTPS). Le manifeste ne demande que `https://*/*`, jamais HTTP.
+
+Safari est une cible de conception ; l'empaquetage vient au jalon 2 (R-08). `dist/safari` existe pour vérifier que le build tient.
+
 ## Hôte natif de développement
 
 `node scripts/install-dev-host.mjs --browser chrome|chromium|firefox|all [--profile <dossier>] [--extension-id <id>] [--host <binaire>] [--config <fichier>]` écrit le manifeste `me.somalabs.onepass.dev.json` et un script d'enveloppe `onepass-native-host.sh` (à côté de la configuration, `~/.onepass-dev/native-host.json` par défaut) qui lance `core/target/debug/onepass-native-host --config <fichier>`. Sans `--profile`, les manifestes vont dans les dossiers utilisateur de Chrome, Chromium et Firefox ; avec `--profile <dossier>`, dans `<dossier>/NativeMessagingHosts/` (famille Chromium seulement). Pour Chrome et Chromium, l'identifiant vient de `--extension-id`, sinon de `allowed_extensions` dans la configuration.
+
+### Configuration de l'hôte
+
+Le fichier JSON est lu par `onepass-native-host` (`--config <fichier>`, sinon `ONEPASS_NATIVE_HOST_CONFIG`, sinon `~/.onepass-dev/native-host.json`). Champs inconnus refusés.
+
+| Champ | Sens |
+| --- | --- |
+| `data_dir` | dossier de données de l'hôte (`~` accepté) |
+| `allowed_extensions` | identifiants d'extension autorisés : identifiant Chrome nu (sans `chrome-extension://`) et `onepass@somalabs.me` pour Firefox |
+| `source` | `{"kind":"fixture","path":...}` ou `{"kind":"dev"}` (voir ci-dessous) |
+| `approval` | `auto` ou `file` |
+| `unlocked` | coffre déverrouillé au démarrage, `true` par défaut |
+| `reprompt` | `deny` (défaut) ou `allow` : réponse aux items qui demandent une nouvelle authentification |
+
+Source `fixture` : items fictifs d'un fichier JSON (par exemple `core/onepass-native-host/fixtures/e2e.json`, Alex Martin et `atlas-cloud.test`), chargés dans un vrai coffre chiffré en mémoire. Build debug uniquement : un binaire release la refuse.
+
+```json
+{
+  "data_dir": "~/.onepass-dev/native-host",
+  "allowed_extensions": ["<identifiant Chrome>", "onepass@somalabs.me"],
+  "source": { "kind": "fixture", "path": "/chemin/vers/onepass/core/onepass-native-host/fixtures/e2e.json" },
+  "approval": "file"
+}
+```
+
+Source `dev` : le dossier de la CLI de développement (`path` optionnel, défaut `data_dir`).
+
+```json
+{
+  "data_dir": "~/.onepass-dev",
+  "allowed_extensions": ["<identifiant Chrome>", "onepass@somalabs.me"],
+  "source": { "kind": "dev" },
+  "approval": "file"
+}
+```
+
+Le coffre `dev` se déverrouille comme la CLI : `ONEPASS_PASSWORD` avec `ONEPASS_DEV_ALLOW_ENV_PASSWORD=1`.
+
+### Installer l'hôte
+
+```sh
+cd core && cargo build -p onepass-native-host      # core/target/debug/onepass-native-host
+cd ../extension
+node scripts/install-dev-host.mjs --browser chrome --extension-id <identifiant> --config <fichier>
+node scripts/install-dev-host.mjs --browser firefox --config <fichier>
+```
+
+Sans `--profile`, les manifestes vont dans les dossiers utilisateur du navigateur. Pour essayer sans toucher à un profil réel : `--browser chromium --profile <dossier-temporaire>` écrit `<dossier>/NativeMessagingHosts/me.somalabs.onepass.dev.json` (famille Chromium seulement ; `--profile` avec Firefox est refusé).
+
+## Appairage
+
+1. Cliquer l'icône de l'extension : "Appairer avec OnePass". L'extension affiche un code à 6 chiffres (`123 456`).
+2. Côté hôte :
+   - `approval: "auto"` : approbation immédiate (tests), le code est écrit dans `<data_dir>/native-host.log` ;
+   - `approval: "file"` : l'hôte écrit `<data_dir>/pending-pairing.json` (code, nom, navigateur). Comparer le code avec celui de l'extension, puis le valider avec `core/target/debug/onepass-native-host approve 123456 --config <fichier>` (écrit `<data_dir>/pairing-approved`).
+3. Si les deux codes sont identiques, cliquer "Les codes sont identiques" dans l'extension. Si les codes diffèrent, refuser : quelqu'un s'est glissé sur le canal.
+
+Le délai est de 120 s. L'appairage est enregistré des deux côtés seulement après les deux confirmations (spec 6.4). "Oublier cet appairage" dans l'extension, ou la suppression de l'entrée de `pairings.json` côté hôte, le révoque.
 
 ## Tests de bout en bout
 
@@ -27,3 +111,42 @@ Le manifeste Chromium n'a pas de champ `key` : l'identifiant est calculé par Ch
 Découverte de l'hôte natif : Chromium lit le manifeste dans `<user-data-dir>/NativeMessagingHosts/` du profil lancé par Playwright ; rien n'est écrit dans les dossiers de l'utilisateur. Le manifeste est lu au moment de `connectNative` : le harnais lit l'identifiant de l'extension dans l'URL du service worker, puis écrit le manifeste et la configuration de l'hôte avant le premier appairage, sans relancer le navigateur.
 
 Le coffre chiffré de la fixture est construit une fois par lancement (environ 10 s en debug) puis copié pour chaque test. Premier lancement : `npx playwright install chromium`.
+
+## Lancer les tests
+
+```sh
+cd extension
+npm run check    # typecheck, vitest, build des trois navigateurs
+npm run e2e      # Playwright, Chromium, hôte natif réel
+cd ../core
+cargo test -p onepass-bridge -p onepass-native-host
+cargo test -p onepass-bridge --features vectors --test vectors   # vecteurs croisés Rust/TypeScript à jour
+```
+
+`npm run e2e` demande `cargo` (il construit l'hôte avec `cargo build --locked -p onepass-native-host` au démarrage), `openssl`, et Chromium de Playwright : `npx playwright install chromium` une fois. Rien n'est écrit dans les profils de l'utilisateur et aucune requête ne sort de la machine.
+
+## Harnais visuel
+
+`npm run build:chromium && node scripts/ui-shots.mjs <dossier-de-sortie> [--only nom,nom]` rend les pages de l'extension (popup, menu, overlay, proposition d'enregistrement) hors extension, avec des réponses fictives, en clair et en sombre, et enregistre une capture par état. Outil de développement, rien n'est embarqué dans l'extension.
+
+## Limites et reports
+
+Rulings de la spec (section 14) qui bornent cette version :
+
+- R-08 : Safari est une cible de conception ; Chromium et Firefox sont exercés, les tests de bout en bout ne tournent que sur Chromium (Playwright ne charge d'extensions que là). Empaquetage Safari au jalon 2.
+- R-10 : aucune exception aux iframes d'autres sites, même pour un paiement (Stripe et consorts). Les cartes dans ces iframes ne sont pas remplies.
+- R-11 : la chaîne "Connexion en un clic" s'arrête (`handoff`) dès que le domaine sort de la liste autorisée, sans exception, même pour un SSO d'entreprise à domaines multiples.
+- R-12 : "Se souvenir de cet appareil" n'est jamais touché. La soumission automatique est une préférence locale par item (`chrome.storage.local`, activée par défaut) ; il n'y a pas encore d'interface pour la changer (pas d'UI `autoSubmit`).
+- R-13 : pas d'apprentissage des étapes inconnues ; une étape inconnue rend la main.
+- R-15 : mode autonome Windows et Linux (core en WASM, CloudKit JS, WebAuthn PRF) reporté.
+- R-16 : passkeys reportées au jalon 3.
+- R-17 : vérification de la signature de code du navigateur appelant et relais XPC vers l'app au jalon 2. Un logiciel qui lit le profil du navigateur obtient la clé d'appairage et peut demander des secrets pour des origines précises (voir la section "Extension navigateur" de `docs/security/README.md`).
+
+Origines : HTTPS seulement, aucune exception de développement (R-18).
+
+## Avertissements de développement
+
+- L'hôte de développement affiche `DEV MODE` dans son journal et n'est pas fait pour de vrais secrets. N'y mettre aucun vrai identifiant, mot de passe, carte ou coffre personnel.
+- Son dossier de données (`data_dir`) contient : `pairings.json` (clé d'appairage en clair, 0600), `native-host.log` et `audit.log` (opérations sans valeurs), `fixture-cache.bin` (coffre de la fixture, clés de test comprises) et, en mode `file`, `pending-pairing.json` / `pairing-approved`.
+- Le cache de la fixture persiste tout login enregistré via l'extension (proposition d'enregistrement, "Enregistrer un nouveau login"), d'une session à l'autre. Supprimer `fixture-cache.bin` pour repartir de zéro.
+- Ne jamais utiliser de vrais secrets avec la fixture ni avec la source `dev` hors de la machine de développement.
