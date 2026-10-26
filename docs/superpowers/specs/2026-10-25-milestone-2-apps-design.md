@@ -132,10 +132,10 @@ Composants de `VaultKit` :
 1. `KeychainStore` (protocole) et `SystemKeychain` : éléments génériques, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, keychain à protection de données, groupe d'accès partagé `$(AppIdentifierPrefix)me.somalabs.onepass.shared`. Sans l'entitlement (build local non signé, erreur `-34018`), repli sur le trousseau classique, en build Debug seulement.
 2. `SecretKeyVault` : stocke et relit la Secret Key par compte.
 3. `BiometricUnlock` (protocole) et `SecureEnclaveBiometricUnlock` :
-   - clé P-256 de la Secure Enclave, contrôle d'accès `.privateKeyUsage` + `.biometryCurrentSet` (iOS) ou `.biometryCurrentSet` OR `.watch` (macOS) ;
+   - clé P-256 de la Secure Enclave, contrôle d'accès `.privateKeyUsage` + `.biometryCurrentSet` (iOS) ou `.biometryCurrentSet` OR `.companion` (macOS, réglage "Accepter aussi l'Apple Watch") ;
    - l'AUK est chiffrée avec `SecKeyAlgorithm.eciesEncryptionCofactorVariableIVX963SHA256AESGCM` vers la clé publique, le texte chiffré va dans le Keychain ;
-   - à l'enrôlement, enregistre la date et l'heure de démarrage du système (`kern.boottime`) ;
-   - `unlock()` refuse sans biométrie si plus de 14 jours (réglable) depuis la dernière saisie du mot de passe, si l'heure de démarrage a changé, ou si la clé a été invalidée (nouveau doigt ou visage) ; dans ces cas le mot de passe est demandé et la clé est recréée ;
+   - à l'enrôlement et à chaque saisie du mot de passe, enregistre l'identifiant de la session de démarrage (`kern.bootsessionuuid`, un UUID par démarrage) ;
+   - `unlock()` refuse sans biométrie si plus de 14 jours (réglable) depuis la dernière saisie du mot de passe, si l'identifiant de démarrage a changé (ou est illisible), ou si la clé a été invalidée (nouveau doigt ou visage) ; dans ces cas le mot de passe est demandé et la clé est recréée ;
    - sans Secure Enclave (Simulateur), `isAvailable` vaut `false` et l'option est masquée.
 4. `DeviceMode` : `personal` ou `shared` (R3). `shared` désactive la biométrie, force le verrouillage après 5 min d'inactivité et masque les vaults choisis.
 5. `VaultSession` (`@MainActor @Observable`) : la machine à états de l'app.
@@ -144,7 +144,7 @@ Composants de `VaultKit` :
    - garde en mémoire la liste des vaults et des résumés d'items (aucun secret), charge un item complet à la demande et l'oublie à la fermeture du détail et au verrouillage ;
    - recherche locale sur titre, sous-titre, URL et tags ;
    - filtres : tous les items, vault, catégorie, tag, favoris, archive, corbeille ;
-   - verrouillage automatique (délai réglable : 1, 5, 15, 60 min, jamais en mode personnel ; 5 min fixe en partagé), verrouillage en arrière-plan après le délai.
+   - verrouillage automatique (délai réglable : 1, 5, 15, 60 min, jamais en mode personnel ; en partagé, le plus court entre le délai choisi et 5 min), verrouillage en arrière-plan après le délai.
 6. `Clipboard` : copie avec `localOnly`, marquage "concealed" (macOS : type `org.nspasteboard.ConcealedType`), effacement après 90 s si le contenu n'a pas changé.
 7. Sync :
    - `RemoteRecordStore` (protocole) : `fetchChanges() async throws -> RemoteBatch`, `send(changes) async throws -> [SendResult]`, où `SendResult` est `saved(serverMeta)`, `conflict(serverRecord)` ou `failed` ;
@@ -152,7 +152,7 @@ Composants de `VaultKit` :
    - `CloudKitRemote` : base privée, zone `OnePass`, type d'enregistrement `OPRecord`, nom `"<code de type>.<id hex>"`, champs `kind`, `version` et `data` (dans `encryptedValues`). Envoi par `CKDatabase.modifyRecords(saving:deleting:savePolicy: .ifServerRecordUnchanged, atomically: true)`, récupération par `recordZoneChanges(inZoneWith:since:)`, jeton de changement sauvé par `set_sync_meta`, abonnement `CKDatabaseSubscription` pour les notifications push. Les champs système de chaque `CKRecord` sont gardés dans `server_meta`. Limite de 900 Kio par enregistrement, au-delà l'écriture est refusée côté Rust avant d'être faite ;
    - `InMemoryRemote` : faux serveur pour les tests, qui sait aussi rejouer, retenir ou altérer des enregistrements.
 8. `EmergencyKit` : PDF une page (Secret Key en clair, QR code, identifiant du compte, instructions en français, emplacement pour noter le mot de passe à la main), produit localement (CoreGraphics + CoreImage), partagé par la feuille de partage système. Jamais écrit ailleurs que dans un fichier temporaire supprimé après partage.
-9. `SiteIconLoader` : favicon et `apple-touch-icon` récupérés directement sur le site de l'URL principale, `URLSession` éphémère sans cookies, HTTPS seulement, 256 Kio maximum, cache local par hash du domaine (fichiers en `NSFileProtectionComplete`), réglage pour désactiver. Pack de marques et cache chiffré au jalon 5 (R10).
+9. `SiteIconLoader` : favicon et `apple-touch-icon` récupérés directement sur le site de l'URL principale, `URLSession` éphémère sans cookies, HTTPS seulement, 256 Kio maximum, cache local par hash du domaine (fichiers en `completeFileProtectionUnlessOpen` sur iOS, pour qu'une écriture commencée se termine écran verrouillé ; macOS : conteneur et FileVault), réglage pour désactiver. Pack de marques et cache chiffré au jalon 5 (R10).
 
 ## 5. DesignKit (package Swift)
 

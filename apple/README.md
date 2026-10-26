@@ -22,10 +22,10 @@ Règle de frontière : seul le Rust manipule les clés. Swift reçoit des items 
 **VaultKit** (`VaultKit/Sources/VaultKit`) :
 
 - `OnePassFFI` (XCFramework) et `OnePassCore` (liaisons Swift générées) : ni l'un ni l'autre n'est versionné.
-- `Session/` : `VaultSession`, la machine à états de l'app (`noAccount`, `locked`, `unlocking`, `unlocked`, `failed`), qui garde les vaults et les résumés d'items (aucun secret), charge un item complet à la demande et l'oublie au verrouillage ; recherche, filtres, verrouillage automatique (`AutoLock`), erreurs (`VaultError`, sans valeur de champ).
+- `Session/` : `VaultSession`, la machine à états de l'app (`noAccount`, `locked`, `unlocking`, `unlocked`, `failed` ; un compte connu de l'appareil mais disparu de la base donne `failed(.integrity("account_missing"))`, jamais `noAccount`), qui garde les vaults et les résumés d'items (aucun secret), charge un item complet à la demande et l'oublie au verrouillage ; recherche, filtres, verrouillage automatique (`AutoLock`), erreurs (`VaultError`, sans valeur de champ).
 - `Keychain/` : `KeychainStore`, `SystemKeychain` (keychain à protection de données), `SecretKeyVault`, `InMemoryKeychain` pour les tests et la démonstration.
 - `Biometrics/` : `BiometricUnlock` (AUK enveloppée par une clé P-256 de la Secure Enclave), politique des 14 jours et du redémarrage (`BiometricPolicy`).
-- `Sync/` : protocole `RemoteRecordStore`, `SyncCoordinator` (acteur : envoi puis récupération, anti-rebond de 2 s), `CloudKitRemote` (base privée, zone `OnePass`), `InMemoryRemote` (faux serveur des tests, qui sait rejouer, retenir ou altérer).
+- `Sync/` : protocole `RemoteRecordStore`, `SyncCoordinator` (acteur : envoi puis récupération, anti-rebond de 2 s ; la base est liée au compte iCloud du premier tour, un autre compte arrête la sync avec l'état "Le compte iCloud a changé"), `CloudKitRemote` (base privée, zone `OnePass`, identité par `userRecordID`), `InMemoryRemote` (faux serveur des tests, qui sait rejouer, retenir, altérer, forger une suppression et changer de compte).
 - `Support/` : presse-papiers (90 s, local seulement), Emergency Kit (PDF avec QR code produit sur l'appareil), icônes de site, mode d'appareil, réglages locaux.
 - `Editing/` : brouillon d'item (`ItemDraft`), saisie des nombres, force du mot de passe.
 
@@ -151,6 +151,9 @@ Décisions qui limitent ce jalon (spec, section 13) :
 - **R14** : pas de suppression de vault, seulement création et renommage. Sans liste signée des vaults, un vault supprimé ressemblerait pour les autres appareils à un vault masqué par le serveur (`VaultMissing`).
 
 Autres limites connues :
+
+- Changement de compte iCloud : la sync s'arrête ("Le compte iCloud a changé") tant que le compte d'origine n'est pas reconnecté ; l'acceptation d'un nouveau compte (`SyncCoordinator.acceptAccountChange()`) existe mais n'est pas encore proposée dans l'interface.
+- iOS : une app suspendue garde ses clés en mémoire jusqu'au retour au premier plan ou au prochain réveil par notification, si le délai de verrouillage dépasse le temps d'arrière-plan accordé par le système.
 
 - Une seule fenêtre (voir Architecture).
 - iOS peut proposer "Enregistrer le mot de passe ?" (mots de passe du système) après l'enregistrement d'un Login : il faut refuser. Corrigé au jalon 3, quand OnePass devient le fournisseur de remplissage automatique.
