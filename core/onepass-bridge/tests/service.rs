@@ -650,3 +650,168 @@ fn generate_recipes() {
         assert_eq!(err(&v), "invalid");
     }
 }
+
+#[test]
+fn provider_account_with_never_rule_is_not_a_provider_account() {
+    let mut h = H::new();
+    let perso = h.ids.google_perso;
+    for u in h
+        .svc
+        .vault_mut()
+        .items
+        .iter_mut()
+        .find(|i| i.id == perso)
+        .unwrap()
+        .urls
+        .iter_mut()
+    {
+        u.rule = MatchRule::Never;
+    }
+    let v = h.call(
+        json!({"op":"provider_accounts","ctx":"menu","provider":"google",
+                          "origin":"https://docs.atlas-cloud.test"}),
+    );
+    let o = ok(&v);
+    assert!(!o.to_string().contains(&id(perso)), "{o}");
+    assert!(o.get("linked_item_id").is_none());
+    let v = h.call(
+        json!({"op":"fill_provider","ctx":"chain","account_item_id":id(perso),
+        "provider":"google","provider_origin":"https://accounts.google.com",
+        "site_origin":"https://docs.atlas-cloud.test","fields":["password"]}),
+    );
+    assert_eq!(err(&v), "not_found");
+}
+
+#[test]
+fn fill_provider_honors_exact_url_and_port() {
+    let mut h = H::new();
+    let perso = h.ids.google_perso;
+    {
+        let item = h
+            .svc
+            .vault_mut()
+            .items
+            .iter_mut()
+            .find(|i| i.id == perso)
+            .unwrap();
+        item.urls[0].url = "https://accounts.google.com:8443/signin".into();
+        item.urls[0].rule = MatchRule::ExactUrl;
+    }
+    let req = |provider_origin: &str| {
+        json!({"op":"fill_provider","ctx":"chain","account_item_id":id(perso),
+            "provider":"google","provider_origin":provider_origin,
+            "site_origin":"https://docs.atlas-cloud.test","fields":["password"]})
+    };
+    assert_eq!(
+        err(&h.call(req("https://accounts.google.com/signin"))),
+        "origin_mismatch"
+    );
+    assert_eq!(
+        err(&h.call(req("https://accounts.google.com:8443/other"))),
+        "origin_mismatch"
+    );
+    let v = h.call(req("https://accounts.google.com:8443/signin?x=1"));
+    assert_eq!(ok(&v)["password"], GOOGLE_PERSO_PASSWORD);
+}
+
+#[test]
+fn reveal_and_totp_limited_to_displayable_types() {
+    let mut h = H::new();
+    let perso = h.ids.perso;
+    let mut ssh =
+        onepass_core::model::new_item(onepass_core::model::ItemType::SshKey, perso, "Atlas SSH");
+    ssh.field_mut("passphrase").unwrap().value =
+        FieldValue::Concealed(zeroize::Zeroizing::new("Ssh-Pass-0013".into()));
+    ssh.sections[0].fields.push(onepass_core::model::Field {
+        id: "totp".into(),
+        label: "TOTP".into(),
+        kind: onepass_core::model::FieldType::Otp,
+        value: FieldValue::Otp(zeroize::Zeroizing::new(TOTP_SECRET.into())),
+        required: false,
+        repeatable: false,
+        autofill: true,
+    });
+    ssh.urls.push(onepass_core::model::ItemUrl {
+        label: "site web".into(),
+        url: ATLAS.into(),
+        rule: MatchRule::Domain,
+        primary: true,
+    });
+    let ssh_id = ssh.id;
+    h.svc.vault_mut().items.push(ssh);
+    let v = h.call(json!({"op":"reveal","ctx":"popup","item_id":id(ssh_id),"field":"passphrase"}));
+    assert_eq!(err(&v), "not_found");
+    let v = h.call(json!({"op":"totp","ctx":"popup","item_id":id(ssh_id)}));
+    assert_eq!(err(&v), "not_found");
+    let v = h.call(json!({"op":"totp","ctx":"menu","item_id":id(ssh_id),"origin":ATLAS}));
+    assert_eq!(err(&v), "not_found");
+}
+
+#[test]
+fn account_email_ignores_ineligible_accounts() {
+    let mut h = H::new();
+    let perso = h.ids.google_perso;
+    h.svc
+        .vault_mut()
+        .items
+        .iter_mut()
+        .find(|i| i.id == perso)
+        .unwrap()
+        .archived = true;
+    let v = h.call(list("https://docs.atlas-cloud.test"));
+    let s = v.to_string();
+    assert!(!s.contains("alex.perso@example.com"), "{s}");
+}
+
+#[test]
+fn writes_to_reprompt_items_need_approval() {
+    let mut h = H::new();
+    let (r, pro) = (h.ids.reprompt, h.ids.google_pro);
+    let origin = "https://vault.atlas-cloud.test";
+    let v = h.call(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":id(r),
+                          "origin":origin,"password":"New-Pass-0014"}),
+    );
+    assert_eq!(err(&v), "reprompt_required");
+    let v = h.call(
+        json!({"op":"link_provider","ctx":"save_prompt","site_origin":origin,
+                          "provider":"google","account_item_id":id(pro)}),
+    );
+    assert_eq!(err(&v), "reprompt_required");
+    let item = h.vault().item(r);
+    assert!(item.password_history.is_empty());
+    assert!(item.login_methods.is_empty());
+    h.svc.vault_mut().approve_reprompt = true;
+    let v = h.call(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":id(r),
+                          "origin":origin,"password":"New-Pass-0014"}),
+    );
+    assert_eq!(ok(&v), &json!({}));
+}
+
+#[test]
+fn writes_count_in_the_rate_limit() {
+    let mut h = H::new();
+    let (atlas, pro) = (h.ids.atlas, h.ids.google_pro);
+    for i in 0..30 {
+        let pw = format!("Rot-Pass-{i:04}");
+        ok(&h.call(
+            json!({"op":"update_password","ctx":"save_prompt","item_id":id(atlas),
+                          "origin":ATLAS,"password":pw}),
+        ));
+        ok(&h.call(
+            json!({"op":"link_provider","ctx":"save_prompt","site_origin":ATLAS,
+                          "provider":"google","account_item_id":id(pro)}),
+        ));
+    }
+    let v = h.call(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":id(atlas),
+                          "origin":ATLAS,"password":"x"}),
+    );
+    assert_eq!(err(&v), "rate_limited");
+    let v = h.call(
+        json!({"op":"link_provider","ctx":"save_prompt","site_origin":ATLAS,
+                          "provider":"google","account_item_id":id(pro)}),
+    );
+    assert_eq!(err(&v), "rate_limited");
+}

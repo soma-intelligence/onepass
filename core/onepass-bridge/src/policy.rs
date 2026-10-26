@@ -5,7 +5,7 @@
 //! autofill, and the current TOTP code, never the TOTP secret.
 
 use onepass_core::Id;
-use onepass_core::model::{Field, FieldValue, Item, ItemType, LoginMethod};
+use onepass_core::model::{Field, FieldValue, Item, ItemType, LoginMethod, MatchRule};
 use onepass_core::reference::otp_field_of;
 use onepass_core::totp::{code_at, parse_otpauth, seconds_remaining, totp_from_secret};
 use zeroize::Zeroizing;
@@ -54,12 +54,22 @@ pub fn item_match(item: &Item, page: &Origin) -> Option<MatchQuality> {
 }
 
 /// Is this a login of `p`: a URL whose host is an official host of `p`?
+/// URLs with rule `Never` do not count.
 pub fn is_provider_account(item: &Item, p: ProviderId) -> bool {
     item.item_type == ItemType::Login
-        && item
-            .urls
-            .iter()
-            .any(|u| item_host(&u.url).is_some_and(|h| official_hosts(p).contains(&h.as_str())))
+        && item.urls.iter().any(|u| {
+            u.rule != MatchRule::Never
+                && item_host(&u.url).is_some_and(|h| official_hosts(p).contains(&h.as_str()))
+        })
+}
+
+/// Does an item URL on an official host of `p` match the provider page
+/// under its own rule (path for `ExactUrl`, explicit port)?
+pub fn provider_url_matches(item: &Item, p: ProviderId, page: &Origin) -> bool {
+    item.urls.iter().any(|u| {
+        item_host(&u.url).is_some_and(|h| official_hosts(p).contains(&h.as_str()))
+            && matches(&u.url, u.rule, page).is_some()
+    })
 }
 
 fn text_of(f: &Field) -> Option<&str> {

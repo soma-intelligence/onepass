@@ -26,7 +26,8 @@ use crate::audit::{AuditEvent, AuditSink};
 use crate::origin::{MatchQuality, Origin};
 use crate::policy::{
     card_values, eligible, identity_values, is_provider_account, item_match, login_identifier,
-    login_secrets, reveal_value, stored_password, summarize, summary_kind, totp_now,
+    login_secrets, provider_url_matches, reveal_value, stored_password, summarize, summary_kind,
+    totp_now,
 };
 use crate::provider::{ProviderId, from_host};
 use crate::{AppErrorCode, BridgeError, Result};
@@ -285,6 +286,17 @@ impl<V: VaultAccess> Service<V> {
             .ok_or(AppErrorCode::NotFound)
     }
 
+    /// An eligible item of a type the extension can display (login, card,
+    /// identity), or `not_found`: other types (SSH keys, servers, ID
+    /// documents) never leave the host.
+    fn displayable_item(&mut self, item_id: &str) -> OpResult<Item> {
+        let (_, item) = self.eligible_item(item_id)?;
+        if summary_kind(item.item_type).is_none() {
+            return Err(AppErrorCode::NotFound);
+        }
+        Ok(item)
+    }
+
     fn dispatch(&mut self, req: &Request, now: u64) -> OpResult<Response> {
         match req {
             Request::Status { .. } => {
@@ -313,6 +325,8 @@ impl<V: VaultAccess> Service<V> {
                 | Request::Totp { .. }
                 | Request::Reveal { .. }
                 | Request::CheckCredentials { .. }
+                | Request::UpdatePassword { .. }
+                | Request::LinkProvider { .. }
         ) {
             self.take_secret_slot(now)?;
         }
@@ -452,7 +466,7 @@ impl<V: VaultAccess> Service<V> {
     ) -> Vec<Summary> {
         let email = |id: Id| {
             all.iter()
-                .find(|(_, i)| i.id == id)
+                .find(|(_, i)| i.id == id && eligible(i))
                 .and_then(|(_, i)| login_identifier(i))
                 .map(str::to_owned)
         };
@@ -558,7 +572,7 @@ impl<V: VaultAccess> Service<V> {
             (_, Some(o)) => Some(origin(o)?),
             (_, None) => return Err(AppErrorCode::NotAllowed),
         };
-        let (_, item) = self.eligible_item(item_id)?;
+        let item = self.displayable_item(item_id)?;
         if let Some(page) = &page
             && item_match(&item, page).is_none()
         {
@@ -574,7 +588,7 @@ impl<V: VaultAccess> Service<V> {
         if ctx != Ctx::Popup {
             return Err(AppErrorCode::NotAllowed);
         }
-        let (_, item) = self.eligible_item(item_id)?;
+        let item = self.displayable_item(item_id)?;
         self.reprompt(&item)?;
         let value = reveal_value(&item, field)?;
         self.record("reveal", item.id, None, ctx, now);
@@ -678,6 +692,7 @@ impl<V: VaultAccess> Service<V> {
         if item_match(&item, &page).is_none() {
             return Err(AppErrorCode::OriginMismatch);
         }
+        self.reprompt(&item)?;
         let at = unix(now);
         if let Some(old) = stored_password(&item).filter(|p| !p.is_empty()).cloned() {
             item.password_history.push(PasswordHistoryEntry {
@@ -750,6 +765,9 @@ impl<V: VaultAccess> Service<V> {
             return Err(AppErrorCode::OriginMismatch);
         }
         let item = self.provider_account(account_item_id, p)?;
+        if !provider_url_matches(&item, p, &prov) {
+            return Err(AppErrorCode::OriginMismatch);
+        }
         self.reprompt(&item)?;
         let out = login_secrets(&item, fields, now);
         self.record("fill_provider", item.id, Some(provider_origin), ctx, now);
@@ -781,6 +799,7 @@ impl<V: VaultAccess> Service<V> {
         logins.sort_by_key(|(q, _)| rank(Some(*q)));
         let item = match logins.into_iter().next() {
             Some((_, mut item)) => {
+                self.reprompt(&item)?;
                 if !item.login_methods.contains(&method) {
                     item.login_methods.push(method);
                     item.updated_at = unix(now);
