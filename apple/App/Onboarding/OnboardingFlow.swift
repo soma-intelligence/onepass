@@ -13,8 +13,8 @@ enum OnboardingPath: Sendable {
 }
 
 /// The onboarding state machine (spec 7): create an account, or restore one with the Emergency Kit.
-/// The typed fields are emptied as soon as they are submitted. The master password then stays in
-/// a wipeable buffer until the last step (biometric enrollment needs it), as does the new Secret Key
+/// The typed fields are emptied as soon as they are submitted. When the biometric step follows, the
+/// master password then stays in a wipeable buffer until the last step, as does the new Secret Key
 /// (shown once and put in the Emergency Kit); both are wiped at the end or on lock.
 @MainActor
 @Observable
@@ -26,19 +26,29 @@ final class OnboardingModel {
 
     var mode: DeviceMode = .personal
     var displayName = ""
-    var password = ""
-    var confirmation = ""
-    /// The new account's Secret Key. Only `secretKey` (a transient `String` for the view and the
-    /// Emergency Kit) reads it.
-    private var secretKeyBytes: SecretBytes?
-    /// The master password once submitted, for the biometric enrollment step only.
-    @ObservationIgnored private var enrollmentPassword: SecretBytes?
+    /// Typed fields and the kept secrets (`OnboardingCredentials`: emptied on submit, wiped on
+    /// `clear()`).
+    private var credentials = OnboardingCredentials()
+    var password: String {
+        get { credentials.password }
+        set { credentials.password = newValue }
+    }
+    var confirmation: String {
+        get { credentials.confirmation }
+        set { credentials.confirmation = newValue }
+    }
     var kitStoredOffline = false
     var allowWatch = false
     private(set) var biometricsEnabled = false
 
-    var restoreKey = ""
-    var restorePassword = ""
+    var restoreKey: String {
+        get { credentials.restoreKey }
+        set { credentials.restoreKey = newValue }
+    }
+    var restorePassword: String {
+        get { credentials.restorePassword }
+        set { credentials.restorePassword = newValue }
+    }
 
     private(set) var busyMessage: String?
     var errorMessage: String?
@@ -136,7 +146,7 @@ final class OnboardingModel {
     var passwordBits: Double { estimatedBits(password) }
 
     /// The Secret Key in display form, decoded on each read (never stored as a `String`).
-    var secretKey: String? { secretKeyBytes?.string() }
+    var secretKey: String? { credentials.secretKey?.string() }
 
     var confirmationMismatch: Bool { !confirmation.isEmpty && confirmation != password }
 
@@ -210,14 +220,12 @@ final class OnboardingModel {
         busyMessage = String(localized: "Création du coffre...")
         // Submitted: both fields are emptied now, whatever the outcome. The local copy lives for the
         // call only (`String`, R5; Part B passes bytes to the core).
-        let typed = password
-        password = ""
-        confirmation = ""
+        let typed = credentials.submitCreation()
         do {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
             let key = try await session.createAccount(password: typed, displayName: name, mode: mode)
-            secretKeyBytes = SecretBytes(utf8: key)
-            enrollmentPassword = SecretBytes(utf8: typed)
+            // The password is kept only when the biometric step follows.
+            credentials.accountCreated(secretKey: key, password: typed, keepPasswordForBiometrics: biometricsOffered)
             advance()
         } catch {
             errorMessage = VaultError(error).localizedMessage
@@ -228,7 +236,7 @@ final class OnboardingModel {
         busyMessage = String(localized: "Activation de \(biometryName)...")
         defer { busyMessage = nil }
         model.settings.allowWatchUnlock = allowWatch
-        guard let typed = enrollmentPassword?.string() else {
+        guard let typed = credentials.enrollmentPassword?.string() else {
             errorMessage = VaultError.passwordRequired.localizedMessage
             return
         }
@@ -272,16 +280,14 @@ final class OnboardingModel {
         // The password field is emptied on submission, whatever the outcome. The Secret Key field
         // is kept after a failure (a typo or a wrong password), so the long key need not be typed
         // again, and emptied on success.
-        let typedPassword = restorePassword
-        restorePassword = ""
+        let typedPassword = credentials.submitRestore()
         do {
             try await session.restore(secretKey: restoreKey, password: typedPassword)
         } catch {
             errorMessage = VaultError(error).localizedMessage
             return
         }
-        restoreKey = ""
-        enrollmentPassword = SecretBytes(utf8: typedPassword)
+        credentials.restored(password: typedPassword, keepPasswordForBiometrics: biometricsOffered)
         if !restoreOnly { session.setDeviceMode(mode) }
         #if os(macOS)
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -302,29 +308,14 @@ final class OnboardingModel {
     /// deleted and the lock screen replaces the onboarding. The Secret Key stays in the keychain.
     func sessionLocked() {
         deleteKit()
-        password = ""
-        confirmation = ""
-        restorePassword = ""
-        restoreKey = ""
-        wipeSecrets()
+        credentials.clear()
         errorMessage = nil
         model.onboardingInProgress = false
     }
 
     private func finish() {
-        password = ""
-        confirmation = ""
-        restorePassword = ""
-        wipeSecrets()
+        credentials.clear()
         model.onboardingInProgress = false
-    }
-
-    /// Overwrites the kept master password and Secret Key.
-    private func wipeSecrets() {
-        enrollmentPassword?.wipe()
-        enrollmentPassword = nil
-        secretKeyBytes?.wipe()
-        secretKeyBytes = nil
     }
 
     // MARK: - Emergency Kit

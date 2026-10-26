@@ -5,7 +5,7 @@ import SwiftUI
 /// value is drawn as bullets and announced as "masqué" until revealed. A revealed secret is masked
 /// again after `autoHideAfter`, when the row leaves the screen, and whenever `concealToken` changes
 /// (the session bumps it on lock and when the scene leaves the foreground). While `captured` (screen
-/// recording, mirroring, AirPlay) a secret stays drawn as bullets even if revealed.
+/// recording, mirroring, AirPlay) a secret is drawn as bullets, and a revealed one is masked again.
 public struct FieldRow: View {
     private let label: String
     private let value: String
@@ -92,6 +92,8 @@ public struct FieldRow: View {
         }
         .onDisappear { if disclosure.revealed { setRevealed(false) } }
         .onChange(of: concealToken) { if disclosure.revealed { setRevealed(false) } }
+        // Captured: masked now, and still masked once the capture ends.
+        .onChange(of: captured) { _, now in if now, disclosure.revealed { setRevealed(false) } }
         .sheet(isPresented: largeBinding) {
             VStack(spacing: 16) {
                 Text(label).font(.headline)

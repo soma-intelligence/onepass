@@ -24,7 +24,9 @@ public struct SecretKeyVault: Sendable {
         try secretKey.withData { try keychain.write(Self.key(for: accountID), $0) }
     }
 
-    /// The stored Secret Key in a wipeable buffer; the keychain's `Data` is overwritten once copied.
+    /// The stored Secret Key in a wipeable buffer. The `Data` the keychain returned is overwritten once
+    /// copied, but only that buffer: when it is backed by a `CFData` the Security framework shares or
+    /// already copied, those other copies are out of reach (R5).
     public func loadBytes(accountID: String) throws -> SecretBytes? {
         guard var data = try keychain.read(Self.key(for: accountID)) else { return nil }
         return SecretBytes(taking: &data)

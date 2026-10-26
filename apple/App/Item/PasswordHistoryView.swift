@@ -6,6 +6,11 @@ import VaultKit
 /// Loaded when shown, dropped when it goes away.
 struct PasswordHistoryView: View {
     @Environment(AppModel.self) private var model
+    #if os(iOS) || os(visionOS)
+    @Environment(\.isSceneCaptured) private var captured
+    #else
+    private let captured = false
+    #endif
     let ref: ItemRef
     @State private var entries: [FfiHistoryEntry] = []
     @State private var error: String?
@@ -20,6 +25,7 @@ struct PasswordHistoryView: View {
                     FieldRow(
                         label: "Remplacé le \(FieldDates.timestamp(entry.replacedAt))", value: entry.value,
                         isSecret: true, monospaced: true, copyIdentifier: "history.copy.\(index)",
+                        concealToken: model.session.concealGeneration, captured: captured,
                         onCopy: { model.session.copy(entry.value, concealed: true) },
                         onReveal: { _ in model.session.noteActivity() })
                         .privacySensitive()

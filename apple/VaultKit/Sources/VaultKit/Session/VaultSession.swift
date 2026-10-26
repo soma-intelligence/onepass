@@ -28,8 +28,9 @@ public final class VaultSession {
     public private(set) var hiddenVaultIDs: Set<String>
     /// The store holds an account but this device has no Secret Key for it: use `restore`.
     public private(set) var needsSecretKey = false
-    /// Bumped on lock and when the scene leaves the foreground (inactive or background): views mask
-    /// every revealed value again when it changes (`FieldRow`, the item editor).
+    /// Bumped on lock, when the scene goes to the background, and on iOS, iPadOS and visionOS when it
+    /// becomes inactive (app switcher snapshot; not on macOS, where switching apps would re-mask all the
+    /// time): views mask every revealed value again when it changes (`FieldRow`, the item editor).
     public private(set) var concealGeneration = 0
 
     /// Vaults shown in the sidebar (hidden ones left out).
@@ -210,7 +211,7 @@ public final class VaultSession {
             throw fail(VaultError(error))
         }
         // Unreadable (not UTF-8) counts as missing, as before.
-        guard let secretKey, secretKey.string() != nil else {
+        guard let secretKey, secretKey.isValidUTF8 else {
             needsSecretKey = true
             throw fail(missing)
         }
@@ -541,14 +542,15 @@ public final class VaultSession {
         case .background:
             autoLock.enterBackground(now)
             concealRevealed()
-            // A secret we copied does not outlive the app leaving the screen (spec 6.2).
-            clipboard.clearIfConcealed()
+            // The clipboard is kept (copy, then switch app to paste): it clears on lock and after 90 s.
         case .active:
             let expired = autoLock.becomeActive(now, delay: settings.effectiveAutoLockSeconds)
             if state == .unlocked, expired { lock() }
             clipboard.clearIfExpired()
         case .inactive:
+            #if !os(macOS)
             concealRevealed()
+            #endif
         }
     }
 

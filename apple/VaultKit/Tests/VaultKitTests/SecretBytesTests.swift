@@ -75,6 +75,13 @@ struct SecretBytesTests {
         #expect(Mirror(reflecting: secret).children.isEmpty)
     }
 
+    @Test func utf8CheckDoesNotNeedAString() {
+        #expect(SecretBytes(utf8: "clé-éèà").isValidUTF8)
+        #expect(SecretBytes(copying: Data()).isValidUTF8)
+        #expect(!SecretBytes(copying: Data([0x41, 0xC3])).isValidUTF8)
+        #expect(!SecretBytes(copying: Data([0xFF, 0xFE])).isValidUTF8)
+    }
+
     @Test func emptyInputIsFine() {
         let secret = SecretBytes(copying: Data())
         #expect(secret.isEmpty)

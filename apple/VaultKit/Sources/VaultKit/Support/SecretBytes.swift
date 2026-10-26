@@ -48,8 +48,10 @@ public final class SecretBytes: @unchecked Sendable {
         bytes.withUnsafeMutableBytes { Self.zero($0) }
     }
 
-    /// Copies `source`, then overwrites it and leaves it empty, so this object holds the only copy we
-    /// know of.
+    /// Copies `source`, then overwrites it and leaves it empty. The overwrite reaches the original bytes
+    /// only when `source` is their sole owner: if another `Data` shares the buffer (then
+    /// `withUnsafeMutableBytes` copies before writing) or a `CFData`/`NSData` held elsewhere backs it
+    /// (bindings, Security framework), only that fresh copy is wiped and the original may survive (R5).
     public convenience init(taking source: inout Data) {
         self.init(copying: source)
         source.withUnsafeMutableBytes { Self.zero($0) }
@@ -88,6 +90,21 @@ public final class SecretBytes: @unchecked Sendable {
     /// copy that cannot be wiped: keep it in a local, never in a property (R5).
     public func string() -> String? {
         withUnsafeBytes { String(bytes: $0, encoding: .utf8) }
+    }
+
+    /// Whether the bytes are valid UTF-8, checked in place (no `String` is built).
+    public var isValidUTF8: Bool {
+        withUnsafeBytes { buffer in
+            var iterator = buffer.makeIterator()
+            var decoder = Unicode.UTF8()
+            while true {
+                switch decoder.decode(&iterator) {
+                case .scalarValue: continue
+                case .emptyInput: return true
+                case .error: return false
+                }
+            }
+        }
     }
 
     /// Overwrites the bytes now; the object then holds nothing (`count` 0). Idempotent.

@@ -543,27 +543,37 @@ struct VaultSessionHardeningTests {
         await #expect(throws: VaultError.lockedOut(until: until)) { try await session.unlock(password: testPassword) }
     }
 
-    @Test func backgroundClearsACopiedSecretButNotAPlainValue() async throws {
+    /// Ruling R1: copying then switching app to paste must work, so leaving the foreground keeps
+    /// the copied secret; the lock and the 90 s expiry still clear it.
+    @Test func backgroundKeepsTheCopiedSecretUntilLockOrExpiry() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }
         let session = h.makeSession()
         _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
         session.copy("valeur-fictive", concealed: true)
         session.scenePhaseChanged(.inactive)
+        session.scenePhaseChanged(.background)
+        #expect(h.pasteboard.snapshot.contents == "valeur-fictive")
+        session.lock()
+        #expect(h.pasteboard.snapshot.contents == nil)
+
+        try await session.unlock(password: testPassword)
+        session.copy("valeur-fictive", concealed: true)
+        session.scenePhaseChanged(.background)
+        h.clock.advance(60)
+        session.scenePhaseChanged(.active)
         #expect(h.pasteboard.snapshot.contents == "valeur-fictive")
         session.scenePhaseChanged(.background)
+        h.clock.advance(31)
+        session.scenePhaseChanged(.active)
         #expect(h.pasteboard.snapshot.contents == nil)
         #expect(session.state == .unlocked)
-
-        session.scenePhaseChanged(.active)
-        session.copy("adresse-fictive@exemple.fr", concealed: false)
-        session.scenePhaseChanged(.background)
-        #expect(h.pasteboard.snapshot.contents == "adresse-fictive@exemple.fr")
     }
 
-    /// Revealed values are masked again when the scene leaves the foreground and on lock
-    /// (views watch `concealGeneration`); coming back to the foreground reveals nothing.
-    @Test func revealResetsOnBackgroundInactiveAndLock() async throws {
+    /// Revealed values are masked again when the scene goes to the background and on lock (views
+    /// watch `concealGeneration`); `.inactive` masks too on iOS and visionOS, not on macOS (ruling
+    /// R2); coming back to the foreground reveals nothing.
+    @Test func revealResetsOnBackgroundAndLock() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }
         let session = h.makeSession()
@@ -571,7 +581,11 @@ struct VaultSessionHardeningTests {
         var last = session.concealGeneration
 
         session.scenePhaseChanged(.inactive)
+        #if os(macOS)
+        #expect(session.concealGeneration == last)
+        #else
         #expect(session.concealGeneration != last)
+        #endif
         last = session.concealGeneration
 
         session.scenePhaseChanged(.background)
