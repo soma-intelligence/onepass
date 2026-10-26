@@ -212,12 +212,26 @@ fn object_doc(json: &[u8], what: &'static str) -> Result<Map<String, Value>> {
     }
 }
 
+/// Longest documentation link kept.
+const MAX_DOC_URL: usize = 2048;
+
+/// The documentation link of an entry, kept only when it is an `https://`
+/// URL of printable ASCII without spaces, at most [`MAX_DOC_URL`] bytes:
+/// the value comes from a downloaded document and may be shown in a
+/// terminal.
 fn documentation(entry: &Map<String, Value>) -> Option<String> {
     entry
         .get("documentation")
         .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
+        .filter(|s| is_safe_doc_url(s))
         .map(str::to_owned)
+}
+
+fn is_safe_doc_url(s: &str) -> bool {
+    s.len() <= MAX_DOC_URL
+        && s.len() > "https://".len()
+        && s.starts_with("https://")
+        && s.bytes().all(|b| b.is_ascii_graphic())
 }
 
 /// Lower-cased domain without a trailing dot; `None` when empty or longer
@@ -418,5 +432,32 @@ mod tests {
         );
         assert_eq!(normalize_domain("."), None);
         assert_eq!(normalize_domain(&"a".repeat(MAX_HOST_LEN + 1)), None);
+    }
+
+    #[test]
+    fn documentation_only_safe_https() {
+        let doc = |v: Value| {
+            let mut m = Map::new();
+            m.insert("documentation".into(), v);
+            documentation(&m)
+        };
+        assert_eq!(
+            doc(Value::from("https://example.com/2fa")).as_deref(),
+            Some("https://example.com/2fa")
+        );
+        for bad in [
+            "http://example.com/2fa",
+            "https://",
+            "javascript:alert(1)",
+            "https://example.com/\x1b[31m",
+            "https://example.com/a b",
+            "https://example.com/\u{e9}",
+            "",
+        ] {
+            assert_eq!(doc(Value::from(bad)), None, "{bad:?}");
+        }
+        let long = format!("https://example.com/{}", "a".repeat(MAX_DOC_URL));
+        assert_eq!(doc(Value::from(long)), None);
+        assert_eq!(doc(Value::from(7)), None);
     }
 }

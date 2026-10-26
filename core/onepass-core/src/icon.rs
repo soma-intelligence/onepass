@@ -14,14 +14,16 @@ use crate::model::checks::{CardBrand, card_brand};
 use crate::model::field::FieldValue;
 use crate::model::item::Item;
 use crate::model::templates::ItemType;
-use crate::watchtower::host::{host_of, is_local_host};
+use crate::watchtower::host::{host_of, is_private_host};
 
 /// What a client needs to draw an item icon, without any network access.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IconHint {
     /// Host of the primary URL (else the first one).
     pub host: Option<String>,
-    /// Icon URLs a client may try, always `https`, empty for local hosts.
+    /// Icon URLs a client may try, always `https`, empty for private hosts
+    /// (private addresses, single-label and local network names): the
+    /// client then draws the letter.
     pub candidates: Vec<String>,
     /// Brand of the card number of a credit card.
     pub card_brand: Option<CardBrand>,
@@ -38,7 +40,7 @@ pub fn hint(item: &Item) -> IconHint {
         .or_else(|| item.urls.first());
     let host = url.and_then(|u| host_of(&u.url));
     let candidates = match &host {
-        Some(h) if !is_local_host(h) => vec![
+        Some(h) if !is_private_host(h) => vec![
             format!("https://{h}/apple-touch-icon.png"),
             format!("https://{h}/favicon.ico"),
         ],
@@ -138,5 +140,23 @@ mod tests {
         assert_eq!(l("\u{df}x"), 'S');
         assert_eq!(l("***"), '#');
         assert_eq!(l(""), '#');
+    }
+
+    #[test]
+    fn icon_no_candidates_for_private_hosts() {
+        let mut it = new_item(ItemType::Login, Id::new(), "Router");
+        for u in [
+            "http://192.168.1.1/admin",
+            "https://10.0.0.2",
+            "http://[fe80::1]:8080",
+            "https://nas.home.arpa",
+            "https://intranet/",
+            "https://svc.internal",
+        ] {
+            it.urls = vec![url(u, true)];
+            let h = hint(&it);
+            assert!(h.candidates.is_empty(), "{u}");
+            assert_eq!(h.letter, 'R');
+        }
     }
 }
