@@ -20,7 +20,7 @@ use aws_lc_rs::hmac;
 use data_encoding::{BASE32_NOPAD, BASE64_NOPAD};
 use prost::Message;
 use std::fmt;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 const STEAM_ALPHABET: &[u8; 26] = b"23456789BCDFGHJKMNPQRTVWXY";
 
@@ -100,10 +100,10 @@ pub fn seconds_remaining(cfg: &TotpConfig, unix_seconds: u64) -> u32 {
     (p - unix_seconds % p) as u32
 }
 
-fn percent_decode(s: &str, plus_is_space: bool) -> Result<String> {
+fn percent_decode(s: &str, plus_is_space: bool) -> Result<Zeroizing<String>> {
     const BAD: Error = Error::InvalidFormat("otpauth uri");
     let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
+    let mut out: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(b.len()));
     let mut i = 0;
     while i < b.len() {
         match b[i] {
@@ -123,7 +123,9 @@ fn percent_decode(s: &str, plus_is_space: bool) -> Result<String> {
             }
         }
     }
-    String::from_utf8(out).map_err(|_| BAD)
+    // Validate in place, then copy: the buffer `out` is wiped on drop.
+    let text = std::str::from_utf8(&out).map_err(|_| BAD)?;
+    Ok(Zeroizing::new(text.to_owned()))
 }
 
 fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
@@ -134,13 +136,18 @@ fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
 
 fn decode_base32_secret(raw: &str) -> Result<Zeroizing<Vec<u8>>> {
     const BAD: Error = Error::InvalidFormat("otp secret");
-    let cleaned: Zeroizing<String> = Zeroizing::new(
-        raw.chars()
-            .filter(|c| !c.is_whitespace() && *c != '-')
-            .collect::<String>()
-            .trim_end_matches('=')
-            .to_ascii_uppercase(),
-    );
+    // One pass into a single wiped buffer: no plain intermediate String.
+    // Padding is only valid at the end, so any `=` is dropped when it is
+    // followed solely by padding or spaces; an inner `=` fails the decode.
+    let mut cleaned: Zeroizing<String> = Zeroizing::new(String::with_capacity(raw.len()));
+    for c in raw.chars() {
+        if !c.is_whitespace() && c != '-' {
+            cleaned.push(c.to_ascii_uppercase());
+        }
+    }
+    while cleaned.ends_with('=') {
+        cleaned.pop();
+    }
     if cleaned.is_empty() {
         return Err(BAD);
     }
@@ -188,7 +195,7 @@ pub fn parse_otpauth(uri: &str) -> Result<TotpConfig> {
         if seen.contains(&k) {
             continue; // first occurrence wins
         }
-        let v = Zeroizing::new(percent_decode(v, true)?);
+        let v = percent_decode(v, true)?;
         match k.as_str() {
             "secret" => secret = Some(decode_base32_secret(&v)?),
             "issuer" => issuer_param = clean(&v),
@@ -267,19 +274,26 @@ pub fn parse_migration(uri: &str) -> Result<Vec<TotpConfig>> {
         if let Some((k, v)) = pair.split_once('=')
             && k == "data"
         {
-            data = Some(percent_decode(v, true)?.replace(' ', "+"));
+            let mut d = percent_decode(v, true)?;
+            // Form decoding turned a literal `+` into a space: restore it.
+            if d.contains(' ') {
+                let fixed = Zeroizing::new(d.replace(' ', "+"));
+                d = fixed;
+            }
+            data = Some(d);
             break;
         }
     }
     let data = data.ok_or(BAD)?;
     let data = data.trim_end_matches('=');
-    let raw = BASE64_NOPAD.decode(data.as_bytes()).map_err(|_| BAD)?;
-    let mut payload = MigrationPayload::decode(raw.as_slice()).map_err(|_| BAD)?;
+    let raw = Zeroizing::new(BASE64_NOPAD.decode(data.as_bytes()).map_err(|_| BAD)?);
+    let mut payload = MigrationPayload::decode(&raw[..]).map_err(|_| BAD)?;
 
     let mut out = Vec::new();
     for p in &mut payload.otp_parameters {
+        // Taken first, so a skipped entry's secret is wiped when `secret`
+        // drops on `continue`.
         let secret = Zeroizing::new(std::mem::take(&mut p.secret));
-        p.secret.zeroize();
         let algorithm = match p.algorithm {
             0 | 1 => TotpAlgorithm::Sha1,
             2 => TotpAlgorithm::Sha256,
