@@ -541,6 +541,51 @@ struct VaultSessionHardeningTests {
         #expect(h.pasteboard.snapshot.contents == "copié ailleurs")
     }
 
+    @Test func createAccountFailsWhenSecretKeyCannotBeStored() async throws {
+        let h = try SessionHarness(keychain: FailingWriteKeychain())
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        await #expect(throws: VaultError.other(VaultSession.secretKeyNotStoredOnCreate)) {
+            _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        }
+        #expect(session.state == .noAccount)
+        #expect(session.summaries.isEmpty)
+        #expect(!h.sync.events.contains(.unlocked))
+        #expect(h.settings.accountID == nil)
+        #expect(try !hasAccount(dbPath: h.environment.databaseURL.path))
+        #expect(h.makeSession().state == .noAccount)
+    }
+
+    @Test func restoreIsCancelledWhenSecretKeyCannotBeStored() async throws {
+        let first = try SessionHarness()
+        defer { first.cleanUp() }
+        let session = first.makeSession()
+        let secretKey = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        session.lock()
+        await session.waitForReleasedSessions()
+
+        let keychain = FailingWriteKeychain()
+        let second = try SessionHarness(keychain: keychain)
+        defer { second.cleanUp() }
+        for suffix in ["", "-wal", "-shm"] {
+            let source = URL(fileURLWithPath: first.environment.databaseURL.path + suffix)
+            guard FileManager.default.fileExists(atPath: source.path) else { continue }
+            try FileManager.default.copyItem(
+                at: source, to: URL(fileURLWithPath: second.environment.databaseURL.path + suffix))
+        }
+        let restored = second.makeSession()
+        await #expect(throws: VaultError.other(VaultSession.secretKeyNotStoredOnRestore)) {
+            try await restored.restore(secretKey: secretKey, password: testPassword)
+        }
+        #expect(restored.state == .locked)
+        #expect(restored.needsSecretKey)
+        #expect(!second.sync.events.contains(.unlocked))
+        // The store is kept: once the keychain works, the restore goes through.
+        keychain.failWrites(false)
+        try await restored.restore(secretKey: secretKey, password: testPassword)
+        #expect(restored.state == .unlocked)
+    }
+
     @Test func unavailableKeychainIsNotAMissingSecretKey() async throws {
         let keychain = FailingReadKeychain()
         let h = try SessionHarness(keychain: keychain)

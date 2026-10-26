@@ -30,15 +30,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$APPLE_DIR/.." && pwd)"
 
-mkdir -p "$1"
-OUT="$(cd "$1" && pwd -P)"
+# Checked before anything is created: the resolved destination must be outside this checkout and
+# outside the main repository (a worktree lives inside it, under .claude/worktrees).
+PARENT="$(dirname "$1")"
+if [ ! -d "$PARENT" ]; then
+  echo "refused: $PARENT does not exist" >&2
+  exit 64
+fi
+OUT="$(cd "$PARENT" && pwd -P)/$(basename "$1")"
 ROOT_REAL="$(cd "$ROOT_DIR" && pwd -P)"
-case "$OUT/" in
-  "$ROOT_REAL"/*)
-    echo "refused: $OUT is inside the repository" >&2
-    exit 64
-    ;;
-esac
+COMMON_DIR="$(cd "$ROOT_DIR" && git rev-parse --git-common-dir 2>/dev/null || true)"
+MAIN_REAL=""
+if [ -n "$COMMON_DIR" ]; then
+  MAIN_REAL="$(cd "$ROOT_DIR" && cd "$COMMON_DIR/.." && pwd -P)"
+fi
+for repo in "$ROOT_REAL" "$MAIN_REAL"; do
+  [ -n "$repo" ] || continue
+  case "$OUT/" in
+    "$repo"/*)
+      echo "refused: $OUT is inside the repository ($repo)" >&2
+      exit 64
+      ;;
+  esac
+done
+mkdir -p "$OUT"
 
 IPHONE="OnePass M2 iPhone"
 IPAD="OnePass M2 iPad"

@@ -76,6 +76,19 @@ final class FailingReadKeychain: KeychainStore {
     func delete(_ key: String) throws { try inner.delete(key) }
 }
 
+/// Keychain whose writes fail (unsigned iOS build: no keychain access, -34018).
+final class FailingWriteKeychain: KeychainStore {
+    let inner = InMemoryKeychain()
+    private let failing = Mutex(true)
+    func failWrites(_ on: Bool) { failing.withLock { $0 = on } }
+    func read(_ key: String) throws -> Data? { try inner.read(key) }
+    func write(_ key: String, _ data: Data) throws {
+        if failing.withLock({ $0 }) { throw KeychainError.unexpectedStatus(-34018) }
+        try inner.write(key, data)
+    }
+    func delete(_ key: String) throws { try inner.delete(key) }
+}
+
 /// Pasteboard double: tracks its own change count like `NSPasteboard`.
 final class FakePasteboard: PasteboardWriter {
     struct State {

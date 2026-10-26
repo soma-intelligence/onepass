@@ -82,7 +82,7 @@ Couverture : `VaultSession` (états, verrouillage automatique, verrouillage pend
 make -C apple uitest
 ```
 
-`AppUITests/OnboardingAndItemUITests.swift`, sur `OnePass M2 iPhone` : lancement avec `-OnePassUITestReset YES`, création d'un compte avec le vrai Argon2id (256 Mio, aucun réglage rapide), Emergency Kit coché, biométrie "Plus tard" (étape absente sur un Simulateur sans Secure Enclave), ouverture ; nouvel élément Login "Exemple Atlas", identifiant `camille.durand@exemple.fr`, mot de passe généré ; la ligne apparaît, la recherche "atlas" la trouve ; verrouillage par le menu du compte, déverrouillage par le mot de passe maître, la ligne est toujours là. Les attentes liées à Argon2id vont jusqu'à 90 s. Le build du test est signé ad hoc (`CODE_SIGN_IDENTITY=-`) : une app iOS construite avec `CODE_SIGNING_ALLOWED=NO` n'a aucun accès au Keychain (`-34018`), sa Secret Key n'est pas enregistrée et le déverrouillage après verrouillage échoue. Le test ferme la feuille système "Save Password?" que iOS peut afficher après l'enregistrement de l'item ("Not Now"). `AppUITests/ScreenshotUITests.swift` est ignoré (`XCTSkip`) hors du script de captures.
+`AppUITests/OnboardingAndItemUITests.swift`, sur `OnePass M2 iPhone` : lancement avec `-OnePassUITestReset YES`, création d'un compte avec le vrai Argon2id (256 Mio, aucun réglage rapide), Emergency Kit coché, biométrie "Plus tard" (étape absente sur un Simulateur sans Secure Enclave), ouverture ; nouvel élément Login "Exemple Atlas", identifiant `camille.durand@exemple.fr`, mot de passe généré ; la ligne apparaît, la recherche "atlas" la trouve ; verrouillage par le menu du compte, déverrouillage par le mot de passe maître, la ligne est toujours là. Les attentes liées à Argon2id vont jusqu'à 90 s. Le build du test est signé ad hoc (`CODE_SIGN_IDENTITY=-`) : une app iOS construite avec `CODE_SIGNING_ALLOWED=NO` n'a aucun accès au Keychain (`-34018`), sa Secret Key n'est pas enregistrée et le déverrouillage après verrouillage échoue. Le test ferme la feuille système "Enregistrer le mot de passe ?" que iOS peut afficher après l'enregistrement de l'item ("Not Now" ou "Pas maintenant"), limite du jalon 2 décrite plus bas. `AppUITests/ScreenshotUITests.swift` est ignoré (`XCTSkip`) hors du script de captures.
 
 ### Captures d'écran
 
@@ -123,7 +123,7 @@ Compilés seulement en Debug (`#if DEBUG`), absents des builds Release.
 
 ## Build non signé ou signé
 
-- Build non signé (local seulement) : sans équipe de développement ni droits iCloud, l'app tourne en stockage local et l'affiche dans les réglages ("Non (build local)"). La synchronisation CloudKit est désactivée (ruling R8). Sur Mac, le Keychain sans droit d'accès (erreur `-34018`) se replie sur le trousseau classique, en Debug seulement. Sur le Simulateur iOS, un build sans aucune signature (`make build-ios`, `CODE_SIGNING_ALLOWED=NO`) n'a pas de Keychain du tout : il sert à vérifier la compilation ; pour lancer l'app, la signer ad hoc (`CODE_SIGN_IDENTITY=-`), comme `make uitest` et le script de captures.
+- Build non signé (local seulement) : sans équipe de développement ni droits iCloud, l'app tourne en stockage local et l'affiche dans les réglages ("Non (build local)"). La synchronisation CloudKit est désactivée (ruling R8). Sur Mac, le Keychain sans droit d'accès (erreur `-34018`) se replie sur le trousseau classique, en Debug seulement. Sur le Simulateur iOS, un build sans aucune signature (`make build-ios`, `CODE_SIGNING_ALLOWED=NO`) n'a pas de Keychain du tout : la création de compte y est refusée ("Impossible de ranger la Secret Key dans le trousseau de cet appareil. Le coffre n'a pas été créé.") et la restauration annulée. Ce build sert à vérifier la compilation ; pour lancer l'app, la signer ad hoc (`CODE_SIGN_IDENTITY=-`), comme `make uitest` et le script de captures.
 - Build signé (`Release-CloudKit`) : avec une équipe et les droits `iCloud.me.somalabs.onepass` et le groupe Keychain `me.somalabs.onepass.shared`, la synchronisation CloudKit est active. Sans compte iCloud connecté, la création et la restauration de compte s'arrêtent avec un message ("Connecte-toi à iCloud dans Réglages pour créer ton coffre.") au lieu de créer un compte local seulement.
 
 ## Simulateurs dédiés
@@ -153,6 +153,7 @@ Décisions qui limitent ce jalon (spec, section 13) :
 Autres limites connues :
 
 - Une seule fenêtre (voir Architecture).
+- iOS peut proposer "Enregistrer le mot de passe ?" (mots de passe du système) après l'enregistrement d'un Login : il faut refuser. Corrigé au jalon 3, quand OnePass devient le fournisseur de remplissage automatique.
 - Pas de liste "À proximité" ni de géofences sur l'Accueil (R11).
 - Mac : pas de scan du QR de l'Emergency Kit, la Secret Key se tape (R19).
 - Une modification locale d'un item supprimé sur un autre appareil le fait revenir (une suppression ne porte pas de date) ; un déplacement local concurrent d'une modification distante peut laisser l'item dans les deux vaults, sans perte.

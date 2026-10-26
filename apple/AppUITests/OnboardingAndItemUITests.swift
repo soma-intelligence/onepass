@@ -59,26 +59,41 @@ final class OnboardingAndItemUITests: XCTestCase {
         XCTAssertTrue(generated.waitForExistence(timeout: Self.uiTimeout))
         XCTAssertFalse(generated.label.trimmingCharacters(in: .whitespaces).isEmpty, "no password generated")
         tap(app.buttons["generator.use"])
+        // The generated password is in the field (a secure field shows bullets).
+        let passwordField = app.secureTextFields["editor.field.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: Self.uiTimeout))
+        XCTAssertTrue((passwordField.value as? String ?? "").contains("•"), "generated password not in the field")
         tap(app.buttons["editor.save"])
 
         // Saved: its detail is shown, then the row is in the list.
         XCTAssertTrue(app.staticTexts["item.title"].waitForExistence(timeout: Self.uiTimeout), "item not saved")
         // A signed build gets the system "Save Password?" sheet after an edited secure field
         // goes away: never save a vault secret in the system password manager.
-        let notNow = app.buttons["Not Now"].firstMatch
+        // Milestone 2 limit, gone in milestone 3 (OnePass becomes the AutoFill provider).
+        let notNow = app.buttons.matching(NSPredicate(format: "label IN %@", ["Not Now", "Pas maintenant"])).firstMatch
         if notNow.waitForExistence(timeout: 3) { notNow.tap() }
         let search = tabButton(app, id: "tab.search", label: "Rechercher")
         tap(search)
         XCTAssertTrue(row(app).waitForExistence(timeout: Self.uiTimeout), "row missing after save")
 
-        // Search "atlas" finds it.
-        // iOS 26 search tab: the field shows in the tab bar once the selected tab is tapped again.
+        // Search: a query that matches nothing hides the row, then "atlas" finds it.
+        // iOS 26 search tab: the field opens when the tab is chosen (tapped again if needed).
         let field = app.searchFields.firstMatch
         if !field.waitForExistence(timeout: 3) { search.tap() }
         tap(field)
+        field.typeText("zzqx")
+        XCTAssertTrue(app.staticTexts["search.empty"].waitForExistence(timeout: Self.uiTimeout), "no empty state")
+        XCTAssertFalse(row(app).exists, "row shown for a query that does not match")
+        let clear = field.buttons.firstMatch
+        if clear.exists {
+            clear.tap()
+        } else {
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4))
+        }
         field.typeText("atlas")
         XCTAssertTrue(row(app).waitForExistence(timeout: Self.uiTimeout), "search did not find the item")
         XCTAssertFalse(app.staticTexts["search.empty"].exists)
+        XCTAssertTrue((field.value as? String ?? "").localizedCaseInsensitiveContains("atlas"))
 
         // Leave the search (its close button brings the tab bar back).
         field.typeText("\n")
@@ -92,8 +107,10 @@ final class OnboardingAndItemUITests: XCTestCase {
         tap(home)
         let back = app.navigationBars.buttons.element(boundBy: 0)
         let menu = app.descendants(matching: .any)["account.menu"].firstMatch
-        while !menu.waitForExistence(timeout: 2), back.exists {
+        var pops = 0
+        while !menu.waitForExistence(timeout: 2), back.exists, pops < 4 {
             back.tap()
+            pops += 1
         }
         tap(menu)
         // Menu items keep their label in the accessibility tree, not always their identifier.

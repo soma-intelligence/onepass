@@ -176,11 +176,16 @@ public final class VaultSession {
             throw fail(VaultError(error))
         }
 
-        // The account exists now: keep its Secret Key even if a lock came in meanwhile.
+        // The account exists now: keep its Secret Key even if a lock came in meanwhile. Without it
+        // the account could never be unlocked again: the creation is undone (no session, no sync).
         do {
             try secretKeys.store(created.secretKey, accountID: created.accountID)
         } catch {
-            Self.log.error("Secret Key not stored in the keychain")
+            Self.log.error("Secret Key not stored in the keychain, account creation undone")
+            _ = try? await CoreThread.run { created.session.lock() }
+            Self.removeStore(at: environment.databaseURL)
+            evaluateStoredAccount()
+            throw fail(.other(Self.secretKeyNotStoredOnCreate))
         }
         settings.accountID = created.accountID
         settings.displayName = displayName
@@ -246,16 +251,21 @@ public final class VaultSession {
         }
         defer { opened.auk.wipe() }
 
-        settings.resetFailedUnlocks()
-        settings.lockoutUntil = nil
         if storeSecretKey {
+            // Without the Secret Key in the keychain this device could not unlock again: the session
+            // is dropped (no sync starts). The store is kept: it may hold the only local copy.
             do {
                 try secretKeys.store(secretKey, accountID: opened.accountID)
             } catch {
-                Self.log.error("Secret Key not stored in the keychain")
+                Self.log.error("Secret Key not stored in the keychain, restore cancelled")
+                _ = try? await CoreThread.run { opened.session.lock() }
+                if gen == generation { evaluateStoredAccount() }
+                throw fail(.other(Self.secretKeyNotStoredOnRestore))
             }
             settings.accountID = opened.accountID
         }
+        settings.resetFailedUnlocks()
+        settings.lockoutUntil = nil
         afterPasswordUnlock(accountID: opened.accountID, auk: opened.auk.data)
         needsSecretKey = secretKeyPresence() == .missing
 
@@ -665,6 +675,18 @@ public final class VaultSession {
         lastError = nil
         state = .unlocking
         return generation
+    }
+
+    nonisolated static let secretKeyNotStoredOnCreate =
+        "Impossible de ranger la Secret Key dans le trousseau de cet appareil. Le coffre n'a pas été créé."
+    nonisolated static let secretKeyNotStoredOnRestore =
+        "Impossible de ranger la Secret Key dans le trousseau de cet appareil. La connexion a été annulée."
+
+    /// The SQLite store and its side files (an account whose Secret Key was lost at creation).
+    private static func removeStore(at url: URL) {
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            try? FileManager.default.removeItem(atPath: url.path + suffix)
+        }
     }
 
     private func install(_ session: Session, _ snapshot: Snapshot) {

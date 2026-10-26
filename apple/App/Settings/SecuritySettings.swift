@@ -245,7 +245,7 @@ struct PasswordPromptSheet: View {
                     SecureField("Mot de passe maître", text: $password)
                         .focused($focused)
                         .onSubmit(run)
-                        .textContentType(.password)
+                        // No `.password` content type: iOS must never offer to save the master password.
                         .privacySensitive()
                         .accessibilityIdentifier("settings.prompt.password")
                 } footer: {

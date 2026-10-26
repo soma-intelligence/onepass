@@ -202,9 +202,7 @@ struct ItemDetailView: View {
                     SecureField("Mot de passe maître", text: $password)
                         .textFieldStyle(.roundedBorder)
                         .privacySensitive()
-                        #if os(iOS)
-                        .textContentType(.password)
-                        #endif
+                        // No `.password` content type: iOS must never offer to save the master password.
                         .onSubmit { verifyPassword() }
                         .accessibilityIdentifier("item.reprompt.password")
                     Button("Confirmer") { verifyPassword() }
