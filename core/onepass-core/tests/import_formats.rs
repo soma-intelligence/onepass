@@ -174,8 +174,101 @@ fn archive_is_refused() {
     assert!(parse(Format::OnePassArchive, b"OPARCH").is_err());
 }
 
+#[test]
+fn json_with_many_keys_is_detected_in_constant_memory() {
+    let mut s = String::from("{");
+    for i in 0..200_000 {
+        s.push_str(&format!("\"k{i}\":0,"));
+    }
+    s.push_str("\"accounts\":[]}");
+    assert_eq!(detect("x", s.as_bytes()), Some(Format::CredentialExchange));
+}
+
+#[test]
+fn header_after_blank_lines_is_detected() {
+    let mut b = b"\n\r\n  \n".to_vec();
+    b.extend_from_slice(fixture!("chrome.csv"));
+    assert_eq!(detect("x", &b), Some(Format::ChromeCsv));
+}
+
+#[test]
+fn enpass_like_csv_is_not_dashlane() {
+    assert_eq!(detect("x", b"title,password,url\na,b,c\n"), None);
+    assert_eq!(detect("x", b"title,note,url,password\na,b,c,d\n"), None);
+    assert_eq!(detect("x", b"type,name,number\na,b,c\n"), None);
+}
+
+#[test]
+fn dashlane_secure_notes_with_category() {
+    assert_eq!(
+        detect("x", b"title,note,category\na,b,c\n"),
+        Some(Format::DashlaneCsv)
+    );
+}
+
+#[test]
+fn encrypted_bitwarden_json_is_detected_and_refused() {
+    let b = br#"{"encrypted":true,"passwordProtected":true,"data":"2.xxx"}"#;
+    assert_eq!(detect("x", b), Some(Format::BitwardenJson));
+    assert!(parse(Format::BitwardenJson, b).is_err());
+}
+
+#[test]
+fn damaged_zips_do_not_panic() {
+    let z = dashlane_zip();
+    for cut in [4, 30, z.len() / 2, z.len() - 10, z.len() - 1] {
+        let t = &z[..cut];
+        let _ = detect("x", t);
+        let _ = parse(Format::DashlaneZip, t);
+    }
+    // Corrupt the central directory (last 100 bytes).
+    let mut c = z.clone();
+    let n = c.len();
+    for b in &mut c[n - 100..] {
+        *b ^= 0xA5;
+    }
+    let _ = detect("x", &c);
+    let _ = parse(Format::DashlaneZip, &c);
+    let _ = parse(Format::OnePasswordPux, &c);
+}
+
+#[test]
+fn zip_entries_in_subdirectories() {
+    // 1PUX needs `export.data` at the root; a nested one is not detected.
+    let nested = zip_of(&[("dir/export.data", fixture!("1pux-export.data.json"))]);
+    assert_eq!(detect("x", &nested), None);
+    // Dashlane entries are matched by base name.
+    let nested = zip_of(&[("dir/credentials.csv", fixture!("dashlane/credentials.csv"))]);
+    assert_eq!(detect("x", &nested), Some(Format::DashlaneZip));
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
+
+    #[test]
+    fn no_panic_on_mutated_fixtures(
+        which in 0usize..64,
+        cut in any::<prop::sample::Index>(),
+        flips in proptest::collection::vec((any::<prop::sample::Index>(), any::<u8>()), 0..8),
+    ) {
+        let all = cases();
+        let (_, bytes, format) = &all[which % all.len()];
+        let mut m = bytes.clone();
+        for (i, v) in &flips {
+            let n = m.len();
+            m[i.index(n)] ^= v | 1;
+        }
+        let truncated = &m[..cut.index(m.len() + 1)];
+        for data in [&m[..], truncated] {
+            let _ = parse(*format, data);
+            let _ = detect("x", data);
+            for f in Format::ALL {
+                if f != Format::OnePassArchive {
+                    let _ = parse(f, data);
+                }
+            }
+        }
+    }
 
     #[test]
     fn no_panic_on_arbitrary_bytes(bytes in proptest::collection::vec(any::<u8>(), 0..4096)) {

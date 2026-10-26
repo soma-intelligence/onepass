@@ -78,18 +78,28 @@ fn reject_encrypted(b: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// File kind of a lower-cased header.
+/// File kind of a lower-cased header. The real Dashlane column sets are
+/// required so that other managers' CSVs (title and password columns) are
+/// not mistaken for Dashlane.
 fn kind_of_header(h: &[String]) -> Option<Kind> {
     let has = |c: &str| h.iter().any(|x| x == c);
-    if has("password") && has("title") {
-        Some(Kind::Credentials)
-    } else if has("cc_number") || has("account_number") {
+    let all = |cs: &[&str]| cs.iter().all(|c| has(c));
+    let any = |cs: &[&str]| cs.iter().any(|c| has(c));
+    if (has("cc_number") || has("account_number")) && has("account_name") {
         Some(Kind::Payments)
-    } else if has("issue_date") {
+    } else if all(&["type", "number", "name"]) && any(&["issue_date", "expiration_date"]) {
         Some(Kind::Ids)
-    } else if has("first_name") || has("date_of_birth") {
+    } else if all(&["type", "first_name", "last_name"]) {
         Some(Kind::PersonalInfo)
-    } else if has("title") && has("note") {
+    } else if all(&["username", "title", "password", "url"])
+        && any(&["username2", "otpsecret", "otpurl", "category"])
+    {
+        Some(Kind::Credentials)
+    } else if h.len() >= 2
+        && h.len() <= 3
+        && all(&["title", "note"])
+        && (h.len() == 2 || has("category"))
+    {
         Some(Kind::SecureNotes)
     } else {
         None
@@ -529,14 +539,15 @@ mod tests {
 
     #[test]
     fn otpsecret_column_and_wide_row() {
-        let csv = "username,title,password,otpsecret\nbob,Site,pw-Invented,JBSWY3DPEHPK3PXP,tail\n";
+        let csv =
+            "username,title,password,url,otpsecret\nbob,Site,pw-Invented,,JBSWY3DPEHPK3PXP,tail\n";
         let imp = parse_dashlane_csv(csv.as_bytes()).unwrap();
         let item = &imp.items[0].item;
         assert!(text(item, "totp").starts_with("otpauth://"));
         assert!(
             imported(item)
                 .iter()
-                .any(|(l, v)| l == "column 5" && *v == FieldValue::Text("tail".into()))
+                .any(|(l, v)| l == "column 6" && *v == FieldValue::Text("tail".into()))
         );
     }
 
@@ -654,8 +665,8 @@ mod tests {
 
     #[test]
     fn orphan_personal_rows() {
-        let header = "type,first_name,email\n";
-        let csv = format!("{header}email,,orphan@example.com\nemail,Carol,carol@example.com\n");
+        let header = "type,first_name,last_name,email\n";
+        let csv = format!("{header}email,,,orphan@example.com\nemail,Carol,,carol@example.com\n");
         let imp = parse_dashlane_csv(csv.as_bytes()).unwrap();
         assert_eq!(imp.items.len(), 1);
         assert_eq!(imp.items[0].item.item_type, ItemType::Identity);

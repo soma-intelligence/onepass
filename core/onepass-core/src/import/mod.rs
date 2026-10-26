@@ -23,8 +23,8 @@ pub mod text;
 
 use std::io::Cursor;
 
-use serde::Serialize;
-use serde::de::IgnoredAny;
+use serde::de::{IgnoredAny, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer as _, Serialize};
 
 use crate::error::{Error, Result};
 use crate::model::Item;
@@ -133,8 +133,10 @@ pub struct Warning {
 const HEADER_PROBE: usize = 64 * 1024;
 
 /// Guess the format of an import file from its content (the name is never
-/// trusted). Reads only a zip central directory, a first CSV line or the
-/// top-level keys of a JSON object: nothing is fully parsed.
+/// trusted). Reads a zip central directory (entry names only), the first
+/// CSV line, or, for JSON, makes one syntax-only streaming pass over the
+/// object that keeps no value and no key (memory stays constant). No
+/// record is ever built.
 pub fn detect(_file_name: &str, bytes: &[u8]) -> Option<Format> {
     if bytes.starts_with(b"OPARCH") {
         return Some(Format::OnePassArchive);
@@ -157,7 +159,7 @@ pub fn detect(_file_name: &str, bytes: &[u8]) -> Option<Format> {
     if body.starts_with(b"WIFI:") {
         return Some(Format::WifiQr);
     }
-    detect_csv(bytes)
+    detect_csv(body)
 }
 
 fn detect_zip(bytes: &[u8]) -> Option<Format> {
@@ -173,11 +175,60 @@ fn detect_zip(bytes: &[u8]) -> Option<Format> {
     dashlane.then_some(Format::DashlaneZip)
 }
 
+/// Top-level JSON keys that matter for detection.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum Key {
+    Items,
+    Encrypted,
+    Data,
+    Accounts,
+    #[serde(other)]
+    Other,
+}
+
+/// Visits a JSON object recording which interesting keys it holds. Keys
+/// deserialize into a unit enum and values into `IgnoredAny`: nothing owned.
+#[derive(Default)]
+struct Keys {
+    items: bool,
+    encrypted: bool,
+    data: bool,
+    accounts: bool,
+}
+
+impl<'de> Visitor<'de> for &mut Keys {
+    type Value = ();
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a JSON object")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<(), A::Error> {
+        while let Some(key) = map.next_key::<Key>()? {
+            match key {
+                Key::Items => self.items = true,
+                Key::Encrypted => self.encrypted = true,
+                Key::Data => self.data = true,
+                Key::Accounts => self.accounts = true,
+                Key::Other => {}
+            }
+            map.next_value::<IgnoredAny>()?;
+        }
+        Ok(())
+    }
+}
+
 fn detect_json(body: &[u8]) -> Option<Format> {
-    let keys: std::collections::BTreeMap<String, IgnoredAny> = serde_json::from_slice(body).ok()?;
-    if keys.contains_key("items") && keys.contains_key("encrypted") {
+    let mut keys = Keys::default();
+    let mut de = serde_json::Deserializer::from_slice(body);
+    de.deserialize_map(&mut keys).ok()?;
+    de.end().ok()?;
+    // An encrypted export has `encrypted` and `data` but no `items`: still
+    // Bitwarden, so that `parse` reports the explicit encrypted-export error.
+    if keys.encrypted && (keys.items || keys.data) {
         Some(Format::BitwardenJson)
-    } else if keys.contains_key("accounts") {
+    } else if keys.accounts {
         Some(Format::CredentialExchange)
     } else {
         None
