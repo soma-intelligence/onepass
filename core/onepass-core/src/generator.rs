@@ -222,6 +222,108 @@ pub fn entropy_bits(recipe: &Recipe) -> f64 {
     }
 }
 
+/// Strength estimate of a typed or stored password, in bits, on the same
+/// scale as `entropy_bits` so a meter shows the same level for a generated
+/// password and for the same password once saved:
+///
+/// - only ASCII digits: a PIN, `digits * log2(10)`;
+/// - at least 3 words of one of the generator's lists (any case) joined by
+///   one repeated separator: `words * log2(list size)`, as `Recipe::Passphrase`;
+/// - otherwise `length * log2(pool)`, the pool summing the classes present
+///   with the generator's sizes (lower 26, upper 26, digits 10, its 13
+///   symbols), 33 for any other printable ASCII character instead of the 13
+///   symbols, and 100 for anything outside ASCII. A generated random password
+///   holds every enabled class, so this equals `entropy_bits` for its recipe
+///   (without `avoid_ambiguous`, which it slightly overestimates).
+///
+/// A hint for a meter, not a guarantee: patterns and dictionary words that
+/// are not a generator passphrase are not detected.
+pub fn strength_bits(password: &str) -> f64 {
+    if password.is_empty() {
+        return 0.0;
+    }
+    let length = password.chars().count() as f64;
+    if password.bytes().all(|b| b.is_ascii_digit()) {
+        return length * 10f64.log2();
+    }
+    let (mut lower, mut upper, mut digit, mut symbol, mut other_ascii, mut non_ascii) =
+        (false, false, false, false, false, false);
+    for c in password.chars() {
+        match c {
+            'a'..='z' => lower = true,
+            'A'..='Z' => upper = true,
+            '0'..='9' => digit = true,
+            c if SYMBOLS.contains(c) => symbol = true,
+            c if c.is_ascii() => other_ascii = true,
+            _ => non_ascii = true,
+        }
+    }
+    let pool = [
+        (lower, 26),
+        (upper, 26),
+        (digit, 10),
+        (symbol && !other_ascii, 13),
+        (other_ascii, 33),
+        (non_ascii, 100),
+    ]
+    .iter()
+    .filter(|(on, _)| *on)
+    .map(|(_, n)| *n)
+    .sum::<u32>();
+    let pool_bits = length * f64::from(pool).log2();
+    match passphrase_words(password) {
+        Some((words, list)) => (words as f64 * (list as f64).log2()).min(pool_bits),
+        None => pool_bits,
+    }
+}
+
+/// `(word count, list size)` when `password` is at least 3 words of one
+/// generator list joined by a single repeated separator (a word of the list
+/// may itself hold a hyphen, like `t-shirt`, whatever the separator).
+fn passphrase_words(password: &str) -> Option<(usize, usize)> {
+    let lower = Zeroizing::new(password.to_lowercase());
+    let mut separators: Vec<char> = lower.chars().filter(|c| !c.is_ascii_lowercase()).collect();
+    separators.sort_unstable();
+    separators.dedup();
+    if separators.is_empty() || separators.len() > 2 {
+        return None;
+    }
+    let mut best: Option<(usize, usize)> = None;
+    for &sep in &separators {
+        let parts: Vec<&str> = lower.split(sep).collect();
+        for list in [Wordlist::FrenchDiceware, Wordlist::EffEnglish] {
+            let words = words_of(list);
+            if let Some(n) = count_words(&parts, sep, words).filter(|n| *n >= 3) {
+                if best.is_none_or(|(b, _)| n < b) {
+                    best = Some((n, words.len()));
+                }
+            }
+        }
+    }
+    best
+}
+
+/// Fewest list words covering `parts` in order (a word spans one part, or two
+/// parts joined by the separator), or None.
+fn count_words(parts: &[&str], sep: char, words: &[&str]) -> Option<usize> {
+    let known = |w: &str| words.contains(&w);
+    let mut best: Vec<Option<usize>> = vec![None; parts.len() + 1];
+    best[0] = Some(0);
+    for i in 0..parts.len() {
+        let Some(so_far) = best[i] else { continue };
+        if known(parts[i]) {
+            best[i + 1] = Some(best[i + 1].map_or(so_far + 1, |b| b.min(so_far + 1)));
+        }
+        if i + 1 < parts.len() {
+            let joined = Zeroizing::new(format!("{}{sep}{}", parts[i], parts[i + 1]));
+            if known(&joined) {
+                best[i + 2] = Some(best[i + 2].map_or(so_far + 1, |b| b.min(so_far + 1)));
+            }
+        }
+    }
+    best[parts.len()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -480,5 +582,79 @@ mod tests {
                 assert!(uniform_below(n).unwrap() < n);
             }
         }
+    }
+
+    #[test]
+    fn strength_of_a_generated_password_matches_its_recipe() {
+        let recipes = [
+            Recipe::Pin { digits: 6 },
+            Recipe::Passphrase(PassphraseOptions {
+                words: 5,
+                separator: "-".into(),
+                capitalize: false,
+                include_digit: false,
+                list: Wordlist::FrenchDiceware,
+            }),
+            Recipe::Passphrase(PassphraseOptions {
+                words: 4,
+                separator: " ".into(),
+                capitalize: true,
+                include_digit: false,
+                list: Wordlist::EffEnglish,
+            }),
+            Recipe::Passphrase(PassphraseOptions {
+                words: 6,
+                separator: ".".into(),
+                capitalize: false,
+                include_digit: false,
+                list: Wordlist::EffEnglish,
+            }),
+        ];
+        for recipe in recipes.iter().chain(
+            [8u8, 13, 16, 20, 40]
+                .iter()
+                .flat_map(|&length| {
+                    [(true, true), (true, false), (false, true), (false, false)].map(
+                        |(digits, symbols)| {
+                            Recipe::Random(CharsetOptions {
+                                length,
+                                lower: true,
+                                upper: true,
+                                digits,
+                                symbols,
+                                avoid_ambiguous: false,
+                            })
+                        },
+                    )
+                })
+                .collect::<Vec<_>>()
+                .iter(),
+        ) {
+            for _ in 0..200 {
+                let generated = generate(recipe).unwrap();
+                let expected = entropy_bits(recipe);
+                let got = strength_bits(&generated);
+                assert!(
+                    (got - expected).abs() < 1e-9,
+                    "{recipe:?}: {got} != {expected}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn strength_of_typed_passwords() {
+        assert_eq!(strength_bits(""), 0.0);
+        assert!((strength_bits("abcd") - 4.0 * 26f64.log2()).abs() < 1e-9);
+        // `~` is not one of the generator's symbols: the 33 printable ones count.
+        assert!((strength_bits("ab~d") - 4.0 * 59f64.log2()).abs() < 1e-9);
+        assert!(strength_bits("tj7N-qe4L-wPz9-Kc2m!") >= 100.0);
+        // Two list words are not a passphrase; a hyphenated list word is one word.
+        let two = strength_bits("abacus-abdomen");
+        assert!((two - 14.0 * 39f64.log2()).abs() < 1e-9);
+        let hyphenated = strength_bits("t-shirt-abacus-abdomen");
+        assert!((hyphenated - 3.0 * 7776f64.log2()).abs() < 1e-9);
+        let spaced = strength_bits("Abacus T-shirt Abdomen Drop-down");
+        assert!((spaced - 4.0 * 7776f64.log2()).abs() < 1e-9);
     }
 }
