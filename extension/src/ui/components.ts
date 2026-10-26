@@ -310,6 +310,7 @@ export interface GuardOptions {
 export class ClickGuard {
   private shownAt: number;
   private visible: boolean | undefined;
+  private intersecting: boolean | undefined;
   private readonly trusted: (e: Event) => boolean;
 
   constructor(private readonly opts: GuardOptions) {
@@ -322,8 +323,16 @@ export class ClickGuard {
     this.shownAt = this.opts.now();
   }
 
+  /**
+   * Becoming visible (v2 `isVisible`) or entering the viewport re-arms the
+   * delay: a page cannot keep the frame hidden and reveal it under a click.
+   */
   setVisibility(v: Visibility): void {
-    if (v.visible !== undefined) this.visible = v.visible;
+    if (v.intersecting && this.intersecting === false) this.reset();
+    this.intersecting = v.intersecting;
+    if (v.visible === undefined) return;
+    if (v.visible && this.visible === false) this.reset();
+    this.visible = v.visible;
   }
 
   accepts(e: Event): boolean {

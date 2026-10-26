@@ -1,6 +1,6 @@
 // Background handlers of the in-page extension pages: menu extras, overlay
 // and save prompt.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createBackground } from "../../src/background/app";
 import type { ChainDriver } from "../../src/background/chain/types";
 import { contentSender } from "../../src/background/frames";
@@ -317,6 +317,37 @@ describe("save prompt", () => {
     token = await bg.saves.open(pending);
     clock.t += SAVE_TTL_MS + 1;
     expect(await ext.send({ type: "save_init", token }, uiSender("save.html", 7))).toEqual({ err: "invalid" });
+  });
+
+  it("the record holding the password is purged by timer after 2 minutes", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ext, bg } = await setup();
+      const token = await bg.saves.open(pending);
+      const rec = await bg.saves.tokens.resolve(token, { page: "save.html", tabId: 7 });
+      expect(rec?.password).toBe("typed-Secret-1");
+      await vi.advanceTimersByTimeAsync(SAVE_TTL_MS - 1);
+      expect(rec?.password).toBe("typed-Secret-1");
+      await vi.advanceTimersByTimeAsync(1);
+      // Wiped and revoked without anyone resolving the token.
+      expect(rec?.password).toBe("");
+      expect(ext.sentToTabs.at(-1)?.message).toEqual({ type: "remove_frame", kind: "save" });
+      expect(await ext.send({ type: "save_reveal", token }, uiSender("save.html", 7))).toEqual({ err: "invalid" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a dismissed prompt cancels its purge timer", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ext, bg } = await setup();
+      const token = await bg.saves.open(pending);
+      await ext.send({ type: "save_decide", token, decision: "dismiss" }, uiSender("save.html", 7));
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("provider link variant calls link_provider", async () => {

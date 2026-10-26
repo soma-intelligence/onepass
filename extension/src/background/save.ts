@@ -58,6 +58,11 @@ export class SavePrompts {
     this.tokens = new FrameTokens<SaveRecord>({
       prefix: "save:",
       ttlMs: SAVE_TTL_MS,
+      // Spec 8.5: the submitted password is kept at most 2 minutes.
+      onExpire: async (rec) => {
+        rec.password = "";
+        await removeFrame(this.deps.ext.tabs, rec, "save");
+      },
       ...(deps.now ? { now: deps.now } : {}),
     });
   }

@@ -176,6 +176,18 @@ describe("save prompt", () => {
     expect(text(r)).toContain("Lien enregistré");
   });
 
+  it("no vault: Aucun coffre disponible, Enregistrer disabled", async () => {
+    const { r, handle, worker, click } = setup({ ...base, vaults: [] });
+    await handle.ready;
+    expect(text(r)).toContain("Aucun coffre disponible");
+    expect(button(r, "Enregistrer").disabled).toBe(true);
+    await click("Enregistrer");
+    expect(worker.types()).not.toContain("save_decide");
+    await click("Modifier");
+    expect(text(r)).toContain("Aucun coffre disponible");
+    expect(button(r, "Enregistrer").disabled).toBe(true);
+  });
+
   it("errors are French sentences", async () => {
     let s = setup({ err: "locked" });
     await s.handle.ready;

@@ -126,6 +126,16 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     return sel;
   };
 
+  /** Vault choice and "Enregistrer"; with no vault, nothing can be saved. */
+  const saveActions = (cls: string, err: HTMLElement, d: Draft) => {
+    const save = btn("Enregistrer", "btn btn-primary", () =>
+      void decide("save", err, () => renderSaved(`${d.title} enregistré`, `Dans ${vaultName()}`)),
+    );
+    if ((init?.vaults.length ?? 0) > 0) return h("div", { class: cls }, vaultSelect(), save);
+    save.disabled = true;
+    return h("div", { class: cls }, h("span", { class: "stack note no-vault" }, "Aucun coffre disponible"), save);
+  };
+
   const header = (title: string, withMore: boolean) =>
     h(
       "div",
@@ -254,14 +264,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
               void decide("update", err, () => renderSaved(`${i.update?.title ?? d.title} mis à jour`, d.username)),
             ),
           )
-        : h(
-            "div",
-            { class: "actions" },
-            vaultSelect(),
-            btn("Enregistrer", "btn btn-primary", () =>
-              void decide("save", err, () => renderSaved(`${d.title} enregistré`, `Dans ${vaultName()}`)),
-            ),
-          );
+        : saveActions("actions", err, d);
     show(
       h(
         "div",
@@ -384,14 +387,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
         h("div", { class: "stack" }, h("span", { class: "cell-label" }, "tags"), tags),
         err,
       ),
-      h(
-        "div",
-        { class: "actions save-foot" },
-        vaultSelect(),
-        btn("Enregistrer", "btn btn-primary", () =>
-          void decide("save", err, () => renderSaved(`${d.title} enregistré`, `Dans ${vaultName()}`)),
-        ),
-      ),
+      saveActions("actions save-foot", err, d),
     );
   }
 

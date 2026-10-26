@@ -112,6 +112,32 @@ describe("overlay", () => {
     expect(text(r)).toContain(HELP_TEXT);
   });
 
+  it("polls keep the Arrêter node and its focus; changes update in place", async () => {
+    let state: ChainView = running;
+    const { r, handle } = setup(() => state, running);
+    await handle.ready;
+    const stop = button(r, "Arrêter");
+    stop.focus();
+    const steps = r.querySelector(".ov-steps");
+    await handle.poll();
+    await handle.poll();
+    expect(button(r, "Arrêter")).toBe(stop);
+    expect(document.activeElement).toBe(stop);
+    // Identical reply: nothing re-rendered at all.
+    expect(r.querySelector(".ov-steps")).toBe(steps);
+    const firstStep = r.querySelector(".ov-step");
+    await handle.poll();
+    expect(r.querySelector(".ov-step")).toBe(firstStep);
+    state = {
+      ...running,
+      steps: [running.steps[0]!, { label: "Mot de passe rempli", state: "done" }, { label: "Code à usage unique", state: "active" }],
+    };
+    await handle.poll();
+    expect(button(r, "Arrêter")).toBe(stop);
+    expect(document.activeElement).toBe(stop);
+    expect(r.querySelector(".ov-step.active .ov-step-label")!.textContent).toBe("Code à usage unique");
+  });
+
   it("done: Connecté", async () => {
     const { r, handle } = setup(() => ({ itemId: "it_01", status: "done", steps: [{ label: "Connecté", state: "done" }] }), running);
     await handle.ready;

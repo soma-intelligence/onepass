@@ -74,11 +74,35 @@ describe("inline menu", () => {
     await Promise.resolve();
     expect(worker.types()).toEqual(["menu_init"]);
     vis.emit({ intersecting: true, visible: true });
+    // Revealed: the 300 ms delay starts again.
+    button(r, "Atlas Cloud").click();
+    await Promise.resolve();
+    expect(worker.types()).toEqual(["menu_init"]);
+    clock.advance(299);
+    button(r, "Atlas Cloud").click();
+    await Promise.resolve();
+    expect(worker.types()).toEqual(["menu_init"]);
+    clock.advance(1);
     button(r, "Atlas Cloud").click();
     await Promise.resolve();
     expect(worker.types()).toEqual(["menu_init", "menu_pick"]);
     vis.emit({ intersecting: false });
     expect(worker.sent.at(-1)).toEqual({ type: "menu_close", token: TOKEN });
+  });
+
+  it("entering the viewport again re-arms the delay", async () => {
+    const { r, handle, worker, clock, vis } = setup(def);
+    await handle.ready;
+    clock.advance(500);
+    vis.emit({ intersecting: false });
+    vis.emit({ intersecting: true });
+    button(r, "Atlas Cloud").click();
+    await Promise.resolve();
+    expect(worker.types().filter((t) => t === "menu_pick")).toEqual([]);
+    clock.advance(300);
+    button(r, "Atlas Cloud").click();
+    await Promise.resolve();
+    expect(worker.types()).toContain("menu_pick");
   });
 
   it("provider entry starts the chain with menu_signin", async () => {

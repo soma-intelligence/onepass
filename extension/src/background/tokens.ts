@@ -28,6 +28,11 @@ export interface FrameTokenOptions<R extends BoundRecord> {
   area?: StorageArea;
   /** Rebuilds a record read back from `area`, or null when malformed. */
   parse?: (raw: unknown) => R | null;
+  /**
+   * Revoke each record by timer at its TTL, not only when it is next
+   * resolved, and run this first (wipe a secret it holds).
+   */
+  onExpire?: (rec: R) => void | Promise<void>;
 }
 
 /** Common checks of a stored bound record. */
@@ -42,6 +47,7 @@ export function isBoundRecord(raw: unknown): raw is BoundRecord {
 
 export class FrameTokens<R extends BoundRecord> {
   private readonly mem = new Map<string, R>();
+  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly now: () => number;
 
   constructor(private readonly opts: FrameTokenOptions<R>) {
@@ -61,6 +67,20 @@ export class FrameTokens<R extends BoundRecord> {
     const full = { ...rec, createdAt: this.now() } as R;
     this.mem.set(token, full);
     await this.opts.area?.set({ [this.opts.prefix + token]: full });
+    const onExpire = this.opts.onExpire;
+    if (onExpire) {
+      this.timers.set(
+        token,
+        setTimeout(() => {
+          this.timers.delete(token);
+          const rec = this.mem.get(token);
+          void (async () => {
+            if (rec) await onExpire(rec);
+            await this.drop(token);
+          })().catch(() => undefined);
+        }, this.opts.ttlMs),
+      );
+    }
     return token;
   }
 
@@ -86,6 +106,9 @@ export class FrameTokens<R extends BoundRecord> {
   }
 
   async drop(token: string): Promise<void> {
+    const t = this.timers.get(token);
+    if (t !== undefined) clearTimeout(t);
+    this.timers.delete(token);
     this.mem.delete(token);
     await this.opts.area?.remove(this.opts.prefix + token);
   }

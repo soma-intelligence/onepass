@@ -262,13 +262,17 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     );
   }
 
+  /** Only the reply to the latest query is shown (replies may cross). */
+  let searchSeq = 0;
   async function search(q: string): Promise<void> {
+    const seq = ++searchSeq;
     if (q.trim() === "") {
       results = null;
       renderSide();
       return;
     }
     const r = await call(deps.send, { type: "popup_search", query: q }, parseItems);
+    if (seq !== searchSeq) return;
     if (!r.ok) return handleError(r.code);
     results = r.value.items;
     renderSide();
@@ -327,15 +331,24 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       const left = h("span", { class: "field-note totp-left" }, "");
       card.append(fieldRow("code à usage unique", code, left));
       let remaining = 0;
+      // One request at a time: ticks during a slow refresh do not stack.
+      let inFlight = false;
       const refresh = async () => {
-        const t = await call(deps.send, { type: "popup_totp", itemId }, parseTotp);
-        if (!t.ok) {
-          stopTotp();
-          return handleError(t.code);
+        if (inFlight) return;
+        inFlight = true;
+        try {
+          const t = await call(deps.send, { type: "popup_totp", itemId }, parseTotp);
+          if (selected !== itemId || view !== "detail") return;
+          if (!t.ok) {
+            stopTotp();
+            return handleError(t.code);
+          }
+          code.textContent = formatCode(t.value.code);
+          remaining = Math.max(0, Math.floor(t.value.remaining));
+          left.textContent = `${remaining} s`;
+        } finally {
+          inFlight = false;
         }
-        code.textContent = formatCode(t.value.code);
-        remaining = Math.max(0, Math.floor(t.value.remaining));
-        left.textContent = `${remaining} s`;
       };
       await refresh();
       totpTimer = timers.setInterval(() => {

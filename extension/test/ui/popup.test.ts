@@ -192,6 +192,68 @@ describe("popup", () => {
     expect(r.querySelector(".toast")!.textContent).toBe("Aucun formulaire à remplir sur cette page.");
   });
 
+  it("TOTP refresh does not stack while a request is in flight", async () => {
+    let release: (() => void) | null = null;
+    let calls = 0;
+    const w = worker((m) => {
+      if (m.type !== "popup_totp") return null;
+      calls++;
+      return null;
+    });
+    const base = w.answer;
+    w.answer = (m) => {
+      if (m.type === "popup_totp" && calls >= 1) {
+        calls++;
+        return new Promise((res) => (release = () => res({ ok: { code: "111222", remaining: 30 } })));
+      }
+      return base(m);
+    };
+    const { r, handle, timers } = setup(w);
+    await handle.ready;
+    button(r, "Atlas Cloud").click();
+    await handle.settled();
+    expect(calls).toBe(1);
+    // remaining 2: two ticks reach 0 and start one refresh; more ticks while it hangs add nothing.
+    timers.tick();
+    timers.tick();
+    timers.tick();
+    timers.tick();
+    await new Promise((res) => setTimeout(res, 0));
+    expect(w.types().filter((t) => t === "popup_totp")).toHaveLength(2);
+    release!();
+    await new Promise((res) => setTimeout(res, 0));
+    expect(text(r)).toContain("111 222");
+    expect(r.querySelector(".totp-left")!.textContent).toBe("30 s");
+  });
+
+  it("search shows only the latest query's result", async () => {
+    const releases: Record<string, () => void> = {};
+    const w = worker();
+    const base = w.answer;
+    w.answer = (m) =>
+      m.type === "popup_search"
+        ? new Promise((res) => {
+            releases[m.query] = () => res({ ok: { items: [login(`it_${m.query}`, { title: `Résultat ${m.query}` })] } });
+          })
+        : base(m);
+    const { r, handle, timers } = setup(w);
+    await handle.ready;
+    const input = r.querySelector<HTMLInputElement>("input[type=search]")!;
+    for (const q of ["gi", "git"]) {
+      input.value = q;
+      input.dispatchEvent(new Event("input"));
+      timers.runTimeouts();
+    }
+    await new Promise((res) => setTimeout(res, 0));
+    releases.git!();
+    await new Promise((res) => setTimeout(res, 0));
+    releases.gi!();
+    await new Promise((res) => setTimeout(res, 0));
+    expect(text(r)).toContain("Résultat git");
+    expect(text(r)).not.toContain("Résultat gi ");
+    expect([...r.querySelectorAll(".pp-list .t1")].map((e) => e.textContent)).toEqual(["Résultat git"]);
+  });
+
   it("search", async () => {
     const { r, handle, w, timers } = setup();
     await handle.ready;

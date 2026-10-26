@@ -75,7 +75,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
 
   let init: OverlayInit | null = null;
   let timer: unknown = null;
-  let shownStatus: ChainView["status"] | null = null;
+  let chainUi: { mode: "running" | "ended"; steps: HTMLElement; status: HTMLElement; last: string } | null = null;
 
   const stopPolling = () => {
     if (timer !== null) timers.clearInterval(timer);
@@ -109,6 +109,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
 
   const renderMessage = (code: string) => {
     stopPolling();
+    chainUi = null;
     const title =
       code === "unpaired" ? "Appairer OnePass depuis la barre d'outils" : code === "locked" ? "OnePass est verrouillé" : errorText(code);
     mount(container, head(init?.origin ?? null), messageBlock(title));
@@ -131,7 +132,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
 
   function renderIdle(): void {
     stopPolling();
-    shownStatus = null;
+    chainUi = null;
     if (!init) return;
     const list = h("div", { class: "ov-accounts" });
     for (const a of init.accounts) {
@@ -154,63 +155,73 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     guard.reset();
   }
 
+  const stepNode = (s: ChainView["steps"][number]) => {
+    const dot = h("span", { class: `dot dot-${s.state}`, attrs: { "aria-hidden": "true" } });
+    if (s.state === "done") dot.append(icon("check", 10));
+    if (s.state === "stopped") dot.append("!");
+    return h(
+      "div",
+      { class: `ov-step ${s.state}`, attrs: { role: "listitem" } },
+      dot,
+      h("span", { class: "stack" }, h("span", { class: "ov-step-label" }, s.label), s.detail ? h("span", { class: "t2" }, s.detail) : null),
+      srOnly(STATE_TEXT[s.state]),
+    );
+  };
+
+  /**
+   * Polls arrive every 500 ms: an identical reply renders nothing, a changed
+   * one updates the steps and status in place. The skeleton (and its
+   * "Arrêter" / "Recommencer" button) is rebuilt only when the chain moves
+   * between running and ended, which also re-arms the click delay.
+   */
   function renderChain(c: ChainView): void {
-    const steps = h("div", { class: "ov-steps", attrs: { role: "list" } });
-    for (const s of c.steps) {
-      const dot = h("span", { class: `dot dot-${s.state}`, attrs: { "aria-hidden": "true" } });
-      if (s.state === "done") dot.append(icon("check", 10));
-      if (s.state === "stopped") dot.append("!");
-      steps.append(
-        h(
-          "div",
-          { class: `ov-step ${s.state}`, attrs: { role: "listitem" } },
-          dot,
+    const key = JSON.stringify(c);
+    if (chainUi && chainUi.last === key) return;
+    const mode = c.status === "running" ? "running" : "ended";
+    if (!chainUi || chainUi.mode !== mode) {
+      const steps = h("div", { class: "ov-steps", attrs: { role: "list" } });
+      const status = h("span", { class: "ov-status", attrs: { role: "status" } });
+      const foot = h("div", { class: "ov-foot" }, status);
+      if (mode === "running") {
+        foot.append(
           h(
-            "span",
-            { class: "stack" },
-            h("span", { class: "ov-step-label" }, s.label),
-            s.detail ? h("span", { class: "t2" }, s.detail) : null,
+            "button",
+            {
+              class: "btn",
+              attrs: { type: "button" },
+              on: {
+                click: guard.wrap(() => {
+                  if (token) void call(deps.send, { type: "overlay_stop", token }, parseEmpty).then(() => poll());
+                }),
+              },
+            },
+            "Arrêter",
           ),
-          srOnly(STATE_TEXT[s.state]),
-        ),
-      );
+        );
+      } else {
+        stopPolling();
+        foot.append(
+          h("button", { class: "btn btn-primary", attrs: { type: "button" }, on: { click: guard.wrap(() => renderIdle()) } }, "Recommencer"),
+        );
+      }
+      mount(container, head(init?.origin ?? null), steps, foot);
+      // New buttons under the pointer ("Recommencer" where "Arrêter" was).
+      guard.reset();
+      chainUi = { mode, steps, status, last: "" };
     }
-    let status = "En cours…";
+    mount(chainUi.steps, ...c.steps.map(stepNode));
+    let text = "En cours…";
     let tone = "";
     if (c.status === "done") {
-      status = "Connecté";
+      text = "Connecté";
       tone = "ok";
     } else if (c.status !== "running") {
-      status = c.reason ? stopText(c.reason, c.host) : "Arrêté";
+      text = c.reason ? stopText(c.reason, c.host) : "Arrêté";
       tone = "warn";
     }
-    const foot = h("div", { class: "ov-foot" }, h("span", { class: `ov-status ${tone}`, attrs: { role: "status" } }, status));
-    if (c.status === "running") {
-      foot.append(
-        h(
-          "button",
-          {
-            class: "btn",
-            attrs: { type: "button" },
-            on: {
-              click: guard.wrap(() => {
-                if (token) void call(deps.send, { type: "overlay_stop", token }, parseEmpty).then(() => poll());
-              }),
-            },
-          },
-          "Arrêter",
-        ),
-      );
-    } else {
-      stopPolling();
-      foot.append(
-        h("button", { class: "btn btn-primary", attrs: { type: "button" }, on: { click: guard.wrap(() => renderIdle()) } }, "Recommencer"),
-      );
-    }
-    mount(container, head(init?.origin ?? null), steps, foot);
-    // New buttons under the pointer ("Recommencer" where "Arrêter" was).
-    if (c.status !== shownStatus) guard.reset();
-    shownStatus = c.status;
+    chainUi.status.textContent = text;
+    chainUi.status.className = `ov-status ${tone}`.trimEnd();
+    chainUi.last = key;
   }
 
   async function poll(): Promise<void> {
