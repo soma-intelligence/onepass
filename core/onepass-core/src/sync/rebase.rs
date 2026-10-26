@@ -84,8 +84,14 @@ impl Repository<SyncStore> {
 
     /// `persist_device_state`, except that the vaults in `force` keep the
     /// in-memory entry whatever is stored (a rebase renumbers them).
+    ///
+    /// The vaults dropped on purpose since the last persist (`dropped`,
+    /// Travel Mode) are forced too: the stored entry must not come back.
     fn persist_device_state_forcing(&mut self, force: &[Id]) -> Result<()> {
-        self.device = self.store.merge_device_state(&self.device, force)?;
+        let mut forced: Vec<Id> = force.to_vec();
+        forced.extend(self.dropped.iter().copied());
+        self.device = self.store.merge_device_state(&self.device, &forced)?;
+        self.dropped.clear();
         Ok(())
     }
 

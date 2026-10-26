@@ -187,6 +187,7 @@ impl<S: RecordStore> Repository<S> {
         let mut parked = BTreeMap::new();
         for (id, seen, _) in plan {
             self.device.last_seen.remove(&id);
+            self.dropped.insert(id);
             parked.insert(id, seen);
         }
         Ok(TravelState {
@@ -316,7 +317,10 @@ impl<S: RecordStore> Repository<S> {
             for (id, seen) in before {
                 match seen {
                     Some(s) => self.device.last_seen.insert(id, s),
-                    None => self.device.last_seen.remove(&id),
+                    None => {
+                        self.dropped.insert(id);
+                        self.device.last_seen.remove(&id)
+                    }
                 };
             }
             // Reverse copy order: the key goes first, so a rollback cut

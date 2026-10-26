@@ -31,7 +31,7 @@
 //! another hash (a race loser stopped before deleting its record). Served
 //! instead of the current record, both stay errors.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -82,6 +82,11 @@ pub struct Repository<S: RecordStore> {
     pub(crate) store: S,
     pub(crate) account: Account,
     pub(crate) device: DeviceState,
+    /// Vaults whose `last_seen` entry was removed on purpose (Travel Mode
+    /// parks them) since the device state was last persisted: a merging
+    /// persist (`Repository<SyncStore>::persist_device_state`) must not take
+    /// the stored entry back for them.
+    pub(crate) dropped: BTreeSet<Id>,
 }
 
 /// The verified content of a vault.
@@ -224,6 +229,7 @@ impl<S: RecordStore> Repository<S> {
             store,
             account,
             device,
+            dropped: BTreeSet::new(),
         };
         repo.create_vault(personal())?;
         Ok((repo, secret_key))
@@ -286,6 +292,7 @@ impl<S: RecordStore> Repository<S> {
             store,
             account,
             device,
+            dropped: BTreeSet::new(),
         })
     }
 
