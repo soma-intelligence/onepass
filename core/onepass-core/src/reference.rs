@@ -167,14 +167,19 @@ fn locate<'a>(item: &'a Item, r: &SecretRef) -> Result<&'a Field> {
 
 fn otp_code(value: &str, now: u64) -> Result<Zeroizing<String>> {
     let value = value.trim();
-    let uri: Zeroizing<String> = if value
-        .get(..10)
-        .is_some_and(|h| h.eq_ignore_ascii_case("otpauth://"))
+    const OTPAUTH: &str = "otpauth://";
+    const BARE: &str = "otpauth://totp/x?secret=";
+    // One allocation of the final size, so no unwiped copy is left behind.
+    let mut uri = Zeroizing::new(String::with_capacity(BARE.len() + value.len()));
+    if value
+        .get(..OTPAUTH.len())
+        .is_some_and(|h| h.eq_ignore_ascii_case(OTPAUTH))
     {
-        Zeroizing::new(value.to_owned())
+        uri.push_str(value);
     } else {
-        Zeroizing::new(format!("otpauth://totp/x?secret={value}"))
-    };
+        uri.push_str(BARE);
+        uri.push_str(value);
+    }
     let cfg = parse_otpauth(&uri)?;
     Ok(Zeroizing::new(code_at(&cfg, now)?))
 }
@@ -550,7 +555,91 @@ mod tests {
 
     #[test]
     fn errors_do_not_leak_values() {
-        let e = invalid("ambiguous reference, use the item id");
-        assert!(!e.to_string().contains("hunter2"));
+        const PASSWORD: &str = "Zx9-pass-w0rd-canary";
+        const SEED: &str = "JBSWY3DPEHPK3PXP";
+        const BAD_SEED: &str = "bad!seed-canary";
+        const TITLE: &str = "Canary Title";
+        let (mut repo, v) = fixture();
+        let mut it = new_item(ItemType::Login, v.id, TITLE);
+        set(&mut it, "username", FieldValue::Text("u".into()));
+        set(
+            &mut it,
+            "password",
+            FieldValue::Password(Zeroizing::new(PASSWORD.into())),
+        );
+        set(
+            &mut it,
+            "totp",
+            FieldValue::Otp(Zeroizing::new(SEED.into())),
+        );
+        set(
+            &mut it,
+            "recovery_phone",
+            FieldValue::Money {
+                minor_units: 1,
+                currency: "EUR".into(),
+            },
+        );
+        repo.save_item(&v, it).unwrap();
+        let mut twin = new_item(ItemType::Login, v.id, TITLE);
+        set(&mut twin, "username", FieldValue::Text("u".into()));
+        set(
+            &mut twin,
+            "password",
+            FieldValue::Password(Zeroizing::new(PASSWORD.into())),
+        );
+        repo.save_item(&v, twin).unwrap();
+        let mut broken = new_item(ItemType::Login, v.id, "Broken");
+        set(&mut broken, "username", FieldValue::Text("u".into()));
+        set(
+            &mut broken,
+            "totp",
+            FieldValue::Otp(Zeroizing::new(BAD_SEED.into())),
+        );
+        repo.save_item(&v, broken).unwrap();
+
+        let mut errors = vec![
+            repo.resolve(&r("onepass://Perso/Canary%20Title/password"))
+                .unwrap_err(),
+            repo.resolve(&r("onepass://Perso/Missing/password"))
+                .unwrap_err(),
+            repo.resolve(&r("onepass://Perso/Broken/totp")).unwrap_err(),
+            parse_ref("onepass://Perso/Canary%20Title/pass%zz").unwrap_err(),
+            parse_ref(&format!("onepass://Perso/{TITLE}/{PASSWORD}?{SEED}")).unwrap_err(),
+        ];
+        // Same title twice: ambiguous. Give the unique one a bad-kind read.
+        assert!(matches!(&errors[0], Error::Validation(e) if e.reason.starts_with("ambiguous")));
+        let mut solo = new_item(ItemType::Login, v.id, "Solo Canary");
+        set(&mut solo, "username", FieldValue::Text("u".into()));
+        set(
+            &mut solo,
+            "recovery_phone",
+            FieldValue::Money {
+                minor_units: 1,
+                currency: "EUR".into(),
+            },
+        );
+        set(
+            &mut solo,
+            "password",
+            FieldValue::Password(Zeroizing::new(PASSWORD.into())),
+        );
+        repo.save_item(&v, solo).unwrap();
+        let bad_kind = repo
+            .resolve(&r("onepass://Perso/Solo%20Canary/recovery_phone"))
+            .unwrap_err();
+        assert!(
+            matches!(&bad_kind, Error::Validation(e) if e.reason == "field cannot be read as text")
+        );
+        assert_eq!(errors[1], Error::NotFound);
+        assert!(matches!(errors[2], Error::InvalidFormat(_)));
+        errors.push(bad_kind);
+        for e in &errors {
+            for text in [e.to_string(), format!("{e:?}")] {
+                for secret in [PASSWORD, SEED, BAD_SEED, TITLE, "Solo Canary", "Canary"] {
+                    assert!(!text.contains(secret), "{text:?} leaks {secret:?}");
+                }
+            }
+        }
     }
 }
