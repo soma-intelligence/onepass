@@ -21,9 +21,13 @@ use crate::model::{
     Section, new_item, template, validate,
 };
 use crate::totp::parse_otpauth;
+pub(crate) use crate::watchtower::host::host_of;
 
 use super::limits::MAX_DOMAIN_LEN;
 use super::{Import, ImportedItem, Warning};
+
+// Imported hosts and Watchtower hosts share one length cap.
+const _: () = assert!(MAX_DOMAIN_LEN == crate::watchtower::host::MAX_HOST_LEN);
 
 const IMPORTED_ID: &str = "imported";
 const IMPORTED_LABEL: &str = "Importé";
@@ -531,27 +535,6 @@ pub(crate) fn otpauth_from_parts(
     let _ = write!(uri, "&digits={digits}&period={period}");
     // Moves the allocation out; the emptied wrapper has nothing to wipe.
     std::mem::take(&mut *uri)
-}
-
-/// Lower-cased host of a URL, without scheme, credentials or port. A
-/// missing scheme is allowed. IPv6 literals keep their brackets.
-// Task 10 moves this to `watchtower::host::host_of`.
-pub(crate) fn host_of(url: &str) -> Option<String> {
-    let s = url.trim();
-    let rest = match s.find("://") {
-        Some(i) => s.get(i + 3..)?,
-        None => s,
-    };
-    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let authority = rest.get(..end)?;
-    let host_port = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
-    let host = if host_port.starts_with('[') {
-        host_port.get(..=host_port.find(']')?)?
-    } else {
-        host_port.split(':').next()?
-    };
-    let host = host.trim_end_matches('.').to_ascii_lowercase();
-    (!host.is_empty() && host.len() <= MAX_DOMAIN_LEN).then_some(host)
 }
 
 fn is_filled(v: &FieldValue) -> bool {
@@ -1330,22 +1313,6 @@ mod tests {
         d.set("username", "alice");
         let (item, _) = one(d);
         assert_eq!(item.title, "Sans titre");
-    }
-
-    #[test]
-    fn host_of_cases() {
-        assert_eq!(
-            host_of("https://User:pw@Example.COM:8443/x").as_deref(),
-            Some("example.com")
-        );
-        assert_eq!(host_of("example.com/path").as_deref(), Some("example.com"));
-        assert_eq!(host_of("http://[::1]:80").as_deref(), Some("[::1]"));
-        assert_eq!(
-            host_of("https://example.net?q#f").as_deref(),
-            Some("example.net")
-        );
-        assert_eq!(host_of(""), None);
-        assert_eq!(host_of("https://"), None);
     }
 
     #[test]

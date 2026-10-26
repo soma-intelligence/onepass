@@ -23,7 +23,7 @@ postcard = { version = "1", default-features = false, features = ["alloc"] }
 time = { version = "0.3", default-features = false, features = ["serde", "std", "parsing"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
 prost = "0.14"
-zxcvbn = "3"
+zxcvbn = { version = "3", default-features = false }
 csv = "1"
 serde_json = "1"
 quick-xml = "0.42.0"
