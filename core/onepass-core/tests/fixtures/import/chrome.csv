@@ -1,0 +1,5 @@
+name,url,username,password
+Example Mail,https://mail.example.com/login,alice@example.com,Tr0ub4dor-Invented1
+Example Shop,https://shop.example.org,alice,Sh0p-Invented-2
+,,,
+Unlisted Site,https://www.example.net,bob,Invented-Pw-3

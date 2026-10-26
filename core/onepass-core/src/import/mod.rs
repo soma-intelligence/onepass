@@ -11,6 +11,7 @@
 )]
 
 pub(crate) mod build;
+pub(crate) mod csv_logins;
 pub(crate) mod limits;
 
 use serde::Serialize;
