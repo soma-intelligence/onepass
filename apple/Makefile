@@ -10,6 +10,7 @@ TEST_XCFRAMEWORK := ../build/test/OnePassFFI.xcframework
 # unchanged; make always delegates to it.
 .PHONY: core core-test test project simulators build-ios build-mac uitest screenshots clean
 .PHONY: simulators-m6 build-watch build-vision screenshots-m6
+.PHONY: simulator-m3 uitest-autofill
 
 ## Shipped XCFramework (release, ios + ios-simulator + macOS) and bindings.
 core:
@@ -33,6 +34,8 @@ project: core
 
 IOS_DESTINATION := platform=iOS Simulator,name=OnePass M2 iPhone
 IOS_RUNTIME := com.apple.CoreSimulator.SimRuntime.iOS-27-0
+M3_SIMULATOR := OnePass M3 iPhone
+M3_DESTINATION := platform=iOS Simulator,name=$(M3_SIMULATOR)
 
 ## The two dedicated simulators, created when missing. Never boots, stops or erases any simulator.
 simulators:
@@ -41,9 +44,17 @@ simulators:
 	@xcrun simctl list devices | grep -q "OnePass M2 iPad (" || \
 		xcrun simctl create "OnePass M2 iPad" com.apple.CoreSimulator.SimDeviceType.iPad-mini-A17-Pro $(IOS_RUNTIME)
 
+## The milestone 3 simulator (AutoFill UI test), created when missing. Never touches any other one.
+simulator-m3:
+	@xcrun simctl list devices | grep -q "$(M3_SIMULATOR) (" || \
+		xcrun simctl create "$(M3_SIMULATOR)" com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro $(IOS_RUNTIME)
+
 ## Simulator build, unsigned. Uses the committed OnePass.xcodeproj (`make project` regenerates it).
 build-ios: core simulators
 	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
+		-destination '$(IOS_DESTINATION)' -derivedDataPath DerivedData \
+		CODE_SIGNING_ALLOWED=NO build
+	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePassAutoFill \
 		-destination '$(IOS_DESTINATION)' -derivedDataPath DerivedData \
 		CODE_SIGNING_ALLOWED=NO build
 
@@ -91,6 +102,20 @@ uitest: core simulators
 	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
 		-destination '$(IOS_DESTINATION)' -derivedDataPath DerivedData \
 		CODE_SIGN_IDENTITY=- test
+
+## AutoFill XCUITest on `OnePass M3 iPhone`, signed ad hoc (the simulator embeds the App Group,
+## keychain group and provider entitlements). The test drives AutoFillHost; OnePass and its
+## extension are installed beside it first, since `xcodebuild test` installs only the host app.
+## Boots only the M3 simulator, and only when it is shut down.
+uitest-autofill: core simulator-m3
+	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePassAutoFill \
+		-destination '$(M3_DESTINATION)' -derivedDataPath DerivedData \
+		CODE_SIGN_IDENTITY=- build-for-testing
+	xcrun simctl bootstatus "$(M3_SIMULATOR)" -b
+	xcrun simctl install "$(M3_SIMULATOR)" "$(APPLE_DIR)/DerivedData/Build/Products/Debug-iphonesimulator/OnePass.app"
+	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePassAutoFill \
+		-destination '$(M3_DESTINATION)' -derivedDataPath DerivedData \
+		CODE_SIGN_IDENTITY=- test-without-building
 
 ## Screenshots (iPhone, iPad landscape, Mac) with the demo data: `make screenshots OUT=<folder>`,
 ## a folder outside the repository.

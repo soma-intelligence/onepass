@@ -30,6 +30,7 @@ public enum VaultError: Error, Equatable, Sendable {
                 self = what == "account exists" ? .accountExists : .other(Self.invalidInputMessage(what))
             case .Store: self = .other("Le stockage local est illisible.")
             case .Crypto: self = .other("Erreur de chiffrement.")
+            case .PasskeyExcluded: self = .other("Ce compte a déjà une passkey OnePass pour ce site.")
             }
         case let error as BiometricError:
             switch error {
