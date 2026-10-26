@@ -81,6 +81,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     saves,
     neverSave,
     frameOrigin: (t, f) => frames.frameOrigin(t, f),
+    topDocumentId: (t) => frames.documentId(t, 0),
     chainRunning,
     ...(opts.now ? { now: opts.now } : {}),
   });

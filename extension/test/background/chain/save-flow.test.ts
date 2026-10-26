@@ -44,6 +44,7 @@ function setup(status: "new" | "same" | "update" = "new", never: string[] = []) 
   const opened: SavePending[] = [];
   let top: string | null = `${SITE}/login`;
   let chain = false;
+  let topDoc: string | null = "doc-1";
   const flow = new SaveFlow({
     session: {
       request: (async (r: Record<string, unknown>) => {
@@ -57,6 +58,7 @@ function setup(status: "new" | "same" | "update" = "new", never: string[] = []) 
     saves: { open: async (p: SavePending) => (opened.push(structuredClone(p)), "tok") },
     neverSave: { has: async (s: string) => never.includes(s) },
     frameOrigin: async () => (top === null ? null : new URL(top).origin),
+    topDocumentId: async () => topDoc,
     chainRunning: async () => chain,
     now: () => timers.t,
     timers,
@@ -72,6 +74,7 @@ function setup(status: "new" | "same" | "update" = "new", never: string[] = []) 
     submit,
     setTop: (u: string | null) => (top = u),
     setChain: (v: boolean) => (chain = v),
+    setTopDoc: (d: string | null) => (topDoc = d),
   };
 }
 
@@ -102,6 +105,27 @@ describe("save flow", () => {
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({ status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } });
     // The old document is gone: no documentId pin.
+    expect(t.opened[0]?.documentId).toBeUndefined();
+  });
+
+  it("a navigation committed before the submission was registered: the prompt goes to the new top document", async () => {
+    const t = setup("new");
+    // The commit event of the next page wins the race with the submission message.
+    t.flow.onNavigation(7);
+    t.setTop(`${SITE}/home`);
+    t.setTopDoc("doc-2");
+    await t.submit();
+    await t.timers.advance(CHECK_DELAY_MS);
+    expect(t.opened).toHaveLength(1);
+    // Not pinned to doc-1, which is gone: delivered to the top frame.
+    expect(t.opened[0]?.documentId).toBeUndefined();
+  });
+
+  it("the top document is unknown: no pin to the submitting document", async () => {
+    const t = setup("new");
+    t.setTopDoc(null);
+    await t.submit();
+    await t.timers.advance(CHECK_DELAY_MS);
     expect(t.opened[0]?.documentId).toBeUndefined();
   });
 

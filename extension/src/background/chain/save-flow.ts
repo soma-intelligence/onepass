@@ -71,6 +71,12 @@ export interface SaveFlowDeps {
   neverSave: Pick<NeverSave, "has">;
   /** Current origin of a frame, from the browser. */
   frameOrigin: (tabId: number, frameId: number) => Promise<string | null>;
+  /**
+   * Current document of the top frame (`webNavigation.getFrame`), where the
+   * browser reports it: the submission message can reach the worker after
+   * the top frame already committed the next page.
+   */
+  topDocumentId?: (tabId: number) => Promise<string | null>;
   /** A sign-in chain runs in this tab: its submissions are not proposed. */
   chainRunning?: (tabId: number) => Promise<boolean>;
   now?: () => number;
@@ -178,12 +184,26 @@ export class SaveFlow {
     }
     if (r.status === "same") return;
     const pending: SavePending = { tabId, origin, kind: "login", status: r.status, username, password };
-    if (!navigated && documentId !== undefined) pending.documentId = documentId;
+    if (!navigated && documentId !== undefined && (await this.stillTop(tabId, documentId))) pending.documentId = documentId;
     if (r.status === "update" && r.item_id !== undefined) pending.update = { itemId: r.item_id, title: r.title ?? "" };
     try {
       await this.deps.saves.open(pending);
     } catch {
       // Content script gone (tab closed, navigated again): nothing to show.
+    }
+  }
+
+  /**
+   * The submitting document is still the top one. A navigation committed
+   * before the submission was even registered is not seen by
+   * `onNavigation`: pinning the prompt to that dead document would lose it.
+   */
+  private async stillTop(tabId: number, documentId: string): Promise<boolean> {
+    if (!this.deps.topDocumentId) return true;
+    try {
+      return (await this.deps.topDocumentId(tabId)) === documentId;
+    } catch {
+      return false;
     }
   }
 
