@@ -10,6 +10,7 @@ pub mod model;
 pub mod reference;
 pub mod repo;
 pub mod store;
+pub mod sync;
 pub mod totp;
 pub mod vault;
 

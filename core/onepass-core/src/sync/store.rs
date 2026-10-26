@@ -1,0 +1,940 @@
+//! `SyncStore`: a layered SQLite store.
+//!
+//! - `base`: last known server state (with opaque `server_meta`).
+//! - `pending`: local writes not yet confirmed by the server (`data NULL` is
+//!   a deletion). Reads see `pending` over `base`.
+//! - `staging`: changes received during a fetch, applied to `base` in one
+//!   transaction by `commit_remote`.
+//! - `ancestor`: for a manifest with a pending local write, the `base` row
+//!   that write was built on, kept when the server replaces `base`.
+//! - `meta`: device state, change token and other small values.
+
+use std::collections::BTreeSet;
+use std::path::Path;
+use std::time::Duration;
+
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+
+use super::{Change, MAX_RECORD_BYTES, RemoteChange};
+use crate::repo::{DeviceState, split_item_record};
+use crate::store::{Record, RecordKind, RecordStore};
+use crate::{Error, Id, Result};
+
+const DEVICE_STATE_KEY: &str = "device_state";
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
+const SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS base (
+    kind INTEGER NOT NULL,
+    id BLOB NOT NULL,
+    version INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    server_meta BLOB,
+    PRIMARY KEY (kind, id)
+);
+CREATE TABLE IF NOT EXISTS pending (
+    kind INTEGER NOT NULL,
+    id BLOB NOT NULL,
+    version INTEGER NOT NULL,
+    data BLOB,
+    PRIMARY KEY (kind, id)
+);
+CREATE TABLE IF NOT EXISTS staging (
+    kind INTEGER NOT NULL,
+    id BLOB NOT NULL,
+    version INTEGER NOT NULL,
+    data BLOB,
+    server_meta BLOB,
+    PRIMARY KEY (kind, id)
+);
+CREATE TABLE IF NOT EXISTS ancestor (
+    kind INTEGER NOT NULL,
+    id BLOB NOT NULL,
+    version INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (kind, id)
+);
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT NOT NULL PRIMARY KEY,
+    value BLOB NOT NULL
+);
+PRAGMA user_version = 1;
+";
+
+/// A `staging` row: `(kind, id, version, data, server_meta)`.
+type StagedRow = (i64, Vec<u8>, i64, Option<Vec<u8>>, Option<Vec<u8>>);
+
+pub struct SyncStore {
+    conn: Connection,
+}
+
+/// Only the SQLite error code goes into the error: never paths or data.
+fn store_err(e: rusqlite::Error) -> Error {
+    match e.sqlite_error_code() {
+        Some(code) => Error::Store(format!("sqlite: {code:?}")),
+        None => Error::Store("sqlite".into()),
+    }
+}
+
+fn to_i64(v: u64) -> Result<i64> {
+    i64::try_from(v).map_err(|_| Error::InvalidFormat("record version"))
+}
+
+/// Rows come from a file that may have been edited: check every column.
+fn decode_row(kind: i64, id: Vec<u8>, version: i64, data: Vec<u8>) -> Result<Record> {
+    Ok(Record {
+        kind: decode_kind(kind)?,
+        id: decode_id(id)?,
+        version: u64::try_from(version).map_err(|_| Error::InvalidFormat("record version"))?,
+        data,
+    })
+}
+
+fn decode_kind(kind: i64) -> Result<RecordKind> {
+    u8::try_from(kind)
+        .map_err(|_| Error::InvalidFormat("record kind"))
+        .and_then(RecordKind::from_code)
+}
+
+fn decode_id(id: Vec<u8>) -> Result<Id> {
+    Ok(Id(id
+        .try_into()
+        .map_err(|_| Error::InvalidFormat("record id"))?))
+}
+
+fn check_size(data: &[u8]) -> Result<()> {
+    if data.len() > MAX_RECORD_BYTES {
+        Err(Error::InvalidFormat("record too large"))
+    } else {
+        Ok(())
+    }
+}
+
+/// Version of the effective record (pending over base), if any.
+fn effective_version(conn: &Connection, kind: RecordKind, id: Id) -> Result<Option<u64>> {
+    Ok(effective_get(conn, kind, id)?.map(|r| r.version))
+}
+
+/// The effective record of one key: a pending row hides the `base` row, and a
+/// pending deletion hides it entirely.
+fn effective_get(conn: &Connection, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+    let pending: Option<(i64, Option<Vec<u8>>)> = conn
+        .query_row(
+            "SELECT version, data FROM pending WHERE kind = ?1 AND id = ?2",
+            params![kind.code(), &id.0[..]],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(store_err)?;
+    if let Some((version, data)) = pending {
+        return data
+            .map(|d| decode_row(i64::from(kind.code()), id.0.to_vec(), version, d))
+            .transpose();
+    }
+    conn.query_row(
+        "SELECT version, data FROM base WHERE kind = ?1 AND id = ?2",
+        params![kind.code(), &id.0[..]],
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
+    )
+    .optional()
+    .map_err(store_err)?
+    .map(|(version, data)| decode_row(i64::from(kind.code()), id.0.to_vec(), version, data))
+    .transpose()
+}
+
+/// Write a pending data row. A manifest write over a `base` manifest with no
+/// `ancestor` yet first keeps that `base` row as its ancestor.
+fn write_pending(tx: &Transaction<'_>, r: &Record) -> Result<()> {
+    let version = to_i64(r.version)?;
+    if r.kind == RecordKind::Manifest {
+        tx.execute(
+            "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
+             SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
+            params![r.kind.code(), &r.id.0[..]],
+        )
+        .map_err(store_err)?;
+    }
+    tx.execute(
+        "INSERT OR REPLACE INTO pending (kind, id, version, data) VALUES (?1, ?2, ?3, ?4)",
+        params![r.kind.code(), &r.id.0[..], version, r.data],
+    )
+    .map_err(store_err)?;
+    Ok(())
+}
+
+/// Vaults whose pending manifest is not newer than the `base` manifest: the
+/// server moved on and the local manifest must be rebased before any push.
+fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT p.id FROM pending p JOIN base b ON b.kind = p.kind AND b.id = p.id
+             WHERE p.kind = ?1 AND p.data IS NOT NULL AND p.version <= b.version",
+        )
+        .map_err(store_err)?;
+    let rows = stmt
+        .query_map(params![RecordKind::Manifest.code()], |r| {
+            r.get::<_, Vec<u8>>(0)
+        })
+        .map_err(store_err)?;
+    rows.map(|id| decode_id(id.map_err(store_err)?)).collect()
+}
+
+impl SyncStore {
+    /// Open or create the store at `path`: WAL, `synchronous = FULL` and a
+    /// 5 s busy timeout, so a session and a sync manager can each hold a
+    /// connection on the same file.
+    pub fn open(path: &Path) -> Result<SyncStore> {
+        let conn = Connection::open(path).map_err(store_err)?;
+        conn.busy_timeout(BUSY_TIMEOUT).map_err(store_err)?;
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
+            .map_err(store_err)?;
+        if !mode.eq_ignore_ascii_case("wal") {
+            return Err(Error::Store("sqlite: WAL unavailable".into()));
+        }
+        conn.execute_batch("PRAGMA synchronous = FULL;")
+            .map_err(store_err)?;
+        conn.execute_batch(SCHEMA).map_err(store_err)?;
+        Ok(SyncStore { conn })
+    }
+
+    pub fn open_in_memory() -> Result<SyncStore> {
+        let conn = Connection::open_in_memory().map_err(store_err)?;
+        conn.execute_batch(SCHEMA).map_err(store_err)?;
+        Ok(SyncStore { conn })
+    }
+
+    fn write_tx(&mut self) -> Result<Transaction<'_>> {
+        self.conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(store_err)
+    }
+
+    /// Local writes to push, minus the held vaults. Order: account params,
+    /// keysets, vault keys, vault metas, items, manifests, then deletions,
+    /// so a manifest never reaches the server before its items.
+    pub fn pending_changes(&self) -> Result<Vec<Change>> {
+        let tx = self.conn.unchecked_transaction().map_err(store_err)?;
+        let held = held_vaults(&tx)?;
+        let mut stmt = tx
+            .prepare(
+                "SELECT p.kind, p.id, p.version, p.data, b.data
+                 FROM pending p LEFT JOIN base b ON b.kind = p.kind AND b.id = p.id
+                 ORDER BY p.kind, p.id",
+            )
+            .map_err(store_err)?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, Vec<u8>>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, Option<Vec<u8>>>(3)?,
+                    r.get::<_, Option<Vec<u8>>>(4)?,
+                ))
+            })
+            .map_err(store_err)?;
+        let mut writes = Vec::new();
+        let mut deletions = Vec::new();
+        for row in rows {
+            let (kind, id, version, data, base_data) = row.map_err(store_err)?;
+            let kind = decode_kind(kind)?;
+            let id = decode_id(id)?;
+            let version =
+                u64::try_from(version).map_err(|_| Error::InvalidFormat("record version"))?;
+            let vault = match kind {
+                RecordKind::Manifest => Some(id),
+                RecordKind::Item => match data.as_deref().or(base_data.as_deref()) {
+                    Some(d) => Some(split_item_record(d)?.0),
+                    None => None,
+                },
+                _ => None,
+            };
+            if vault.is_some_and(|v| held.contains(&v)) {
+                continue;
+            }
+            let change = Change {
+                kind,
+                id,
+                version,
+                data,
+            };
+            if change.data.is_some() {
+                writes.push(change);
+            } else {
+                deletions.push(change);
+            }
+        }
+        writes.extend(deletions);
+        Ok(writes)
+    }
+
+    /// The server confirmed `(kind, id, version)`. If the pending row has
+    /// exactly that version it moves to `base` with `server_meta` (a pending
+    /// deletion removes the `base` row); any other version changes nothing.
+    pub fn mark_pushed(
+        &mut self,
+        kind: RecordKind,
+        id: Id,
+        version: u64,
+        server_meta: Option<Vec<u8>>,
+    ) -> Result<()> {
+        let v = to_i64(version)?;
+        let tx = self.write_tx()?;
+        let pending: Option<Option<Vec<u8>>> = tx
+            .query_row(
+                "SELECT data FROM pending WHERE kind = ?1 AND id = ?2 AND version = ?3",
+                params![kind.code(), &id.0[..], v],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(store_err)?;
+        let Some(data) = pending else {
+            return Ok(());
+        };
+        match data {
+            Some(data) => tx.execute(
+                "INSERT OR REPLACE INTO base (kind, id, version, data, server_meta)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![kind.code(), &id.0[..], v, data, server_meta],
+            ),
+            None => tx.execute(
+                "DELETE FROM base WHERE kind = ?1 AND id = ?2",
+                params![kind.code(), &id.0[..]],
+            ),
+        }
+        .map_err(store_err)?;
+        tx.execute(
+            "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+            params![kind.code(), &id.0[..]],
+        )
+        .map_err(store_err)?;
+        if kind == RecordKind::Manifest {
+            tx.execute(
+                "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2",
+                params![kind.code(), &id.0[..]],
+            )
+            .map_err(store_err)?;
+        }
+        tx.commit().map_err(store_err)
+    }
+
+    /// Park a change received from the server. Nothing is visible until
+    /// `commit_remote`. A later change for the same key replaces it.
+    pub fn stage_remote(&mut self, c: RemoteChange) -> Result<()> {
+        let v = to_i64(c.version)?;
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO staging (kind, id, version, data, server_meta)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![c.kind.code(), &c.id.0[..], v, c.data, c.server_meta],
+            )
+            .map_err(store_err)?;
+        Ok(())
+    }
+
+    /// Apply all staged changes to `base` in one transaction and empty
+    /// `staging`. `pending` is never touched. Returns the ids of the vaults
+    /// whose manifest was applied.
+    pub fn commit_remote(&mut self) -> Result<Vec<Id>> {
+        let tx = self.write_tx()?;
+        let staged: Vec<StagedRow> = {
+            let mut stmt = tx
+                .prepare(
+                    "SELECT kind, id, version, data, server_meta FROM staging ORDER BY kind, id",
+                )
+                .map_err(store_err)?;
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+                })
+                .map_err(store_err)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(store_err)?
+        };
+        let mut vaults = BTreeSet::new();
+        for (kind, id, version, data, server_meta) in staged {
+            let kind_code = kind;
+            let kind = decode_kind(kind)?;
+            if kind == RecordKind::Manifest {
+                vaults.insert(decode_id(id.clone())?);
+            }
+            match data {
+                Some(data) => tx.execute(
+                    "INSERT OR REPLACE INTO base (kind, id, version, data, server_meta)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![kind_code, id, version, data, server_meta],
+                ),
+                None => tx.execute(
+                    "DELETE FROM base WHERE kind = ?1 AND id = ?2",
+                    params![kind_code, id],
+                ),
+            }
+            .map_err(store_err)?;
+        }
+        tx.execute("DELETE FROM staging", []).map_err(store_err)?;
+        tx.commit().map_err(store_err)?;
+        Ok(vaults.into_iter().collect())
+    }
+
+    /// The opaque server metadata kept with the `base` row.
+    pub fn server_meta(&self, kind: RecordKind, id: Id) -> Result<Option<Vec<u8>>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT server_meta FROM base WHERE kind = ?1 AND id = ?2",
+                params![kind.code(), &id.0[..]],
+                |r| r.get::<_, Option<Vec<u8>>>(0),
+            )
+            .optional()
+            .map_err(store_err)?
+            .flatten())
+    }
+
+    pub fn meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        self.conn
+            .query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+                r.get(0)
+            })
+            .optional()
+            .map_err(store_err)
+    }
+
+    pub fn set_meta(&mut self, key: &str, value: &[u8]) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+                params![key, value],
+            )
+            .map_err(store_err)?;
+        Ok(())
+    }
+
+    /// The persisted device state, or the default one if none was saved.
+    pub fn device_state(&self) -> Result<DeviceState> {
+        match self.meta(DEVICE_STATE_KEY)? {
+            Some(bytes) => DeviceState::decode(&bytes),
+            None => Ok(DeviceState::default()),
+        }
+    }
+
+    pub fn set_device_state(&mut self, s: &DeviceState) -> Result<()> {
+        self.set_meta(DEVICE_STATE_KEY, &s.encode())
+    }
+
+    /// Whether an account params record is visible (pending or base).
+    pub fn has_account(&self) -> Result<bool> {
+        Ok(!self.list(RecordKind::AccountParams)?.is_empty())
+    }
+
+    /// Vaults held back because the server manifest caught up with, or
+    /// passed, the local pending one. Sorted by id.
+    pub fn vaults_needing_rebase(&self) -> Result<Vec<Id>> {
+        Ok(held_vaults(&self.conn)?.into_iter().collect())
+    }
+
+    // Used by the rebase (next task).
+    #[allow(dead_code)]
+    /// The `base` manifest a pending manifest of `vault` was built on.
+    pub(crate) fn ancestor_manifest(&self, vault: Id) -> Result<Option<Record>> {
+        self.conn
+            .query_row(
+                "SELECT version, data FROM ancestor WHERE kind = ?1 AND id = ?2",
+                params![RecordKind::Manifest.code(), &vault.0[..]],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
+            )
+            .optional()
+            .map_err(store_err)?
+            .map(|(version, data)| {
+                decode_row(
+                    i64::from(RecordKind::Manifest.code()),
+                    vault.0.to_vec(),
+                    version,
+                    data,
+                )
+            })
+            .transpose()
+    }
+
+    // Used by the rebase (next task).
+    #[allow(dead_code)]
+    /// Remove every pending row of `vault` (its manifest and its items,
+    /// deletions included) and the manifest's ancestor, so the next local
+    /// write starts again from the current `base`. Read
+    /// `ancestor_manifest` first.
+    pub(crate) fn drop_pending_vault(&mut self, vault: Id) -> Result<()> {
+        let tx = self.write_tx()?;
+        let manifest = RecordKind::Manifest.code();
+        let item = RecordKind::Item.code();
+        tx.execute(
+            "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+            params![manifest, &vault.0[..]],
+        )
+        .map_err(store_err)?;
+        tx.execute(
+            "DELETE FROM pending WHERE kind = ?1 AND data IS NOT NULL
+             AND substr(data, 1, 16) = ?2",
+            params![item, &vault.0[..]],
+        )
+        .map_err(store_err)?;
+        tx.execute(
+            "DELETE FROM pending WHERE kind = ?1 AND data IS NULL AND EXISTS (
+                 SELECT 1 FROM base b WHERE b.kind = pending.kind AND b.id = pending.id
+                 AND substr(b.data, 1, 16) = ?2)",
+            params![item, &vault.0[..]],
+        )
+        .map_err(store_err)?;
+        tx.execute(
+            "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2",
+            params![manifest, &vault.0[..]],
+        )
+        .map_err(store_err)?;
+        tx.commit().map_err(store_err)
+    }
+}
+
+impl RecordStore for SyncStore {
+    fn put(&mut self, r: Record) -> Result<()> {
+        check_size(&r.data)?;
+        let tx = self.write_tx()?;
+        write_pending(&tx, &r)?;
+        tx.commit().map_err(store_err)
+    }
+
+    fn put_if_version(&mut self, r: Record, expected: Option<u64>) -> Result<()> {
+        check_size(&r.data)?;
+        let tx = self.write_tx()?;
+        if effective_version(&tx, r.kind, r.id)? != expected {
+            return Err(Error::Conflict);
+        }
+        write_pending(&tx, &r)?;
+        tx.commit().map_err(store_err)
+    }
+
+    fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+        let tx = self.conn.unchecked_transaction().map_err(store_err)?;
+        effective_get(&tx, kind, id)
+    }
+
+    fn list(&self, kind: RecordKind) -> Result<Vec<Record>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT kind, id, version, data FROM pending
+                     WHERE kind = ?1 AND data IS NOT NULL
+                 UNION ALL
+                 SELECT kind, id, version, data FROM base b WHERE kind = ?1
+                     AND NOT EXISTS (SELECT 1 FROM pending p WHERE p.kind = b.kind AND p.id = b.id)",
+            )
+            .map_err(store_err)?;
+        let rows = stmt
+            .query_map(params![kind.code()], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .map_err(store_err)?;
+        rows.map(|row| {
+            let (k, id, v, d) = row.map_err(store_err)?;
+            decode_row(k, id, v, d)
+        })
+        .collect()
+    }
+
+    fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
+        let tx = self.write_tx()?;
+        let base_version: Option<i64> = tx
+            .query_row(
+                "SELECT version FROM base WHERE kind = ?1 AND id = ?2",
+                params![kind.code(), &id.0[..]],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(store_err)?;
+        match base_version {
+            // Known to the server: a tombstone carrying the deleted version.
+            Some(version) => {
+                if kind == RecordKind::Manifest {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
+                         SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
+                        params![kind.code(), &id.0[..]],
+                    )
+                    .map_err(store_err)?;
+                }
+                tx.execute(
+                    "INSERT OR REPLACE INTO pending (kind, id, version, data)
+                     VALUES (?1, ?2, ?3, NULL)",
+                    params![kind.code(), &id.0[..], version],
+                )
+                .map_err(store_err)?;
+            }
+            // Local only: it vanishes.
+            None => {
+                tx.execute(
+                    "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+                    params![kind.code(), &id.0[..]],
+                )
+                .map_err(store_err)?;
+            }
+        }
+        tx.commit().map_err(store_err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rec(id: Id, kind: RecordKind, version: u64, data: &[u8]) -> Record {
+        Record {
+            id,
+            kind,
+            version,
+            data: data.to_vec(),
+        }
+    }
+
+    fn item_data(vault: Id, body: &[u8]) -> Vec<u8> {
+        let mut d = vault.0.to_vec();
+        d.extend_from_slice(body);
+        d
+    }
+
+    fn remote(kind: RecordKind, id: Id, version: u64, data: Option<Vec<u8>>) -> RemoteChange {
+        RemoteChange {
+            kind,
+            id,
+            version,
+            data,
+            server_meta: Some(vec![9, version as u8]),
+        }
+    }
+
+    /// Put a record straight into `base`, as a server fetch would.
+    fn seed_base(s: &mut SyncStore, kind: RecordKind, id: Id, version: u64, data: Vec<u8>) {
+        s.stage_remote(remote(kind, id, version, Some(data)))
+            .unwrap();
+        s.commit_remote().unwrap();
+    }
+
+    fn count(s: &SyncStore, table: &str) -> i64 {
+        s.conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn exercise_shared_store_contract() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        crate::store::exercise(&mut s);
+    }
+
+    #[test]
+    fn pending_shadows_base() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let id = Id::new();
+        seed_base(&mut s, RecordKind::Keyset, id, 1, b"old".to_vec());
+        assert_eq!(
+            s.get(RecordKind::Keyset, id).unwrap(),
+            Some(rec(id, RecordKind::Keyset, 1, b"old"))
+        );
+        s.put(rec(id, RecordKind::Keyset, 2, b"new")).unwrap();
+        assert_eq!(
+            s.get(RecordKind::Keyset, id).unwrap(),
+            Some(rec(id, RecordKind::Keyset, 2, b"new"))
+        );
+        assert_eq!(
+            s.list(RecordKind::Keyset).unwrap(),
+            vec![rec(id, RecordKind::Keyset, 2, b"new")]
+        );
+        // put_if_version compares to the effective version.
+        assert_eq!(
+            s.put_if_version(rec(id, RecordKind::Keyset, 3, b"x"), Some(1)),
+            Err(Error::Conflict)
+        );
+        s.put_if_version(rec(id, RecordKind::Keyset, 3, b"x"), Some(2))
+            .unwrap();
+    }
+
+    #[test]
+    fn delete_of_base_row_is_a_tombstone() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let id = Id::new();
+        seed_base(&mut s, RecordKind::Keyset, id, 4, b"k".to_vec());
+        s.delete(RecordKind::Keyset, id).unwrap();
+        assert_eq!(s.get(RecordKind::Keyset, id).unwrap(), None);
+        assert_eq!(s.list(RecordKind::Keyset).unwrap(), vec![]);
+        assert_eq!(
+            s.pending_changes().unwrap(),
+            vec![Change {
+                kind: RecordKind::Keyset,
+                id,
+                version: 4,
+                data: None
+            }]
+        );
+        // Rewriting after a delete brings it back.
+        s.put_if_version(rec(id, RecordKind::Keyset, 5, b"n"), None)
+            .unwrap();
+        assert!(s.get(RecordKind::Keyset, id).unwrap().is_some());
+    }
+
+    #[test]
+    fn delete_of_pending_only_row_vanishes() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let id = Id::new();
+        s.put(rec(id, RecordKind::Keyset, 1, b"k")).unwrap();
+        s.delete(RecordKind::Keyset, id).unwrap();
+        assert_eq!(s.get(RecordKind::Keyset, id).unwrap(), None);
+        assert_eq!(s.pending_changes().unwrap(), vec![]);
+        assert_eq!(count(&s, "pending"), 0);
+    }
+
+    #[test]
+    fn pending_changes_order_items_before_manifest() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let (a, i1, i2, gone) = (Id::new(), Id::new(), Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::Item, gone, 1, item_data(vault, b"old"));
+        s.put(rec(vault, RecordKind::Manifest, 1, b"m")).unwrap();
+        s.put(rec(i1, RecordKind::Item, 1, &item_data(vault, b"1")))
+            .unwrap();
+        s.put(rec(vault, RecordKind::VaultMeta, 1, b"vm")).unwrap();
+        s.put(rec(vault, RecordKind::VaultKey, 1, b"vk")).unwrap();
+        s.put(rec(i2, RecordKind::Item, 1, &item_data(vault, b"2")))
+            .unwrap();
+        s.put(rec(a, RecordKind::AccountParams, 1, b"ap")).unwrap();
+        s.put(rec(a, RecordKind::Keyset, 1, b"ks")).unwrap();
+        s.delete(RecordKind::Item, gone).unwrap();
+        let kinds: Vec<(RecordKind, bool)> = s
+            .pending_changes()
+            .unwrap()
+            .iter()
+            .map(|c| (c.kind, c.data.is_some()))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (RecordKind::AccountParams, true),
+                (RecordKind::Keyset, true),
+                (RecordKind::VaultKey, true),
+                (RecordKind::VaultMeta, true),
+                (RecordKind::Item, true),
+                (RecordKind::Item, true),
+                (RecordKind::Manifest, true),
+                (RecordKind::Item, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn mark_pushed_moves_row_to_base_with_meta() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let id = Id::new();
+        s.put(rec(id, RecordKind::Keyset, 2, b"k")).unwrap();
+        s.mark_pushed(RecordKind::Keyset, id, 2, Some(vec![7, 7]))
+            .unwrap();
+        assert_eq!(s.pending_changes().unwrap(), vec![]);
+        assert_eq!(count(&s, "pending"), 0);
+        assert_eq!(
+            s.get(RecordKind::Keyset, id).unwrap(),
+            Some(rec(id, RecordKind::Keyset, 2, b"k"))
+        );
+        assert_eq!(
+            s.server_meta(RecordKind::Keyset, id).unwrap(),
+            Some(vec![7, 7])
+        );
+        assert_eq!(s.server_meta(RecordKind::Item, id).unwrap(), None);
+        // A pushed deletion removes the base row too.
+        s.delete(RecordKind::Keyset, id).unwrap();
+        s.mark_pushed(RecordKind::Keyset, id, 2, None).unwrap();
+        assert_eq!(count(&s, "pending"), 0);
+        assert_eq!(count(&s, "base"), 0);
+        assert_eq!(s.get(RecordKind::Keyset, id).unwrap(), None);
+    }
+
+    #[test]
+    fn mark_pushed_ignores_other_version() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let id = Id::new();
+        s.put(rec(id, RecordKind::Keyset, 3, b"k")).unwrap();
+        s.mark_pushed(RecordKind::Keyset, id, 2, Some(vec![1]))
+            .unwrap();
+        assert_eq!(count(&s, "base"), 0);
+        assert_eq!(s.pending_changes().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn commit_remote_is_atomic_and_reports_vaults() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let item = Id::new();
+        s.stage_remote(remote(
+            RecordKind::Item,
+            item,
+            1,
+            Some(item_data(vault, b"i")),
+        ))
+        .unwrap();
+        s.stage_remote(remote(RecordKind::Manifest, vault, 1, Some(b"m".to_vec())))
+            .unwrap();
+        assert_eq!(s.get(RecordKind::Manifest, vault).unwrap(), None);
+        assert_eq!(s.get(RecordKind::Item, item).unwrap(), None);
+        assert_eq!(s.list(RecordKind::Item).unwrap(), vec![]);
+        assert_eq!(s.commit_remote().unwrap(), vec![vault]);
+        assert!(s.get(RecordKind::Manifest, vault).unwrap().is_some());
+        assert!(s.get(RecordKind::Item, item).unwrap().is_some());
+        assert_eq!(count(&s, "staging"), 0);
+        assert_eq!(
+            s.server_meta(RecordKind::Manifest, vault).unwrap(),
+            Some(vec![9, 1])
+        );
+        // Remote deletion.
+        s.stage_remote(remote(RecordKind::Item, item, 2, None))
+            .unwrap();
+        assert_eq!(s.commit_remote().unwrap(), vec![]);
+        assert_eq!(s.get(RecordKind::Item, item).unwrap(), None);
+    }
+
+    #[test]
+    fn commit_remote_keeps_pending() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let id = Id::new();
+        seed_base(&mut s, RecordKind::Keyset, id, 1, b"base".to_vec());
+        s.put(rec(id, RecordKind::Keyset, 2, b"local")).unwrap();
+        s.stage_remote(remote(RecordKind::Keyset, id, 3, Some(b"remote".to_vec())))
+            .unwrap();
+        s.commit_remote().unwrap();
+        assert_eq!(
+            s.get(RecordKind::Keyset, id).unwrap(),
+            Some(rec(id, RecordKind::Keyset, 2, b"local"))
+        );
+        assert_eq!(s.pending_changes().unwrap().len(), 1);
+        let base_version: i64 = s
+            .conn
+            .query_row("SELECT version FROM base", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(base_version, 3);
+    }
+
+    #[test]
+    fn ancestor_kept_when_remote_overwrites_base_manifest() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        seed_base(&mut s, RecordKind::Manifest, vault, 1, b"m1".to_vec());
+        assert_eq!(s.ancestor_manifest(vault).unwrap(), None);
+        s.put(rec(vault, RecordKind::Manifest, 2, b"local"))
+            .unwrap();
+        s.put(rec(vault, RecordKind::Manifest, 3, b"local2"))
+            .unwrap();
+        let anc = rec(vault, RecordKind::Manifest, 1, b"m1");
+        assert_eq!(s.ancestor_manifest(vault).unwrap(), Some(anc.clone()));
+        seed_base(&mut s, RecordKind::Manifest, vault, 2, b"remote".to_vec());
+        assert_eq!(s.ancestor_manifest(vault).unwrap(), Some(anc));
+        // Pushing the manifest clears it.
+        s.mark_pushed(RecordKind::Manifest, vault, 3, None).unwrap();
+        assert_eq!(s.ancestor_manifest(vault).unwrap(), None);
+    }
+
+    #[test]
+    fn held_vault_sends_nothing() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (held, free) = (Id::new(), Id::new());
+        let (h_item, h_old, f_item) = (Id::new(), Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::Manifest, held, 2, b"m2".to_vec());
+        seed_base(&mut s, RecordKind::Manifest, free, 1, b"f1".to_vec());
+        seed_base(&mut s, RecordKind::Item, h_old, 1, item_data(held, b"old"));
+        s.put(rec(held, RecordKind::Manifest, 3, b"local")).unwrap();
+        s.put(rec(h_item, RecordKind::Item, 1, &item_data(held, b"n")))
+            .unwrap();
+        s.delete(RecordKind::Item, h_old).unwrap();
+        s.put(rec(free, RecordKind::Manifest, 2, b"f2")).unwrap();
+        s.put(rec(f_item, RecordKind::Item, 1, &item_data(free, b"n")))
+            .unwrap();
+        // Not held yet: base (2) is older than pending (3).
+        assert_eq!(s.pending_changes().unwrap().len(), 5);
+        assert_eq!(s.vaults_needing_rebase().unwrap(), vec![]);
+        // The server catches up.
+        seed_base(&mut s, RecordKind::Manifest, held, 3, b"remote".to_vec());
+        let sent = s.pending_changes().unwrap();
+        let ids: Vec<Id> = sent.iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec![f_item, free]);
+        assert_eq!(s.vaults_needing_rebase().unwrap(), vec![held]);
+        // Dropping the vault's pending rows releases nothing local to send.
+        s.drop_pending_vault(held).unwrap();
+        assert_eq!(s.vaults_needing_rebase().unwrap(), vec![]);
+        assert_eq!(s.pending_changes().unwrap().len(), 2);
+        assert_eq!(s.ancestor_manifest(held).unwrap(), None);
+        assert_eq!(
+            s.get(RecordKind::Manifest, held).unwrap(),
+            Some(rec(held, RecordKind::Manifest, 3, b"remote"))
+        );
+        assert!(s.get(RecordKind::Item, h_old).unwrap().is_some());
+        assert_eq!(s.get(RecordKind::Item, h_item).unwrap(), None);
+    }
+
+    #[test]
+    fn oversized_record_refused() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let id = Id::new();
+        let big = vec![0u8; MAX_RECORD_BYTES + 1];
+        assert_eq!(
+            s.put(rec(id, RecordKind::Keyset, 1, &big)),
+            Err(Error::InvalidFormat("record too large"))
+        );
+        assert_eq!(
+            s.put_if_version(rec(id, RecordKind::Keyset, 1, &big), None),
+            Err(Error::InvalidFormat("record too large"))
+        );
+        let ok = vec![0u8; MAX_RECORD_BYTES];
+        s.put(rec(id, RecordKind::Keyset, 1, &ok)).unwrap();
+    }
+
+    #[test]
+    fn device_state_persists_across_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sync.sqlite");
+        let mut state = DeviceState::default();
+        state.last_seen.clear();
+        {
+            let mut s = SyncStore::open(&path).unwrap();
+            assert_eq!(s.device_state().unwrap(), DeviceState::default());
+            assert!(!s.has_account().unwrap());
+            s.set_device_state(&state).unwrap();
+            s.set_meta("change_token", b"tok").unwrap();
+            s.put(rec(Id::new(), RecordKind::AccountParams, 1, b"ap"))
+                .unwrap();
+        }
+        let s = SyncStore::open(&path).unwrap();
+        assert_eq!(s.device_state().unwrap(), state);
+        assert_eq!(s.meta("change_token").unwrap(), Some(b"tok".to_vec()));
+        assert_eq!(s.meta("absent").unwrap(), None);
+        assert!(s.has_account().unwrap());
+        let v: i64 = s
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 1);
+    }
+
+    #[test]
+    fn two_connections_same_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sync.sqlite");
+        let mut a = SyncStore::open(&path).unwrap();
+        let mut b = SyncStore::open(&path).unwrap();
+        let id = Id::new();
+        a.put(rec(id, RecordKind::Keyset, 1, b"k")).unwrap();
+        assert!(b.get(RecordKind::Keyset, id).unwrap().is_some());
+        b.mark_pushed(RecordKind::Keyset, id, 1, Some(vec![1]))
+            .unwrap();
+        assert_eq!(a.pending_changes().unwrap(), vec![]);
+        b.set_meta("k", b"v").unwrap();
+        assert_eq!(a.meta("k").unwrap(), Some(b"v".to_vec()));
+        b.stage_remote(remote(RecordKind::Keyset, id, 2, Some(b"r".to_vec())))
+            .unwrap();
+        a.commit_remote().unwrap();
+        assert_eq!(
+            b.get(RecordKind::Keyset, id).unwrap(),
+            Some(rec(id, RecordKind::Keyset, 2, b"r"))
+        );
+    }
+}
