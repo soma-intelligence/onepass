@@ -1,5 +1,8 @@
 import Foundation
 import Testing
+#if canImport(AppKit)
+import AppKit
+#endif
 
 @testable import VaultKit
 
@@ -49,4 +52,27 @@ struct ClipboardTests {
         clipboard.clearIfExpired()
         #expect(pasteboard.snapshot.contents == nil)
     }
+
+    #if os(macOS)
+    /// Real `NSPasteboard`, on a private named pasteboard (never the user's).
+    @Test func systemPasteboardMarksConcealedAndClearsIfUnchanged() {
+        let name = NSPasteboard.Name("me.somalabs.onepass.tests.\(UUID().uuidString)")
+        let board = NSPasteboard(name: name)
+        defer { board.releaseGlobally() }
+        let system = SystemPasteboard(name: name)
+
+        system.write("motdepasse-fictif", concealed: true, expiresAfter: 90)
+        #expect(board.string(forType: .string) == "motdepasse-fictif")
+        #expect(board.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) == true)
+        system.clearIfUnchanged()
+        #expect(board.string(forType: .string) == nil)
+
+        system.write("identifiant-fictif", concealed: false, expiresAfter: 90)
+        #expect(board.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) == false)
+        board.clearContents()
+        board.setString("copié ailleurs", forType: .string)
+        system.clearIfUnchanged()
+        #expect(board.string(forType: .string) == "copié ailleurs")
+    }
+    #endif
 }

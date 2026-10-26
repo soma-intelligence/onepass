@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import VaultKit
@@ -8,7 +9,7 @@ import Testing
 final class SessionHarness {
     let dir: URL
     let suite: String
-    let keychain = InMemoryKeychain()
+    let keychain: any KeychainStore
     let keyring = FakeEnclaveKeyring()
     let clock = FakeClock()
     let pasteboard = FakePasteboard()
@@ -19,7 +20,8 @@ final class SessionHarness {
     /// Fast Argon2id parameters, accepted by the dev-fast-kdf test core only.
     static let fastKdf = FfiKdfParams(mKib: 8192, t: 1, p: 1)
 
-    init(dir: URL? = nil) throws {
+    init(dir: URL? = nil, keychain: any KeychainStore = InMemoryKeychain()) throws {
+        self.keychain = keychain
         let dir = dir ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("onepass-session-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -183,16 +185,22 @@ struct VaultSessionTests {
         #expect(session.state == .locked)
         #expect(session.summaries.isEmpty && session.allVaults.isEmpty)
 
-        // Lock while a save is in flight: whichever wins, nothing stays in memory.
+        // Lock while a save is held inside its core call.
         try await session.unlock(password: testPassword)
         var item = try session.newItem(type: .secureNote, vaultID: session.allVaults[0].id)
         item.title = "Note fictive"
         fillRequired(&item)
+        let gate = CoreGate()
+        session.coreWorkHook = gate.hook
         let saving = Task { try await session.save(item) }
+        try await gate.waitUntilEntered()
+        session.coreWorkHook = nil
         session.lock()
-        _ = try? await saving.value
         #expect(session.state == .locked)
-        #expect(session.summaries.isEmpty && session.allVaults.isEmpty)
+        gate.release()
+        await #expect(throws: VaultError.passwordRequired) { _ = try await saving.value }
+        #expect(session.state == .locked)
+        #expect(session.summaries.isEmpty && session.allVaults.isEmpty && session.recents.isEmpty)
     }
 
     @Test func autoLockAfterDelayInBackground() async throws {
@@ -350,6 +358,7 @@ struct VaultSessionTests {
         let secretKey = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
         try await addItem(session, title: "Projet Atlas")
         session.lock()
+        await session.waitForReleasedSessions()
 
         let second = try SessionHarness()
         defer { second.cleanUp() }
@@ -426,6 +435,134 @@ struct VaultSessionTests {
         #expect(VaultError(OnePassError.Locked) == .passwordRequired)
         #expect(VaultError(OnePassError.Conflict) == .conflict)
         #expect(VaultError(BiometricError.passwordRequired(reason: .rebooted)) == .passwordRequired)
-        #expect(!VaultError.integrity(kind: "rollback").message.isEmpty)
+        #expect(!VaultError.integrity(kind: "rollback").localizedMessage.isEmpty)
+        #expect(VaultError(OnePassError.InvalidInput(what: "account exists")) == .accountExists)
+        #expect(VaultError(OnePassError.InvalidInput(what: "passkey")).localizedMessage == "Clé d'accès inconnue.")
+        #expect(VaultError.validation(field: "content", reason: "is required").localizedMessage == "Champ obligatoire")
+        #expect(VaultError.validation(field: "number", reason: "is not a valid card number").localizedMessage == "Numéro de carte invalide")
+        #expect(VaultError.validation(field: "iban", reason: "is not a valid IBAN").localizedMessage == "IBAN invalide")
+        #expect(VaultError.validation(field: "phrase", reason: "is not a valid recovery phrase").localizedMessage == "Phrase de récupération invalide")
+        #expect(VaultError.validation(field: "nir", reason: "is not a valid national number").localizedMessage == "Numéro invalide")
+        #expect(VaultError.validation(field: "title", reason: "must not be empty").localizedMessage == "Ne peut pas être vide")
+        #expect(VaultError.validation(field: "x", reason: "something new").localizedMessage == "Valeur invalide")
+    }
+}
+
+/// Holds a core call on its thread until released.
+final class CoreGate: Sendable {
+    private let entered = Mutex(false)
+    private let semaphore = DispatchSemaphore(value: 0)
+
+    var hook: @Sendable () -> Void {
+        { [self] in
+            entered.withLock { $0 = true }
+            semaphore.wait()
+        }
+    }
+
+    func waitUntilEntered() async throws {
+        while !entered.withLock({ $0 }) { try await Task.sleep(for: .milliseconds(2)) }
+    }
+
+    func release() { semaphore.signal() }
+}
+
+@MainActor
+@Suite("Vault session hardening")
+struct VaultSessionHardeningTests {
+    @Test func concurrentPasswordChecksCannotBypassLockout() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        session.lock()
+        h.settings.failedUnlocks = 4
+
+        let gate = CoreGate()
+        session.coreWorkHook = gate.hook
+        let first = Task { try await session.unlock(password: "faux") }
+        try await gate.waitUntilEntered()
+        session.coreWorkHook = nil
+        await #expect(throws: VaultError.other("Une vérification du mot de passe est déjà en cours.")) {
+            try await session.unlock(password: "faux")
+        }
+        gate.release()
+        await #expect(throws: VaultError.wrongPassword) { try await first.value }
+        #expect(h.settings.failedUnlocks == 5)
+        let until = try #require(h.settings.lockoutUntil)
+        await #expect(throws: VaultError.lockedOut(until: until)) { try await session.unlock(password: testPassword) }
+    }
+
+    @Test func lockClearsOurClipboardValue() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        session.copy("valeur-fictive", concealed: true)
+        session.lock()
+        #expect(h.pasteboard.snapshot.contents == nil)
+
+        try await session.unlock(password: testPassword)
+        session.copy("valeur-fictive", concealed: true)
+        h.pasteboard.externalWrite("copié ailleurs")
+        session.lock()
+        #expect(h.pasteboard.snapshot.contents == "copié ailleurs")
+    }
+
+    @Test func unavailableKeychainIsNotAMissingSecretKey() async throws {
+        let keychain = FailingReadKeychain()
+        let h = try SessionHarness(keychain: keychain)
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        session.lock()
+
+        keychain.failReads(true)
+        let relaunched = h.makeSession()
+        #expect(relaunched.state == .locked)
+        #expect(!relaunched.needsSecretKey)
+        await #expect(throws: VaultError.other(KeychainError.unexpectedStatus(-25308).message)) {
+            try await relaunched.unlock(password: testPassword)
+        }
+        #expect(!relaunched.needsSecretKey)
+        #expect(relaunched.state == .locked)
+
+        keychain.failReads(false)
+        let accountID = try #require(h.settings.accountID)
+        try SecretKeyVault(keychain: keychain).remove(accountID: accountID)
+        #expect(h.makeSession().needsSecretKey)
+    }
+
+    @Test func storeErrorKeepsBiometricEnrollment() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await session.enrollBiometrics(password: testPassword)
+        session.lock()
+        await session.waitForReleasedSessions()
+
+        // The store disappears (moved away): not a rejected AUK, the enrollment stays.
+        let fm = FileManager.default
+        let db = h.environment.databaseURL.path
+        let aside = h.dir.appendingPathComponent("aside", isDirectory: true)
+        try fm.createDirectory(at: aside, withIntermediateDirectories: true)
+        let suffixes = ["", "-wal", "-shm"].filter { fm.fileExists(atPath: db + $0) }
+        for suffix in suffixes {
+            try fm.moveItem(atPath: db + suffix, toPath: aside.appendingPathComponent("vault.sqlite" + suffix).path)
+        }
+        await #expect(throws: VaultError.self) { try await session.unlockWithBiometrics() }
+        #expect(session.state != .unlocked)
+        #expect(h.environment.biometrics.isEnrolled(accountID: try #require(h.settings.accountID)))
+
+        for suffix in ["", "-wal", "-shm"] where fm.fileExists(atPath: db + suffix) {
+            try fm.removeItem(atPath: db + suffix)
+        }
+        for suffix in suffixes {
+            try fm.moveItem(atPath: aside.appendingPathComponent("vault.sqlite" + suffix).path, toPath: db + suffix)
+        }
+        await session.refresh()
+        try await session.unlockWithBiometrics()
+        #expect(session.state == .unlocked)
     }
 }

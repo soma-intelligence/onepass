@@ -19,6 +19,11 @@ public struct SecretKeyVault: Sendable {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Whether a Secret Key is stored, without loading it. Throws when the keychain is unavailable.
+    public func contains(accountID: String) throws -> Bool {
+        try keychain.contains(Self.key(for: accountID))
+    }
+
     public func remove(accountID: String) throws {
         try keychain.delete(Self.key(for: accountID))
     }

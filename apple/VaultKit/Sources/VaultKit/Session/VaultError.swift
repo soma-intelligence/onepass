@@ -26,7 +26,8 @@ public enum VaultError: Error, Equatable, Sendable {
             case .Locked: self = .passwordRequired
             case .Validation(let field, let reason): self = .validation(field: field, reason: reason)
             case .Integrity(let kind): self = .integrity(kind: kind)
-            case .InvalidInput(let what): self = .other("Donnée invalide (\(what)).")
+            case .InvalidInput(let what):
+                self = what == "account exists" ? .accountExists : .other(Self.invalidInputMessage(what))
             case .Store: self = .other("Le stockage local est illisible.")
             case .Crypto: self = .other("Erreur de chiffrement.")
             }
@@ -42,8 +43,8 @@ public enum VaultError: Error, Equatable, Sendable {
         }
     }
 
-    /// French message for the UI.
-    public var message: String {
+    /// French message for the UI (core validation reasons translated).
+    public var localizedMessage: String {
         switch self {
         case .wrongPassword:
             "Mot de passe incorrect."
@@ -52,7 +53,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case .integrity(let kind):
             "Données refusées : \(Self.integrityLabel(kind))"
         case .validation(_, let reason):
-            reason
+            Self.validationMessage(reason)
         case .accountExists:
             "Un compte OnePass existe déjà sur cet appareil."
         case .notFound:
@@ -65,6 +66,29 @@ public enum VaultError: Error, Equatable, Sendable {
             "Saisissez le mot de passe maître."
         case .other(let message):
             message
+        }
+    }
+
+    /// French text for a core validation reason (English, fixed strings).
+    public static func validationMessage(_ reason: String) -> String {
+        switch reason {
+        case "is required": "Champ obligatoire"
+        case "is not a valid card number": "Numéro de carte invalide"
+        case "is not a valid IBAN": "IBAN invalide"
+        case "is not a valid recovery phrase": "Phrase de récupération invalide"
+        case "is not a valid national number": "Numéro invalide"
+        case "must not be empty": "Ne peut pas être vide"
+        default: "Valeur invalide"
+        }
+    }
+
+    /// French text for a core `InvalidInput { what }` (never a value, only what was refused).
+    public static func invalidInputMessage(_ what: String) -> String {
+        switch what {
+        case "passkey": "Clé d'accès inconnue."
+        case "date", "month", "timestamp": "Date invalide."
+        case "recipe": "Réglages du générateur invalides."
+        default: "Valeur invalide."
         }
     }
 

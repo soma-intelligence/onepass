@@ -39,6 +39,13 @@ public final class VaultSession {
     @ObservationIgnored private var autoLockTimer: Task<Void, Never>?
     @ObservationIgnored private var syncChain: Task<Void, Never>?
     @ObservationIgnored private let clipboard: Clipboard
+    /// A master password check (Argon2id) is running: a second one waits its turn, so concurrent
+    /// calls cannot slip past the failure throttle.
+    @ObservationIgnored private var passwordCheckInFlight = false
+    /// Tests: runs on the core thread before each core call, to hold a call in flight.
+    @ObservationIgnored var coreWorkHook: (@Sendable () -> Void)?
+    /// Sessions being locked on the core thread, in order.
+    @ObservationIgnored private var releaseChain: Task<Void, Never>?
     /// Bumped when the biometric enrollment may have changed (`canUseBiometrics` reads the keychain).
     private var biometricsRevision = 0
 
@@ -70,7 +77,7 @@ public final class VaultSession {
         if state == .unlocked, let session {
             let gen = generation
             do {
-                let snapshot = try await Self.background { try Self.load(session, purge: false) }
+                let snapshot = try await background { try Self.load(session, purge: false) }
                 if gen == generation { apply(snapshot) }
             } catch {
                 _ = handle(error, generation: gen)
@@ -84,7 +91,7 @@ public final class VaultSession {
         do {
             let exists = try hasAccount(dbPath: dbPath)
             state = exists ? .locked : .noAccount
-            needsSecretKey = exists && storedSecretKey() == nil
+            needsSecretKey = exists && secretKeyPresence() == .missing
         } catch {
             let failure = VaultError(error)
             state = .failed(failure)
@@ -92,9 +99,37 @@ public final class VaultSession {
         }
     }
 
-    private func storedSecretKey() -> String? {
-        guard let accountID = settings.accountID else { return nil }
-        return (try? secretKeys.load(accountID: accountID)) ?? nil
+    private enum Presence { case present, missing, unknown }
+
+    /// Presence only, nothing loaded. `unknown` when the keychain cannot answer (device locked at a
+    /// background launch, for example): that is not a missing Secret Key.
+    private func secretKeyPresence() -> Presence {
+        guard let accountID = settings.accountID else { return .missing }
+        do {
+            return try secretKeys.contains(accountID: accountID) ? .present : .missing
+        } catch {
+            return .unknown
+        }
+    }
+
+    /// The stored Secret Key for an unlock. Missing: `needsSecretKey`. Keychain error: thrown as is.
+    private func loadSecretKey() throws -> (accountID: String, secretKey: String) {
+        let missing = VaultError.other("La Secret Key de ce compte n'est pas sur cet appareil : utilisez votre Emergency Kit.")
+        guard let accountID = settings.accountID else {
+            needsSecretKey = true
+            throw fail(missing)
+        }
+        let secretKey: String?
+        do {
+            secretKey = try secretKeys.load(accountID: accountID)
+        } catch {
+            throw fail(VaultError(error))
+        }
+        guard let secretKey else {
+            needsSecretKey = true
+            throw fail(missing)
+        }
+        return (accountID, secretKey)
     }
 
     // MARK: - Account creation and unlock
@@ -108,7 +143,7 @@ public final class VaultSession {
         let gen = beginUnlocking()
         let created: Created
         do {
-            created = try await Self.background {
+            created = try await background {
                 if try hasAccount(dbPath: path) { throw VaultError.accountExists }
                 let account = try kdf.map { try createAccountWithKdf(dbPath: path, password: password, kdf: $0) }
                     ?? OnePassCore.createAccount(dbPath: path, password: password)
@@ -141,10 +176,10 @@ public final class VaultSession {
         settings.resetFailedUnlocks()
         settings.lockoutUntil = nil
         if !mode.biometricsAllowed { disableBiometrics() }
-        needsSecretKey = storedSecretKey() == nil
+        needsSecretKey = secretKeyPresence() == .missing
 
         guard gen == generation else {
-            created.session.lock()
+            release(created.session)
             return created.secretKey
         }
         install(created.session, created.snapshot)
@@ -155,11 +190,8 @@ public final class VaultSession {
     public func unlock(password: String) async throws {
         if state == .unlocked { return }
         try checkLockout()
-        guard let secretKey = storedSecretKey() else {
-            needsSecretKey = true
-            throw fail(.other("La Secret Key de ce compte n'est pas sur cet appareil : utilisez votre Emergency Kit."))
-        }
-        try await passwordUnlock(password: password, secretKey: secretKey, storeSecretKey: false)
+        let stored = try loadSecretKey()
+        try await passwordUnlock(password: password, secretKey: stored.secretKey, storeSecretKey: false)
     }
 
     /// New device (or wiped keychain) with a store that already holds the account:
@@ -177,25 +209,30 @@ public final class VaultSession {
     }
 
     private func passwordUnlock(password: String, secretKey: String, storeSecretKey: Bool) async throws {
+        try beginPasswordCheck()
+        defer { passwordCheckInFlight = false }
         let path = dbPath
         let gen = beginUnlocking()
-        var opened: Opened
+        let opened: Opened
         do {
-            opened = try await Self.background {
-                let unlocked = try unlockWithPassword(dbPath: path, password: password, secretKey: secretKey)
+            opened = try await background {
+                var unlocked = try unlockWithPassword(dbPath: path, password: password, secretKey: secretKey)
+                let auk = SecretBytes(copying: unlocked.auk)
+                Self.wipe(&unlocked.auk)
                 do {
                     return Opened(
                         session: unlocked.session, accountID: unlocked.session.accountId(),
-                        snapshot: try Self.load(unlocked.session, purge: true), auk: unlocked.auk)
+                        snapshot: try Self.load(unlocked.session, purge: true), auk: auk)
                 } catch {
+                    auk.wipe()
                     unlocked.session.lock()
                     throw error
                 }
             }
         } catch {
-            throw unlockFailed(VaultError(error), generation: gen)
+            throw unlockFailed(error, generation: gen)
         }
-        defer { Self.wipe(&opened.auk) }
+        defer { opened.auk.wipe() }
 
         settings.resetFailedUnlocks()
         settings.lockoutUntil = nil
@@ -207,11 +244,11 @@ public final class VaultSession {
             }
             settings.accountID = opened.accountID
         }
-        afterPasswordUnlock(accountID: opened.accountID, auk: opened.auk)
-        needsSecretKey = storedSecretKey() == nil
+        afterPasswordUnlock(accountID: opened.accountID, auk: opened.auk.data)
+        needsSecretKey = secretKeyPresence() == .missing
 
         guard gen == generation else {
-            opened.session.lock()
+            release(opened.session)
             return
         }
         install(opened.session, opened.snapshot)
@@ -238,23 +275,23 @@ public final class VaultSession {
         }
         guard let accountID = settings.accountID else { throw fail(.passwordRequired) }
         let gen = beginUnlocking()
-        var auk: Data
+        let key: SecretBytes
         do {
-            auk = try await biometrics.unlock(accountID: accountID, prompt: Self.unlockPrompt)
+            var auk = try await biometrics.unlock(accountID: accountID, prompt: Self.unlockPrompt)
+            key = SecretBytes(taking: &auk)
         } catch {
             biometricsRevision += 1
             if gen == generation { state = .locked }
             throw fail(.passwordRequired)
         }
-        defer { Self.wipe(&auk) }
+        defer { key.wipe() }
         guard gen == generation else { return }
 
         let path = dbPath
-        let key = auk
         let opened: (session: Session, snapshot: Snapshot)
         do {
-            opened = try await Self.background {
-                let session = try unlockWithAuk(dbPath: path, auk: key)
+            opened = try await background {
+                let session = try unlockWithAuk(dbPath: path, auk: key.data)
                 do {
                     return (session, try Self.load(session, purge: true))
                 } catch {
@@ -265,14 +302,19 @@ public final class VaultSession {
         } catch {
             let failure = VaultError(error)
             if case .integrity = failure, gen == generation { throw enterFailed(failure) }
-            // The wrapped AUK no longer opens the account: drop it, ask for the password.
-            biometrics.disable(accountID: accountID)
-            biometricsRevision += 1
-            if gen == generation { state = .locked }
-            throw fail(.passwordRequired)
+            // Only a rejected AUK drops the enrollment; a store error keeps it for the next try.
+            let rejected = (error as? OnePassError).map { $0 == .WrongPassword || $0 == .Crypto } ?? false
+            if rejected {
+                biometrics.disable(accountID: accountID)
+                biometricsRevision += 1
+            }
+            if gen == generation {
+                if rejected { state = .locked } else { evaluateStoredAccount() }
+            }
+            throw fail(rejected ? .passwordRequired : failure)
         }
         guard gen == generation else {
-            opened.session.lock()
+            release(opened.session)
             return
         }
         install(opened.session, opened.snapshot)
@@ -284,27 +326,29 @@ public final class VaultSession {
             throw fail(.biometricsUnavailable)
         }
         try checkLockout()
-        guard let accountID = settings.accountID, let secretKey = storedSecretKey() else {
-            throw fail(.passwordRequired)
-        }
+        let (accountID, secretKey) = try loadSecretKey()
+        try beginPasswordCheck()
+        defer { passwordCheckInFlight = false }
         let path = dbPath
-        var probe: (session: Session, auk: Data)
+        let auk: SecretBytes
         do {
-            probe = try await Self.background {
-                let unlocked = try unlockWithPassword(dbPath: path, password: password, secretKey: secretKey)
-                return (unlocked.session, unlocked.auk)
+            auk = try await background {
+                var unlocked = try unlockWithPassword(dbPath: path, password: password, secretKey: secretKey)
+                let auk = SecretBytes(copying: unlocked.auk)
+                Self.wipe(&unlocked.auk)
+                unlocked.session.lock()
+                return auk
             }
         } catch {
             let failure = VaultError(error)
             if failure == .wrongPassword { recordFailedUnlock() }
             throw fail(failure)
         }
-        probe.session.lock()
-        defer { Self.wipe(&probe.auk) }
+        defer { auk.wipe() }
         settings.resetFailedUnlocks()
         settings.lockoutUntil = nil
         do {
-            try biometrics.enroll(auk: probe.auk, accountID: accountID, allowWatch: settings.allowWatchUnlock)
+            try biometrics.enroll(auk: auk.data, accountID: accountID, allowWatch: settings.allowWatchUnlock)
         } catch {
             biometricsRevision += 1
             throw fail(VaultError(error))
@@ -351,9 +395,12 @@ public final class VaultSession {
     public func lock() {
         generation &+= 1
         let wasOpen = session != nil || state == .unlocking || state == .unlocked
-        session?.lock()
-        session = nil
+        if let session {
+            self.session = nil
+            release(session)
+        }
         clearMemory()
+        clipboard.clear()
         if state == .unlocked || state == .unlocking { state = .locked }
         if wasOpen { notifySync { await $0.sessionLocked() } }
     }
@@ -515,7 +562,7 @@ public final class VaultSession {
         var session: Session
         var accountID: String
         var snapshot: Snapshot
-        var auk: Data
+        let auk: SecretBytes
     }
 
     private struct Created: Sendable {
@@ -530,14 +577,26 @@ public final class VaultSession {
         return Snapshot(vaults: try session.vaults(), summaries: try session.itemSummaries(), purged: purged)
     }
 
-    nonisolated private static func background<T: Sendable>(
-        _ work: @escaping @Sendable () throws -> T
-    ) async throws -> T {
-        try await CoreThread.run(work)
+    private func background<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        let hook = coreWorkHook
+        return try await CoreThread.run {
+            hook?()
+            return try work()
+        }
     }
 
-    /// Best effort: overwrites the bytes we hold. Swift cannot reach copies made elsewhere (R5).
-    static func wipe(_ data: inout Data) {
+    /// `Session.lock()` waits for a core call in flight (save, purge...): never on the main actor.
+    private func release(_ session: Session) {
+        let previous = releaseChain
+        releaseChain = Task {
+            await previous?.value
+            _ = try? await CoreThread.run { session.lock() }
+        }
+    }
+
+    /// Overwrites the bytes of this buffer (in place when it is the only reference). Copies made by the
+    /// bindings or the core are out of reach (R5).
+    nonisolated static func wipe(_ data: inout Data) {
         data.withUnsafeMutableBytes { buffer in
             guard let base = buffer.baseAddress else { return }
             _ = memset_s(base, buffer.count, 0, buffer.count)
@@ -584,11 +643,24 @@ public final class VaultSession {
         settings.lockoutUntil = environment.clock.now.addingTimeInterval(wait)
     }
 
-    private func unlockFailed(_ failure: VaultError, generation gen: Int) -> VaultError {
-        if failure == .wrongPassword { recordFailedUnlock() }
+    private func unlockFailed(_ error: any Error, generation gen: Int) -> VaultError {
+        let failure = VaultError(error)
         if case .integrity = failure, gen == generation { return enterFailed(failure) }
-        if gen == generation { state = .locked }
+        if failure == .wrongPassword {
+            recordFailedUnlock()
+            if gen == generation { state = .locked }
+        } else if gen == generation {
+            // Store or keychain trouble: the account may be gone or unreadable, re-read the store.
+            evaluateStoredAccount()
+        }
         return fail(failure)
+    }
+
+    private func beginPasswordCheck() throws {
+        guard !passwordCheckInFlight else {
+            throw fail(.other("Une vérification du mot de passe est déjà en cours."))
+        }
+        passwordCheckInFlight = true
     }
 
     /// Records the error for the UI and returns it.
@@ -601,9 +673,12 @@ public final class VaultSession {
     private func enterFailed(_ failure: VaultError) -> VaultError {
         let wasOpen = session != nil
         generation &+= 1
-        session?.lock()
-        session = nil
+        if let session {
+            self.session = nil
+            release(session)
+        }
         clearMemory()
+        clipboard.clear()
         state = .failed(failure)
         lastError = failure
         if wasOpen { notifySync { await $0.sessionLocked() } }
@@ -623,7 +698,7 @@ public final class VaultSession {
         noteActivity()
         let value: T
         do {
-            value = try await Self.background { try op(session) }
+            value = try await background { try op(session) }
         } catch {
             throw handle(error, generation: gen)
         }
@@ -631,7 +706,7 @@ public final class VaultSession {
         return value
     }
 
-    /// Runs a write (retried once on `Conflict`, spec 8), reloads the lists, tells the sync layer.
+    /// Runs a write, reloads the lists, tells the sync layer.
     @discardableResult
     private func write<T: Sendable>(_ op: @escaping @Sendable (Session) throws -> T) async throws -> T {
         guard let session else { throw fail(.passwordRequired) }
@@ -639,13 +714,9 @@ public final class VaultSession {
         noteActivity()
         let result: (value: T, snapshot: Snapshot)
         do {
-            result = try await Self.background {
-                let value: T
-                do {
-                    value = try op(session)
-                } catch OnePassError.Conflict {
-                    value = try op(session)
-                }
+            result = try await background {
+                // No retry here: the core already retries a conflicting write once (spec 8).
+                let value = try op(session)
                 return (value, try Self.load(session, purge: false))
             }
         } catch {
@@ -667,8 +738,34 @@ public final class VaultSession {
         }
     }
 
+    /// Tests: waits until every dropped session has been locked by the core (connection closed).
+    func waitForReleasedSessions() async {
+        await releaseChain?.value
+    }
+
     /// Tests: waits until every sync notification sent so far has been delivered.
     func waitForSyncNotifications() async {
         await syncChain?.value
     }
+}
+
+/// The AUK in one heap buffer referenced once, so `wipe()` overwrites the only copy we hold.
+/// Accessed by one thread at a time (core thread, then main actor).
+final class SecretBytes: @unchecked Sendable {
+    private(set) var data: Data
+
+    /// Fresh buffer with the same bytes (the caller wipes its own).
+    init(copying source: Data) {
+        data = source.withUnsafeBytes { Data($0) }
+    }
+
+    /// Takes the buffer; `source` is left empty so this is the only reference.
+    init(taking source: inout Data) {
+        data = source
+        source = Data()
+    }
+
+    func wipe() { VaultSession.wipe(&data) }
+
+    deinit { wipe() }
 }

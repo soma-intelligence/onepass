@@ -22,7 +22,18 @@ public final class SystemPasteboard: PasteboardWriter {
     /// `changeCount` right after our last write.
     private let ownChange = Mutex<Int?>(nil)
 
+    #if canImport(UIKit)
     public init() {}
+    #elseif canImport(AppKit)
+    /// Pasteboard name (tests use a private named pasteboard, never the user's one).
+    private let name: NSPasteboard.Name
+
+    public init(name: NSPasteboard.Name = .general) {
+        self.name = name
+    }
+
+    private var board: NSPasteboard { NSPasteboard(name: name) }
+    #endif
 
     public func write(_ s: String, concealed: Bool, expiresAfter: TimeInterval) {
         #if canImport(UIKit)
@@ -33,11 +44,10 @@ public final class SystemPasteboard: PasteboardWriter {
         let count = board.changeCount
         ownChange.withLock { $0 = count }
         #elseif canImport(AppKit)
-        let board = NSPasteboard.general
+        let board = self.board
+        // Clears the pasteboard and sets "this Mac only" (no Universal Clipboard). No `declareTypes`
+        // after it: that would clear again with the default options.
         board.prepareForNewContents(with: .currentHostOnly)
-        var types: [NSPasteboard.PasteboardType] = [.string]
-        if concealed { types.append(Self.concealedType) }
-        board.declareTypes(types, owner: nil)
         board.setString(s, forType: .string)
         if concealed { board.setData(Data(), forType: Self.concealedType) }
         let count = board.changeCount
@@ -52,7 +62,7 @@ public final class SystemPasteboard: PasteboardWriter {
         board.items = []
         ownChange.withLock { $0 = nil }
         #elseif canImport(AppKit)
-        let board = NSPasteboard.general
+        let board = self.board
         guard ownChange.withLock({ $0 }) == board.changeCount else { return }
         board.clearContents()
         ownChange.withLock { $0 = nil }
@@ -93,6 +103,9 @@ public final class Clipboard {
             self?.clearNow()
         }
     }
+
+    /// Clears now if our value is still there (called on lock).
+    public func clear() { clearNow() }
 
     /// Clears when the delay has passed on the injected clock (also call it when the app becomes active:
     /// a suspended app does not run its timer).

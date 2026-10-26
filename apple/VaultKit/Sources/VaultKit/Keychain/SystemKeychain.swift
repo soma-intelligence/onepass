@@ -33,6 +33,22 @@ public struct SystemKeychain: KeychainStore {
         }
     }
 
+    /// Attributes only: the secret data is never loaded.
+    public func contains(_ key: String) throws -> Bool {
+        try withFallback { legacy in
+            var query = baseQuery(key, legacy: legacy)
+            query[kSecReturnAttributes as String] = true
+            query[kSecMatchLimit as String] = kSecMatchLimitOne
+            var result: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+            switch status {
+            case errSecSuccess: return true
+            case errSecItemNotFound: return false
+            default: throw KeychainError.unexpectedStatus(status)
+            }
+        }
+    }
+
     public func write(_ key: String, _ data: Data) throws {
         try withFallback { legacy in
             let query = baseQuery(key, legacy: legacy)

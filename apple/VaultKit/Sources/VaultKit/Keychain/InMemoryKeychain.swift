@@ -15,6 +15,10 @@ public final class InMemoryKeychain: KeychainStore {
         storage.withLock { $0[key] = data }
     }
 
+    public func contains(_ key: String) throws -> Bool {
+        storage.withLock { $0[key] != nil }
+    }
+
     public func delete(_ key: String) throws {
         storage.withLock { _ = $0.removeValue(forKey: key) }
     }
