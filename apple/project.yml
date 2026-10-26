@@ -179,6 +179,11 @@ targets:
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""
+      configs:
+        Release-CloudKit:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
 
   # Complication and Smart Stack card (glyph and name only, no vault data).
   OnePassWatchWidgets:
@@ -209,6 +214,11 @@ targets:
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""
+      configs:
+        Release-CloudKit:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
 
   # iPhone and iPad widgets ("Codes", "Favoris") and Controls (spec 7 and 8). Reads the App
   # Group snapshot through GlanceKit only: no Rust core in the extension.
