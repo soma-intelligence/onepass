@@ -15,7 +15,9 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+use commands::export::ExportArgs;
 use commands::generate::GenerateArgs;
+use commands::import::ImportArgs;
 use commands::item::ItemCmd;
 use commands::vault::VaultCmd;
 use session::{CliError, Ctx};
@@ -59,6 +61,10 @@ enum Command {
         #[arg(long)]
         vault: Option<String>,
     },
+    /// Import another manager's export, a OnePass archive or keychain Wi-Fi.
+    Import(ImportArgs),
+    /// Export items to an encrypted archive or, with --plaintext, a CSV.
+    Export(ExportArgs),
 }
 
 #[derive(Subcommand)]
@@ -96,6 +102,8 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Item(c) => commands::item::run(&ctx, c),
         Command::Read { reference } => commands::read::run(&ctx, &reference),
         Command::Totp { key, vault } => commands::totp::run(&ctx, &key, vault.as_deref()),
+        Command::Import(a) => commands::import::run(&ctx, a),
+        Command::Export(a) => commands::export::run(&ctx, a),
         Command::Generate(_) => unreachable!("handled above"),
     }
 }

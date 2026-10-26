@@ -380,6 +380,28 @@ pub fn read_password(prompt: &str) -> Result<Zeroizing<String>, CliError> {
     Ok(Zeroizing::new(p))
 }
 
+/// Whether secrets may come from the environment (tests only):
+/// `ONEPASS_DEV_ALLOW_ENV_PASSWORD` is `1`.
+pub fn env_secrets_allowed() -> bool {
+    std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").as_deref() == Ok("1")
+}
+
+/// A secret other than the account password: `env_var` only when
+/// `ONEPASS_DEV_ALLOW_ENV_PASSWORD` is `1` (tests), otherwise a masked
+/// prompt on the terminal.
+pub fn read_secret(prompt: &str, env_var: &str) -> Result<Zeroizing<String>, CliError> {
+    if env_secrets_allowed()
+        && let Ok(p) = std::env::var(env_var)
+    {
+        return Ok(Zeroizing::new(p));
+    }
+    if !std::io::stdin().is_terminal() {
+        return Err(CliError::usage("no terminal to read the secret from"));
+    }
+    let p = rpassword::prompt_password(prompt)?;
+    Ok(Zeroizing::new(p))
+}
+
 /// Argon2 parameters of a new account: the floor, or the fast test ones
 /// when `ONEPASS_DEV_FAST_KDF=1` (debug builds only).
 pub fn kdf_params() -> Result<KdfParams, CliError> {
