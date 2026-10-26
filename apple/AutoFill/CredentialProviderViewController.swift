@@ -23,15 +23,35 @@ private typealias HostingController = NSHostingController
 /// without sync. The model locks the session before it completes; a session is never kept for a
 /// later request. The `...WithoutUserInteraction` entry points never unlock: they answer with
 /// `AutoFillModel.resultWithoutUserInteraction` (password generation reads no vault data).
+///
+/// When the system dismisses the interface (or starts another request on this controller) before
+/// the model completes, the request is abandoned: the session is locked and the late result of
+/// the old model never reaches `extensionContext` (per-request token).
 final class CredentialProviderViewController: ASCredentialProviderViewController {
     private var hosting: PlatformViewController?
+    private var model: AutoFillModel?
     private var session: VaultSession?
+    /// Bumped by every request with an interface; a completion carrying an older token is dropped.
+    private var requestToken = 0
+    /// The current request was answered or abandoned: nothing more goes to `extensionContext`.
+    private var requestEnded = true
 
     #if os(macOS)
     /// No nib: an `NSViewController` without one must create its own view.
     override func loadView() {
         view = NSView()
         preferredContentSize = NSSize(width: 440, height: 560)
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        tearDown()
+    }
+    #else
+    /// Dismissed by the system (or after completion): lock and forget the session.
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        tearDown()
     }
     #endif
 
@@ -60,7 +80,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
 
     override func provideCredentialWithoutUserInteraction(for credentialRequest: any ASCredentialRequest) {
         guard let request = Self.directRequest(credentialRequest) else {
-            finish(.cancelled(.credentialNotFound), for: nil)
+            answer(.cancelled(.credentialNotFound), for: nil)
             return
         }
         answerWithoutInterface(request)
@@ -68,7 +88,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
 
     override func prepareInterfaceToProvideCredential(for credentialRequest: any ASCredentialRequest) {
         guard let request = Self.directRequest(credentialRequest) else {
-            finish(.cancelled(.credentialNotFound), for: nil)
+            answer(.cancelled(.credentialNotFound), for: nil)
             return
         }
         begin(request)
@@ -78,7 +98,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
 
     override func prepareInterface(forPasskeyRegistration registrationRequest: any ASCredentialRequest) {
         guard let request = Self.registrationRequest(registrationRequest) else {
-            finish(.cancelled(.failed), for: nil)
+            answer(.cancelled(.failed), for: nil)
             return
         }
         begin(request)
@@ -87,7 +107,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
     /// Ruling A9: never a passkey created without the interface.
     override func performWithoutUserInteractionIfPossible(passkeyRegistration registrationRequest: ASPasskeyCredentialRequest) {
         guard let request = Self.registrationRequest(registrationRequest) else {
-            finish(.cancelled(.failed), for: nil)
+            answer(.cancelled(.failed), for: nil)
             return
         }
         answerWithoutInterface(request)
@@ -154,12 +174,16 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
     /// A request with an interface: a fresh session and model, the root view, then `start`.
     private func begin(_ request: AutoFillRequest) {
         tearDown()
+        requestToken &+= 1
+        requestEnded = false
+        let token = requestToken
         let session = VaultSession(environment: VaultEnvironment.live(sync: NoSync()))
         let model = AutoFillModel(session: session, request: request, ownAppIDs: Self.ownAppIDs()) {
             [weak self] result in
-            self?.finish(result, for: request)
+            self?.finish(result, for: request, token: token)
         }
         self.session = session
+        self.model = model
         host(AutoFillRootView(model: model, session: session, request: request))
         Task { await model.start() }
     }
@@ -168,11 +192,15 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         let result =
             AutoFillModel.resultWithoutUserInteraction(for: request, ownAppIDs: Self.ownAppIDs())
             ?? .cancelled(.userInteractionRequired)
-        finish(result, for: request)
+        answer(result, for: request)
     }
 
-    /// The previous request's view and session, if the system reuses this controller.
+    /// Ends the current request with an interface, if any: an unfinished model is abandoned (session
+    /// locked, no completion), the session is locked and dropped, and the view is removed.
     private func tearDown() {
+        requestEnded = true
+        model?.abandon()
+        model = nil
         session?.lock()
         session = nil
         guard let hosting else { return }
@@ -203,9 +231,16 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
 
     // MARK: - Results
 
+    /// The model's completion: forwarded only for the current, still open request.
+    private func finish(_ result: AutoFillResult, for request: AutoFillRequest, token: Int) {
+        guard token == requestToken, !requestEnded else { return }
+        requestEnded = true
+        answer(result, for: request)
+    }
+
     /// `AutoFillResult` to `extensionContext`. The configuration request always ends with
     /// `completeExtensionConfigurationRequest` (its screen ends with the model's `cancel`).
-    private func finish(_ result: AutoFillResult, for request: AutoFillRequest?) {
+    private func answer(_ result: AutoFillResult, for request: AutoFillRequest?) {
         if case .configuration? = request {
             extensionContext.completeExtensionConfigurationRequest()
             return
@@ -231,6 +266,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
             #if os(iOS)
             extensionContext.completeRequest(withTextToInsert: text, completionHandler: nil)
             #else
+            // Unreachable: macOS has no text insertion request.
             cancel(.failed)
             #endif
         case .saved:
@@ -241,6 +277,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
                 cancel(.failed)
             }
             #else
+            // Unreachable: macOS has no save password request.
             cancel(.failed)
             #endif
         case .cancelled(let failure):

@@ -236,6 +236,45 @@ struct AutoFillModelTests {
         #expect(done.results.isEmpty)
     }
 
+    @Test func startingUntilStart() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, _) = try await f.seed()
+        seed.lock()
+
+        let (model, _, _) = f.model(.credentialList(services: ["example.com"], passkey: nil))
+        #expect(model.screen == .starting)
+        await model.start()
+        #expect(model.screen == .locked)
+    }
+
+    /// The system dismisses the extension while the master password is being checked: the session
+    /// ends locked with nothing in memory, and `complete` is never called.
+    @Test func abandonDuringUnlockEndsLockedWithoutCompleting() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, _) = try await f.seed()
+        seed.lock()
+
+        let (model, session, done) = f.model(.credentialList(services: ["example.com"], passkey: nil))
+        await model.start()
+        let unlocking = Task { await model.unlock(password: testPassword) }
+        while session.state != .unlocking { await Task.yield() }
+        model.abandon()
+        #expect(model.isFinished)
+        #expect(model.screen == .finished)
+        await unlocking.value
+        #expect(session.state == .locked)
+        #expect(session.summaries.isEmpty && session.allVaults.isEmpty)
+        #expect(model.screen == .finished)
+
+        // Every later call is ignored.
+        await model.unlock(password: testPassword)
+        model.cancel()
+        #expect(session.state == .locked)
+        #expect(done.results.isEmpty)
+    }
+
     @Test func directCredentialFillsRecord() async throws {
         let f = try Fixture()
         defer { f.cleanUp() }

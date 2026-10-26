@@ -16,8 +16,9 @@ struct AutoFillRootView: View {
 
     @ViewBuilder private var screen: some View {
         switch model.screen {
-        case .finished:
-            // The controller is dismissing the extension: nothing from the vault stays on screen.
+        case .starting, .finished:
+            // Before `start` nothing is decided yet; after the end the controller is dismissing the
+            // extension and nothing from the vault stays on screen.
             Color.clear
         case .locked:
             UnlockView(model: model, session: session)

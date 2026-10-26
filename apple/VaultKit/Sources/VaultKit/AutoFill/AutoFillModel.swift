@@ -13,6 +13,8 @@ import Observation
 @Observable
 public final class AutoFillModel {
     public enum Screen: Equatable, Sendable {
+        /// Before `start`: the interface shows nothing yet.
+        case starting
         /// No account, or a store that cannot be read: "open OnePass" and cancel.
         case noAccount
         /// This device has no Secret Key for the account: the app must restore it first.
@@ -33,7 +35,7 @@ public final class AutoFillModel {
         case finished
     }
 
-    public private(set) var screen: Screen = .locked
+    public private(set) var screen: Screen = .starting
     /// `complete` was called: the request is over.
     public private(set) var isFinished = false
 
@@ -512,6 +514,18 @@ public final class AutoFillModel {
     /// Cancel button (and the end of the configuration screen).
     public func cancel() {
         finish(.cancelled(.userCanceled))
+    }
+
+    /// The system dismissed the interface or replaced the request: ends it like `finish` (session
+    /// locked, `store-changed` posted if this request wrote) but never calls `complete`, since the
+    /// request is no longer the extension's to answer. A pending unlock or write is dropped by the
+    /// lock; every later call is ignored.
+    public func abandon() {
+        guard !isFinished else { return }
+        isFinished = true
+        screen = .finished
+        session.lock()
+        if wrote { session.environment.storeChanges.post() }
     }
 
     private func finish(_ result: AutoFillResult) {
