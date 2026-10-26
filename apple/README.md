@@ -34,7 +34,15 @@ make -C apple project
 open apple/OnePass.xcodeproj
 ```
 
-`make project` lance `xcodegen generate` depuis `project.yml` (le projet Xcode n'est pas versionné). Autres cibles : `build-ios`, `build-mac`, `uitest`, `screenshots`, `clean`.
+Une seule cible `OnePass` (iPhone, iPad et Mac natif arm64). `make project` lance `xcodegen generate` depuis `project.yml` ; le projet généré est versionné, il faut le régénérer après toute modification de `project.yml`. La phase de script "Build Rust core" lance `make -C apple core` si l'XCFramework manque.
+
+- `make -C apple build-ios` : build Simulateur non signé sur `OnePass M2 iPhone`.
+- `make -C apple build-mac` : build Mac signé ad hoc (`CODE_SIGN_IDENTITY=-`), lançable localement.
+- Autres cibles : `uitest`, `screenshots`, `clean`. Les builds vont dans `apple/DerivedData` (ignoré par git).
+
+Configurations : `Debug` et `Release` (non signées, sans CloudKit) ; `Release-CloudKit` (condition `ONEPASS_CLOUDKIT`, droits iCloud, groupe Keychain partagé et notifications push, `DEVELOPMENT_TEAM` à renseigner).
+
+Arguments de lancement (Debug seulement) : `-OnePassUITestReset YES` efface la base, les réglages et les éléments Keychain de l'app ; `-OnePassOnboardingStep device|password|restore` ouvre directement une étape de l'onboarding (captures d'écran).
 
 ## Build non signé ou signé
 

@@ -1,0 +1,592 @@
+import DesignKit
+import LocalAuthentication
+import Observation
+import SwiftUI
+import VaultKit
+
+enum OnboardingStep: Hashable, Sendable {
+    case welcome, device, password, secretKey, biometrics, visibleVaults, restore, done
+}
+
+enum OnboardingPath: Sendable {
+    case create, restore
+}
+
+/// The onboarding state machine (spec 7): create an account, or restore one with the Emergency Kit.
+/// The master password stays in memory only until the last step (biometric enrollment needs it).
+@MainActor
+@Observable
+final class OnboardingModel {
+    private(set) var path: OnboardingPath = .create
+    private(set) var step: OnboardingStep
+    /// The device lacks the Secret Key of an account already in the store: restore only.
+    let restoreOnly: Bool
+
+    var mode: DeviceMode = .personal
+    var displayName = ""
+    var password = ""
+    var confirmation = ""
+    private(set) var secretKey: String?
+    var kitStoredOffline = false
+    var allowWatch = false
+    private(set) var biometricsEnabled = false
+
+    var restoreKey = ""
+    var restorePassword = ""
+
+    private(set) var busyMessage: String?
+    var errorMessage: String?
+    /// The creation was refused because this iCloud already holds an account (R13).
+    private(set) var offerRestore = false
+
+    @ObservationIgnored private let model: AppModel
+
+    init(model: AppModel, restoreOnly: Bool) {
+        self.model = model
+        self.restoreOnly = restoreOnly
+        if restoreOnly {
+            path = .restore
+            step = .restore
+            mode = model.settings.deviceMode
+        } else {
+            step = .welcome
+        }
+        displayName = model.settings.displayName
+        allowWatch = model.settings.allowWatchUnlock
+        #if DEBUG
+        // Screenshots: `-OnePassOnboardingStep device|password|restore` opens that step directly.
+        if !restoreOnly, let start = UserDefaults.standard.string(forKey: "OnePassOnboardingStep") {
+            switch start {
+            case "device": step = .device
+            case "password": step = .password
+            case "restore": path = .restore; step = .restore
+            default: break
+            }
+        }
+        #endif
+    }
+
+    var session: VaultSession { model.session }
+    var cloudKitEnabled: Bool { model.cloudKitEnabled }
+    var busy: Bool { busyMessage != nil }
+
+    // MARK: - Steps
+
+    /// Secure Enclave present and the device is personal.
+    var biometricsOffered: Bool { mode.biometricsAllowed && session.environment.biometrics.isAvailable }
+
+    var steps: [OnboardingStep] {
+        var steps: [OnboardingStep] = restoreOnly ? [] : [.welcome, .device]
+        steps.append(contentsOf: path == .create ? [.password, .secretKey] : [.restore])
+        if biometricsOffered { steps.append(.biometrics) }
+        if mode == .shared { steps.append(.visibleVaults) }
+        steps.append(.done)
+        return steps
+    }
+
+    var stepIndex: Int { steps.firstIndex(of: step) ?? 0 }
+
+    /// Back is possible until the account exists on this device.
+    var canGoBack: Bool {
+        guard !busy else { return false }
+        switch step {
+        case .device, .password: return true
+        case .restore: return !restoreOnly
+        default: return false
+        }
+    }
+
+    func back() {
+        errorMessage = nil
+        offerRestore = false
+        let index = stepIndex
+        guard canGoBack, index > 0 else { return }
+        step = steps[index - 1]
+    }
+
+    private func advance() {
+        errorMessage = nil
+        let all = steps
+        if let index = all.firstIndex(of: step), index + 1 < all.count {
+            step = all[index + 1]
+        }
+    }
+
+    func choose(_ path: OnboardingPath) {
+        self.path = path
+        errorMessage = nil
+        offerRestore = false
+        step = .device
+    }
+
+    // MARK: - Primary action
+
+    var passwordBits: Double { estimatedBits(password) }
+
+    var confirmationMismatch: Bool { !confirmation.isEmpty && confirmation != password }
+
+    /// "Continuer" from the "bon" level and when both fields match.
+    var passwordAccepted: Bool {
+        StrengthMeter.level(forBits: passwordBits) >= 3 && password == confirmation
+    }
+
+    var primaryLabel: String? {
+        switch step {
+        case .welcome: nil
+        case .biometrics: "Activer \(biometryName)"
+        case .restore: "Déverrouiller"
+        case .done: "Ouvrir OnePass"
+        default: "Continuer"
+        }
+    }
+
+    var primaryEnabled: Bool {
+        guard !busy else { return false }
+        switch step {
+        case .password: return passwordAccepted
+        case .secretKey: return kitStoredOffline
+        case .restore: return !restoreKey.trimmingCharacters(in: .whitespaces).isEmpty && !restorePassword.isEmpty
+        default: return true
+        }
+    }
+
+    var canSkip: Bool { step == .biometrics && !busy }
+
+    func primary() async {
+        guard primaryEnabled else { return }
+        switch step {
+        case .welcome: break
+        case .device: advance()
+        case .password: await createAccount()
+        case .secretKey: advance()
+        case .biometrics: await enrollBiometrics()
+        case .visibleVaults: advance()
+        case .restore: await restore()
+        case .done: finish()
+        }
+    }
+
+    func skip() { advance() }
+
+    // MARK: - Actions
+
+    private func createAccount() async {
+        busyMessage = cloudKitEnabled ? "Vérification de ton iCloud..." : "Création du coffre..."
+        defer { busyMessage = nil }
+        errorMessage = nil
+        offerRestore = false
+        do {
+            if try await model.remoteHasAccount() {
+                errorMessage = "Un compte OnePass existe déjà dans ton iCloud, utilise ton Emergency Kit."
+                offerRestore = true
+                return
+            }
+        } catch {
+            errorMessage = "Impossible de vérifier ton iCloud. Vérifie ta connexion puis réessaie."
+            return
+        }
+        busyMessage = "Création du coffre..."
+        do {
+            let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            secretKey = try await session.createAccount(password: password, displayName: name, mode: mode)
+            confirmation = ""
+            advance()
+        } catch {
+            errorMessage = VaultError(error).localizedMessage
+        }
+    }
+
+    private func enrollBiometrics() async {
+        busyMessage = "Activation de \(biometryName)..."
+        defer { busyMessage = nil }
+        model.settings.allowWatchUnlock = allowWatch
+        do {
+            try await session.enrollBiometrics(password: password)
+            biometricsEnabled = true
+            advance()
+        } catch {
+            errorMessage = VaultError(error).localizedMessage
+        }
+    }
+
+    private func restore() async {
+        busyMessage = cloudKitEnabled ? "Récupération de ton coffre dans iCloud..." : "Recherche du compte..."
+        defer { busyMessage = nil }
+        errorMessage = nil
+        do {
+            let found: Bool
+            if cloudKitEnabled {
+                found = try await model.remoteHasAccount()
+            } else {
+                let path = session.environment.databaseURL.path
+                found = try await CoreThread.run { try hasAccount(dbPath: path) }
+            }
+            guard found else {
+                errorMessage = "Aucun compte trouvé dans ton iCloud."
+                return
+            }
+        } catch {
+            errorMessage = "Impossible de joindre iCloud. Vérifie ta connexion puis réessaie."
+            return
+        }
+        busyMessage = "Déverrouillage..."
+        do {
+            try await session.restore(secretKey: restoreKey, password: restorePassword)
+        } catch {
+            errorMessage = VaultError(error).localizedMessage
+            return
+        }
+        if !restoreOnly { session.setDeviceMode(mode) }
+        #if os(macOS)
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { model.settings.displayName = name }
+        #endif
+        password = restorePassword
+        restorePassword = ""
+        restoreKey = ""
+        advance()
+    }
+
+    func switchToRestore() {
+        offerRestore = false
+        errorMessage = nil
+        path = .restore
+        step = .restore
+    }
+
+    private func finish() {
+        password = ""
+        confirmation = ""
+        restorePassword = ""
+        secretKey = nil
+        model.onboardingInProgress = false
+    }
+
+    // MARK: - Emergency Kit
+
+    /// The PDF in a fresh temporary folder (`NSFileProtectionComplete` on iOS), deleted by
+    /// `deleteKit()` when the step disappears.
+    @ObservationIgnored private var kitFolder: URL?
+    private(set) var kitURL: URL?
+
+    func prepareKit() {
+        guard kitURL == nil, let secretKey, let accountID = model.settings.accountID else { return }
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kit-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let data = try EmergencyKit.pdf(
+                secretKey: secretKey, accountID: accountID,
+                displayName: model.settings.displayName, createdAt: Date())
+            let url = folder.appendingPathComponent("Emergency Kit OnePass.pdf")
+            #if os(iOS)
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            #else
+            try data.write(to: url, options: .atomic)
+            #endif
+            kitFolder = folder
+            kitURL = url
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            errorMessage = "L'Emergency Kit n'a pas pu être préparé."
+        }
+    }
+
+    func deleteKit() {
+        if let kitFolder { try? FileManager.default.removeItem(at: kitFolder) }
+        kitFolder = nil
+        kitURL = nil
+    }
+
+    // MARK: - Texts
+
+    var biometryName: String { Self.biometryName }
+
+    static let biometryName: String = {
+        let context = LAContext()
+        _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        switch context.biometryType {
+        case .faceID: return "Face ID"
+        case .touchID: return "Touch ID"
+        case .opticID: return "Optic ID"
+        default:
+            #if os(macOS)
+            return "Touch ID"
+            #else
+            return "Face ID"
+            #endif
+        }
+    }()
+
+    static func railLabel(_ step: OnboardingStep) -> String {
+        switch step {
+        case .welcome: "Bienvenue"
+        case .device: "Type d'appareil"
+        case .password: "Mot de passe maître"
+        case .secretKey: "Secret Key"
+        case .biometrics: biometryName
+        case .visibleVaults: "Coffres visibles"
+        case .restore: "Emergency Kit"
+        case .done: "Terminé"
+        }
+    }
+}
+
+/// Full-window onboarding: pages with progress dots on iPhone and iPad, a step rail in a native
+/// sidebar on Mac (mockups `PhoneOnboarding` and `Onboarding`).
+struct OnboardingFlow: View {
+    let restoreOnly: Bool
+    @Environment(AppModel.self) private var app
+    @State private var model: OnboardingModel?
+
+    var body: some View {
+        Group {
+            if let model {
+                #if os(macOS)
+                MacOnboardingLayout(model: model)
+                #else
+                PhoneOnboardingLayout(model: model)
+                #endif
+            } else {
+                // An empty Group never appears: keep a view so onAppear runs.
+                Color.clear
+            }
+        }
+        .onAppear {
+            app.onboardingInProgress = true
+            if model == nil { model = OnboardingModel(model: app, restoreOnly: restoreOnly) }
+        }
+    }
+}
+
+// MARK: - iPhone and iPad
+
+#if os(iOS)
+private struct PhoneOnboardingLayout: View {
+    @Bindable var model: OnboardingModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            topBar
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+            ScrollView {
+                OnboardingStepContent(model: model)
+                    .frame(maxWidth: 520, alignment: .leading)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            bottomBar
+                .frame(maxWidth: 520)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 12)
+        }
+        .animation(.smooth(duration: 0.25), value: model.step)
+    }
+
+    private var topBar: some View {
+        HStack {
+            if model.canGoBack {
+                Button {
+                    model.back()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel(Text("Retour"))
+            } else {
+                Color.clear.frame(width: 40, height: 40)
+            }
+            Spacer()
+            ProgressDots(count: model.steps.count, current: model.stepIndex)
+            Spacer()
+            Color.clear.frame(width: 40, height: 40)
+        }
+    }
+
+    @ViewBuilder private var bottomBar: some View {
+        VStack(spacing: 10) {
+            if let label = model.primaryLabel {
+                Button {
+                    Task { await model.primary() }
+                } label: {
+                    Group {
+                        if model.busy {
+                            ProgressView()
+                        } else {
+                            Text(label)
+                        }
+                    }
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 40)
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.capsule)
+                .disabled(!model.primaryEnabled)
+                .accessibilityIdentifier("onboarding.primary")
+            }
+            if model.canSkip {
+                Button("Plus tard") { model.skip() }
+                    .font(.body)
+                    .frame(height: 40)
+            }
+        }
+    }
+}
+
+private struct ProgressDots: View {
+    let count: Int
+    let current: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<count, id: \.self) { index in
+                Capsule()
+                    .fill(index <= current ? Theme.accent : Color.secondary.opacity(0.25))
+                    .frame(width: index == current ? 22 : 8, height: 8)
+            }
+        }
+        .animation(.smooth, value: current)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Progression"))
+        .accessibilityValue(Text("Étape \(current + 1) sur \(count)"))
+    }
+}
+#endif
+
+// MARK: - Mac
+
+#if os(macOS)
+private struct MacOnboardingLayout: View {
+    @Bindable var model: OnboardingModel
+
+    var body: some View {
+        NavigationSplitView {
+            StepRail(model: model)
+                .frame(minWidth: 250)
+                .navigationSplitViewColumnWidth(min: 280, ideal: 280, max: 280)
+                .toolbar(removing: .sidebarToggle)
+        } detail: {
+            VStack(spacing: 0) {
+                ScrollView {
+                    OnboardingStepContent(model: model)
+                        .frame(maxWidth: 560, alignment: .leading)
+                        .padding(.horizontal, 56)
+                        .padding(.top, 64)
+                        .padding(.bottom, 24)
+                        .frame(maxWidth: .infinity)
+                }
+                Divider()
+                bottomBar
+                    .padding(.horizontal, 32)
+                    .frame(height: 68)
+            }
+            .animation(.smooth(duration: 0.25), value: model.step)
+            .toolbar(removing: .title)
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    private var bottomBar: some View {
+        HStack(spacing: 10) {
+            if model.canGoBack {
+                Button("Retour") { model.back() }
+                    .controlSize(.large)
+            }
+            Spacer()
+            if model.step != .welcome, model.step != .done {
+                if model.busy { ProgressView().controlSize(.small) }
+                if model.canSkip {
+                    Button("Plus tard") { model.skip() }
+                        .controlSize(.large)
+                }
+                if let label = model.primaryLabel {
+                    Button(label) { Task { await model.primary() } }
+                        .buttonStyle(.glassProminent)
+                        .controlSize(.large)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!model.primaryEnabled)
+                        .accessibilityIdentifier("onboarding.primary")
+                }
+            }
+        }
+    }
+}
+
+/// Step list of the mockup's left rail: number disc, check once done, current step in bold.
+private struct StepRail: View {
+    let model: OnboardingModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Theme.accent)
+                    .frame(width: 34, height: 34)
+                    .overlay {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityHidden(true)
+                Text("OnePass").font(.title3.bold())
+            }
+            .padding(.horizontal, 6)
+            .padding(.bottom, 22)
+
+            let steps = model.steps
+            let current = model.stepIndex
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                HStack(spacing: 12) {
+                    ZStack {
+                        if index <= current {
+                            Circle().fill(Theme.accent)
+                        } else {
+                            Circle().strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1.5)
+                        }
+                        if index < current {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                        } else {
+                            Text("\(index + 1)")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(index == current ? Color.white : Color.secondary)
+                        }
+                    }
+                    .frame(width: 22, height: 22)
+                    Text(OnboardingModel.railLabel(step))
+                        .font(.system(size: 13.5, weight: index == current ? .bold : .medium))
+                        .foregroundStyle(index > current ? Color.secondary : Color.primary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8)
+                .frame(height: 36)
+                .background {
+                    if index == current {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(index == current ? .isSelected : [])
+            }
+            Spacer()
+            Text("Code source ouvert. Ton coffre est chiffré sur ce Mac avant d'aller dans iCloud. Personne d'autre, ni nous ni Apple, ne peut le lire.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+}
+#endif

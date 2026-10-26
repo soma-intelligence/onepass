@@ -29,18 +29,24 @@ test: core-test
 project: core
 	cd "$(APPLE_DIR)" && xcodegen generate
 
-build-ios: project
-	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass-iOS \
-		-destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData build
+IOS_DESTINATION := platform=iOS Simulator,name=OnePass M2 iPhone
 
+## Simulator build, unsigned (the dedicated simulator must exist, see README).
+build-ios: project
+	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
+		-destination '$(IOS_DESTINATION)' -derivedDataPath DerivedData \
+		CODE_SIGNING_ALLOWED=NO build
+
+## Native Mac build (arm64), signed ad hoc so it runs locally.
 build-mac: project
-	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass-macOS \
-		-destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData build
+	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
+		-destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData \
+		CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
 
 uitest: project
-	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass-iOS \
-		-destination 'platform=iOS Simulator,name=OnePass M2 iPhone' \
-		-derivedDataPath DerivedData test
+	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
+		-destination '$(IOS_DESTINATION)' -derivedDataPath DerivedData \
+		CODE_SIGNING_ALLOWED=NO test
 
 screenshots: project
 	"$(APPLE_DIR)/scripts/screenshots.sh"

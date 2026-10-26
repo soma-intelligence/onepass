@@ -60,6 +60,13 @@ public final class BiometricUnlock: Sendable {
         ((try? loadEnrollment(accountID)) ?? nil) != nil
     }
 
+    /// When the master password is asked again (last password entry plus the policy delay), for the
+    /// unlock screen. Nil when not enrolled or the keychain cannot answer.
+    public func passwordDueDate(accountID: String) -> Date? {
+        guard let enrollment = (try? loadEnrollment(accountID)) ?? nil else { return nil }
+        return enrollment.lastPasswordAt.addingTimeInterval(policy.passwordEvery)
+    }
+
     /// Creates a fresh Secure Enclave key (replacing any previous one) and stores the wrapped AUK.
     public func enroll(auk: Data, accountID: String, allowWatch: Bool) throws {
         guard keyring.isAvailable else { throw BiometricError.unavailable }

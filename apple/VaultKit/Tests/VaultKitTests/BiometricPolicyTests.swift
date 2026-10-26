@@ -55,6 +55,17 @@ struct BiometricPolicyTests {
         await expectPassword(.expired, unlock)
     }
 
+    @Test func passwordDueDateFollowsLastPasswordEntry() throws {
+        let (unlock, _, _, clock) = make()
+        #expect(unlock.passwordDueDate(accountID: account) == nil)
+        try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        let enrolledAt = clock.now
+        #expect(unlock.passwordDueDate(accountID: account) == enrolledAt.addingTimeInterval(14 * 86400))
+        clock.advance(86400)
+        try unlock.notePasswordUnlock(accountID: account)
+        #expect(unlock.passwordDueDate(accountID: account) == enrolledAt.addingTimeInterval(15 * 86400))
+    }
+
     @Test func passwordUnlockResetsTheClock() async throws {
         let (unlock, _, _, clock) = make()
         try unlock.enroll(auk: auk, accountID: account, allowWatch: false)

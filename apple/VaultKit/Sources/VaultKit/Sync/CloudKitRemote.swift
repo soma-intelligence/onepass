@@ -1,4 +1,7 @@
-#if ONEPASS_CLOUDKIT
+// Always compiled: Xcode does not pass the app's ONEPASS_CLOUDKIT condition to package targets.
+// Nothing here runs until the app creates a `CloudKitRemote`, which it does only under
+// `#if ONEPASS_CLOUDKIT` (signed Release-CloudKit configuration, ruling R8).
+#if canImport(CloudKit)
 import CloudKit
 import Foundation
 

@@ -1,0 +1,116 @@
+# OnePass app (iPhone, iPad, native Mac). Generate with `make -C apple project`
+# (xcodegen generate); the generated OnePass.xcodeproj is committed (ruling R15).
+name: OnePass
+
+options:
+  bundleIdPrefix: me.somalabs
+  developmentLanguage: fr
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+configs:
+  Debug: debug
+  Release: release
+  Release-CloudKit: release
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEAD_CODE_STRIPPING: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    SWIFT_EMIT_LOC_STRINGS: YES
+
+packages:
+  VaultKit:
+    path: VaultKit
+  DesignKit:
+    path: DesignKit
+
+targets:
+  OnePass:
+    type: application
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - path: App
+        excludes:
+          - "Support/Info.plist"
+          - "Support/*.entitlements"
+    dependencies:
+      - package: VaultKit
+        product: VaultKit
+      - package: DesignKit
+        product: DesignKit
+    preBuildScripts:
+      - name: Build Rust core
+        basedOnDependencyAnalysis: false
+        shell: /bin/bash
+        script: |
+          # The XCFramework and the Swift bindings are generated, not committed (ruling R17).
+          if [ ! -d "$SRCROOT/build/OnePassFFI.xcframework" ]; then
+            make -C "$SRCROOT" core
+          fi
+    info:
+      path: App/Support/Info.plist
+      properties:
+        CFBundleDisplayName: OnePass
+        CFBundleDevelopmentRegion: fr
+        LSApplicationCategoryType: public.app-category.productivity
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
+        ITSAppUsesNonExemptEncryption: false
+        NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
+        NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit."
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        UIBackgroundModes: [remote-notification]
+        UISupportedInterfaceOrientations~iphone:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass
+        PRODUCT_NAME: OnePass
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        "ARCHS[sdk=macosx*]": arm64
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass.entitlements
+      configs:
+        Release-CloudKit:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ONEPASS_CLOUDKIT"
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          # Fill in the Apple team to sign this configuration (iCloud, shared keychain group, push).
+          DEVELOPMENT_TEAM: ""
+          CODE_SIGN_ENTITLEMENTS: App/Support/OnePass-CloudKit.entitlements
+          "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass-CloudKit-macOS.entitlements
+
+schemes:
+  OnePass:
+    build:
+      targets:
+        OnePass: all
+    run:
+      config: Debug
+    archive:
+      config: Release
