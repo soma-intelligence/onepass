@@ -31,7 +31,7 @@ use crate::model::Item;
 pub use checks::{Check, Detail, Finding, Severity};
 pub use pwned::{DirRangeSource, RangeSource, parse_range};
 pub use score::VaultScore;
-pub use sites::{BreachCatalog, SiteDirectory};
+pub use sites::{Breach, BreachCatalog, SiteDirectory, SiteInfo};
 
 /// Thresholds of an analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,8 +103,11 @@ pub struct Report {
 
 /// Runs every check on `items` (spec 3.2) and scores the result (spec 3.5).
 pub fn analyze(items: &[Item], opts: &Options, sources: Sources<'_>) -> Report {
-    // Task 12 wires the site and breach catalogs.
-    let Sources { pwned, .. } = sources;
+    let Sources {
+        pwned,
+        sites,
+        breaches,
+    } = sources;
     let analyzed: Vec<&Item> = items
         .iter()
         .filter(|i| i.trashed_at.is_none() && !i.archived)
@@ -118,6 +121,15 @@ pub fn analyze(items: &[Item], opts: &Options, sources: Sources<'_>) -> Report {
         }
         None => PwnedStatus::Disabled,
     };
+    if let Some(dir) = sites {
+        sites::site_findings(&analyzed, dir, &mut findings);
+    }
+    if let Some(catalog) = breaches {
+        sites::breach_findings(&analyzed, catalog, &mut findings);
+    }
+    // Last: it reads the compromised, reused and weak findings.
+    let exposed = sites::provider_findings(&analyzed, &findings);
+    findings.extend(exposed);
     findings.sort_by(|a, b| {
         (a.vault_id, a.item_id, a.check, &a.field_id).cmp(&(
             b.vault_id,
@@ -137,7 +149,7 @@ pub fn analyze(items: &[Item], opts: &Options, sources: Sources<'_>) -> Report {
         findings,
         counts,
         pwned: pwned_status,
-        sites_checked: false,
-        breaches_checked: false,
+        sites_checked: sites.is_some(),
+        breaches_checked: breaches.is_some(),
     }
 }

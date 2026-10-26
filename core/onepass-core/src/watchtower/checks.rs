@@ -251,12 +251,18 @@ pub(crate) fn local_findings(items: &[&Item], opts: &Options) -> Vec<Finding> {
     out
 }
 
-fn excluded(item: &Item, check: Check) -> bool {
+pub(crate) fn excluded(item: &Item, check: Check) -> bool {
     item.watchtower_exclusions.iter().any(|e| e == check.id())
 }
 
 /// Records a finding unless the item excludes the check.
-fn push(out: &mut Vec<Finding>, item: &Item, check: Check, field_id: Option<&str>, detail: Detail) {
+pub(crate) fn push(
+    out: &mut Vec<Finding>,
+    item: &Item,
+    check: Check,
+    field_id: Option<&str>,
+    detail: Detail,
+) {
     if excluded(item, check) {
         return;
     }
@@ -272,7 +278,7 @@ fn push(out: &mut Vec<Finding>, item: &Item, check: Check, field_id: Option<&str
 
 /// Non-empty `Password` fields of an item as (field id, value), in section
 /// order. The values are borrowed: no copy of a password is made.
-fn passwords(item: &Item) -> impl Iterator<Item = (&str, &str)> {
+pub(crate) fn passwords(item: &Item) -> impl Iterator<Item = (&str, &str)> {
     item.sections
         .iter()
         .flat_map(|s| s.fields.iter())
@@ -503,15 +509,9 @@ fn expiry(item: &Item, opts: &Options, field_id: Option<&str>, on: Date, out: &m
     }
 }
 
-/// Login or Password whose password last changed `old_password_days` ago or
-/// more: the latest history entry, else the creation date.
-fn old_password(item: &Item, opts: &Options, out: &mut Vec<Finding>) {
-    if !matches!(item.item_type, ItemType::Login | ItemType::Password) {
-        return;
-    }
-    let Some((field_id, _)) = passwords(item).next() else {
-        return;
-    };
+/// UTC date of the last password change: the latest history entry, else
+/// the creation date.
+pub(crate) fn password_changed_on(item: &Item) -> Date {
     let changed_at = item
         .password_history
         .iter()
@@ -521,10 +521,22 @@ fn old_password(item: &Item, opts: &Options, out: &mut Vec<Finding>) {
     // Imported timestamps keep their source offset; near the edges of the
     // supported range the UTC conversion does not exist. Fall back to the
     // date in the stored offset rather than panicking.
-    let changed = changed_at
+    changed_at
         .checked_to_offset(UtcOffset::UTC)
         .unwrap_or(changed_at)
-        .date();
+        .date()
+}
+
+/// Login or Password whose password last changed `old_password_days` ago or
+/// more: the latest history entry, else the creation date.
+fn old_password(item: &Item, opts: &Options, out: &mut Vec<Finding>) {
+    if !matches!(item.item_type, ItemType::Login | ItemType::Password) {
+        return;
+    }
+    let Some((field_id, _)) = passwords(item).next() else {
+        return;
+    };
+    let changed = password_changed_on(item);
     let days = (opts.today - changed).whole_days();
     if days >= i64::from(opts.old_password_days) {
         let days = u32::try_from(days).unwrap_or(u32::MAX);
