@@ -97,8 +97,25 @@ for f in "${FILES[@]}"; do
   log="$OUT/${base%.pv}.log"
   echo "$base" >> "$RAN"
   printf 'formal: %s ... ' "$base"
+  # Extra libraries: a model may name, one per line, a library of
+  # formal/proverif loaded after common.pvl, with the exact line
+  # "(* formal-lib: name.pvl *)" (account_core.pvl for the account models).
+  extra=()
+  missing=""
+  while IFS= read -r l; do
+    if [ -f "$FORMAL/proverif/$l" ]; then
+      extra+=(-lib "$FORMAL/proverif/$l")
+    else
+      missing="$l"
+    fi
+  done < <(sed -n 's/^(\* formal-lib: \([A-Za-z0-9_-]*\.pvl\) \*)$/\1/p' "$f")
+  if [ -n "$missing" ]; then
+    echo "missing library $missing"
+    printf '%s\t%s\t%s\t%s\n' "$base" "*" "error" "0.0" >> "$ACTUAL"
+    continue
+  fi
   t0="$(now_ms)"
-  run_limited "$PROVERIF" -lib "$LIB" "$f" > "$log" 2>&1
+  run_limited "$PROVERIF" -lib "$LIB" ${extra[@]+"${extra[@]}"} "$f" > "$log" 2>&1
   rc=$?
   t1="$(now_ms)"
   secs="$(awk -v a="$t0" -v b="$t1" 'BEGIN { printf("%.1f", (b - a) / 1000) }')"
