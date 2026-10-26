@@ -35,7 +35,9 @@
 //! instead of the current record, both stay errors.
 
 use std::collections::BTreeMap;
+use std::sync::Mutex;
 
+use aws_lc_rs::digest::{SHA256, digest};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -151,6 +153,16 @@ pub struct Repository<S: RecordStore> {
     pub(crate) store: S,
     pub(crate) account: Account,
     pub(crate) device: DeviceState,
+    /// The last restore epoch record verified, keyed by its version and
+    /// data, so that a read does not verify the same signature again.
+    epoch_cache: Mutex<Option<(u64, Vec<u8>, StoredEpoch)>>,
+}
+
+/// A restore epoch record, verified, and the SHA-256 of its data.
+#[derive(Clone)]
+struct StoredEpoch {
+    epoch: RestoreEpoch,
+    hash: [u8; 32],
 }
 
 /// The verified content of a vault.
@@ -320,6 +332,7 @@ impl<S: RecordStore> Repository<S> {
             store,
             account,
             device,
+            epoch_cache: Mutex::new(None),
         };
         repo.create_vault(personal())?;
         Ok((repo, secret_key))
@@ -382,6 +395,7 @@ impl<S: RecordStore> Repository<S> {
             store,
             account,
             device,
+            epoch_cache: Mutex::new(None),
         })
     }
 
@@ -424,9 +438,9 @@ impl<S: RecordStore> Repository<S> {
     /// vaults already read; its errors come before any vault's.
     pub fn vaults(&self) -> Result<Vec<Vault>> {
         let stored = self.stored_epoch()?;
-        let newer = newer_epoch(self.device.epoch, stored.as_ref())?;
+        let newer = self.epoch_rule(stored.as_ref())?;
         let known = match &stored {
-            Some(e) if newer => &e.heads,
+            Some(s) if newer => &s.epoch.heads,
             _ => &self.device.last_seen,
         };
         let out = self.open_vaults()?;
@@ -460,18 +474,53 @@ impl<S: RecordStore> Repository<S> {
 
     /// The account's restore epoch record, decoded and verified under the
     /// pinned account's signing key, or `None` if there is none. A record
-    /// whose version is not its epoch is `EpochRollback`.
-    fn stored_epoch(&self) -> Result<Option<RestoreEpoch>> {
+    /// whose version is not its epoch is `EpochRollback`. The verification
+    /// of the same record (version and data) is cached.
+    fn stored_epoch(&self) -> Result<Option<StoredEpoch>> {
         let id = self.account.params.account_id;
         let Some(rec) = self.store.get(RecordKind::RestoreEpoch, id)? else {
             return Ok(None);
         };
+        let mut cache = self
+            .epoch_cache
+            .lock()
+            .map_err(|_| Error::Store("epoch cache".into()))?;
+        if let Some((version, data, stored)) = cache.as_ref()
+            && *version == rec.version
+            && *data == rec.data
+        {
+            return Ok(Some(stored.clone()));
+        }
         let signed = SignedRestoreEpoch::decode(&rec.data)?;
         let epoch = signed.verify(id, &self.account.params.signing_pub)?;
         if rec.version != epoch.epoch {
             return Err(IntegrityError::EpochRollback.into());
         }
-        Ok(Some(signed.epoch))
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(digest(&SHA256, &rec.data).as_ref());
+        let stored = StoredEpoch {
+            epoch: signed.epoch,
+            hash,
+        };
+        *cache = Some((rec.version, rec.data, stored.clone()));
+        Ok(Some(stored))
+    }
+
+    /// `newer_epoch`, plus the fork check: a record with the very epoch
+    /// this device accepted, but not the record it accepted (its hash,
+    /// kept by the store as `restore_epoch_mark`), is `EpochRollback`.
+    /// Stores that keep no mark skip that check.
+    fn epoch_rule(&self, stored: Option<&StoredEpoch>) -> Result<bool> {
+        let newer = newer_epoch(self.device.epoch, stored.map(|s| &s.epoch))?;
+        if let Some(s) = stored
+            && !newer
+            && let Some((epoch, hash)) = self.store.restore_epoch_mark()?
+            && epoch == s.epoch.epoch
+            && hash != s.hash
+        {
+            return Err(IntegrityError::EpochRollback.into());
+        }
+        Ok(newer)
     }
 
     /// The restore epoch rules, the one place they are applied (before
@@ -481,21 +530,28 @@ impl<S: RecordStore> Repository<S> {
     /// 2. a valid record newer than the epoch accepted: `last_seen` is
     ///    replaced by its heads (vaults outside them are forgotten) and its
     ///    epoch is accepted; the usual checks follow;
-    /// 3. the same epoch: nothing changes;
+    /// 3. the same epoch: nothing changes, unless it is another record
+    ///    than the one accepted (a fork, see `epoch_rule`);
     /// 4. an older epoch, or none while one was accepted, is
     ///    `EpochRollback`; a bad signature `Signature`; another account
     ///    `EpochRollback`; an undecodable record `InvalidFormat`.
     ///
-    /// Returns the stored epoch, verified.
+    /// The record accepted is remembered by the store
+    /// (`set_restore_epoch_mark`). Returns the stored epoch, verified.
     pub(crate) fn sync_epoch(&mut self) -> Result<Option<RestoreEpoch>> {
         let stored = self.stored_epoch()?;
-        if newer_epoch(self.device.epoch, stored.as_ref())?
-            && let Some(e) = &stored
-        {
-            self.device.last_seen = e.heads.clone();
-            self.device.epoch = e.epoch;
+        let newer = self.epoch_rule(stored.as_ref())?;
+        let Some(s) = stored else {
+            return Ok(None);
+        };
+        if newer {
+            self.device.last_seen = s.epoch.heads.clone();
+            self.device.epoch = s.epoch.epoch;
         }
-        Ok(stored)
+        if self.store.restore_epoch_mark()? != Some((s.epoch.epoch, s.hash)) {
+            self.store.set_restore_epoch_mark(s.epoch.epoch, s.hash)?;
+        }
+        Ok(Some(s.epoch))
     }
 
     /// Mark that the account was deliberately set back (a restore, or a
@@ -510,6 +566,12 @@ impl<S: RecordStore> Repository<S> {
     /// one (`put_if_version`): another device's epoch written meanwhile is
     /// `Error::Conflict` (sync, then retry). The device then accepts the
     /// epoch and its heads.
+    ///
+    /// Strict: the stored epoch and every vault must pass the usual checks.
+    /// Over a sync store, an epoch whose heads cannot all reach the server
+    /// (a vault held for rebase) is dropped by the rebase with
+    /// `Error::Conflict`, to be issued again; see also
+    /// `issue_restore_epoch_from_local`.
     ///
     /// Errors: those of `sync_epoch`, `vaults`, the loads and the writes.
     /// The manifests already re-signed when a later step fails are valid
@@ -530,31 +592,11 @@ impl<S: RecordStore> Repository<S> {
                 vault.open_item(r)?;
             }
             let prev = &loaded.manifest;
-            let seq = prev
-                .seq
-                .checked_add(1)
-                .ok_or(Error::InvalidFormat("manifest seq"))?
-                .max(floor);
-            let m = Manifest {
-                vault_id: vault.id,
-                seq,
-                prev_hash: manifest_hash(prev),
-                entries: prev.entries.clone(),
-                merkle_root: prev.merkle_root,
-            };
-            let sm = sign_manifest(&vault, &self.account.keyset().signing, &m)?;
-            let data = postcard::to_allocvec(&sm).map_err(|_| Error::InvalidFormat("manifest"))?;
-            self.store.put_if_version(
-                Record {
-                    id: vault.id,
-                    kind: RecordKind::Manifest,
-                    version: seq,
-                    data,
-                },
-                Some(prev.seq),
-            )?;
-            self.device.last_seen.insert(vault.id, seen(&m));
-            heads.insert(vault.id, seen(&m));
+            let mut m = Manifest::next(Some(prev), vault.id, prev.entries.clone())?;
+            m.seq = m.seq.max(floor);
+            let head = self.store_manifest(&vault, &m, Some(prev.seq))?;
+            self.device.last_seen.insert(vault.id, head.clone());
+            heads.insert(vault.id, head);
         }
         let account_id = self.account.params.account_id;
         let issued = RestoreEpoch {
@@ -564,18 +606,22 @@ impl<S: RecordStore> Repository<S> {
             heads,
             reason,
         };
-        let signed = SignedRestoreEpoch::sign(issued.clone(), &self.account.keyset().signing)?;
+        let data =
+            SignedRestoreEpoch::sign(issued.clone(), &self.account.keyset().signing)?.encode();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(digest(&SHA256, &data).as_ref());
         self.store.put_if_version(
             Record {
                 id: account_id,
                 kind: RecordKind::RestoreEpoch,
                 version: epoch,
-                data: signed.encode(),
+                data,
             },
             stored,
         )?;
         self.device.epoch = epoch;
         self.device.last_seen = issued.heads.clone();
+        self.store.set_restore_epoch_mark(epoch, hash)?;
         Ok(issued)
     }
 
@@ -893,7 +939,19 @@ impl<S: RecordStore> Repository<S> {
         entries: Vec<ManifestEntry>,
     ) -> Result<SeenManifest> {
         let m = Manifest::next(prev, vault.id, entries)?;
-        let sm = sign_manifest(vault, &self.account.keyset().signing, &m)?;
+        self.store_manifest(vault, &m, prev.map(|p| p.seq))
+    }
+
+    /// Sign and store `m` (record version = its seq), only if the stored
+    /// manifest has seq `expected` (`None`: there is none). A lost race is
+    /// `Error::Conflict`.
+    fn store_manifest(
+        &mut self,
+        vault: &Vault,
+        m: &Manifest,
+        expected: Option<u64>,
+    ) -> Result<SeenManifest> {
+        let sm = sign_manifest(vault, &self.account.keyset().signing, m)?;
         let data = postcard::to_allocvec(&sm).map_err(|_| Error::InvalidFormat("manifest"))?;
         self.store.put_if_version(
             Record {
@@ -902,9 +960,9 @@ impl<S: RecordStore> Repository<S> {
                 version: m.seq,
                 data,
             },
-            prev.map(|p| p.seq),
+            expected,
         )?;
-        Ok(seen(&m))
+        Ok(seen(m))
     }
 }
 

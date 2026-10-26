@@ -70,6 +70,19 @@ pub trait RecordStore {
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>>;
     fn list(&self, kind: RecordKind) -> Result<Vec<Record>>;
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()>;
+
+    /// The restore epoch this device accepted or issued last, with the
+    /// SHA-256 of its record data, if the store keeps it (device-local, not
+    /// synced). Used to tell two different epochs with the same number
+    /// apart (a fork). The default keeps nothing: the check is then skipped.
+    fn restore_epoch_mark(&self) -> Result<Option<(u64, [u8; 32])>> {
+        Ok(None)
+    }
+
+    /// Remember the mark of `restore_epoch_mark`. The default drops it.
+    fn set_restore_epoch_mark(&mut self, _epoch: u64, _hash: [u8; 32]) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Shared behavior checks, run against every store.

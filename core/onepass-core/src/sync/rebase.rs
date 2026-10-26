@@ -30,13 +30,17 @@
 //! previous pending writes with their last seen manifest, and the vault
 //! stays held.
 //!
-//! Restore epoch: the stored epoch is checked and applied first
-//! (`Repository::sync_epoch`). A local epoch that lost the race to another
-//! device's (`SyncStore::epoch_held`) is dropped and reported as
-//! `Error::Conflict` once the vaults are rebased: the caller syncs and
-//! issues it again, as the next epoch. When the stored epoch has a head for
-//! a vault newer than its ancestor, the server manifest must chain to that
-//! head instead: a manifest from before the epoch is refused.
+//! Restore epoch: a local epoch not pushed yet is dropped when it lost the
+//! race to another device's (`SyncStore::epoch_held`) or when any vault is
+//! held (its head, a pending manifest, is about to be rebased away and
+//! would never reach the server). The device then goes back to the epoch it
+//! had before issuing it, and the rebase reports `Error::Conflict` (first,
+//! before any vault error): the caller syncs and issues it again once the
+//! vaults converged. Only then is the stored epoch checked and applied
+//! (`Repository::sync_epoch`), so a winner's epoch with the same number is
+//! adopted with its heads. When the stored epoch has a head for a vault
+//! newer than its ancestor, the server manifest must chain to that head
+//! instead: a manifest from before the epoch is refused.
 //!
 //! Serialization premise: each vault's plan is read before its batch opens.
 //! Only the session writes pending rows, with one exception: the settlement
@@ -45,7 +49,7 @@
 //! interleave; the apps guarantee it by running the rebase inside the sync
 //! round that owns the fetch (one round at a time).
 
-use crate::epoch::RestoreEpoch;
+use crate::epoch::{EpochReason, RestoreEpoch};
 use crate::manifest::{
     Manifest, ManifestEntry, SignedManifest, manifest_hash, record_hash, verify_manifest,
 };
@@ -81,6 +85,25 @@ impl Plan {
 }
 
 impl Repository<SyncStore> {
+    /// Like `issue_restore_epoch`, for an owner's explicit choice of this
+    /// device's copy (`KeepThisDevice` after an alert): the heads are this
+    /// device's local copies, verified against its own history (pending
+    /// writes over the server state), even where the server is behind or
+    /// the vault is held for a rebase that cannot succeed. Every head is
+    /// re-signed at the epoch floor, then every pending manifest and the
+    /// epoch are rebuilt on the current server rows
+    /// (`SyncStore::rebuild_ancestors_on_base`): none is held, and the next
+    /// push overwrites the server's copies with them.
+    ///
+    /// Still refused: a stored epoch that fails the rules, and a vault
+    /// whose local copy fails the checks (nothing verified to keep).
+    pub fn issue_restore_epoch_from_local(&mut self, reason: EpochReason) -> Result<RestoreEpoch> {
+        let issued = self.issue_restore_epoch(reason)?;
+        self.store.rebuild_ancestors_on_base()?;
+        self.persist_device_state()?;
+        Ok(issued)
+    }
+
     /// Save the device state in the store (`SyncStore::set_device_state`).
     pub fn persist_device_state(&mut self) -> Result<()> {
         self.store.set_device_state(&self.device)
@@ -98,17 +121,25 @@ impl Repository<SyncStore> {
     /// error keeps its pending writes and stays held; the others stay
     /// rebased.
     ///
-    /// Before any vault: a local restore epoch that lost the race is
-    /// dropped, then the stored epoch is checked and applied (its errors
-    /// stop the rebase). The lost epoch is `Error::Conflict`, after every
-    /// vault was tried, if nothing else failed.
+    /// Before any vault: a local restore epoch that cannot ship (see the
+    /// module doc) is dropped and the device goes back to the epoch it had
+    /// before issuing it; then the stored epoch is checked and applied (its
+    /// errors stop the rebase). The dropped epoch is `Error::Conflict`,
+    /// returned after every vault was tried, before any vault error.
     pub fn rebase(&mut self) -> Result<Vec<Id>> {
-        let lost_epoch = self.store.epoch_held()?;
-        if lost_epoch {
+        let held = self.store.vaults_needing_rebase()?;
+        let pending_epoch = self.store.pending_epoch()?;
+        let lost_epoch = pending_epoch.is_some() && (self.store.epoch_held()? || !held.is_empty());
+        if let (true, Some(issued)) = (lost_epoch, pending_epoch) {
             self.store.drop_pending_epoch()?;
+            // `issue_restore_epoch` takes the epoch accepted plus one, so
+            // the one before is what this device had accepted.
+            if self.device.epoch == issued {
+                self.device.epoch = issued - 1;
+            }
+            self.persist_device_state()?;
         }
         let epoch = self.sync_epoch()?;
-        let held = self.store.vaults_needing_rebase()?;
         let mut rebased = Vec::new();
         let mut first_error = None;
         for v in held {
@@ -120,9 +151,11 @@ impl Repository<SyncStore> {
             }
         }
         let persisted = self.persist_device_state();
+        if lost_epoch {
+            return persisted.and(Err(Error::Conflict));
+        }
         match first_error {
             Some(e) => Err(e),
-            None if lost_epoch => persisted.and(Err(Error::Conflict)),
             None => persisted.map(|()| rebased),
         }
     }

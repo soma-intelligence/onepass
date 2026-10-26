@@ -183,10 +183,13 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
                 .map_err(|e| partial(e, usize::try_from(restored).unwrap_or(usize::MAX), total))?;
             restored += 1;
         }
-        // After every write: the epoch's heads are the restored state.
-        let epoch = stored(repo.issue_restore_epoch(EpochReason::Restore))?.epoch;
+        // After every write: the epoch's heads are the restored state. A
+        // failure here keeps the items written (and the device state saved):
+        // it is reported once the counts are out.
+        let epoch = stored(repo.issue_restore_epoch(EpochReason::Restore)).map(|e| e.epoch);
         Ok((plan.new_vaults.len(), restored, plan.skipped, epoch))
     })?;
+    let issued = epoch.as_ref().ok().copied();
     if ctx.json {
         crate::out!(
             "{}",
@@ -194,16 +197,27 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
                 "vaults_created": created,
                 "restored": restored,
                 "skipped": skipped,
-                "epoch": epoch,
+                "epoch": issued,
             })
         );
     } else {
         crate::out!("Created {created} vaults");
         crate::out!("Restored {restored} items");
         crate::out!("Skipped {skipped} items (already in the account)");
-        crate::out!("Restore epoch {epoch}");
+        if let Some(n) = issued {
+            crate::out!("Restore epoch {n}");
+        }
     }
-    Ok(())
+    epoch.map(|_| ()).map_err(epoch_not_issued)
+}
+
+/// The restore wrote its items but could not issue the epoch: the other
+/// devices may refuse the restored state until it is issued.
+fn epoch_not_issued(e: CliError) -> CliError {
+    CliError {
+        code: e.code,
+        msg: "items restored, epoch not issued: run sync and retry".to_owned(),
+    }
 }
 
 /// `backup inspect`: no data directory, no password.

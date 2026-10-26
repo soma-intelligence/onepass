@@ -27,6 +27,9 @@ use crate::store::{Record, RecordKind, RecordStore};
 use crate::{Error, Id, Result};
 
 const DEVICE_STATE_KEY: &str = "device_state";
+/// The restore epoch mark (`RecordStore::restore_epoch_mark`): epoch
+/// (8 bytes, big endian) then the SHA-256 of its record data.
+const EPOCH_MARK_KEY: &str = "epoch_hash";
 /// The capped log of remote deletions the store refused (outside the `sync.`
 /// namespace of the FFI handle, so only the core writes it).
 const IGNORED_DELETIONS_KEY: &str = "ignored_deletions";
@@ -256,7 +259,9 @@ fn held_epoch(conn: &Connection) -> Result<bool> {
 /// `SyncStore::pending_changes` on a consistent view.
 fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
     let held = held_vaults(tx)?;
-    let epoch_held = held_epoch(tx)?;
+    // The epoch ships only with or after the manifests its heads name: never
+    // while a vault is held (its head would be rebased away).
+    let epoch_held = held_epoch(tx)? || !held.is_empty();
     let mut stmt = tx
         .prepare("SELECT kind, id, version, data, vault FROM pending ORDER BY kind, id")
         .map_err(store_err)?;
@@ -814,6 +819,42 @@ impl SyncStore {
         self.read(held_epoch)
     }
 
+    /// The version (epoch number) of the restore epoch written here and not
+    /// yet pushed, if any.
+    pub(crate) fn pending_epoch(&self) -> Result<Option<u64>> {
+        self.read(|c| {
+            c.query_row(
+                "SELECT version FROM pending WHERE kind = ?1 AND data IS NOT NULL",
+                params![RecordKind::RestoreEpoch.code()],
+                |r| r.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(store_err)?
+            .map(|v| u64::try_from(v).map_err(|_| Error::InvalidFormat("record version")))
+            .transpose()
+        })
+    }
+
+    /// Make every pending manifest and restore epoch built on the current
+    /// `base` row: its ancestor becomes that row, so it is no longer held
+    /// and its push overwrites what the server holds now. For an owner's
+    /// explicit choice of the local copy (`issue_restore_epoch_from_local`).
+    pub(crate) fn rebuild_ancestors_on_base(&mut self) -> Result<()> {
+        let tx = self.write_tx()?;
+        let codes = params![RecordKind::Manifest.code(), RecordKind::RestoreEpoch.code()];
+        tx.execute("DELETE FROM ancestor WHERE kind IN (?1, ?2)", codes)
+            .map_err(store_err)?;
+        tx.execute(
+            "INSERT INTO ancestor (kind, id, version, data)
+             SELECT b.kind, b.id, b.version, b.data FROM base b
+             WHERE b.kind IN (?1, ?2) AND EXISTS (SELECT 1 FROM pending p
+                 WHERE p.kind = b.kind AND p.id = b.id AND p.data IS NOT NULL)",
+            codes,
+        )
+        .map_err(store_err)?;
+        tx.commit()
+    }
+
     /// Remove the pending restore epoch and its ancestor: reads see the
     /// server's epoch again.
     pub(crate) fn drop_pending_epoch(&mut self) -> Result<()> {
@@ -1058,6 +1099,25 @@ impl RecordStore for SyncStore {
             decode_row(k, id, v, d)
         })
         .collect()
+    }
+
+    fn restore_epoch_mark(&self) -> Result<Option<(u64, [u8; 32])>> {
+        let Some(v) = self.meta(EPOCH_MARK_KEY)? else {
+            return Ok(None);
+        };
+        let (epoch, hash) = v
+            .split_first_chunk::<8>()
+            .filter(|(_, h)| h.len() == 32)
+            .ok_or(Error::InvalidFormat("restore epoch mark"))?;
+        let mut h = [0u8; 32];
+        h.copy_from_slice(hash);
+        Ok(Some((u64::from_be_bytes(*epoch), h)))
+    }
+
+    fn set_restore_epoch_mark(&mut self, epoch: u64, hash: [u8; 32]) -> Result<()> {
+        let mut v = epoch.to_be_bytes().to_vec();
+        v.extend_from_slice(&hash);
+        self.set_meta(EPOCH_MARK_KEY, &v)
     }
 
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
