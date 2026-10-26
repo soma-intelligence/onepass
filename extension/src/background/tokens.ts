@@ -33,6 +33,8 @@ export interface FrameTokenOptions<R extends BoundRecord> {
    * resolved, and run this first (wipe a secret it holds).
    */
   onExpire?: (rec: R) => void | Promise<void>;
+  /** Runs when a live record is dropped (decision, close, navigation, tab removal). */
+  onDrop?: (rec: R) => void;
 }
 
 /** Common checks of a stored bound record. */
@@ -109,7 +111,9 @@ export class FrameTokens<R extends BoundRecord> {
     const t = this.timers.get(token);
     if (t !== undefined) clearTimeout(t);
     this.timers.delete(token);
+    const rec = this.mem.get(token);
     this.mem.delete(token);
+    if (rec) this.opts.onDrop?.(rec);
     await this.opts.area?.remove(this.opts.prefix + token);
   }
 

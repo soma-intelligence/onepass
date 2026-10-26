@@ -144,6 +144,13 @@ Rulings de la spec (section 14) qui bornent cette version :
 
 Origines : HTTPS seulement, aucune exception de développement (R-18).
 
+## Hygiène mémoire
+
+- L'historique du générateur (20 entrées) vit dans un tableau en mémoire du service worker. Il n'est écrit dans aucun stockage (`storage.session` compris), il est vidé au verrouillage et quand l'appairage est oublié, et un redémarrage du worker le repart vide. L'ancienne clé `genHistory` de `storage.session` est supprimée au démarrage.
+- Le mot de passe de la proposition d'enregistrement est effacé dès l'enregistrement, le refus ou la fermeture, et au plus tard après 2 minutes.
+- Les `Uint8Array` de clés et de secrets (appairage, KEM, session, canal natif) sont effacés par `wipe` dans des blocs `finally`, y compris sur les chemins d'erreur.
+- Limite assumée : les chaînes JavaScript sont immuables et ne peuvent pas être effacées. Un mot de passe affiché, copié, rempli ou décodé depuis un message reste en mémoire jusqu'au ramasse-miettes, hors de notre contrôle.
+
 ## Avertissements de développement
 
 - L'hôte de développement affiche `DEV MODE` dans son journal et n'est pas fait pour de vrais secrets. N'y mettre aucun vrai identifiant, mot de passe, carte ou coffre personnel.

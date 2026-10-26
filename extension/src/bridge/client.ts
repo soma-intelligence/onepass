@@ -259,14 +259,16 @@ export class BridgeClient {
     const channel = this.channel;
     if (this.failure || !channel) return;
     let reply: unknown;
+    let plain: Uint8Array | undefined;
     try {
-      const plain = await channel.open(msg);
+      plain = await channel.open(msg);
       const text = new TextDecoder("utf-8", { fatal: true }).decode(plain);
-      wipe(plain);
       reply = JSON.parse(text);
     } catch (e) {
       this.fail(e instanceof BridgeError ? e : new BridgeError("bad_frame", "reply"));
       return;
+    } finally {
+      wipe(plain);
     }
     this.dispatch(reply);
   }
@@ -383,6 +385,7 @@ export class BridgeClient {
   ): Promise<PairingRecord> {
     this.beginHandshake();
     let state: ExtPairing | undefined;
+    let stored: PairingRecord | undefined;
     // The whole pairing, user step included, is bounded by 120 s (spec 6.4
     // item 7): past it the state is wiped and the transport closed.
     const deadline = setTimeout(
@@ -417,12 +420,16 @@ export class BridgeClient {
       // A user step that never settles still ends at the deadline or when
       // the connection fails.
       await Promise.race([Promise.all([hostVerified, userAgreed]), failed.promise]);
-      const { confirm, record } = await Promise.race([st.confirm(), failed.promise]);
-      this.send(confirm);
+      const out = await Promise.race([st.confirm(), failed.promise]);
+      stored = out.record;
+      this.send(out.confirm);
       await this.next("pair_ok", this.stepTimeoutMs);
-      return record;
+      stored = undefined;
+      return out.record;
     } catch (e) {
       state?.abort();
+      // The record was never handed out: its key goes with the failure.
+      wipe(stored?.key);
       const err = e instanceof Error ? e : new BridgeError("bad_frame");
       this.fail(err);
       throw this.failure ?? err;
