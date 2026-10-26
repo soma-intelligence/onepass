@@ -1,6 +1,7 @@
 {
   "sourceLanguage": "fr",
   "strings": {
+    "Afficher le mot de passe": {},
     "Afficher les %lld autres éléments": {},
     "Ajouter à %@": {},
     "Annuler": {},
@@ -30,6 +31,7 @@
     "Enregistrer une passkey pour %@": {},
     "Identifiant": {},
     "Le nouveau mot de passe remplace l'ancien, qui reste dans l'historique de l'élément.": {},
+    "Masquer le mot de passe": {},
     "Mettre à jour": {},
     "Mettre à jour %@": {},
     "Mettre à jour l'élément existant": {},

@@ -178,7 +178,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         requestToken &+= 1
         requestEnded = false
         let token = requestToken
-        let session = VaultSession(environment: VaultEnvironment.live(sync: NoSync()))
+        let session = VaultSession(environment: Self.environment())
         let model = AutoFillModel(session: session, request: request, ownAppIDs: Self.ownAppIDs()) {
             [weak self] result in
             self?.finish(result, for: request, token: token)
@@ -187,6 +187,15 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         self.model = model
         host(AutoFillRootView(model: model, session: session, request: request))
         Task { await model.start() }
+    }
+
+    /// The shared store, settings and keychain service; in a Debug build after an isolated launch of
+    /// the app (UI tests), the isolated ones (`UITestIsolation`).
+    private static func environment() -> VaultEnvironment {
+        #if DEBUG
+        if let isolated = UITestIsolation.extensionEnvironment() { return isolated }
+        #endif
+        return VaultEnvironment.live(sync: NoSync())
     }
 
     private func answerWithoutInterface(_ request: AutoFillRequest) {

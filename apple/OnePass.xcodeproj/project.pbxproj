@@ -1170,9 +1170,9 @@
 			buildSettings = {
 				"ARCHS[sdk=macosx*]" = arm64;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "AutoFill/Support/OnePassAutoFill-iOS.entitlements";
-				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "AutoFill/Support/OnePassAutoFill-macOS.entitlements";
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Manual;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "AutoFill/Support/OnePassAutoFill-macOS-CloudKit.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;

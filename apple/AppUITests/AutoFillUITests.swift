@@ -25,14 +25,27 @@ final class AutoFillUITests: XCTestCase {
     /// The test target's own app: `AutoFillHost`.
     private let host = XCUIApplication()
 
+    /// Debug: the app's own test store, defaults suite and keychain service
+    /// (`me.somalabs.onepass.uitest`), never the real ones. The store is in the App Group container
+    /// and the extension follows the isolated launch (`UITestIsolation`).
+    private static let isolated = ["-OnePassTestIsolation", "YES"]
+
     override func setUp() async throws {
         continueAfterFailure = false
     }
 
+    override func tearDown() async throws {
+        // Empties the isolated store, defaults suite and keychain service.
+        let cleanup = XCUIApplication(bundleIdentifier: "me.somalabs.onepass")
+        cleanup.launchArguments += Self.isolated + ["-OnePassUITestReset", "YES"]
+        cleanup.launch()
+        cleanup.terminate()
+    }
+
     func testFillLoginIntoHostApp() throws {
         turnOffInSystemSettings()
-        // Debug only: empties the store, the settings and this app's keychain items first.
-        onePass.launchArguments += ["-OnePassUITestReset", "YES"]
+        // Debug only: starts from an empty isolated store, settings suite and keychain service.
+        onePass.launchArguments += Self.isolated + ["-OnePassUITestReset", "YES"]
         onePass.launch()
         createAccount()
 

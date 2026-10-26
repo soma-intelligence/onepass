@@ -251,10 +251,13 @@ public final class VaultSession {
 
     /// The account of this device: from the settings, else (settings wiped, store kept) the account
     /// the store shows, adopted into the settings once this device's keychain holds its Secret Key.
-    /// Nil when it cannot be told.
+    /// Nil when it cannot be told. A missing or refused store is never opened (opening would create
+    /// it, and the AutoFill extension must never create the shared store).
     private func knownAccountID() -> String? {
         if let accountID = settings.accountID { return accountID }
-        guard let stored = try? openSyncStore(dbPath: dbPath).accountId() else { return nil }
+        guard refusedStore == nil, FileManager.default.fileExists(atPath: dbPath),
+            let stored = try? openSyncStore(dbPath: dbPath).accountId()
+        else { return nil }
         if (try? secretKeys.contains(accountID: stored)) == true { settings.accountID = stored }
         return stored
     }

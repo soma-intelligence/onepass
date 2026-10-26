@@ -3,15 +3,18 @@ import LocalAuthentication
 import SwiftUI
 import VaultKit
 
-/// "Déverrouiller OnePass", in the tone of the app's lock screen: glyph, master password field with
-/// the biometric button inside, "Déverrouiller". The model tries Face ID / Touch ID once before this
-/// screen is used (ruling A2). Like the app's lock screen, the master password field is a plain
-/// `SecureField` with no password content type, so the system never offers to save it.
+/// "Déverrouiller OnePass", with the rules of the app's lock screen: glyph, ONE master password field
+/// (show or hide button, then the biometric button behind a thin divider), "Déverrouiller" once
+/// something is typed, Return unlocks. The Secret Key is never asked: it stays in the keychain. The
+/// model tries Face ID / Touch ID once when this screen shows up (ruling A2); the field takes the
+/// focus only when no such attempt runs, or once it failed or was cancelled. Like the app's lock
+/// screen, the field has no password content type, so the system never offers to save it.
 struct UnlockView: View {
     let model: AutoFillModel
     let session: VaultSession
 
     @State private var password = ""
+    @State private var revealed = false
     @State private var busy = false
     @State private var message: String?
     @State private var lockoutRefresh = 0
@@ -31,8 +34,12 @@ struct UnlockView: View {
                         .padding(.top, 6)
                     passwordField
                         .padding(.top, 4)
-                    unlockButton
+                    if !password.isEmpty || unlocking {
+                        unlockButton
+                            .transition(.opacity)
+                    }
                 }
+                .animation(.smooth(duration: 0.2), value: password.isEmpty)
                 .frame(maxWidth: 334)
                 .padding(.horizontal, 28)
                 .padding(.vertical, 32)
@@ -40,6 +47,14 @@ struct UnlockView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .background(background)
+        }
+        .task {
+            // No automatic biometric attempt: the keyboard comes up at once.
+            if !session.canUseBiometrics { fieldFocused = true }
+        }
+        .onChange(of: session.state) { old, new in
+            // The automatic attempt failed or was cancelled: back to the password.
+            if old == .unlocking, new == .locked { fieldFocused = true }
         }
         .task(id: lockoutUntil) {
             // Re-renders when the wait ends so the field and the button come back.
@@ -60,17 +75,45 @@ struct UnlockView: View {
     private var passwordField: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                SecureField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
-                    .labelsHidden()
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 17))
-                    .focused($fieldFocused)
-                    .submitLabel(.go)
-                    .onSubmit { Task { await unlockWithPassword() } }
-                    .disabled(unlocking || lockedOut)
-                    .privacySensitive()
-                    .accessibilityIdentifier("autofill.password")
+                Group {
+                    if revealed {
+                        TextField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                            .autocorrectionDisabled()
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                    } else {
+                        SecureField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                    }
+                }
+                .labelsHidden()
+                .textFieldStyle(.plain)
+                .font(.system(size: 17))
+                .focused($fieldFocused)
+                .submitLabel(.go)
+                .onSubmit { Task { await unlockWithPassword() } }
+                .disabled(unlocking || lockedOut)
+                .privacySensitive()
+                .accessibilityIdentifier("autofill.password")
+                Button {
+                    revealed.toggle()
+                    fieldFocused = true
+                } label: {
+                    Image(systemName: revealed ? "eye.slash" : "eye")
+                        .font(.system(size: 17))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, height: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
+                .accessibilityIdentifier("autofill.reveal")
                 if session.canUseBiometrics {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.15))
+                        .frame(width: 1, height: 24)
+                        .padding(.horizontal, 4)
+                        .accessibilityHidden(true)
                     Button {
                         Task { await unlockWithBiometrics() }
                     } label: {

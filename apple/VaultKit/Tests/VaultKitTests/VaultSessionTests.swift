@@ -98,6 +98,17 @@ struct VaultSessionTests {
         #expect(!FileManager.default.fileExists(atPath: h.environment.databaseURL.path))
     }
 
+    /// Milestone 2's account lookup in the store (settings wiped) must not open, hence create, a
+    /// missing store: an unlock with no account id and no store fails and leaves no file.
+    @Test func unlockWithoutAccountIDNeverCreatesTheStore() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        #expect(h.settings.accountID == nil)
+        await #expect(throws: VaultError.self) { try await session.unlock(password: testPassword) }
+        #expect(!FileManager.default.fileExists(atPath: h.environment.databaseURL.path))
+    }
+
     /// A store the app could not put in place (split by a failed migration): the session stays failed,
     /// "Réessayer" never opens or creates a store.
     @Test func refusedStoreStaysFailed() async throws {

@@ -114,6 +114,12 @@ final class AppModel {
         let resolved = SharedContainer.resolve()
         #if DEBUG
         let wasReset = DebugReset.applyIfRequested()
+        // The AutoFill extension opens the isolated store while the last launch was isolated.
+        if TestIsolation.isActive {
+            UITestIsolation.markActive(container: resolved)
+        } else {
+            UITestIsolation.clearMarker(container: resolved)
+        }
         #endif
         Self.sweepEmergencyKits()
         #if DEBUG
@@ -851,12 +857,13 @@ final class AppModel {
 
 #if DEBUG
 /// `-OnePassTestIsolation YES` (UI tests, screenshot runs and the Debug item helpers, Debug builds only): the app uses a store
-/// in `<tmp>/OnePassUITest`, the `me.somalabs.onepass.uitest` defaults suite and the
+/// in `OnePassUITest` (in the App Group container when there is one, so the AutoFill extension can
+/// follow, else in `<tmp>`), the `me.somalabs.onepass.uitest` defaults suite and the
 /// `me.somalabs.onepass.uitest` keychain service, never the user's store, settings or Secret Keys.
-/// No sync, no widget or watch data.
+/// No sync, no widget or watch data, nothing in the system identity store (`UITestIsolation`).
 enum TestIsolation {
-    static let keychainService = "me.somalabs.onepass.uitest"
-    static let suiteName = "me.somalabs.onepass.uitest"
+    static let keychainService = UITestIsolation.keychainService
+    static let suiteName = UITestIsolation.suiteName
 
     /// Also forced by the Debug helpers that create or unlock a fictional account
     /// (`-OnePassDebugItem`, `-OnePassDebugNewItem`, `-OnePassDebugSeedAccount`): they never touch
@@ -868,14 +875,9 @@ enum TestIsolation {
             || defaults.string(forKey: "OnePassDebugNewItem") != nil
     }
 
-    static var folder: URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("OnePassUITest", isDirectory: true)
-    }
+    static var folder: URL { UITestIsolation.folder(container: .resolve()) }
 
-    static var databaseURL: URL {
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder.appendingPathComponent("vault.sqlite")
-    }
+    static var databaseURL: URL { UITestIsolation.databaseURL(container: .resolve()) }
 
     /// `UserDefaults` is thread safe; the type is just not marked `Sendable` in this SDK.
     nonisolated(unsafe) static let defaults: UserDefaults = UserDefaults(suiteName: suiteName) ?? .standard

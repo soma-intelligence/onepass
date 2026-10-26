@@ -206,6 +206,13 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: ""
           "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": AutoFill/Support/OnePassAutoFill-macOS-CloudKit.entitlements
+        # Signed without CloudKit (milestone 2): the extension carries no iCloud entitlement, so the
+        # signed Mac file of Release-CloudKit serves here too (App Group, keychain group, provider).
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+          "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": AutoFill/Support/OnePassAutoFill-macOS-CloudKit.entitlements
 
   # Test host for the AutoFill UI test (ruling A16): a sign-in form with username, password and
   # one-time code fields. iOS only, never embedded in OnePass, never shipped.
