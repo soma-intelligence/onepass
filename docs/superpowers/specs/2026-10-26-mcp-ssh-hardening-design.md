@@ -1,0 +1,191 @@
+# Durcissement du serveur MCP et de l'agent SSH
+
+Date : 2026-10-26
+Statut : approuvée (auto-approbation, session autonome)
+Portée : durcir `onepass mcp` et `onepass ssh-agent` (jalon 7, spec `2026-10-25-milestone-7-mcp-ssh-design.md`) sans les désactiver. Brief : `.superpowers/briefs/mcp-ssh-hardening.md`.
+
+## 1. Compréhension
+
+Ce que le brief demande : un modèle de menace écrit (4 attaquants), une défense contre l'usurpation de client (identité du pair, signature de code, appairage), des approbations par client et par coffre, courtes, révocables, limitées en débit, regroupées, fortes (Touch ID) pour toute révélation, aucun secret dans le contexte du modèle sauf politique explicite, un journal d'audit lisible et chaîné, un agent SSH à confirmation réglable, clés liées aux hôtes, transfert refusé, signatures journalisées, et des tests d'abus (secrets hors portée, injection dans un titre, client non signé, rejeu d'une autorisation expirée).
+
+Ce qui existe déjà au jalon 7 et reste : scopes par vault (`metadata`, `use`, `write`, `totp`, `reveal`), politique signée, ordre fixe des contrôles, quarantaine d'intégrité, approbation sur terminal avec code de confirmation, journal chaîné et signé obligatoire avant les actions sur secret, uid du pair vérifié, transfert d'agent refusé par défaut, `session-bind` vérifié, marque-pages `hosts` indicatifs.
+
+Hypothèses : l'app Mac (jalon 2) n'héberge pas encore ces serveurs ; ils tournent dans la CLI. Touch ID est appelé depuis la CLI via LocalAuthentication. Les autres sessions durcissent le reste du cœur : les changements du cœur restent additifs (ici : aucun).
+
+## 2. Modèle de menace
+
+Actif protégé : les valeurs secrètes des items, les clés privées SSH, et la capacité de les utiliser. Hors périmètre (inchangé) : un attaquant root ou qui lit la mémoire du processus déverrouillé.
+
+| Attaquant | Capacités | Ce qu'il veut | Défenses |
+| --- | --- | --- | --- |
+| A1. Injection de prompt (contenu d'un item, d'une page, d'un outil) | Écrit du texte que le modèle lira : titre, URL, tag, sortie d'une commande | Pousser le modèle à demander un secret, à l'exfiltrer, à approuver en masse | Données du coffre balisées `untrusted_vault_data` ; aucune valeur rendue sans scope `reveal` ; approbation humaine qui affiche la demande exacte ; masquage des sorties ; limites de débit ; refus groupés après des refus répétés |
+| A2. Agent IA malveillant ou piloté | Appelle tous les outils MCP avec des arguments arbitraires, a souvent un shell sous le même uid | Obtenir des secrets hors de sa portée, contourner l'approbation, user l'utilisateur | Scopes par client et par vault ; approbation forte (Touch ID) pour `reveal` et `totp` ; autorisations courtes et révocables, liées au client ; limites de débit ; blocage temporaire après refus ; journal que l'agent ne peut pas réécrire sans être détecté |
+| A3. Processus local qui se fait passer pour un client | Même uid ; se connecte au socket SSH ou lance `onepass mcp` lui-même | Signer avec une clé ou lire des secrets en se présentant comme un client approuvé | Identité du pair par le noyau (uid, pid, jeton d'audit) ; identité de code signée (équipe et identifiant) vérifiée par le système ; seul un client appairé est servi ; un binaire non signé est épinglé par son empreinte |
+| A4. Fatigue d'approbation | Déclenche des dizaines d'invites pour obtenir un « oui » réflexe | Une approbation obtenue par lassitude | Regroupement : une seule invite par requête, toutes cibles incluses ; autorisations de courte durée explicites ; plafond d'invites par minute ; blocage du client après 3 refus ; Touch ID pour toute révélation ; code de confirmation à recopier |
+
+Ruling: modèle de menace limité aux 4 attaquants du brief, l'attaquant root restant hors périmètre - il lit la mémoire du processus quoi qu'on fasse - coût si faux : aucun, c'est la limite déjà documentée.
+
+## 3. Identité des clients
+
+### 3.1 Nouvelle crate `onepass-peer`
+
+Une crate dédiée regroupe ce que le noyau sait du processus en face :
+
+- `PeerCred { uid, pid, audit_token }` pour un `UnixStream` (macOS : `getpeereid`, `LOCAL_PEERPID`, `LOCAL_PEERTOKEN` ; Linux : `SO_PEERCRED`) et pour le processus parent (`getppid`).
+- `exe_path(pid)`.
+- `CodeIdentity` : ce que le système dit du code exécuté.
+  - `Platform { identifier }` : binaire Apple (exigence `anchor apple`).
+  - `Team { team_id, identifier }` : signé par un développeur (exigence `anchor apple generic` valide, équipe lue dans les informations de signature).
+  - `Unsigned { path, sha256 }` : non signé ou signé ad hoc (tout binaire compilé localement sur Apple Silicon), épinglé par l'empreinte SHA-256 du fichier exécutable.
+- `identify(pid | audit_token) -> ClientIdentity { code: CodeIdentity, exe, pid, chain }`. Sur macOS, `SecCodeCopyGuestWithAttributes` (par jeton d'audit pour un socket, sinon par pid), `SecCodeCheckValidity`, puis `SecCodeCopySigningInformation` pour l'équipe et l'identifiant. Un code dont la signature ne se vérifie pas (modifié sur le disque) est `Unsigned`. Sur Linux, toujours `Unsigned`.
+- Identifiant stable d'un client : `platform:<identifier>`, `team:<team_id>:<identifier>`, `unsigned:<sha256>`.
+
+Le module `peer.rs` de `onepass-ssh-agent` est remplacé par cette crate.
+
+Ruling: identité de code par les exigences de signature du système (Security.framework) plutôt que par le chemin - un chemin se remplace, une signature d'équipe non - coût si faux : un client signé mais compromis reste accepté (hors périmètre, attaquant root ou chaîne de signature compromise).
+
+Ruling: binaire ad hoc ou non signé épinglé par l'empreinte SHA-256 de son fichier - sur Apple Silicon tout binaire local est signé ad hoc, sans identité ; l'empreinte change à chaque recompilation - coût si faux : il faut réappairer un outil local après chaque mise à jour.
+
+Ruling: jeton d'audit (`LOCAL_PEERTOKEN`) plutôt que pid pour le socket SSH - un pid peut être réutilisé entre `accept` et la vérification - coût si faux : aucun sur macOS ; Linux garde le pid.
+
+### 3.2 Client MCP
+
+Le client MCP est le processus qui lance `onepass mcp` (stdio). Son identité est celle du premier ancêtre qui n'est pas un lanceur : les shells et `env` du système (`com.apple.sh`, `com.apple.bash`, `com.apple.zsh`, `com.apple.dash`, `com.apple.env`) sont traversés, au plus 8 niveaux. La chaîne complète est journalisée. Le nom déclaré par le client dans `initialize` n'est qu'une étiquette affichée.
+
+Ruling: identité MCP = premier ancêtre non lanceur - un hôte MCP lance souvent le serveur par un shell ; appairer `sh` reviendrait à appairer tout le monde - coût si faux : un hôte qui passe par un interpréteur générique (`node`, `python`) appaire cet interpréteur ; documenté.
+
+### 3.3 Appairage
+
+Registre signé `<data-dir>/clients.json` (`SignedConfig`, domaine `clients`), par surface (`mcp`, `ssh`) :
+
+```
+{ "account_id", "generation", "clients": [ { "id", "surface", "label", "code": {...}, "paired_at",
+  "mcp_scopes": { "<vault id>": ["metadata", "use", ...] },   // MCP seulement
+  "ssh_keys": ["<empreinte>", ...] | null } ] }              // SSH seulement, null = toutes
+```
+
+- Un client inconnu n'est jamais servi : MCP répond à chaque appel d'outil `Refused("client not paired: run onepass clients pair ...")` et écrit une entrée d'audit ; SSH répond `FAILURE`, aucune clé listée.
+- Appairage interactif à la première connexion, seulement pour un client `Platform` ou `Team`, par une approbation forte (section 4.4) qui affiche l'identité vérifiée. Scopes MCP par défaut à l'appairage : `metadata` et `use` sur chaque vault MCP ; clés SSH : toutes.
+- Un client `Unsigned` ne s'appaire que par la commande explicite `onepass clients pair --surface <s> --exe <chemin>` (mot de passe maître, empreinte affichée).
+- `onepass clients list | pair | unpair <id> | scopes <id> --vault <v> --scopes <liste> | keys <id> --key <empreinte>...`.
+- Les serveurs relisent et vérifient le registre à chaque requête : un désappairage prend effet tout de suite.
+
+Ruling: aucun client servi sans appairage - c'est la seule défense contre A3 qui tienne pour le même uid - coût si faux : une étape de plus au premier usage.
+
+Ruling: appairage interactif réservé aux clients signés, non signés par commande explicite - une invite « appairer ce binaire ad hoc ? » ne donne aucune information vérifiable à l'utilisateur - coût si faux : un outil local demande une commande de plus.
+
+Ruling: registre signé avec un compteur `generation`, le plus haut vu étant gardé en mémoire par chaque serveur - un registre plus ancien rejoué pendant que le serveur tourne est refusé - coût si faux : au redémarrage, un ancien registre authentique peut être rejoué (documenté, comme la politique MCP).
+
+## 4. Approbations
+
+### 4.1 Portées par client et par coffre
+
+Scopes effectifs MCP = politique du vault (`mcp-policy.json`) ∩ scopes du client appairé ∩ restriction de lancement (`--vault`, `--scopes`). Un vault hors des scopes du client lui est invisible, comme un vault non MCP.
+
+Ruling: les scopes du client s'ajoutent à la politique existante par intersection - la politique reste le plafond global, le client ne fait que restreindre - coût si faux : aucun.
+
+### 4.2 Autorisations courtes et révocables
+
+Les « accords de session » en mémoire du jalon 7 deviennent des autorisations persistées dans un fichier signé `<data-dir>/grants.json` (`generation`, liste d'autorisations) :
+
+```
+{ "id", "client_id", "surface", "action", "key", "vault_id", "expires_at", "created_at" }
+```
+
+- Durée par défaut 5 minutes, au plus 60 minutes, choisie à l'invite (`s` = 5 min ; `s15`, `s60`).
+- Liée au client appairé (identifiant de code) : un autre processus ne la réutilise pas.
+- Vérifiée à chaque usage : signature du fichier, `expires_at` dans le futur (horloge murale et horloge monotone du serveur), client identique, requête identique (`key`).
+- `onepass grants list` et `onepass grants revoke <id> | --all | --client <id>` ; la révocation réécrit le fichier signé avec une génération plus haute.
+- Une autorisation expirée ou révoquée est refusée et l'utilisateur est de nouveau sollicité ; le refus est journalisé (`grant_expired`, `grant_revoked`).
+- `reveal`, `totp` et les clés SSH `confirm_each_use` ne donnent jamais d'autorisation.
+
+Ruling: autorisations dans un fichier signé relu à chaque requête plutôt qu'en mémoire - la révocation depuis un autre terminal doit agir sur un serveur en marche - coût si faux : une lecture et une vérification de signature par requête.
+
+Ruling: durée par défaut 5 min, plafond 60 min - assez pour une tâche, trop court pour une session d'agent oubliée - coût si faux : plus d'invites.
+
+### 4.3 Limites de débit et fatigue
+
+Par client et par surface, en mémoire du serveur :
+
+- au plus 6 invites par minute ; au-delà, refus immédiat sans invite (`rate_limited`) ;
+- au plus 30 requêtes à secret par minute (MCP) ou 60 signatures par minute (SSH) ;
+- après 3 refus de l'utilisateur d'affilée, le client est bloqué 10 minutes : refus sans invite (`client_cooling_down`), annoncé une fois sur le terminal ;
+- regroupement : une requête = une invite pour toutes ses cibles (déjà le cas pour `run_with_secrets`) ; une requête identique à une invite en attente attend son résultat au lieu d'en ouvrir une autre.
+
+Ruling: seuils 6 invites/min, 3 refus puis 10 min de pause - un humain ne répond pas sérieusement à plus d'une invite toutes les 10 s, et 3 refus signalent un agent qui insiste - coût si faux : un usage légitime intense est freiné, réglable par variables de configuration documentées.
+
+### 4.4 Approbation forte
+
+Trait `StrongAuth` dans `onepass-guard` : `fn verify(&self, reason: &str) -> StrongOutcome`.
+
+- macOS : LocalAuthentication, politique « propriétaire de l'appareil » (Touch ID, Apple Watch, ou mot de passe de session macOS en repli), raison affichée par le système avec le client et la cible.
+- Ailleurs ou si LocalAuthentication est indisponible (session SSH, pas d'interface) : le mot de passe maître retapé sur `/dev/tty`, vérifié contre le compte.
+- Développement : `ONEPASS_DEV_STRONG_AUTH=allow|deny`, builds de debug seulement.
+
+Exigée pour : `reveal_secret`, `totp_code`, l'appairage interactif, et (option `--strong`) chaque signature SSH. Elle s'ajoute à l'invite avec code de confirmation : l'invite dit quoi, l'approbation forte prouve qui.
+
+Ruling: Touch ID via LocalAuthentication depuis la CLI (crates `objc2-local-authentication`) avec repli sur le mot de passe maître - c'est l'approbation forte demandée et la seule disponible sans app - coût si faux : une dépendance Objective-C de plus, limitée à macOS.
+
+### 4.5 Secrets hors du contexte du modèle
+
+Inchangé et confirmé : seules `reveal_secret` (scope `reveal`, absent par défaut, Touch ID) et `totp_code` (scope `totp`, Touch ID) rendent une valeur. Le chemin par défaut est `run_with_secrets` (injection dans l'environnement de la commande, sortie masquée).
+
+## 5. Journal d'audit
+
+Le journal du jalon 7 (`audit.log`, chaîné SHA-256, tête signée, en ajout seul sous verrou) gagne :
+
+- `client_id` (identifiant de code) et `client_label` dans chaque entrée (champs optionnels : les anciennes lignes restent vérifiables) ;
+- les nouveaux résultats `not_paired`, `rate_limited`, `client_cooling_down`, `grant_expired`, `grant_revoked`, `strong_auth_failed`, `host_not_bound` ;
+- `onepass audit [--verify] [--client <id>] [--since <durée>]` : lecture humaine (date locale, client, action, vault et item par leur nom, décision, résultat), vérification de la chaîne toujours faite avant l'affichage.
+
+Ruling: une commande `onepass audit` de premier niveau, `onepass mcp audit` gardée comme alias - le journal couvre MCP et SSH - coût si faux : aucun.
+
+## 6. Agent SSH
+
+- Confirmation réglable : `onepass ssh-agent --confirm session|always` (défaut `session`) ; `confirm_each_use` de l'item force `always` pour sa clé ; `--strong` exige l'approbation forte à chaque signature.
+- Clés liées aux hôtes : une clé dont le champ `hosts` n'est pas vide ne signe que pour une connexion liée (`session-bind`) dont la clé d'hôte correspond, dans `known_hosts`, à un de ses hôtes. Sans liaison, ou destination non correspondante : refus (`host_not_bound`), sauf signature `SSHSIG` d'espace de noms `git` pour une clé dont `git_signing` vaut oui. Une clé sans `hosts` reste utilisable partout, avec approbation.
+- Transfert : refusé sauf `--allow-forwarded` (inchangé), et jamais d'autorisation pour une connexion transférée.
+- Liste des clés par client : un client appairé avec `ssh_keys` ne voit et n'utilise que ces clés.
+- Chaque signature, acceptée ou refusée, est journalisée avec client, clé, destination liée et espace de noms.
+
+Ruling: marque-pages `hosts` désormais bloquants - le brief demande des clés liées à des hôtes, et `session-bind` donne une destination vérifiée - coût si faux : une clé avec `hosts` ne marche plus avec un client trop ancien pour `session-bind` (OpenSSH < 8.9) ; il faut vider `hosts`.
+
+Ruling: exception `git` pour les signatures de commits - `ssh-keygen -Y sign` ne lie aucune session ; `git_signing` existe déjà dans le modèle - coût si faux : une clé `git_signing` peut signer n'importe quel contenu de l'espace `git`.
+
+## 7. Tests d'abus
+
+- Agent qui demande des secrets hors de sa portée : scope absent du client, vault hors des scopes du client, vault non MCP ; l'approbateur n'est jamais appelé.
+- Injection de prompt dans un titre : le titre revient balisé, nettoyé à l'affichage, et n'ouvre aucune autorisation.
+- Client non signé : un binaire de test ad hoc se connecte au socket SSH et lance `onepass mcp` : refusé tant qu'il n'est pas appairé ; appairé par `clients pair --exe`, il est servi ; le binaire modifié d'un octet est refusé.
+- Rejeu d'une autorisation expirée : autorisation créée, horloge avancée (horloge injectable), requête refusée et invite de nouveau ; fichier `grants.json` restauré après révocation : refusé (génération plus basse) ; autorisation copiée vers un autre client : refusée.
+- Fatigue : 7 invites en une minute (la 7e refusée sans invite) ; 3 refus puis blocage ; requêtes identiques simultanées regroupées.
+- SSH : clé avec `hosts` sans liaison refusée ; liaison vers un autre hôte refusée ; signature `git` acceptée seulement avec `git_signing`.
+
+## 8. Red team
+
+Avant la revue finale, une équipe rouge (modèle le plus puissant) attaque MCP et SSH avec les 4 attaquants de la section 2, écrit ses attaques en tests, et tout ce qu'elle casse est corrigé.
+
+## 9. Hors périmètre
+
+- Héberger les serveurs dans l'app Mac (jalon 2b ou suivant).
+- Sandbox des commandes lancées par `run_with_secrets`.
+- Détection du retour en arrière des registres signés après un redémarrage (même limite que la politique MCP).
+
+## 10. Récapitulatif des rulings
+
+1. Modèle de menace limité aux 4 attaquants.
+2. Identité de code par les exigences de signature du système.
+3. Binaire ad hoc ou non signé épinglé par SHA-256.
+4. Jeton d'audit pour le socket SSH.
+5. Identité MCP = premier ancêtre non lanceur.
+6. Aucun client servi sans appairage.
+7. Appairage interactif réservé aux clients signés.
+8. Registre signé avec génération.
+9. Scopes client par intersection.
+10. Autorisations dans un fichier signé relu à chaque requête.
+11. Durées 5 min par défaut, 60 min au plus.
+12. Seuils de débit et de fatigue.
+13. Touch ID via LocalAuthentication, repli mot de passe maître.
+14. Commande `onepass audit` de premier niveau.
+15. Marque-pages `hosts` bloquants.
+16. Exception `git` pour les signatures de commits.
