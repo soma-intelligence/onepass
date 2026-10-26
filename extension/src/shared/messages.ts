@@ -1,0 +1,140 @@
+// Internal runtime messages (spec 4, 8). `ref` values are opaque ids assigned
+// by the content script; they are never selectors supplied by the page.
+
+export type ProviderId =
+  | "google"
+  | "apple"
+  | "microsoft"
+  | "github"
+  | "facebook"
+  | "x"
+  | "linkedin"
+  | "discord"
+  | "slack";
+
+export type FieldRole =
+  | "username"
+  | "email"
+  | "current_password"
+  | "new_password"
+  | "confirm_password"
+  | "otp"
+  | "cc_name"
+  | "cc_number"
+  | "cc_exp"
+  | "cc_exp_month"
+  | "cc_exp_year"
+  | "cc_csc"
+  | "given_name"
+  | "family_name"
+  | "full_name"
+  | "tel"
+  | "organization"
+  | "bday"
+  | "address_line1"
+  | "address_line2"
+  | "city"
+  | "postal_code"
+  | "region"
+  | "country"
+  | "remember_me"
+  | "unknown";
+
+export type FormKind = "login" | "signup" | "change_password" | "otp" | "card" | "identity" | "address";
+
+export interface FieldInfo {
+  ref: string;
+  role: FieldRole;
+}
+
+export interface FormInfo {
+  ref: string;
+  kind: FormKind;
+  fields: FieldInfo[];
+  submitRef?: string;
+}
+
+export interface PageAnalysis {
+  url: string;
+  forms: FormInfo[];
+  captcha: boolean;
+  push: boolean;
+  providerButtons: { provider: ProviderId; ref: string }[];
+  accountChooser: { email: string; ref: string }[];
+}
+
+export type FrameKind = "menu" | "overlay" | "save";
+
+/** Content script to background (untrusted sender: origin comes from `sender`). */
+export type CsToBg =
+  | { type: "page_analysis"; analysis: PageAnalysis }
+  | { type: "open_menu"; fieldRef: string; formRef: string; formKind: FormKind }
+  | { type: "close_menu" }
+  | {
+      type: "submitted_credentials";
+      formRef: string;
+      username: string;
+      password: string;
+      /** Password typed in the "new password" field of a signup or change form. */
+      isNew: boolean;
+    }
+  | { type: "provider_click"; provider: ProviderId; ref: string }
+  | { type: "account_click"; email: string; ref: string };
+
+export type SaveDecision = "save" | "update" | "never" | "dismiss";
+
+export interface SaveEdits {
+  title: string;
+  username: string;
+  password: string;
+  vaultId: string;
+  rule: "domain" | "exact_host" | "exact_url" | "never";
+  tags: string[];
+}
+
+/** Extension pages (menu, overlay, save, popup) to background; `token` binds the frame. */
+export type UiToBg =
+  | { type: "menu_init"; token: string }
+  | { type: "menu_pick"; token: string; itemId: string }
+  | { type: "menu_generate"; token: string }
+  | { type: "overlay_init"; token: string }
+  | { type: "overlay_start"; token: string; itemId: string }
+  | { type: "overlay_stop"; token: string }
+  | { type: "save_init"; token: string }
+  | { type: "save_decide"; token: string; decision: SaveDecision; edits?: SaveEdits; itemId?: string }
+  | { type: "popup_status" }
+  | { type: "popup_unlock" }
+  | { type: "popup_search"; query: string }
+  | { type: "popup_fill"; itemId: string }
+  | { type: "popup_totp"; itemId: string }
+  | { type: "popup_pair_start" }
+  | { type: "popup_pair_approve" }
+  | { type: "popup_pair_cancel" };
+
+/** Background to content script. */
+export type BgToCs =
+  | { type: "fill"; fields: { ref: string; value: string }[] }
+  | { type: "click"; ref: string }
+  | { type: "submit"; ref: string }
+  | { type: "show_frame"; kind: FrameKind; url: string; ref?: string }
+  | { type: "remove_frame"; kind: FrameKind }
+  | { type: "chain_highlight"; ref: string | null };
+
+const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
+  "page_analysis",
+  "open_menu",
+  "close_menu",
+  "submitted_credentials",
+  "provider_click",
+  "account_click",
+]);
+
+/** Cheap discriminant check for messages received from content scripts. */
+export function isCsToBg(m: unknown): m is CsToBg {
+  return (
+    typeof m === "object" &&
+    m !== null &&
+    typeof (m as { type?: unknown }).type === "string" &&
+    CS_TO_BG_TYPES.has((m as { type: string }).type)
+  );
+}
