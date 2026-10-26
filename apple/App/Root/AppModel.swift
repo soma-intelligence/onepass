@@ -50,6 +50,9 @@ final class AppModel {
     var editRequest = 0
     var saveRequest = 0
     var searchFocusRequest = 0
+    /// Bumped after each remote change set is applied: an open item detail reloads (or warns its
+    /// editor) on it.
+    private(set) var remoteRevision = 0
     /// Short confirmation shown at the bottom of the browse screens ("Mis à la corbeille").
     private(set) var toast: String?
 
@@ -124,6 +127,7 @@ final class AppModel {
         tasks.append(Task { [weak self] in
             for await _ in await coordinator.remoteChanges() {
                 await self?.session.reload()
+                self?.remoteRevision &+= 1
             }
         })
         tasks.append(Task { [weak self] in
@@ -145,10 +149,47 @@ final class AppModel {
             session.scenePhaseChanged(.inactive)
         case .background:
             session.scenePhaseChanged(.background)
+            #if os(iOS)
+            lockWhileBackgroundTimeLasts()
+            #endif
         @unknown default:
             break
         }
     }
+
+    #if os(iOS)
+    @ObservationIgnored private var backgroundLock: Task<Void, Never>?
+    @ObservationIgnored private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+
+    /// iOS suspends the app soon after it leaves the screen, and the in-process auto-lock timer with
+    /// it. While the system grants background time, the delay is checked every second, so a short
+    /// delay (shared mode, 1 minute) locks without waiting for the return to the foreground. Past
+    /// that, a background wake (remote notification) or the return locks first.
+    private func lockWhileBackgroundTimeLasts() {
+        guard session.state == .unlocked, backgroundLock == nil else { return }
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "OnePass auto-lock") { [weak self] in
+            MainActor.assumeIsolated { self?.endBackgroundLock() }
+        }
+        backgroundLock = Task { [weak self] in
+            while let self, !Task.isCancelled, self.session.state == .unlocked,
+                UIApplication.shared.applicationState == .background
+            {
+                self.session.checkAutoLock()
+                try? await Task.sleep(for: .seconds(1))
+            }
+            self?.endBackgroundLock()
+        }
+    }
+
+    private func endBackgroundLock() {
+        backgroundLock?.cancel()
+        backgroundLock = nil
+        if backgroundTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            backgroundTaskID = .invalid
+        }
+    }
+    #endif
 
     #if DEBUG
     /// Screenshots: `-OnePassDebugSeedAccount YES` creates a fictional account (Camille Durand) when
@@ -276,8 +317,13 @@ final class AppModel {
         }
     }
 
-    /// The vault of a new item: the vault shown in the list, else the first visible one.
+    /// iPhone (tabs): the vault whose list is open in the visible tab, set by `PhoneTabsView`.
+    var phoneBrowsedVault: String?
+
+    /// The vault of a new item: the vault shown in the list (iPhone: the vault list open in the
+    /// visible tab), else the first visible one.
     var vaultForNewItem: String? {
+        if let id = phoneBrowsedVault, session.vaults.contains(where: { $0.id == id }) { return id }
         if case .vault(let id) = selection, session.vaults.contains(where: { $0.id == id }) { return id }
         return session.vaults.first?.id
     }

@@ -244,6 +244,24 @@ struct VaultSessionTests {
         #expect(session.state == .unlocked)
     }
 
+    /// M5: still in the background (a background task tick or a remote notification wake), the
+    /// expired delay locks without waiting for the return to the foreground.
+    @Test func backgroundWakePastTheDelayLocks() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        session.copy("valeur-fictive", concealed: true)
+        session.scenePhaseChanged(.background)
+        h.clock.advance(600)
+        session.checkAutoLock()
+        #expect(session.state == .unlocked)
+        h.clock.advance(301)
+        session.checkAutoLock()
+        #expect(session.state == .locked)
+        #expect(session.summaries.isEmpty && h.pasteboard.snapshot.contents == nil)
+    }
+
     @Test func sharedModeAutoLocksAfterFiveMinutes() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }

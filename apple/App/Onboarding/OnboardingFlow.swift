@@ -268,6 +268,20 @@ final class OnboardingModel {
         step = .restore
     }
 
+    /// The session locked (auto-lock, background, "Verrouiller") after the account was created or
+    /// restored: the Secret Key and the master password leave memory, the Emergency Kit file is
+    /// deleted and the lock screen replaces the onboarding. The Secret Key stays in the keychain.
+    func sessionLocked() {
+        deleteKit()
+        password = ""
+        confirmation = ""
+        restorePassword = ""
+        restoreKey = ""
+        secretKey = nil
+        errorMessage = nil
+        model.onboardingInProgress = false
+    }
+
     private func finish() {
         password = ""
         confirmation = ""
@@ -371,6 +385,10 @@ struct OnboardingFlow: View {
             // whatever the reason the onboarding is on screen.
             let restoreOnly = app.session.needsSecretKey && app.session.state != .noAccount
             if model == nil { model = OnboardingModel(model: app, restoreOnly: restoreOnly) }
+        }
+        .onChange(of: app.session.state) { old, new in
+            // A lock after the creation or restore unlocked the session (spec 4 point 5).
+            if old == .unlocked, new != .unlocked, new != .unlocking { model?.sessionLocked() }
         }
     }
 }

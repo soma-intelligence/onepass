@@ -20,6 +20,7 @@ struct ItemsTab: View {
         let categories = ItemCategory.all.filter { (counts.byType[$0.type] ?? 0) > 0 }
         let tags = counts.byTag.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         List {
+            SyncRefusalSection()
             Section {
                 if vaultsOpen {
                     ForEach(session.vaults, id: \.id) { vault in

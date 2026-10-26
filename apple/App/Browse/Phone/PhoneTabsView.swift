@@ -71,6 +71,11 @@ struct PhoneTabsView: View {
         .onChange(of: model.selectedItem) { old, new in
             follow(selection: new, previous: old)
         }
+        // "Nouvel élément" goes to the vault whose list is open in the visible tab.
+        .onChange(of: browsedVault, initial: true) { _, vault in
+            model.phoneBrowsedVault = vault
+        }
+        .onDisappear { model.phoneBrowsedVault = nil }
         #if DEBUG
         .task { applyDemoArguments() }
         #endif
@@ -101,6 +106,17 @@ struct PhoneTabsView: View {
                 let ref = newPath.last?.itemRef
                 if model.selectedItem != ref { model.perform(.select(ref)) }
             })
+    }
+
+    /// The vault of the last vault list in the visible tab's stack (an item opened from it included).
+    private var browsedVault: String? {
+        for route in (paths[tab] ?? []).reversed() {
+            if case .list(let filter) = route {
+                if case .vault(let id) = filter { return id }
+                return nil
+            }
+        }
+        return nil
     }
 
     private func follow(selection new: ItemRef?, previous old: ItemRef?) {

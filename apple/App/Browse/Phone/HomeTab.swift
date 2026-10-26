@@ -21,6 +21,7 @@ struct HomeTab: View {
                 firstItemState
             } else {
                 List {
+                    SyncRefusalSection()
                     if !model.settings.displayName.isEmpty {
                         Text(model.settings.displayName)
                             .font(.title2.weight(.semibold))
@@ -130,6 +131,28 @@ private struct HomeSection: View {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+/// iPhone: a sync refusal (spec 8, "Données refusées") at the top of Accueil and Éléments. The data on
+/// screen is local and stays readable, but the refused vault's changes no longer sync: the Mac has
+/// its sidebar chip, the iPhone this banner.
+struct SyncRefusalSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if case .refused(let kind) = model.syncStatus {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    IntegrityBanner(kind: kind)
+                    Text("Les données reçues d'iCloud ont été refusées. Tes modifications restent sur cet appareil mais ne se synchronisent plus pour ce coffre.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                .accessibilityIdentifier("sync.refused.banner")
             }
         }
     }

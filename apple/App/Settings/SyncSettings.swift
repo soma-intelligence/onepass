@@ -9,7 +9,7 @@ struct SyncSettings: View {
 
     /// Status line and its symbol; nil last sync means a first round has not finished yet.
     private enum Line {
-        case disabled, offline, refused(String), error(String), syncing, idle(Date?)
+        case disabled, offline, refused(String), error(String), syncing, idle(Date?), accountChanged
     }
 
     private var line: Line {
@@ -21,12 +21,14 @@ struct SyncSettings: View {
         case .error(let message): return .error(message)
         case .syncing: return .syncing
         case .idle(let last): return .idle(last)
+        case .accountChanged: return .accountChanged
         }
     }
 
     private var canSync: Bool {
         if case .disabled = line { return false }
         if case .syncing = line { return false }
+        if case .accountChanged = line { return false }
         return model.coordinator != nil && !syncing
     }
 
@@ -71,6 +73,9 @@ struct SyncSettings: View {
             }
         case .error(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+        case .accountChanged:
+            Label("Le compte iCloud a changé", systemImage: "person.crop.circle.badge.exclamationmark")
+                .foregroundStyle(.orange)
         case .syncing:
             Label("Synchronisation en cours", systemImage: "arrow.triangle.2.circlepath")
         case .idle(let last):
@@ -91,6 +96,8 @@ struct SyncSettings: View {
             Text("Les données restent sur cet appareil. La synchronisation chiffrée par iCloud demande une version signée de OnePass.")
         case .refused:
             Text("Les données reçues d'iCloud ont été refusées par OnePass. Aucune n'a été utilisée.")
+        case .accountChanged:
+            Text("Cet appareil est maintenant connecté à un autre compte iCloud que celui avec lequel ton coffre se synchronisait. Par sécurité, OnePass ne lit et n'envoie plus rien vers iCloud : ton coffre reste intact sur cet appareil. Reconnecte-toi au compte iCloud d'origine dans Réglages pour reprendre la synchronisation.")
         default:
             Text("Tout est chiffré avant de quitter cet appareil. iCloud ne voit que des données illisibles.")
         }

@@ -37,11 +37,15 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        // The footer sits in the list's bottom safe area (rows end above it when scrolled to the end)
+        // on an opaque bar material: rows passing under it never show through "Réglages".
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
+                Divider()
                 SyncStatusChip(status: model.syncStatus)
                 SettingsRow()
             }
+            .background(.bar)
         }
         .sheet(isPresented: $creatingVault) {
             VaultEditorView(vault: nil) { creatingVault = false }
@@ -210,7 +214,8 @@ enum TagColor {
     }
 }
 
-/// Bottom of the sidebar: shown only when sync is offline, failing, or refused remote data.
+/// Bottom of the sidebar: shown only when sync is offline, failing, refused remote data, or the
+/// iCloud account changed.
 struct SyncStatusChip: View {
     let status: SyncStatus
 
@@ -219,6 +224,7 @@ struct SyncStatusChip: View {
         case .offline: (status.label, "wifi.slash", .orange)
         case .error: (status.label, "exclamationmark.triangle.fill", .red)
         case .refused: (status.label, "xmark.shield.fill", .red)
+        case .accountChanged: (status.label, "person.crop.circle.badge.exclamationmark", .orange)
         default: nil
         }
     }

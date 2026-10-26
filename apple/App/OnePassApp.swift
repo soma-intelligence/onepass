@@ -74,12 +74,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]
     ) async -> UIBackgroundFetchResult {
+        // A background wake past the auto-lock delay drops the keys before anything else runs.
+        model?.session.checkAutoLock()
         guard let coordinator = model?.coordinator else { return .noData }
         await coordinator.syncNow()
         return .newData
     }
 }
 #else
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
 
@@ -87,6 +90,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if ONEPASS_CLOUDKIT
         NSApplication.shared.registerForRemoteNotifications()
         #endif
+        // Lock on system sleep and on screen lock, like the lock button (no confirmation).
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(lockNow), name: NSWorkspace.willSleepNotification, object: nil)
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(lockNow), name: Self.screenLocked, object: nil)
+    }
+
+    static let screenLocked = Notification.Name("com.apple.screenIsLocked")
+
+    /// Delivered on the main thread (workspace and distributed notifications both).
+    @objc private func lockNow() {
+        model?.lock()
+    }
+
+    /// Quit (also after the last window closed): `lock()` drops the keys and clears our clipboard
+    /// value, which macOS would otherwise keep after the process is gone (no system expiration).
+    func applicationWillTerminate(_ notification: Notification) {
+        model?.lock()
     }
 
     func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {

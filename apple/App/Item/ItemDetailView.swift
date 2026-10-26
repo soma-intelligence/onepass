@@ -24,6 +24,8 @@ struct ItemDetailView: View {
     @State private var checking = false
     /// "Modifier" was pressed on a reprompt item: edit once confirmed.
     @State private var editAfterConfirm = false
+    /// While editing, a remote change replaced the stored item the editor started from.
+    @State private var remoteVersion: FfiItem?
 
     init(ref: ItemRef) { self.ref = ref }
 
@@ -51,6 +53,38 @@ struct ItemDetailView: View {
             if let item, model.selectedItem == ref { startEditing(item) }
         }
         .onDisappear { model.editing = false }
+        // A remote change set was applied: show the stored item, or warn the editor (spec 8).
+        .onChange(of: model.remoteRevision) {
+            Task { await remoteChanged() }
+        }
+        .alert(
+            "Élément modifié sur un autre appareil",
+            isPresented: Binding(get: { remoteVersion != nil }, set: { if !$0 { remoteVersion = nil } })
+        ) {
+            Button("Recharger", role: .destructive) {
+                if let remoteVersion { item = remoteVersion }
+                remoteVersion = nil
+                model.editing = false
+            }
+            Button("Continuer la modification", role: .cancel) { remoteVersion = nil }
+        } message: {
+            Text("Si tu enregistres, tes modifications remplaceront cette nouvelle version. Recharger abandonne tes modifications.")
+        }
+    }
+
+    /// Not editing: the detail shows what the store now holds (or "introuvable"). Editing: the draft
+    /// is kept, and the user chooses between reloading and overwriting.
+    private func remoteChanged() async {
+        guard let current = item, session.state == .unlocked else { return }
+        let target = ItemRef(vaultID: current.vaultId, itemID: current.id)
+        guard model.editing else {
+            await reload(target)
+            return
+        }
+        guard let stored = try? await session.loadItem(vaultID: target.vaultID, itemID: target.itemID),
+            stored != current
+        else { return }
+        if model.editing { remoteVersion = stored } else { item = stored }
     }
 
     private func locked(_ item: FfiItem) -> Bool { item.reprompt && !confirmed }
