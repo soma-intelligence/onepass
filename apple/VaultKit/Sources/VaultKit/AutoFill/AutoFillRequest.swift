@@ -5,8 +5,9 @@ public struct PasskeyRequest: Sendable, Equatable {
     /// Relying party id, checked by the system against the page or the app.
     public var rpID: String
     public var clientDataHash: Data
-    /// Credentials the relying party accepts; empty means any passkey of `rpID`. For a direct request
-    /// (`AutoFillRequest.credential`), the controller passes the identity's credential id here.
+    /// Credentials the relying party accepts; empty means any passkey of `rpID` in a list. A direct
+    /// request (`AutoFillRequest.credential`) needs the identity's credential id here: empty ends it
+    /// with `credentialNotFound`.
     public var allowedCredentialIDs: [Data]
 
     public init(rpID: String, clientDataHash: Data, allowedCredentialIDs: [Data]) {

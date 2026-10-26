@@ -68,6 +68,21 @@ private final class Fixture {
 
     func written() -> Int { h.sync.events.filter { $0 == .written }.count }
 
+    /// A vault hidden on this device holding a Login of `https://example.com` with a passkey.
+    func hiddenVaultLogin(_ seed: VaultSession) async throws -> (vaultID: String, login: FfiItem, credential: Data) {
+        try await seed.createVault(FfiVaultMeta(
+            name: "Caché", icon: "folder", color: "orange", travelSafe: false, mcpAccess: false))
+        let vault = try #require(seed.allVaults.first { $0.meta.name == "Caché" })
+        let login = try await addLogin(
+            seed, title: "Caché", url: "https://example.com", user: "cache", vaultID: vault.id)
+        let passkey = try await seed.createPasskey(FfiPasskeyCreation(
+            vaultId: vault.id, itemId: login.id, rpId: "example.com", userName: "cache",
+            userHandle: Data([5, 6]), clientDataHash: Data(repeating: 9, count: 32), excludedCredentialIds: []))
+        seed.setVaultHidden(vault.id, hidden: true)
+        #expect(h.settings.hiddenVaultIDs == [vault.id])
+        return (vault.id, login, passkey.credentialId)
+    }
+
     func cleanUp() {
         watchers.forEach { $0.cancel() }
         h.cleanUp()
@@ -79,9 +94,9 @@ private final class Fixture {
 @discardableResult
 private func addLogin(
     _ session: VaultSession, title: String, url: String, user: String = loginUser,
-    password: String = loginPassword, totp: String? = nil
+    password: String = loginPassword, totp: String? = nil, vaultID: String? = nil
 ) async throws -> FfiItem {
-    var item = try session.newItem(type: .login, vaultID: session.allVaults[0].id)
+    var item = try session.newItem(type: .login, vaultID: vaultID ?? session.allVaults[0].id)
     item.title = title
     for s in item.sections.indices {
         for f in item.sections[s].fields.indices {
@@ -271,6 +286,12 @@ struct AutoFillModelTests {
         #expect(matches.map(\.itemId) == [login.id])
         #expect(!others.contains { $0.itemId == noTotp.id })
 
+        // A candidate that is not on the screen is ignored.
+        var unlisted = try #require(matches.first)
+        unlisted.itemId = noTotp.id
+        await model.choose(unlisted)
+        #expect(done.results.isEmpty)
+
         await model.choose(try #require(matches.first))
         let expected = try totpNow(
             secretOrUri: totpSecret, unixSeconds: UInt64(f.h.clock.now.timeIntervalSince1970)).code
@@ -357,6 +378,10 @@ struct AutoFillModelTests {
         }
         #expect(restrictedMatches.first?.itemId == login.id)
         #expect(restrictedMatches.allSatisfy { $0.passkeys.isEmpty })
+        // A passkey that is not offered on the screen is ignored.
+        let hidden = FfiPasskeyRef(rpId: "example.com", userName: loginUser, credentialId: registration.credentialId)
+        await restricted.choosePasskey(hidden, in: try #require(restrictedMatches.first))
+        #expect(!restricted.isFinished)
         restricted.cancel()
 
         // No allow list: the passkey is offered and signs.
@@ -382,7 +407,9 @@ struct AutoFillModelTests {
 
         // Direct request: an allow list without this credential, or a missing record.
         let record = "\(login.vaultId):\(login.id)"
-        for (recordID, allowed) in [(record, [unknown]), ("\(login.vaultId):\(String(repeating: "0", count: 32))", [])] {
+        // An empty allow list is no answer for a direct request (the controller always names the credential).
+        let missing = "\(login.vaultId):\(String(repeating: "0", count: 32))"
+        for (recordID, allowed) in [(record, [unknown]), (record, []), (missing, [registration.credentialId])] {
             let (direct, _, directDone) = f.model(.credential(
                 recordID: recordID, kind: .passkey,
                 passkey: PasskeyRequest(rpID: "example.com", clientDataHash: clientDataHash, allowedCredentialIDs: allowed)))
@@ -437,6 +464,23 @@ struct AutoFillModelTests {
         try await Task.sleep(for: .milliseconds(300))
         #expect(f.h.sync.events == events)
         #expect(posts.count == 0)
+    }
+
+    @Test func generatedPasswordFilledIsSilent() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, _) = try await f.seed()
+        seed.lock()
+        await seed.waitForSyncNotifications()
+        let events = f.h.sync.events
+
+        let (model, session, done) = f.model(
+            saveRequest(service: "example.com", password: "Genere-789", event: .generatedPasswordFilled))
+        await model.start()
+        #expect(done.results == [.saved])
+        #expect(session.state == .locked)
+        await session.waitForSyncNotifications()
+        #expect(f.h.sync.events == events)
     }
 
     @Test func saveIdenticalIsSilent() async throws {
@@ -542,6 +586,150 @@ struct AutoFillModelTests {
         await model.insert(field: try #require(fields.first { $0.id == "username" }))
         #expect(done.results == [.text(loginUser)])
         #expect(session.state == .locked)
+        // Nothing from the vault stays on the model.
+        #expect(model.screen == .finished)
+    }
+
+    // MARK: - Guards on writes
+
+    @Test func writesRequireShownTargets() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        let other = try await addLogin(seed, title: "Ailleurs", url: "https://ailleurs.org", user: "autre")
+        let hidden = try await f.hiddenVaultLogin(seed)
+        seed.lock()
+        await seed.waitForSyncNotifications()
+        let writes = f.written()
+
+        // Passkey into a Login that is not a suggestion, or into a hidden vault: nothing written.
+        let (registration, _, registrationDone) = f.model(.passkeyRegistration(PasskeyRegistrationRequest(
+            rpID: "example.com", userName: loginUser, userHandle: Data([1]), clientDataHash: clientDataHash,
+            excludedCredentialIDs: [], supportsES256: true)))
+        await registration.start()
+        await registration.unlock(password: testPassword)
+        let shown = registration.screen
+        await registration.registerPasskey(into: other.id, vaultID: other.vaultId)
+        await registration.registerPasskey(into: hidden.login.id, vaultID: hidden.vaultID)
+        await registration.registerPasskey(into: nil, vaultID: hidden.vaultID)
+        await registration.registerPasskey(into: login.id, vaultID: hidden.vaultID)
+        #expect(registrationDone.results.isEmpty)
+        #expect(registration.screen == shown)
+        registration.cancel()
+
+        // New-Login sheet: no update of an arbitrary item, no hidden vault.
+        let (fresh, _, freshDone) = f.model(saveRequest(service: "nouveau.exemple.fr", password: "Neuf-123"))
+        await fresh.start()
+        await fresh.unlock(password: testPassword)
+        #expect(fresh.screen == .save(existing: nil))
+        await fresh.save(title: "", vaultID: login.vaultId, updating: login.id)
+        await fresh.save(title: "", vaultID: hidden.vaultID, updating: nil)
+        #expect(freshDone.results.isEmpty)
+        #expect(fresh.screen == .save(existing: nil))
+        fresh.cancel()
+
+        // Update sheet: only the shown Login, in its own vault.
+        let (update, _, updateDone) = f.model(saveRequest(service: "example.com", password: "Change-456"))
+        await update.start()
+        await update.unlock(password: testPassword)
+        guard case .save(let existing?) = update.screen else {
+            Issue.record("expected the update sheet, got \(update.screen)")
+            return
+        }
+        await update.save(title: "", vaultID: other.vaultId, updating: other.id)
+        await update.save(title: "", vaultID: hidden.vaultID, updating: existing.itemId)
+        #expect(updateDone.results.isEmpty)
+        update.cancel()
+
+        let check = f.session()
+        await check.waitForSyncNotifications()
+        #expect(f.written() == writes)
+        try await check.unlock(password: testPassword)
+        let otherNow = try await check.loadItem(vaultID: other.vaultId, itemID: other.id)
+        #expect(field("password", in: otherNow) == .password(value: loginPassword))
+        let loginNow = try await check.loadItem(vaultID: login.vaultId, itemID: login.id)
+        #expect(field("password", in: loginNow) == .password(value: loginPassword))
+        #expect(!check.summaries.contains { $0.title == "nouveau.exemple.fr" })
+        check.lock()
+    }
+
+    @Test func updateAddsMissingPasswordField() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, _) = try await f.seed()
+        var draft = try seed.newItem(type: .login, vaultID: seed.allVaults[0].id)
+        draft.title = "Sans mot de passe"
+        for s in draft.sections.indices {
+            draft.sections[s].fields.removeAll { $0.id == "password" }
+            for i in draft.sections[s].fields.indices where draft.sections[s].fields[i].id == "username" {
+                draft.sections[s].fields[i].value = .text(value: "sans-mdp")
+            }
+        }
+        draft.urls = [FfiUrl(label: "", url: "https://sans.exemple.fr", rule: .domain, primary: true)]
+        fillRequired(&draft)
+        let bare = try await seed.save(draft)
+        #expect(field("password", in: bare) == nil)
+        seed.lock()
+
+        let (model, _, done) = f.model(saveRequest(service: "sans.exemple.fr", user: "sans-mdp", password: "Ajout-1"))
+        await model.start()
+        await model.unlock(password: testPassword)
+        guard case .save(let existing?) = model.screen else {
+            Issue.record("expected the update sheet, got \(model.screen)")
+            return
+        }
+        await model.save(title: "", vaultID: existing.vaultId, updating: existing.itemId)
+        #expect(done.results == [.saved])
+
+        let check = f.session()
+        try await check.unlock(password: testPassword)
+        let item = try await check.loadItem(vaultID: bare.vaultId, itemID: bare.id)
+        #expect(field("password", in: item) == .password(value: "Ajout-1"))
+        check.lock()
+    }
+
+    // MARK: - Hidden vaults
+
+    @Test func hiddenVaultRecordsAreNotFilled() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        let hidden = try await f.hiddenVaultLogin(seed)
+        seed.lock()
+        let record = "\(hidden.vaultID):\(hidden.login.id)"
+
+        // Password: back to the list, without the hidden Login.
+        let (password, _, passwordDone) = f.model(.credential(recordID: record, kind: .password, passkey: nil))
+        await password.start()
+        await password.unlock(password: testPassword)
+        #expect(passwordDone.results.isEmpty)
+        guard case .list(let matches, let others) = password.screen else {
+            Issue.record("expected the list, got \(password.screen)")
+            return
+        }
+        #expect(others.contains { $0.itemId == login.id })
+        #expect(!(matches + others).contains { $0.itemId == hidden.login.id })
+        password.cancel()
+
+        // Passkey: not found.
+        let (passkey, _, passkeyDone) = f.model(.credential(
+            recordID: record, kind: .passkey,
+            passkey: PasskeyRequest(rpID: "example.com", clientDataHash: clientDataHash, allowedCredentialIDs: [hidden.credential])))
+        await passkey.start()
+        await passkey.unlock(password: testPassword)
+        #expect(passkeyDone.results == [.cancelled(.credentialNotFound)])
+
+        // Text insertion: the hidden vault's items are not listed.
+        let (text, _, _) = f.model(.textToInsert)
+        await text.start()
+        await text.unlock(password: testPassword)
+        guard case .textItems(let items) = text.screen else {
+            Issue.record("expected the items, got \(text.screen)")
+            return
+        }
+        #expect(items.contains { $0.id == login.id })
+        #expect(!items.contains { $0.vaultId == hidden.vaultID })
+        text.cancel()
     }
 
     @Test func configurationNeedsNoUnlock() async throws {

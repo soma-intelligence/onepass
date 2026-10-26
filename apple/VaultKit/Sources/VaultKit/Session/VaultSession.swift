@@ -825,7 +825,10 @@ public final class VaultSession {
 
     /// Another process (the AutoFill extension) wrote to the store. Unlocked: reload the lists, then
     /// (unless the reload failed) let the sync layer send the change. Not unlocked: only tell the sync
-    /// layer, pending rows push without unlocking. This session never posts, so this cannot loop.
+    /// layer, pending rows push without unlocking. VaultSession itself never posts: the AutoFill model
+    /// posts through `environment.storeChanges` after a write, once its session is locked. The
+    /// extension session then receives its own post while locked, which only signals the sync layer
+    /// and never posts again, so this cannot loop.
     private func observeStoreChanges() {
         let changes = environment.storeChanges.changes()
         storeChangeObserver = Task { [weak self] in

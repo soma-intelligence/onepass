@@ -29,6 +29,8 @@ public final class AutoFillModel {
         case textItems([FfiItemSummary])
         case textFields(FfiItem)
         case configuration
+        /// The request is over (`complete` was called). Nothing from the vault is kept.
+        case finished
     }
 
     public private(set) var screen: Screen = .locked
@@ -84,7 +86,8 @@ public final class AutoFillModel {
         case .configuration:
             screen = .configuration
             return
-        case .savePassword(let save) where Self.isOwnApp(save, ownAppIDs):
+        case .savePassword(let save) where Self.isOwnApp(save, ownAppIDs) || save.event == .generatedPasswordFilled:
+            // Own app, or a generated password just filled (the next event carries the same value).
             finish(.saved)
             return
         case .passkeyRegistration(let registration) where !registration.supportsES256:
@@ -234,8 +237,9 @@ public final class AutoFillModel {
     }
 
     /// A Login of the list: its username and password, or its current one-time code.
+    /// Ignored unless `candidate` is on the current `list` screen.
     public func choose(_ candidate: FfiAutofillCandidate) async {
-        guard !isFinished, session.state == .unlocked, let kind = listKind else { return }
+        guard !isFinished, session.state == .unlocked, let kind = listKind, listed(candidate) != nil else { return }
         do {
             let item = try await session.loadItem(vaultID: candidate.vaultId, itemID: candidate.itemId)
             if kind == .oneTimeCode {
@@ -248,16 +252,28 @@ public final class AutoFillModel {
         }
     }
 
-    /// A passkey of the list: the core signs the assertion.
+    /// A passkey of the list: the core signs the assertion. Ignored unless `ref` is offered for
+    /// `candidate` on the current `list` screen.
     public func choosePasskey(_ ref: FfiPasskeyRef, in candidate: FfiAutofillCandidate) async {
         guard !isFinished, session.state == .unlocked, let passkey = passkeyRequest,
-            !Self.offered([ref], for: passkey).isEmpty
+            listed(candidate)?.passkeys.contains(ref) == true, !Self.offered([ref], for: passkey).isEmpty
         else { return }
         do {
             finish(try await assertion(vaultID: candidate.vaultId, itemID: candidate.itemId, ref: ref, request: passkey))
         } catch {
             recover(finishing: false)
         }
+    }
+
+    /// The candidate of the current `list` screen with the same vault and item ids.
+    private func listed(_ candidate: FfiAutofillCandidate) -> FfiAutofillCandidate? {
+        guard case .list(let matches, let others) = screen else { return nil }
+        return (matches + others).first { $0.vaultId == candidate.vaultId && $0.itemId == candidate.itemId }
+    }
+
+    /// A vault shown on this device (writes never go to a hidden vault).
+    private func isVisibleVault(_ vaultID: String) -> Bool {
+        session.vaults.contains { $0.id == vaultID }
     }
 
     // MARK: - Direct requests
@@ -280,7 +296,8 @@ public final class AutoFillModel {
                 screen = try await listScreen(services: [], passkey: nil, oneTimeCode: true)
             }
         case .passkey:
-            guard let passkey, let item else {
+            // The controller always passes the identity's credential id: no guess among several.
+            guard let passkey, !passkey.allowedCredentialIDs.isEmpty, let item else {
                 finish(.cancelled(.credentialNotFound))
                 return
             }
@@ -359,11 +376,14 @@ public final class AutoFillModel {
     }
 
     /// Creates the passkey in the Login `itemID`, or in a new Login of `vaultID` (ruling A9: always
-    /// after an explicit choice). The key pair stays in the core.
+    /// after an explicit choice). The key pair stays in the core. Ignored (nothing written, screen
+    /// kept) unless `itemID` is nil or one of the shown suggestions in `vaultID`, and `vaultID` is a
+    /// visible vault.
     public func registerPasskey(into itemID: String?, vaultID: String) async {
-        guard !isFinished, session.state == .unlocked, case .passkeyRegistration(let registration) = request else {
-            return
-        }
+        guard !isFinished, session.state == .unlocked, case .passkeyRegistration(let registration) = request,
+            case .passkeyRegistration(let suggestions) = screen, isVisibleVault(vaultID)
+        else { return }
+        if let itemID, !suggestions.contains(where: { $0.itemId == itemID && $0.vaultId == vaultID }) { return }
         do {
             let created = try await session.createPasskey(FfiPasskeyCreation(
                 vaultId: vaultID, itemId: itemID, rpId: registration.rpID, userName: registration.userName,
@@ -403,9 +423,14 @@ public final class AutoFillModel {
 
     /// New Login (`updating` nil): `title` (default `defaultTitle`), URL `https://<host>` (or the app
     /// identifier for an app), username and password, in `vaultID`. Update: the new password replaces
-    /// the old one, which goes to the password history.
+    /// the old one, which goes to the password history (a Login without a password field gets one).
+    /// Ignored (nothing written, screen kept) unless `vaultID` is a visible vault and `updating` is
+    /// nil or the shown `existing` Login of `vaultID`.
     public func save(title: String, vaultID: String, updating itemID: String?) async {
-        guard !isFinished, session.state == .unlocked, case .savePassword(let save) = request else { return }
+        guard !isFinished, session.state == .unlocked, case .savePassword(let save) = request,
+            case .save(let existing) = screen, isVisibleVault(vaultID)
+        else { return }
+        if let itemID, existing?.itemId != itemID || existing?.vaultId != vaultID { return }
         do {
             if let itemID {
                 var item = try await session.loadItem(vaultID: vaultID, itemID: itemID)
@@ -492,6 +517,7 @@ public final class AutoFillModel {
     private func finish(_ result: AutoFillResult) {
         guard !isFinished else { return }
         isFinished = true
+        screen = .finished
         session.lock()
         // The environment's notifier is `store-changed` in production (tests use their own name).
         if wrote { session.environment.storeChanges.post() }
@@ -520,12 +546,27 @@ public final class AutoFillModel {
         item.sections.lazy.flatMap(\.fields).first { $0.id == id }?.value
     }
 
+    /// Sets the field `id`; a missing field is appended to the Login section `main` (created if
+    /// needed) with the template's label and kind.
     private static func setField(_ id: String, to value: FfiFieldValue, in item: inout FfiItem) {
         for s in item.sections.indices {
             if let f = item.sections[s].fields.firstIndex(where: { $0.id == id }) {
                 item.sections[s].fields[f].value = value
                 return
             }
+        }
+        let (label, kind): (String, FfiFieldType) =
+            switch id {
+            case "password": ("Mot de passe", .password)
+            case "username": ("Identifiant", .text)
+            default: (id, .text)
+            }
+        let field = FfiField(
+            id: id, label: label, kind: kind, value: value, required: false, repeatable: false, autofill: true)
+        if let main = item.sections.firstIndex(where: { $0.id == "main" }) {
+            item.sections[main].fields.append(field)
+        } else {
+            item.sections.insert(FfiSection(id: "main", label: "Connexion", fields: [field]), at: 0)
         }
     }
 
