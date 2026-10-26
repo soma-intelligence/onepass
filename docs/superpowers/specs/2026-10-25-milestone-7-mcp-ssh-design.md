@@ -68,10 +68,11 @@ Ruling: modules enfants de `repo` plutôt qu'accesseurs publics - aucune clé ni
 - `ApprovalRequest` : surface (`Mcp` ou `Ssh`), client déclaré, action, lignes de détail non secrètes, éléments visés (vault, item, champ), `remember_allowed`.
 - `Decision` : `Deny`, `AllowOnce`, `AllowForSession`.
 - Trait `Approver: Send + Sync { fn approve(&self, req: &ApprovalRequest) -> Decision }`.
-- `TtyApprover` : ouvre `/dev/tty`, affiche la demande, lit `y` (une fois), `s` (pour la session, si permis), autre chose = refus. Délai de 60 s, puis refus. Aucune réponse lisible (pas de terminal) = refus.
+- `TtyApprover` : ouvre `/dev/tty` le temps d'une seule question (aucun lecteur permanent : entre deux questions, les frappes vont au client qui partage le terminal), vide l'entrée en attente (`tcflush(TCIFLUSH)`), affiche la demande avec un code de 2 caractères tiré par `aws_lc_rs::rand` dans l'alphabet `abcdefghjkmnpqrstuvwxyz` (sans `i`, `l`, `o`), lit une ligne avec `poll(2)` sur le temps restant, puis referme. Le code seul autorise une fois, le code suivi de ` s` autorise pour la session (si permis), autre chose = refus. Délai de 60 s, puis refus. Toute erreur (pas de terminal, vidage impossible, ligne trop longue) = refus. Risque résiduel documenté : un injecteur de frappes (`TIOCSTI`) qui lit aussi l'écran voit le code.
 - `DevAutoApprover` : réponse fixe, construit seulement par `ONEPASS_DEV_AUTO_APPROVE=once|session|deny`, accepté seulement dans un build avec assertions de debug (comme `ONEPASS_DEV_FAST_KDF`). Pour les tests de bout en bout.
 - `sanitize_for_display` : retire les caractères de contrôle (ESC, CR, BEL, etc.) et les remplace par `?`, tronque à 200 caractères. Appliqué à tout texte affiché sur le terminal (titres d'items, nom de client déclaré par l'agent, arguments de commande) : un titre ou un nom de client piégé ne peut pas réécrire l'invite d'approbation.
-- `AuditLog` : fichier JSON lignes, `0600`. Chaque entrée : `seq`, horodatage UTC, surface, client, action, ids (vault, item), champ, décision, résultat, `prev` (hash SHA-256 de l'entrée précédente). Aucune valeur secrète, aucun titre (seulement des ids opaques ; `onepass mcp audit` les traduit après déverrouillage). Un fichier tête `<log>.head` contient `(seq, hash)` de la dernière entrée, signé via un trait `LocalSigner` (implémenté par la CLI avec `sign_local`). `verify` contrôle la chaîne et la signature de la tête : une entrée modifiée, insérée, supprimée ou une troncature de la fin sont détectées. Limite connue : remettre ensemble un ancien journal et son ancienne tête authentique n'est pas détecté.
+- `AuditSink` : `record` rend `Result<(), GuardError>` ; `ready` (par défaut `Ok`) vérifie sans rien écrire que le journal peut être prolongé. Les outils MCP secrets et la signature SSH appellent `ready` avant l'approbateur et refusent en cas d'erreur (MCP : `audit log unusable; run onepass mcp audit --rotate`, SSH : `FAILURE`) ; un `record` qui échoue après l'action rend le résultat et écrit l'erreur sur stderr. Les outils de métadonnées restent ouverts (aucun secret). `onepass mcp audit --rotate` archive le journal et sa tête en `audit.log.<date UTC>.bad` (et `.bad.head`) et en ouvre un vide ; c'est la seule réparation d'une dernière ligne coupée.
+- `AuditLog` : fichier JSON lignes, `0600`. L'ajout et `ready` ne lisent que la fin du fichier (dernière ligne) ; `verify` lit tout sous un verrou partagé. Chaque entrée : `seq`, horodatage UTC, surface, client, action, ids (vault, item), champ, décision, résultat, `prev` (hash SHA-256 de l'entrée précédente). Aucune valeur secrète, aucun titre (seulement des ids opaques ; `onepass mcp audit` les traduit après déverrouillage). Un fichier tête `<log>.head` contient `(seq, hash)` de la dernière entrée, signé via un trait `LocalSigner` (implémenté par la CLI avec `sign_local`). `verify` contrôle la chaîne et la signature de la tête : une entrée modifiée, insérée, supprimée ou une troncature de la fin sont détectées. Limite connue : remettre ensemble un ancien journal et son ancienne tête authentique n'est pas détecté.
 - `SignedConfig` : enveloppe JSON `{"payload": "<texte JSON>", "signature": "<base64>"}` signée par `LocalSigner`, vérifiée au chargement.
 
 Ruling: signature de la tête du journal plutôt que de chaque entrée - une signature ML-DSA-87 fait 4627 octets, en signer une par ligne gonflerait le journal sans gain sur la détection de troncature - coût si faux : ajouter une signature par entrée, format de ligne inchangé sinon.
@@ -102,13 +103,13 @@ Voir section 6.
 Trois couches, de la plus large à la plus étroite ; un accès doit passer les trois :
 
 1. **Vault** : seuls les vaults avec `mcp_access = true` existent pour le serveur. Les autres ne sont ni listés, ni résolus, ni nommés dans les erreurs : un vault ou un item hors d'atteinte répond exactement comme un introuvable (`not found`), pour ne pas donner d'oracle d'existence.
-2. **Politique signée** `<data-dir>/mcp-policy.json` (`SignedConfig`) : pour chaque vault (par id), les scopes accordés parmi `metadata`, `use`, `totp`, `reveal`, `write`, et `allow_generate` global. Sans fichier, la politique par défaut vaut pour chaque vault MCP : `metadata` et `use`, `allow_generate = true`. Fichier présent mais signature invalide, ou compte différent : le serveur refuse de démarrer (code 3). La politique ne se modifie que par `onepass mcp policy set`, qui demande le mot de passe maître et re-signe.
+2. **Politique signée** `<data-dir>/mcp-policy.json` (`SignedConfig`) : pour chaque vault (par id), les scopes accordés parmi `metadata`, `use`, `totp`, `reveal`, `write`, et `allow_generate` global. Sans fichier, la politique par défaut vaut pour chaque vault MCP : `metadata` et `use`, `allow_generate = true`. Fichier présent mais signature invalide, ou compte différent : le serveur refuse de démarrer (code 3). La politique ne se modifie que par `onepass mcp policy set`, qui demande le mot de passe maître et re-signe. Limites : supprimer le fichier rétablit la politique par défaut ; un processus du même uid peut remettre une ancienne politique authentique (retour en arrière non détecté) ; l'approbation par requête des outils secrets reste exigée dans tous les cas.
 3. **Options de lancement** `onepass mcp --vault <v>... --scopes <s,...>` : ne peuvent que restreindre la politique, jamais l'étendre.
 
 | Scope | Outils | Approbation |
 | --- | --- | --- |
 | `metadata` | `list_vaults`, `list_items`, `search_items`, `get_item` | aucune (pas de secret) |
-| `use` | `run_with_secrets`, `fill_template` | à chaque requête ; `s` = mémorisée pour la session pour exactement la même requête |
+| `use` | `run_with_secrets`, `fill_template` | à chaque requête ; code suivi de ` s` = mémorisée pour la session pour exactement la même requête |
 | `write` | `create_login` | à chaque requête |
 | `totp` | `totp_code` | à chaque appel, jamais mémorisée |
 | `reveal` | `reveal_secret` | à chaque appel, jamais mémorisée |
@@ -156,8 +157,8 @@ Ruling: aucune inscription automatique du serveur dans une configuration de clie
 
 ### 5.1 Modèle
 
-- **Entrer** (`Repository::enter_travel(&mut self, upstream: &impl RecordStore) -> Result<TravelState>`) : pour chaque vault sans `travel_safe`, le noyau charge et vérifie le vault (manifeste signé, `last_seen`, enregistrements), vérifie que l'amont contient **octet pour octet** chacun de ses enregistrements (clé, meta, manifeste, items), puis seulement les efface du stockage local et déplace son `last_seen` dans le `TravelState`. Un vault absent de l'amont ou différent bloque l'entrée avant toute suppression : le Travel Mode n'efface jamais la seule copie.
-- **Sortir** (`Repository::exit_travel(&mut self, upstream: &impl RecordStore, state: &TravelState) -> Result<()>`) : pour chaque vault mis de côté, copie ses enregistrements depuis l'amont, remet son `last_seen` dans l'état d'appareil, puis le charge avec la vérification normale du noyau. Le manifeste doit avoir un numéro de séquence au moins égal à celui mis de côté (et le même hash à numéro égal) : un amont qui rejoue un ancien état, ou qui retire un item, est refusé exactement comme en usage normal. En cas d'échec, les enregistrements copiés sont retirés, l'état d'appareil revient à l'identique et le `TravelState` reste valable.
+- **Entrer** (`Repository::enter_travel(&mut self, upstream: &impl RecordStore) -> Result<TravelState>`) : pour chaque vault sans `travel_safe`, le noyau charge et vérifie le vault (manifeste signé, `last_seen`, enregistrements), vérifie que l'amont contient **octet pour octet** chaque enregistrement de cet état vérifié (clé, meta, manifeste, et les items que le chargement local utilise, c'est-à-dire ceux que le manifeste liste), puis seulement les efface du stockage local et déplace son `last_seen` dans le `TravelState`. Un vault absent de l'amont ou différent bloque l'entrée avant toute suppression : le Travel Mode n'efface jamais la seule copie. Les enregistrements que l'amont garde en plus (anciennes versions et items supprimés, puisque `push` ne fait qu'ajouter) sont ignorés.
+- **Sortir** (`Repository::exit_travel(&mut self, upstream: &impl RecordStore, state: &TravelState) -> Result<()>`) : pour chaque vault mis de côté, copie depuis l'amont la clé, le meta, le manifeste et seulement les items dont l'id et la version figurent dans les entrées du manifeste amont (décodé pour choisir, sans lui faire confiance : la confiance vient de la vérification qui suit ; les restes de l'amont ne sont jamais copiés), remet son `last_seen` dans l'état d'appareil, puis le charge avec la vérification normale du noyau. Le manifeste doit avoir un numéro de séquence au moins égal à celui mis de côté (et le même hash à numéro égal) : un amont qui rejoue un ancien état, ou qui retire un item, est refusé exactement comme en usage normal. En cas d'échec, les enregistrements copiés sont retirés, l'état d'appareil revient à l'identique et le `TravelState` reste valable.
 - **`TravelState`** : vaults mis de côté avec leur `SeenManifest`, date d'entrée. Scellé : une clé symétrique fraîche, enveloppée pour la paire KEM hybride du compte (contexte `travel:` + id du compte), chiffre l'état (AES-256-GCM-SIV, `BlobKind::TravelState`), et le tout est signé par `sign_local`. Ni lisible ni falsifiable sans le compte déverrouillé.
 - Le Travel Mode ne touche jamais au compte (paramètres, keyset) ni aux vaults `travel_safe`.
 
@@ -170,6 +171,10 @@ Limites, documentées :
 - La présence de `travel.bin` révèle que le Travel Mode est actif ; sa taille est fixe (remplissage à 64 Ko) pour ne pas révéler le nombre de vaults cachés.
 - Supprimer `travel.bin` fait oublier à l'appareil les `last_seen` mis de côté : à la sortie, ces vaults sont alors acceptés comme des vaults jamais vus (signature du compte toujours exigée, mais un ancien manifeste authentique serait accepté). Sans `travel.bin`, `exit` refuse et demande `--accept-unpinned`.
 - La journalisation du système de fichiers et les sauvegardes Time Machine peuvent conserver d'anciennes copies de la base : hors de portée d'un logiciel.
+- Pendant le voyage, `audit.log` et `mcp-policy.json` nomment encore en clair les ids des vaults cachés.
+- Un `travel.bin` présent alors qu'un vault mis de côté a sa clé localement, ou qu'un vault sans `travel_safe` est listé, est un état incohérent : `travel status` l'affiche (`travel mode: inconsistent ...`, code 3) et `travel on` refuse (code 3) en renvoyant vers `onepass travel off --upstream <fichier>` (qui vérifie et fusionne) ou vers la suppression d'un `travel.bin` périmé.
+- `backup restore` est refusé tant que `travel.bin` existe ; `backup create` prévient sur stderr que les vaults cachés n'y figurent pas.
+- Un vault local périmé ou bifurqué (seq inférieur, ou même seq avec un autre hash) planté à la place d'un vault caché fait refuser la sortie.
 
 ### 5.3 Amont en mode développement
 
@@ -185,11 +190,13 @@ Ruling: le `last_seen` mis de côté est scellé par le compte, pas laissé dans
 
 `onepass mcp` et `onepass ssh-agent` tournent longtemps. Ils déverrouillent une fois au démarrage, puis à chaque requête : prennent le verrou du dossier de données, relisent `device.bin`, fusionnent son état (`adopt_device_state`), traitent la requête, réécrivent `device.bin`, relâchent le verrou. Les autres commandes de la CLI restent utilisables pendant ce temps, et aucun `last_seen` ne recule.
 
+Un serveur garde en mémoire les derniers manifestes vus et les réécrit dans `device.bin`. Pour qu'il ne remette pas des vaults cachés dans l'état d'appareil, chaque serveur tient pendant toute sa vie un verrou partagé sur `<data-dir>/servers.lock` (`0600`, pris juste après le déverrouillage), et `travel on`, `travel off` et `backup restore` prennent ce verrou en exclusif sans attendre, sous le verrou du dossier : s'il est pris, ils refusent (code 1, `a long-running onepass server (mcp or ssh-agent) is running; stop it first`). En seconde ligne, le serveur note si `travel.bin` existait au déverrouillage ; si cela change, chaque requête est refusée (`Travel Mode changed while this server was running; restart it`) et le serveur s'arrête avec le code 1 (MCP : la requête reçoit ce refus puis le service cesse ; agent SSH : arrêt et retrait du socket).
+
 Ruling: verrou par requête plutôt que pour toute la durée du serveur - un agent SSH vit toute la journée, il ne peut pas bloquer la CLI - coût si faux : un peu de latence par requête (relecture d'un petit fichier).
 
 ### 6.2 Protocole
 
-Socket Unix, chemin donné par `--socket` (défaut `<data-dir>/ssh-agent.sock`), dossier parent `0700`, socket `0600`. Message : longueur `u32` big endian (au plus 256 KiB), type, contenu (draft-miller-ssh-agent).
+Socket Unix, chemin donné par `--socket` (défaut `<data-dir>/ssh-agent.sock`), dossier parent `0700`, socket `0600`. Un socket existant n'est remplacé que si aucune connexion n'y aboutit ; s'il répond, le démarrage est refusé (`another agent is serving this socket`). Message : longueur `u32` big endian (au plus 256 KiB), type, contenu (draft-miller-ssh-agent).
 
 - `REQUEST_IDENTITIES` (11) : liste des clés des items SSH Key dont `use_in_agent` vaut oui (`yes`, `oui`, `true`, `1`, sans casse), tous vaults présents confondus, items hors corbeille et hors archives. Commentaire = titre de l'item. Relu à chaque demande.
 - `SIGN_REQUEST` (13) : clé connue, approbation, puis signature. Ed25519 (`ssh-ed25519`), ECDSA (`ecdsa-sha2-nistp256`, `-nistp384`, `-nistp521`), RSA avec drapeaux `SSH_AGENT_RSA_SHA2_256` (`rsa-sha2-256`) ou `SSH_AGENT_RSA_SHA2_512` (`rsa-sha2-512`). Une demande RSA sans ces drapeaux (SHA-1, `ssh-rsa`) est refusée.
@@ -204,9 +211,9 @@ Signature : la clé privée est relue dans le coffre à chaque signature (sous l
 
 L'approbation affiche : titre et empreinte SHA-256 de la clé, processus demandeur (pid et chemin de l'exécutable, via `LOCAL_PEERPID` sur macOS, `SO_PEERCRED` sur Linux), destination si la connexion est liée (empreinte de la clé d'hôte, et noms d'hôtes marque-pages trouvés pour cette clé dans `known_hosts`), transfert oui/non, et pour une signature `SSHSIG` (signature de commit Git, `ssh-keygen -Y sign`) l'espace de noms (`git`, `file`...).
 
-- Un pair d'un autre utilisateur (uid différent) est refusé avant tout.
+- Un pair d'un autre utilisateur (uid différent), ou dont l'uid est inconnu, est refusé avant tout.
 - `confirm_each_use` oui : approbation à chaque signature (`AllowOnce` seulement).
-- Sinon, `s` mémorise l'accord pour le couple (clé, exécutable demandeur) pendant 1 h au plus, ou jusqu'à `LOCK` ou l'arrêt de l'agent.
+- Sinon, le code suivi de ` s` mémorise l'accord pour le couple (clé, exécutable demandeur) pendant 1 h au plus, ou jusqu'à `LOCK` ou l'arrêt de l'agent.
 - Une connexion transférée (`session-bind` avec drapeau de transfert) est refusée par défaut ; `--allow-forwarded` l'autorise, avec approbation à chaque signature.
 
 Ruling: mémorisation par (clé, exécutable) pendant 1 h au plus - c'est "une fois par session et par app" de la spec globale 9.3, borné pour qu'un agent laissé ouvert ne signe pas indéfiniment - coût si faux : changer une durée.
@@ -238,7 +245,7 @@ Ruling: RSA de 2048 bits refusé à la génération (3072 minimum), accepté à 
 
 Nouvelles sous-commandes (un module chacune dans `onepass-cli/src/commands/`) :
 
-- `onepass mcp [--vault <v>...] [--scopes <liste>]` ; `onepass mcp policy show|set --vault <v> --scopes <liste> [--allow-generate true|false]` ; `onepass mcp audit [--verify]`.
+- `onepass mcp [--vault <v>...] [--scopes <liste>]` ; `onepass mcp policy show|set --vault <v> --scopes <liste> [--allow-generate true|false]` ; `onepass mcp audit [--verify | --rotate]`. `--vault` se répète.
 - `onepass ssh-agent [--socket <chemin>] [--allow-forwarded]` : premier plan, affiche `SSH_AUTH_SOCK=<chemin>` sur stderr ; `SIGINT`/`SIGTERM` retirent le socket.
 - `onepass ssh-key generate|import|public|bookmark|config`.
 - `onepass travel push|on|off|status --upstream <fichier>`.
