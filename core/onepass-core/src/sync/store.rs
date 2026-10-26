@@ -150,8 +150,6 @@ fn effective_get(conn: &Connection, kind: RecordKind, id: Id) -> Result<Option<R
     .transpose()
 }
 
-/// Write a pending data row. A manifest write over a `base` manifest with no
-/// `ancestor` yet first keeps that `base` row as its ancestor.
 /// The persisted mode of a begun fetch from scratch (`FETCH_PLAIN` or `FETCH_RESET`).
 fn fetch_mode(conn: &Connection) -> Result<Option<u8>> {
     let value: Option<Vec<u8>> = conn
@@ -165,6 +163,8 @@ fn fetch_mode(conn: &Connection) -> Result<Option<u8>> {
     Ok(value.and_then(|v| v.first().copied()))
 }
 
+/// Write a pending data row. A manifest write over a `base` manifest with no
+/// `ancestor` yet first keeps that `base` row as its ancestor.
 fn write_pending(tx: &Connection, r: &Record) -> Result<()> {
     let version = to_i64(r.version)?;
     if r.kind == RecordKind::Manifest {
@@ -436,8 +436,15 @@ impl SyncStore {
     /// it) and without a pending row, then clears the mode. One transaction; a
     /// no-op without a begun fetch. Returns whether `base` rows were deleted.
     ///
-    /// - Plain full fetch: the rows no longer exist on the server, they are
-    ///   deleted from `base` (the fetch carries no tombstones).
+    /// - Plain full fetch: only an item row whose vault manifest the server
+    ///   returned is deleted (the server is authoritative for the items of a
+    ///   vault it serves; the fetch carries no tombstones). Every other row
+    ///   stays in `base` untouched: the stable id kinds (account params,
+    ///   keyset, vault keys, vault metas), the manifests and the items of a
+    ///   vault the server did not return. The store is not trusted: an empty
+    ///   or partial answer must never erase the local copy, and a vault this
+    ///   device has seen and the server hides is reported by the repository
+    ///   (`VaultMissing` or a manifest rollback), not silently forgotten.
     /// - Reset: an item row whose vault manifest the server returned is
     ///   deleted (the server is authoritative for that vault, and a stale item
     ///   blob next to its manifest would be refused as unexpected). Any other
@@ -453,18 +460,19 @@ impl SyncStore {
         };
         let missing = "b.server_meta IS NULL AND NOT EXISTS
              (SELECT 1 FROM pending p WHERE p.kind = b.kind AND p.id = b.id)";
-        let mut deleted = 0;
+        // Both modes: an item the server did not return, in a vault whose
+        // manifest it did return, is gone from that vault.
+        let deleted = tx
+            .execute(
+                &format!(
+                    "DELETE FROM base AS b WHERE b.kind = ?1 AND {missing}
+                     AND EXISTS (SELECT 1 FROM base m WHERE m.kind = ?2
+                         AND m.id = substr(b.data, 1, 16) AND m.server_meta IS NOT NULL)"
+                ),
+                params![RecordKind::Item.code(), RecordKind::Manifest.code()],
+            )
+            .map_err(store_err)?;
         if mode == FETCH_RESET {
-            deleted += tx
-                .execute(
-                    &format!(
-                        "DELETE FROM base AS b WHERE b.kind = ?1 AND {missing}
-                         AND EXISTS (SELECT 1 FROM base m WHERE m.kind = ?2
-                             AND m.id = substr(b.data, 1, 16) AND m.server_meta IS NOT NULL)"
-                    ),
-                    params![RecordKind::Item.code(), RecordKind::Manifest.code()],
-                )
-                .map_err(store_err)?;
             tx.execute(
                 &format!(
                     "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
@@ -482,18 +490,6 @@ impl SyncStore {
                 [],
             )
             .map_err(store_err)?;
-        } else {
-            tx.execute(
-                &format!(
-                    "DELETE FROM ancestor WHERE kind = ?1 AND id IN
-                     (SELECT b.id FROM base b WHERE b.kind = ?1 AND {missing})"
-                ),
-                params![RecordKind::Manifest.code()],
-            )
-            .map_err(store_err)?;
-            deleted += tx
-                .execute(&format!("DELETE FROM base AS b WHERE {missing}"), [])
-                .map_err(store_err)?;
         }
         tx.execute("DELETE FROM meta WHERE key = ?1", params![FETCH_MODE_KEY])
             .map_err(store_err)?;
@@ -518,8 +514,17 @@ impl SyncStore {
     /// Apply all staged changes to `base` in one transaction and empty
     /// `staging`. `pending` is never touched. Returns the ids of the vaults
     /// whose manifest was applied.
+    ///
+    /// Remote deletions the store has no right to make are ignored (no
+    /// client deletes them in M2, so they come from a hostile or broken
+    /// server): account params and keysets, and the vault key, vault meta and
+    /// manifest of a vault in the device's `last_seen`. The local rows stay
+    /// and the vault stays readable from them: nothing the server sends can
+    /// make this device forget its account or a vault it has read (the
+    /// repository reports `VaultMissing` if those rows ever disappear).
     pub fn commit_remote(&mut self) -> Result<Vec<Id>> {
         let tx = self.write_tx()?;
+        let seen: BTreeSet<Id> = device_state_in(&tx)?.last_seen.into_keys().collect();
         let staged: Vec<StagedRow> = {
             let mut stmt = tx
                 .prepare(
@@ -537,6 +542,9 @@ impl SyncStore {
         for (kind, id, version, data, server_meta) in staged {
             let kind_code = kind;
             let kind = decode_kind(kind)?;
+            if data.is_none() && protected_from_remote_deletion(kind, &id, &seen) {
+                continue;
+            }
             if kind == RecordKind::Manifest {
                 vaults.insert(decode_id(id.clone())?);
             }
@@ -593,10 +601,7 @@ impl SyncStore {
 
     /// The persisted device state, or the default one if none was saved.
     pub fn device_state(&self) -> Result<DeviceState> {
-        match self.meta(DEVICE_STATE_KEY)? {
-            Some(bytes) => DeviceState::decode(&bytes),
-            None => Ok(DeviceState::default()),
-        }
+        device_state_in(&self.conn)
     }
 
     pub fn set_device_state(&mut self, s: &DeviceState) -> Result<()> {
@@ -606,6 +611,32 @@ impl SyncStore {
     /// Whether an account params record is visible (pending or base).
     pub fn has_account(&self) -> Result<bool> {
         Ok(!self.list(RecordKind::AccountParams)?.is_empty())
+    }
+
+    /// What the store holds, as the apps need it before any unlock. A device
+    /// state with a pinned account and no params record means the account
+    /// this device knew has disappeared from the store: an integrity fault,
+    /// never an empty store a new account could be created in.
+    pub fn account_state(&self) -> Result<AccountState> {
+        let has_account = self.has_account()?;
+        let pinned = self.device_state()?.pinned.is_some();
+        Ok(match (has_account, pinned) {
+            (true, _) => AccountState::Present,
+            (false, true) => AccountState::PinnedButMissing,
+            (false, false) => AccountState::Empty,
+        })
+    }
+
+    /// Empty every table in one transaction (records, sync state, device
+    /// state). For a store whose account creation was abandoned: the file
+    /// stays in place, so other open connections keep working on it.
+    pub fn reset(&mut self) -> Result<()> {
+        let tx = self.write_tx()?;
+        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+            tx.execute(&format!("DELETE FROM {table}"), [])
+                .map_err(store_err)?;
+        }
+        tx.commit()
     }
 
     /// Vaults held back because the server manifest caught up with, or
@@ -643,6 +674,46 @@ impl SyncStore {
         let tx = self.write_tx()?;
         delete_vault_rows(&tx, vault)?;
         tx.commit()
+    }
+}
+
+/// What `SyncStore::account_state` found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountState {
+    /// No account params and no pinned account: a new account may be created.
+    Empty,
+    /// An account params record is visible.
+    Present,
+    /// This device pinned an account whose params record is gone.
+    PinnedButMissing,
+}
+
+/// The device state persisted in `meta`, or the default one.
+fn device_state_in(conn: &Connection) -> Result<DeviceState> {
+    let bytes: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            params![DEVICE_STATE_KEY],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(store_err)?;
+    match bytes {
+        Some(bytes) => DeviceState::decode(&bytes),
+        None => Ok(DeviceState::default()),
+    }
+}
+
+/// A remote deletion `commit_remote` ignores: account params and keysets
+/// (never deleted by a client in M2), and the vault key, meta or manifest of
+/// a vault the device has seen (no vault deletion in M2, R14).
+fn protected_from_remote_deletion(kind: RecordKind, id: &[u8], seen: &BTreeSet<Id>) -> bool {
+    match kind {
+        RecordKind::AccountParams | RecordKind::Keyset => true,
+        RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
+            decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v))
+        }
+        RecordKind::Item => false,
     }
 }
 
@@ -1080,13 +1151,31 @@ mod tests {
     }
 
     #[test]
-    fn plain_full_fetch_deletes_rows_the_server_no_longer_has() {
+    fn plain_full_fetch_deletes_only_items_of_returned_vaults() {
         let mut s = SyncStore::open_in_memory().unwrap();
-        let (kept, gone, edited, m) = (Id::new(), Id::new(), Id::new(), Id::new());
+        let (kept, absent, edited, m) = (Id::new(), Id::new(), Id::new(), Id::new());
+        let (served, hidden) = (Id::new(), Id::new());
+        let (gone_item, hidden_item) = (Id::new(), Id::new());
         seed_base(&mut s, RecordKind::Keyset, kept, 1, b"k".to_vec());
-        seed_base(&mut s, RecordKind::Keyset, gone, 1, b"g".to_vec());
+        seed_base(&mut s, RecordKind::Keyset, absent, 1, b"g".to_vec());
         seed_base(&mut s, RecordKind::Keyset, edited, 1, b"e".to_vec());
         seed_base(&mut s, RecordKind::Manifest, m, 2, b"m".to_vec());
+        seed_base(&mut s, RecordKind::Manifest, served, 1, b"s".to_vec());
+        seed_base(&mut s, RecordKind::Manifest, hidden, 1, b"h".to_vec());
+        seed_base(
+            &mut s,
+            RecordKind::Item,
+            gone_item,
+            1,
+            item_data(served, b"a"),
+        );
+        seed_base(
+            &mut s,
+            RecordKind::Item,
+            hidden_item,
+            1,
+            item_data(hidden, b"b"),
+        );
         s.put(rec(edited, RecordKind::Keyset, 2, b"e2")).unwrap();
         s.set_meta("tok", &[1]).unwrap();
 
@@ -1102,6 +1191,8 @@ mod tests {
             server_meta: Some(vec![3]),
         })
         .unwrap();
+        s.stage_remote(remote(RecordKind::Manifest, served, 1, Some(b"s".to_vec())))
+            .unwrap();
         s.commit_remote().unwrap();
         assert!(s.finish_full_fetch().unwrap());
 
@@ -1109,13 +1200,144 @@ mod tests {
             s.server_meta(RecordKind::Keyset, kept).unwrap(),
             Some(vec![3])
         );
-        assert_eq!(s.get(RecordKind::Keyset, gone).unwrap(), None);
-        assert_eq!(s.get(RecordKind::Manifest, m).unwrap(), None);
+        // The item the server no longer lists in a vault it served is gone.
+        assert_eq!(s.get(RecordKind::Item, gone_item).unwrap(), None);
+        // Everything else the server did not return stays: stable kinds,
+        // manifests, and the items of a vault it did not serve.
+        assert!(s.get(RecordKind::Keyset, absent).unwrap().is_some());
+        assert!(s.get(RecordKind::Manifest, m).unwrap().is_some());
+        assert!(s.get(RecordKind::Manifest, hidden).unwrap().is_some());
+        assert!(s.get(RecordKind::Item, hidden_item).unwrap().is_some());
         // A local edit stays (pending), nothing was requeued.
         let pending = s.pending_changes().unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].id, edited);
         assert!(!s.full_fetch_pending().unwrap());
+    }
+
+    #[test]
+    fn plain_full_fetch_of_an_empty_zone_keeps_every_row() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (acct, vault, item) = (Id::new(), Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::AccountParams, acct, 1, b"p".to_vec());
+        seed_base(&mut s, RecordKind::Keyset, acct, 1, b"k".to_vec());
+        seed_base(&mut s, RecordKind::VaultKey, vault, 1, b"vk".to_vec());
+        seed_base(&mut s, RecordKind::VaultMeta, vault, 1, b"vm".to_vec());
+        seed_base(&mut s, RecordKind::Manifest, vault, 1, b"m".to_vec());
+        seed_base(&mut s, RecordKind::Item, item, 1, item_data(vault, b"i"));
+        s.begin_full_fetch().unwrap();
+        s.commit_remote().unwrap();
+        assert!(!s.finish_full_fetch().unwrap());
+        assert_eq!(count(&s, "base"), 6);
+        assert_eq!(count(&s, "pending"), 0);
+        assert!(s.has_account().unwrap());
+    }
+
+    #[test]
+    fn commit_remote_ignores_deletion_of_account_records_and_seen_vaults() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (acct, seen, unseen, item) = (Id::new(), Id::new(), Id::new(), Id::new());
+        for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
+            seed_base(&mut s, kind, acct, 1, b"a".to_vec());
+        }
+        for v in [seen, unseen] {
+            for kind in [
+                RecordKind::VaultKey,
+                RecordKind::VaultMeta,
+                RecordKind::Manifest,
+            ] {
+                seed_base(&mut s, kind, v, 1, b"v".to_vec());
+            }
+        }
+        seed_base(&mut s, RecordKind::Item, item, 1, item_data(seen, b"i"));
+        let mut state = DeviceState::default();
+        state.last_seen.insert(
+            seen,
+            crate::manifest::SeenManifest {
+                seq: 1,
+                hash: [7; 32],
+            },
+        );
+        s.set_device_state(&state).unwrap();
+
+        for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
+            s.stage_remote(remote(kind, acct, 1, None)).unwrap();
+        }
+        for v in [seen, unseen] {
+            for kind in [
+                RecordKind::VaultKey,
+                RecordKind::VaultMeta,
+                RecordKind::Manifest,
+            ] {
+                s.stage_remote(remote(kind, v, 1, None)).unwrap();
+            }
+        }
+        s.stage_remote(remote(RecordKind::Item, item, 1, None))
+            .unwrap();
+        // The ignored manifest deletion is not reported as an applied vault.
+        assert_eq!(s.commit_remote().unwrap(), vec![unseen]);
+
+        assert!(s.has_account().unwrap());
+        assert!(s.get(RecordKind::Keyset, acct).unwrap().is_some());
+        for kind in [
+            RecordKind::VaultKey,
+            RecordKind::VaultMeta,
+            RecordKind::Manifest,
+        ] {
+            assert!(s.get(kind, seen).unwrap().is_some());
+            assert_eq!(s.get(kind, unseen).unwrap(), None);
+        }
+        // Item deletions are ordinary remote changes.
+        assert_eq!(s.get(RecordKind::Item, item).unwrap(), None);
+        assert_eq!(count(&s, "staging"), 0);
+    }
+
+    #[test]
+    fn account_state_reports_a_pinned_account_that_disappeared() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        assert_eq!(s.account_state().unwrap(), AccountState::Empty);
+        let kdf = crate::crypto::KdfParams {
+            m_kib: 8192,
+            t: 1,
+            p: 1,
+            salt: crate::crypto::random_array().unwrap(),
+        };
+        let (mut repo, _sk) =
+            crate::repo::Repository::create_account(s, "Projet Atlas", kdf).unwrap();
+        repo.persist_device_state().unwrap();
+        s = repo.store;
+        assert_eq!(s.account_state().unwrap(), AccountState::Present);
+        s.conn
+            .execute(
+                "DELETE FROM pending WHERE kind = ?1",
+                params![RecordKind::AccountParams.code()],
+            )
+            .unwrap();
+        assert!(!s.has_account().unwrap());
+        assert_eq!(s.account_state().unwrap(), AccountState::PinnedButMissing);
+    }
+
+    #[test]
+    fn reset_empties_every_table_and_keeps_the_connection_usable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.sqlite");
+        let mut s = SyncStore::open(&path).unwrap();
+        let mut other = SyncStore::open(&path).unwrap();
+        let (vault, m) = (Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::Manifest, m, 1, b"m".to_vec());
+        s.put(rec(m, RecordKind::Manifest, 2, b"m2")).unwrap();
+        s.put(rec(vault, RecordKind::Keyset, 1, b"k")).unwrap();
+        s.stage_remote(remote(RecordKind::Keyset, vault, 3, None))
+            .unwrap();
+        s.set_meta("sync.tok", &[1]).unwrap();
+        s.set_device_state(&DeviceState::default()).unwrap();
+        other.reset().unwrap();
+        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+            assert_eq!(count(&s, table), 0, "{table}");
+        }
+        // Both connections keep working on the same file.
+        s.put(rec(vault, RecordKind::Keyset, 1, b"k")).unwrap();
+        assert_eq!(other.list(RecordKind::Keyset).unwrap().len(), 1);
     }
 
     #[test]

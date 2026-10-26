@@ -1148,3 +1148,116 @@ fn totp_debug_masks_the_code_and_entropy_matches_generate() {
         assert_eq!(password_entropy_bits(r), 0.0);
     }
 }
+
+#[test]
+fn verify_password_returns_the_auk_and_never_writes_the_device_state() {
+    let fx = fixture();
+    let unlocked =
+        unlock_with_password(fx.path.clone(), PASSWORD.into(), fx.secret_key.clone()).unwrap();
+    unlocked.session.lock();
+    // A device state that an unlock would change (it pins the account).
+    {
+        let mut store = onepass_core::sync::SyncStore::open(Path::new(&fx.path)).unwrap();
+        store
+            .set_device_state(&onepass_core::repo::DeviceState::default())
+            .unwrap();
+    }
+    let read_state = || {
+        onepass_core::sync::SyncStore::open(Path::new(&fx.path))
+            .unwrap()
+            .device_state()
+            .unwrap()
+    };
+    let auk = verify_password(fx.path.clone(), PASSWORD.into(), fx.secret_key.clone()).unwrap();
+    assert_eq!(auk, unlocked.auk);
+    assert_eq!(read_state(), onepass_core::repo::DeviceState::default());
+    assert_eq!(
+        verify_password(fx.path.clone(), "mauvais".into(), fx.secret_key.clone()),
+        Err(OnePassError::WrongPassword)
+    );
+    // A real unlock does persist.
+    let again =
+        unlock_with_password(fx.path.clone(), PASSWORD.into(), fx.secret_key.clone()).unwrap();
+    again.session.lock();
+    assert!(read_state().pinned.is_some());
+}
+
+#[test]
+fn store_state_and_create_refuse_a_pinned_account_that_disappeared() {
+    let fx = fixture();
+    assert_eq!(
+        store_state(fx.path.clone()).unwrap(),
+        FfiStoreState::Account
+    );
+    let handle = open_sync_store(fx.path.clone()).unwrap();
+    assert_eq!(handle.store_state().unwrap(), FfiStoreState::Account);
+    fx.session.lock();
+    // Push the local rows to base, then a "server" deletes the account
+    // records: commit_remote ignores those deletions.
+    for c in handle.pending_changes().unwrap() {
+        handle
+            .mark_pushed(c.kind, c.id, c.version, Some(vec![1]))
+            .unwrap();
+    }
+    assert!(handle.pending_changes().unwrap().is_empty());
+    let account_id = fx.session.account_id();
+    for kind in [1u8, 2] {
+        handle
+            .stage_remote(FfiRemoteRecord {
+                kind,
+                id: account_id.clone(),
+                version: 1,
+                data: None,
+                server_meta: None,
+            })
+            .unwrap();
+    }
+    handle.commit_remote().unwrap();
+    assert_eq!(
+        store_state(fx.path.clone()).unwrap(),
+        FfiStoreState::Account
+    );
+
+    // The params record disappears anyway (a damaged file, here a local
+    // tombstone hiding it): pinned but missing.
+    {
+        use onepass_core::store::{RecordKind, RecordStore};
+        let mut store = onepass_core::sync::SyncStore::open(Path::new(&fx.path)).unwrap();
+        let id = store.list(RecordKind::AccountParams).unwrap()[0].id;
+        store.delete(RecordKind::AccountParams, id).unwrap();
+    }
+    assert_eq!(
+        store_state(fx.path.clone()).unwrap(),
+        FfiStoreState::PinnedButMissing
+    );
+    assert!(!has_account(fx.path.clone()).unwrap());
+    let err = create_account_with_kdf(fx.path.clone(), "autre".into(), FAST)
+        .err()
+        .unwrap();
+    assert_eq!(
+        err,
+        OnePassError::Integrity {
+            kind: "account_missing".into()
+        }
+    );
+}
+
+#[test]
+fn reset_store_empties_the_file_while_a_handle_stays_open() {
+    let fx = fixture();
+    let handle = open_sync_store(fx.path.clone()).unwrap();
+    handle.set_meta("token".into(), vec![1, 2]).unwrap();
+    assert!(!handle.pending_changes().unwrap().is_empty());
+    fx.session.lock();
+    reset_store(fx.path.clone()).unwrap();
+    assert_eq!(store_state(fx.path.clone()).unwrap(), FfiStoreState::Empty);
+    // The open handle sees the emptied file, not a stale unlinked copy.
+    assert_eq!(handle.store_state().unwrap(), FfiStoreState::Empty);
+    assert!(handle.pending_changes().unwrap().is_empty());
+    assert_eq!(handle.meta("token".into()).unwrap(), None);
+    // A new account in the same file is what the handle then syncs.
+    let created = create_account_with_kdf(fx.path.clone(), PASSWORD.into(), FAST).unwrap();
+    assert_eq!(handle.store_state().unwrap(), FfiStoreState::Account);
+    assert!(!handle.pending_changes().unwrap().is_empty());
+    created.session.lock();
+}

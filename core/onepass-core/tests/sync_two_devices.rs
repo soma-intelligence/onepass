@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use onepass_core::crypto::{KdfParams, SecretKey, random_array};
 use onepass_core::model::{FieldValue, Item, ItemType, new_item};
 use onepass_core::repo::{Repository, split_item_record};
-use onepass_core::store::{Record, RecordKind};
-use onepass_core::sync::{Change, RemoteChange, SyncStore};
+use onepass_core::store::{Record, RecordKind, RecordStore};
+use onepass_core::sync::{AccountState, Change, RemoteChange, SyncStore};
 use onepass_core::vault::{ItemRecord, Vault, VaultMeta};
 use onepass_core::{Error, Id, IntegrityError, Result};
 use time::OffsetDateTime;
@@ -136,6 +136,19 @@ impl Server {
             (record.kind, record.id),
             Entry {
                 record: Some(record),
+                tag,
+                changed: tag,
+            },
+        );
+    }
+
+    /// The server logs a deletion no client asked for (a forged tombstone).
+    fn forge_deletion(&mut self, kind: RecordKind, id: Id) {
+        let tag = self.tick();
+        self.records.insert(
+            (kind, id),
+            Entry {
+                record: None,
                 tag,
                 changed: tag,
             },
@@ -293,6 +306,20 @@ fn pull(server: &Server, dev: &mut Device) {
         store.stage_remote(c).unwrap();
     }
     store.commit_remote().unwrap();
+    dev.cursor = cursor;
+}
+
+/// A fetch from scratch (token lost or expired): every live record, then the
+/// settlement of the rows the server did not return.
+fn full_fetch(server: &Server, dev: &mut Device) {
+    let (changes, cursor) = server.changes_since(0);
+    let mut store = dev.store();
+    store.begin_full_fetch().unwrap();
+    for c in changes.into_iter().filter(|c| c.data.is_some()) {
+        store.stage_remote(c).unwrap();
+    }
+    store.commit_remote().unwrap();
+    store.finish_full_fetch().unwrap();
     dev.cursor = cursor;
 }
 
@@ -903,4 +930,69 @@ fn failing_vault_does_not_block_other_vaults() {
         users(&b.repo().items(&bb).unwrap()),
         vec!["bad.b", "second"]
     );
+}
+
+#[test]
+fn forged_deletions_of_account_and_seen_vault_change_nothing_locally() {
+    let mut server = Server::default();
+    let (a, mut b, sk, _items) = setup(&mut server, &[("camille", T0)]);
+    let before = b.items();
+    let v = b.vault().id;
+    b.lock();
+    let account: Vec<Id> = a
+        .store()
+        .list(RecordKind::AccountParams)
+        .unwrap()
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
+    assert_eq!(account.len(), 1);
+    for id in &account {
+        server.forge_deletion(RecordKind::AccountParams, *id);
+        server.forge_deletion(RecordKind::Keyset, *id);
+    }
+    for kind in [
+        RecordKind::VaultKey,
+        RecordKind::VaultMeta,
+        RecordKind::Manifest,
+    ] {
+        server.forge_deletion(kind, v);
+    }
+    pull(&server, &mut b);
+    assert_eq!(b.store().account_state().unwrap(), AccountState::Present);
+    b.unlock(&sk);
+    assert_eq!(b.items(), before);
+}
+
+#[test]
+fn empty_zone_on_a_full_fetch_keeps_the_local_copy() {
+    let mut server = Server::default();
+    let (_a, mut b, sk, _items) = setup(&mut server, &[("camille", T0)]);
+    let before = b.items();
+    b.lock();
+    // The token expired and the zone now answers with nothing at all.
+    full_fetch(&Server::default(), &mut b);
+    assert_eq!(b.store().account_state().unwrap(), AccountState::Present);
+    b.unlock(&sk);
+    assert_eq!(b.items(), before);
+    assert!(b.store().pending_changes().unwrap().is_empty());
+}
+
+#[test]
+fn full_fetch_hiding_a_seen_vault_keeps_it_readable() {
+    let mut server = Server::default();
+    let (_a, mut b, sk, _items) = setup(&mut server, &[("camille", T0)]);
+    let before = b.items();
+    let v = b.vault().id;
+    b.lock();
+    for kind in [
+        RecordKind::VaultKey,
+        RecordKind::VaultMeta,
+        RecordKind::Manifest,
+    ] {
+        server.withhold(kind, v);
+    }
+    full_fetch(&server, &mut b);
+    b.unlock(&sk);
+    assert_eq!(b.items(), before);
 }

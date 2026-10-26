@@ -430,3 +430,26 @@ pub enum FfiPasswordRecipe {
         length: u32,
     },
 }
+
+/// What a store holds before any unlock (see `store_state`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiStoreState {
+    /// No account: one may be created.
+    Empty,
+    /// An account is stored.
+    Account,
+    /// This device pinned an account whose records are gone: an integrity
+    /// fault, never an empty store.
+    PinnedButMissing,
+}
+
+impl From<onepass_core::sync::AccountState> for FfiStoreState {
+    fn from(s: onepass_core::sync::AccountState) -> Self {
+        use onepass_core::sync::AccountState;
+        match s {
+            AccountState::Empty => Self::Empty,
+            AccountState::Present => Self::Account,
+            AccountState::PinnedButMissing => Self::PinnedButMissing,
+        }
+    }
+}

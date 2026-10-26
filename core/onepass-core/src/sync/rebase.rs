@@ -29,6 +29,13 @@
 //! last seen manifest commit together. A failure or a crash leaves the
 //! previous pending writes with their last seen manifest, and the vault
 //! stays held.
+//!
+//! Serialization premise: each vault's plan is read before its batch opens.
+//! Only the session writes pending rows, with one exception: the settlement
+//! of a zone reset (`SyncStore::finish_full_fetch` in reset mode) requeues
+//! rows through the sync connection. A rebase and that settlement must not
+//! interleave; the apps guarantee it by running the rebase inside the sync
+//! round that owns the fetch (one round at a time).
 
 use crate::manifest::{
     Manifest, ManifestEntry, SignedManifest, manifest_hash, record_hash, verify_manifest,

@@ -311,7 +311,12 @@ impl Session {
 }
 
 /// Base-layer sync operations over their own connection, usable while the
-/// vault is locked. Never writes pending rows or the device state.
+/// vault is locked. Never writes the device state. It writes pending rows in
+/// one case only: `finish_full_fetch` after a zone reset requeues the rows
+/// the server lost. `Session::rebase_all` reads pending rows before its
+/// batch opens (see `rebase.rs`), so the app must never run a rebase and a
+/// reset settlement at the same time: the coordinator serializes them (one
+/// sync round at a time, rebases inside the round).
 #[derive(uniffi::Object)]
 pub struct SyncStoreHandle {
     store: Mutex<SyncStore>,
@@ -401,6 +406,11 @@ impl SyncStoreHandle {
 
     pub fn has_account(&self) -> Result<bool, OnePassError> {
         Ok(self.guard().has_account()?)
+    }
+
+    /// `store_state` over this handle's connection.
+    pub fn store_state(&self) -> Result<FfiStoreState, OnePassError> {
+        Ok(self.guard().account_state()?.into())
     }
 
     /// Start of a fetch from scratch (no token, or an expired one): forgets server tags and staged

@@ -5,7 +5,7 @@
 mod rebase;
 mod store;
 
-pub use store::SyncStore;
+pub use store::{AccountState, SyncStore};
 
 use crate::Id;
 use crate::store::RecordKind;

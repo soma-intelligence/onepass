@@ -15,7 +15,7 @@ use onepass_core::crypto::{KdfParams, SecretKey};
 use onepass_core::generator::{self, CharsetOptions, PassphraseOptions, Recipe, Wordlist};
 use onepass_core::model::{self, ItemType, checks::CardBrand};
 use onepass_core::repo::Repository;
-use onepass_core::sync::SyncStore;
+use onepass_core::sync::{AccountState, SyncStore};
 use onepass_core::totp;
 use zeroize::Zeroizing;
 
@@ -37,8 +37,12 @@ fn create(
     kdf: KdfParams,
 ) -> Result<FfiCreatedAccount, OnePassError> {
     let store = open_store(db_path)?;
-    if store.has_account()? {
-        return Err(invalid("account exists"));
+    match store.account_state()? {
+        AccountState::Empty => {}
+        AccountState::Present => return Err(invalid("account exists")),
+        // This device knew an account the store no longer shows: creating a
+        // second one over it is exactly what a hostile store would want.
+        AccountState::PinnedButMissing => return Err(account_missing()),
     }
     let (mut repo, secret_key) = Repository::create_account(store, password, kdf)?;
     repo.persist_device_state()?;
@@ -96,6 +100,26 @@ pub fn unlock_with_password(
     })
 }
 
+/// Checks a master password and Secret Key against the stored account and
+/// returns the Account Unlock Key, without opening a session and without
+/// persisting the device state: a throwaway check (reprompt, biometric
+/// enrollment) must never write back a device state it read before the
+/// Argon2id run, while the live session keeps moving `last_seen` forward.
+#[uniffi::export]
+pub fn verify_password(
+    db_path: String,
+    password: String,
+    secret_key: String,
+) -> Result<Vec<u8>, OnePassError> {
+    let (password, secret_key) = (Zeroizing::new(password), Zeroizing::new(secret_key));
+    let store = open_store(&db_path)?;
+    let secret_key = SecretKey::parse(&secret_key)?;
+    let device = store.device_state()?;
+    let (repo, auk) = Repository::unlock_exporting_auk(store, &password, &secret_key, device)?;
+    drop(repo);
+    Ok(auk.as_bytes().to_vec())
+}
+
 #[uniffi::export]
 pub fn unlock_with_auk(db_path: String, auk: Vec<u8>) -> Result<Arc<Session>, OnePassError> {
     let auk = Zeroizing::new(auk);
@@ -114,6 +138,27 @@ pub fn unlock_with_auk(db_path: String, auk: Vec<u8>) -> Result<Arc<Session>, On
 #[uniffi::export]
 pub fn has_account(db_path: String) -> Result<bool, OnePassError> {
     Ok(open_store(&db_path)?.has_account()?)
+}
+
+/// What the store at `db_path` holds before any unlock: nothing, an account,
+/// or (integrity fault) the account this device pinned has disappeared.
+#[uniffi::export]
+pub fn store_state(db_path: String) -> Result<FfiStoreState, OnePassError> {
+    Ok(open_store(&db_path)?.account_state()?.into())
+}
+
+/// Empty every table of the store in one transaction, leaving the file in
+/// place: connections other parts of the app hold on it (the sync handle)
+/// keep working. For an account creation that has to be undone.
+#[uniffi::export]
+pub fn reset_store(db_path: String) -> Result<(), OnePassError> {
+    Ok(open_store(&db_path)?.reset()?)
+}
+
+fn account_missing() -> OnePassError {
+    OnePassError::Integrity {
+        kind: "account_missing".to_owned(),
+    }
 }
 
 #[uniffi::export]

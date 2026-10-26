@@ -95,7 +95,8 @@ mod tests {
                 }
             }
         }
-        assert!(seen >= 30, "templates changed shape: {seen}");
+        // 27 menus with their own options and 8 yes/no switches.
+        assert_eq!(seen, 35, "templates changed shape: {seen}");
     }
 
     #[test]
