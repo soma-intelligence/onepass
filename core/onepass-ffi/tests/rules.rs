@@ -141,3 +141,29 @@ fn syntax_details() {
         assert!(q.chars().all(|c| (' '..='~').contains(&c)));
     }
 }
+
+#[test]
+fn length_is_capped() {
+    for rules in [
+        "minlength: 4294967295; maxlength: 4294967295;",
+        "minlength: 65;",
+        "minlength: 65; maxlength: 100;",
+    ] {
+        assert_eq!(gen_one(&[rules]).chars().count(), 20, "{rules}");
+    }
+    assert_eq!(
+        gen_one(&["minlength: 64; maxlength: 4294967295;"]).len(),
+        64
+    );
+    assert_eq!(gen_one(&["maxlength: 4294967295;"]).len(), 20);
+}
+
+#[test]
+fn lenient_lists_and_printable_sets() {
+    let p = gen_one(&["required: upper,; allowed: upper; minlength: 8; maxlength: 8;"]);
+    assert!(p.chars().all(|c| c.is_ascii_uppercase()));
+    // Control and non-ASCII characters in a set are unreadable: fallback.
+    for rules in ["allowed: [a\u{7}b];", "allowed: [aé];", "allowed: ,;"] {
+        assert_eq!(gen_one(&[rules]).chars().count(), 20, "{rules}");
+    }
+}

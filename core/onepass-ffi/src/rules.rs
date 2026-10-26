@@ -16,8 +16,8 @@ use crate::{FfiPasswordRecipe, OnePassError, generate_password};
 
 /// Target length when the rules leave room.
 const TARGET_LENGTH: u32 = 20;
-/// Longest password generated when the rules set no maximum.
-const MAX_UNBOUNDED_LENGTH: u32 = 64;
+/// Longest password generated, whatever the rules say.
+const MAX_LENGTH: u32 = 64;
 /// Draws of a whole password before giving up on the rules.
 const ATTEMPTS: usize = 100;
 /// Apple `special` class: ASCII punctuation they list, and the space.
@@ -85,6 +85,9 @@ fn parse_class(token: &str) -> Option<CharSet> {
             return None;
         }
         for (i, c) in chars.iter().enumerate() {
+            if !(' '..='~').contains(c) {
+                return None;
+            }
             let edge_dash = *c == '-' && (i == 0 || i == chars.len() - 1);
             if (*c == '-' && !edge_dash) || (*c == ']' && i != 0) {
                 return None;
@@ -96,10 +99,14 @@ fn parse_class(token: &str) -> Option<CharSet> {
 }
 
 fn parse_classes(value: &str) -> Option<Vec<CharSet>> {
-    split_outside_sets(value, ',')
+    // Empty tokens (a trailing comma) are skipped; no token at all is
+    // unreadable.
+    let sets: Option<Vec<CharSet>> = split_outside_sets(value, ',')
         .into_iter()
+        .filter(|t| !t.trim().is_empty())
         .map(parse_class)
-        .collect()
+        .collect();
+    sets.filter(|s| !s.is_empty())
 }
 
 fn parse_number(value: &str) -> Option<u32> {
@@ -195,10 +202,16 @@ fn pick(set: &[char]) -> Option<char> {
 
 /// Length chosen from the bounds: the target, clamped into them.
 fn choose_length(r: &Rules) -> Option<usize> {
-    let length = match r.max_length {
-        Some(max) => max.min(r.min_length.max(TARGET_LENGTH)),
-        None => r.min_length.clamp(TARGET_LENGTH, MAX_UNBOUNDED_LENGTH),
-    };
+    // Hard cap: the rules come from web pages and the extension is memory
+    // limited. A minimum above the cap cannot be met.
+    if r.min_length > MAX_LENGTH {
+        return None;
+    }
+    let target = r.min_length.max(TARGET_LENGTH);
+    let length = r
+        .max_length
+        .map_or(target, |max| max.min(target))
+        .min(MAX_LENGTH);
     (length >= r.min_length && length >= 1).then_some(length as usize)
 }
 
@@ -232,7 +245,7 @@ fn attempt(
     required: &[Vec<char>],
     max_consecutive: Option<u32>,
 ) -> Option<Zeroizing<Vec<char>>> {
-    let mut fixed: Vec<Option<char>> = vec![None; length];
+    let mut fixed: Zeroizing<Vec<Option<char>>> = Zeroizing::new(vec![None; length]);
     let mut free: Vec<usize> = (0..length).collect();
     for group in required {
         let slot = free.swap_remove(uniform_below(free.len())?);
@@ -288,7 +301,9 @@ fn from_rules(rules: &[String]) -> Option<Zeroizing<String>> {
     }
     for _ in 0..ATTEMPTS {
         if let Some(chars) = attempt(length, &alphabet, &required, parsed.max_consecutive) {
-            return Some(Zeroizing::new(chars.iter().collect()));
+            let mut password = Zeroizing::new(String::with_capacity(length * 4));
+            password.extend(chars.iter());
+            return Some(password);
         }
     }
     None
