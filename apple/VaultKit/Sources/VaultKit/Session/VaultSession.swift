@@ -52,6 +52,8 @@ public final class VaultSession {
     @ObservationIgnored private let identitySync: IdentityStoreSync
     /// Identity store requests (refresh, clear), forwarded in order.
     @ObservationIgnored private var identityChain: Task<Void, Never>?
+    /// Observes `StoreChangeNotifier`; cancelled on deinit (the extension makes one session per request).
+    @ObservationIgnored private(set) var storeChangeObserver: Task<Void, Never>?
 
     static let maxRecents = 20
     nonisolated static let trashRetentionDays: UInt32 = 30
@@ -68,6 +70,10 @@ public final class VaultSession {
         identitySync = IdentityStoreSync(client: environment.identityStore, debounce: environment.identityDebounce)
         evaluateStoredAccount()
         observeStoreChanges()
+    }
+
+    isolated deinit {
+        storeChangeObserver?.cancel()
     }
 
     private var settings: VaultSettings { environment.settings }
@@ -817,11 +823,12 @@ public final class VaultSession {
         }
     }
 
-    /// Another process (the AutoFill extension) wrote to the store: unlocked, reload the lists and let
-    /// the sync layer send the change. This session never posts, so this cannot loop.
+    /// Another process (the AutoFill extension) wrote to the store. Unlocked: reload the lists, then
+    /// (unless the reload failed) let the sync layer send the change. Not unlocked: only tell the sync
+    /// layer, pending rows push without unlocking. This session never posts, so this cannot loop.
     private func observeStoreChanges() {
         let changes = environment.storeChanges.changes()
-        Task { [weak self] in
+        storeChangeObserver = Task { [weak self] in
             for await _ in changes {
                 guard let self else { return }
                 await self.storeChanged()
@@ -830,9 +837,10 @@ public final class VaultSession {
     }
 
     private func storeChanged() async {
-        guard state == .unlocked else { return }
-        await reload()
-        guard state == .unlocked else { return }
+        if state == .unlocked {
+            await reload()
+            guard state == .unlocked else { return }
+        }
         notifySync { await $0.localChangesWritten() }
     }
 

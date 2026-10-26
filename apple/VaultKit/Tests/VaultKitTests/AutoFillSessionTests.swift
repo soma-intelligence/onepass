@@ -232,7 +232,8 @@ struct AutoFillSessionTests {
         second.lock()
     }
 
-    @Test func notificationIgnoredWhileLocked() async throws {
+    /// Locked: nothing is reloaded, but the sync layer is told (pending rows push without unlocking).
+    @Test func notificationWhileLockedOnlySignalsSync() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }
         let notifier = StoreChangeNotifier(name: "me.somalabs.onepass.tests.\(UUID().uuidString)")
@@ -243,10 +244,25 @@ struct AutoFillSessionTests {
         let events = h.sync.events
 
         notifier.post()
-        try await Task.sleep(for: .milliseconds(200))
-        await session.waitForSyncNotifications()
+        #expect(await eventually {
+            await session.waitForSyncNotifications()
+            return h.sync.events.count > events.count
+        })
         #expect(session.state == .locked)
         #expect(session.summaries.isEmpty)
-        #expect(h.sync.events == events)
+        #expect(h.sync.events == events + [.written])
+    }
+
+    /// The observer task ends with its session: per-request sessions of the extension do not pile up.
+    @Test func observerEndsWithSession() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let notifier = StoreChangeNotifier(name: "me.somalabs.onepass.tests.\(UUID().uuidString)")
+        var session: VaultSession? = autofillSession(h, store: InMemoryIdentityStore(), notifier: notifier)
+        let observer = try #require(session?.storeChangeObserver)
+        #expect(!observer.isCancelled)
+        session = nil
+        #expect(await eventually { observer.isCancelled })
+        await observer.value
     }
 }
