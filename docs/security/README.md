@@ -465,3 +465,4 @@ Lancer : `cd extension && npm run check && npm run e2e`, puis `cd core && cargo 
 - L'hôte de développement n'est pas pour de vrais secrets : le coffre est chargé en mémoire (R-14), la clé d'appairage est dans un fichier en 0600, la fixture est refusée par un build release.
 - Pas de passkeys (R-16), pas d'apprentissage des étapes (R-13), aucune exception aux iframes d'autres sites (R-10), chaîne arrêtée hors domaines autorisés (R-11).
 - Les tests de bout en bout ne couvrent que Chromium (R-08).
+- Les jetons du menu, de l'overlay et de la proposition d'enregistrement sont liés à l'identifiant de l'onglet ; chaque action revérifie l'origine et le `documentId` du cadre visé. Un moteur de rendu compromis du même site (qui partage le processus de la page) est hors périmètre.
