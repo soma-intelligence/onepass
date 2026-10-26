@@ -10,9 +10,6 @@
 import { type PairingRecord, recordFromJson, recordToJson } from "../bridge/pairing";
 import type { BgExt, StorageArea } from "./ext";
 
-/** Key of a pairing written by earlier builds in `storage.local`. */
-export const LEGACY_PAIRING_KEY = "pairing";
-
 /** Raw storage of the pairing record (its JSON form). */
 export interface PairingStore {
   get(): Promise<unknown>;
@@ -93,8 +90,6 @@ export class MemoryPairingStore implements PairingStore {
 }
 
 export class Store {
-  private migration: Promise<void> | undefined;
-
   constructor(
     private readonly ext: Pick<BgExt, "storage">,
     private readonly pairings: PairingStore,
@@ -114,30 +109,8 @@ export class Store {
     }
   }
 
-  /** Move a legacy `storage.local` record into the pairing store, once per worker. */
-  private migrate(): Promise<void> {
-    this.migration ??= (async () => {
-      const legacy = (await this.ext.storage.local.get(LEGACY_PAIRING_KEY))[LEGACY_PAIRING_KEY];
-      if (legacy === undefined) return;
-      let valid = false;
-      try {
-        recordFromJson(legacy);
-        valid = true;
-      } catch {
-        // Corrupt: just dropped.
-      }
-      if (valid && (await this.pairings.get()) === undefined) await this.pairings.set(legacy);
-      await this.ext.storage.local.remove(LEGACY_PAIRING_KEY);
-    })().catch((e: unknown) => {
-      this.migration = undefined;
-      throw e;
-    });
-    return this.migration;
-  }
-
   /** The stored pairing; a missing or corrupt record reads as unpaired. */
   async getPairing(): Promise<PairingRecord | null> {
-    await this.migrate();
     const raw = await this.pairings.get();
     if (raw === undefined || raw === null) return null;
     try {
@@ -148,12 +121,10 @@ export class Store {
   }
 
   async setPairing(r: PairingRecord): Promise<void> {
-    await this.migrate();
     await this.pairings.set(recordToJson(r));
   }
 
   async clearPairing(): Promise<void> {
-    await this.migrate();
     await this.pairings.clear();
   }
 

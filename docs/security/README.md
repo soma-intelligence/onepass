@@ -417,7 +417,7 @@ Chaque décision de correspondance est **refaite par l'hôte** ; l'extension ne 
 
 ### 12.5 Stockage de la clé d'appairage
 
-L'extension garde `PK` dans l'**IndexedDB de l'origine de l'extension** (`extension/src/background/store.ts`), pas dans `storage.local`. Un ancien enregistrement de `storage.local` est migré puis supprimé. Les scripts de contenu et les pages web n'ont aucun accès à cette base (origine d'extension). Côté hôte de développement : `pairings.json` en 0600 dans le dossier de données (l'app réelle utilisera le trousseau). Un logiciel qui lit le profil du navigateur y accède : limite hors périmètre (section 12.1, R-17).
+L'extension garde `PK` dans l'**IndexedDB de l'origine de l'extension** (`extension/src/background/store.ts`), pas dans `storage.local`. Les scripts de contenu et les pages web n'ont aucun accès à cette base (origine d'extension). Côté hôte de développement : `pairings.json` en 0600 dans le dossier de données (l'app réelle utilisera le trousseau). Un logiciel qui lit le profil du navigateur y accède : limite hors périmètre (section 12.1, R-17).
 
 ### 12.6 Défenses dans la page
 

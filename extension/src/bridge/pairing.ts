@@ -40,7 +40,7 @@ export interface PairingRecord {
   createdAt: number;
 }
 
-/** Storage form of a record (`chrome.storage.local`): base64 fields. */
+/** Storage form of a record (IndexedDB of the extension origin): base64 fields. */
 export interface PairingRecordJson {
   pairing_id: string;
   key: string;

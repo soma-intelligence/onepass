@@ -1,7 +1,7 @@
 // Pairing flow driven by the popup (spec 6.4): start shows the six digit
 // code, confirm is the user's "Les codes sont identiques". The record is
-// stored in `storage.local` (key `pairing`) and the pairing port is reused
-// as the first session.
+// stored in the extension origin's IndexedDB (see store.ts) and the pairing
+// port is reused as the first session.
 import { wipe } from "../bridge/bytes";
 import type { PairingRecord } from "../bridge/pairing";
 import { BgError, type BridgeLike, type Session, toBgError } from "./session";
