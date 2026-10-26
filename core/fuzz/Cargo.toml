@@ -11,7 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 serde_bytes = "0.11"
-onepass-core = { path = "../onepass-core" }
+onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }
 
 [workspace]
 
@@ -60,6 +60,69 @@ bench = false
 [[bin]]
 name = "reference_parse"
 path = "fuzz_targets/reference_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "import_csv"
+path = "fuzz_targets/import_csv.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "import_1pux"
+path = "fuzz_targets/import_1pux.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "import_bitwarden_json"
+path = "fuzz_targets/import_bitwarden_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "import_keepass_xml"
+path = "fuzz_targets/import_keepass_xml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "import_cxf"
+path = "fuzz_targets/import_cxf.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "import_text"
+path = "fuzz_targets/import_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "archive_open"
+path = "fuzz_targets/archive_open.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "hibp_range"
+path = "fuzz_targets/hibp_range.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "site_directory"
+path = "fuzz_targets/site_directory.rs"
 test = false
 doc = false
 bench = false

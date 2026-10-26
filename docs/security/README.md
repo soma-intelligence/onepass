@@ -134,7 +134,7 @@ Aucun message d'erreur ne contient de secret ni de contenu d'item (`Error`, `Int
 
 ## 4. Validation des entrées
 
-Les décodeurs qu'un stockage hostile atteint avant toute authentification sont fuzzés (`core/fuzz`) : ouverture de blob, enregistrement de manifeste signé (décodage puis signature), paramètres de compte (décodage puis `Account::unlock`), enregistrement d'item (préfixe de vault, `ItemRecord`, confrontation au manifeste), vérification des signatures hybride et d'identité sur des clés et signatures arbitraires, plus `parse_otpauth` et `parse_ref`. Le décodage de `Manifest` n'est pas une cible : il ne lit qu'un clair déjà authentifié. Chaque cible exige seulement l'absence de panique. Toutes ont tourné 60 s sans plantage au moment de la livraison, puis tournent 30 s à chaque exécution de la CI.
+Les décodeurs qu'un stockage hostile atteint avant toute authentification sont fuzzés (`core/fuzz`) : ouverture de blob, enregistrement de manifeste signé (décodage puis signature), paramètres de compte (décodage puis `Account::unlock`), enregistrement d'item (préfixe de vault, `ItemRecord`, confrontation au manifeste), vérification des signatures hybride et d'identité sur des clés et signatures arbitraires, plus `parse_otpauth` et `parse_ref`. Au jalon 5 s'y ajoutent les parseurs d'import (CSV, 1PUX, Bitwarden JSON, KeePass XML, CXF, texte), l'ouverture d'archive (`inspect` et `open`), la réponse de plage HIBP et les catalogues de sites. Le décodage de `Manifest` n'est pas une cible : il ne lit qu'un clair déjà authentifié. Chaque cible exige seulement l'absence de panique. Toutes ont tourné 60 s sans plantage au moment de la livraison, puis tournent 30 s à chaque exécution de la CI.
 
 ## 5. Attaques testées
 
@@ -168,7 +168,51 @@ Les décodeurs qu'un stockage hostile atteint avant toute authentification sont 
 - Cryptographie : vecteurs officiels NIST ACVP (ML-KEM-1024, ML-DSA-87 génération et signature, SLH-DSA-SHA2-256s) et test différentiel `aws-lc-rs` contre `libcrux` (`tests/differential.rs`).
 - Secrets : `Debug` n'affiche jamais d'octets de clé, et les messages d'erreur ne contiennent ni secret ni contenu (tests de rédaction).
 
-## 6. Écarts entre le code et la spec
+## 7. Archive OnePass (jalon 5)
+
+Un seul conteneur sert à l'export chiffré et à la sauvegarde (`archive/format.rs`, extension `.onepass`).
+
+**Format.** `"OPARCH"` (6 octets), octet de format (1), longueur de l'en-tête (u32 big-endian), en-tête (postcard), charge scellée. L'en-tête porte `archive_id`, le type (`Export` ou `Backup`), la date, le schéma de charge, la liste des destinataires (1 à 8) et la signature éventuelle. Il fait 64 Kio au plus, sans octet en trop. La charge est scellée par une clé de contenu `K` de 32 octets aléatoires (AEAD de la section 3.2, type `Archive`, `blob_id = archive_id`, schéma de charge). Elle répète `archive_id`, le type, la date et le schéma : l'ouverture refuse toute différence avec l'en-tête.
+
+**Destinataires.** `K` est enveloppée pour chaque destinataire :
+
+- *phrase de passe* : `KEK = HKDF(derive_auk(NFC(phrase), Secret Key à zéro, kdf), "onepass/archive/kek/v1")`, puis `K` scellée sous `KEK`. La phrase doit avoir un score zxcvbn d'au moins 3, et les paramètres Argon2id respectent le plancher des comptes à la création. À l'ouverture seul le plafond des comptes (2 Gio, 16 passes, 16 voies) est imposé : un fichier hostile ne peut pas épuiser l'appareil, et un fichier ancien à paramètres plus faibles reste lisible. C'est le mode de l'export portable, restaurable dans n'importe quel compte ;
+- *compte* : `K` enveloppée vers la clé KEM hybride publique du compte (ML-KEM-1024 + X25519, section 3.3), contexte `"onepass/archive/v1" || archive_id`. C'est le mode de la sauvegarde : aucune saisie, seul ce compte l'ouvre.
+
+**Signature.** Une archive avec destinataire compte est signée par la clé de signature hybride du compte (section 3.4), domaine `"onepass/archive/v1"`, sur `SHA-256(magic || format || en-tête sans signature || charge scellée)`. La signature est obligatoire dans ce cas et vérifiée contre le compte qui ouvre : une archive d'un autre compte, ou sans signature, est refusée (`Signature`). Un export par phrase de passe seul n'est pas signé.
+
+**Ce qui est authentifié.** La charge l'est toujours (AEAD, avec `archive_id` dans l'AAD). Pour une archive signée, l'en-tête l'est aussi, par la signature. Pour un export par phrase de passe, l'en-tête n'est pas authentifié séparément : un paramètre KDF ou un `archive_id` altéré change la clé dérivée ou l'AAD, l'engagement de clé échoue et l'altération se lit comme une mauvaise phrase de passe (`WrongPassword`), sans jamais livrer de contenu. Les champs répétés dans la charge sont comparés à l'en-tête après déchiffrement.
+
+**Versionnement.** L'octet de format décrit le conteneur : un format inconnu est refusé. `payload_schema` décrit la charge : tout schéma de 1 à `CURRENT_SCHEMA` est accepté, un schéma plus récent est refusé (`archive from a newer version`). Une évolution ajoute une fonction de migration par schéma. L'en-tête et la charge de référence sont figés en hexadécimal dans `tests/archive.rs`.
+
+**Plafonds à l'ouverture.** Charge de 1 Gio, 10 000 vaults, 1 000 000 d'items. `inspect` ne lit que l'en-tête clair, sans clé ni mot de passe.
+
+**Restauration.** `restore_plan` réutilise le vault du même id s'il existe, sinon en crée un avec la même méta (nouvel id). Un item dont l'id existe déjà est sauté et compté, jamais écrasé. La corbeille et les archivés sont restaurés tels quels.
+
+## 8. Watchtower et k-anonymity (jalon 5)
+
+Watchtower analyse les items déverrouillés en mémoire (mots de passe faibles, réutilisés, anciens, 2FA ou passkey disponibles, sites compromis, fuites de mots de passe). Il ne persiste rien.
+
+**Ce qui sort de l'appareil pour les fuites de mots de passe : 5 caractères hexadécimaux.** Le SHA-1 de chaque mot de passe distinct est calculé en mémoire (`Zeroizing`). Seul son préfixe de 5 caractères hexadécimaux majuscules est passé à la source de plages ; les 35 caractères restants sont comparés en local à la réponse. Ni le mot de passe, ni le hash complet, ni le suffixe, ni l'item ne quittent l'appareil. Un préfixe n'est demandé qu'une fois par analyse, et la source ne reçoit que le préfixe : la CLI le valide (5 hexadécimaux majuscules) avant de lancer la moindre commande, donc rien d'autre ne peut atteindre la ligne de `curl`.
+
+- **Add-Padding.** La CLI appelle `https://api.pwnedpasswords.com/range/{préfixe}` avec l'en-tête `Add-Padding: true` : le serveur complète la réponse avec de fausses lignes de compte 0, ce qui masque sa taille. Ces lignes sont ignorées à la lecture.
+- **Réponse hostile.** Le corps est plafonné à 4 Mio, une ligne mal formée invalide la réponse de ce préfixe. Une source en erreur ne fait pas échouer l'analyse : l'état des fuites passe à `Partial` ou `Unavailable`, sans conclure à tort qu'un mot de passe est sain.
+- **Modes hors ligne.** `--offline` n'exécute aucune commande réseau. `--hibp-dir` lit un dossier de fichiers `ABCDE.txt` (PwnedPasswordsDownloader) : l'analyse des fuites est alors entièrement locale, sans aucun préfixe émis. Sans ces options, la CLI télécharge les plages.
+- **Catalogues fournis par l'appelant.** Les catalogues 2fa.directory, passkeys et fuites HIBP (sites compromis) sont des documents que l'appelant fournit au noyau (fichier ou téléchargement de la CLI) ; le noyau ne fait aucun accès réseau lui-même. Chaque document est plafonné (16 Mio, 100 000 entrées, 253 octets par domaine) et une entrée mal formée est refusée. Un hôte correspond à un domaine s'il lui est égal ou se termine par `.` + domaine (pas de liste des suffixes publics).
+
+Limite : le préfixe de 5 caractères révèle à la source que l'appareil a testé un mot de passe dont le SHA-1 commence par ces caractères, parmi environ un million de mots de passe possibles par préfixe. Un observateur du réseau voit aussi la requête vers le service ; seul le mode hors ligne l'évite.
+
+## 9. Import (jalon 5)
+
+Un fichier d'import est une entrée hostile : un export altéré ou piégé ne doit ni faire paniquer le noyau, ni épuiser la mémoire ou le temps, ni écrire ailleurs que dans le coffre.
+
+- **Plafonds.** Fichier de 256 Mio au plus ; CSV en UTF-8 strict (1 Mio par cellule, 1 000 000 de lignes) ; JSON de profondeur 128 (défaut de `serde_json`) ; XML sans expansion d'entités hors entités prédéfinies, profondeur 256 ; zip (1PUX, Dashlane) de 10 000 entrées au plus, lu en flux et plafonné à 512 Mio décompressés (64 Mio pour `export.data`), noms d'entrée jamais utilisés comme chemins (aucune écriture disque), méthodes stockée et deflate seulement ; 1 000 000 d'items par import. Toute violation donne `InvalidFormat` avec une raison statique, sans contenu du fichier.
+- **Pas de panique.** Les modules d'import interdisent `unwrap`, `expect`, `panic` et l'indexation hors tests (`clippy`), et chaque parseur a une cible de fuzzing (section 4).
+- **Exports chiffrés de tiers refusés.** Un export chiffré d'un autre gestionnaire (Bitwarden `encrypted: true`, Dashlane `.dash`, 1Password `.1pif` chiffré, KDBX) est refusé avec un message qui demande un export en clair : OnePass ne déchiffre pas les formats de tiers. KDBX n'est pas supporté. Seules les archives OnePass sont ouvertes, avec leur phrase de passe, par le module `archive`.
+- **Aucun secret dans les erreurs ni les avertissements.** Les avertissements d'import ne portent que des libellés fixes et des noms de champ.
+- **Export en clair.** L'export CSV en clair est refusé sans `--plaintext`, avertit sur stderr, crée le fichier en mode `0600` et n'écrase jamais un fichier existant. Il n'échappe pas les formules de tableur : ouvrir ce CSV dans un tableur peut les interpréter.
+
+## 10. Écarts entre le code et la spec
 
 1. **Secret Key** : la spec et les contraintes du jalon parlent de 52 caractères. Le code affiche 52 caractères de base32 plus un caractère de contrôle (53 au total, en 14 groupes de 4, le dernier de 1). Les 256 bits de clé sont inchangés.
 2. **`mlock`** : la section 4.7 de la spec prévoit le verrouillage des pages sensibles en mémoire. Le code efface les secrets à la libération (`zeroize`) mais n'appelle pas `mlock`.

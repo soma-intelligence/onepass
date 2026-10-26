@@ -43,7 +43,11 @@ La suite couvre :
 - des tests property-based (`proptest`) sur l'AEAD : tout bit retourné est refusé (`tests/aead_props.rs`) ;
 - la dérivation de l'AUK (`tests/kdf_vectors.rs`) ;
 - la suite "stockage malveillant" (`tests/malicious_store.rs`), une attaque par test ;
-- les tests de la CLI (`onepass-cli/tests/cli.rs`).
+- les tests de la CLI (`onepass-cli/tests/cli.rs`) ;
+- les formats d'import, un fichier synthétique par format (`tests/import_formats.rs`) ;
+- Watchtower : contrôles, k-anonymity, catalogues et score (`tests/watchtower.rs`) ;
+- l'archive OnePass : aller-retour, refus, encodage figé (`tests/archive.rs`, feature `dev-fast-kdf`) ;
+- les commandes du jalon 5 de la CLI : import, export, watchtower, backup (`onepass-cli/tests/m5.rs`).
 
 La suite "stockage malveillant" déverrouille des comptes créés avec des paramètres Argon2id rapides : elle demande la feature `dev-fast-kdf` de `onepass-core`, que `onepass-cli` active, donc `cargo test --workspace` (et `make test`) la lance. Seule : `cargo test -p onepass-core --features dev-fast-kdf --test malicious_store`. Cette feature n'abaisse le plancher Argon2id que dans un build avec assertions de debug ; un build release impose toujours le plancher de la spec.
 
@@ -51,7 +55,7 @@ La signature SLH-DSA est lente (environ 15 s en optimisé, plus en debug). Le pr
 
 ## Fuzzing
 
-Sept cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'un stockage hostile atteint avant toute authentification :
+Seize cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'un stockage hostile atteint avant toute authentification :
 
 | Cible | Entrée |
 | --- | --- |
@@ -62,6 +66,15 @@ Sept cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'un
 | `signature_verify` | `HybridVerifyingKey::verify` et `IdentityVerifyingKey::verify` sur des clés et signatures arbitraires, encodées (postcard) et aux longueurs exactes |
 | `otpauth_parse` | texte UTF-8 passé à `parse_otpauth` |
 | `reference_parse` | texte UTF-8 passé à `parse_ref` |
+| `import_csv` | le premier octet choisit l'un des neuf formats CSV (dont LastPass et Dashlane, et le zip Dashlane), le reste est l'entrée de `import::parse` |
+| `import_1pux` | `import::parse(OnePasswordPux, ..)` (zip) et `detect` |
+| `import_bitwarden_json` | `import::parse(BitwardenJson, ..)` et `detect` |
+| `import_keepass_xml` | `import::parse(KeePassXml, ..)` et `detect` |
+| `import_cxf` | `import::parse(CredentialExchange, ..)` et `detect` |
+| `import_text` | le premier octet choisit `OtpAuthUris`, `WifiQr` (avec `parse_wifi_qr`), `parse_hardware_ports` ou `parse_preferred_networks` |
+| `archive_open` | octets arbitraires, puis mutation d'une sauvegarde valide : `archive::inspect`, `open` par phrase de passe et `open` par compte (compte fixe créé une fois, paramètres Argon2id du plancher dev) |
+| `hibp_range` | `watchtower::parse_range` sur une réponse de plage HIBP |
+| `site_directory` | le premier octet choisit 2fa.directory, passkeys ou le catalogue HIBP des fuites |
 
 ```sh
 cd core
@@ -69,6 +82,8 @@ make fuzz                      # 60 s par cible
 make fuzz FUZZ_SECONDS=300     # durée au choix
 cargo +nightly fuzz run blob_open -- -max_total_time=60
 ```
+
+`archive_open` demande la feature `dev-fast-kdf` de `onepass-core` (activée dans `fuzz/Cargo.toml`) pour créer son compte fixe en quelques secondes. Elle ne joue que dans un build avec assertions de debug : `cargo fuzz` en active par défaut (`-a`), ne passez donc pas `-O` pour cette cible, sinon le plancher de production s'applique et la cible échoue à son initialisation.
 
 Le fuzzing demande la toolchain `nightly` : la toolchain épinglée ne le supporte pas. Le corpus et les plantages restent dans `fuzz/corpus` et `fuzz/artifacts`, ignorés par git.
 
@@ -90,6 +105,30 @@ onepass read "onepass://Personnel/Exemple/password"
 onepass totp "Exemple"
 onepass generate --words 5
 ```
+
+### Jalon 5 : import, export, Watchtower, sauvegarde
+
+```sh
+# Import : le format est détecté (ou forcé avec --format) ; --dry-run n'écrit rien
+onepass import export.1pux --dry-run
+onepass import bitwarden.json --vault Personnel
+onepass import --wifi-keychain          # réseaux Wi-Fi du trousseau (macOS)
+
+# Export : archive chiffrée par phrase de passe, ou CSV en clair (refusé sans --plaintext)
+onepass export --out coffre.onepass --generate-passphrase
+onepass export --out coffre.csv --format csv --plaintext
+
+# Watchtower : analyse du coffre (mots de passe faibles, réutilisés, fuites, 2FA, passkeys)
+onepass watchtower
+onepass watchtower --offline --hibp-dir ./pwned --sites 2fa.json --passkeys passkeys.json --breaches breaches.json
+
+# Sauvegarde signée du compte, restauration des items manquants, lecture de l'en-tête
+onepass backup create --out sauvegarde.onepass --passphrase
+onepass backup restore sauvegarde.onepass
+onepass backup inspect sauvegarde.onepass
+```
+
+Les fichiers créés (`export`, `backup create`) le sont en mode `0600`, jamais par-dessus un fichier existant. `watchtower` n'envoie que les 5 premiers caractères hexadécimaux du SHA-1 de chaque mot de passe (voir `docs/security/README.md`) ; `--offline` n'exécute aucune commande réseau.
 
 Références `onepass://` (commande `read`) : sans section, un nom de champ qui désigne plusieurs champs de l'item est refusé (`ambiguous field, add the section`) plutôt que de livrer le premier à un script ; `totp` désigne l'unique champ OTP rempli de l'item (`onepass totp` choisit le même) ; un secret OTP nu est décodé en base32 tel quel, jamais recopié dans une URI.
 

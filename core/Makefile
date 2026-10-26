@@ -2,7 +2,7 @@
 
 # Seconds per fuzz target (override: make fuzz FUZZ_SECONDS=300).
 FUZZ_SECONDS ?= 60
-FUZZ_TARGETS = blob_open signed_manifest account_params item_record signature_verify otpauth_parse reference_parse
+FUZZ_TARGETS = blob_open signed_manifest account_params item_record signature_verify otpauth_parse reference_parse import_csv import_1pux import_bitwarden_json import_keepass_xml import_cxf import_text archive_open hibp_range site_directory
 
 check: fmt-check lint test deny
 
