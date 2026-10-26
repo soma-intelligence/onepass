@@ -39,8 +39,8 @@ Une seule fenêtre au jalon 2 : l'état de navigation et d'édition vit dans `Ap
 
 - Xcode 27 (SDK iOS 27, cibles de déploiement iOS 26.0 et macOS 26.0), Swift 6 en concurrence stricte.
 - XcodeGen (`brew install xcodegen`).
-- Toolchain Rust (`rustup`) avec les cibles `aarch64-apple-ios`, `aarch64-apple-ios-sim` et `aarch64-apple-darwin` :
-  `rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin`.
+- Toolchain Rust (`rustup`) avec les cibles `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `aarch64-apple-darwin`, `aarch64-apple-watchos`, `aarch64-apple-watchos-sim`, `aarch64-apple-visionos` et `aarch64-apple-visionos-sim` :
+  `rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin aarch64-apple-watchos aarch64-apple-watchos-sim aarch64-apple-visionos aarch64-apple-visionos-sim`.
 
 ## Commandes
 
@@ -62,7 +62,7 @@ Une seule fenêtre au jalon 2 : l'état de navigation et d'édition vit dans `Ap
 make -C apple core
 ```
 
-Produit `apple/build/OnePassFFI.xcframework` (tranches `ios-arm64`, `ios-arm64-simulator`, `macos-arm64`, profil `release`, jamais la fonctionnalité `dev-fast-kdf`) et génère les liaisons Swift dans `apple/VaultKit/Sources/OnePassCore/`. La commande est idempotente : rien n'est recompilé tant que les fichiers `.rs`, `Cargo.toml` et `Cargo.lock` sous `core/` n'ont pas changé (empreinte dans `apple/build/.core-stamp`).
+Produit `apple/build/OnePassFFI.xcframework` (tranches `ios-arm64`, `ios-arm64-simulator`, `macos-arm64`, `watchos-arm64`, `watchos-arm64-simulator`, `xros-arm64`, `xros-arm64-simulator`, profil `release`, jamais la fonctionnalité `dev-fast-kdf`) et génère les liaisons Swift dans `apple/VaultKit/Sources/OnePassCore/`. La commande est idempotente : rien n'est recompilé tant que les fichiers `.rs`, `Cargo.toml` et `Cargo.lock` sous `core/` n'ont pas changé (empreinte dans `apple/build/.core-stamp`).
 
 Un clone neuf doit exécuter `make -C apple core` avant tout `swift build` ou ouverture du paquet : le XCFramework et les liaisons Swift générées ne sont pas versionnés.
 

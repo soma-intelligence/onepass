@@ -14,9 +14,10 @@ let ffiPath: String = {
 
 let package = Package(
     name: "VaultKit",
-    platforms: [.iOS("26.0"), .macOS("26.0")],
+    platforms: [.iOS("26.0"), .macOS("26.0"), .watchOS("26.0"), .visionOS("26.0")],
     products: [
-        .library(name: "VaultKit", targets: ["VaultKit"])
+        .library(name: "VaultKit", targets: ["VaultKit"]),
+        .library(name: "OnePassCore", targets: ["OnePassCore"]),
     ],
     targets: [
         .binaryTarget(name: "OnePassFFI", path: ffiPath),
