@@ -1363,6 +1363,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "onepass-bridge"
+version = "0.1.0"
+dependencies = [
+ "aws-lc-rs",
+ "libcrux-ml-kem",
+ "zeroize",
+]
+
+[[package]]
 name = "onepass-cli"
 version = "0.1.0"
 dependencies = [
@@ -1466,6 +1475,10 @@ dependencies = [
  "tempfile",
  "zeroize",
 ]
+
+[[package]]
+name = "onepass-native-host"
+version = "0.1.0"
 
 [[package]]
 name = "password-hash"
