@@ -17,6 +17,8 @@ make -C apple core
 
 Produit `apple/build/OnePassFFI.xcframework` (tranches `ios-arm64`, `ios-arm64-simulator`, `macos-arm64`, profil `release`, jamais la fonctionnalité `dev-fast-kdf`) et génère les liaisons Swift dans `apple/VaultKit/Sources/OnePassCore/`. La commande est idempotente : rien n'est recompilé tant que les fichiers `.rs`, `Cargo.toml` et `Cargo.lock` sous `core/` n'ont pas changé (empreinte dans `apple/build/.core-stamp`).
 
+Un clone neuf doit exécuter `make -C apple core` avant tout `swift build` ou ouverture du paquet : le XCFramework et les liaisons Swift générées ne sont pas versionnés.
+
 ## Tests
 
 ```sh

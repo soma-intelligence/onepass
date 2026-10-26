@@ -48,14 +48,19 @@ fi
 XCFRAMEWORK="$OUT_DIR/OnePassFFI.xcframework"
 STAMP="$OUT_DIR/.core-stamp"
 
+# Every file under core/ except build output and fuzz scratch: Rust sources,
+# manifests, lockfile, rust-toolchain.toml, .cargo config, and data files
+# pulled in with include_str!. NUL-safe and sorted.
 fingerprint() {
   (
     cd "$CORE_DIR"
-    find . \( -path ./target -o -path ./fuzz/target \) -prune -o \
-      \( -name '*.rs' -o -name Cargo.toml -o -name Cargo.lock \) -type f -print \
-      | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1
+    find . \
+      \( -path ./target -o -path ./fuzz/target -o -path ./fuzz/corpus \
+         -o -path ./fuzz/artifacts -o -name .DS_Store \) -prune -o \
+      -type f -print0 \
+      | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1
   )
-  # A different script or toolchain pin also invalidates the output.
+  # A different script also invalidates the output.
   shasum -a 256 "$SCRIPT_DIR/build-core.sh" | cut -d' ' -f1
 }
 CURRENT="$(fingerprint)"
@@ -64,6 +69,14 @@ if [ -d "$XCFRAMEWORK" ] && [ -f "$SWIFT_OUT/onepass_ffi.swift" ] \
   && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$CURRENT" ]; then
   echo "core ($MODE): up to date"
   exit 0
+fi
+
+# A shipped build must never carry the dev KDF floor.
+if [ "$MODE" = shipped ] \
+  && (cd "$CORE_DIR" && cargo tree -p onepass-ffi -e features,no-dev -i onepass-core \
+        --target aarch64-apple-darwin) | grep -q 'feature "dev-fast-kdf"'; then
+  echo "core (shipped): refusing to build, dev-fast-kdf is enabled in the dependency graph" >&2
+  exit 1
 fi
 
 mkdir -p "$OUT_DIR"

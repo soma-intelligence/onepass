@@ -6,9 +6,11 @@ import PackageDescription
 // (release, three slices); `make test` builds a macOS-only debug one with the
 // dev-fast-kdf floor and points ONEPASS_FFI_XCFRAMEWORK at it (path relative
 // to this package directory: SwiftPM rejects absolute binary target paths).
-let ffiPath =
-    ProcessInfo.processInfo.environment["ONEPASS_FFI_XCFRAMEWORK"]
-    ?? "../build/OnePassFFI.xcframework"
+// An empty value counts as unset.
+let ffiPath: String = {
+    let value = ProcessInfo.processInfo.environment["ONEPASS_FFI_XCFRAMEWORK"] ?? ""
+    return value.isEmpty ? "../build/OnePassFFI.xcframework" : value
+}()
 
 let package = Package(
     name: "VaultKit",
