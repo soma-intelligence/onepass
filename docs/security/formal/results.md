@@ -31,6 +31,18 @@
 | account_kem_x25519_broken.pv | `not event(VaultAccepted(acct_main,s,v_6,k_2))` | false | false |
 | account_kem_x25519_broken.pv | `not event(ItemRead(acct_main,v_6,i,m_2))` | false | false |
 | account_kem_x25519_broken.pv | `not event(ItemWritten(acct_main,v_6,m_2))` | false | false |
+| manifest.pv | `event(Accept(d_3,v_84,n,mh_12,e)) ==> event(Signed(v_84,n,p,mh_12,e))` | true | true |
+| manifest.pv | `event(Accept(d_3,v_84,n,h1,e1))@i_6 && event(Accept(d_3,v_84,m_3,h2,e2))@j ==> i_6 > j \|\| m_3 ≥ n` | true | true |
+| manifest.pv | `event(Accept(d_3,v_84,n,h1,e1)) && event(Accept(d_3,v_84,n,h2,e2)) ==> h1 = h2` | true | true |
+| manifest.pv | `event(Fetched(d_3,v_84,seen(n,h0),n + 1,mh_12)) ==> event(Signed(v_84,n + 1,h0,mh_12,e))` | true | true |
+| manifest.pv | `event(ItemAccepted(d_3,v_84,one_entry(i_6,ver_9,rh_6))) ==> event(Accept(d_3,v_84,n,mh_12,one_entry(i_6,ver_9,rh_6)))` | true | true |
+| manifest.pv | `event(Fetched(d_3,v_84,seen(2,h0),4,mh_12)) ==> event(Signed(v_84,4,p,mh_12,e)) && event(Signed(v_84,3,h0,p,e3))` | false | false |
+| manifest.pv | `event(Signed(v_84,2,p1,h1,e1)) && event(Signed(v_84,2,p2,h2,e2)) ==> h1 = h2` | false | false |
+| manifest.pv | `not event(Fetched(d_3,v_84,seen(1,h0),2,mh_12))` | false | false |
+| manifest.pv | `not event(Fetched(d_3,v_84,seen(1,h0),3,mh_12))` | false | false |
+| manifest.pv | `not event(Fetched(d_3,v_84,seen(2,h0),2,mh_12))` | false | false |
+| manifest.pv | `not event(Fetched(d_3,v_84,seen(2,h0),3,mh_12))` | false | false |
+| manifest.pv | `not event(ItemAccepted(d_3,v_84,one_entry(i_6,ver_9,rh_6)))` | false | false |
 | sanity.pv | `not attacker(secret_msg[])` | true | true |
 | sanity.pv | `not attacker(auk_msg[])` | true | true |
 | sanity.pv | `not attacker(bridge_msg[])` | true | true |

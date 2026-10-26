@@ -63,3 +63,26 @@ account_kem_x25519_broken.pv | not event(Unlocked(acct_main)) | false
 account_kem_x25519_broken.pv | not event(VaultAccepted(acct_main,s,v_6,k_2)) | false
 account_kem_x25519_broken.pv | not event(ItemRead(acct_main,v_6,i,m_2)) | false
 account_kem_x25519_broken.pv | not event(ItemWritten(acct_main,v_6,m_2)) | false
+
+# manifest.pv : manifestes signés, état last_seen de l'appareil, retour en arrière et bifurcation.
+# P6 : tout manifeste accepté a été signé par le compte, pour ce coffre.
+manifest.pv | event(Accept(d_3,v_84,n,mh_12,e)) ==> event(Signed(v_84,n,p,mh_12,e)) | true
+# P7 : pas de retour en arrière (requête temporelle).
+manifest.pv | event(Accept(d_3,v_84,n,h1,e1))@i_6 && event(Accept(d_3,v_84,m_3,h2,e2))@j ==> i_6 > j || m_3 ≥ n | true
+# P8 : pas de bifurcation, jamais deux hash différents acceptés pour le même seq.
+manifest.pv | event(Accept(d_3,v_84,n,h1,e1)) && event(Accept(d_3,v_84,n,h2,e2)) ==> h1 = h2 | true
+# P8 (chaînage) : le seq suivant lu se chaîne au manifeste vu.
+manifest.pv | event(Fetched(d_3,v_84,seen(n,h0),n + 1,mh_12)) ==> event(Signed(v_84,n + 1,h0,mh_12,e)) | true
+# P9 : un item accepté figure dans un manifeste accepté, même version et même hash.
+manifest.pv | event(ItemAccepted(d_3,v_84,one_entry(i_6,ver_9,rh_6))) ==> event(Accept(d_3,v_84,n,mh_12,one_entry(i_6,ver_9,rh_6))) | true
+# Limite documentée (F-03, verify_manifest, README 3.7) : un écart de plus
+# d'un seq est accepté sans chaînage, même s'il descend d'une bifurcation.
+manifest.pv | event(Fetched(d_3,v_84,seen(2,h0),4,mh_12)) ==> event(Signed(v_84,4,p,mh_12,e)) && event(Signed(v_84,3,h0,p,e3)) | false
+# Sanité : deux écrivains signent deux manifestes différents au même seq.
+manifest.pv | event(Signed(v_84,2,p1,h1,e1)) && event(Signed(v_84,2,p2,h2,e2)) ==> h1 = h2 | false
+# Sanité : lecture du suivant, d'un écart, du même seq, du suivant après 2, puis d'un item.
+manifest.pv | not event(Fetched(d_3,v_84,seen(1,h0),2,mh_12)) | false
+manifest.pv | not event(Fetched(d_3,v_84,seen(1,h0),3,mh_12)) | false
+manifest.pv | not event(Fetched(d_3,v_84,seen(2,h0),2,mh_12)) | false
+manifest.pv | not event(Fetched(d_3,v_84,seen(2,h0),3,mh_12)) | false
+manifest.pv | not event(ItemAccepted(d_3,v_84,one_entry(i_6,ver_9,rh_6))) | false
