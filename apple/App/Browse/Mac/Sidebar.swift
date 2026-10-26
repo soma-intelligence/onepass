@@ -45,7 +45,7 @@ struct Sidebar: View {
                 SyncStatusChip(status: model.syncStatus)
                 SettingsRow()
             }
-            .background(.bar)
+            .background { SidebarFooterBackground() }
         }
         .sheet(isPresented: $creatingVault) {
             VaultEditorView(vault: nil) { creatingVault = false }
@@ -265,6 +265,18 @@ struct SettingsButton: View {
             #endif
         }
         .accessibilityIdentifier(identifier)
+    }
+}
+
+/// Opaque backing of the sidebar footer: the bar material on iPhone and iPad; on Mac, where the
+/// bar material stays translucent in a sidebar, the window background color.
+private struct SidebarFooterBackground: View {
+    var body: some View {
+        #if os(macOS)
+        Color(nsColor: .windowBackgroundColor)
+        #else
+        Rectangle().fill(.bar)
+        #endif
     }
 }
 
