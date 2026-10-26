@@ -19,7 +19,7 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
     public func createKey(tag: String, allowWatch: Bool) throws {
         var flags: SecAccessControlCreateFlags = [.privateKeyUsage, .biometryCurrentSet]
         #if os(macOS)
-        if allowWatch { flags = [.privateKeyUsage, .or, .biometryCurrentSet, .watch] }
+        if allowWatch { flags = [.privateKeyUsage, .or, .biometryCurrentSet, .companion] }
         #endif
         var error: Unmanaged<CFError>?
         guard let access = SecAccessControlCreateWithFlags(
