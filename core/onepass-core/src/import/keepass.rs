@@ -12,9 +12,11 @@
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
+use std::borrow::Cow;
+
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::Error;
 use crate::error::Result;
@@ -25,6 +27,89 @@ use super::limits::{MAX_INPUT, MAX_RECORDS, XML_MAX_DEPTH};
 use super::{Import, Warning};
 
 const BAD: Error = Error::InvalidFormat("keepass xml syntax");
+
+/// Meaning of an open element, fixed when it starts from its parent's
+/// kind. Everything unexpected, and everything below it, is `Other`: its
+/// content is ignored. One kind is pushed per start tag and popped per end
+/// tag, so groups and entries always balance.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    File,
+    Meta,
+    RecycleBinUuid,
+    Root,
+    Group,
+    GroupName,
+    GroupUuid,
+    Entry,
+    Str,
+    Key,
+    Value,
+    Tags,
+    Times,
+    Expires,
+    ExpiryTime,
+    Created,
+    Modified,
+    Binary,
+    History,
+    Other,
+}
+
+impl Kind {
+    fn of(parent: Option<Kind>, name: &str) -> Kind {
+        match (parent, name) {
+            (None, "KeePassFile") => Kind::File,
+            (Some(Kind::File), "Meta") => Kind::Meta,
+            (Some(Kind::File), "Root") => Kind::Root,
+            (Some(Kind::Meta), "RecycleBinUUID") => Kind::RecycleBinUuid,
+            (Some(Kind::Root | Kind::Group), "Group") => Kind::Group,
+            (Some(Kind::Group), "Name") => Kind::GroupName,
+            (Some(Kind::Group), "UUID") => Kind::GroupUuid,
+            (Some(Kind::Group), "Entry") => Kind::Entry,
+            (Some(Kind::Entry), "String") => Kind::Str,
+            (Some(Kind::Entry), "Tags") => Kind::Tags,
+            (Some(Kind::Entry), "Times") => Kind::Times,
+            (Some(Kind::Entry), "History") => Kind::History,
+            (Some(Kind::Entry), "Binary") => Kind::Binary,
+            (Some(Kind::Str), "Key") => Kind::Key,
+            (Some(Kind::Str), "Value") => Kind::Value,
+            (Some(Kind::Times), "Expires") => Kind::Expires,
+            (Some(Kind::Times), "ExpiryTime") => Kind::ExpiryTime,
+            (Some(Kind::Times), "CreationTime") => Kind::Created,
+            (Some(Kind::Times), "LastModificationTime") => Kind::Modified,
+            _ => Kind::Other,
+        }
+    }
+
+    /// Kinds whose text is read.
+    fn has_text(self) -> bool {
+        matches!(
+            self,
+            Kind::RecycleBinUuid
+                | Kind::GroupName
+                | Kind::GroupUuid
+                | Kind::Key
+                | Kind::Value
+                | Kind::Tags
+                | Kind::Expires
+                | Kind::ExpiryTime
+                | Kind::Created
+                | Kind::Modified
+        )
+    }
+}
+
+/// Keys that fill a login field; a second occurrence goes to `imported`.
+const STANDARD_KEYS: [&str; 7] = [
+    "Title",
+    "UserName",
+    "Password",
+    "URL",
+    "Notes",
+    "otp",
+    "TimeOtp-Secret-Base32",
+];
 
 /// A group on the path from the root.
 struct Frame {
@@ -43,6 +128,7 @@ struct Acc {
     otp: Zeroizing<String>,
     otp_b32: Zeroizing<String>,
     extras: Vec<(String, Zeroizing<String>, bool)>,
+    seen: Vec<&'static str>,
     tags: String,
     binaries: u32,
     expires: bool,
@@ -56,12 +142,11 @@ struct Acc {
 
 #[derive(Default)]
 struct State {
-    path: Vec<String>,
+    stack: Vec<Kind>,
     text: Zeroizing<String>,
     recycle_uuid: String,
     frames: Vec<Frame>,
     entry: Option<Acc>,
-    history: usize,
     count: usize,
     value_protected: bool,
     out: Import,
@@ -82,70 +167,86 @@ pub(crate) fn parse_keepass_xml(b: &[u8]) -> Result<Import> {
     loop {
         match reader.read_event().map_err(|_| BAD)? {
             Event::Start(e) => {
-                seen_root = true;
-                st.start(&e)?;
+                st.start(&e, &mut seen_root)?;
             }
             Event::Empty(e) => {
-                seen_root = true;
-                st.start(&e)?;
+                st.start(&e, &mut seen_root)?;
                 st.end()?;
             }
             Event::End(_) => st.end()?,
-            Event::Text(t) => st.text.push_str(&t.xml10_content()),
-            Event::CData(t) => st.text.push_str(&t.xml10_content()),
+            Event::Text(t) => st.push_text(t.xml10_content()),
+            Event::CData(t) => st.push_text(t.xml10_content()),
             Event::GeneralRef(r) => {
+                let mut buf = [0u8; 4];
                 if let Some(c) = r.resolve_char_ref().map_err(|_| BAD)? {
-                    st.text.push(c);
+                    st.push_text(Cow::Borrowed(c.encode_utf8(&mut buf)));
                 } else {
-                    st.text.push(match &*r {
-                        "amp" => '&',
-                        "lt" => '<',
-                        "gt" => '>',
-                        "quot" => '"',
-                        "apos" => '\'',
+                    let s = match &*r {
+                        "amp" => "&",
+                        "lt" => "<",
+                        "gt" => ">",
+                        "quot" => "\"",
+                        "apos" => "'",
                         _ => return Err(Error::InvalidFormat("keepass xml entity")),
-                    });
+                    };
+                    st.push_text(Cow::Borrowed(s));
                 }
             }
             Event::Eof => break,
             _ => {}
         }
     }
-    if !seen_root || !st.path.is_empty() {
+    if !seen_root || !st.stack.is_empty() {
         return Err(BAD);
     }
     Ok(st.out)
 }
 
 impl State {
-    fn parent(&self, up: usize) -> &str {
-        self.path
-            .len()
-            .checked_sub(up + 1)
-            .and_then(|i| self.path.get(i))
-            .map_or("", String::as_str)
+    fn top(&self) -> Kind {
+        self.stack.last().copied().unwrap_or(Kind::Other)
     }
 
-    fn start(&mut self, e: &BytesStart<'_>) -> Result<()> {
-        let name = e.name().as_ref().to_owned();
-        self.path.push(name);
-        if self.path.len() > XML_MAX_DEPTH {
+    /// Appends element text when the open element reads text. An owned
+    /// temporary is wiped.
+    fn push_text(&mut self, t: Cow<'_, str>) {
+        if self.top().has_text() {
+            self.text.push_str(&t);
+        }
+        if let Cow::Owned(mut s) = t {
+            s.zeroize();
+        }
+    }
+
+    fn start(&mut self, e: &BytesStart<'_>, seen_root: &mut bool) -> Result<()> {
+        let parent = self.stack.last().copied();
+        let kind = Kind::of(parent, e.name().as_ref());
+        if parent.is_none() {
+            if *seen_root {
+                return Err(BAD);
+            }
+            *seen_root = true;
+            if kind != Kind::File {
+                return Err(Error::InvalidFormat("not a KeePass XML file"));
+            }
+        }
+        self.stack.push(kind);
+        if self.stack.len() > XML_MAX_DEPTH {
             return Err(Error::InvalidFormat("keepass xml too deep"));
         }
-        self.text.clear();
-        let name = self.parent(0).to_owned();
-        match name.as_str() {
-            "History" if self.entry.is_some() => self.history += 1,
-            _ if self.history > 0 => {}
-            "Group" if self.entry.is_none() => {
+        if kind.has_text() {
+            self.text.clear();
+        }
+        match kind {
+            Kind::Group => {
                 let recycle = self.frames.last().is_some_and(|f| f.recycle);
                 self.frames.push(Frame {
                     name: String::new(),
                     recycle,
                 });
             }
-            "Entry" if self.entry.is_none() => self.entry = Some(Acc::default()),
-            "Value" if self.entry.is_some() && self.parent(1) == "String" => {
+            Kind::Entry => self.entry = Some(Acc::default()),
+            Kind::Value => {
                 self.value_protected = false;
                 for a in e.attributes().with_checks(false) {
                     let a = a.map_err(|_| BAD)?;
@@ -157,7 +258,7 @@ impl State {
                     }
                 }
             }
-            "Binary" if self.parent(1) == "Entry" => {
+            Kind::Binary => {
                 if let Some(acc) = self.entry.as_mut() {
                     acc.binaries = acc.binaries.saturating_add(1);
                 }
@@ -168,84 +269,64 @@ impl State {
     }
 
     fn end(&mut self) -> Result<()> {
-        let name = self.parent(0).to_owned();
-        let parent = self.parent(1).to_owned();
-        let grand = self.parent(2).to_owned();
-        let text = std::mem::take(&mut self.text);
-        if name == "History" && self.entry.is_some() && self.history > 0 {
-            self.history -= 1;
-        } else if self.history == 0 {
-            self.leaf(&name, &parent, &grand, &text)?;
-        }
-        self.path.pop();
-        Ok(())
-    }
-
-    fn leaf(&mut self, name: &str, parent: &str, grand: &str, text: &str) -> Result<()> {
-        if name == "RecycleBinUUID" && parent == "Meta" {
-            text.trim().clone_into(&mut self.recycle_uuid);
-            return Ok(());
-        }
-        let Some(acc) = self.entry.as_mut() else {
-            match (name, parent) {
-                ("Name", "Group") => {
-                    if let Some(f) = self.frames.last_mut() {
-                        text.trim().clone_into(&mut f.name);
-                    }
-                }
-                ("UUID", "Group") => {
-                    let uuid = text.trim();
-                    if !self.recycle_uuid.is_empty()
-                        && uuid == self.recycle_uuid
-                        && let Some(f) = self.frames.last_mut()
-                    {
-                        f.recycle = true;
-                    }
-                }
-                ("Group", _) => {
-                    self.frames.pop();
-                }
-                _ => {}
-            }
-            return Ok(());
+        let kind = self.stack.pop().ok_or(BAD)?;
+        let text = if kind.has_text() {
+            std::mem::take(&mut self.text)
+        } else {
+            Zeroizing::new(String::new())
         };
-        match (name, parent) {
-            ("Key", "String") => text.clone_into(&mut acc.key),
-            ("Value", "String") => {
-                acc.value = Zeroizing::new(text.to_owned());
-                acc.protected = self.value_protected;
-            }
-            ("String", "Entry") => {
-                let key = std::mem::take(&mut acc.key);
-                let value = std::mem::take(&mut acc.value);
-                let protected = acc.protected;
-                acc.protected = false;
-                match key.as_str() {
-                    "Title" => value.as_str().clone_into(&mut acc.title),
-                    "UserName" => value.as_str().clone_into(&mut acc.user),
-                    "Password" => acc.password = value,
-                    "URL" => value.as_str().clone_into(&mut acc.url),
-                    "Notes" => value.as_str().clone_into(&mut acc.notes),
-                    "otp" => acc.otp = value,
-                    "TimeOtp-Secret-Base32" => acc.otp_b32 = value,
-                    _ => acc.extras.push((key, value, protected)),
+        let text: &str = &text;
+        match kind {
+            Kind::RecycleBinUuid => text.trim().clone_into(&mut self.recycle_uuid),
+            Kind::GroupName => {
+                if let Some(f) = self.frames.last_mut() {
+                    text.trim().clone_into(&mut f.name);
                 }
             }
-            ("Tags", "Entry") => text.clone_into(&mut acc.tags),
-            ("Expires", "Times") if grand == "Entry" => {
-                acc.expires = text.trim().eq_ignore_ascii_case("true");
+            Kind::GroupUuid => {
+                if !self.recycle_uuid.is_empty()
+                    && text.trim() == self.recycle_uuid
+                    && let Some(f) = self.frames.last_mut()
+                {
+                    f.recycle = true;
+                }
             }
-            ("ExpiryTime", "Times") if grand == "Entry" => text.trim().clone_into(&mut acc.expiry),
-            ("CreationTime", "Times") if grand == "Entry" => {
-                text.trim().clone_into(&mut acc.created);
+            Kind::Group => {
+                self.frames.pop();
             }
-            ("LastModificationTime", "Times") if grand == "Entry" => {
-                text.trim().clone_into(&mut acc.updated);
+            Kind::Entry => self.finish_entry()?,
+            Kind::Key => {
+                if let Some(acc) = self.entry.as_mut() {
+                    text.clone_into(&mut acc.key);
+                }
             }
-            ("Entry", _) => self.finish_entry()?,
+            Kind::Value => {
+                if let Some(acc) = self.entry.as_mut() {
+                    acc.value = Zeroizing::new(text.to_owned());
+                    acc.protected = self.value_protected;
+                }
+            }
+            Kind::Str => {
+                if let Some(acc) = self.entry.as_mut() {
+                    acc.commit();
+                }
+            }
+            Kind::Tags => self.with_entry(|a| text.clone_into(&mut a.tags)),
+            Kind::Expires => {
+                self.with_entry(|a| a.expires = text.trim().eq_ignore_ascii_case("true"));
+            }
+            Kind::ExpiryTime => self.with_entry(|a| text.trim().clone_into(&mut a.expiry)),
+            Kind::Created => self.with_entry(|a| text.trim().clone_into(&mut a.created)),
+            Kind::Modified => self.with_entry(|a| text.trim().clone_into(&mut a.updated)),
             _ => {}
         }
         Ok(())
+    }
+
+    fn with_entry(&mut self, f: impl FnOnce(&mut Acc)) {
+        if let Some(acc) = self.entry.as_mut() {
+            f(acc);
+        }
     }
 
     fn finish_entry(&mut self) -> Result<()> {
@@ -267,12 +348,11 @@ impl State {
         d.set("password", &acc.password);
         d.url(&acc.url);
         d.notes(&acc.notes);
-        match (acc.otp.trim().is_empty(), acc.otp_b32.trim().is_empty()) {
-            (false, _) => {
-                d.set("totp", &acc.otp);
-                d.extra("TimeOtp-Secret-Base32", &acc.otp_b32, true);
-            }
-            (true, _) => d.set("totp", &acc.otp_b32),
+        if acc.otp.trim().is_empty() {
+            d.set("totp", &acc.otp_b32);
+        } else {
+            d.set("totp", &acc.otp);
+            d.extra("TimeOtp-Secret-Base32", &acc.otp_b32, true);
         }
         for (key, value, protected) in &acc.extras {
             d.extra(key, value, *protected);
@@ -288,11 +368,20 @@ impl State {
             .filter(|n| !n.is_empty())
             .collect();
         d.folder(&folder.join("/"));
-        if let Some(t) = rfc3339(&acc.created) {
-            d.created(t);
-        }
-        if let Some(t) = rfc3339(&acc.updated) {
-            d.updated(t);
+        for (raw, label, apply) in [
+            (
+                &acc.created,
+                "CreationTime",
+                Draft::created as fn(&mut Draft, OffsetDateTime),
+            ),
+            (&acc.updated, "LastModificationTime", Draft::updated),
+        ] {
+            if !raw.is_empty() {
+                match rfc3339(raw) {
+                    Some(t) => apply(&mut d, t),
+                    None => d.bad_value(label, raw),
+                }
+            }
         }
         if acc.expires && !acc.expiry.is_empty() {
             match rfc3339(&acc.expiry) {
@@ -308,6 +397,32 @@ impl State {
         }
         d.finish(index, &mut self.out);
         Ok(())
+    }
+}
+
+impl Acc {
+    /// Stores the finished `String` element: a login field, or `imported`
+    /// for other keys and for a repeated standard key.
+    fn commit(&mut self) {
+        let key = std::mem::take(&mut self.key);
+        let value = std::mem::take(&mut self.value);
+        let protected = std::mem::take(&mut self.protected);
+        if let Some(std_key) = STANDARD_KEYS.iter().copied().find(|k| *k == key)
+            && !self.seen.contains(&std_key)
+        {
+            self.seen.push(std_key);
+            match std_key {
+                "Title" => value.as_str().clone_into(&mut self.title),
+                "UserName" => value.as_str().clone_into(&mut self.user),
+                "Password" => self.password = value,
+                "URL" => value.as_str().clone_into(&mut self.url),
+                "Notes" => value.as_str().clone_into(&mut self.notes),
+                "otp" => self.otp = value,
+                _ => self.otp_b32 = value,
+            }
+            return;
+        }
+        self.extras.push((key, value, protected));
     }
 }
 
@@ -476,10 +591,7 @@ mod tests {
         let xml = "<?xml version=\"1.0\"?><!DOCTYPE KeePassFile [<!ENTITY x \"EXPANDED\">]>\
             <KeePassFile><Root><Group><Name>R</Name><Entry>\
             <String><Key>Title</Key><Value>a&x;b</Value></String></Entry></Group></Root></KeePassFile>";
-        match parse_keepass_xml(xml.as_bytes()) {
-            Err(_) => {}
-            Ok(imp) => assert!(imp.items.iter().all(|i| !i.item.title.contains("EXPANDED"))),
-        }
+        assert!(parse_keepass_xml(xml.as_bytes()).is_err());
     }
 
     #[test]
@@ -496,5 +608,143 @@ mod tests {
         assert!(parse_keepass_xml(b"<KeePassFile><Root>").is_err());
         assert!(parse_keepass_xml(b"").is_err());
         assert!(parse_keepass_xml(b"\xFF\xFE").is_err());
+    }
+
+    fn nested(groups: usize) -> String {
+        let mut xml = String::from("<KeePassFile><Root>");
+        for _ in 0..groups {
+            xml.push_str("<Group>");
+        }
+        for _ in 0..groups {
+            xml.push_str("</Group>");
+        }
+        xml.push_str("</Root></KeePassFile>");
+        xml
+    }
+
+    #[test]
+    fn depth_limit_is_exact() {
+        // KeePassFile + Root + 254 groups = 256 levels.
+        assert!(parse_keepass_xml(nested(254).as_bytes()).is_ok());
+        assert!(parse_keepass_xml(nested(255).as_bytes()).is_err());
+    }
+
+    #[test]
+    fn long_parent_name_is_linear() {
+        let name = "a".repeat(64 * 1024);
+        let mut xml = format!("<KeePassFile><{name}>");
+        for _ in 0..200_000 {
+            xml.push_str("<c/>");
+        }
+        xml.push_str(&format!("</{name}></KeePassFile>"));
+        let start = std::time::Instant::now();
+        assert!(parse_keepass_xml(xml.as_bytes()).is_ok());
+        assert!(start.elapsed() < std::time::Duration::from_secs(10));
+    }
+
+    #[test]
+    fn group_inside_entry_keeps_stack_balanced() {
+        let xml = "<KeePassFile><Meta><RecycleBinUUID>BIN</RecycleBinUUID></Meta><Root>\
+            <Group><Name>R</Name><Group><UUID>BIN</UUID><Name>Bin</Name>\
+            <Entry><String><Key>Title</Key><Value>a</Value></String>\
+            <Group><Entry/></Group></Entry>\
+            <Entry><String><Key>Title</Key><Value>b</Value></String></Entry>\
+            </Group></Group></Root></KeePassFile>";
+        let imp = parse_keepass_xml(xml.as_bytes()).unwrap();
+        assert!(imp.items.is_empty());
+        assert_eq!(imp.skipped, 2);
+    }
+
+    #[test]
+    fn nested_entry_outside_history_ignored() {
+        let xml = wrap(
+            "<Entry><String><Key>Title</Key><Value>outer</Value></String>\
+             <Entry><String><Key>Title</Key><Value>inner</Value></String></Entry>\
+             <String><Key>UserName</Key><Value>kept</Value></String></Entry>",
+        );
+        let imp = parse_keepass_xml(&xml).unwrap();
+        assert_eq!(imp.items.len(), 1);
+        assert_eq!(imp.items[0].item.title, "outer");
+        assert_eq!(text(&imp.items[0].item, "username"), "kept");
+    }
+
+    #[test]
+    fn mixed_content_value_kept() {
+        let xml =
+            wrap("<Entry><String><Key>Title</Key><Value>ab<x>zz</x>cd</Value></String></Entry>");
+        assert_eq!(parse_keepass_xml(&xml).unwrap().items[0].item.title, "abcd");
+    }
+
+    #[test]
+    fn bad_times_kept_as_text() {
+        let xml = wrap(
+            "<Entry><Times><CreationTime>nope</CreationTime>\
+             <LastModificationTime>never</LastModificationTime></Times>\
+             <String><Key>Title</Key><Value>T</Value></String></Entry>",
+        );
+        let imp = parse_keepass_xml(&xml).unwrap();
+        assert_eq!(
+            imp.warnings.iter().filter(|w| w.code == "bad_date").count(),
+            2
+        );
+        let extras = imported(&imp.items[0].item);
+        assert!(extras.iter().any(|(k, _)| k == "CreationTime"));
+        assert!(extras.iter().any(|(k, _)| k == "LastModificationTime"));
+    }
+
+    #[test]
+    fn duplicate_key_goes_to_extra() {
+        let xml = wrap(
+            "<Entry><String><Key>Title</Key><Value>first</Value></String>\
+             <String><Key>Title</Key><Value>second</Value></String></Entry>",
+        );
+        let imp = parse_keepass_xml(&xml).unwrap();
+        assert_eq!(imp.items[0].item.title, "first");
+        let extras = imported(&imp.items[0].item);
+        assert!(matches!(extras.iter().find(|(k, _)| k == "Title"),
+            Some((_, FieldValue::Text(t))) if t == "second"));
+    }
+
+    #[test]
+    fn wrong_root_rejected() {
+        let err = parse_keepass_xml(b"<Other><Root/></Other>").unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidFormat("not a KeePass XML file")
+        ));
+    }
+
+    #[test]
+    fn value_outside_string_ignored() {
+        let xml = wrap(
+            "<Entry><Value>stray</Value><String><Key>Title</Key><Value>T</Value></String></Entry>",
+        );
+        let imp = parse_keepass_xml(&xml).unwrap();
+        assert_eq!(imp.items[0].item.title, "T");
+    }
+
+    #[test]
+    fn both_otp_keys_second_to_extra() {
+        let xml = wrap(
+            "<Entry><String><Key>Title</Key><Value>T</Value></String>\
+             <String><Key>UserName</Key><Value>u</Value></String>\
+             <String><Key>otp</Key><Value>otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&amp;issuer=Example</Value></String>\
+             <String><Key>TimeOtp-Secret-Base32</Key><Value>GEZDGNBVGY3TQOJQ</Value></String></Entry>",
+        );
+        let imp = parse_keepass_xml(&xml).unwrap();
+        let item = &imp.items[0].item;
+        assert!(text(item, "totp").contains("JBSWY3DPEHPK3PXP"));
+        assert!(imported(item).iter().any(|(k, v)| k == "TimeOtp-Secret-Base32"
+            && matches!(v, FieldValue::Concealed(_))));
+    }
+
+    #[test]
+    fn protected_password_is_password_kind() {
+        let imp = parse_keepass_xml(KP).unwrap();
+        let item = &by_title(&imp, "Root login").item;
+        assert!(matches!(
+            item.field("password").map(|f| &f.value),
+            Some(FieldValue::Password(_))
+        ));
     }
 }
