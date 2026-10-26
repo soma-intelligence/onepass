@@ -24,7 +24,7 @@ use onepass_ssh_agent::{
 };
 
 use super::ssh_key::AGENT_SOCKET;
-use crate::session::{CliError, Ctx, LongSession, stored};
+use crate::session::{CliError, Ctx, LongSession, TRAVEL_CHANGED, stored};
 use crate::signer::SyncSigner;
 
 const AUDIT_FILE: &str = "audit.log";
@@ -77,8 +77,9 @@ fn install_signal_handlers() -> Result<(), CliError> {
 }
 
 /// [`KeySource`] of the agent: each call is its own lock cycle on the
-/// shared session.
-struct SessionKeys(Arc<Mutex<LongSession>>);
+/// shared session. The flag is raised when the session refused a request
+/// because Travel Mode changed: the agent then stops.
+struct SessionKeys(Arc<Mutex<LongSession>>, Arc<AtomicBool>);
 
 impl SessionKeys {
     fn with<T>(
@@ -89,7 +90,11 @@ impl SessionKeys {
             .0
             .lock()
             .map_err(|_| "session unavailable".to_owned())?;
-        session.with_repo(f).map_err(|e| e.msg)
+        let result = session.with_repo(f).map_err(|e| e.msg);
+        if session.travel_changed() {
+            self.1.store(true, Ordering::SeqCst);
+        }
+        result
     }
 }
 
@@ -133,6 +138,7 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
         args.known_hosts
     };
     let session = Arc::new(Mutex::new(LongSession::open(ctx)?));
+    let travel_changed = Arc::new(AtomicBool::new(false));
     let log = AuditLog::open(&ctx.data_dir.join(AUDIT_FILE))
         .map_err(|e| CliError::usage(format!("cannot open the audit log: {e}")))?;
     let sink = SignedAuditSink {
@@ -140,7 +146,7 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
         signer: SyncSigner(session.clone()),
     };
     let agent = Agent::new(
-        SessionKeys(session),
+        SessionKeys(session, travel_changed.clone()),
         approver,
         Box::new(sink),
         AgentConfig {
@@ -160,9 +166,10 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
     // `serve` watches an `Arc` flag; the handlers can only set a static.
     let watcher = {
         let stop = stop.clone();
+        let travel_changed = travel_changed.clone();
         thread::spawn(move || {
             while !stop.load(Ordering::SeqCst) {
-                if SIGNALED.load(Ordering::SeqCst) {
+                if SIGNALED.load(Ordering::SeqCst) || travel_changed.load(Ordering::SeqCst) {
                     stop.store(true, Ordering::SeqCst);
                 }
                 thread::sleep(SIGNAL_POLL);
@@ -178,6 +185,9 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
     };
     served.map_err(|e| CliError::usage(format!("agent stopped on error: {e}")))?;
     removed?;
+    if travel_changed.load(Ordering::SeqCst) {
+        return Err(CliError::usage(TRAVEL_CHANGED));
+    }
     eprintln!("onepass ssh-agent: stopped");
     Ok(())
 }

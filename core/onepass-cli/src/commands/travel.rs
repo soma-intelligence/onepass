@@ -17,9 +17,7 @@ use onepass_core::repo::travel::{SEALED_TRAVEL_STATE_LEN, TravelState};
 use onepass_core::store::{RecordKind, RecordStore, SqliteStore};
 use zeroize::Zeroizing;
 
-use crate::session::{CliError, Ctx, stored, with_session, with_session_then};
-
-const TRAVEL_FILE: &str = "travel.bin";
+use crate::session::{CliError, Ctx, exclude_servers, stored, with_session, with_session_then};
 
 #[derive(Subcommand)]
 pub enum TravelCmd {
@@ -50,7 +48,24 @@ pub enum TravelCmd {
 }
 
 fn travel_path(ctx: &Ctx) -> PathBuf {
-    ctx.data_dir.join(TRAVEL_FILE)
+    ctx.travel_path()
+}
+
+/// What `status` prints when travel.bin and the device disagree.
+const INCONSISTENT: &str =
+    "travel mode: inconsistent (travel.bin present but hidden vaults are on this device)";
+
+/// Whether travel.bin claims vaults are hidden while the device shows
+/// otherwise: a parked vault has its key record here, or a vault without
+/// `travel_safe` is listed (a leftover or replayed travel.bin, or a vault
+/// created or restored during the trip).
+fn inconsistent(repo: &Repository<SqliteStore>, state: &TravelState) -> Result<bool, CliError> {
+    for id in state.parked.keys() {
+        if stored(repo.store().get(RecordKind::VaultKey, *id))?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(stored(repo.vaults())?.iter().any(|v| !v.meta.travel_safe))
 }
 
 pub fn run(ctx: &Ctx, cmd: TravelCmd) -> Result<(), CliError> {
@@ -179,10 +194,20 @@ fn sync_dir(ctx: &Ctx) -> Result<(), CliError> {
 fn on(ctx: &Ctx, upstream: &Path) -> Result<(), CliError> {
     // (vaults hidden, whether Travel Mode was already on)
     let (hidden, was_on) = with_session(ctx, |repo| {
+        let _servers = exclude_servers(ctx)?;
         if travel_path(ctx).exists() {
-            // Already on: if the state opens, only retry the compaction a
-            // failed run may have skipped.
+            // Already on: if the state opens and matches the device, only
+            // retry the compaction a failed run may have skipped.
             let state = read_state(ctx, repo)?;
+            if inconsistent(repo, &state)? {
+                return Err(CliError {
+                    code: 3,
+                    msg: "travel.bin is present but hidden vaults are on this device; run \
+                          `onepass travel off --upstream <file>` (it verifies and merges), or \
+                          remove travel.bin if it is stale"
+                        .to_owned(),
+                });
+            }
             compact_local(ctx)?;
             return Ok((state.parked.len(), true));
         }
@@ -249,6 +274,7 @@ fn off(ctx: &Ctx, upstream: &Path, accept_unpinned: bool) -> Result<(), CliError
     let restored = with_session_then(
         ctx,
         |repo| {
+            let _servers = exclude_servers(ctx)?;
             let up = open_existing(upstream)?;
             if path.exists() {
                 let state = read_state(ctx, repo)?;
@@ -290,7 +316,27 @@ fn status(ctx: &Ctx) -> Result<(), CliError> {
         }
         return Ok(());
     }
-    let state = with_session(ctx, |repo| read_state(ctx, repo))?;
+    let (state, bad) = with_session(ctx, |repo| {
+        let state = read_state(ctx, repo)?;
+        let bad = inconsistent(repo, &state)?;
+        Ok((state, bad))
+    })?;
+    if bad {
+        if ctx.json {
+            crate::out!(
+                "{}",
+                serde_json::json!({ "travel": "inconsistent", "hidden": state.parked.len() })
+            );
+        } else {
+            crate::out!("{INCONSISTENT}");
+        }
+        return Err(CliError {
+            code: 3,
+            msg: "travel.bin is present but hidden vaults are on this device; run \
+                  `onepass travel off --upstream <file>`, or remove travel.bin if it is stale"
+                .to_owned(),
+        });
+    }
     let since = rfc3339(state.entered_at);
     if ctx.json {
         crate::out!(

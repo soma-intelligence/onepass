@@ -35,7 +35,8 @@ use zeroize::Zeroizing;
 use super::import::{ARCHIVE_PASSPHRASE_ENV, partial};
 use super::vault::all;
 use crate::session::{
-    CliError, Ctx, env_secrets_allowed, kdf_params, read_secret, stored, with_session,
+    CliError, Ctx, env_secrets_allowed, exclude_servers, kdf_params, read_secret, stored,
+    with_session,
 };
 
 /// Largest archive read: the 1 GiB payload cap plus room for the header.
@@ -77,6 +78,11 @@ fn create(ctx: &Ctx, out: &Path, with_passphrase: bool) -> Result<(), CliError> 
         None
     };
     let (bytes, vaults, items) = with_session(ctx, |repo| {
+        if ctx.travel_path().exists() {
+            eprintln!(
+                "warning: Travel Mode is on: the hidden vaults are not included in this backup"
+            );
+        }
         let mut archived = Vec::new();
         for v in all(repo)? {
             let items = stored(repo.items(&v))?;
@@ -118,6 +124,15 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
     let bytes = read_capped(file)?;
     let info = read_header(&bytes)?;
     let (created, restored, skipped) = with_session(ctx, |repo| {
+        // A running server would write back last seen manifests of what
+        // this changes; during Travel Mode, restored vaults would sit beside
+        // the hidden ones.
+        let _servers = exclude_servers(ctx)?;
+        if ctx.travel_path().exists() {
+            return Err(CliError::usage(
+                "Travel Mode is on: run `onepass travel off --upstream <file>` before restoring a backup",
+            ));
+        }
         let account_id = repo.account().params.account_id;
         let contents = if info.account == Some(account_id) {
             archive::open(&bytes, Unlock::Account(repo.account()))?

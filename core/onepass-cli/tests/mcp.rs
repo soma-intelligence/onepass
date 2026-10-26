@@ -581,3 +581,95 @@ fn mcp_without_tty_or_env_password_fails_cleanly() {
     assert!(stderr.contains("/dev/tty"), "{stderr}");
     assert!(o.stdout.is_empty(), "nothing on the protocol channel");
 }
+
+#[test]
+fn mcp_refuses_then_stops_when_travel_mode_changes_under_it() {
+    let tmp = fresh();
+    let d = tmp.path();
+    let mut s = Server::start(d, &[]);
+    let listed = s.call("list_vaults", json!({}));
+    assert_eq!(listed["isError"], false, "{listed}");
+    // travel.bin appears behind the server's back (the lock was bypassed).
+    fs::write(d.join("travel.bin"), b"x").unwrap();
+    let refused = s.call("list_vaults", json!({}));
+    assert_eq!(refused["isError"], true, "{refused}");
+    assert!(
+        refused
+            .to_string()
+            .contains("Travel Mode changed while this server was running; restart it"),
+        "{refused}"
+    );
+    // The server stops on its own, stdin still open.
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        if let Some(st) = s.child.try_wait().unwrap() {
+            break st;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the server kept running"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(status.code(), Some(1));
+}
+
+#[test]
+fn unusable_audit_log_blocks_secret_tools_until_rotated() {
+    let tmp = fresh();
+    let d = tmp.path();
+    let run_args = json!({
+        "command": ["true"],
+        "env": {"PW": "onepass://Dev/Server/password"},
+    });
+    let mut s = Server::start(d, &[]);
+    let r = s.call("run_with_secrets", run_args.clone());
+    assert_eq!(r["isError"], false, "{r}");
+    assert_eq!(s.finish().0, 0);
+
+    // One byte of the last entry changes: the log no longer matches its head.
+    let log = d.join("audit.log");
+    let mut bytes = fs::read(&log).unwrap();
+    let at = bytes.len() - 10;
+    bytes[at] ^= 0x01;
+    fs::write(&log, &bytes).unwrap();
+
+    let mut s = Server::start(d, &[]);
+    let r = s.call("run_with_secrets", run_args.clone());
+    assert_eq!(r["isError"], true, "{r}");
+    assert!(
+        r.to_string()
+            .contains("audit log unusable; run onepass mcp audit --rotate"),
+        "{r}"
+    );
+    // Metadata tools stay available.
+    let l = s.call("list_items", json!({}));
+    assert_eq!(l["isError"], false, "{l}");
+    assert_eq!(s.finish().0, 0);
+
+    let o = ok(d, &["mcp", "audit", "--rotate"]);
+    assert!(o.stdout.contains("archived"), "{}", o.stdout);
+    let archived: Vec<String> = fs::read_dir(d)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("audit.log.") && n.contains(".bad"))
+        .collect();
+    assert_eq!(archived.len(), 2, "{archived:?}");
+    assert!(archived.iter().any(|n| n.ends_with(".bad")));
+    assert!(archived.iter().any(|n| n.ends_with(".bad.head")));
+    let bad = archived.iter().find(|n| n.ends_with(".bad")).unwrap();
+    assert_eq!(fs::read(d.join(bad)).unwrap(), bytes);
+    assert_eq!(fs::read(&log).unwrap(), b"");
+    assert!(!d.join("audit.log.head").exists());
+
+    let mut s = Server::start(d, &[]);
+    let r = s.call("run_with_secrets", run_args);
+    assert_eq!(r["isError"], false, "{r}");
+    assert_eq!(s.finish().0, 0);
+    let o = ok(d, &["mcp", "audit", "--verify"]);
+    assert!(
+        o.stdout.contains("audit log verified (1 entries)"),
+        "{}",
+        o.stdout
+    );
+}

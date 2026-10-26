@@ -8,6 +8,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -30,7 +31,9 @@ use onepass_mcp::{
 use zeroize::Zeroizing;
 
 use super::vault::find_vault;
-use crate::session::{CliError, Ctx, LongSession, stdout_error, stored, with_session};
+use crate::session::{
+    CliError, Ctx, LongSession, TRAVEL_CHANGED, lock, stdout_error, stored, with_session,
+};
 use crate::signer::{RepoSigner, SharedSigner};
 
 const POLICY_FILE: &str = "mcp-policy.json";
@@ -58,8 +61,14 @@ enum McpSub {
     /// Show the audit log, verified.
     Audit {
         /// Only verify the log and print the verdict.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "rotate")]
         verify: bool,
+        /// Archive the current log and its head as
+        /// `audit.log.<UTC time>.bad` (and `.bad.head`), and start a fresh
+        /// empty log. The way out of a log that can no longer be appended
+        /// to (edited, truncated, or a torn last line).
+        #[arg(long)]
+        rotate: bool,
     },
 }
 
@@ -112,7 +121,8 @@ pub fn run(ctx: &Ctx, cmd: McpCmd) -> Result<(), CliError> {
             scopes,
             allow_generate,
         })) => policy_set(ctx, &vault, scopes, allow_generate),
-        Some(McpSub::Audit { verify }) => audit(ctx, verify),
+        Some(McpSub::Audit { rotate: true, .. }) => audit_rotate(ctx),
+        Some(McpSub::Audit { verify, .. }) => audit(ctx, verify),
     }
 }
 
@@ -289,6 +299,77 @@ fn audit(ctx: &Ctx, verify_only: bool) -> Result<(), CliError> {
     })
 }
 
+/// `audit.log.<UTC time>.bad`, with `-<n>` added if that name is taken.
+fn archive_name(ctx: &Ctx) -> PathBuf {
+    let now = time::OffsetDateTime::now_utc();
+    let stamp = format!(
+        "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
+        now.year(),
+        u8::from(now.month()),
+        now.day(),
+        now.hour(),
+        now.minute(),
+        now.second()
+    );
+    let mut n = 0u32;
+    loop {
+        let name = if n == 0 {
+            format!("{AUDIT_FILE}.{stamp}.bad")
+        } else {
+            format!("{AUDIT_FILE}.{stamp}-{n}.bad")
+        };
+        let path = ctx.data_dir.join(name);
+        if fs::symlink_metadata(&path).is_err() && fs::symlink_metadata(head_path(&path)).is_err() {
+            return path;
+        }
+        n += 1;
+    }
+}
+
+/// `onepass mcp audit --rotate`: under the data directory lock and the
+/// log's own lock, move the log and its head aside and start an empty log.
+/// Needs no password: nothing is read, signed or verified.
+fn audit_rotate(ctx: &Ctx) -> Result<(), CliError> {
+    if !ctx.has_account() {
+        return Err(CliError::usage(format!(
+            "no account in {}; run `onepass account create` first",
+            ctx.data_dir.display()
+        )));
+    }
+    let _lock = lock(ctx)?;
+    let path = audit_path(ctx);
+    let head = head_path(&path);
+    let log_exists = fs::symlink_metadata(&path).is_ok();
+    let head_exists = fs::symlink_metadata(&head).is_ok();
+    if !log_exists && !head_exists {
+        crate::out!("no audit log to archive");
+        return Ok(());
+    }
+    // Appenders take this lock before touching the log or its head.
+    let _log_lock = if log_exists {
+        let f = fs::File::open(&path)?;
+        f.lock()?;
+        Some(f)
+    } else {
+        None
+    };
+    let archived = archive_name(ctx);
+    if log_exists {
+        fs::rename(&path, &archived)?;
+        crate::out!("archived {}", archived.display());
+    }
+    if head_exists {
+        let archived_head = head_path(&archived);
+        fs::rename(&head, &archived_head)?;
+        crate::out!("archived {}", archived_head.display());
+    }
+    AuditLog::open(&path)
+        .map_err(|e| CliError::usage(format!("cannot create the audit log: {e}")))?;
+    fs::File::open(&ctx.data_dir)?.sync_all()?;
+    crate::out!("started a new audit log at {}", path.display());
+    Ok(())
+}
+
 /// Vault names and item titles by id, for the audit display.
 type Names = (BTreeMap<String, String>, BTreeMap<String, String>);
 
@@ -367,6 +448,45 @@ impl VaultPort for LockedPort {
     }
 }
 
+/// Stdin of the server, which reads as ended once the session refused a
+/// request because Travel Mode changed: the refusal is answered, then the
+/// server stops.
+struct UntilTravelChange<R> {
+    inner: R,
+    session: Rc<RefCell<LongSession>>,
+}
+
+impl<R> UntilTravelChange<R> {
+    fn stopped(&self) -> bool {
+        self.session
+            .try_borrow()
+            .map(|s| s.travel_changed())
+            .unwrap_or(false)
+    }
+}
+
+impl<R: std::io::Read> std::io::Read for UntilTravelChange<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.stopped() {
+            return Ok(0);
+        }
+        self.inner.read(buf)
+    }
+}
+
+impl<R: std::io::BufRead> std::io::BufRead for UntilTravelChange<R> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        if self.stopped() {
+            return Ok(&[]);
+        }
+        self.inner.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.inner.consume(amt);
+    }
+}
+
 fn serve_stdio(
     ctx: &Ctx,
     vault_keys: &[String],
@@ -417,9 +537,16 @@ fn serve_stdio(
         Some(session.borrow().ctx().data_dir.clone()),
     );
     eprintln!("onepass mcp: ready ({visible} vaults)");
-    let stdin = std::io::stdin();
+    let stdin = UntilTravelChange {
+        inner: std::io::stdin().lock(),
+        session: session.clone(),
+    };
     let stdout = std::io::stdout();
-    serve(&mut tools, stdin.lock(), stdout.lock()).map_err(stdout_error)
+    serve(&mut tools, stdin, stdout.lock()).map_err(stdout_error)?;
+    if session.borrow().travel_changed() {
+        return Err(CliError::usage(TRAVEL_CHANGED));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

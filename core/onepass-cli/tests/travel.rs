@@ -368,3 +368,280 @@ fn push_never_deletes_upstream_records() {
     ok(d, &["travel", "push", "--upstream", &up]);
     assert_eq!(count(&up), before);
 }
+
+const SERVER_RUNNING: &str =
+    "a long-running onepass server (mcp or ssh-agent) is running; stop it first";
+
+/// A running `onepass ssh-agent` on a short socket path.
+struct AgentProc {
+    child: std::process::Child,
+    socket: PathBuf,
+    _sock_dir: tempfile::TempDir,
+}
+
+impl AgentProc {
+    fn start(dir: &Path) -> AgentProc {
+        // Socket paths are short on macOS (104 bytes): a fresh short dir.
+        let sock_dir = tempfile::Builder::new()
+            .prefix("opt")
+            .tempdir_in("/tmp")
+            .unwrap();
+        let socket = sock_dir.path().join("s").join("agent.sock");
+        let home = sock_dir.path().join("home");
+        fs::create_dir(&home).unwrap();
+        let child = std::process::Command::new(assert_cmd::cargo::cargo_bin("onepass"))
+            .env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
+            .env("ONEPASS_PASSWORD", PASSWORD)
+            .env("ONEPASS_DEV_AUTO_APPROVE", "once")
+            .env("HOME", &home)
+            .env_remove("SSH_AUTH_SOCK")
+            .arg("--data-dir")
+            .arg(dir)
+            .arg("ssh-agent")
+            .arg("--socket")
+            .arg(&socket)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while std::os::unix::net::UnixStream::connect(&socket).is_err() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the agent never listened"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        AgentProc {
+            child,
+            socket,
+            _sock_dir: sock_dir,
+        }
+    }
+
+    /// Waits up to 30 s for the agent to exit on its own: code and stderr.
+    fn wait_exit(mut self) -> (i32, String) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let status = loop {
+            if let Some(s) = self.child.try_wait().unwrap() {
+                break s;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the agent did not stop"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        let mut err = String::new();
+        use std::io::Read;
+        self.child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut err)
+            .unwrap();
+        (status.code().unwrap_or(-1), err)
+    }
+
+    fn stop(self) -> (i32, String) {
+        let st = std::process::Command::new("kill")
+            .arg("-TERM")
+            .arg(self.child.id().to_string())
+            .status()
+            .unwrap();
+        assert!(st.success());
+        self.wait_exit()
+    }
+}
+
+impl Drop for AgentProc {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[test]
+fn travel_on_refused_while_a_server_runs() {
+    let tmp = fresh();
+    let d = tmp.path();
+    prep_upstream_dir(&tmp);
+    let up = upstream(&tmp);
+    ok(d, &["travel", "push", "--upstream", &up]);
+    let agent = AgentProc::start(d);
+    let o = run(d, &["travel", "on", "--upstream", &up]);
+    assert_eq!(o.code, 1, "{}", o.stderr);
+    assert!(o.stderr.contains(SERVER_RUNNING), "{}", o.stderr);
+    assert!(!d.join("travel.bin").exists());
+    assert!(items(d).contains("BankLogin"));
+    // `travel off` is refused the same way.
+    let o = run(d, &["travel", "off", "--upstream", &up]);
+    assert_eq!(o.code, 1, "{}", o.stderr);
+    assert!(o.stderr.contains(SERVER_RUNNING), "{}", o.stderr);
+
+    let (code, stderr) = agent.stop();
+    assert_eq!(code, 0, "{stderr}");
+    ok(d, &["travel", "on", "--upstream", &up]);
+    let list = items(d);
+    assert!(!list.contains("BankLogin"), "{list}");
+    assert!(list.contains("BoardingPass"), "{list}");
+    ok(d, &["travel", "off", "--upstream", &up]);
+    assert!(items(d).contains("BankLogin"));
+}
+
+/// REQUEST_IDENTITIES on `socket`: the reply's message type (12 is an
+/// answer, 5 a failure), or `None` when the agent closed the connection.
+fn identities_reply(socket: &Path) -> Option<u8> {
+    use std::io::{Read, Write};
+    let mut s = std::os::unix::net::UnixStream::connect(socket).ok()?;
+    s.set_read_timeout(Some(std::time::Duration::from_secs(30)))
+        .unwrap();
+    s.write_all(&[0, 0, 0, 1, 11]).ok()?;
+    let mut len = [0u8; 4];
+    s.read_exact(&mut len).ok()?;
+    let mut body = vec![0u8; u32::from_be_bytes(len) as usize];
+    s.read_exact(&mut body).ok()?;
+    body.first().copied()
+}
+
+#[test]
+fn ssh_agent_stops_when_travel_mode_changes_under_it() {
+    let tmp = fresh();
+    let d = tmp.path();
+    prep_upstream_dir(&tmp);
+    let up = upstream(&tmp);
+    ok(d, &["travel", "push", "--upstream", &up]);
+    let agent = AgentProc::start(d);
+    assert_eq!(identities_reply(&agent.socket), Some(12));
+    // travel.bin appears behind the agent's back (the lock was bypassed).
+    fs::write(d.join("travel.bin"), b"x").unwrap();
+    assert_eq!(identities_reply(&agent.socket), Some(5));
+    let socket = agent.socket.clone();
+    let (code, stderr) = agent.wait_exit();
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stderr.contains("Travel Mode changed while this server was running; restart it"),
+        "{stderr}"
+    );
+    assert!(!socket.exists(), "the socket was left behind");
+}
+
+#[test]
+fn travel_after_push_edit_push() {
+    let tmp = fresh();
+    let d = tmp.path();
+    prep_upstream_dir(&tmp);
+    let up = upstream(&tmp);
+    ok(d, &["travel", "push", "--upstream", &up]);
+    ok(
+        d,
+        &[
+            "item",
+            "edit",
+            "BankLogin",
+            "--vault",
+            "Personnel",
+            "--field",
+            "username=edited-user",
+        ],
+    );
+    ok(d, &["travel", "push", "--upstream", &up]);
+    ok(d, &["travel", "on", "--upstream", &up]);
+    assert!(!items(d).contains("BankLogin"));
+    ok(d, &["travel", "off", "--upstream", &up]);
+    let got = ok(d, &["item", "get", "BankLogin", "--vault", "Personnel"]).stdout;
+    assert!(got.contains("edited-user"), "{got}");
+}
+
+const INCONSISTENT: &str =
+    "travel mode: inconsistent (travel.bin present but hidden vaults are on this device)";
+
+#[test]
+fn replayed_travel_bin_is_reported_inconsistent() {
+    let tmp = fresh();
+    let d = tmp.path();
+    prep_upstream_dir(&tmp);
+    let up = upstream(&tmp);
+    ok(d, &["travel", "push", "--upstream", &up]);
+    ok(d, &["travel", "on", "--upstream", &up]);
+    let sealed = fs::read(d.join("travel.bin")).unwrap();
+    ok(d, &["travel", "off", "--upstream", &up]);
+    // A leftover or replayed travel.bin while the vaults are back.
+    fs::write(d.join("travel.bin"), &sealed).unwrap();
+    let o = run(d, &["travel", "status"]);
+    assert_eq!(o.code, 3, "{}", o.stderr);
+    assert!(o.stdout.contains(INCONSISTENT), "{}", o.stdout);
+    let o = run(d, &["travel", "on", "--upstream", &up]);
+    assert_eq!(o.code, 3, "{}", o.stderr);
+    assert!(
+        o.stderr.contains("onepass travel off --upstream <file>"),
+        "{}",
+        o.stderr
+    );
+    assert!(o.stderr.contains("remove travel.bin"), "{}", o.stderr);
+    assert!(items(d).contains("BankLogin"));
+    // `off` verifies and merges, then the mode is cleanly off.
+    ok(d, &["travel", "off", "--upstream", &up]);
+    assert_eq!(
+        ok(d, &["travel", "status"]).stdout.trim(),
+        "travel mode: off"
+    );
+}
+
+#[test]
+fn vault_without_travel_safe_during_travel_is_inconsistent() {
+    let tmp = fresh();
+    let d = tmp.path();
+    prep_upstream_dir(&tmp);
+    let up = upstream(&tmp);
+    ok(d, &["travel", "push", "--upstream", &up]);
+    ok(d, &["travel", "on", "--upstream", &up]);
+    ok(d, &["vault", "create", "Visible"]);
+    let o = run(d, &["travel", "status"]);
+    assert_eq!(o.code, 3, "{}", o.stderr);
+    assert!(o.stdout.contains(INCONSISTENT), "{}", o.stdout);
+    let o = run(d, &["travel", "on", "--upstream", &up]);
+    assert_eq!(o.code, 3, "{}", o.stderr);
+}
+
+#[test]
+fn backups_and_travel_mode() {
+    let tmp = fresh();
+    let d = tmp.path();
+    prep_upstream_dir(&tmp);
+    let up = upstream(&tmp);
+    let out = tmp.path().join("upstream").join("b.onepass");
+    let out = out.to_str().unwrap();
+    ok(d, &["backup", "create", "--out", out]);
+    ok(d, &["travel", "push", "--upstream", &up]);
+    ok(d, &["travel", "on", "--upstream", &up]);
+    let o = run(d, &["backup", "restore", out]);
+    assert_eq!(o.code, 1, "{}", o.stderr);
+    assert!(o.stderr.contains("Travel Mode is on"), "{}", o.stderr);
+    assert!(!items(d).contains("BankLogin"));
+    let out2 = tmp.path().join("upstream").join("c.onepass");
+    let o = ok(d, &["backup", "create", "--out", out2.to_str().unwrap()]);
+    assert!(
+        o.stderr.contains("hidden vaults are not included"),
+        "{}",
+        o.stderr
+    );
+}
+
+#[test]
+fn backup_restore_refused_while_a_server_runs() {
+    let tmp = fresh();
+    let d = tmp.path();
+    prep_upstream_dir(&tmp);
+    let out = tmp.path().join("upstream").join("b.onepass");
+    let out = out.to_str().unwrap();
+    ok(d, &["backup", "create", "--out", out]);
+    let agent = AgentProc::start(d);
+    let o = run(d, &["backup", "restore", out]);
+    assert_eq!(o.code, 1, "{}", o.stderr);
+    assert!(o.stderr.contains(SERVER_RUNNING), "{}", o.stderr);
+    let (code, stderr) = agent.stop();
+    assert_eq!(code, 0, "{stderr}");
+    ok(d, &["backup", "restore", out]);
+}

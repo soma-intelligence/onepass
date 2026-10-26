@@ -20,6 +20,14 @@ use zeroize::Zeroizing;
 const DEVICE_FILE: &str = "device.bin";
 const STORE_FILE: &str = "vault.sqlite";
 const LOCK_FILE: &str = "lock";
+const SERVERS_LOCK_FILE: &str = "servers.lock";
+const TRAVEL_FILE: &str = "travel.bin";
+
+/// Refusal of a command that must not run under a long-running server.
+pub const SERVER_RUNNING: &str =
+    "a long-running onepass server (mcp or ssh-agent) is running; stop it first";
+/// Refusal of a server request once `travel.bin` appeared or vanished.
+pub const TRAVEL_CHANGED: &str = "Travel Mode changed while this server was running; restart it";
 
 /// Global options shared by every command.
 pub struct Ctx {
@@ -38,6 +46,17 @@ impl Ctx {
 
     pub fn lock_path(&self) -> PathBuf {
         self.data_dir.join(LOCK_FILE)
+    }
+
+    /// `<data-dir>/servers.lock`: shared by every running server, taken
+    /// exclusively by the commands a server must not see happen.
+    pub fn servers_lock_path(&self) -> PathBuf {
+        self.data_dir.join(SERVERS_LOCK_FILE)
+    }
+
+    /// `<data-dir>/travel.bin`, present while Travel Mode is on.
+    pub fn travel_path(&self) -> PathBuf {
+        self.data_dir.join(TRAVEL_FILE)
     }
 
     /// Whether the data directory holds an account (device file and store).
@@ -228,6 +247,32 @@ pub fn lock(ctx: &Ctx) -> Result<fs::File, CliError> {
     Ok(f)
 }
 
+fn open_servers_lock(ctx: &Ctx) -> Result<fs::File, CliError> {
+    let f = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(ctx.servers_lock_path())?;
+    set_mode(&ctx.servers_lock_path(), 0o600)?;
+    Ok(f)
+}
+
+/// Take `servers.lock` exclusively without waiting: refused with
+/// [`SERVER_RUNNING`] while an `onepass mcp` or `onepass ssh-agent` holds it
+/// shared. For the commands that change what a server's in-memory state
+/// relies on (`travel on`, `travel off`, `backup restore`); the caller holds
+/// the data directory lock, and keeps the returned file until it is done.
+pub fn exclude_servers(ctx: &Ctx) -> Result<fs::File, CliError> {
+    let f = open_servers_lock(ctx)?;
+    match f.try_lock() {
+        Ok(()) => Ok(f),
+        Err(fs::TryLockError::WouldBlock) => Err(CliError::usage(SERVER_RUNNING)),
+        Err(fs::TryLockError::Error(e)) => Err(e.into()),
+    }
+}
+
 /// Create the data directory (and parents) with mode 0700.
 pub fn ensure_dir(dir: &Path) -> Result<(), CliError> {
     fs::DirBuilder::new()
@@ -254,7 +299,7 @@ pub fn harden(ctx: &Ctx) -> Result<(), CliError> {
             set_mode(&p, 0o600)?;
         }
     }
-    for p in [ctx.device_path(), ctx.lock_path()] {
+    for p in [ctx.device_path(), ctx.lock_path(), ctx.servers_lock_path()] {
         if p.exists() {
             set_mode(&p, 0o600)?;
         }
@@ -483,9 +528,19 @@ pub fn read_device_state(ctx: &Ctx) -> Result<DeviceState, CliError> {
 /// the state other commands saved in `device.bin`, runs, saves the state
 /// and releases the lock: the rest of the CLI stays usable meanwhile, and
 /// no last seen manifest ever goes back.
+///
+/// While it lives it holds `servers.lock` shared, so `travel on`, `travel
+/// off` and `backup restore` refuse to run under it. As a second line of
+/// defense, it remembers whether `travel.bin` existed at unlock and refuses
+/// every request once that changed ([`TRAVEL_CHANGED`]): its in-memory last
+/// seen manifests would otherwise write hidden vault ids back to
+/// `device.bin`.
 pub struct LongSession {
     session: Session,
     ctx: Ctx,
+    travel_at_unlock: bool,
+    travel_changed: bool,
+    _servers: fs::File,
 }
 
 impl LongSession {
@@ -500,13 +555,27 @@ impl LongSession {
         let session = Session::open(ctx, &password)?;
         harden(ctx)?;
         session.persist()?;
+        let travel_at_unlock = ctx.travel_path().exists();
+        // Exclusive holders take it under the data directory lock, which
+        // is held here: this never waits.
+        let servers = open_servers_lock(ctx)?;
+        servers.lock_shared()?;
         Ok(LongSession {
             session,
             ctx: Ctx {
                 data_dir: ctx.data_dir.clone(),
                 json: ctx.json,
             },
+            travel_at_unlock,
+            travel_changed: false,
+            _servers: servers,
         })
+    }
+
+    /// Whether a request was refused because Travel Mode changed: the
+    /// server must stop.
+    pub fn travel_changed(&self) -> bool {
+        self.travel_changed
     }
 
     /// The global options this session was opened with.
@@ -520,7 +589,9 @@ impl LongSession {
         &self.session.repo
     }
 
-    /// One request: lock, merge `device.bin`, run `f`, save the state
+    /// One request: lock, check Travel Mode did not change since unlock
+    /// (else [`TRAVEL_CHANGED`], and every later request too), merge
+    /// `device.bin`, run `f`, save the state
     /// (even when `f` fails, reads move the last seen manifests too),
     /// unlock.
     pub fn with_repo<T>(
@@ -528,6 +599,10 @@ impl LongSession {
         f: impl FnOnce(&mut Repository<SqliteStore>) -> Result<T, CliError>,
     ) -> Result<T, CliError> {
         let _lock = lock(&self.ctx)?;
+        if self.travel_changed || self.ctx.travel_path().exists() != self.travel_at_unlock {
+            self.travel_changed = true;
+            return Err(CliError::usage(TRAVEL_CHANGED));
+        }
         let state = read_device_state(&self.ctx)?;
         stored(self.session.repo.adopt_device_state(&state))?;
         // What is on disk now (same encoding, same key), so an unchanged
