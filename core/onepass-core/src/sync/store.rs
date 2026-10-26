@@ -22,7 +22,7 @@ use rusqlite::{
 use super::{Change, MAX_RECORD_BYTES, RemoteChange};
 use crate::repo::{DeviceState, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore};
-use crate::{Error, Id, Result};
+use crate::{Error, Id, IntegrityError, Result};
 
 const DEVICE_STATE_KEY: &str = "device_state";
 /// The capped log of remote deletions the store refused (outside the `sync.`
@@ -655,9 +655,13 @@ impl SyncStore {
     /// Merge `mem` with the stored device state, in one transaction (a
     /// savepoint inside an open batch), and store and return the result.
     /// Two processes (the app and an extension) each keep their own state
-    /// over one file: per vault the entry with the larger `seq` wins (a tie
-    /// keeps the memory one), so neither process rewinds `last_seen`. The
-    /// pin is the memory one, or the stored one if memory has none.
+    /// over one file: per vault the entry with the larger `seq` wins, so
+    /// neither process rewinds `last_seen`; the same `seq` with another hash
+    /// is a fork, refused (`ManifestRollback`) before anything is written,
+    /// like `Repository::adopt_device_state`. The pin is the memory one, or
+    /// the stored one if memory has none; when both pin the same account,
+    /// the KDF floor is the componentwise maximum of the two (it only goes
+    /// up; the memory salt is kept unless the stored floor raised it).
     ///
     /// Invariant: on this file a higher stored `seq` is always a descendant
     /// of a lower one (manifests are committed conditionally), except after
@@ -672,8 +676,24 @@ impl SyncStore {
     ) -> Result<DeviceState> {
         let tx = self.write_tx()?;
         let stored = device_state_in(&tx)?;
+        let pinned = match (mem.pinned.clone(), stored.pinned) {
+            (Some(mut mine), Some(theirs))
+                if mine.account_id == theirs.account_id
+                    && mine.identity_pub == theirs.identity_pub =>
+            {
+                let salt = mine.kdf_floor.salt;
+                let before = (mine.kdf_floor.m_kib, mine.kdf_floor.t, mine.kdf_floor.p);
+                mine.raise_floor(&theirs.kdf_floor);
+                let after = (mine.kdf_floor.m_kib, mine.kdf_floor.t, mine.kdf_floor.p);
+                if before == after {
+                    mine.kdf_floor.salt = salt;
+                }
+                Some(mine)
+            }
+            (mine, theirs) => mine.or(theirs),
+        };
         let mut merged = DeviceState {
-            pinned: mem.pinned.clone().or(stored.pinned),
+            pinned,
             last_seen: mem.last_seen.clone(),
         };
         for (v, theirs) in stored.last_seen {
@@ -681,6 +701,9 @@ impl SyncStore {
                 continue;
             }
             match merged.last_seen.get(&v) {
+                Some(ours) if ours.seq == theirs.seq && ours.hash != theirs.hash => {
+                    return Err(Error::Integrity(IntegrityError::ManifestRollback));
+                }
                 Some(ours) if ours.seq >= theirs.seq => {}
                 _ => {
                     merged.last_seen.insert(v, theirs);

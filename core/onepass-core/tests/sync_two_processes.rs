@@ -165,3 +165,63 @@ fn merge_does_not_resurrect_a_vault_parked_by_travel_mode() {
     let stored = SyncStore::open(&path).unwrap().device_state().unwrap();
     assert_eq!(stored.last_seen[&v], state.parked[&v]);
 }
+
+/// The same `seq` with another hash in the stored state is a fork: the
+/// merge refuses it before writing, like `adopt_device_state`, so the stored
+/// and in-memory states both stay as they were.
+#[test]
+fn merge_refuses_a_forked_entry_and_changes_nothing() {
+    let (_dir, path, mut a, _b, v) = two_processes();
+    let mine = a.device_state().last_seen[&v].clone();
+    let mut forged = SyncStore::open(&path).unwrap().device_state().unwrap();
+    let mut other = mine.clone();
+    other.hash[0] ^= 0xff;
+    forged.last_seen.insert(v, other);
+    SyncStore::open(&path)
+        .unwrap()
+        .set_device_state(&forged)
+        .unwrap();
+    let before = a.device_state().clone();
+
+    assert_eq!(
+        integrity(a.persist_device_state()),
+        IntegrityError::ManifestRollback
+    );
+    assert_eq!(a.device_state(), &before);
+    assert_eq!(
+        SyncStore::open(&path).unwrap().device_state().unwrap(),
+        forged
+    );
+}
+
+/// The merged pin keeps the higher KDF floor: a process whose memory pin
+/// is older never lowers the floor another process raised.
+#[test]
+fn merge_keeps_the_higher_kdf_floor() {
+    let (_dir, path, mut a, mut b, _v) = two_processes();
+    let low = a.device_state().pinned.clone().unwrap().kdf_floor;
+    let mut raised = SyncStore::open(&path).unwrap().device_state().unwrap();
+    let floor = &mut raised.pinned.as_mut().unwrap().kdf_floor;
+    floor.m_kib = low.m_kib * 2;
+    floor.t = low.t + 1;
+    let raised_floor = floor.clone();
+    SyncStore::open(&path)
+        .unwrap()
+        .set_device_state(&raised)
+        .unwrap();
+
+    a.persist_device_state().unwrap();
+    let merged = &a.device_state().pinned.as_ref().unwrap().kdf_floor;
+    assert_eq!(
+        (merged.m_kib, merged.t, merged.p),
+        (raised_floor.m_kib, raised_floor.t, low.p)
+    );
+    let stored = SyncStore::open(&path).unwrap().device_state().unwrap();
+    assert_eq!(&stored.pinned.unwrap().kdf_floor, merged);
+
+    // An equal floor keeps the memory salt.
+    b.persist_device_state().unwrap();
+    b.persist_device_state().unwrap();
+    let again = &b.device_state().pinned.as_ref().unwrap().kdf_floor;
+    assert_eq!((again.m_kib, again.t), (raised_floor.m_kib, raised_floor.t));
+}

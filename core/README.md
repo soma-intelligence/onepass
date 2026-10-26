@@ -358,10 +358,9 @@ Le `Repository<SyncStore>` fusionne aussi l'état de l'appareil écrit par un au
 Dans `onepass-ffi`, nouveau fichier `src/autofill.rs` (ajouts seulement ; `PasskeyExcluded` en fin de `OnePassError`) :
 
 - `Session::autofill_identities(excluded_vault_ids)` : identités des Logins vivants et non cachés de l'AutoFill (mot de passe par hôte d'URL, code à usage unique si `totp`, passkey par credential), dédoublonnées ; aucune valeur secrète.
-- `Session::autofill_candidates(service, include_all, excluded_vault_ids)` : Logins qui correspondent à un domaine ou une URL, classés (même hôte, puis même domaine enregistrable par la Public Suffix List) ; `include_all` ajoute les autres Logins vivants non cachés comme "Autres". `http` jamais pour un domaine public, une IP ne correspond qu'à elle-même, ports ignorés.
+- `Session::autofill_candidates(service, include_all, excluded_vault_ids)` : Logins qui correspondent à un domaine ou une URL, classés (même hôte, ou passkey dont le `rp_id` est cet hôte même sans URL, puis même domaine enregistrable par la Public Suffix List) ; `include_all` ajoute les autres Logins vivants non cachés comme "Autres". `http` jamais pour un domaine public, une IP ne correspond qu'à elle-même, ports ignorés.
 - `Session::create_passkey(request)` : crée la passkey dans un Login existant ou un nouveau et rend l'`attestationObject` ; refuse un credential déjà listé par le site (`PasskeyExcluded`), un item archivé ou en corbeille et un nom d'utilisateur vide pour un nouveau Login.
 - `Session::passkey_assertion(vault_id, item_id, credential_id, client_data_hash)` : signe dans le Rust, la clé privée ne sort jamais.
 - `password_from_rules(rules, fallback)` (`src/rules.rs`) : applique le langage `passwordrules` d'Apple (longueur plafonnée à 64, repli sur la recette `fallback` pour des règles illisibles ou contradictoires).
 
 Les types `FfiAutofill*`, `FfiPasskey*` sont dans `src/types.rs`. Dépendances `psl` 2 et `url` 2 : `onepass-ffi` seulement (`onepass-core` n'en gagne aucune). Tests : `onepass-ffi/tests/autofill.rs` et `onepass-ffi/tests/rules.rs`. Sécurité : section 14 de [`docs/security/README.md`](../docs/security/README.md).
-

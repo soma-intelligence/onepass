@@ -75,9 +75,12 @@ impl Repository<SyncStore> {
     /// Save the device state in the store, merged with what the store
     /// already holds: another process on the same file (the AutoFill
     /// extension) may have seen newer manifests, and this one must not
-    /// rewind them. Per vault the larger `seq` wins; the pin is this
-    /// process's. The merged state replaces `self.device`. Read, merge and
-    /// write run in one transaction (a savepoint inside a rebase batch).
+    /// rewind them. Per vault the larger `seq` wins, and the same `seq`
+    /// with another hash is refused (`ManifestRollback`, nothing written).
+    /// The pin is this process's, its KDF floor raised to the stored one
+    /// when both pin the same account. The merged state replaces
+    /// `self.device`. Read, merge and write run in one transaction (a
+    /// savepoint inside a rebase batch).
     pub fn persist_device_state(&mut self) -> Result<()> {
         self.persist_device_state_forcing(&[])
     }
@@ -118,7 +121,10 @@ impl Repository<SyncStore> {
                 }
             }
         }
-        let persisted = self.persist_device_state_forcing(&rebased);
+        // Each rebased vault was already forced inside its own batch: a
+        // plain merge here keeps a `last_seen` another process (the AutoFill
+        // extension) wrote meanwhile.
+        let persisted = self.persist_device_state();
         match first_error {
             Some(e) => Err(e),
             None => persisted.map(|()| rebased),
@@ -129,6 +135,7 @@ impl Repository<SyncStore> {
         let vault = self.open_vault(v)?;
         let plan = self.plan(&vault)?;
         let last_seen = self.device.last_seen.get(&v).cloned();
+        let dropped = self.dropped.clone();
         self.store.begin_batch()?;
         let result = self
             .apply(&vault, plan)
@@ -139,6 +146,9 @@ impl Repository<SyncStore> {
                 Some(s) => self.device.last_seen.insert(v, s),
                 None => self.device.last_seen.remove(&v),
             };
+            // The forced merge was rolled back with the batch: the vaults
+            // Travel Mode dropped must still be forced by the next persist.
+            self.dropped = dropped;
             // The original error wins. If the rollback fails too, SQLite
             // undoes the open transaction when the connection closes, and
             // the next batch on it is refused ("batch already open").
