@@ -194,6 +194,28 @@ fn crypto<T>(_: T) -> KeyError {
     KeyError::Crypto
 }
 
+const RSA_KEY_SIZE: KeyError = KeyError::Unsupported("RSA key size");
+/// RSA moduli accepted at import (aws-lc-rs supports 2048 to 8192 bits).
+const RSA_MIN_BITS: usize = 2048;
+const RSA_MAX_BITS: usize = 8192;
+
+/// Maps an aws-lc-rs RSA rejection: a modulus outside 2048..=8192 bits is
+/// unsupported rather than malformed.
+fn rsa_rejected(e: aws_lc_rs::error::KeyRejected) -> KeyError {
+    match e.description_() {
+        "TooSmall" | "TooLarge" => RSA_KEY_SIZE,
+        _ => KeyError::BadKey,
+    }
+}
+
+/// Bit length of a big-endian magnitude without leading zero bytes.
+fn bit_len(magnitude: &[u8]) -> usize {
+    match magnitude.first() {
+        None => 0,
+        Some(&b) => magnitude.len() * 8 - b.leading_zeros() as usize,
+    }
+}
+
 impl AgentKey {
     /// Generates a new key with aws-lc-rs.
     pub fn generate(t: KeyType) -> Result<AgentKey, KeyError> {
@@ -245,7 +267,7 @@ impl AgentKey {
             OPENSSH_LABEL => Self::from_openssh_bin(&pem.der, passphrase),
             "PRIVATE KEY" => Self::from_pkcs8(&pem.der),
             "RSA PRIVATE KEY" => {
-                Self::from_rsa_pair(RsaKeyPair::from_der(&pem.der).map_err(rejected)?)
+                Self::from_rsa_pair(RsaKeyPair::from_der(&pem.der).map_err(rsa_rejected)?)
             }
             _ => Self::from_sec1(&pem.der),
         }
@@ -291,6 +313,15 @@ impl AgentKey {
                 let iqmp = r.mpint().map_err(rejected)?;
                 let p = r.mpint().map_err(rejected)?;
                 let q = r.mpint().map_err(rejected)?;
+                // Bound the sizes before any arithmetic on them.
+                let bits = bit_len(n);
+                if !(RSA_MIN_BITS..=RSA_MAX_BITS).contains(&bits)
+                    || d.len() > RSA_MAX_BITS / 8
+                    || p.len() > RSA_MAX_BITS / 16
+                    || q.len() > RSA_MAX_BITS / 16
+                {
+                    return Err(RSA_KEY_SIZE);
+                }
                 let dp = crt_exponent(d, p)?;
                 let dq = crt_exponent(d, q)?;
                 let components = KeyPairComponents {
@@ -302,7 +333,7 @@ impl AgentKey {
                     dQ: dq.as_slice(),
                     qInv: iqmp,
                 };
-                let pair = RsaKeyPair::from_components(&components).map_err(rejected)?;
+                let pair = RsaKeyPair::from_components(&components).map_err(rsa_rejected)?;
                 Self::from_rsa_pair(pair)
             }
             _ => {
@@ -333,10 +364,7 @@ impl AgentKey {
                 return Self::from_ecdsa_pair(curve, pair);
             }
         }
-        match RsaKeyPair::from_pkcs8(der) {
-            Ok(pair) => Self::from_rsa_pair(pair),
-            Err(_) => Err(KeyError::BadKey),
-        }
+        Self::from_rsa_pair(RsaKeyPair::from_pkcs8(der).map_err(rsa_rejected)?)
     }
 
     fn from_sec1(der: &[u8]) -> Result<AgentKey, KeyError> {
@@ -376,6 +404,9 @@ impl AgentKey {
     }
 
     fn from_rsa_pair(pair: RsaKeyPair) -> Result<AgentKey, KeyError> {
+        if !(RSA_MIN_BITS..=RSA_MAX_BITS).contains(&(pair.public_modulus_len() * 8)) {
+            return Err(RSA_KEY_SIZE);
+        }
         let pkcs8 = pair.as_der().map_err(crypto)?;
         let pkcs1 = der::pkcs8_private_key(pkcs8.as_ref()).map_err(rejected)?;
         let parts = der::rsa_private_key(pkcs1).map_err(rejected)?;
@@ -441,8 +472,13 @@ impl AgentKey {
     }
 
     /// The key as an unencrypted OpenSSH private key file.
-    pub fn to_openssh_private(&self, comment: &str) -> Zeroizing<String> {
-        let mut w = SshWriter::new();
+    ///
+    /// # Errors
+    /// [`KeyError::Crypto`] if the system random generator (used for the
+    /// check integers of the private section) fails.
+    pub fn to_openssh_private(&self, comment: &str) -> Result<Zeroizing<String>, KeyError> {
+        let mut w = SshWriter::with_capacity(self.private_fields_len());
+        let initial = w.capacity();
         w.string(self.algorithm_name().as_bytes());
         match &self.inner {
             Inner::Ed25519 { seed, public, .. } => {
@@ -473,11 +509,38 @@ impl AgentKey {
                 w.mpint(n).mpint(e).mpint(d).mpint(iqmp).mpint(p).mpint(q);
             }
         }
+        debug_assert_eq!(w.capacity(), initial, "private fields reallocated");
         let fields = Zeroizing::new(w.into_vec());
-        // Only the random check integer can fail; without randomness the
-        // export is not possible at all.
         openssh::encode_unencrypted(&self.public_blob(), &fields, comment)
-            .expect("system random generator unavailable")
+    }
+
+    /// Upper bound of the OpenSSH private key fields length, so the writer
+    /// holding them never reallocates. Each field costs its length plus 4
+    /// (string length) plus 1 (possible mpint sign byte).
+    fn private_fields_len(&self) -> usize {
+        let field = |len: usize| len + 5;
+        field(self.algorithm_name().len())
+            + match &self.inner {
+                Inner::Ed25519 { .. } => field(32) + field(64),
+                Inner::Ecdsa {
+                    curve,
+                    scalar,
+                    point,
+                    ..
+                } => field(curve.identifier().len()) + field(point.len()) + field(scalar.len()),
+                Inner::Rsa {
+                    n,
+                    e,
+                    d,
+                    p,
+                    q,
+                    iqmp,
+                    ..
+                } => [n.len(), e.len(), d.len(), iqmp.len(), p.len(), q.len()]
+                    .into_iter()
+                    .map(field)
+                    .sum(),
+            }
     }
 
     /// Signs `data` and returns the complete SSH signature blob. For RSA,
@@ -524,14 +587,12 @@ fn crt_exponent(d: &[u8], m: &[u8]) -> Result<Zeroizing<Vec<u8>>, KeyError> {
     }
     let mut d = BoxedUint::from_be_slice_vartime(d);
     let mut m = BoxedUint::from_be_slice_vartime(m);
-    let mut m1 = m.wrapping_sub(BoxedUint::one());
+    let m1 = m.wrapping_sub(BoxedUint::one());
     m.zeroize();
-    let modulus = NonZero::new(m1.clone())
-        .into_option()
-        .ok_or(KeyError::BadKey);
-    m1.zeroize();
-    let mut modulus = modulus?;
-    let mut rem = d.rem(&modulus);
+    // `None` only when m - 1 is zero, so nothing secret is dropped there.
+    let mut modulus = NonZero::new(m1).into_option().ok_or(KeyError::BadKey)?;
+    let (mut quotient, mut rem) = d.div_rem(&modulus);
+    quotient.zeroize();
     d.zeroize();
     modulus.zeroize();
     let out = Zeroizing::new(rem.to_be_bytes().into_vec());
@@ -598,8 +659,16 @@ pub fn verify_signature(public_blob: &[u8], data: &[u8], sig_blob: &[u8]) -> Res
                 SSH_RSA => return Err(KeyError::Unsupported("ssh-rsa with SHA-1")),
                 _ => return Err(KeyError::BadKey),
             };
+            // OpenSSH accepts signatures shorter than the modulus (leading
+            // zero bytes dropped) and pads them; longer ones are malformed.
+            let modulus_len = n.len();
+            if sig_bytes.len() > modulus_len {
+                return Err(KeyError::BadKey);
+            }
+            let mut padded = vec![0u8; modulus_len];
+            padded[modulus_len - sig_bytes.len()..].copy_from_slice(sig_bytes);
             RsaPublicKeyComponents { n, e }
-                .verify(alg, data, sig_bytes)
+                .verify(alg, data, &padded)
                 .map_err(crypto)
         }
         _ => {
@@ -707,7 +776,7 @@ mod tests {
     #[test]
     fn openssh_roundtrip_each_type() {
         for (t, key) in keys() {
-            let text = key.to_openssh_private("comment");
+            let text = key.to_openssh_private("comment").unwrap();
             assert!(text.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----\n"));
             assert!(!is_encrypted(&text));
             let back = AgentKey::from_private_text(&text, None).unwrap();
@@ -791,7 +860,7 @@ mod tests {
         let a = &keys()[0].1;
         let b = AgentKey::generate(KeyType::Ed25519).unwrap();
         // Swap the outer public blob of a's file for b's.
-        let text = a.to_openssh_private("");
+        let text = a.to_openssh_private("").unwrap();
         let pem = openssh::pem_find(&text, |_| true).unwrap().unwrap();
         let mut bin = pem.der.to_vec();
         let (pa, pb) = (a.public_blob(), b.public_blob());
@@ -873,6 +942,132 @@ mod tests {
         assert_eq!(strip(&crt_exponent(&[77], &[11]).unwrap()), vec![7]);
         assert_eq!(crt_exponent(&[5], &[1]), Err(KeyError::BadKey));
         assert_eq!(crt_exponent(&[5], &[]), Err(KeyError::BadKey));
+    }
+
+    /// Test-only RSA 1024 key made with ssh-keygen, in three formats.
+    const RSA1024_OPENSSH: &str = include_str!("../tests/data/rsa1024_openssh");
+    const RSA1024_PKCS1: &str = include_str!("../tests/data/rsa1024_pkcs1.pem");
+    const RSA1024_PKCS8: &str = include_str!("../tests/data/rsa1024_pkcs8.pem");
+
+    #[test]
+    fn rsa_below_2048_bits_is_unsupported() {
+        for text in [RSA1024_OPENSSH, RSA1024_PKCS1, RSA1024_PKCS8] {
+            assert_eq!(
+                AgentKey::from_private_text(text, None).err(),
+                Some(KeyError::Unsupported("RSA key size"))
+            );
+        }
+    }
+
+    fn rsa_openssh_text(n: &[u8], d: &[u8], p: &[u8], q: &[u8]) -> String {
+        let mut fields = SshWriter::new();
+        fields
+            .string(b"ssh-rsa")
+            .mpint(n)
+            .mpint(&[1, 0, 1])
+            .mpint(d)
+            .mpint(&[3])
+            .mpint(p)
+            .mpint(q);
+        let text = openssh::encode_unencrypted(b"public", fields.as_slice(), "").unwrap();
+        text.to_string()
+    }
+
+    #[test]
+    fn oversized_rsa_components_are_unsupported() {
+        let ok_n = vec![0xC5u8; 384];
+        let cases = [
+            (
+                "n above 8192 bits",
+                vec![0xC5u8; 1025],
+                vec![7; 300],
+                vec![9; 192],
+                vec![9; 192],
+            ),
+            (
+                "n below 2048 bits",
+                vec![0x7F; 256],
+                vec![7; 200],
+                vec![9; 128],
+                vec![9; 128],
+            ),
+            (
+                "d too long",
+                ok_n.clone(),
+                vec![7; 1025],
+                vec![9; 192],
+                vec![9; 192],
+            ),
+            (
+                "p too long",
+                ok_n.clone(),
+                vec![7; 300],
+                vec![9; 513],
+                vec![9; 192],
+            ),
+            (
+                "q too long",
+                ok_n.clone(),
+                vec![7; 300],
+                vec![9; 192],
+                vec![9; 513],
+            ),
+        ];
+        for (what, n, d, p, q) in cases {
+            assert_eq!(
+                AgentKey::from_private_text(&rsa_openssh_text(&n, &d, &p, &q), None).err(),
+                Some(KeyError::Unsupported("RSA key size")),
+                "{what}"
+            );
+        }
+        // In range but inconsistent: malformed, not unsupported.
+        assert_eq!(
+            AgentKey::from_private_text(
+                &rsa_openssh_text(&ok_n, &[7; 300], &[9; 192], &[11; 192]),
+                None
+            )
+            .err(),
+            Some(KeyError::BadKey)
+        );
+    }
+
+    #[test]
+    fn short_rsa_signature_is_padded() {
+        let (_, key) = keys().iter().find(|(t, _)| *t == KeyType::Rsa3072).unwrap();
+        let blob = key.public_blob();
+        let parts = |sig: &[u8]| {
+            let mut r = SshReader::new(sig);
+            let name = r.string().unwrap().to_vec();
+            (name, r.string().unwrap().to_vec())
+        };
+        let rebuild = |name: &[u8], s: &[u8]| {
+            let mut w = SshWriter::new();
+            w.string(name).string(s);
+            w.into_vec()
+        };
+        // Find a signature with a leading zero byte (about 1 in 256).
+        let (msg, name, raw) = (0u32..)
+            .find_map(|i| {
+                let msg = i.to_be_bytes();
+                let (name, raw) = parts(&key.sign(&msg, SSH_AGENT_RSA_SHA2_256).unwrap());
+                (raw[0] == 0).then_some((msg, name, raw))
+            })
+            .unwrap();
+        verify_signature(&blob, &msg, &rebuild(&name, &raw)).unwrap();
+        verify_signature(&blob, &msg, &rebuild(&name, &raw[1..])).unwrap();
+        let mut long = vec![0u8];
+        long.extend_from_slice(&raw);
+        assert_eq!(
+            verify_signature(&blob, &msg, &rebuild(&name, &long)),
+            Err(KeyError::BadKey)
+        );
+    }
+
+    #[test]
+    fn crt_exponent_large_values() {
+        // d = 2^64 + 5, p = 2^32 + 1: d mod 2^32 = 5.
+        let d = [1u8, 0, 0, 0, 0, 0, 0, 0, 5];
+        assert_eq!(strip(&crt_exponent(&d, &[1, 0, 0, 0, 1]).unwrap()), vec![5]);
     }
 
     fn strip(v: &[u8]) -> Vec<u8> {

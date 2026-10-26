@@ -186,7 +186,7 @@ fn exported_key_is_accepted_by_ssh_keygen() {
     let dir = TempDir::new().unwrap();
     for (i, (t, key)) in generated_keys().iter().enumerate() {
         let path = dir.path().join(format!("export{i}"));
-        write_private(&path, &key.to_openssh_private("exported"));
+        write_private(&path, &key.to_openssh_private("exported").unwrap());
         let out = keygen(dir.path(), &["-y", "-f", path.to_str().unwrap()]);
         let public = String::from_utf8(out.stdout).unwrap();
         assert_eq!(without_comment(&public), key.public_openssh(""), "{t:?}");

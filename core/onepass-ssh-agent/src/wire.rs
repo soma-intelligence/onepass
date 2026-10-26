@@ -212,6 +212,20 @@ impl SshWriter {
         Self::default()
     }
 
+    /// An empty writer with room for `capacity` bytes. Writers that hold
+    /// private key material are sized up front so that the buffer is never
+    /// reallocated, which would leave a copy in freed memory.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            buf: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// Bytes the writer can hold without reallocating.
+    pub fn capacity(&self) -> usize {
+        self.buf.capacity()
+    }
+
     /// Writes a `byte`.
     pub fn u8(&mut self, v: u8) -> &mut Self {
         self.buf.push(v);

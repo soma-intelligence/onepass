@@ -15,7 +15,7 @@ pub(crate) const OPENSSH_LABEL: &str = "OPENSSH PRIVATE KEY";
 const MAGIC: &[u8] = b"openssh-key-v1\0";
 /// Upper bound on bcrypt-pbkdf rounds read from a file, so a hostile file
 /// cannot stall the process (ssh-keygen defaults to 16).
-const MAX_BCRYPT_ROUNDS: u32 = 4096;
+const MAX_BCRYPT_ROUNDS: u32 = 1024;
 const GCM_TAG_LEN: usize = 16;
 
 /// A PEM block found in a text.
@@ -41,7 +41,8 @@ pub(crate) fn pem_find(text: &str, want: impl Fn(&str) -> bool) -> Result<Option
             continue;
         }
         let end = format!("-----END {label}-----");
-        let mut b64 = Zeroizing::new(String::new());
+        // Sized from the whole text so pushing never reallocates.
+        let mut b64 = Zeroizing::new(String::with_capacity(text.len()));
         let mut encrypted_headers = false;
         let mut closed = false;
         for l in lines.by_ref() {
@@ -75,7 +76,11 @@ pub(crate) fn pem_find(text: &str, want: impl Fn(&str) -> bool) -> Result<Option
 /// PEM armor with lines of `width` characters and a final newline.
 pub(crate) fn pem_encode(label: &str, der: &[u8], width: usize) -> Zeroizing<String> {
     let b64 = Zeroizing::new(BASE64.encode(der));
-    let mut out = Zeroizing::new(String::with_capacity(b64.len() + b64.len() / width + 80));
+    // Exact size: base64, one newline per line, "-----BEGIN -----\n" (17)
+    // and "-----END -----\n" (15) around two copies of the label.
+    let capacity = b64.len() + b64.len().div_ceil(width) + 2 * label.len() + 32;
+    let mut out = Zeroizing::new(String::with_capacity(capacity));
+    let initial = out.capacity();
     out.push_str("-----BEGIN ");
     out.push_str(label);
     out.push_str("-----\n");
@@ -87,6 +92,7 @@ pub(crate) fn pem_encode(label: &str, der: &[u8], width: usize) -> Zeroizing<Str
     out.push_str("-----END ");
     out.push_str(label);
     out.push_str("-----\n");
+    debug_assert_eq!(out.capacity(), initial, "PEM buffer reallocated");
     out
 }
 
@@ -135,7 +141,11 @@ impl<'a> Container<'a> {
         passphrase: Option<&str>,
     ) -> Result<Zeroizing<Vec<u8>>, KeyError> {
         if !self.is_encrypted() {
-            if self.kdf != "none" || !self.kdf_options.is_empty() || !self.tag.is_empty() {
+            if self.kdf != "none"
+                || !self.kdf_options.is_empty()
+                || !self.tag.is_empty()
+                || !self.private.len().is_multiple_of(8)
+            {
                 return Err(KeyError::BadKey);
             }
             return Ok(Zeroizing::new(self.private.to_vec()));
@@ -152,7 +162,7 @@ impl<'a> Container<'a> {
             return Err(KeyError::BadKey);
         }
         if rounds > MAX_BCRYPT_ROUNDS {
-            return Err(KeyError::Unsupported("bcrypt rounds above 4096"));
+            return Err(KeyError::Unsupported("bcrypt rounds above 1024"));
         }
         let passphrase = passphrase.ok_or(KeyError::NeedPassphrase)?;
         if passphrase.is_empty() {
@@ -172,7 +182,9 @@ impl<'a> Container<'a> {
             .map_err(|_| KeyError::Crypto)?;
         let (key, iv) = key_iv.split_at(suite.key_len);
 
-        let mut buf = Zeroizing::new(self.private.to_vec());
+        // Room for the GCM tag, so appending it never reallocates.
+        let mut buf = Zeroizing::new(Vec::with_capacity(self.private.len() + self.tag.len()));
+        buf.extend_from_slice(self.private);
         match suite.mode {
             Mode::Ctr | Mode::Cbc => {
                 let alg = match suite.key_len {
@@ -284,20 +296,26 @@ pub(crate) fn encode_unencrypted(
     aws_lc_rs::rand::fill(&mut check).map_err(|_| KeyError::Crypto)?;
     let check = u32::from_be_bytes(check);
 
-    let mut private = SshWriter::new();
+    // check integers, key fields, comment, then up to 7 padding bytes.
+    let private_len = 8 + key_fields.len() + 4 + comment.len();
+    let padded_len = private_len.next_multiple_of(8);
+    let mut private = SshWriter::with_capacity(padded_len);
+    let initial = private.capacity();
     private
         .u32(check)
         .u32(check)
         .raw(key_fields)
         .string(comment.as_bytes());
-    let mut private = Zeroizing::new(private.into_vec());
-    let mut pad = 1u8;
-    while !private.len().is_multiple_of(8) {
-        private.push(pad);
-        pad += 1;
+    for pad in 1..=(padded_len - private_len) {
+        // At most 7, so the cast is lossless.
+        private.u8(pad as u8);
     }
+    debug_assert_eq!(private.capacity(), initial, "private section reallocated");
+    let private = Zeroizing::new(private.into_vec());
 
-    let mut out = SshWriter::new();
+    let out_len = MAGIC.len() + 4 * 7 + 8 + public_blob.len() + private.len();
+    let mut out = SshWriter::with_capacity(out_len);
+    let initial = out.capacity();
     out.raw(MAGIC)
         .string(b"none")
         .string(b"none")
@@ -305,6 +323,7 @@ pub(crate) fn encode_unencrypted(
         .u32(1)
         .string(public_blob)
         .string(&private);
+    debug_assert_eq!(out.capacity(), initial, "container reallocated");
     let bin = Zeroizing::new(out.into_vec());
     Ok(pem_encode(OPENSSH_LABEL, &bin, 70))
 }
@@ -341,6 +360,64 @@ mod tests {
         );
         let enc = "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,00\n\nAAAA\n-----END RSA PRIVATE KEY-----\n";
         assert!(pem_find(enc, |_| true).unwrap().unwrap().encrypted_headers);
+    }
+
+    fn container(cipher: &str, kdf: &str, kdf_options: &[u8], private: &[u8]) -> Vec<u8> {
+        let mut w = SshWriter::new();
+        w.raw(MAGIC)
+            .string(cipher.as_bytes())
+            .string(kdf.as_bytes())
+            .string(kdf_options)
+            .u32(1)
+            .string(b"public")
+            .string(private);
+        w.into_vec()
+    }
+
+    #[test]
+    fn unencrypted_section_must_be_block_aligned() {
+        for len in [8usize, 16] {
+            let bin = container("none", "none", b"", &vec![0; len]);
+            assert!(
+                Container::parse(&bin)
+                    .unwrap()
+                    .private_section(None)
+                    .is_ok()
+            );
+        }
+        for len in [7usize, 9, 15] {
+            let bin = container("none", "none", b"", &vec![0; len]);
+            assert_eq!(
+                Container::parse(&bin).unwrap().private_section(None).err(),
+                Some(KeyError::BadKey),
+                "length {len}"
+            );
+        }
+    }
+
+    #[test]
+    fn bcrypt_rounds_are_capped() {
+        let opts = |rounds: u32| {
+            let mut w = SshWriter::new();
+            w.string(b"0123456789abcdef").u32(rounds);
+            w.into_vec()
+        };
+        let bin = container("aes256-ctr", "bcrypt", &opts(1025), &[0; 32]);
+        assert_eq!(
+            Container::parse(&bin)
+                .unwrap()
+                .private_section(Some("pw"))
+                .err(),
+            Some(KeyError::Unsupported("bcrypt rounds above 1024"))
+        );
+        // At the cap the derivation runs; random bytes fail the check later.
+        let bin = container("aes256-ctr", "bcrypt", &opts(1), &[0; 32]);
+        assert!(
+            Container::parse(&bin)
+                .unwrap()
+                .private_section(Some("pw"))
+                .is_ok()
+        );
     }
 
     #[test]
