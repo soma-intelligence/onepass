@@ -17,6 +17,9 @@ configs:
   Debug: debug
   Release: release
   Release-CloudKit: release
+  # Signed without CloudKit: the shared keychain group only (a restricted entitlement, so a
+  # provisioning profile is required; ad hoc builds never carry it).
+  Release-Signed: release
 
 settings:
   base:
@@ -120,6 +123,14 @@ targets:
           "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass-CloudKit-macOS.entitlements
           # Overrides the base iOS file (the CloudKit file carries the App Group too).
           "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Support/OnePass-CloudKit.entitlements
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          # Fill in the Apple team: keychain-access-groups needs a provisioning profile.
+          DEVELOPMENT_TEAM: ""
+          "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass-Signed-macOS.entitlements
+          "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Support/OnePass-Signed-iOS.entitlements
+          "CODE_SIGN_ENTITLEMENTS[sdk=xr*]": App/Support/OnePass-Signed-iOS.entitlements
 
   # XCUITest, iPhone simulator `OnePass M2 iPhone` (`make -C apple uitest`). The screenshot
   # tests in the same bundle are skipped unless `scripts/screenshots.sh` runs them.
@@ -184,6 +195,10 @@ targets:
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: ""
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
 
   # Complication and Smart Stack card (glyph and name only, no vault data).
   OnePassWatchWidgets:
@@ -216,6 +231,10 @@ targets:
         DEVELOPMENT_TEAM: ""
       configs:
         Release-CloudKit:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+        Release-Signed:
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: ""
@@ -255,6 +274,10 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Widgets/OnePassWidgets.entitlements
       configs:
         Release-CloudKit:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+        Release-Signed:
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: ""
