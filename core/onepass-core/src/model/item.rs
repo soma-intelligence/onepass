@@ -254,7 +254,7 @@ mod tests {
                         user_name: "quentin".into(),
                         user_handle: vec![1, 2, 3],
                         credential_id: vec![4, 5, 6],
-                        private_key: Zeroizing::new(vec![231, 232, 233, 234, 235]),
+                        private_key: Zeroizing::new(vec![231, 232, 233, 234, 235, 236]),
                         created_at: datetime!(2026-10-25 12:00 UTC),
                     }),
                 ),
@@ -274,11 +274,17 @@ mod tests {
                 "concealed-plain-7f3a",
                 "mnemonic-plain-9c1d",
                 "pem-plain-b82e",
-                "231, 232, 233",
-                "231,\n",
             ] {
                 assert!(!s.contains(plain), "leaked {plain}");
             }
+            // Six consecutive values, whitespace removed so compact and
+            // pretty forms share one needle that random id bytes cannot
+            // realistically produce.
+            let squeezed: String = s.split_whitespace().collect();
+            assert!(
+                !squeezed.contains("231,232,233,234,235,236"),
+                "leaked passkey private key bytes"
+            );
             assert!(s.contains("**"));
         }
     }
