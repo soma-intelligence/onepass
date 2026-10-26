@@ -310,7 +310,7 @@ Le serveur apprend donc ce que décrit la section 1 (nombre d'items par vault, v
 - **R9** : pas de pièces jointes ; le type de blob `Attachment` reste réservé.
 - **R12** : pas de changement du mot de passe maître. Une AUK enveloppée reste valable tant que le mot de passe et la Secret Key ne changent pas ; rien à invalider au jalon 2.
 - **R14** : pas de suppression de vault. La liste des vaults du compte n'est toujours pas signée (section 9, écart 8) : elle n'est pas livrée au jalon 2 et passe au jalon 2b.
-- iOS peut afficher sa feuille "Enregistrer le mot de passe ?" (vers les mots de passe du système) après l'enregistrement d'un Login. Accepter ferait sortir la valeur du chiffrement de OnePass. Les champs de l'éditeur ne sont plus marqués `.password` ni `.oneTimeCode`, et les invites du mot de passe maître non plus (iOS ne doit jamais proposer d'enregistrer le mot de passe maître), mais l'heuristique du système se déclenche encore sur un champ sécurisé. Limite du jalon 2, corrigée au jalon 3 quand OnePass devient le fournisseur de remplissage automatique.
+- iOS peut afficher sa feuille "Enregistrer le mot de passe ?" (vers les mots de passe du système) après l'enregistrement d'un Login. Accepter ferait sortir la valeur du chiffrement de OnePass. Les champs de l'éditeur ne sont plus marqués `.password` ni `.oneTimeCode`, et les invites du mot de passe maître non plus (iOS ne doit jamais proposer d'enregistrer le mot de passe maître), mais l'heuristique du système se déclenche encore sur un champ sécurisé. Limite du jalon 2, **corrigée au jalon 3 quand OnePass est le fournisseur de remplissage automatique (iOS 26.2 et plus)** : la demande d'enregistrement arrive alors à l'extension, qui reconnaît qu'elle vient de OnePass lui-même et la referme sans interface ni écriture (section 14.7). La feuille reste possible quand un autre fournisseur est actif, et sur iOS 26.0 et 26.1, où l'API de demande d'enregistrement n'existe pas.
 - Mode partagé : des vaults masqués ne sont qu'une règle d'affichage locale, pas une frontière cryptographique (le keyset ouvre tous les vaults).
 - Aucun audit externe des apps.
 
@@ -528,3 +528,73 @@ Le Contrôle "Verrouiller OnePass" s'exécute dans l'extension, qui n'a aucune c
 - La montre garde en mémoire, pendant l'affichage, les valeurs des champs autorisés (R5 : Swift ne garantit pas l'effacement des `String`).
 - Montres `arm64_32` seulement non prises en charge (W3).
 - Aucun audit externe.
+
+## 14. Jalon 3 : AutoFill et passkeys
+
+Cette section décrit ce qu'ajoutent l'extension `OnePassAutoFill` (fournisseur de remplissage automatique, iOS, iPadOS et macOS), le conteneur partagé et les passkeys. La règle de frontière du jalon 2 est inchangée : toutes les clés restent dans le Rust. Spec : `docs/superpowers/specs/2026-10-26-milestone-3-autofill-design.md`.
+
+### 14.1 Ce que voit le système
+
+OnePass publie des identités dans `ASCredentialIdentityStore`, le magasin du système qui alimente la barre QuickType. Ce magasin est lu par le système en dehors du chiffrement de OnePass. Il reçoit :
+
+- les **hôtes** des URL des Logins (jamais l'URL complète) et les **noms d'utilisateur** ;
+- pour les passkeys, le **`rp_id`**, le nom d'utilisateur, l'**identifiant du credential** et la **user handle** (que le site reçoit déjà à chaque connexion, ce n'est pas un secret) ;
+- des **identifiants d'enregistrement opaques** (`"<vault hex>:<item hex>"`) et l'état favori.
+
+Il ne reçoit jamais un mot de passe, un code à usage unique, une clé ni un titre d'item. Sont exclus : la corbeille, l'archive, les Logins marqués `hide_from_autofill` et les vaults masqués sur l'appareil (mode partagé). Le réglage **Réglages > Remplissage automatique > Suggestions au-dessus du clavier** coupe la publication et vide le magasin ; le magasin est aussi vidé à la réinitialisation du compte. Quelqu'un qui lit le magasin du système apprend donc quels sites et quels identifiants l'utilisateur a dans OnePass (ruling A5).
+
+### 14.2 Extension, session par requête, conteneur partagé
+
+- **Un second processus.** L'extension a sa propre session. Chaque requête ouvre une session neuve, demande un déverrouillage frais (Face ID ou mot de passe maître), sert la requête, puis **verrouille à la fin** (réussite, échec ou annulation) : les clés sont effacées. Le système peut aussi écarter l'interface (glissement, changement d'app) : le **renvoi de l'interface** verrouille la session et abandonne la requête en cours. L'extension n'est jamais déverrouillée hors requête : les variantes "sans interaction" répondent `userInteractionRequired`.
+- **Pas de reprompt supplémentaire.** Les items `reprompt` sont remplis sans seconde question : le déverrouillage de la requête est déjà une vérification fraîche.
+- **Conteneur App Group.** La base (`vault.sqlite`) et les réglages (`UserDefaults`) vivent dans le conteneur partagé : `group.me.somalabs.onepass` sur iOS, `<préfixe d'équipe>me.somalabs.onepass` sur macOS. Sur iOS le dossier de la base est en `completeUntilFirstUserAuthentication`. Le contenu reste le blob chiffré et signé du core : le conteneur partagé n'ajoute aucun secret en clair. Sans conteneur (build Mac signé ad hoc), l'app retombe sur les emplacements du jalon 2 et l'extension n'a rien à lire.
+- **Groupe Keychain partagé.** La Secret Key et l'enrôlement biométrique sont dans le groupe `$(AppIdentifierPrefix)me.somalabs.onepass.shared` (déjà prévu au jalon 2, section 10.2), pour que l'extension ouvre le coffre sans l'app. Si un build signé refusait le groupe, l'extension ne verrait pas le coffre et le dirait ("Ouvre OnePass pour configurer ton coffre") ; l'app, elle, resterait fonctionnelle (ruling A1).
+- **Notification Darwin.** `me.somalabs.onepass.store-changed` ne transporte aucune donnée. L'extension la poste après une écriture ; l'app recharge ses résumés et pousse les lignes `pending` (même verrouillée). L'extension n'envoie rien à CloudKit.
+
+### 14.3 État de l'appareil entre deux processus
+
+L'app et l'extension tiennent chacune un `Repository` avec son `DeviceState` en mémoire (épingle du compte, dernier manifeste vu par vault). Une écriture aveugle de l'un ferait reculer le `last_seen` écrit par l'autre et affaiblirait la détection de rejeu. `Repository<SyncStore>::persist_device_state` **fusionne** donc avant d'écrire, dans une seule transaction : par vault l'entrée de plus grand `seq` gagne (égalité : la mémoire), l'épingle est celle de la mémoire (ou celle du stockage si la mémoire n'en a pas), et le résultat est adopté en mémoire. Les écritures d'items sont déjà sûres entre processus : `commit_manifest` est conditionnel et SQLite sérialise les transactions.
+
+**Seule l'app rebase.** Un rebase renumérote un vault et peut finir sous le `seq` de manifestes locaux abandonnés, que le stockage a déjà vus. Le rebase persiste donc avec `force` : pour les vaults rebasés, l'entrée de la mémoire s'impose, quoi que le stockage contienne. L'extension ne rebase jamais et ouvre une session neuve par requête, qui est verrouillée à la fin : aucun processus longue durée ne garde en mémoire un `seq` abandonné (ruling X2). Une future surface qui garderait une session longue et rebaserait ailleurs devrait revoir cette hypothèse : un processus périmé pourrait réécrire un `seq` mort et bloquer un vault jusqu'au prochain verrouillage.
+
+### 14.4 Mémoire : Argon2id dans l'extension
+
+Le mot de passe maître demande une dérivation Argon2id de 256 Mio. Une extension d'AutoFill a une limite mémoire inférieure à celle d'une app, et le système peut la tuer pendant la dérivation sur un appareil réel. L'extension propose donc **Face ID d'abord** (l'AUK enveloppée par la Secure Enclave ne coûte presque pas de mémoire) et garde le mot de passe maître en second, car sans lui un appareil sans biométrie, ou dont l'enrôlement a expiré (14 jours, redémarrage, `.biometryCurrentSet`), n'aurait aucun remplissage (ruling A2). Le risque est **non mesuré**: il demande un appareil réel (section 10.7 de la spec, limites du jalon 3 de `apple/README.md`). Plan B prévu : enveloppe de l'AUK par une clé Secure Enclave `.userPresence`. Le compteur d'échecs du mot de passe est partagé avec l'app (réglages partagés).
+
+### 14.5 Passkeys
+
+- **Génération et stockage dans le Rust.** `onepass-core::webauthn` crée une paire ECDSA P-256 par `aws-lc-rs` (`EcdsaKeyPair::generate_pkcs8`). La clé privée est rangée en **PKCS#8 DER** dans le champ `passkeys` du Login, chiffrée comme toute valeur d'item. **Elle ne traverse jamais vers Swift** : Swift reçoit un `attestationObject`, des `authenticatorData` et une signature. `FfiPasskey` reste sans user handle ; la `user_handle` ne traverse que dans les identités et l'assertion, là où l'API Apple l'exige (ruling A8).
+- **Format.** Compteur de signature toujours **0**, flags **UP, UV, BE, BS** (et AT à l'enregistrement) : la passkey est sauvegardée et synchronisée, un compteur ne pouvant pas rester monotone entre appareils (ruling A6). **AAGUID** propre à OnePass, attestation **`none`** (ruling A7) : les sites affichent un authentificateur inconnu. UV est vrai parce que toute requête passe par un déverrouillage frais.
+- **Garde-fous.** Identifiant de credential de 16 octets aléatoires ; `rp_id` vide ou de plus de 253 octets, `user_handle` de plus de 64 octets, nom d'utilisateur de plus de 1024 octets, `client_data_hash` qui ne fait pas 32 octets : refusés. Une clé qui ne se relit pas en PKCS#8 P-256 (passkey importée d'un autre algorithme) donne une erreur, jamais une signature.
+- **Qui signe quoi.** Une requête passkey directe doit porter l'identifiant du credential de l'identité choisie : sans lui elle est **refusée** au lieu de signer avec la première passkey du Login (ruling X13). Une passkey ne peut pas être créée dans un item archivé ni dans un vault masqué. La création est refusée si une passkey de la liste `excluded` du site existe déjà (`PasskeyExcluded`). Un nom d'utilisateur vide ne peut pas créer de nouveau Login (ruling X6).
+- **Pas de création silencieuse.** `performPasskeyRegistrationWithoutUserInteractionIfPossible` est refusé : l'extension n'est jamais déverrouillée hors requête (ruling A9).
+- **Passkey supprimée.** Une passkey supprimée dans OnePass reste connue du site : le jalon 3 n'envoie pas `reportUnknownPublicKeyCredential`.
+
+### 14.6 Hameçonnage : correspondance de domaine
+
+La correspondance est calculée dans `onepass-ffi` (`autofill.rs`) avec la Public Suffix List (crate `psl`) et `url`, et non dans Swift :
+
+- Hôtes comparés en ASCII minuscule (punycode). Même hôte d'abord, puis même domaine enregistrable (PSL) ; `examp1e.com` ne correspond pas à `example.com`, `co.uk` est un suffixe public et non un domaine. Les ports sont ignorés (ruling X5).
+- **`http` n'est jamais proposé pour un domaine public** (un site `https` seulement, sauf hôte local). Une **adresse IP ne correspond qu'à elle-même**.
+- Les Logins `hide_from_autofill` ne sont **jamais** proposés, même par le choix manuel (`include_all`) : "caché de l'AutoFill" signifie jamais offert par l'extension (ruling X3). Seuls les Logins vivants sont proposés (ni corbeille ni archive) ; les items **Crypto Wallet** ne le sont jamais, y compris par l'insertion de texte, pas plus que ceux d'un vault masqué sur l'appareil.
+- Le choix hors correspondance demande un geste explicite : rubrique "Autres éléments" ou recherche. Là seulement, un Login `http` peut apparaître, c'est un choix volontaire (ruling X4).
+- Pour les passkeys, le `rp_id` est vérifié par le système (domaine de la page ou domaines associés de l'app) ; l'extension ne le re-valide pas, elle ne propose que les passkeys du `rp_id` demandé.
+- L'app hôte de test `AutoFillHost` n'a pas de domaine associé : le test UI ne prouve pas la correspondance, que les tests Rust couvrent (ruling A16).
+
+### 14.7 Données hostiles venues du web
+
+- **Règles de mot de passe.** Les règles `passwordrules` d'un champ viennent d'une page web : c'est une entrée hostile. `password_from_rules` borne la longueur générée à **64** dans tous les cas (un `minlength` supérieur donne le repli, 20 caractères aléatoires), ignore les propriétés inconnues, retombe sur la recette de repli quand les règles sont illisibles (valeur mal formée) ou contradictoires, et efface ses tampons (`zeroize`). Une page ne peut donc pas faire allouer ou générer sans borne dans l'extension (ruling X7). `required` seul restreint l'ensemble aux classes requises et `special` inclut l'espace (sémantique d'Apple, ruling X8) : un site qui refuse l'espace peut rejeter le mot de passe généré, l'utilisateur en génère un autre. Aucune donnée du coffre n'est lue pour générer.
+- **Demandes d'enregistrement venant de OnePass lui-même** (iOS 26.2 et plus). Après l'enregistrement d'un Login dans l'app, iOS propose d'enregistrer la valeur dans le fournisseur actif. L'extension reconnaît la demande (service de type app dont l'identifiant est celui de l'app, ou valeur identique à un Login existant : même hôte, même identifiant, même mot de passe) et la referme sans interface ni écriture. Un mot de passe généré rempli (`generatedPasswordFilled`) ne s'enregistre pas non plus. Toute autre demande passe par un déverrouillage et la feuille Enregistrer ou Mettre à jour. Les écritures de l'extension (enregistrement, passkey) ne sont acceptées que vers une cible affichée à l'écran et un vault non masqué (le modèle refuse les identifiants fournis par l'appelant sans les vérifier).
+
+### 14.8 Migration vers le conteneur partagé
+
+Au lancement, avant toute ouverture de la base, `SharedContainerMigration` déplace `vault.sqlite`, `-wal` et `-shm` de l'ancien conteneur vers le conteneur partagé, dans l'ordre `-shm`, `-wal`, base, pour qu'un arrêt au milieu laisse l'ancienne base complète. Garde-fous :
+
+- **Retour en arrière.** Une migration qui échoue en route **remet en place** les fichiers déjà déplacés avant de retomber sur l'ancien conteneur : ouvrir une base sans son WAL perdrait des écritures (ruling X17). Un double échec (le retour en arrière échoue aussi) reste un risque connu.
+- **Rien n'est supprimé.** Si la base partagée existe mais ne contient aucun compte alors qu'une base ancienne existe, la base partagée est **mise de côté** (renommée, jamais supprimée) et l'ancienne est migrée. Un fichier supplémentaire reste à côté du magasin après un tel lancement.
+- **L'extension ne crée jamais le magasin.** Si le fichier partagé manque, elle répond "Ouvre OnePass pour configurer ton coffre" : une base vide créée avant la migration aurait écarté la vraie (ruling X16).
+- Les clés `onepass.*` de `UserDefaults.standard` sont copiées une fois dans la suite partagée.
+
+### 14.9 Limites du jalon 3
+
+Voir la section "Limites du jalon 3" de [`apple/README.md`](../apple/README.md). En résumé : l'icône dans le champ n'existe pas (le système n'en permet pas aux fournisseurs), la mémoire d'Argon2id dans l'extension et Face ID dans l'extension ne sont vérifiés que sur un appareil, la sync CloudKit d'une passkey demande un build `Release-CloudKit`, et l'import et l'export de passkeys par le flux système (FIDO Credential Exchange) sont reportés avec le jalon 5. Aucun audit externe.

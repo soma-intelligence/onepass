@@ -1,6 +1,6 @@
 # OnePass pour Apple (iPhone, iPad, Mac, Apple Watch, Vision Pro)
 
-Les applications Apple s'appuient sur le coeur Rust (`core/onepass-ffi`, exposé par UniFFI) via le paquet Swift `VaultKit`. Ce dossier est le jalon 2 : création de compte, déverrouillage (mot de passe, Face ID, Touch ID, Apple Watch sur Mac), les 26 types d'items, vaults, recherche, synchronisation CloudKit et verrouillage automatique. Spec : `docs/superpowers/specs/2026-10-25-milestone-2-apps-design.md`. Sécurité : section "Jalon 2 : apps Apple" de [`docs/security/README.md`](../docs/security/README.md).
+Les applications Apple s'appuient sur le coeur Rust (`core/onepass-ffi`, exposé par UniFFI) via le paquet Swift `VaultKit`. Ce dossier est le jalon 2 : création de compte, déverrouillage (mot de passe, Face ID, Touch ID, Apple Watch sur Mac), les 26 types d'items, vaults, recherche, synchronisation CloudKit et verrouillage automatique. Le jalon 3 y ajoute l'AutoFill système (extension `OnePassAutoFill`), les passkeys et les codes à usage unique dans les champs. Specs : `docs/superpowers/specs/2026-10-25-milestone-2-apps-design.md` et `docs/superpowers/specs/2026-10-26-milestone-3-autofill-design.md`. Sécurité : sections "Jalon 2 : apps Apple" et "Jalon 3 : AutoFill et passkeys" de [`docs/security/README.md`](../docs/security/README.md).
 
 Le jalon 6 ajoute l'app Apple Watch, l'app Vision Pro, les widgets, les Contrôles et les Raccourcis (voir "Jalon 6" plus bas). Spec : `docs/superpowers/specs/2026-10-26-milestone-6-watch-vision-design.md`. Sécurité : section 12 de [`docs/security/README.md`](../docs/security/README.md).
 
@@ -11,7 +11,7 @@ apple/
   project.yml               source du projet (XcodeGen)
   OnePass.xcodeproj         généré par `make project`, versionné
   Makefile                  core, test, project, build-ios, build-mac, build-watch, build-vision,
-                            uitest, screenshots, screenshots-m6
+                            uitest, uitest-autofill, screenshots, screenshots-m6
   scripts/build-core.sh     compile onepass-ffi, assemble l'XCFramework, génère les liaisons
   scripts/screenshots.sh    captures iPhone, iPad et Mac (données de démonstration)
   scripts/screenshots-m6.sh captures Apple Watch et Vision Pro (données fictives)
@@ -19,6 +19,8 @@ apple/
   DesignKit/                paquet Swift : couleurs, icônes de catégorie, composants
   CompanionKit/             paquet Swift : widgets (GlanceKit) et lien iPhone-montre (CompanionLink)
   App/                      cible unique iOS, iPadOS, macOS natif et visionOS (SwiftUI)
+  AutoFill/                 extension OnePassAutoFill (fournisseur de remplissage automatique, SwiftUI)
+  AutoFillHost/             app hôte de test de l'AutoFill (iOS, non livrée)
   Watch/                    app watchOS (cible OnePassWatch)
   WatchWidgets/             complication et Smart Stack (cible OnePassWatchWidgets)
   Widgets/                  widgets et Contrôles iOS (cible OnePassWidgets)
@@ -34,12 +36,15 @@ Règle de frontière : seul le Rust manipule les clés. Swift reçoit des items 
 - `Keychain/` : `KeychainStore`, `SystemKeychain` (keychain à protection de données), `SecretKeyVault`, `InMemoryKeychain` pour les tests et la démonstration.
 - `Biometrics/` : `BiometricUnlock` (AUK enveloppée par une clé P-256 de la Secure Enclave), politique des 14 jours et du redémarrage (`BiometricPolicy`).
 - `Sync/` : protocole `RemoteRecordStore`, `SyncCoordinator` (acteur : envoi puis récupération, anti-rebond de 2 s ; la base est liée au compte iCloud du premier tour, un autre compte arrête la sync avec l'état "Le compte iCloud a changé" jusqu'à `acceptAccountChange()`, qui vérifie d'abord la zone ; identité revérifiée avant l'envoi seulement après `CKAccountChanged` ou 10 min ; nombre de suppressions refusées), `CloudKitRemote` (base privée, zone `OnePass`, identité par `userRecordID`, compteur de `CKAccountChanged`), `InMemoryRemote` (faux serveur des tests, qui sait rejouer, retenir, altérer, forger une suppression et changer de compte, y compris entre la récupération et l'envoi).
+- `AutoFill/` (jalon 3) : `SharedContainer` (conteneur App Group de la base et des réglages, repli sur les emplacements du jalon 2 sans conteneur) et `SharedContainerMigration` (déplacement de la base au lancement, retour en arrière en cas d'échec, jamais de suppression), `AutoFillIdentityBuilder` et `IdentityStoreSync` (identités publiées dans `ASCredentialIdentityStore`, anti-rebond de 1 s, `InMemoryIdentityStore` pour les tests), `StoreChangeNotifier` (notification Darwin `me.somalabs.onepass.store-changed`), `AutoFillStatus`, `AutoFillRequest` et `AutoFillModel` (le modèle de l'extension : une ligne par point d'entrée du système, testé contre une vraie session).
 - `Support/` : presse-papiers (90 s, local seulement), Emergency Kit (PDF avec QR code produit sur l'appareil), icônes de site (noms locaux refusés, adresses résolues vérifiées par `HostResolver`), mode d'appareil, réglages locaux.
 - `Editing/` : brouillon d'item (`ItemDraft`), saisie des nombres, force du mot de passe.
 
 **DesignKit** : couleur d'accent, tuiles et symboles des 26 catégories, `ItemIcon`, `VaultBadge`, ligne de champ (Copier, Révéler, masquage après 30 s), jauge de force, compteur TOTP, bannière d'intégrité, états vides. Aucun élément de marque d'un autre gestionnaire.
 
-**App** (`App/`) : `Root/` (`AppModel`, choix de l'écran, écran "Données refusées", vue de confidentialité), `Onboarding/`, `Lock/`, `Browse/` (Mac et iPad en `NavigationSplitView` 3 colonnes dans `Mac/`, onglets iPhone dans `Phone/`), `Item/` (détail et éditeur unique des 26 types, piloté par `template` et `menu_options` du core), `Vaults/`, `Settings/`. Textes en français dans `Resources/Localizable.xcstrings`.
+**AutoFill** (`AutoFill/`, jalon 3) : `CredentialProviderViewController` (sous-classe de `ASCredentialProviderViewController`, mots de passe, passkeys, codes, insertion de texte, enregistrement et génération de mots de passe en 26.2) qui n'héberge que des vues SwiftUI (`Views/` : déverrouillage, liste des candidats, enregistrement de passkey, enregistrement de mot de passe, insertion de texte, configuration). Toute la logique est dans `AutoFillModel` ; l'extension ouvre une session par requête et la verrouille à la fin. `AutoFillHost/` est une app iOS de test avec un champ identifiant et un champ mot de passe, utilisée par le test UI.
+
+**App** (`App/`) : `Root/` (`AppModel`, choix de l'écran, écran "Données refusées", vue de confidentialité), `Onboarding/`, `Lock/`, `Browse/` (Mac et iPad en `NavigationSplitView` 3 colonnes dans `Mac/`, onglets iPhone dans `Phone/`), `Item/` (détail et éditeur unique des 26 types, piloté par `template` et `menu_options` du core), `Vaults/`, `Settings/` (dont la page Remplissage automatique du jalon 3 et la carte d'activation de l'Accueil). Textes en français dans `Resources/Localizable.xcstrings`.
 
 Une seule fenêtre au jalon 2 : l'état de navigation et d'édition vit dans `AppModel`, unique par processus. Le Mac utilise une scène `Window`, l'iPad déclare `UIApplicationSupportsMultipleScenes` à `false`. Deux fenêtres de OnePass côte à côte (Stage Manager, Split View de l'app avec elle-même) attendent un état par scène.
 
@@ -57,14 +62,16 @@ Une seule fenêtre au jalon 2 : l'état de navigation et d'édition vit dans `Ap
 | `make -C apple core` | XCFramework livré et liaisons Swift (voir plus bas) |
 | `make -C apple test` | tests Swift de `VaultKit`, `DesignKit` et `CompanionKit` sur macOS, contre l'XCFramework de test |
 | `make -C apple project` | régénère `OnePass.xcodeproj` depuis `project.yml` |
-| `make -C apple build-ios` | build Simulateur non signé sur `OnePass M2 iPhone` |
+| `make -C apple build-ios` | builds Simulateur non signés de l'app et de l'extension `OnePassAutoFill` sur `OnePass M2 iPhone` |
 | `make -C apple build-mac` | build Mac arm64 signé ad hoc (`CODE_SIGN_IDENTITY=-`), lançable localement |
 | `make -C apple build-watch` | build Simulateur watchOS de l'app montre et de sa complication sur `OnePass M6 Watch`, signé ad hoc |
 | `make -C apple build-vision` | build Simulateur visionOS de l'app sur `OnePass M6 Vision Pro` (destination générique si ce Simulateur n'existe pas), signé ad hoc |
 | `make -C apple uitest` | tests XCUITest sur `OnePass M2 iPhone` (build signé ad hoc) |
+| `make -C apple uitest-autofill` | test UI de l'AutoFill sur `OnePass M3 iPhone` (build signé ad hoc, environ 4 minutes) |
+| `make -C apple simulator-m3` | crée `OnePass M3 iPhone` s'il manque (appelé par `uitest-autofill`) |
 | `make -C apple screenshots OUT=<dossier>` | captures iPhone, iPad et Mac dans `<dossier>` |
 | `make -C apple screenshots-m6 OUT=<dossier>` | captures Apple Watch et Vision Pro dans `<dossier>` |
-| `make -C apple simulators` | crée les deux Simulateurs dédiés s'ils manquent |
+| `make -C apple simulators` | crée les deux Simulateurs du jalon 2 s'ils manquent |
 | `make -C apple simulators-m6` | crée `OnePass M6 Watch` et `OnePass M6 Vision Pro` s'ils manquent (le second seulement si le runtime visionOS 27 est installé) |
 | `make -C apple clean` | supprime `build/`, `DerivedData/`, `.build` et les liaisons générées |
 
@@ -127,7 +134,7 @@ make -C apple core
 open apple/OnePass.xcodeproj
 ```
 
-Une cible d'app `OnePass` (iPhone, iPad et Mac natif arm64, pas Catalyst) et une cible de tests UI `OnePassUITests` (iOS). `make project` lance `xcodegen generate` depuis `project.yml` ; le projet généré est versionné, il faut le régénérer après toute modification de `project.yml`. Une pré-action du schéma ("Build Rust core") lance `make -C apple core` si l'XCFramework manque. `build-ios`, `build-mac` et `uitest` utilisent le projet versionné sans le régénérer et créent les deux Simulateurs dédiés s'ils manquent. Les builds vont dans `apple/DerivedData` (ignoré par git).
+Une cible d'app `OnePass` (iPhone, iPad et Mac natif arm64, pas Catalyst), une cible de tests UI `OnePassUITests` (iOS) et, au jalon 3, l'extension `OnePassAutoFill` (iOS et Mac, `me.somalabs.onepass.autofill`), l'app hôte `AutoFillHost` (`me.somalabs.onepass.autofillhost`) et `OnePassAutoFillUITests`. Le schéma `OnePassAutoFill` construit l'extension et lance le test UI de l'AutoFill. `make project` lance `xcodegen generate` depuis `project.yml` ; le projet généré est versionné, il faut le régénérer après toute modification de `project.yml`. Une pré-action du schéma ("Build Rust core") lance `make -C apple core` si l'XCFramework manque. `build-ios`, `build-mac` et `uitest` utilisent le projet versionné sans le régénérer et créent les deux Simulateurs dédiés s'ils manquent. Les builds vont dans `apple/DerivedData` (ignoré par git).
 
 Configurations : `Debug` et `Release` (non signées, sans CloudKit) ; `Release-CloudKit` (condition `ONEPASS_CLOUDKIT`, droits iCloud, groupe Keychain partagé et notifications push, `DEVELOPMENT_TEAM` à renseigner).
 
@@ -152,13 +159,13 @@ Compilés seulement en Debug (`#if DEBUG`), absents des builds Release.
 
 ## Simulateurs dédiés
 
-Utiliser uniquement `OnePass M2 iPhone` (iPhone 18 Pro, iOS 27.0), `OnePass M2 iPad` (iPad mini, iOS 27.0), `OnePass M6 Watch` (Apple Watch Series 12 46 mm, watchOS 27.0) et `OnePass M6 Vision Pro` (Apple Vision Pro, visionOS 27.0, ruling W16). Ne jamais démarrer, arrêter ou effacer un autre Simulateur : d'autres sessions s'en servent.
+Utiliser uniquement `OnePass M2 iPhone` (iPhone 18 Pro, iOS 27.0), `OnePass M2 iPad` (iPad mini, iOS 27.0), `OnePass M3 iPhone` (iPhone 18 Pro, iOS 27.0) pour le test de l'AutoFill, `OnePass M6 Watch` (Apple Watch Series 12 46 mm, watchOS 27.0) et `OnePass M6 Vision Pro` (Apple Vision Pro, visionOS 27.0, ruling W16). Ne jamais démarrer, arrêter ou effacer un autre Simulateur : d'autres sessions s'en servent.
 
 ## Limites du jalon 2
 
 Hors périmètre (spec, section 12) :
 
-- AutoFill système, passkeys et TOTP dans le champ : jalon 3.
+- AutoFill système, passkeys et codes à usage unique dans les champs : livrés au jalon 3 (voir plus bas).
 - Extension de navigateur : jalon 4.
 - Watchtower (onglet présent avec un état vide), pack d'icônes de marques, import, export, sauvegarde, pièces jointes : jalon 5.
 - Apple Watch (app), Vision Pro, widgets, Contrôles, Raccourcis, Spotlight, Handoff : jalon 6 (Apple Watch, Vision Pro, widgets, Contrôles et Raccourcis livrés, voir Jalon 6).
@@ -181,11 +188,49 @@ Autres limites connues :
 - iOS : une app suspendue garde ses clés en mémoire jusqu'au retour au premier plan ou au prochain réveil par notification, si le délai de verrouillage dépasse le temps d'arrière-plan accordé par le système.
 
 - Une seule fenêtre (voir Architecture).
-- iOS peut proposer "Enregistrer le mot de passe ?" (mots de passe du système) après l'enregistrement d'un Login : il faut refuser. Corrigé au jalon 3, quand OnePass devient le fournisseur de remplissage automatique.
+- iOS peut proposer "Enregistrer le mot de passe ?" (mots de passe du système) après l'enregistrement d'un Login : il faut refuser. Corrigé au jalon 3 quand OnePass est le fournisseur de remplissage automatique et que l'appareil est en iOS 26.2 ou plus (l'extension referme la demande venue de OnePass lui-même, sans interface). Toujours possible avec un autre fournisseur, ou en iOS 26.0 et 26.1.
 - Pas de liste "À proximité" ni de géofences sur l'Accueil (R11).
 - Mac : pas de scan du QR de l'Emergency Kit, la Secret Key se tape (R19).
 - Une modification locale d'un item supprimé sur un autre appareil le fait revenir (une suppression ne porte pas de date) ; un déplacement local concurrent d'une modification distante peut laisser l'item dans les deux vaults, sans perte.
 - Une réinitialisation de la zone iCloud (zone supprimée) est réparée par le prochain appareil qui synchronise, qui renvoie tout son contenu : un effacement volontaire des données iCloud est donc défait. Un vrai réglage "Effacer les données iCloud" arrive au jalon 5.
+
+## Jalon 3 : AutoFill, passkeys et codes à usage unique
+
+Spec : `docs/superpowers/specs/2026-10-26-milestone-3-autofill-design.md`. Sécurité : section 14 de [`docs/security/README.md`](../docs/security/README.md).
+
+Ce que livre le jalon 3 :
+
+- **OnePass fournisseur de remplissage automatique** (iPhone, iPad, Mac) : extension `OnePassAutoFill`, activée depuis Réglages > Remplissage automatique > "Activer OnePass" (demande système). Suggestion du compte dans la barre QuickType, touche "Mots de passe" pour choisir un autre compte, liste OnePass avec les comptes du site en tête et la recherche dans tous les Logins.
+- **Déverrouillage par requête** : Face ID d'abord, mot de passe maître en second ; la session de l'extension est verrouillée à la fin de chaque requête et quand le système écarte l'interface.
+- **Codes à usage unique** : le code TOTP du Login du site, proposé sur un champ de code de vérification.
+- **Passkeys** : "Enregistrer dans OnePass" (dans un Login existant ou un nouveau) et connexion par la feuille système ; la clé est créée et utilisée dans le Rust, elle ne traverse jamais vers Swift. Synchronisées comme tout item.
+- **Enregistrer un mot de passe tapé** et **mot de passe fort proposé** (iOS 26.2 et plus), avec les règles du site (`password_from_rules`).
+- **Insertion de texte** (iOS 18 et plus) : n'importe quel champ d'un item dans n'importe quel champ.
+- **Conteneur partagé** : la base et les réglages passent dans le conteneur App Group (`group.me.somalabs.onepass` sur iOS, `<préfixe d'équipe>me.somalabs.onepass` sur Mac), migrés au lancement sans jamais rien supprimer.
+- **Fin de la feuille "Enregistrer le mot de passe ?"** après l'enregistrement d'un Login, quand OnePass est le fournisseur (iOS 26.2 et plus).
+- Page **Remplissage automatique** dans les réglages (état, activation, codes de vérification, interrupteur "Suggestions au-dessus du clavier" qui vide le magasin du système quand il est coupé) et carte d'activation sur l'Accueil.
+
+### Limites du jalon 3
+
+Ce qui demande un build signé ou un appareil réel (spec, section 10) :
+
+- **AutoFill sur Mac** : l'extension est construite et embarquée, mais un build Mac signé ad hoc ne peut pas porter les droits App Group et fournisseur AutoFill (restreints, profil obligatoire). À vérifier en build signé.
+- **Face ID dans l'extension** : le Simulateur n'a pas de Secure Enclave.
+- **Mémoire de l'extension avec Argon2id** : la dérivation du mot de passe maître demande 256 Mio, que la limite mémoire d'une extension sur un appareil réel peut ne pas permettre. Non mesuré. Plan B : enveloppe de l'AUK par une clé Secure Enclave `.userPresence`.
+- **Passkeys avec un vrai site** : le Simulateur n'a pas de domaines associés signés ; la cryptographie est vérifiée par les tests Rust (signature vérifiée avec `aws-lc-rs`).
+- **Synchronisation CloudKit d'une passkey** créée dans l'extension : build `Release-CloudKit` (R8).
+- **Flux hybride** (QR code d'un autre appareil) : fourni par le système, à vérifier sur un appareil.
+- **État "Activé" du fournisseur** : dans le Simulateur iOS 27.0, `ASCredentialIdentityStore.state()` répond "désactivé" même quand l'interrupteur du système est allumé (ruling X18) ; l'affichage "Activé" de la page Remplissage automatique n'est vérifié que sur un appareil.
+
+Hors périmètre du jalon 3 (spec, section 11) :
+
+- Import et export de passkeys par FIDO Credential Exchange (`ASCredentialImportManager`, `ASCredentialExportManager`) : avec l'import et l'export du jalon 5.
+- Quick Access et barre de menus du Mac : jalon ultérieur.
+- Vision Pro (jalon 6), extension Safari et icône dans le champ des pages web (jalon 4). Aucun fournisseur ne peut dessiner dans les champs des autres apps : l'expérience système est la barre QuickType, la touche clé et la feuille passkey.
+- Signal des passkeys inconnues ou renommées au système (`reportUnknownPublicKeyCredential`, `reportAllAcceptedPublicKeyCredentials`).
+- Extensions WebAuthn PRF et largeBlob.
+- Création de passkey sans interface (mise à niveau automatique) : refusée, l'extension n'est jamais déverrouillée hors requête.
+- Identités limitées aux Logins : un compte Email ou un Server ne remonte pas en suggestion QuickType (l'insertion de texte couvre les autres types).
 
 ## Jalon 6 : Apple Watch, Vision Pro, widgets, Contrôles et Raccourcis
 

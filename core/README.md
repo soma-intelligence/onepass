@@ -348,3 +348,20 @@ onepass travel off    --upstream amont.db [--accept-unpinned]
 Côté FFI (`onepass-ffi/src/companion.rs`) : `companion_generate_key()`, `Session::companion_payload`, `Session::glance_snapshot`, objet `CompanionVault` (`open(secret, sealed)`, `generation`, `generated_at`, `entries` sans graine, `totp(item_id, unix)`). L'XCFramework livré gagne les tranches `aarch64-apple-watchos`, `aarch64-apple-watchos-sim`, `aarch64-apple-visionos` et `aarch64-apple-visionos-sim` (cibles rustup de niveau 2) ; les montres `arm64_32` seulement ne sont pas prises en charge.
 
 Tests : unitaires dans `companion.rs` (aller-retour, mauvaise clé, altération de chaque octet, génération authentifiée, liste fermée par type, exclusions, limites, carte à 4 chiffres, codes de l'instantané égaux à `totp::code_at`, plafond de codes) et `onepass-ffi/tests/companion.rs`. Ils tournent avec `make check`.
+
+## Module `webauthn` et surface FFI AutoFill (jalon 3)
+
+`onepass-core/src/webauthn.rs` (une ligne `pub mod webauthn;` dans `lib.rs`, aucune nouvelle dépendance : ECDSA P-256 et SHA-256 par `aws-lc-rs`, CBOR écrit à la main). Authentificateur WebAuthn logiciel pour les passkeys : `new_credential` (paire P-256, clé privée en PKCS#8 DER, identifiant de credential de 16 octets), `public_key_cose` (clé publique COSE ES256 en CBOR canonique), `registration` (`authenticatorData` avec AAGUID `AAGUID` et `attestationObject` de format `none`) et `assertion` (`authenticatorData` et signature ECDSA en DER de `authenticatorData` suivi du hash des données client). Flags UP, UV, BE, BS (AT à l'enregistrement), compteur toujours 0. Les entrées hors limites (`rp_id`, `user_handle`, nom d'utilisateur, hash qui ne fait pas 32 octets) et une clé qui ne se relit pas en P-256 sont refusées (`InvalidFormat`). Tests unitaires : octets du CBOR, flags, signature vérifiée par `aws_lc_rs::signature`.
+
+Le `Repository<SyncStore>` fusionne aussi l'état de l'appareil écrit par un autre processus sur le même fichier (`persist_device_state` : plus grand `seq` par vault ; un rebase impose sa propre entrée). Test : `onepass-core/tests/sync_two_processes.rs`.
+
+Dans `onepass-ffi`, nouveau fichier `src/autofill.rs` (ajouts seulement ; `PasskeyExcluded` en fin de `OnePassError`) :
+
+- `Session::autofill_identities(excluded_vault_ids)` : identités des Logins vivants et non cachés de l'AutoFill (mot de passe par hôte d'URL, code à usage unique si `totp`, passkey par credential), dédoublonnées ; aucune valeur secrète.
+- `Session::autofill_candidates(service, include_all, excluded_vault_ids)` : Logins qui correspondent à un domaine ou une URL, classés (même hôte, puis même domaine enregistrable par la Public Suffix List) ; `include_all` ajoute les autres Logins vivants non cachés comme "Autres". `http` jamais pour un domaine public, une IP ne correspond qu'à elle-même, ports ignorés.
+- `Session::create_passkey(request)` : crée la passkey dans un Login existant ou un nouveau et rend l'`attestationObject` ; refuse un credential déjà listé par le site (`PasskeyExcluded`), un item archivé ou en corbeille et un nom d'utilisateur vide pour un nouveau Login.
+- `Session::passkey_assertion(vault_id, item_id, credential_id, client_data_hash)` : signe dans le Rust, la clé privée ne sort jamais.
+- `password_from_rules(rules, fallback)` (`src/rules.rs`) : applique le langage `passwordrules` d'Apple (longueur plafonnée à 64, repli sur la recette `fallback` pour des règles illisibles ou contradictoires).
+
+Les types `FfiAutofill*`, `FfiPasskey*` sont dans `src/types.rs`. Dépendances `psl` 2 et `url` 2 : `onepass-ffi` seulement (`onepass-core` n'en gagne aucune). Tests : `onepass-ffi/tests/autofill.rs` et `onepass-ffi/tests/rules.rs`. Sécurité : section 14 de [`docs/security/README.md`](../docs/security/README.md).
+

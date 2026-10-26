@@ -77,7 +77,7 @@ Nouveau dossier `VaultKit/Sources/VaultKit/AutoFill/` :
 - `AutoFillIdentityBuilder` : transforme `FfiAutofillIdentity` en `ASPasswordCredentialIdentity`, `ASPasskeyCredentialIdentity`, `ASOneTimeCodeCredentialIdentity` (service de type domaine pour un hôte, rang 1 pour un favori).
 - `IdentityStoreSync` (acteur) : `refresh(session)` remplace tout le contenu de `ASCredentialIdentityStore` (si le magasin est activé et le réglage "Suggestions" actif), anti-rebond 1 s ; `clear()` vide le magasin (réglage coupé, compte réinitialisé). Protocole `IdentityStoreClient` pour les tests (`InMemoryIdentityStore`).
 - `StoreChangeNotifier` : poste et observe la notification Darwin `me.somalabs.onepass.store-changed` (aucune donnée transportée).
-- `AutoFillUnlocker` : déverrouillage dans l'extension, mêmes règles que l'app (biométrie si enrôlée et autorisée par `BiometricPolicy`, sinon mot de passe maître, compteur d'échecs partagé), session rendue au plus pour la durée d'une requête.
+- Pas de `AutoFillUnlocker` séparé (ruling X1) : l'extension réutilise `VaultSession`, qui porte déjà le déverrouillage (biométrie si enrôlée et autorisée par `BiometricPolicy`, sinon mot de passe maître, compteur d'échecs partagé, intégrité). La session est ouverte par requête, sans sync (`NoSync`), et verrouillée à la fin de la requête ; `AutoFillModel` en pilote le cycle.
 - `AutoFillSettings` (dans `VaultSettings`) : `quickTypeSuggestions` (vrai par défaut), `autofillTipDismissed`.
 
 `VaultEnvironment.live()` utilise `SharedContainer` (base, réglages) ; `VaultSession` appelle `IdentityStoreSync` après déverrouillage, après chaque écriture locale et après chaque changement distant appliqué, et observe `StoreChangeNotifier` pour recharger les résumés et signaler la sync.
@@ -134,7 +134,7 @@ Cause (jalon 2, E20) : l'heuristique d'iOS voit un champ sécurisé disparaître
 - **Base partagée** : même contenu chiffré qu'au jalon 2, dans le conteneur App Group. Deux processus écrivent ; l'intégrité reste celle du core (manifestes signés, écriture conditionnelle, état de l'appareil fusionné en 3.2).
 - **Passkeys** : clé privée P-256 générée par `aws-lc-rs` dans le Rust, stockée chiffrée dans l'item comme toute valeur, jamais transmise à Swift. Une passkey supprimée côté OnePass reste connue du site (pas de signal `reportUnknownPublicKeyCredential` au jalon 3).
 - **Hameçonnage** : le `rp_id` des passkeys est vérifié par le système (domaine de la page ou associated domains de l'app). Pour les mots de passe, OnePass ne pré-sélectionne que les correspondances PSL ; un choix hors correspondance demande un geste explicite ("Autres éléments").
-- `docs/security/README.md` gagne une section 11 "Jalon 3 : AutoFill et passkeys".
+- `docs/security/README.md` gagne une section "Jalon 3 : AutoFill et passkeys" (section 14 après la fusion avec les jalons 4, 6 et 7).
 
 ## 9. Tests
 
@@ -188,3 +188,37 @@ Ajouts seulement, sans reformatage : `apple/project.yml` (deux cibles, une clé 
 ## 14. Rulings d'exécution
 
 Décisions prises pendant l'implémentation, au même format.
+
+- Ruling X1: l'extension réutilise `VaultSession` au lieu d'un `AutoFillUnlocker` séparé (la section 4 est amendée) - mêmes règles de déverrouillage, mêmes compteurs d'échecs et même traitement des erreurs d'intégrité, sans code dupliqué - si `VaultSession` tire dans l'extension un comportement réservé à l'app (minuterie de verrouillage, sync), l'extension doit le neutraliser (`NoSync`, verrouillage à la fin de la requête).
+- Ruling X2: seule l'app rebase ; l'extension ouvre une session neuve par requête, ne rebase jamais et se verrouille à la fin - aucun processus longue durée ne garde en mémoire un `seq` abandonné par un rebase (le rebase persiste avec `force`, qui impose sa propre entrée) - une future surface qui garderait une session longue et rebaserait ailleurs pourrait réécrire un `seq` mort et bloquer un vault jusqu'au prochain verrouillage.
+- Ruling X3: les Logins `hide_from_autofill` sont exclus aussi de `autofill_candidates`, `include_all` compris - "caché de l'AutoFill" doit vouloir dire jamais proposé par l'extension - l'utilisateur ne peut pas choisir à la main un tel item dans l'extension (il l'ouvre dans l'app).
+- Ruling X4: avec `include_all`, les Logins `http` ou à règle de correspondance `Never` peuvent apparaître en "Autres éléments" - choix manuel explicite (section 5) - un utilisateur peut remplir volontairement un mot de passe dans un formulaire `http`.
+- Ruling X5: les ports sont ignorés dans la correspondance d'hôte - la spec parle d'hôtes - un Login pour `example.com:8443` est proposé sur `example.com`.
+- Ruling X6: la création d'une passkey avec un nom d'utilisateur vide dans un nouveau Login est refusée - l'identifiant d'un Login est requis et les sites WebAuthn envoient toujours `user.name` - un site qui enverrait un nom vide ne peut pas enregistrer de passkey dans OnePass.
+- Ruling X7: la longueur d'un mot de passe généré par `password_from_rules` est plafonnée à 64 dans tous les cas, et un `minlength` supérieur à 64 donne le repli - les règles viennent d'une page web, donc d'une entrée hostile, et la mémoire de l'extension est bornée - un site qui exige plus de 64 caractères reçoit le repli de 20 caractères et peut le refuser.
+- Ruling X8: `required` seul restreint l'ensemble autorisé aux classes requises, et `special` inclut l'espace - c'est la grammaire `passwordrules` d'Apple - un site qui refuse l'espace intérieur peut rejeter le mot de passe généré.
+- Ruling X9: un seul `Info.plist` pour l'extension sur les deux plateformes, `ProvidesTextToInsert` présent aussi sur macOS où le système l'ignore - un fichier de moins à maintenir - aucun (macOS n'a pas d'API d'insertion de texte).
+- Ruling X10: les mises à jour des README sont regroupées dans la tâche 12 - une seule passe de documentation - aucun.
+- Ruling X11: une notification `store-changed` signale aussi le coordinateur de sync quand l'app est verrouillée (les lignes `pending` partent sans déverrouillage) - l'extension écrit le plus souvent pendant que l'app est verrouillée - une tentative d'envoi de plus par notification.
+- Ruling X12: `VaultSession` annule sa tâche d'observation de la notification dans `deinit` - l'extension crée une session par requête dans un processus qui peut vivre longtemps - aucun.
+- Ruling X13: une requête passkey directe sans l'identifiant de credential de l'identité est refusée (`credentialNotFound`) au lieu de signer avec la première passkey du Login - ne jamais signer pour le mauvais compte - le contrôleur doit toujours passer l'identifiant de credential.
+- Ruling X14: une écriture refusée (cible absente de l'écran, vault masqué) laisse l'écran inchangé, sans message - l'interface n'offre que des cibles valides - un bug d'interface ressemblerait à un bouton mort plutôt qu'à une mauvaise écriture.
+- Ruling X15: une liste `supportedAlgorithms` vide vaut acceptation d'ES256 - c'est le défaut de WebAuthn - aucun pour les parties de confiance conformes.
+- Ruling X16: l'extension n'ouvre ni ne crée jamais le magasin quand le fichier de base partagé manque, et la migration met de côté (sans jamais la supprimer) une base partagée sans compte quand une ancienne base existe - un magasin vide créé le premier ferait perdre le vrai coffre - un fichier de plus reste à côté du magasin après un tel lancement.
+- Ruling X17: une migration qui échoue remet en place les fichiers annexes déjà déplacés avant de retomber sur l'ancien conteneur - ouvrir une base sans son WAL perd des écritures - aucun (un double échec, silencieux, reste possible).
+- Ruling X18: l'état du fournisseur affiché "Désactivé" dans le Simulateur est une limite du Simulateur (service d'état de `ASCredentialIdentityStore` injoignable, "No such process") - l'interrupteur des réglages du système prouve l'activation - l'affichage "Activé" n'est vérifié que sur un appareil.
+- Ruling X19: sur iOS 27, les lignes de la page Réglages n'ouvraient pas leur page (geste tactile d'activité sur `SettingsView`) ; remplacé par `onChange(of: path)` - la navigation fonctionne - un toucher dans une page de réglages ne repousse plus le verrouillage automatique.
+- Ruling X20: la clé de dédoublonnage des identités du système contient l'identifiant de credential (type, service, nom d'utilisateur, identifiant d'enregistrement, identifiant de credential) - sans lui, deux passkeys d'un même Login pour le même site et le même nom seraient fusionnées et l'une disparaîtrait de la feuille passkey - aucun.
+
+Points laissés ouverts (mineurs différés, à reprendre après la revue finale) :
+
+- `cbor_head` tronque en silence les longueurs de 65536 et plus : plafonner l'identifiant de credential à 1023 octets (maximum WebAuthn) ou refuser.
+- Pas de test de signature négatif ni de contrôle du hash du `rp_id` dans le test d'assertion ; l'effacement du PKCS#8 en mémoire n'est pas confirmé dans la documentation.
+- `rebase.rs` : la persistance finale avec `force` est redondante et peut faire reculer une écriture concurrente de l'extension (utiliser une persistance non forcée) ; la documentation sur l'épingle est périmée.
+- Une session verrouillée avec un identifiant mal formé rend `InvalidInput` au lieu de `Locked`.
+- La cible `uitest-autofill` du `Makefile` code en dur le chemin `Debug-iphonesimulator`.
+- Migration : doit tourner avant toute ouverture par `VaultSession` ou l'extension (câblage de la tâche 10) ; `resolve()` sonde à chaque appel (à mettre en cache) ; un sidecar de destination périmé n'est pas testé ; `isShared` vrai avec une suite nulle est permis ; l'échec du retour en arrière est silencieux (`try?`) et le repli pourrait ouvrir l'ancienne base sans son WAL.
+- L'extension recharge sa session après sa propre notification (sans conséquence).
+- Un `viewDidDisappear` tardif d'un contrôleur réutilisé peut abandonner la requête suivante ; `abandon()` ne signale pas une écriture encore en cours.
+- La carte d'activation est absente d'un Accueil vide ; double republication lors d'un rafraîchissement concurrent de l'état (anti-rebond, sans conséquence).
+- `VaultSessionTests` ligne 90 : `cleanUp` manquant.
