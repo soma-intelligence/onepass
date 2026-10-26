@@ -27,8 +27,8 @@ const WORDS: [Role, RegExp][] = [
   ["otp", /one time|\botp\b|verification code|code de verification|sms code|\b2fa\b|verifizierungscode|bestaetigungscode|codigo de verificacion|codice di verifica|totp/],
   ["username", /user ?name|\blogin\b|identifiant|benutzer|nutzername|usuario|nome utente|\butente\b|gebruikersnaam|utilizador|nom d utilisateur|\buid\b/],
   ["password", /passw|mot de passe|kennwort|contrasena|\bsenha\b|wachtwoord|parola chiave|\bpwd\b/],
-  ["given_name", /first ?name|given|prenom|vorname|voornaam|\bnombre\b|\bnome\b|\bnom d usage\b/],
-  ["family_name", /last ?name|surname|family|nom de famille|nachname|familienname|apellido|cognome|sobrenome|achternaam|^nom$/],
+  ["given_name", /first ?name|given|prenom|vorname|voornaam|\bnombre\b|\bnome\b/],
+  ["family_name", /last ?name|surname|family|nom de famille|nom d usage|nachname|familienname|apellido|cognome|sobrenome|achternaam|^nom$/],
   ["tel", /phone|telephone|\btel\b|telefon|telefono|mobile|\bhandy\b|celular|telefoon/],
   ["birth_date", /birth|naissance|geburt|nacimiento|nascita|nascimento|geboorte|\bbday\b|\bdob\b/],
   ["organization", /company|organi[sz]ation|societe|entreprise|\bfirma\b|unternehmen|empresa|azienda|bedrijf/],
@@ -37,6 +37,9 @@ const WORDS: [Role, RegExp][] = [
   ["city", /\bcity\b|\bville\b|\bstadt\b|\bort\b|ciudad|\bcitta\b|cidade|\bstad\b|\btown\b|localite/],
   ["country", /country|\bpays\b|\bland\b|\bpais\b|\bpaese\b/],
 ];
+
+// Words that turn a password field into a new-password (or confirmation) field.
+const NEW_PASSWORD = /confirm|repeat|retype|re ?enter|\bagain\b|\bnew\b|nouveau|nouvelle|neues|neue|wiederhol|bestatig|nueva|nuevo|repetir|nuova|nuovo|\bnovo\b|\bnova\b|bevestig|nieuw/;
 
 function normalize(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
@@ -51,12 +54,15 @@ export function classifyRole(f: RoleInput): Role | "unknown" {
     }
   }
   const type = (f.type ?? "").toLowerCase();
-  if (type === "password") return "password";
+  const hay = normalize([f.label, f.name, f.id].filter(Boolean).join(" | "));
+  if (type === "password") return NEW_PASSWORD.test(hay) ? "new_password" : "password";
   if (type === "email") return "email";
   if (type === "tel") return "tel";
-  const hay = normalize([f.label, f.name, f.id].filter(Boolean).join(" | "));
   for (const part of hay.split(" | ")) {
-    for (const [role, re] of WORDS) if (re.test(part)) return role;
+    for (const [role, re] of WORDS) {
+      if (!re.test(part)) continue;
+      return role === "password" && NEW_PASSWORD.test(part) ? "new_password" : role;
+    }
   }
   return "unknown";
 }

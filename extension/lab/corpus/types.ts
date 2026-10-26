@@ -15,7 +15,7 @@ export interface SampleForm { step: FormStep; fields: SampleField[]; buttons: st
 
 export interface Sample {
   source_url: string; host: string; category: Category; captured_at: string; extractor: 1;
-  status: "ok" | "skipped: robots" | `error: ${string}`;
+  status: "ok" | "skipped: robots" | "skipped: duplicate host" | `error: ${string}`;
   lang?: Lang; forms?: SampleForm[]; iframes?: { origin: string; sameSite: boolean }[];
   shadowFields?: number; webauthnCalls?: ("get" | "create")[]; providerButtons?: ProviderId[];
 }

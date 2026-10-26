@@ -5,6 +5,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { ProviderId } from "../gen/model.ts";
 import { isAllowed, parseRobots } from "./robots.ts";
+import type { RobotsRules } from "./robots.ts";
 import { classifyRole } from "./roles.ts";
 import { sanitizeText, sanitizeToken } from "./sanitize.ts";
 import { stableJson } from "./types.ts";
@@ -134,15 +135,28 @@ function hostSite(a: string, b: string): boolean {
   return base(a) === base(b);
 }
 
-async function fetchRobots(origin: string): Promise<string | null | "deny"> {
+type RobotsEntry = RobotsRules | null | "deny"; // null: no robots.txt (404), "deny": unreadable
+
+const robotsCache = new Map<string, RobotsEntry>();
+
+async function getRobots(origin: string): Promise<RobotsEntry> {
+  const hit = robotsCache.get(origin);
+  if (hit !== undefined) return hit;
+  let entry: RobotsEntry;
   try {
     const res = await fetch(origin + "/robots.txt", { headers: { "user-agent": USER_AGENT }, signal: AbortSignal.timeout(10_000) });
-    if (res.status === 404) return null;
-    if (!res.ok) return "deny";
-    return await res.text();
+    entry = res.status === 404 ? null : res.ok ? parseRobots(await res.text()) : "deny";
   } catch {
-    return "deny";
+    entry = "deny";
   }
+  robotsCache.set(origin, entry);
+  return entry;
+}
+
+async function urlAllowed(u: URL): Promise<boolean> {
+  const e = await getRobots(u.origin);
+  if (e === "deny") return false;
+  return e === null || isAllowed(e, ROBOTS_AGENT, u.pathname + u.search);
 }
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
@@ -159,7 +173,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { console.log(USAGE); return; }
   if (typeof args.sites !== "string" || typeof args.out !== "string") { console.error(USAGE); process.exitCode = 2; return; }
-  const delay = Number(args["delay-ms"] ?? 5000);
+  const delay = Math.max(5000, Number(args["delay-ms"] ?? 5000) || 5000); // never faster than 5 s
   const sites = JSON.parse(readFileSync(args.sites, "utf8")) as { url: string; category: Category }[];
   mkdirSync(args.out, { recursive: true });
 
@@ -168,33 +182,56 @@ async function main(): Promise<void> {
   const browser = await chromium.launch({ channel: "chromium" });
   const seen = new Set<string>();
   let first = true;
+  let dupes = 0;
   try {
     for (const site of sites) {
       const url = new URL(site.url);
       if (typeof args.only === "string" && url.hostname !== args.only) continue;
-      if (seen.has(url.hostname)) continue; // one page per host and pass
+      const base: Sample = { source_url: site.url, host: url.hostname, category: site.category, captured_at: new Date().toISOString(), extractor: 1, status: "ok" };
+      if (seen.has(url.hostname)) { // one page per host and pass: say so instead of dropping silently
+        const n = ++dupes;
+        writeFileSync(`${args.out}/${url.hostname}.dup${n}.json`, stableJson({ ...base, status: "skipped: duplicate host" }));
+        console.log(`${url.hostname}: skipped: duplicate host`);
+        continue;
+      }
       seen.add(url.hostname);
       if (!first) await new Promise((r) => setTimeout(r, delay));
       first = false;
-      const base: Sample = { source_url: site.url, host: url.hostname, category: site.category, captured_at: new Date().toISOString(), extractor: 1, status: "ok" };
       let sample: Sample;
-      const robotsText = await fetchRobots(url.origin);
-      if (robotsText === "deny" || (robotsText !== null && !isAllowed(parseRobots(robotsText), ROBOTS_AGENT, url.pathname + url.search))) {
+      if (!(await urlAllowed(url))) {
         sample = { ...base, status: "skipped: robots" };
       } else {
         const ctx = await browser.newContext({ userAgent: USER_AGENT, serviceWorkers: "block" });
+        const deadline = setTimeout(() => { ctx.close().catch(() => {}); }, 30_000); // covers goto, wait and evaluate
+        let blocked = false;
         try {
           const page = await ctx.newPage();
+          await page.route("**/*", async (route: any) => {
+            const req = route.request();
+            if (req.isNavigationRequest() && req.frame() === page.mainFrame() && !(await urlAllowed(new URL(req.url())))) {
+              blocked = true;
+              await route.abort();
+            } else {
+              await route.continue();
+            }
+          });
           await page.addInitScript(INIT_SCRIPT);
           await page.goto(site.url, { timeout: 30_000, waitUntil: "domcontentloaded" });
           await page.waitForTimeout(2500);
-          const raw: RawPage = await page.evaluate(pageExtract);
-          const calls: ("get" | "create")[] = await page.evaluate(() => (window as any).__lab_webauthn ?? []);
-          sample = build(base, raw, calls);
+          if (blocked || !(await urlAllowed(new URL(page.url())))) {
+            sample = { ...base, status: "skipped: robots" };
+          } else {
+            const raw: RawPage = await page.evaluate(pageExtract);
+            const calls: ("get" | "create")[] = await page.evaluate(() => (window as any).__lab_webauthn ?? []);
+            sample = build(base, raw, calls);
+          }
         } catch (e) {
-          sample = { ...base, status: `error: ${sanitizeText(e instanceof Error ? e.message.split("\n")[0] : String(e)) ?? "unknown"}` };
+          sample = blocked
+            ? { ...base, status: "skipped: robots" }
+            : { ...base, status: `error: ${sanitizeText(e instanceof Error ? e.message.split("\n")[0] : String(e)) ?? "unknown"}` };
         } finally {
-          await ctx.close();
+          clearTimeout(deadline);
+          await ctx.close().catch(() => {});
         }
       }
       writeFileSync(`${args.out}/${url.hostname}.json`, stableJson(sample));

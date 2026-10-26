@@ -38,7 +38,7 @@ function toRegex(pattern: string): RegExp {
 
 export function isAllowed(rules: RobotsRules, agent: string, path: string): boolean {
   const a = agent.toLowerCase();
-  let groups = rules.groups.filter((g) => g.agents.some((t) => t !== "*" && t !== "" && a.includes(t)));
+  let groups = rules.groups.filter((g) => g.agents.some((t) => t !== "*" && t !== "" && t === a));
   if (groups.length === 0) groups = rules.groups.filter((g) => g.agents.includes("*"));
   let best: RobotsRule | undefined;
   for (const g of groups) {

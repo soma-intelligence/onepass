@@ -22,6 +22,12 @@ describe("robots", () => {
     expect(isAllowed(r, "OtherBot", "/login")).toBe(false);
   });
 
+  it("agent_token_is_exact", () => {
+    const r = parseRobots("User-agent: lab\nDisallow: /\n\nUser-agent: *\nAllow: /\n");
+    expect(isAllowed(r, AGENT, "/login")).toBe(true);
+    expect(isAllowed(r, "lab", "/login")).toBe(false);
+  });
+
   it("wildcard_and_dollar", () => {
     const r = parseRobots("User-agent: *\nDisallow: /*/private\nDisallow: /exact$\n");
     expect(isAllowed(r, AGENT, "/a/private/x")).toBe(false);

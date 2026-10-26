@@ -8,15 +8,7 @@
     "category": "login"
   },
   {
-    "url": "https://www.reddit.com/login/",
-    "category": "login"
-  },
-  {
     "url": "https://news.ycombinator.com/login",
-    "category": "login"
-  },
-  {
-    "url": "https://www.dropbox.com/login",
     "category": "login"
   },
   {
@@ -25,10 +17,6 @@
   },
   {
     "url": "https://www.pinterest.com/login/",
-    "category": "login"
-  },
-  {
-    "url": "https://www.etsy.com/signin",
     "category": "login"
   },
   {
@@ -44,27 +32,11 @@
     "category": "login"
   },
   {
-    "url": "https://accounts.google.com/signin",
-    "category": "login"
-  },
-  {
     "url": "https://appleid.apple.com/sign-in",
     "category": "login"
   },
   {
     "url": "https://www.netflix.com/login",
-    "category": "login"
-  },
-  {
-    "url": "https://www.spotify.com/us/login/",
-    "category": "login"
-  },
-  {
-    "url": "https://www.twitch.tv/login",
-    "category": "login"
-  },
-  {
-    "url": "https://en.wikipedia.org/w/index.php?title=Special:UserLogin",
     "category": "login"
   },
   {
@@ -80,6 +52,26 @@
     "category": "login"
   },
   {
+    "url": "https://en.wikipedia.org/w/index.php?title=Special:UserLogin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.twitch.tv/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.dropbox.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.saucedemo.com/",
+    "category": "login"
+  },
+  {
+    "url": "https://the-internet.herokuapp.com/login",
+    "category": "login"
+  },
+  {
     "url": "https://www.amazon.fr/ap/signin",
     "category": "login"
   },
@@ -92,7 +84,7 @@
     "category": "login"
   },
   {
-    "url": "https://www.ovh.com/auth/",
+    "url": "https://login.orange.fr/",
     "category": "login"
   },
   {
@@ -100,7 +92,7 @@
     "category": "login"
   },
   {
-    "url": "https://login.orange.fr/",
+    "url": "https://www.ovh.com/auth/",
     "category": "login"
   },
   {
@@ -120,7 +112,7 @@
     "category": "login"
   },
   {
-    "url": "https://www.web.de/",
+    "url": "https://web.de/",
     "category": "login"
   },
   {
@@ -160,23 +152,11 @@
     "category": "login"
   },
   {
-    "url": "https://github.com/signup",
-    "category": "signup"
-  },
-  {
     "url": "https://www.reddit.com/register/",
     "category": "signup"
   },
   {
-    "url": "https://www.dropbox.com/register",
-    "category": "signup"
-  },
-  {
     "url": "https://www.etsy.com/register",
-    "category": "signup"
-  },
-  {
-    "url": "https://gitlab.com/users/sign_up",
     "category": "signup"
   },
   {
@@ -188,55 +168,71 @@
     "category": "signup"
   },
   {
-    "url": "https://www.booking.com/",
-    "category": "signup"
-  },
-  {
-    "url": "https://www.wordpress.com/start",
-    "category": "signup"
-  },
-  {
     "url": "https://account.proton.me/signup",
     "category": "signup"
   },
   {
-    "url": "https://stripe.com/docs/payments/checkout",
-    "category": "checkout"
+    "url": "https://signup.live.com/",
+    "category": "signup"
+  },
+  {
+    "url": "https://discord.com/register",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.tumblr.com/register",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.deezer.com/fr/register",
+    "category": "signup"
+  },
+  {
+    "url": "https://automationexercise.com/login",
+    "category": "signup"
+  },
+  {
+    "url": "https://demo.nopcommerce.com/register",
+    "category": "signup"
   },
   {
     "url": "https://checkout.stripe.dev/",
     "category": "checkout"
   },
   {
-    "url": "https://www.paypal.com/checkout",
+    "url": "https://stripe.dev/elements-examples/",
     "category": "checkout"
   },
   {
-    "url": "https://demo.spreedly.com/",
+    "url": "https://demo.opencart.com/index.php?route=checkout/checkout",
     "category": "checkout"
   },
   {
-    "url": "https://www.usps.com/",
+    "url": "https://tools.usps.com/zip-code-lookup.htm?byaddress",
     "category": "address"
   },
   {
-    "url": "https://www.laposte.fr/",
+    "url": "https://www.royalmail.com/find-a-postcode",
     "category": "address"
   },
   {
-    "url": "https://www.deutschepost.de/",
+    "url": "https://www.laposte.fr/outils/trouver-un-code-postal",
     "category": "address"
   },
   {
-    "url": "https://www.correos.es/",
+    "url": "https://www.correos.es/es/es/herramientas/codigos-postales",
     "category": "address"
+  },
+  {
+    "url": "https://www.nytimes.com/subscription",
+    "category": "identity"
   },
   {
     "url": "https://www.apple.com/shop/account/home",
     "category": "identity"
   },
   {
-    "url": "https://www.nytimes.com/subscription",
+    "url": "https://gravatar.com/connect/",
     "category": "identity"
   }
 ]

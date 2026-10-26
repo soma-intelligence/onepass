@@ -2,122 +2,122 @@
   "buttons": {
     "next": {
       "de": [
-        "fortfahren",
-        "weiter"
+        "Fortfahren",
+        "Weiter"
       ],
       "en": [
-        "continue",
-        "next"
+        "Continue",
+        "Next"
       ],
       "es": [
-        "continuar",
-        "siguiente"
+        "Continuar",
+        "Siguiente"
       ],
       "fr": [
-        "continuer",
-        "suivant",
-        "étape suivante"
+        "Continuer",
+        "Suivant",
+        "Étape suivante"
       ]
     },
     "passkey": {
       "de": [
-        "mit passkey anmelden",
-        "passkey verwenden"
+        "Mit Passkey anmelden",
+        "Passkey verwenden"
       ],
       "en": [
-        "sign in with a passkey",
-        "use passkey"
+        "Sign in with a passkey",
+        "Use passkey"
       ],
       "es": [
-        "iniciar sesión con una llave de acceso",
-        "usar llave de acceso"
+        "Iniciar sesión con una llave de acceso",
+        "Usar llave de acceso"
       ],
       "fr": [
-        "se connecter avec une clé d'accès",
-        "utiliser une clé d'accès"
+        "Se connecter avec une clé d'accès",
+        "Utiliser une clé d'accès"
       ]
     },
     "pay": {
       "de": [
-        "bezahlen",
-        "jetzt bezahlen",
-        "zahlungspflichtig bestellen"
+        "Bezahlen",
+        "Jetzt bezahlen",
+        "Zahlungspflichtig bestellen"
       ],
       "en": [
-        "pay",
-        "pay now",
-        "place order"
+        "Pay",
+        "Pay now",
+        "Place order"
       ],
       "es": [
-        "pagar",
-        "pagar ahora",
-        "realizar pedido"
+        "Pagar",
+        "Pagar ahora",
+        "Realizar pedido"
       ],
       "fr": [
-        "payer",
-        "payer maintenant",
-        "valider le paiement"
+        "Payer",
+        "Payer maintenant",
+        "Valider le paiement"
       ]
     },
     "save": {
       "de": [
-        "speichern",
-        "änderungen speichern"
+        "Speichern",
+        "Änderungen speichern"
       ],
       "en": [
-        "save",
-        "save changes",
-        "update"
+        "Save",
+        "Save changes",
+        "Update"
       ],
       "es": [
-        "guardar",
-        "guardar cambios"
+        "Guardar",
+        "Guardar cambios"
       ],
       "fr": [
-        "enregistrer",
-        "sauvegarder",
-        "valider"
+        "Enregistrer",
+        "Sauvegarder",
+        "Valider"
       ]
     },
     "signin": {
       "de": [
-        "anmelden",
-        "einloggen"
+        "Anmelden",
+        "Einloggen"
       ],
       "en": [
-        "log in",
-        "login",
-        "sign in"
+        "Log in",
+        "Login",
+        "Sign in"
       ],
       "es": [
-        "acceder",
-        "entrar",
-        "iniciar sesión"
+        "Acceder",
+        "Entrar",
+        "Iniciar sesión"
       ],
       "fr": [
-        "connexion",
-        "s'identifier",
-        "se connecter"
+        "Connexion",
+        "S'identifier",
+        "Se connecter"
       ]
     },
     "signup": {
       "de": [
-        "konto erstellen",
-        "registrieren"
+        "Konto erstellen",
+        "Registrieren"
       ],
       "en": [
-        "create account",
-        "register",
-        "sign up"
+        "Create account",
+        "Register",
+        "Sign up"
       ],
       "es": [
-        "crear cuenta",
-        "registrarse"
+        "Crear cuenta",
+        "Registrarse"
       ],
       "fr": [
-        "créer un compte",
-        "inscription",
-        "s'inscrire"
+        "Créer un compte",
+        "Inscription",
+        "S'inscrire"
       ]
     }
   },
@@ -144,24 +144,24 @@
       "autocompleteRate": 0.7,
       "labels": {
         "de": [
-          "adresse",
-          "anschrift",
-          "straße und hausnummer"
+          "Adresse",
+          "Anschrift",
+          "Straße und Hausnummer"
         ],
         "en": [
-          "address",
-          "address line 1",
-          "street address"
+          "Address",
+          "Address line 1",
+          "Street address"
         ],
         "es": [
-          "calle y número",
-          "dirección",
-          "dirección línea 1"
+          "Calle y número",
+          "Dirección",
+          "Dirección línea 1"
         ],
         "fr": [
-          "adresse",
-          "adresse postale",
-          "numéro et nom de rue"
+          "Adresse",
+          "Adresse postale",
+          "Numéro et nom de rue"
         ]
       },
       "tokens": [
@@ -178,20 +178,20 @@
       "autocompleteRate": 0.55,
       "labels": {
         "de": [
-          "adresszeile 2",
-          "adresszusatz"
+          "Adresszeile 2",
+          "Adresszusatz"
         ],
         "en": [
-          "address line 2",
-          "apartment, suite, etc."
+          "Address line 2",
+          "Apartment, suite, etc."
         ],
         "es": [
-          "dirección línea 2",
-          "piso, puerta, escalera"
+          "Dirección línea 2",
+          "Piso, puerta, escalera"
         ],
         "fr": [
-          "appartement, bâtiment",
-          "complément d'adresse"
+          "Appartement, bâtiment",
+          "Complément d'adresse"
         ]
       },
       "tokens": [
@@ -207,20 +207,20 @@
       "autocompleteRate": 0.5,
       "labels": {
         "de": [
-          "geburtsdatum",
-          "geburtstag"
+          "Geburtsdatum",
+          "Geburtstag"
         ],
         "en": [
-          "birthday",
-          "date of birth"
+          "Birthday",
+          "Date of birth"
         ],
         "es": [
-          "cumpleaños",
-          "fecha de nacimiento"
+          "Cumpleaños",
+          "Fecha de nacimiento"
         ],
         "fr": [
-          "date de naissance",
-          "né(e) le"
+          "Date de naissance",
+          "Né(e) le"
         ]
       },
       "tokens": [
@@ -236,24 +236,24 @@
       "autocompleteRate": 0.6,
       "labels": {
         "de": [
-          "cvc",
-          "prüfziffer",
-          "sicherheitscode"
+          "CVC",
+          "Prüfziffer",
+          "Sicherheitscode"
         ],
         "en": [
-          "cvc",
-          "cvv",
-          "security code"
+          "CVC",
+          "CVV",
+          "Security code"
         ],
         "es": [
-          "cvc",
-          "cvv",
-          "código de seguridad"
+          "CVC",
+          "CVV",
+          "Código de seguridad"
         ],
         "fr": [
-          "code de sécurité",
-          "cryptogramme visuel",
-          "cvv"
+          "Code de sécurité",
+          "Cryptogramme visuel",
+          "CVV"
         ]
       },
       "tokens": [
@@ -269,24 +269,24 @@
       "autocompleteRate": 0.6,
       "labels": {
         "de": [
-          "ablaufdatum",
-          "gültig bis",
-          "mm/jj"
+          "Ablaufdatum",
+          "Gültig bis",
+          "MM/JJ"
         ],
         "en": [
-          "expiration date",
-          "expiry date",
-          "mm/yy"
+          "Expiration date",
+          "Expiry date",
+          "MM/YY"
         ],
         "es": [
-          "caducidad",
-          "fecha de vencimiento",
-          "mm/aa"
+          "Caducidad",
+          "Fecha de vencimiento",
+          "MM/AA"
         ],
         "fr": [
-          "date d'expiration",
-          "expire le",
-          "mm/aa"
+          "Date d'expiration",
+          "Expire le",
+          "MM/AA"
         ]
       },
       "tokens": [
@@ -301,20 +301,20 @@
       "autocompleteRate": 0.6,
       "labels": {
         "de": [
-          "ablaufmonat",
-          "monat"
+          "Ablaufmonat",
+          "Monat"
         ],
         "en": [
-          "expiration month",
-          "month"
+          "Expiration month",
+          "Month"
         ],
         "es": [
-          "mes",
-          "mes de vencimiento"
+          "Mes",
+          "Mes de vencimiento"
         ],
         "fr": [
-          "mois",
-          "mois d'expiration"
+          "Mois",
+          "Mois d'expiration"
         ]
       },
       "tokens": [
@@ -329,20 +329,20 @@
       "autocompleteRate": 0.6,
       "labels": {
         "de": [
-          "ablaufjahr",
-          "jahr"
+          "Ablaufjahr",
+          "Jahr"
         ],
         "en": [
-          "expiration year",
-          "year"
+          "Expiration year",
+          "Year"
         ],
         "es": [
-          "año",
-          "año de vencimiento"
+          "Año",
+          "Año de vencimiento"
         ],
         "fr": [
-          "année",
-          "année d'expiration"
+          "Année",
+          "Année d'expiration"
         ]
       },
       "tokens": [
@@ -357,20 +357,20 @@
       "autocompleteRate": 0.6,
       "labels": {
         "de": [
-          "karteninhaber",
-          "name auf der karte"
+          "Karteninhaber",
+          "Name auf der Karte"
         ],
         "en": [
-          "cardholder name",
-          "name on card"
+          "Cardholder name",
+          "Name on card"
         ],
         "es": [
-          "nombre en la tarjeta",
-          "titular de la tarjeta"
+          "Nombre en la tarjeta",
+          "Titular de la tarjeta"
         ],
         "fr": [
-          "nom sur la carte",
-          "titulaire de la carte"
+          "Nom sur la carte",
+          "Titulaire de la carte"
         ]
       },
       "tokens": [
@@ -386,20 +386,20 @@
       "autocompleteRate": 0.65,
       "labels": {
         "de": [
-          "kartennummer",
-          "kreditkartennummer"
+          "Kartennummer",
+          "Kreditkartennummer"
         ],
         "en": [
-          "card number",
-          "credit card number"
+          "Card number",
+          "Credit card number"
         ],
         "es": [
-          "número de la tarjeta",
-          "número de tarjeta"
+          "Número de la tarjeta",
+          "Número de tarjeta"
         ],
         "fr": [
-          "numéro de carte",
-          "numéro de carte bancaire"
+          "Numéro de carte",
+          "Numéro de carte bancaire"
         ]
       },
       "tokens": [
@@ -415,20 +415,20 @@
       "autocompleteRate": 0.7,
       "labels": {
         "de": [
-          "ort",
-          "stadt"
+          "Ort",
+          "Stadt"
         ],
         "en": [
-          "city",
-          "town"
+          "City",
+          "Town"
         ],
         "es": [
-          "ciudad",
-          "localidad"
+          "Ciudad",
+          "Localidad"
         ],
         "fr": [
-          "commune",
-          "ville"
+          "Commune",
+          "Ville"
         ]
       },
       "tokens": [
@@ -444,20 +444,20 @@
       "autocompleteRate": 0.7,
       "labels": {
         "de": [
-          "land",
-          "land oder region"
+          "Land",
+          "Land oder Region"
         ],
         "en": [
-          "country",
-          "country or region"
+          "Country",
+          "Country or region"
         ],
         "es": [
-          "país",
-          "país o región"
+          "País",
+          "País o región"
         ],
         "fr": [
-          "pays",
-          "pays ou région"
+          "Pays",
+          "Pays ou région"
         ]
       },
       "tokens": [
@@ -472,26 +472,24 @@
       "autocompleteRate": 0.85,
       "labels": {
         "de": [
-          "e-mail",
-          "e-mail-adresse",
-          "email-adresse"
+          "E-Mail-Adresse"
         ],
         "en": [
-          "e-mail address",
-          "email",
-          "email address"
+          "E-mail address",
+          "Email",
+          "Email address"
         ],
         "es": [
-          "correo electrónico",
-          "dirección de correo electrónico",
-          "email"
+          "Correo electrónico",
+          "Dirección de correo electrónico",
+          "Email"
         ],
         "fr": [
-          "adresse e-mail",
-          "adresse email",
-          "courriel",
-          "e-mail",
-          "email"
+          "Adresse e-mail",
+          "Adresse email",
+          "Courriel",
+          "E-mail",
+          "Email"
         ]
       },
       "tokens": [
@@ -507,21 +505,21 @@
       "autocompleteRate": 0.7,
       "labels": {
         "de": [
-          "familienname",
-          "nachname"
+          "Familienname",
+          "Nachname"
         ],
         "en": [
-          "family name",
-          "last name",
-          "surname"
+          "Family name",
+          "Last name",
+          "Surname"
         ],
         "es": [
-          "apellido",
-          "apellidos"
+          "Apellido",
+          "Apellidos"
         ],
         "fr": [
-          "nom",
-          "nom de famille"
+          "Nom",
+          "Nom de famille"
         ]
       },
       "tokens": [
@@ -537,18 +535,18 @@
       "autocompleteRate": 0.7,
       "labels": {
         "de": [
-          "vorname"
+          "Vorname"
         ],
         "en": [
-          "first name",
-          "given name"
+          "First name",
+          "Given name"
         ],
         "es": [
-          "nombre",
-          "nombre de pila"
+          "Nombre",
+          "Nombre de pila"
         ],
         "fr": [
-          "prénom"
+          "Prénom"
         ]
       },
       "tokens": [
@@ -564,25 +562,25 @@
       "autocompleteRate": 0.7,
       "labels": {
         "de": [
-          "neues passwort",
-          "passwort bestätigen",
-          "passwort wiederholen"
+          "Neues Passwort",
+          "Passwort bestätigen",
+          "Passwort wiederholen"
         ],
         "en": [
-          "choose a password",
-          "confirm password",
-          "create a password",
-          "new password"
+          "Choose a password",
+          "Confirm password",
+          "Create a password",
+          "New password"
         ],
         "es": [
-          "confirmar contraseña",
-          "crea una contraseña",
-          "nueva contraseña"
+          "Confirmar contraseña",
+          "Crea una contraseña",
+          "Nueva contraseña"
         ],
         "fr": [
-          "choisissez un mot de passe",
-          "confirmer le mot de passe",
-          "nouveau mot de passe"
+          "Choisissez un mot de passe",
+          "Confirmer le mot de passe",
+          "Nouveau mot de passe"
         ]
       },
       "tokens": [
@@ -597,24 +595,24 @@
       "autocompleteRate": 0.4,
       "labels": {
         "de": [
-          "firma",
-          "organisation",
-          "unternehmen"
+          "Firma",
+          "Organisation",
+          "Unternehmen"
         ],
         "en": [
-          "company",
-          "company name",
-          "organization"
+          "Company",
+          "Company name",
+          "Organization"
         ],
         "es": [
-          "compañía",
-          "empresa",
-          "organización"
+          "Compañía",
+          "Empresa",
+          "Organización"
         ],
         "fr": [
-          "entreprise",
-          "nom de l'entreprise",
-          "société"
+          "Entreprise",
+          "Nom de l'entreprise",
+          "Société"
         ]
       },
       "tokens": [
@@ -630,26 +628,26 @@
       "autocompleteRate": 0.5,
       "labels": {
         "de": [
-          "bestätigungscode",
-          "einmalcode",
-          "verifizierungscode"
+          "Bestätigungscode",
+          "Einmalcode",
+          "Verifizierungscode"
         ],
         "en": [
-          "enter the code",
-          "one-time code",
-          "security code",
-          "verification code"
+          "Enter the code",
+          "One-time code",
+          "Security code",
+          "Verification code"
         ],
         "es": [
-          "código de seguridad",
-          "código de un solo uso",
-          "código de verificación"
+          "Código de seguridad",
+          "Código de un solo uso",
+          "Código de verificación"
         ],
         "fr": [
-          "code de sécurité",
-          "code de vérification",
-          "code reçu par sms",
-          "code à usage unique"
+          "Code de sécurité",
+          "Code de vérification",
+          "Code reçu par sms",
+          "Code à usage unique"
         ]
       },
       "tokens": [
@@ -666,20 +664,20 @@
       "autocompleteRate": 0.8,
       "labels": {
         "de": [
-          "kennwort",
-          "passwort"
+          "Kennwort",
+          "Passwort"
         ],
         "en": [
-          "password",
-          "your password"
+          "Password",
+          "Your password"
         ],
         "es": [
-          "contraseña",
-          "tu contraseña"
+          "Contraseña",
+          "Tu contraseña"
         ],
         "fr": [
-          "mot de passe",
-          "votre mot de passe"
+          "Mot de passe",
+          "Votre mot de passe"
         ]
       },
       "tokens": [
@@ -695,19 +693,19 @@
       "autocompleteRate": 0.75,
       "labels": {
         "de": [
-          "plz",
-          "postleitzahl"
+          "Plz",
+          "Postleitzahl"
         ],
         "en": [
-          "postal code",
-          "postcode",
-          "zip code"
+          "Postal code",
+          "Postcode",
+          "Zip code"
         ],
         "es": [
-          "código postal"
+          "Código postal"
         ],
         "fr": [
-          "code postal"
+          "Code postal"
         ]
       },
       "tokens": [
@@ -724,24 +722,24 @@
       "autocompleteRate": 0.65,
       "labels": {
         "de": [
-          "handynummer",
-          "telefon",
-          "telefonnummer"
+          "Handynummer",
+          "Telefon",
+          "Telefonnummer"
         ],
         "en": [
-          "mobile phone",
-          "phone",
-          "phone number"
+          "Mobile phone",
+          "Phone",
+          "Phone number"
         ],
         "es": [
-          "móvil",
-          "número de teléfono",
-          "teléfono"
+          "Móvil",
+          "Número de teléfono",
+          "Teléfono"
         ],
         "fr": [
-          "numéro de téléphone",
-          "téléphone",
-          "téléphone mobile"
+          "Numéro de téléphone",
+          "Téléphone",
+          "Téléphone mobile"
         ]
       },
       "tokens": [
@@ -757,27 +755,27 @@
       "autocompleteRate": 0.8,
       "labels": {
         "de": [
-          "anmeldename",
-          "benutzerkennung",
-          "benutzername",
-          "nutzername"
+          "Anmeldename",
+          "Benutzerkennung",
+          "Benutzername",
+          "Nutzername"
         ],
         "en": [
-          "login",
-          "user id",
-          "user name",
-          "username"
+          "Login",
+          "User ID",
+          "User name",
+          "Username"
         ],
         "es": [
-          "identificador",
-          "nombre de usuario",
-          "usuario"
+          "Identificador",
+          "Nombre de usuario",
+          "Usuario"
         ],
         "fr": [
-          "identifiant",
-          "identifiant de connexion",
-          "nom d'utilisateur",
-          "pseudo"
+          "Identifiant",
+          "Identifiant de connexion",
+          "Nom d'utilisateur",
+          "Pseudo"
         ]
       },
       "tokens": [

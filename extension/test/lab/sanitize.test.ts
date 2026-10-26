@@ -20,8 +20,15 @@ describe("sanitize", () => {
     expect(out.length).toBe(60);
   });
   it("long_token", () => {
-    expect(sanitizeToken("a".repeat(41))).toBe("<long>");
+    expect(sanitizeToken("ab-cd-".repeat(9))).toBe("<long>");
     expect(sanitizeToken("user_name")).toBe("user_name");
     expect(sanitizeToken(undefined)).toBeUndefined();
+  });
+  it("token_redacts_digits_email_and_opaque", () => {
+    expect(sanitizeToken("field_20251026")).toBe("<redacted>");
+    expect(sanitizeToken("jean@exemple.fr")).toBe("<redacted>");
+    expect(sanitizeToken("a1b2c3d4e5f6g7h8i9j0k1l2m3")).toBe("<redacted>");
+    expect(sanitizeToken("a".repeat(30))).toBe("<redacted>");
+    expect(sanitizeToken("input-12")).toBe("input-12");
   });
 });

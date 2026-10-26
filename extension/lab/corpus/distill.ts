@@ -4,6 +4,7 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Lang, ProviderId, Role } from "../gen/model.ts";
+import { classifyRole } from "./roles.ts";
 import { stableJson } from "./types.ts";
 import type { ButtonKind, Patterns, Sample } from "./types.ts";
 
@@ -27,8 +28,12 @@ function plain(s: string): string {
   return normLabel(s).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/['’\-_]/g, " ");
 }
 
+// Buttons naming an identity or payment provider say nothing about generic labels.
+const PROVIDER_NAME = /google|apple|microsoft|github|facebook|twitter|linkedin|paypal|amazon|\bx\b/;
+
 export function classifyButton(text: string): ButtonKind | undefined {
   const t = plain(text);
+  if (PROVIDER_NAME.test(t)) return undefined;
   for (const [kind, re] of BUTTON_WORDS) if (re.test(t)) return kind;
   return undefined;
 }
@@ -41,9 +46,26 @@ function addTo(map: Record<string, string[]>, lang: string, value: string): void
   (map[lang] ??= []).push(value);
 }
 
+function clean(s: string): string {
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/** Dedupes on the normalized key, keeps the smallest original casing, sorts by key. */
+function dedupe(values: string[]): string[] {
+  const best = new Map<string, string>();
+  for (const v of values) {
+    const c = clean(v);
+    if (!c) continue;
+    const k = normLabel(c);
+    const cur = best.get(k);
+    if (cur === undefined || c < cur) best.set(k, c);
+  }
+  return [...best.keys()].sort().map((k) => best.get(k)!);
+}
+
 function finish(map: Record<string, string[]>): Record<string, string[]> {
   const out: Record<string, string[]> = {};
-  for (const k of Object.keys(map).sort()) out[k] = [...new Set(map[k]!.map(normLabel))].filter(Boolean).sort();
+  for (const k of Object.keys(map).sort()) out[k] = dedupe(map[k]!);
   return out;
 }
 
@@ -92,7 +114,7 @@ export function distill(samples: Sample[], baseline: Patterns): Patterns {
         if (fld.role === "unknown" || fld.visibility !== "visible") continue;
         const r = fld.role;
         acSeen[r]++;
-        if (fld.autocomplete) acHit[r]++;
+        if (fld.autocomplete && classifyRole({ autocomplete: fld.autocomplete }) === r) acHit[r]++;
         if (fld.label && !SKIP.has(fld.label)) addTo(labels[r], lang, fld.label);
         for (const t of [fld.name, fld.id]) if (t && !SKIP.has(t)) tokens[r].push(t);
       }

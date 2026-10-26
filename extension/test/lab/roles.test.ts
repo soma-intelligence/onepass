@@ -17,6 +17,17 @@ describe("classifyRole", () => {
     expect(classifyRole({ type: "text", label: "Código postal" })).toBe("postal_code");
     expect(classifyRole({ type: "text", label: "PLZ" })).toBe("postal_code");
   });
+  it("password_words_make_new_password", () => {
+    for (const label of ["Confirmer le mot de passe", "New password", "Neues Passwort", "Nueva contraseña"]) {
+      expect(classifyRole({ type: "password", label })).toBe("new_password");
+    }
+    expect(classifyRole({ type: "text", label: "Nueva contraseña" })).toBe("new_password");
+    expect(classifyRole({ type: "password", label: "Mot de passe" })).toBe("password");
+  });
+  it("nom_d_usage_is_family_name", () => {
+    expect(classifyRole({ type: "text", label: "Nom d'usage" })).toBe("family_name");
+    expect(classifyRole({ type: "text", name: "nom_d_usage" })).toBe("family_name");
+  });
   it("unknown_stays_unknown", () => {
     expect(classifyRole({ type: "text", label: "Banana", name: "q7" })).toBe("unknown");
   });
