@@ -14,3 +14,6 @@ zeroize.workspace = true
 data-encoding.workspace = true
 argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
 unicode-normalization = "0.1.26"
+
+[dev-dependencies]
+proptest = "1.12"
