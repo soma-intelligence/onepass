@@ -75,6 +75,8 @@ public struct ItemCounts: Equatable, Sendable {
 public enum EmptyListReason: Equatable, Sendable {
     case noMatch
     case emptyLibrary
+    case emptyCategory
+    case emptyTag
     case noFavorites
     case emptyArchive
     case emptyTrash
@@ -85,7 +87,9 @@ public enum EmptyListReason: Equatable, Sendable {
             return
         }
         switch filter {
-        case .all, .vault, .category, .tag: self = .emptyLibrary
+        case .all, .vault: self = .emptyLibrary
+        case .category: self = .emptyCategory
+        case .tag: self = .emptyTag
         case .favorites: self = .noFavorites
         case .archive: self = .emptyArchive
         case .trash: self = .emptyTrash
@@ -93,5 +97,5 @@ public enum EmptyListReason: Equatable, Sendable {
     }
 
     /// The "Nouvel élément" button belongs to the empty state of a scope items can be created in.
-    public var offersNewItem: Bool { self == .emptyLibrary }
+    public var offersNewItem: Bool { self == .emptyLibrary || self == .emptyCategory }
 }

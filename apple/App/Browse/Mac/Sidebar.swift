@@ -359,8 +359,8 @@ private struct TitlebarHeightReader: NSViewRepresentable {
 
         private func report() {
             guard let window, let content = window.contentView else { return }
-            let top = content.bounds.height - window.contentLayoutRect.maxY
-            guard top > 0 else { return }
+            // No title bar over the content (full screen without toolbar): no offset.
+            let top = max(0, content.bounds.height - window.contentLayoutRect.maxY)
             DispatchQueue.main.async { [onChange] in onChange?(top) }
         }
     }

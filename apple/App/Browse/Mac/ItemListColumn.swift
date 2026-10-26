@@ -229,6 +229,16 @@ struct ItemListEmptyState: View {
                 actionTitle: String(localized: "Nouvel élément"), actionIdentifier: "list.empty.newItem",
                 action: newItem)
             .accessibilityIdentifier("list.empty.library")
+        case .emptyCategory:
+            EmptyState(
+                title: String(localized: "Aucun élément dans cette catégorie"), systemImage: "square.grid.2x2",
+                message: String(localized: "Les éléments de ce type apparaîtront ici."),
+                actionTitle: String(localized: "Nouvel élément"), actionIdentifier: "list.empty.newItem",
+                action: newItem)
+        case .emptyTag:
+            EmptyState(
+                title: String(localized: "Aucun élément avec ce tag"), systemImage: "tag",
+                message: String(localized: "Ajoute ce tag à un élément pour le retrouver ici."))
         case .noFavorites:
             EmptyState(
                 title: String(localized: "Aucun favori"), systemImage: "star",

@@ -37,10 +37,15 @@ struct LockView: View {
         }
         .task(id: scenePhase == .active) {
             // One automatic try per app activation (AppModel), not per window or per redraw.
-            guard scenePhase == .active, model.takeAutomaticBiometricAttempt() else { return }
-            await unlockWithBiometrics(automatic: true)
+            // The password field takes the focus (and the keyboard comes up) only when no automatic
+            // biometric attempt runs, or once it failed or was cancelled.
+            guard scenePhase == .active else { return }
+            if model.takeAutomaticBiometricAttempt(), session.canUseBiometrics {
+                await unlockWithBiometrics(automatic: true)
+            } else {
+                fieldFocused = true
+            }
         }
-        .onAppear { fieldFocused = true }
     }
 
     #if os(macOS)
