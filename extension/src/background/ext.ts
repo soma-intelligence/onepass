@@ -61,6 +61,8 @@ export interface BgExt {
       options: { frameId?: number; documentId?: string },
     ): Promise<unknown>;
     onRemoved: Event<(tabId: number) => void>;
+    /** The popup's active tab (url readable through activeTab / host permissions). */
+    query(q: { active: true; currentWindow: true }): Promise<{ id?: number; url?: string }[]>;
   };
   webNavigation: {
     getFrame(details: { tabId: number; frameId: number }): Promise<FrameDetails | null>;

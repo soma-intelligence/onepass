@@ -261,6 +261,34 @@ describe("message validation", () => {
     expect(parseUiToBg({ type: "popup_search", query: "q".repeat(300) })).toBeNull();
   });
 
+  it("validates the popup messages", () => {
+    expect(parseUiToBg({ type: "popup_generate", kind: "random", length: 24, symbols: true, x: 1 })).toEqual({
+      type: "popup_generate",
+      kind: "random",
+      length: 24,
+      symbols: true,
+    });
+    expect(parseUiToBg({ type: "popup_generate", kind: "smart" })).toEqual({ type: "popup_generate", kind: "smart" });
+    for (const bad of [
+      { type: "popup_generate", kind: "words" },
+      { type: "popup_generate", kind: "random", length: 3 },
+      { type: "popup_generate", kind: "random", length: 129 },
+      { type: "popup_generate", kind: "random", length: 10.5 },
+      { type: "popup_generate", kind: "random", symbols: "yes" },
+      { type: "popup_fill_generated", password: "" },
+      { type: "popup_item", itemId: "" },
+      { type: "popup_reveal" },
+    ]) {
+      expect(parseUiToBg(bad)).toBeNull();
+    }
+    // The popup never names a fill target: extra fields are dropped.
+    expect(parseUiToBg({ type: "popup_fill", itemId: "it_01", tabId: 3, origin: "https://evil.test" })).toEqual({
+      type: "popup_fill",
+      itemId: "it_01",
+    });
+    expect(parseUiToBg({ type: "popup_suggestions", origin: "https://evil.test" })).toEqual({ type: "popup_suggestions" });
+  });
+
   it("validates the menu, overlay and save page messages", () => {
     const token = "A".repeat(22);
     expect(parseUiToBg({ type: "menu_signin", token, itemId: "it_01", provider: "google", x: 1 })).toEqual({

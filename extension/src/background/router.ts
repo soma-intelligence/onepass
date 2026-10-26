@@ -215,6 +215,8 @@ function edits(v: unknown): SaveEdits {
 
 const itemId = (v: unknown) => str(v, MAX_ITEM_ID, 1);
 
+const GEN_KINDS: ReadonlySet<string> = new Set(["smart", "random", "memorable", "pin"]);
+
 /** A fully validated, rebuilt extension page message, or null. */
 export function parseUiToBg(m: unknown): UiToBg | null {
   try {
@@ -259,6 +261,8 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       }
       case "popup_status":
       case "popup_unlock":
+      case "popup_suggestions":
+      case "popup_history":
       case "popup_pair_start":
       case "popup_pair_approve":
       case "popup_pair_cancel":
@@ -267,7 +271,20 @@ export function parseUiToBg(m: unknown): UiToBg | null {
         return { type: "popup_search", query: str(o.query, MAX_QUERY) };
       case "popup_fill":
       case "popup_totp":
+      case "popup_item":
+      case "popup_reveal":
         return { type: o.type, itemId: itemId(o.itemId) };
+      case "popup_generate": {
+        const g: UiToBg = { type: o.type, kind: member(o.kind, GEN_KINDS) };
+        if (o.length !== undefined) {
+          if (typeof o.length !== "number" || !Number.isInteger(o.length) || o.length < 4 || o.length > 128) throw new Invalid();
+          g.length = o.length;
+        }
+        if (o.symbols !== undefined) g.symbols = bool(o.symbols);
+        return g;
+      }
+      case "popup_fill_generated":
+        return { type: o.type, password: str(o.password, MAX_PASSWORD, 1) };
       default:
         return null;
     }

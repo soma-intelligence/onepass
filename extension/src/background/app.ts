@@ -1,8 +1,10 @@
-// Wiring of the service worker: one session, the pairing flow, menu tokens,
-// the fill pipeline and the router with the handlers of this layer. Later
-// layers (popup, chain, save flow) add entries to `handlers`.
-import { BridgeClient, type FillField, type Summary } from "../bridge/client";
-import type { FormKind, ProviderId } from "../shared/messages";
+// Wiring of the service worker: one session, the pairing flow, menu,
+// overlay and save prompt tokens, the fill pipeline, the popup backend and
+// the router. The chain driver (Task 17) plugs in through `opts.chain`; the
+// save flow opens prompts with `saves.open`.
+import { BridgeClient, type Summary } from "../bridge/client";
+import type { ProviderId } from "../shared/messages";
+import { PageAnalyses } from "./analyses";
 import { type ChainDriver, idleChainDriver } from "./chain/types";
 import type { BgExt } from "./ext";
 import { type FillTarget, Filler } from "./fill";
@@ -12,6 +14,7 @@ import { NATIVE_HOST, nativeTransport } from "./native";
 import { NeverSave } from "./never-save";
 import { Overlays, removeFrame } from "./overlay";
 import { PairingFlow } from "./pairing";
+import { PopupBackend, loginFields } from "./popup";
 import { type Handlers, createRouter } from "./router";
 import { SavePrompts } from "./save";
 import { BgError, type BridgeLike, Session } from "./session";
@@ -26,20 +29,6 @@ export interface BackgroundOptions {
   browser?: string;
   /** Sign-in chain (Task 17); none by default. */
   chain?: ChainDriver;
-}
-
-/** Fields of a login item disclosed for each form kind (least disclosure). */
-function loginFields(kind: FormKind): FillField[] {
-  switch (kind) {
-    case "otp":
-      return ["totp"];
-    case "change_password":
-      return ["password"];
-    case "signup":
-      return ["username"];
-    default:
-      return ["username", "password"];
-  }
 }
 
 function targetOf(rec: MenuRecord): FillTarget {
@@ -60,6 +49,16 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const neverSave = new NeverSave(ext.storage.local);
   const overlays = new Overlays({ ext, area: store.session, session, chain, ...(opts.now ? { now: opts.now } : {}) });
   const saves = new SavePrompts({ ext, session, neverSave, ...(opts.now ? { now: opts.now } : {}) });
+  const analyses = new PageAnalyses(store.session);
+  const popup = new PopupBackend({
+    ext,
+    area: store.session,
+    session,
+    pairing,
+    filler,
+    analyses,
+    ...(opts.now ? { now: opts.now } : {}),
+  });
 
   const menuRecord = async (token: string, from: Parameters<MenuTokens["resolve"]>[1]): Promise<MenuRecord> => {
     const rec = await menus.resolve(token, from);
@@ -69,6 +68,10 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
 
   const handlers: Handlers = {
     cs: {
+      page_analysis: async (m, from) => {
+        await analyses.record(m.analysis, from);
+        return {};
+      },
       open_menu: async (m, from) => {
         if (!from.origin.startsWith("https://")) throw new BgError("insecure_origin");
         const token = await menus.register(from, { formRef: m.formRef, fieldRef: m.fieldRef, formKind: m.formKind });
@@ -143,17 +146,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       save_generate: async (m, from) => saves.generate(m.token, from),
       save_decide: async (m, from) => saves.decide(m.token, from, m.decision, m.edits),
       save_close: async (m, from) => saves.close(m.token, from),
-      popup_status: async () => session.request({ op: "status" }),
-      popup_unlock: async () => session.request({ op: "unlock" }),
-      popup_pair_start: async () => pairing.startPairing(),
-      popup_pair_approve: async () => {
-        await pairing.confirmPairing();
-        return {};
-      },
-      popup_pair_cancel: async () => {
-        pairing.cancelPairing();
-        return {};
-      },
+      ...popup.handlers(),
     },
   };
 
@@ -168,6 +161,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     neverSave,
     overlays,
     saves,
+    analyses,
+    popup,
     handlers,
     /** Register every listener; call synchronously at service worker start. */
     install(): void {
@@ -175,6 +170,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       menus.install(ext);
       overlays.tokens.install(ext);
       saves.tokens.install(ext);
+      analyses.install(ext);
       ext.runtime.onMessage.addListener(createRouter(ext.runtime, handlers));
     },
   };

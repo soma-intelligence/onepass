@@ -45,7 +45,9 @@ export type BgErrorCode =
   | "host_missing"
   | "timeout"
   | "refused"
-  | "expired";
+  | "expired"
+  /** No form of the needed kind in the active tab (popup fill). */
+  | "no_form";
 
 const APP_CODE_SET: ReadonlySet<string> = new Set(APP_CODES);
 

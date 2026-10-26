@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountMenu } from "../../src/ui/menu";
 import { mountOverlay } from "../../src/ui/overlay";
+import { mountPopup } from "../../src/ui/popup";
 import { mountSave } from "../../src/ui/save";
 import { FakeWorker, HASH, root } from "./helpers";
 
@@ -24,6 +25,7 @@ export const PAGES: [string, Mount][] = [
   ["menu", mountMenu],
   ["overlay", mountOverlay],
   ["save", mountSave],
+  ["popup", (r, d) => mountPopup(r, { send: d.send })],
 ];
 
 afterEach(() => vi.restoreAllMocks());

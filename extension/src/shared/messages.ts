@@ -119,8 +119,15 @@ export type UiToBg =
   | { type: "popup_status" }
   | { type: "popup_unlock" }
   | { type: "popup_search"; query: string }
+  | { type: "popup_suggestions" }
+  | { type: "popup_item"; itemId: string }
+  | { type: "popup_reveal"; itemId: string }
   | { type: "popup_fill"; itemId: string }
   | { type: "popup_totp"; itemId: string }
+  | { type: "popup_generate"; kind: "smart" | "random" | "memorable" | "pin"; length?: number; symbols?: boolean }
+  | { type: "popup_history" }
+  /** "Remplir" in the generator: into the new password fields of the active tab. */
+  | { type: "popup_fill_generated"; password: string }
   | { type: "popup_pair_start" }
   | { type: "popup_pair_approve" }
   | { type: "popup_pair_cancel" };

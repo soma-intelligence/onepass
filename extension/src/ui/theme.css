@@ -313,3 +313,6 @@ body.popup { width: 780px; height: 600px; overflow: hidden; }
 .toast { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); padding: 8px 14px; border-radius: 10px; background: var(--toast); color: #FFFFFF; font-size: 13px; }
 .save-foot { padding: 12px 16px; flex-shrink: 0; }
 .edit-head { flex-shrink: 0; padding-bottom: 12px; }
+/* Popup: 44 px minimum targets (spec 8.9). */
+.pp .btn, .pp .select, .pp .row, .pp .btn-icon { min-height: 44px; }
+.pp .btn-icon { min-width: 44px; }

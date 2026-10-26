@@ -95,7 +95,11 @@ export class FakeExt implements BgExt {
       return undefined;
     },
     onRemoved: this.onRemoved,
+    query: async () => (this.activeTab ? [{ ...this.activeTab }] : []),
   };
+
+  /** What `tabs.query({active, currentWindow})` returns. */
+  activeTab: { id?: number; url?: string } | null = null;
 
   readonly webNavigation: BgExt["webNavigation"] = {
     getFrame: async ({ tabId, frameId }) => {
