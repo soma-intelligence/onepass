@@ -11,7 +11,10 @@
 //!
 //! Item versions get their own blob ids so that writing a new version never
 //! overwrites the one the current manifest lists. Writes go record first,
-//! manifest second, cleanup last. A crash before the manifest leaves an
+//! manifest second, cleanup last. The manifest write is conditional on the
+//! stored manifest still being the one loaded (`put_if_version` on the
+//! seq): two writers racing on one vault cannot both win, the loser gets
+//! `Error::Conflict` instead of silently dropping the other's item. A crash before the manifest leaves an
 //! interrupted write, which loading ignores: a record that opens under the
 //! vault key and carries exactly the next version of a listed item, or
 //! version 1 of an item the manifest does not list. Any other record that
@@ -224,9 +227,20 @@ impl<S: RecordStore> Repository<S> {
         &self.device
     }
 
-    /// Every vault of the account, sorted by id. The vault list itself is
-    /// not authenticated yet: a store can hide a whole vault undetected. A key envelope without its
-    /// meta record is `InvalidFormat("vault meta")`.
+    /// Every vault of the account, sorted by id. A vault is returned only
+    /// when its key envelope opens, its meta opens under that key, and its
+    /// signed manifest verifies under the account signing key and opens
+    /// with that key: the envelope itself is not authenticated (anyone can
+    /// wrap a key to the account's public KEM key), the manifest signature
+    /// is what authenticates the vault key. History against the last
+    /// manifest seen is checked by `items` and the writes, not here.
+    ///
+    /// Errors: a key envelope without its meta record is
+    /// `InvalidFormat("vault meta")`; a vault without a manifest is
+    /// `ManifestMissingItem`; a vault this device already read
+    /// (`DeviceState::last_seen`) whose key record is gone is
+    /// `VaultMissing`. The vault list itself is not signed in M1: a store
+    /// can still hide a vault from a device that never read it.
     pub fn vaults(&self) -> Result<Vec<Vault>> {
         let mut out = Vec::new();
         for key in self.store.list(RecordKind::VaultKey)? {
@@ -234,7 +248,17 @@ impl<S: RecordStore> Repository<S> {
                 .store
                 .get(RecordKind::VaultMeta, key.id)?
                 .ok_or(Error::InvalidFormat("vault meta"))?;
-            out.push(Vault::open(&self.account, key.id, &key.data, &meta.data)?);
+            let vault = Vault::open(&self.account, key.id, &key.data, &meta.data)?;
+            self.read_manifest(&vault, None)?;
+            out.push(vault);
+        }
+        if self
+            .device
+            .last_seen
+            .keys()
+            .any(|id| !out.iter().any(|v| v.id == *id))
+        {
+            return Err(IntegrityError::VaultMissing.into());
         }
         out.sort_by_key(|v| v.id);
         Ok(out)
@@ -242,10 +266,11 @@ impl<S: RecordStore> Repository<S> {
 
     /// Create a vault with an empty signed manifest (seq 1), so that a
     /// vault without a manifest is always a storage fault. The key envelope
-    /// is written last: until then the vault is not listed.
+    /// is written last: until then the vault is not listed, and the device
+    /// remembers its manifest only once it is.
     pub fn create_vault(&mut self, meta: VaultMeta) -> Result<Vault> {
         let (vault, envelope, meta_blob) = Vault::create(&self.account, meta)?;
-        self.write_manifest(&vault, &Manifest::next(None, vault.id, vec![]))?;
+        let seen = self.put_manifest(&vault, None, vec![])?;
         for (kind, data) in [
             (RecordKind::VaultMeta, meta_blob),
             (RecordKind::VaultKey, envelope),
@@ -257,6 +282,7 @@ impl<S: RecordStore> Repository<S> {
                 data,
             })?;
         }
+        self.device.last_seen.insert(vault.id, seen);
         Ok(vault)
     }
 
@@ -286,10 +312,7 @@ impl<S: RecordStore> Repository<S> {
         self.put_item(vault.id, &rec)?;
         let mut entries = loaded.entries_without(item.id);
         entries.push(entry(&rec));
-        self.write_manifest(
-            vault,
-            &Manifest::next(Some(&loaded.manifest), vault.id, entries),
-        )?;
+        self.write_manifest(vault, &loaded.manifest, entries)?;
         if let Some(blob) = old {
             self.store.delete(RecordKind::Item, blob)?;
         }
@@ -302,10 +325,7 @@ impl<S: RecordStore> Repository<S> {
         let (blob, _) = *loaded.listed(item_id).ok_or(Error::NotFound)?;
         self.delete_ignored(&loaded, item_id)?;
         let entries = loaded.entries_without(item_id);
-        self.write_manifest(
-            vault,
-            &Manifest::next(Some(&loaded.manifest), vault.id, entries),
-        )?;
+        self.write_manifest(vault, &loaded.manifest, entries)?;
         self.store.delete(RecordKind::Item, blob)
     }
 
@@ -322,7 +342,8 @@ impl<S: RecordStore> Repository<S> {
     /// Move an item to another vault: the record re-sealed for `to`
     /// (version 1 there, or the next one if `to` already lists it), the
     /// manifest of `to`, the manifest of `from`, then the old record. A crash
-    /// between the two manifests leaves the item in both vaults.
+    /// between the two manifests leaves the item in both vaults, both
+    /// loadable; moving it again replaces the copy in `to` and heals it.
     pub fn move_item(&mut self, item_id: Id, from: &Vault, to: &Vault) -> Result<()> {
         if from.id == to.id {
             return Err(Error::InvalidFormat("move to the same vault"));
@@ -336,9 +357,9 @@ impl<S: RecordStore> Repository<S> {
         self.put_item(to.id, &moved)?;
         let mut entries = dst.entries_without(item_id);
         entries.push(entry(&moved));
-        self.write_manifest(to, &Manifest::next(Some(&dst.manifest), to.id, entries))?;
+        self.write_manifest(to, &dst.manifest, entries)?;
         let entries = src.entries_without(item_id);
-        self.write_manifest(from, &Manifest::next(Some(&src.manifest), from.id, entries))?;
+        self.write_manifest(from, &src.manifest, entries)?;
         self.delete_ignored(&src, item_id)?;
         self.store.delete(RecordKind::Item, blob)?;
         if let Some(b) = replaced {
@@ -373,17 +394,7 @@ impl<S: RecordStore> Repository<S> {
     /// with this vault's prefix that does not decode is
     /// `ManifestUnexpectedItem`. Then `verify_manifest` and `check_records`.
     fn load(&self, vault: &Vault) -> Result<Loaded> {
-        let rec = self
-            .store
-            .get(RecordKind::Manifest, vault.id)?
-            .ok_or(IntegrityError::ManifestMissingItem)?;
-        let sm: SignedManifest = decode_all(&rec.data).ok_or(Error::InvalidFormat("manifest"))?;
-        let manifest = verify_manifest(
-            vault,
-            &self.account.params.signing_pub,
-            &sm,
-            self.device.last_seen.get(&vault.id),
-        )?;
+        let manifest = self.read_manifest(vault, self.device.last_seen.get(&vault.id))?;
 
         let mut records = Vec::new();
         let mut ignored = Vec::new();
@@ -431,6 +442,18 @@ impl<S: RecordStore> Repository<S> {
         })
     }
 
+    /// The vault's manifest record, decoded and verified (`verify_manifest`).
+    /// No record is `ManifestMissingItem`, an undecodable one
+    /// `InvalidFormat("manifest")`.
+    fn read_manifest(&self, vault: &Vault, last_seen: Option<&SeenManifest>) -> Result<Manifest> {
+        let rec = self
+            .store
+            .get(RecordKind::Manifest, vault.id)?
+            .ok_or(IntegrityError::ManifestMissingItem)?;
+        let sm: SignedManifest = decode_all(&rec.data).ok_or(Error::InvalidFormat("manifest"))?;
+        verify_manifest(vault, &self.account.params.signing_pub, &sm, last_seen)
+    }
+
     fn delete_ignored(&mut self, loaded: &Loaded, item_id: Id) -> Result<()> {
         for blob in loaded.ignored_of(item_id) {
             self.store.delete(RecordKind::Item, blob)?;
@@ -449,18 +472,42 @@ impl<S: RecordStore> Repository<S> {
         })
     }
 
-    /// Sign and store the manifest, and remember it as the last one seen.
-    fn write_manifest(&mut self, vault: &Vault, m: &Manifest) -> Result<()> {
-        let sm = sign_manifest(vault, &self.account.keyset().signing, m)?;
-        let data = postcard::to_allocvec(&sm).map_err(|_| Error::InvalidFormat("manifest"))?;
-        self.store.put(Record {
-            id: vault.id,
-            kind: RecordKind::Manifest,
-            version: m.seq,
-            data,
-        })?;
-        self.device.last_seen.insert(vault.id, seen(m));
+    /// Sign and store the manifest following `prev` with `entries`, and
+    /// remember it as the last one seen.
+    fn write_manifest(
+        &mut self,
+        vault: &Vault,
+        prev: &Manifest,
+        entries: Vec<ManifestEntry>,
+    ) -> Result<()> {
+        let seen = self.put_manifest(vault, Some(prev), entries)?;
+        self.device.last_seen.insert(vault.id, seen);
         Ok(())
+    }
+
+    /// Sign and store the manifest following `prev` (or the first one),
+    /// only if the stored manifest is still `prev` (or there is none): the
+    /// record version is the seq. A lost race is `Error::Conflict`, and the
+    /// item record already written stays an ignored interrupted write.
+    fn put_manifest(
+        &mut self,
+        vault: &Vault,
+        prev: Option<&Manifest>,
+        entries: Vec<ManifestEntry>,
+    ) -> Result<SeenManifest> {
+        let m = Manifest::next(prev, vault.id, entries);
+        let sm = sign_manifest(vault, &self.account.keyset().signing, &m)?;
+        let data = postcard::to_allocvec(&sm).map_err(|_| Error::InvalidFormat("manifest"))?;
+        self.store.put_if_version(
+            Record {
+                id: vault.id,
+                kind: RecordKind::Manifest,
+                version: m.seq,
+                data,
+            },
+            prev.map(|p| p.seq),
+        )?;
+        Ok(seen(&m))
     }
 }
 
@@ -780,6 +827,185 @@ mod tests {
         let vaults = repo.vaults().unwrap();
         assert_eq!(vaults.len(), 1);
         assert_eq!(repo.items(&vaults[0]).unwrap(), vec![item]);
+    }
+
+    /// A store that runs `hook` once, just before the first write of a
+    /// record of kind `on`, and can refuse writes of one record.
+    struct Hooked<S> {
+        inner: S,
+        on: RecordKind,
+        hook: Option<Box<dyn FnOnce()>>,
+        refuse: Option<(RecordKind, Id)>,
+        refuse_kind: Option<RecordKind>,
+    }
+
+    impl<S> Hooked<S> {
+        fn new(inner: S) -> Hooked<S> {
+            Hooked {
+                inner,
+                on: RecordKind::Item,
+                hook: None,
+                refuse: None,
+                refuse_kind: None,
+            }
+        }
+
+        fn before_put(&mut self, r: &Record) -> Result<()> {
+            if self.refuse == Some((r.kind, r.id)) || self.refuse_kind == Some(r.kind) {
+                return Err(Error::Store("cut".into()));
+            }
+            if r.kind == self.on
+                && let Some(hook) = self.hook.take()
+            {
+                hook();
+            }
+            Ok(())
+        }
+    }
+
+    impl<S: RecordStore> RecordStore for Hooked<S> {
+        fn put(&mut self, r: Record) -> Result<()> {
+            self.before_put(&r)?;
+            self.inner.put(r)
+        }
+
+        fn put_if_version(&mut self, r: Record, expected: Option<u64>) -> Result<()> {
+            self.before_put(&r)?;
+            self.inner.put_if_version(r, expected)
+        }
+
+        fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+            self.inner.get(kind, id)
+        }
+
+        fn list(&self, kind: RecordKind) -> Result<Vec<Record>> {
+            self.inner.list(kind)
+        }
+
+        fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
+            self.inner.delete(kind, id)
+        }
+    }
+
+    #[test]
+    fn lost_race_is_a_conflict_not_a_silent_loss() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("onepass.sqlite");
+        let (repo, v) = fresh(SqliteStore::open(&path).unwrap());
+        let device = repo.device_state().clone();
+        drop(repo);
+        let open = |device: DeviceState| {
+            let store = SqliteStore::open(&path).unwrap();
+            Repository::unlock(store, "pw", &shared().secret_key, device).unwrap()
+        };
+
+        // Writer 1 saves `first` while writer 2 is between its load and its
+        // manifest write.
+        let first = login(&v, "first");
+        let mut writer1 = open(device.clone());
+        let (first_c, v1) = (first.clone(), vault_of(&writer1, v.id));
+        let mut store2 = Hooked::new(SqliteStore::open(&path).unwrap());
+        store2.hook = Some(Box::new(move || writer1.save_item(&v1, first_c).unwrap()));
+        let mut writer2 =
+            Repository::unlock(store2, "pw", &shared().secret_key, device.clone()).unwrap();
+        let v2 = vault_of(&writer2, v.id);
+        let second = login(&v, "second");
+        assert_eq!(writer2.save_item(&v2, second.clone()), Err(Error::Conflict));
+
+        // Only the winner is listed, and loading still works.
+        let mut reader = open(device);
+        let ids: Vec<Id> = reader.items(&v).unwrap().iter().map(|i| i.id).collect();
+        assert_eq!(ids, vec![first.id]);
+        // The loser retries and gets through.
+        let mut writer2 = open(reader.device_state().clone());
+        writer2.save_item(&v, second.clone()).unwrap();
+        assert_eq!(writer2.items(&v).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn vaults_requires_a_verified_manifest_and_every_known_vault() {
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let w = repo.create_vault(meta("B")).unwrap();
+        assert_eq!(repo.vaults().unwrap().len(), 2);
+
+        // A listed vault without its manifest.
+        let m = repo.store.get(RecordKind::Manifest, w.id).unwrap().unwrap();
+        repo.store.delete(RecordKind::Manifest, w.id).unwrap();
+        assert_eq!(
+            integrity(repo.vaults()),
+            IntegrityError::ManifestMissingItem
+        );
+        // The manifest of another vault served for this one.
+        let mut other = repo.store.get(RecordKind::Manifest, v.id).unwrap().unwrap();
+        other.id = w.id;
+        repo.store.put(other).unwrap();
+        assert_eq!(integrity(repo.vaults()), IntegrityError::Commitment);
+        repo.store.put(m).unwrap();
+
+        // A vault this device saw, hidden by the store.
+        let key = repo.store.get(RecordKind::VaultKey, w.id).unwrap().unwrap();
+        repo.store.delete(RecordKind::VaultKey, w.id).unwrap();
+        assert_eq!(integrity(repo.vaults()), IntegrityError::VaultMissing);
+        // A device that never saw it cannot tell (signed vault list: M2).
+        repo.device.last_seen.remove(&w.id);
+        assert_eq!(repo.vaults().unwrap().len(), 1);
+        repo.store.put(key).unwrap();
+        assert_eq!(repo.vaults().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn interrupted_create_vault_is_not_remembered() {
+        let (repo, _) = fresh(MemoryStore::new());
+        let device = repo.device_state().clone();
+        let mut store = Hooked::new(repo.store);
+        store.refuse_kind = Some(RecordKind::VaultKey);
+        let mut repo = Repository::unlock(store, "pw", &shared().secret_key, device).unwrap();
+        let seen = repo.device_state().last_seen.clone();
+        assert!(matches!(repo.create_vault(meta("B")), Err(Error::Store(_))));
+        // Manifest written, key never: the vault is not listed, and the
+        // device does not remember it, so this is not a hidden vault.
+        assert_eq!(repo.device_state().last_seen, seen);
+        repo.store.refuse_kind = None;
+        assert_eq!(repo.vaults().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn move_cut_between_the_two_manifests_leaves_the_item_in_both() {
+        let (repo, a) = fresh(MemoryStore::new());
+        let device = repo.device_state().clone();
+        let mut repo =
+            Repository::unlock(Hooked::new(repo.store), "pw", &shared().secret_key, device)
+                .unwrap();
+        let b = repo.create_vault(meta("B")).unwrap();
+        let item = login(&a, "alice");
+        repo.save_item(&a, item.clone()).unwrap();
+
+        // The manifest of `to` is written, the one of `from` is not.
+        repo.store.refuse = Some((RecordKind::Manifest, a.id));
+        assert!(matches!(
+            repo.move_item(item.id, &a, &b),
+            Err(Error::Store(_))
+        ));
+        repo.store.refuse = None;
+        let mut in_b = item.clone();
+        in_b.vault_id = b.id;
+        // Duplicated, never lost: both vaults load and list the item.
+        assert_eq!(repo.items(&a).unwrap(), vec![item.clone()]);
+        assert_eq!(repo.items(&b).unwrap(), vec![in_b.clone()]);
+
+        // Moving again heals it: the copy in `b` is replaced, `a` drops it.
+        repo.move_item(item.id, &a, &b).unwrap();
+        assert_eq!(repo.items(&a).unwrap(), vec![]);
+        assert_eq!(repo.items(&b).unwrap(), vec![in_b]);
+        assert_eq!(repo.store.list(RecordKind::Item).unwrap().len(), 1);
+    }
+
+    fn vault_of<S: RecordStore>(repo: &Repository<S>, id: Id) -> Vault {
+        repo.vaults()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.id == id)
+            .unwrap()
     }
 
     #[test]

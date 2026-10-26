@@ -19,6 +19,7 @@ use zeroize::Zeroizing;
 
 const DEVICE_FILE: &str = "device.bin";
 const STORE_FILE: &str = "vault.sqlite";
+const LOCK_FILE: &str = "lock";
 
 /// Global options shared by every command.
 pub struct Ctx {
@@ -35,6 +36,15 @@ impl Ctx {
         self.data_dir.join(STORE_FILE)
     }
 
+    pub fn lock_path(&self) -> PathBuf {
+        self.data_dir.join(LOCK_FILE)
+    }
+
+    /// Whether the data directory holds an account (device file and store).
+    pub fn has_account(&self) -> bool {
+        self.device_path().is_file() && self.store_path().is_file()
+    }
+
     pub fn banner(&self) {
         eprintln!(
             "DEV MODE: secrets stored unprotected in {}",
@@ -44,7 +54,8 @@ impl Ctx {
 }
 
 /// A failure with the exit code it maps to: 1 usage, 2 wrong password,
-/// 3 integrity, 4 not found. The message never holds a secret.
+/// 3 integrity, 4 not found, 5 concurrent write (retry). The message never
+/// holds a secret.
 #[derive(Debug)]
 pub struct CliError {
     pub code: i32,
@@ -79,6 +90,10 @@ impl From<Error> for CliError {
                 msg: "stored data failed verification, possible tampering".to_owned(),
             },
             Error::NotFound => CliError::not_found("not found"),
+            Error::Conflict => CliError {
+                code: 5,
+                msg: e.to_string(),
+            },
             Error::Validation(_) | Error::InvalidFormat(_) | Error::Crypto | Error::Store(_) => {
                 CliError::usage(e)
             }
@@ -89,6 +104,19 @@ impl From<Error> for CliError {
 impl From<std::io::Error> for CliError {
     fn from(e: std::io::Error) -> CliError {
         CliError::usage(format!("i/o error: {}", e.kind()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conflict_exits_5_and_stays_out_of_the_tampering_path() {
+        let e = stored::<()>(Err(Error::Conflict)).unwrap_err();
+        assert_eq!(e.code, 5);
+        assert_eq!(e.msg, "concurrent write, retry");
+        assert_eq!(CliError::from(Error::NotFound).code, 4);
     }
 }
 
@@ -128,6 +156,23 @@ pub fn stored<T>(r: onepass_core::Result<T>) -> Result<T, CliError> {
     })
 }
 
+/// Take the exclusive lock of the data directory (`<data-dir>/lock`, mode
+/// 0600), waiting for any other `onepass` process to release it. The lock
+/// is held until the returned file is dropped, and released by the system
+/// if the process dies. Every command that opens the store holds it for
+/// its whole run, readers included, so two commands never interleave.
+pub fn lock(ctx: &Ctx) -> Result<fs::File, CliError> {
+    let f = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(ctx.lock_path())?;
+    f.lock()?;
+    Ok(f)
+}
+
 /// Create the data directory (and parents) with mode 0700.
 pub fn ensure_dir(dir: &Path) -> Result<(), CliError> {
     fs::DirBuilder::new()
@@ -154,8 +199,10 @@ pub fn harden(ctx: &Ctx) -> Result<(), CliError> {
             set_mode(&p, 0o600)?;
         }
     }
-    if ctx.device_path().exists() {
-        set_mode(&ctx.device_path(), 0o600)?;
+    for p in [ctx.device_path(), ctx.lock_path()] {
+        if p.exists() {
+            set_mode(&p, 0o600)?;
+        }
     }
     Ok(())
 }
@@ -183,11 +230,8 @@ impl Session {
     /// Unlock the account of the data directory.
     pub fn open(ctx: &Ctx) -> Result<Session, CliError> {
         let device_path = ctx.device_path();
-        if !device_path.is_file() || !ctx.store_path().is_file() {
-            return Err(CliError::usage(format!(
-                "no account in {}; run `onepass account create` first",
-                ctx.data_dir.display()
-            )));
+        if !ctx.has_account() {
+            return Err(no_account(ctx));
         }
         let bytes = Zeroizing::new(fs::read(&device_path)?);
         let file: DeviceFile = postcard::from_bytes(&bytes)
@@ -225,12 +269,26 @@ impl Session {
     }
 }
 
-/// Unlock, run `f`, then save the device state. The state is saved even
-/// when `f` fails, because reading items updates the last manifest seen.
+fn no_account(ctx: &Ctx) -> CliError {
+    CliError::usage(format!(
+        "no account in {}; run `onepass account create` first",
+        ctx.data_dir.display()
+    ))
+}
+
+/// Lock the data directory, unlock, run `f`, then save the device state.
+/// The state is saved even when `f` fails, because reading items updates
+/// the last manifest seen. The lock is held until the state is saved.
 pub fn with_session<T>(
     ctx: &Ctx,
     f: impl FnOnce(&mut Repository<SqliteStore>) -> Result<T, CliError>,
 ) -> Result<T, CliError> {
+    // Checked before taking the lock, so no lock file lands in a directory
+    // that holds no account.
+    if !ctx.has_account() {
+        return Err(no_account(ctx));
+    }
+    let _lock = lock(ctx)?;
     let mut session = Session::open(ctx)?;
     let result = f(&mut session.repo);
     let saved = harden(ctx).and_then(|()| session.persist());

@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use super::{Record, RecordKind, RecordStore};
-use crate::{Id, Result};
+use crate::{Error, Id, Result};
 
 #[derive(Debug, Clone, Default)]
 pub struct MemoryStore {
@@ -18,6 +18,15 @@ impl MemoryStore {
 
 impl RecordStore for MemoryStore {
     fn put(&mut self, r: Record) -> Result<()> {
+        self.records.insert((r.kind, r.id), r);
+        Ok(())
+    }
+
+    fn put_if_version(&mut self, r: Record, expected: Option<u64>) -> Result<()> {
+        let current = self.records.get(&(r.kind, r.id)).map(|c| c.version);
+        if current != expected {
+            return Err(Error::Conflict);
+        }
         self.records.insert((r.kind, r.id), r);
         Ok(())
     }

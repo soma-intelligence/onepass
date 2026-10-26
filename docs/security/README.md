@@ -8,7 +8,13 @@ Le noyau n'a pas fait l'objet d'un audit externe. Il est prévu au jalon 8.
 
 **Adversaire principal : un stockage malveillant.** Le stockage (CloudKit, le futur serveur, le réseau, un disque volé) peut modifier, rejouer, supprimer, réordonner ou injecter n'importe quel enregistrement. Le client doit le détecter et refuser les données, sans jamais déchiffrer quoi que ce soit de forgé. La référence est l'étude ETH Zurich / USI de 2026 sur les gestionnaires cloud : chaque classe d'attaque de cette étude est un test (section 5).
 
-Le stockage ne voit en clair que : l'identifiant d'un enregistrement, son type, un numéro de version, la taille arrondie des blobs et, pour les paramètres de compte, les paramètres Argon2id, le sel et les clés publiques (aucun secret).
+Le stockage voit en clair exactement ceci :
+
+- pour tout enregistrement : son identifiant, son type, son numéro de version et la taille arrondie de ses blobs ;
+- pour un enregistrement d'item : un identifiant de blob neuf à chaque version, la version de l'item, les 16 octets d'id du vault en préfixe, et dans l'`ItemRecord` encodé l'`item_id` (stable d'une version à l'autre : les versions d'un même item sont reliables) et la version. Le stockage connaît donc le nombre d'items de chaque vault et le vault de chaque item ;
+- pour un manifeste : l'id du vault et le numéro de version de l'enregistrement, égal au `seq` du manifeste (nombre d'écritures du vault) ;
+- pour les clés et métadonnées de vault : l'id du vault ;
+- pour les paramètres de compte : les paramètres Argon2id, le sel et les clés publiques (aucun secret).
 
 **Ce que le noyau garantit face à ce stockage :**
 
@@ -16,7 +22,9 @@ Le stockage ne voit en clair que : l'identifiant d'un enregistrement, son type, 
 - détection d'un item supprimé, injecté, rejoué dans une ancienne version, déplacé vers un autre vault ou interverti avec un autre ;
 - détection d'un retour en arrière du vault et d'une bifurcation de l'historique du manifeste ;
 - refus de paramètres Argon2id affaiblis ou non signés ;
-- refus d'une clé de vault substituée.
+- refus d'une clé de vault substituée : l'enveloppe KEM n'est pas authentifiée, mais un vault n'est listé que si son manifeste signé s'ouvre avec la clé reçue, et aucune écriture n'a lieu sans ce manifeste vérifié ;
+- détection d'un vault entier masqué, pour un vault que l'appareil a déjà lu (`VaultMissing`) ;
+- aucune perte silencieuse entre deux écritures concurrentes : l'écriture du manifeste est conditionnelle, le perdant reçoit `Conflict` et rien de ce qu'il a écrit n'est listé.
 
 **Hors périmètre au jalon 1 :**
 
@@ -24,6 +32,7 @@ Le stockage ne voit en clair que : l'identifiant d'un enregistrement, son type, 
 - un attaquant qui lit la mémoire du processus : les secrets sont effacés à la libération (`zeroize`) mais les pages ne sont pas verrouillées (`mlock` n'est pas implémenté) ;
 - la CLI de développement, qui stocke la Secret Key en clair dans `device.bin` (voir `core/README.md`) ;
 - l'analyse de trafic : la taille des blobs est arrondie par paliers, pas masquée ;
+- la liste des vaults du compte n'est pas signée (limite connue du jalon 1) : un stockage peut masquer un vault entier à un appareil qui ne l'a jamais lu. Un appareil qui l'a déjà lu le détecte (`VaultMissing`), et un vault planté est refusé faute de manifeste signé. Une liste de vaults signée est prévue au jalon 2 ;
 - l'appairage d'appareils, le partage entre membres, la révocation, les pièces jointes (le type de blob `Attachment` est réservé, sans flux associé), le modèle formel Tamarin ou ProVerif.
 
 **Dépendances de confiance :** `aws-lc-rs` (AES-256-GCM-SIV, HMAC, HKDF, SHA-2, SHA-3, ML-KEM-1024, X25519, ML-DSA-87, Ed25519, générateur aléatoire du système), `argon2` (Argon2id), `slh-dsa` (SLH-DSA-SHA2-256s, version `=0.1.0`), `postcard` (encodage). `libcrux` sert uniquement de référence indépendante dans les tests différentiels.
@@ -80,6 +89,8 @@ Sert à envelopper une clé de vault pour le compte. Clé publique : ML-KEM-1024
 
 Le blob interne est de type `VaultKey`, de schéma 1, sans vault_id, avec pour id de blob les 16 premiers octets de `SHA-256(contexte)`. Le contexte d'un vault est `"vault:" || vault_id`. Une enveloppe n'est donc valide que pour son vault. Longueur attendue fixe : toute autre longueur est refusée.
 
+L'enveloppe n'est pas authentifiée : la clé publique KEM du compte est en clair dans les paramètres, n'importe qui peut donc envelopper une clé de son choix pour le compte. La clé de vault est authentifiée par le manifeste signé du vault (section 3.7), scellé avec elle.
+
 ### 3.4 Signatures (`crypto/sign.rs`)
 
 Tous les schémas signent le même message encadré : `"onepass/sig/v1" || len(domaine) (u16 big-endian) || domaine || message`. ML-DSA et SLH-DSA utilisent la variante pure avec un contexte FIPS vide.
@@ -102,7 +113,8 @@ Tous les schémas signent le même message encadré : `"onepass/sig/v1" || len(d
 - **Clé de vault** : 256 bits aléatoires, enveloppée par la clé KEM du compte (contexte `"vault:" || vault_id`). Les métadonnées du vault (nom, icône, couleur, voyage, MCP) sont `postcard(VaultMeta)` scellé par la clé de vault, type `VaultMeta`, id de blob = id du vault.
 - **Clé d'item** : 256 bits aléatoires par item et par écriture. Elle est scellée par la clé de vault (type `ItemKey`, 32 octets de clair), `blob_id = item_id`, `vault_id = vault`, schéma 1.
 - **Contenu d'item** : `postcard((version, item))` scellé par la clé d'item (type `Item`), mêmes données associées. La version et l'item (avec son `vault_id`) sont dans le clair scellé. À l'ouverture, la version, l'id d'item et l'id de vault internes doivent égaler ceux de l'enregistrement et du vault, sinon `WrongContext`.
-- **Déplacement** : la clé d'item est conservée, réenveloppée par le vault cible, et le blob d'item est rescellé (le `vault_id` est dans les données associées et dans le clair).
+- **Déplacement** : la clé d'item est conservée, réenveloppée par le vault cible, et le blob d'item est rescellé (le `vault_id` est dans les données associées et dans le clair). Le manifeste du vault cible est écrit avant celui du vault source : une coupure entre les deux laisse l'item dans les deux vaults (dupliqué, jamais perdu), et déplacer l'item de nouveau répare l'état.
+- **Liste des vaults** (`Repository::vaults`) : un vault n'est rendu que si son enveloppe s'ouvre, ses métadonnées s'ouvrent avec la clé obtenue, et son manifeste signé se vérifie avec la clé de signature du compte et s'ouvre avec cette même clé (sinon l'erreur de cette étape, par exemple `Commitment` pour une clé substituée, `Signature` pour un manifeste forgé, `ManifestMissingItem` sans manifeste). Un vault que l'appareil a déjà lu et dont la clé a disparu est `VaultMissing`. L'historique (retour en arrière, bifurcation) est vérifié à la lecture des items et avant chaque écriture.
 
 ### 3.7 Manifeste signé et intégrité (`manifest.rs`, `repo.rs`)
 
@@ -113,11 +125,12 @@ Chaque vault a un manifeste : `vault_id`, `seq`, `prev_hash`, entrées triées s
 - **Scellement** : `postcard(manifeste)` scellé par la clé de vault (type `Manifest`, `blob_id = vault_id`, schéma 1), puis la **signature hybride porte sur le blob scellé** (domaine `"manifest"`).
 - **Vérification, dans cet ordre** : signature, ouverture avec la clé de vault, décodage, vault_id (`WrongContext`), tri strict (`InvalidFormat`), racine de Merkle (`ManifestItemMismatch`), puis historique contre le dernier manifeste vu par l'appareil (seq et hash) : un seq plus ancien est refusé, le même seq doit être exactement le même manifeste (sinon bifurcation), le seq suivant doit se chaîner par `prev_hash`, un écart plus grand est accepté (impossible à chaîner). Échec : `ManifestRollback`.
 - **Enregistrements contre manifeste** (`check_records`) : chaque entrée doit avoir exactement un enregistrement de même version et même hash (`ManifestMissingItem`, `ManifestItemMismatch`), et aucun autre enregistrement ne doit exister (`ManifestUnexpectedItem`).
+- **Écritures concurrentes** : le manifeste est écrit seulement si le manifeste stocké est encore celui qui a été chargé (`put_if_version`, la version de l'enregistrement est le `seq` ; en SQLite une seule instruction `UPDATE ... WHERE version = ?`, ou un `INSERT` sans remplacement pour le premier). Le perdant d'une course reçoit `Conflict` ("concurrent write, retry") ; l'enregistrement d'item qu'il a déjà écrit reste une écriture interrompue, ignorée. La CLI prend en plus un verrou exclusif sur le dossier de données pour toute commande.
 - **Écritures interrompues et restes** : l'enregistrement est écrit avant le manifeste, et l'ancienne version n'est supprimée qu'à la fin. Deux restes sont donc tolérés, jamais plus. (a) Écriture coupée avant le manifeste : un enregistrement qui s'ouvre avec la clé de vault et porte exactement la version suivante d'un item listé, ou la version 1 d'un item non listé, est ignoré. (b) Nettoyage coupé après le manifeste : une version plus ancienne d'un item listé est ignorée seulement si l'enregistrement exact du manifeste (même version, même hash) est présent à côté. Servie à la place de l'enregistrement courant, elle reste une erreur (`ManifestItemMismatch`). Tout autre écart est une erreur.
 
 ### 3.8 Erreurs
 
-Aucun message d'erreur ne contient de secret ni de contenu d'item (`Error`, `IntegrityError`, `ValidationError` ne portent que des libellés fixes ou un nom de champ). La CLI ramène toute erreur d'intégrité à un seul message générique.
+Aucun message d'erreur ne contient de secret ni de contenu d'item (`Error`, `IntegrityError`, `ValidationError` ne portent que des libellés fixes ou un nom de champ). La CLI ramène toute erreur d'intégrité à un seul message générique. `Conflict` n'est pas une erreur d'intégrité : rien n'a été écrasé, il suffit de recommencer (code de sortie 5 de la CLI).
 
 ## 4. Validation des entrées
 
@@ -138,8 +151,10 @@ Les parseurs qui lisent des données non fiables sont fuzzés (`core/fuzz`) : ou
 | Ancienne version d'un item rejouée | `ManifestItemMismatch` |
 | Item servi sous le préfixe d'un autre vault | `ManifestUnexpectedItem` |
 | Contenus de deux items intervertis | `ManifestItemMismatch` |
-| Enveloppe de clé de vault remplacée par celle de l'attaquant | `Commitment` |
-| Manifeste signé par une autre clé | `Signature` |
+| Enveloppe de clé de vault chiffrée pour la clé KEM de l'attaquant | `Commitment` (ouverture de l'enveloppe, au listage des vaults) |
+| Clé de vault de l'attaquant enveloppée pour la clé KEM publique de la victime, métadonnées rescellées avec elle | `Commitment` (ouverture du manifeste, au listage des vaults) ; une écriture sur ce vault est refusée avant toute écriture dans le stockage |
+| Vault déjà lu par l'appareil, masqué dans la liste | `VaultMissing` |
+| Manifeste signé par une autre clé | `Signature` (au listage des vaults et à la lecture des items) |
 | Blob d'item tronqué | `ManifestItemMismatch` |
 
 **Autres tests de sécurité :**
@@ -161,4 +176,5 @@ Les parseurs qui lisent des données non fiables sont fuzzés (`core/fuzz`) : ou
 5. **Plafond Argon2id** : le code borne les paramètres venant du stockage à 2 GiB, 16 passes, 16 voies avant de calculer, pour qu'un serveur hostile ne puisse pas épuiser l'appareil. La spec ne le mentionne pas.
 6. **Modèle formel** : la spec prévoit un modèle Tamarin ou ProVerif vérifié en CI. Il n'existe pas encore.
 7. **CLI** : la section 9.1 de la spec prévoit un passage par l'app Mac avec Touch ID. Au jalon 1 la CLI est en mode développement autonome (Secret Key en clair dans `device.bin`), écart assumé.
-8. **Fuzzing** : la spec dit "tous les parseurs". Le jalon 1 fuzze les quatre points d'entrée listés en section 4, pas les parseurs d'import et d'export, qui n'existent pas encore.
+8. **Liste des vaults non signée** : la spec (4.4) protège chaque vault par son manifeste, pas la liste des vaults du compte. Au jalon 1 cette liste n'est pas authentifiée : un vault planté est refusé (pas de manifeste signé valide), un vault déjà lu par l'appareil puis masqué est détecté (`VaultMissing`), mais un vault jamais lu par l'appareil peut être masqué sans détection. Liste signée prévue au jalon 2.
+9. **Fuzzing** : la spec dit "tous les parseurs". Le jalon 1 fuzze les quatre points d'entrée listés en section 4, pas les parseurs d'import et d'export, qui n'existent pas encore.

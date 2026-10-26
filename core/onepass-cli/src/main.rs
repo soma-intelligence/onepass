@@ -3,7 +3,9 @@
 //! Dev mode: the Secret Key sits in clear in `<data-dir>/device.bin`, and
 //! every command that touches the data directory says so on stderr.
 //! Exit codes: 0 success, 1 usage error, 2 wrong password, 3 integrity
-//! error, 4 not found.
+//! error, 4 not found, 5 concurrent write (nothing was saved, retry).
+//! Commands that open the data directory hold its lock (`<data-dir>/lock`)
+//! for their whole run, so 5 only comes from a writer that bypasses it.
 
 mod commands;
 mod session;

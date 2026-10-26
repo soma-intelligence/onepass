@@ -483,3 +483,40 @@ fn device_state_detects_a_restored_old_database() {
     assert_eq!(rolled.code, 3, "{}", rolled.stderr);
     assert!(rolled.stderr.contains("possible tampering"));
 }
+
+#[test]
+fn parallel_writers_lose_nothing() {
+    let tmp = fresh();
+    let dir = tmp.path();
+    let children: Vec<_> = (0..6)
+        .map(|n| {
+            let mut c = std::process::Command::new(assert_cmd::cargo::cargo_bin("onepass"));
+            c.env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
+                .env("ONEPASS_PASSWORD", PASSWORD)
+                .env("ONEPASS_DEV_FAST_KDF", "1")
+                .arg("--data-dir")
+                .arg(dir)
+                .args(["item", "create", "login", "--title"])
+                .arg(format!("parallel {n}"))
+                .args(["--field", "username=u"])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            c.spawn().unwrap()
+        })
+        .collect();
+    for child in children {
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let list = run(dir, &["item", "list", "--json"]);
+    assert_eq!(list.code, 0, "{}", list.stderr);
+    let rows: serde_json::Value = serde_json::from_str(&list.stdout).unwrap();
+    // The template's GitHub item plus the six.
+    assert_eq!(rows.as_array().unwrap().len(), 7, "{}", list.stdout);
+    assert!(dir.join("lock").exists());
+}

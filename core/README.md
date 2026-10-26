@@ -86,7 +86,9 @@ onepass totp "Exemple"
 onepass generate --words 5
 ```
 
-Options globales : `--data-dir <dossier>` (défaut `~/.onepass-dev`) et `--json`. Codes de sortie : 0 succès, 1 erreur d'usage, 2 mauvais mot de passe, 3 échec d'intégrité (données stockées altérées), 4 introuvable.
+Options globales : `--data-dir <dossier>` (défaut `~/.onepass-dev`) et `--json`. Codes de sortie : 0 succès, 1 erreur d'usage, 2 mauvais mot de passe, 3 échec d'intégrité (données stockées altérées), 4 introuvable, 5 écriture concurrente (`concurrent write, retry` : rien n'a été enregistré, relancez la commande).
+
+Chaque commande qui ouvre le dossier de données prend un verrou exclusif sur `<data-dir>/lock` (droits `0600`) pendant toute son exécution, lectures comprises : deux commandes lancées en parallèle s'exécutent l'une après l'autre. Le code 5 ne sort donc que si un autre programme écrit dans la base sans ce verrou ; le noyau refuse alors l'écriture perdante au lieu de perdre un item en silence.
 
 ### Mode développement : limites
 

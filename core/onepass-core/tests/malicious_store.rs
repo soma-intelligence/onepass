@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 
 use onepass_core::account::{Account, AccountParams, NewAccount};
-use onepass_core::crypto::{KdfParams, SymmetricKey, random_array, wrap_key};
+use onepass_core::crypto::{Aad, BlobKind, KdfParams, SymmetricKey, random_array, seal, wrap_key};
 use onepass_core::manifest::{
     Manifest, SignedManifest, merkle_root, sign_manifest, verify_manifest,
 };
@@ -38,18 +38,26 @@ enum Attack {
     SwapItemsAcrossVaults { record: Id, to: Id },
     /// Exchange the `blob` fields of two item records.
     SwapItemBlobs { a: Id, b: Id },
-    /// Serve this key envelope for the vault.
-    ReplaceVaultKey { vault: Id, envelope: Vec<u8> },
+    /// Serve this key envelope for the vault, and this meta blob if given.
+    ReplaceVaultKey {
+        vault: Id,
+        envelope: Vec<u8>,
+        meta: Option<Vec<u8>>,
+    },
+    /// Hide the key envelope of this vault from `get` and `list`.
+    HideVault { vault: Id },
     /// Serve this manifest record, signed by another key.
     ForgeManifest { manifest: Record },
     /// Drop the last byte of the item record's `blob`.
     TruncateBlob { record: Id },
 }
 
-/// A store that keeps records honestly and lies when serving them.
+/// A store that keeps records honestly and lies when serving them. Every
+/// write is logged as `(kind, id)`.
 struct EvilStore {
     inner: MemoryStore,
     attack: Attack,
+    puts: Rc<RefCell<Vec<(RecordKind, Id)>>>,
 }
 
 fn decode_item(data: &[u8]) -> (Id, ItemRecord) {
@@ -86,9 +94,21 @@ impl EvilStore {
                 rec.blob = decode_item(&other.data).1.blob;
                 r.data = encode_item(vault, &rec);
             }
-            (Attack::ReplaceVaultKey { vault, envelope }, K::VaultKey) if *vault == r.id => {
-                r.data = envelope.clone()
-            }
+            (
+                Attack::ReplaceVaultKey {
+                    vault, envelope, ..
+                },
+                K::VaultKey,
+            ) if *vault == r.id => r.data = envelope.clone(),
+            (
+                Attack::ReplaceVaultKey {
+                    vault,
+                    meta: Some(meta),
+                    ..
+                },
+                K::VaultMeta,
+            ) if *vault == r.id => r.data = meta.clone(),
+            (Attack::HideVault { vault }, K::VaultKey) if *vault == r.id => return None,
             (Attack::TruncateBlob { record }, K::Item) if *record == r.id => {
                 let (vault, mut rec) = decode_item(&r.data);
                 rec.blob.pop();
@@ -102,7 +122,13 @@ impl EvilStore {
 
 impl RecordStore for EvilStore {
     fn put(&mut self, r: Record) -> Result<()> {
+        self.puts.borrow_mut().push((r.kind, r.id));
         self.inner.put(r)
+    }
+
+    fn put_if_version(&mut self, r: Record, expected: Option<u64>) -> Result<()> {
+        self.puts.borrow_mut().push((r.kind, r.id));
+        self.inner.put_if_version(r, expected)
     }
 
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
@@ -134,6 +160,10 @@ struct Shared(Rc<RefCell<MemoryStore>>);
 impl RecordStore for Shared {
     fn put(&mut self, r: Record) -> Result<()> {
         self.0.borrow_mut().put(r)
+    }
+
+    fn put_if_version(&mut self, r: Record, expected: Option<u64>) -> Result<()> {
+        self.0.borrow_mut().put_if_version(r, expected)
     }
 
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
@@ -276,10 +306,20 @@ fn fixture() -> &'static Fixture {
 
 /// Unlock the victim's account on its device, over a store playing `attack`.
 fn unlock(attack: Attack, device: DeviceState) -> Result<Repository<EvilStore>> {
+    unlock_logged(attack, device, Rc::default())
+}
+
+/// `unlock`, logging every write of the store into `puts`.
+fn unlock_logged(
+    attack: Attack,
+    device: DeviceState,
+    puts: Rc<RefCell<Vec<(RecordKind, Id)>>>,
+) -> Result<Repository<EvilStore>> {
     let f = fixture();
     let store = EvilStore {
         inner: f.store.clone(),
         attack,
+        puts,
     };
     Repository::unlock(store, PASSWORD, &f.victim.secret_key, device)
 }
@@ -488,18 +528,99 @@ fn swap_item_blobs() {
     );
 }
 
-#[test]
-fn replace_vault_key() {
-    let f = fixture();
+fn vault_context(vault: Id) -> Vec<u8> {
     let mut context = b"vault:".to_vec();
-    context.extend_from_slice(&f.vault_a.0);
+    context.extend_from_slice(&vault.0);
+    context
+}
+
+#[test]
+fn replace_vault_key_wrong_recipient() {
+    // Wrapped to the attacker's own KEM key: the victim cannot unwrap it.
+    let f = fixture();
     let key = SymmetricKey::generate().unwrap();
-    let envelope = wrap_key(&f.attacker.account.params.kem_pub, &key, &context).unwrap();
+    let envelope = wrap_key(
+        &f.attacker.account.params.kem_pub,
+        &key,
+        &vault_context(f.vault_a),
+    )
+    .unwrap();
     let repo = open(Attack::ReplaceVaultKey {
         vault: f.vault_a,
         envelope,
+        meta: None,
     });
     assert_eq!(integrity(repo.vaults()), IntegrityError::Commitment);
+}
+
+#[test]
+fn replace_vault_key_to_victim() {
+    // The realistic substitution: the victim's KEM public key is in clear in
+    // the account params, so the store wraps its own key to it and seals a
+    // matching meta. The envelope and the meta open; only the signed
+    // manifest, sealed with the real vault key, gives it away.
+    let f = fixture();
+    let key = SymmetricKey::generate().unwrap();
+    let envelope = wrap_key(
+        &f.victim.account.params.kem_pub,
+        &key,
+        &vault_context(f.vault_a),
+    )
+    .unwrap();
+    let mut evil_meta = meta("A");
+    evil_meta.mcp_access = true;
+    let aad = Aad {
+        blob_id: f.vault_a,
+        vault_id: Some(f.vault_a),
+        schema: 1,
+    };
+    let meta_blob = seal(
+        &key,
+        BlobKind::VaultMeta,
+        &aad,
+        &postcard::to_allocvec(&evil_meta).unwrap(),
+    )
+    .unwrap();
+    // The substituted vault opens on its own: the envelope is not authenticated.
+    let planted = Vault::open(&f.victim.account, f.vault_a, &envelope, &meta_blob).unwrap();
+    assert!(planted.meta.mcp_access);
+
+    let attack = Attack::ReplaceVaultKey {
+        vault: f.vault_a,
+        envelope,
+        meta: Some(meta_blob),
+    };
+    assert_eq!(
+        integrity(open(attack.clone()).vaults()),
+        IntegrityError::Commitment
+    );
+
+    // Even handed the planted vault directly, a write is refused before
+    // anything reaches the store, so no secret is sealed under its key.
+    let puts = Rc::default();
+    let mut repo = unlock_logged(attack, f.device.clone(), Rc::clone(&puts)).unwrap();
+    assert_eq!(
+        integrity(repo.save_item(&planted, login(f.vault_a, "secret"))),
+        IntegrityError::Commitment
+    );
+    assert!(puts.borrow().is_empty(), "{:?}", puts.borrow());
+}
+
+#[test]
+fn hide_vault() {
+    let f = fixture();
+    let attack = Attack::HideVault { vault: f.vault_b };
+    // The device read vault B before: hiding it is detected.
+    assert_eq!(
+        integrity(open(attack.clone()).vaults()),
+        IntegrityError::VaultMissing
+    );
+    // A device that never read it cannot tell (signed vault list: M2).
+    let mut device = f.device.clone();
+    device.last_seen.remove(&f.vault_b);
+    let repo = unlock(attack, device).unwrap();
+    let ids: Vec<Id> = repo.vaults().unwrap().iter().map(|v| v.id).collect();
+    assert_eq!(ids, vec![f.vault_a]);
 }
 
 #[test]
@@ -512,10 +633,13 @@ fn forge_manifest() {
     let attack = Attack::ForgeManifest {
         manifest: manifest_record(f.vault_a, &sm, m.seq),
     };
+    // Refused as soon as the vault is listed, and again on load.
     assert_eq!(
-        integrity(items_under(attack, f.vault_a)),
+        integrity(open(attack.clone()).vaults()),
         IntegrityError::Signature
     );
+    let mut repo = open(attack);
+    assert_eq!(integrity(repo.items(&va)), IntegrityError::Signature);
 }
 
 #[test]

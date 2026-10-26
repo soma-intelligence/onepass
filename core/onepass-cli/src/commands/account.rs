@@ -5,14 +5,20 @@ use onepass_core::store::SqliteStore;
 
 use crate::session::{self, CliError, Ctx, Session};
 
-/// `onepass account create`: new account, Secret Key shown once.
-pub fn create(ctx: &Ctx) -> Result<(), CliError> {
+fn exists(ctx: &Ctx) -> Result<(), CliError> {
     if ctx.device_path().exists() || ctx.store_path().exists() {
         return Err(CliError::usage(format!(
             "an account already exists in {}",
             ctx.data_dir.display()
         )));
     }
+    Ok(())
+}
+
+/// `onepass account create`: new account, Secret Key shown once.
+pub fn create(ctx: &Ctx) -> Result<(), CliError> {
+    // Checked early to fail before the prompt, and again under the lock.
+    exists(ctx)?;
     let kdf = session::kdf_params()?;
     let password = session::read_password("New password: ")?;
     if password.is_empty() {
@@ -25,6 +31,8 @@ pub fn create(ctx: &Ctx) -> Result<(), CliError> {
         }
     }
     session::ensure_dir(&ctx.data_dir)?;
+    let _lock = session::lock(ctx)?;
+    exists(ctx)?;
     let result = build(ctx, &password, kdf);
     if result.is_err() {
         // Leave nothing half made behind: the account did not exist before.

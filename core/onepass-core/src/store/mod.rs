@@ -59,6 +59,10 @@ pub struct Record {
 /// record with the same key; `delete` of a missing record is not an error.
 pub trait RecordStore {
     fn put(&mut self, r: Record) -> Result<()>;
+    /// Write `r` only if the stored record with its key has version
+    /// `expected` (`None`: only if there is no such record), atomically.
+    /// Otherwise nothing is written and the error is `Error::Conflict`.
+    fn put_if_version(&mut self, r: Record, expected: Option<u64>) -> Result<()>;
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>>;
     fn list(&self, kind: RecordKind) -> Result<Vec<Record>>;
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()>;
@@ -101,6 +105,35 @@ pub(crate) fn exercise(store: &mut dyn RecordStore) {
     assert_eq!(store.get(RecordKind::Item, a).unwrap(), None);
     assert!(store.get(RecordKind::Manifest, a).unwrap().is_some());
     assert_eq!(store.list(RecordKind::Item).unwrap().len(), 1);
+
+    // Conditional writes.
+    let c = Id::new();
+    store
+        .put_if_version(rec(c, RecordKind::Manifest, 1, b"m1"), None)
+        .unwrap();
+    assert_eq!(
+        store.put_if_version(rec(c, RecordKind::Manifest, 1, b"x"), None),
+        Err(Error::Conflict)
+    );
+    store
+        .put_if_version(rec(c, RecordKind::Manifest, 2, b"m2"), Some(1))
+        .unwrap();
+    assert_eq!(
+        store.put_if_version(rec(c, RecordKind::Manifest, 2, b"y"), Some(1)),
+        Err(Error::Conflict)
+    );
+    assert_eq!(
+        store.put_if_version(rec(Id::new(), RecordKind::Manifest, 2, b"z"), Some(1)),
+        Err(Error::Conflict)
+    );
+    assert_eq!(
+        store.get(RecordKind::Manifest, c).unwrap(),
+        Some(rec(c, RecordKind::Manifest, 2, b"m2"))
+    );
+    // Same id, other kind: not the same record.
+    store
+        .put_if_version(rec(c, RecordKind::Item, 9, b"i"), None)
+        .unwrap();
 }
 
 #[cfg(test)]

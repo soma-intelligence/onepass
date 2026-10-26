@@ -14,6 +14,8 @@ pub enum IntegrityError {
     ParamsDowngrade,
     WrongKind,
     WrongContext,
+    /// A vault this device already read has no key record any more.
+    VaultMissing,
 }
 
 impl fmt::Display for IntegrityError {
@@ -30,6 +32,7 @@ impl fmt::Display for IntegrityError {
             Self::ParamsDowngrade => "parameters downgrade detected",
             Self::WrongKind => "record has an unexpected kind",
             Self::WrongContext => "record is bound to a different context",
+            Self::VaultMissing => "a known vault is missing",
         };
         f.write_str(s)
     }
@@ -59,6 +62,9 @@ pub enum Error {
     InvalidFormat(&'static str),
     Validation(ValidationError),
     NotFound,
+    /// A conditional write lost a race with another writer: nothing was
+    /// overwritten. Reload and retry.
+    Conflict,
     /// Storage layer failure. The string must be non-sensitive and produced
     /// by the store layer. It is available through `Debug` only; `Display`
     /// never prints it.
@@ -74,6 +80,7 @@ impl fmt::Display for Error {
             Self::InvalidFormat(what) => write!(f, "invalid format: {what}"),
             Self::Validation(e) => e.fmt(f),
             Self::NotFound => f.write_str("not found"),
+            Self::Conflict => f.write_str("concurrent write, retry"),
             Self::Store(_) => f.write_str("store error"),
         }
     }
@@ -112,5 +119,14 @@ mod tests {
         assert!(!e.to_string().contains("secret"));
         assert_eq!(e.to_string(), "store error");
         assert!(format!("{e:?}").contains("secret"));
+    }
+
+    #[test]
+    fn conflict_display() {
+        assert_eq!(Error::Conflict.to_string(), "concurrent write, retry");
+        assert_eq!(
+            IntegrityError::VaultMissing.to_string(),
+            "a known vault is missing"
+        );
     }
 }
