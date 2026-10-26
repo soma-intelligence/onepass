@@ -18,10 +18,10 @@ export const FIXTURE = join(CORE, "onepass-native-host/fixtures/e2e.json");
 export const FIXTURE_CACHE = "fixture-cache.bin";
 const CARGO_PATH = `${join(homedir(), ".cargo/bin")}:${process.env.PATH ?? ""}`;
 
-/** `cargo build -p onepass-native-host` (debug: the fixture source is debug only). */
+/** `cargo build --locked -p onepass-native-host` (debug: the fixture source is debug only). */
 export function buildHost(): void {
   try {
-    execFileSync("cargo", ["build", "-p", "onepass-native-host"], {
+    execFileSync("cargo", ["build", "--locked", "-p", "onepass-native-host"], {
       cwd: CORE,
       env: { ...process.env, PATH: CARGO_PATH },
       stdio: "pipe",

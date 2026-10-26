@@ -1,7 +1,7 @@
 // Once per run: build the extension (regular and e2e builds), the native
 // host, a fresh TLS certificate, and the encrypted fixture store. Paths are
 // handed to the workers through E2E_STATE (a JSON file).
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -20,6 +20,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const ext = fileURLToPath(new URL("../", import.meta.url));
   execFileSync(process.execPath, ["build.mjs", "chromium"], { cwd: ext, stdio: "inherit" });
   execFileSync(process.execPath, ["build.mjs", "chromium", "--e2e"], { cwd: ext, stdio: "inherit" });
+  // The worker handle of the e2e build must never reach the regular build.
+  if (readFileSync(join(ext, "dist/chromium/background.js"), "utf8").includes("__onepassE2E")) {
+    throw new Error("e2e: dist/chromium/background.js contains the e2e worker handle");
+  }
   buildHost();
   const root = mkdtempSync(join(tmpdir(), "onepass-e2e-"));
   const certDir = join(root, "cert");

@@ -4,7 +4,7 @@
 // profile. Helpers drive the extension the way a user does: pairing in the
 // popup, the in-field menu (trusted keyboard), the overlay and save frames.
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +12,19 @@ import { type BrowserContext, type Frame, type Page, type Worker, test as base, 
 import { loadCert, type TestCert } from "./cert";
 import type { E2EState } from "./global-setup";
 import { type InstalledHost, installHost } from "./host";
-import { startServer, type TestServer } from "./server";
+import { CANARY_PATH, startServer, type TestServer } from "./server";
+import { MOVE_GUARD_MS } from "../src/content/frames";
+import { CLICK_GUARD_MS } from "../src/ui/components";
+
+/**
+ * Wait before clicking in a freshly shown or re-rendered extension frame:
+ * the frames ignore clicks for CLICK_GUARD_MS after (re)display and the
+ * content script for MOVE_GUARD_MS after a move (spec 8.3), plus a margin
+ * for the IntersectionObserver v2 delay (100 ms) and rendering.
+ */
+export const GUARD_WAIT_MS = Math.max(CLICK_GUARD_MS, MOVE_GUARD_MS) + 150;
+
+const LOOPBACK = new Set(["127.0.0.1", "::1"]);
 
 export { expect };
 
@@ -73,8 +85,10 @@ export interface Ext {
   chainState(): Promise<{ status: string; reason?: string; host?: string } | null>;
   extFrame(page: Page, kind: "menu" | "overlay" | "save"): Promise<Frame>;
   findExtFrame(page: Page, kind: "menu" | "overlay" | "save"): Frame | undefined;
-  /** Waits until the click guard of a freshly shown extension frame is past. */
+  /** Waits `ms` (default GUARD_WAIT_MS: past the click guard of a freshly shown frame). */
   settle(ms?: number): Promise<void>;
+  /** The host's audit journal (one JSON line per secret returned, no value). */
+  audit(): string;
   /** `storage.session` of the extension, read in the service worker. */
   sessionStorage(): Promise<Record<string, unknown>>;
 }
@@ -132,6 +146,20 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         ((u.protocol === "https:" || u.protocol === "http:") && LOCAL_HOSTS.has(u.hostname));
       return ok ? route.continue() : route.abort("blockedbyclient");
     });
+    // Third net: every network response must come from the loopback server,
+    // so a real accounts.google.com (say) can never answer.
+    const remote: string[] = [];
+    const pendingChecks: Promise<void>[] = [];
+    context.on("response", (r) => {
+      pendingChecks.push(
+        r
+          .serverAddr()
+          .then((a) => {
+            if (a && !LOOPBACK.has(a.ipAddress)) remote.push(`${r.url()} from ${a.ipAddress}`);
+          })
+          .catch(() => undefined),
+      );
+    });
     const worker = async (): Promise<Worker> => {
       const live = context.serviceWorkers().find((w) => w.url().startsWith("chrome-extension://"));
       return live ?? (await context.waitForEvent("serviceworker", { timeout: 15_000 }));
@@ -144,6 +172,11 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     // now, before the first connection, is enough.
     const host = installHost(dir, join(profile, "NativeMessagingHosts"), id, cache);
     const page = context.pages()[0] ?? (await context.newPage());
+    // Canary: the local server (this nonce) answers for a real provider name.
+    const canary = await page.goto(`https://accounts.google.com${CANARY_PATH}`);
+    expect(canary?.status()).toBe(200);
+    expect(await canary?.text()).toBe(server.nonce);
+    expect(LOOPBACK.has((await canary?.serverAddr())?.ipAddress ?? "")).toBe(true);
 
     const findExtFrame = (p: Page, kind: "menu" | "overlay" | "save") =>
       p.frames().find((f) => f.url().startsWith("chrome-extension://") && new URL(f.url()).pathname === `/${kind}.html`);
@@ -152,7 +185,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       await expect.poll(() => (f = findExtFrame(p, kind)) !== undefined, { timeout: 15_000, message: `${kind} frame` }).toBe(true);
       return f as Frame;
     };
-    const settle = (ms = 450) => new Promise<void>((r) => setTimeout(r, ms));
+    const settle = (ms = GUARD_WAIT_MS) => new Promise<void>((r) => setTimeout(r, ms));
 
     const ext: Ext = {
       context,
@@ -187,19 +220,14 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       },
       async openMenu(p, selector, frame) {
         const scope = frame ?? p.mainFrame();
-        for (let i = 0; i < 20; i++) {
-          await scope.focus(selector, { timeout: 10_000 });
-          await p.keyboard.press("ArrowDown");
-          for (let j = 0; j < 5; j++) {
-            const f = findExtFrame(p, "menu");
-            if (f) {
-              await f.waitForLoadState("domcontentloaded");
-              return f;
-            }
-            await settle(100);
-          }
-        }
-        throw new Error(`no menu opened for ${selector}`);
+        // The content script has started in that document (its host element).
+        await expect(scope.locator("onepass-root")).toHaveCount(1);
+        await scope.focus(selector, { timeout: 10_000 });
+        // One trusted keystroke, as a user would press it.
+        await p.keyboard.press("ArrowDown");
+        const f = await extFrame(p, "menu");
+        await f.waitForLoadState("domcontentloaded");
+        return f;
       },
       async pickRow(menu, title, subtitle) {
         let row = menu.locator("button.row").filter({ has: menu.locator(".t1", { hasText: exact(title) }) });
@@ -221,6 +249,10 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         const chains = Object.entries(all).filter(([k]) => k.startsWith("chain:"));
         return chains.length === 0 ? null : (chains[chains.length - 1]?.[1] as { status: string; reason?: string; host?: string });
       },
+      audit() {
+        const path = join(host.dataDir, "audit.log");
+        return existsSync(path) ? readFileSync(path, "utf8") : "";
+      },
       async sessionStorage() {
         const w = await worker();
         return w.evaluate(() => chrome.storage.session.get(null));
@@ -228,6 +260,8 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     };
     await use(ext);
     await context.close();
+    await Promise.all(pendingChecks);
+    expect(remote, "responses from a non-loopback address").toEqual([]);
     rmSync(dir, { recursive: true, force: true });
   },
 });

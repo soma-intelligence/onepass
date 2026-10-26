@@ -32,6 +32,9 @@ paired("menu_fill_login", async ({ ext }) => {
   await ext.pickRow(menu, "Atlas Cloud");
   await expect(page.locator("#email")).toHaveValue(FX.atlas.email);
   await expect(page.locator("#password")).toHaveValue(FX.atlas.password);
+  // The host journaled the secret it returned (no value): positive control of S3 and S9.
+  expect(ext.audit()).toContain('"op":"fill_login"');
+  expect(ext.audit()).not.toContain(FX.atlas.password);
   await page.locator("#submit").click();
   await expect(page.locator("#status")).toHaveText("Connecté");
 
@@ -172,9 +175,8 @@ paired("chain_stops_on_captcha", async ({ ext }) => {
   const { page } = ext;
   await page.goto(`${ATLAS}/captcha`);
   const overlay = await ext.overlayStart(page, "Atlas Cloud");
+  await expect.poll(async () => await ext.chainState(), { timeout: 20_000 }).toMatchObject({ status: "handoff", reason: "captcha" });
   await expect(overlay.locator(".ov-status")).toHaveText("CAPTCHA détecté, à toi de jouer");
-  const s = await ext.chainState();
-  expect(s).toMatchObject({ status: "handoff", reason: "captcha" });
   await expect(page.locator("#email")).toHaveValue("");
   await expect(page.locator("#password")).toHaveValue("");
 });

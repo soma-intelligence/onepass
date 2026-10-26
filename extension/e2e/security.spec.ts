@@ -12,8 +12,6 @@
 // real sender, or a forged sender): they run on the `--e2e` build, whose
 // worker exposes its router, session and filler (src/background/e2e-entry.ts).
 // Everything else runs on the regular build.
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Frame, Page, Worker } from "@playwright/test";
 import { type Ext, expect, paired } from "./fixtures";
 import { FX } from "./server";
@@ -226,28 +224,46 @@ paired("S3_postmessage_to_menu_is_ignored", async ({ ext }) => {
   await page.goto(`${ATLAS}/login`);
   const menu = await ext.openMenu(page, "#email");
   await expect(menu.locator("button.row").first()).toBeVisible();
+  // What a page would need to drive the menu: its token and a real item id
+  // (both handed to the page here, which it could never learn by itself).
+  const token = new URL(menu.url()).hash.slice(1);
+  const rec = (await ext.sessionStorage())[`menu:${token}`] as { offered?: Record<string, string> };
+  const itemIds = Object.entries(rec.offered ?? {})
+    .filter(([, kind]) => kind === "login")
+    .map(([id]) => id);
+  expect(itemIds.length).toBeGreaterThan(0);
   await ext.settle();
-  await page.evaluate(() => {
-    const payloads: unknown[] = [
-      { type: "menu_pick", itemId: "x" },
-      { type: "fill", values: { username: "x" } },
-      "pick:0",
-      { action: "click", index: 0 },
-    ];
-    const targets: Window[] = [window, window.top ?? window];
-    for (let i = 0; i < window.frames.length; i++) {
-      const f = window.frames[i];
-      if (f) targets.push(f);
-    }
-    for (const t of targets) for (const p of payloads) t.postMessage(p, "*");
-    // Also the keys a menu would act on, synthesized.
-    for (const key of ["ArrowDown", "Enter"]) {
-      document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-    }
-  });
+  const r = await page.evaluate(
+    ({ token, itemIds }) => {
+      // The menu frame is in a closed shadow root: not among the page's frames.
+      const framesSeen = window.frames.length;
+      const payloads: unknown[] = [];
+      for (const itemId of itemIds) {
+        payloads.push(
+          { type: "menu_pick", token, itemId },
+          { type: "fill", token, itemId, values: { username: "x", current_password: "y" } },
+          { token, itemId },
+          `menu_pick:${token}:${itemId}`,
+        );
+      }
+      const host = document.querySelector("onepass-root");
+      for (const p of payloads) {
+        window.postMessage(p, "*");
+        window.top?.postMessage(p, "*");
+        host?.dispatchEvent(new MessageEvent("message", { data: p, origin: location.origin, bubbles: true, composed: true }));
+      }
+      // Also the keys a menu would act on, synthesized.
+      for (const key of ["ArrowDown", "Enter"]) document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      return { framesSeen, hostFound: host !== null };
+    },
+    { token, itemIds },
+  );
+  expect(r).toEqual({ framesSeen: 0, hostFound: true });
   await ext.settle(1500);
   await emptyFields(page, "#email", "#password");
   expect(ext.findExtFrame(page, "menu")).toBeDefined();
+  // No value was asked of the host.
+  expect(ext.audit()).not.toContain("fill_login");
 });
 
 for (const lookalike of ["https://atlass-cloud.test", "https://atlas-cloud.test.evil.test"]) {
@@ -285,7 +301,9 @@ paired("S7_invisible_form_stays_empty", async ({ ext }) => {
   await ext.pickRow(menu, "Atlas Cloud");
   await expect(page.locator("#email")).toHaveValue(FX.atlas.email);
   await expect(page.locator("#password")).toHaveValue(FX.atlas.password);
-  await emptyFields(page, "#decoy-email", "#decoy-password", "#ghost-email", "#ghost-password", "#hidden-password");
+  await emptyFields(page, "#decoy-email", "#decoy-password", "#ghost-email", "#ghost-password");
+  // Decoys inside the very form that gets filled.
+  await emptyFields(page, "#hidden-password", "#transparent-password", "#offscreen-password", "#tiny-password", "#clipped-password", "#clipped-first");
 });
 
 paired("S8_nothing_filled_on_load", async ({ ext }) => {
@@ -483,8 +501,7 @@ paired.describe("with the worker handle (e2e build)", () => {
     await ext.settle(1000);
     await emptyFields(page, "#email", "#password");
     // No value was even asked of the host.
-    const auditPath = join(ext.host.dataDir, "audit.log");
-    expect(existsSync(auditPath) ? readFileSync(auditPath, "utf8") : "").not.toContain("fill_login");
+    expect(ext.audit()).not.toContain("fill_login");
   });
 
   paired("S14_compromised_content_script_cannot_get_other_site_item", async ({ ext }) => {

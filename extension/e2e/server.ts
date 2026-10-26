@@ -112,8 +112,13 @@ export interface Captured {
   body: Record<string, string>;
 }
 
+/** Path every host answers on with the server's nonce (fixtures.ts canary). */
+export const CANARY_PATH = "/__onepass_e2e_canary";
+
 export interface TestServer {
   port: number;
+  /** Random per server: a page showing it was served by this process. */
+  nonce: string;
   /** Every POST received by a trap host (lookalikes, evil.test). */
   captured: Captured[];
   /** Accounts that signed in through the fictional provider, in order. */
@@ -152,9 +157,10 @@ async function readBody(req: http.IncomingMessage): Promise<Record<string, strin
 }
 
 export async function startServer(cert: TestCert): Promise<TestServer> {
+  const nonce = randomBytes(16).toString("hex");
   const sessions = new Map<string, Session>();
   const codes = new Map<string, string>();
-  const state: Omit<TestServer, "port" | "close"> = {
+  const state: Omit<TestServer, "port" | "close" | "nonce"> = {
     captured: [],
     providerSignIns: [],
     users: initialUsers(),
@@ -195,6 +201,11 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
       res.end();
     };
 
+    if (path === CANARY_PATH) {
+      res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+      res.end(nonce);
+      return;
+    }
     if (path === "/style.css") {
       res.writeHead(200, { "content-type": "text/css; charset=utf-8" });
       res.end(file("style.css"));
@@ -422,6 +433,7 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
   const port = (front.address() as net.AddressInfo).port;
   return Object.assign(state, {
     port,
+    nonce,
     close: () =>
       new Promise<void>((resolve) => {
         for (const s of sockets) s.destroy();
