@@ -32,6 +32,8 @@ pub enum BlobKind {
     DeviceState = 8,
     /// Encrypted OnePass archive: export and backup (milestone 5).
     Archive = 9,
+    /// The sealed Travel Mode state (`repo::travel`, milestone 7).
+    TravelState = 10,
 }
 
 /// Context a blob is bound to. Opening under any other context fails.

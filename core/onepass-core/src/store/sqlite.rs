@@ -67,6 +67,18 @@ impl SqliteStore {
         .map_err(store_err)?;
         Ok(SqliteStore { conn })
     }
+
+    /// Fold the WAL into the database and rebuild it, so that deleted rows
+    /// do not linger in free pages or in the WAL (Travel Mode). In WAL mode
+    /// `VACUUM` writes the rebuilt pages to the WAL: a second checkpoint
+    /// copies them over the old file and truncates the WAL.
+    pub fn compact(&self) -> Result<()> {
+        self.conn
+            .execute_batch(
+                "PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);",
+            )
+            .map_err(store_err)
+    }
 }
 
 impl RecordStore for SqliteStore {
@@ -184,6 +196,44 @@ mod tests {
             .query_row("PRAGMA synchronous", [], |r| r.get(0))
             .unwrap();
         assert_eq!(sync, 2, "synchronous = FULL");
+    }
+
+    #[test]
+    fn compact_keeps_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let mut s = SqliteStore::open(&path).unwrap();
+        let marker: Vec<u8> = b"onepass-compact-marker-".repeat(8);
+        let keep = Id::new();
+        let gone = Id::new();
+        for (id, data) in [(keep, b"kept".to_vec()), (gone, marker.clone())] {
+            s.put(Record {
+                id,
+                kind: RecordKind::Item,
+                version: 1,
+                data,
+            })
+            .unwrap();
+        }
+        s.delete(RecordKind::Item, gone).unwrap();
+        s.compact().unwrap();
+        assert_eq!(
+            s.get(RecordKind::Item, keep).unwrap().unwrap().data,
+            b"kept".to_vec()
+        );
+        assert_eq!(s.get(RecordKind::Item, gone).unwrap(), None);
+        assert_eq!(s.list(RecordKind::Item).unwrap().len(), 1);
+        // The deleted row is gone from the files too, not just unlisted.
+        let contains = |p: &Path| {
+            std::fs::read(p)
+                .map(|b| b.windows(marker.len()).any(|w| w == &marker[..]))
+                .unwrap_or(false)
+        };
+        assert!(!contains(&path));
+        assert!(!contains(&dir.path().join("db-wal")));
+        drop(s);
+        let s = SqliteStore::open(&path).unwrap();
+        assert_eq!(s.list(RecordKind::Item).unwrap().len(), 1);
     }
 
     #[test]

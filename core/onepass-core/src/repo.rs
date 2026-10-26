@@ -50,6 +50,7 @@ use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
 mod local;
+pub mod travel;
 
 /// What a device keeps between sessions: the account pinned at first
 /// unlock, and the last manifest accepted for each vault.

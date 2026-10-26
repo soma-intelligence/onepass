@@ -45,6 +45,10 @@ required-features = ["dev-fast-kdf"]
 name = "archive"
 required-features = ["dev-fast-kdf"]
 
+[[test]]
+name = "travel"
+required-features = ["dev-fast-kdf"]
+
 [dev-dependencies]
 time = { version = "0.3", features = ["macros"] }
 proptest = "1.12"

@@ -1,0 +1,356 @@
+//! Travel Mode: the vaults without `travel_safe` leave the device and come
+//! back verified.
+//!
+//! Entering checks every vault to hide through the verified path (`load`,
+//! with the last manifest seen) and checks that the upstream holds each of
+//! its records byte for byte, for all vaults, before deleting anything: the
+//! Travel Mode never deletes the only copy. The last manifest seen of each
+//! hidden vault moves from the device state into a `TravelState`, sealed to
+//! the account.
+//!
+//! Leaving copies the records back from the upstream, which is not trusted,
+//! puts the parked last seen back into the device state, and loads the
+//! vaults through `vaults()` then `items()`, exactly as in normal use: a
+//! replayed manifest or a dropped item is refused. On failure the copied
+//! records are deleted and the device state is restored, so the
+//! `TravelState` stays valid.
+//!
+//! Neither direction touches the account (params, keyset) or the
+//! `travel_safe` vaults.
+//!
+//! Records of a vault: `VaultKey`, `VaultMeta` and `Manifest` with id = the
+//! vault id, and the `Item` records whose prefix (`split_item_record`) is the
+//! vault id.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+
+use super::{Repository, seen, split_item_record};
+use crate::crypto::{
+    Aad, BlobKind, HybridSignature, SymmetricKey, open, seal, unwrap_key, wrap_key,
+};
+use crate::manifest::SeenManifest;
+use crate::store::{Record, RecordKind, RecordStore};
+use crate::{Error, Id, IntegrityError, Result};
+
+/// Length of a sealed `TravelState`, padding included: fixed, so the file
+/// does not reveal how many vaults are hidden.
+pub const SEALED_TRAVEL_STATE_LEN: usize = 65536;
+
+/// Local signature domain of a sealed state (`sign_local` adds `local:`).
+const SIG_DOMAIN: &[u8] = b"travel-state";
+/// KEM context prefix, followed by the account id.
+const KEM_CONTEXT: &[u8] = b"travel:";
+const SCHEMA: u16 = 1;
+const LEN_PREFIX: usize = 4;
+
+const BAD: Error = Error::InvalidFormat("travel state");
+const UPSTREAM_MISMATCH: Error = Error::InvalidFormat("upstream does not hold the vault");
+
+/// The vaults parked by `enter_travel`, with the last manifest seen of
+/// each, and when the Travel Mode was entered (Unix seconds).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TravelState {
+    pub parked: BTreeMap<Id, SeenManifest>,
+    pub entered_at: i64,
+}
+
+/// The vault kinds keyed by the vault id, in deletion order: the key first,
+/// so a vault cut halfway is no longer listed.
+const VAULT_KINDS: [RecordKind; 3] = [
+    RecordKind::VaultKey,
+    RecordKind::VaultMeta,
+    RecordKind::Manifest,
+];
+
+/// The item records of `records` whose prefix is `vault`. Records too short
+/// for a prefix belong to no vault and are skipped.
+fn items_of(records: &[Record], vault: Id) -> impl Iterator<Item = &Record> {
+    records
+        .iter()
+        .filter(move |r| split_item_record(&r.data).is_ok_and(|(p, _)| p == vault))
+}
+
+fn same(a: &Record, b: &Record) -> bool {
+    a.version == b.version && a.data == b.data
+}
+
+fn kem_context(account_id: Id) -> Vec<u8> {
+    let mut c = KEM_CONTEXT.to_vec();
+    c.extend_from_slice(&account_id.0);
+    c
+}
+
+fn state_aad(account_id: Id) -> Aad {
+    Aad {
+        blob_id: account_id,
+        vault_id: None,
+        schema: SCHEMA,
+    }
+}
+
+/// Postcard of the whole buffer, trailing bytes refused.
+fn decode_exact<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T> {
+    match postcard::take_from_bytes(bytes) {
+        Ok((v, [])) => Ok(v),
+        _ => Err(BAD),
+    }
+}
+
+impl<S: RecordStore> Repository<S> {
+    /// Hide every vault without `travel_safe`: verify it, check that
+    /// `upstream` holds each of its records (same version and data, and the
+    /// same set of item records), then delete it locally and move its last
+    /// manifest seen into the returned state.
+    ///
+    /// Everything is checked for all vaults before anything is deleted: a
+    /// vault the upstream lacks or holds differently is
+    /// `InvalidFormat("upstream does not hold the vault")`, and a vault
+    /// that fails verification gives the core's error; in both cases the
+    /// device is left unchanged. `upstream` is only read.
+    pub fn enter_travel<U: RecordStore>(&mut self, upstream: &U) -> Result<TravelState> {
+        let local_items = self.store.list(RecordKind::Item)?;
+        let upstream_items = upstream.list(RecordKind::Item)?;
+        let mut plan: Vec<(Id, SeenManifest, Vec<Record>)> = Vec::new();
+        for vault in self.vaults()? {
+            if vault.meta.travel_safe {
+                continue;
+            }
+            let loaded = self.load(&vault)?;
+            for (_, r) in &loaded.records {
+                vault.open_item(r)?;
+            }
+            let mut records = Vec::new();
+            for kind in VAULT_KINDS {
+                // `vaults()` and `load` just read them.
+                records.push(self.store.get(kind, vault.id)?.ok_or(Error::NotFound)?);
+            }
+            records.extend(items_of(&local_items, vault.id).cloned());
+            for r in &records {
+                match upstream.get(r.kind, r.id)? {
+                    Some(u) if same(&u, r) => {}
+                    _ => return Err(UPSTREAM_MISMATCH),
+                }
+            }
+            let local_ids: BTreeSet<Id> = items_of(&local_items, vault.id).map(|r| r.id).collect();
+            let upstream_ids: BTreeSet<Id> =
+                items_of(&upstream_items, vault.id).map(|r| r.id).collect();
+            if local_ids != upstream_ids {
+                return Err(UPSTREAM_MISMATCH);
+            }
+            plan.push((vault.id, seen(&loaded.manifest), records));
+        }
+
+        let mut deleted: Vec<Record> = Vec::new();
+        for (_, _, records) in &plan {
+            for r in records {
+                if let Err(e) = self.store.delete(r.kind, r.id) {
+                    // Put back what was deleted: the device stays as it was.
+                    for d in deleted {
+                        let _ = self.store.put(d);
+                    }
+                    return Err(e);
+                }
+                deleted.push(r.clone());
+            }
+        }
+        let mut parked = BTreeMap::new();
+        for (id, seen, _) in plan {
+            self.device.last_seen.remove(&id);
+            parked.insert(id, seen);
+        }
+        Ok(TravelState {
+            parked,
+            entered_at: OffsetDateTime::now_utc().unix_timestamp(),
+        })
+    }
+
+    /// Bring the parked vaults back from `upstream` and verify them as in
+    /// normal use, against their parked last manifest seen: an older
+    /// manifest, a fork at the same seq or a dropped item is refused with
+    /// the core's error, and a newer manifest (written by another device
+    /// meanwhile) is accepted. A parked vault already present locally is
+    /// left as it is.
+    ///
+    /// On failure, the records copied are deleted and the device state is
+    /// restored: `state` stays valid for another attempt.
+    pub fn exit_travel<U: RecordStore>(&mut self, upstream: &U, state: &TravelState) -> Result<()> {
+        let mut todo = Vec::new();
+        for (id, seen) in &state.parked {
+            if self.store.get(RecordKind::VaultKey, *id)?.is_none() {
+                todo.push((*id, Some(seen.clone())));
+            }
+        }
+        self.restore(upstream, &todo)
+    }
+
+    /// Bring back every vault of `upstream` absent locally, without a
+    /// parked last manifest seen (the sealed state was lost): the manifest
+    /// signature and the records are still verified, but an old authentic
+    /// manifest would be accepted. Returns the restored vault ids, sorted.
+    /// Same rollback on failure as `exit_travel`.
+    pub fn exit_travel_unpinned<U: RecordStore>(&mut self, upstream: &U) -> Result<Vec<Id>> {
+        let local: BTreeSet<Id> = self
+            .store
+            .list(RecordKind::VaultKey)?
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        let missing: BTreeSet<Id> = upstream
+            .list(RecordKind::VaultKey)?
+            .into_iter()
+            .map(|r| r.id)
+            .filter(|id| !local.contains(id))
+            .collect();
+        let todo: Vec<(Id, Option<SeenManifest>)> = missing.iter().map(|id| (*id, None)).collect();
+        self.restore(upstream, &todo)?;
+        Ok(missing.into_iter().collect())
+    }
+
+    /// Copy the records of `vaults` from `upstream`, set the given last
+    /// manifest seen, then verify through `vaults()` and `items()`. Undo
+    /// everything on failure.
+    fn restore<U: RecordStore>(
+        &mut self,
+        upstream: &U,
+        vaults: &[(Id, Option<SeenManifest>)],
+    ) -> Result<()> {
+        if vaults.is_empty() {
+            return Ok(());
+        }
+        // Items first and the key last, so a vault cut halfway is not listed.
+        let upstream_items = upstream.list(RecordKind::Item)?;
+        let mut copy = Vec::new();
+        for (id, _) in vaults {
+            copy.extend(items_of(&upstream_items, *id).cloned());
+            for kind in VAULT_KINDS.iter().rev() {
+                if let Some(r) = upstream.get(*kind, *id)? {
+                    copy.push(r);
+                }
+            }
+        }
+        // Never overwrite a local record: an upstream record under the key
+        // of another local record is refused. The same record already there
+        // (left by an interrupted exit) is kept and not copied.
+        let mut to_put = Vec::new();
+        for r in copy {
+            match self.store.get(r.kind, r.id)? {
+                None => to_put.push(r),
+                Some(local) if same(&local, &r) => {}
+                Some(_) => return Err(IntegrityError::WrongContext.into()),
+            }
+        }
+
+        let before: Vec<(Id, Option<SeenManifest>)> = vaults
+            .iter()
+            .map(|(id, _)| (*id, self.device.last_seen.get(id).cloned()))
+            .collect();
+        let mut copied = Vec::new();
+        let result = self.copy_and_verify(to_put, vaults, &mut copied);
+        if result.is_err() {
+            for (kind, id) in copied {
+                // Best effort: a leftover without its key is never listed.
+                let _ = self.store.delete(kind, id);
+            }
+            for (id, seen) in before {
+                match seen {
+                    Some(s) => self.device.last_seen.insert(id, s),
+                    None => self.device.last_seen.remove(&id),
+                };
+            }
+        }
+        result
+    }
+
+    fn copy_and_verify(
+        &mut self,
+        to_put: Vec<Record>,
+        vaults: &[(Id, Option<SeenManifest>)],
+        copied: &mut Vec<(RecordKind, Id)>,
+    ) -> Result<()> {
+        for r in to_put {
+            let key = (r.kind, r.id);
+            self.store.put(r)?;
+            copied.push(key);
+        }
+        for (id, parked) in vaults {
+            if let Some(p) = parked {
+                let keep = self
+                    .device
+                    .last_seen
+                    .get(id)
+                    .is_some_and(|mine| mine.seq >= p.seq);
+                if !keep {
+                    self.device.last_seen.insert(*id, p.clone());
+                }
+            }
+        }
+        let listed = self.vaults()?;
+        for (id, _) in vaults {
+            let vault = listed
+                .iter()
+                .find(|v| v.id == *id)
+                .ok_or(IntegrityError::VaultMissing)?;
+            self.items(vault)?;
+        }
+        Ok(())
+    }
+
+    /// Seal `s` for this account: a fresh key wrapped to the account KEM
+    /// key (context `"travel:" || account id`) encrypts the state, and the
+    /// whole is signed with `sign_local`. Layout:
+    /// `u32 BE len(body) || body || postcard(sig)`, zero padded to
+    /// `SEALED_TRAVEL_STATE_LEN`, where `body = postcard((envelope, blob))`.
+    pub fn seal_travel_state(&self, s: &TravelState) -> Result<Vec<u8>> {
+        let account_id = self.account_id();
+        let key = SymmetricKey::generate()?;
+        let envelope = wrap_key(&self.account.params.kem_pub, &key, &kem_context(account_id))?;
+        let plain = postcard::to_allocvec(s).map_err(|_| BAD)?;
+        let blob = seal(&key, BlobKind::TravelState, &state_aad(account_id), &plain)?;
+        let body = postcard::to_allocvec(&(envelope, blob)).map_err(|_| BAD)?;
+        let sig = self.sign_local(SIG_DOMAIN, &body)?;
+        let sig = postcard::to_allocvec(&sig).map_err(|_| BAD)?;
+        let len = u32::try_from(body.len()).map_err(|_| BAD)?;
+        let total = LEN_PREFIX + body.len() + sig.len();
+        if total > SEALED_TRAVEL_STATE_LEN {
+            return Err(Error::InvalidFormat("travel state too large"));
+        }
+        let mut out = Vec::with_capacity(SEALED_TRAVEL_STATE_LEN);
+        out.extend_from_slice(&len.to_be_bytes());
+        out.extend_from_slice(&body);
+        out.extend_from_slice(&sig);
+        out.resize(SEALED_TRAVEL_STATE_LEN, 0);
+        Ok(out)
+    }
+
+    /// Open a state sealed by `seal_travel_state` for this account. Any
+    /// other length, a body that does not verify under the account's local
+    /// signature, non-zero padding, or a state that does not open is an
+    /// error.
+    pub fn open_travel_state(&self, bytes: &[u8]) -> Result<TravelState> {
+        if bytes.len() != SEALED_TRAVEL_STATE_LEN {
+            return Err(BAD);
+        }
+        let (len, rest) = bytes.split_at(LEN_PREFIX);
+        let len = u32::from_be_bytes(len.try_into().map_err(|_| BAD)?);
+        let len = usize::try_from(len).map_err(|_| BAD)?;
+        let (body, rest) = rest.split_at_checked(len).ok_or(BAD)?;
+        let (sig, padding): (HybridSignature, &[u8]) =
+            postcard::take_from_bytes(rest).map_err(|_| BAD)?;
+        if padding.iter().any(|b| *b != 0) {
+            return Err(BAD);
+        }
+        self.verify_local(SIG_DOMAIN, body, &sig)?;
+        let (envelope, blob): (Vec<u8>, Vec<u8>) = decode_exact(body)?;
+        let account_id = self.account_id();
+        let key = unwrap_key(
+            &self.account.keyset().kem,
+            &envelope,
+            &kem_context(account_id),
+        )?;
+        let plain = open(&key, BlobKind::TravelState, &state_aad(account_id), &blob)?;
+        decode_exact(&plain)
+    }
+}
