@@ -39,6 +39,11 @@ final class AppModel {
     var editorDirty = false
     /// An action that would drop a dirty draft, waiting for "Abandonner les modifications ?".
     var pendingDiscard: GuardedAction?
+    /// iPhone and iPad: the settings sheet (the Mac has its own `Settings` window).
+    var showSettings = false
+    /// Bumped on every settings change made through `updateSettings`, so views that show a setting
+    /// (stored in `UserDefaults`, not observable) redraw.
+    private(set) var settingsRevision = 0
     /// ⌘N: the type picker of a new item.
     var showNewItemPicker = false
     // Menu commands handled by the views on screen (bumped, observed with `onChange`).
@@ -213,6 +218,19 @@ final class AppModel {
         editorDirty = false
         pendingDiscard = nil
         showNewItemPicker = false
+        showSettings = false
+    }
+
+    /// Changes a local setting and restarts the auto-lock clock (a new delay applies from now).
+    func updateSettings(_ change: (VaultSettings) -> Void) {
+        change(settings)
+        settingsChanged()
+    }
+
+    /// A setting changed through the session (biometrics, device mode): redraws the settings pages.
+    func settingsChanged() {
+        settingsRevision &+= 1
+        session.noteActivity()
     }
 
     // MARK: - Navigation guarded by the editor

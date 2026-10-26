@@ -116,7 +116,7 @@ struct ItemsTab: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { PhoneRootToolbar() }
         .sheet(isPresented: $creatingVault) {
-            NewVaultSheet()
+            VaultEditorView(vault: nil) { creatingVault = false }
         }
     }
 

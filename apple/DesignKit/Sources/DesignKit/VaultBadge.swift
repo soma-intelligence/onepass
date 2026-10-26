@@ -12,7 +12,10 @@ public struct VaultBadge: View {
         self.size = size
     }
 
-    nonisolated static func color(named: String) -> Color {
+    /// The seven vault colors a vault can take, in display order.
+    public nonisolated static let colorNames = ["blue", "teal", "orange", "green", "purple", "pink", "gray"]
+
+    public nonisolated static func color(named: String) -> Color {
         switch named {
         case "blue": Color(hex: 0x2F80ED)
         case "teal": Color(hex: 0x0E9F9F)

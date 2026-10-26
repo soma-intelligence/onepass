@@ -124,6 +124,10 @@ extension AppModel {
                 }
                 if defaults.bool(forKey: "OnePassDemoLocked") { lock() }
                 #if os(iOS)
+                // Screenshots: `-OnePassDemoSettings YES [-OnePassDemoSettingsPage security]`.
+                showSettings = defaults.bool(forKey: "OnePassDemoSettings")
+                #endif
+                #if os(iOS)
                 if defaults.bool(forKey: "OnePassDemoLandscape") {
                     for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
                         scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeLeft)) { error in

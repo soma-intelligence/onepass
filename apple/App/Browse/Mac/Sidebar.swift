@@ -38,10 +38,13 @@ struct Sidebar: View {
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            SyncStatusChip(status: model.syncStatus)
+            VStack(spacing: 0) {
+                SyncStatusChip(status: model.syncStatus)
+                SettingsRow()
+            }
         }
         .sheet(isPresented: $creatingVault) {
-            NewVaultSheet()
+            VaultEditorView(vault: nil) { creatingVault = false }
         }
         #if os(iOS)
         .navigationTitle("OnePass")
@@ -133,12 +136,13 @@ struct Sidebar: View {
 }
 
 /// Account header at the top of the sidebar: initials on an accent square, local name. Its menu
-/// holds Verrouiller (Réglages joins it with Task 16).
+/// holds Réglages and Verrouiller.
 struct AccountHeader: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         Menu {
+            SettingsButton(identifier: "account.settings")
             Button("Verrouiller", systemImage: "lock") { model.perform(.lock) }
                 .accessibilityIdentifier("account.lock")
         } label: {
@@ -238,56 +242,37 @@ struct SyncStatusChip: View {
     }
 }
 
-/// "Nouveau coffre": name only, until the vault editor of Task 16 replaces this sheet.
-struct NewVaultSheet: View {
+/// "Réglages": the Mac `Settings` window, a sheet on iPad.
+struct SettingsButton: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var error: String?
-    @State private var saving = false
-
-    private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    #if os(macOS)
+    @Environment(\.openSettings) private var openSettings
+    #endif
+    let identifier: String
 
     var body: some View {
-        NavigationStack {
-            Form {
-                TextField("Nom du coffre", text: $name, prompt: Text("Projet Atlas"))
-                    .onSubmit(create)
-                    .accessibilityIdentifier("vault.name")
-                if let error {
-                    Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
-                }
-            }
-            .formStyle(.grouped)
-            .navigationTitle("Nouveau coffre")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Annuler") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Créer", action: create)
-                        .disabled(trimmed.isEmpty || saving)
-                        .accessibilityIdentifier("vault.create")
-                }
-            }
+        Button("Réglages", systemImage: "gearshape") {
+            #if os(macOS)
+            openSettings()
+            #else
+            model.showSettings = true
+            #endif
         }
-        #if os(macOS)
-        .frame(minWidth: 360, minHeight: 180)
-        #endif
+        .accessibilityIdentifier(identifier)
     }
+}
 
-    private func create() {
-        guard !trimmed.isEmpty, !saving else { return }
-        saving = true
-        let meta = FfiVaultMeta(name: trimmed, icon: "folder", color: "blue", travelSafe: false, mcpAccess: false)
-        Task {
-            defer { saving = false }
-            do {
-                try await model.session.createVault(meta)
-                dismiss()
-            } catch {
-                self.error = VaultError(error).localizedMessage
-            }
+/// Bottom of the sidebar: "Réglages" (spec 6.1).
+struct SettingsRow: View {
+    var body: some View {
+        HStack {
+            SettingsButton(identifier: "sidebar.settings")
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .labelStyle(.titleAndIcon)
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 }

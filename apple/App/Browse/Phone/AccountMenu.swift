@@ -3,16 +3,15 @@ import DesignKit
 import SwiftUI
 
 /// Account button of the iPhone navigation bars (mockups `PhoneHome`, `PhoneItems`): initials on
-/// an accent square. Its menu holds Réglages (the settings screen arrives with Task 16, the entry
-/// is disabled until then) and Verrouiller, which asks first when an edited draft would be lost.
+/// an accent square. Its menu holds Réglages (a sheet) and Verrouiller, which asks first when an
+/// edited draft would be lost.
 struct AccountMenu: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         Menu {
             Section(model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName) {
-                Button("Réglages", systemImage: "gearshape") {}
-                    .disabled(true)
+                Button("Réglages", systemImage: "gearshape") { model.showSettings = true }
                     .accessibilityIdentifier("account.settings")
                 Button("Verrouiller", systemImage: "lock") { model.perform(.lock) }
                     .accessibilityIdentifier("account.lock")

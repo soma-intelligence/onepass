@@ -29,6 +29,11 @@ struct OnePassApp: App {
         .commands {
             BrowseCommands(model: model)
         }
+        Settings {
+            MacSettingsView()
+                .environment(model)
+                .tint(Theme.accent)
+        }
         #else
         WindowGroup {
             root

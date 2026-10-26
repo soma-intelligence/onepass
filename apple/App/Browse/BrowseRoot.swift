@@ -12,7 +12,13 @@ struct BrowseRoot: View {
     #endif
 
     var body: some View {
-        layout
+        @Bindable var model = model
+        return layout
+            #if os(iOS)
+            .sheet(isPresented: $model.showSettings) {
+                SettingsView()
+            }
+            #endif
             // On iPhone the new item sheet carries its own confirmation (shown over the sheet).
             .discardConfirmation(active: !phoneNewItemShown)
             .overlay(alignment: .bottom) {

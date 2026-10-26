@@ -8,12 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		0283FD5F51CA58AA05D74578 /* GeneratorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F2B5C4E147CBDF5F09CD14 /* GeneratorSheet.swift */; };
+		06396E8300D4CC9C6331BE4A /* AboutSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89863609CCDE5B045CFDE000 /* AboutSettings.swift */; };
 		0B6E58B02964EE1E945B9C16 /* SearchTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */; };
 		0C7E3E6364BDD9C145810C95 /* AccountMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556B5099E4A3256C41665C0F /* AccountMenu.swift */; };
 		0CC7CE12C087FB5B9DE37825 /* MenuFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAABECC4D15FF57A4F3ABA49 /* MenuFieldEditor.swift */; };
 		1920E0C0A4999B60233A7594 /* LocationEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 129B81D637BE1364C28F598B /* LocationEditor.swift */; };
 		19B02EE7F352A2AB453481BE /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */; };
 		2298C723CE7AB7505D0CCEFF /* TextFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BC40A3955486B6535DA4A9 /* TextFieldEditor.swift */; };
+		23057CC4E6C58D81940A688A /* VaultsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC87C43ECF5DD8ED3E434B1 /* VaultsSettings.swift */; };
 		29FC439915D5B752F395D5E2 /* ItemsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF8989DA7AFD037445B1CA6 /* ItemsTab.swift */; };
 		365D67E458DDD2161A54A8F8 /* Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B70DA81485FABCED6D9346 /* Sidebar.swift */; };
 		369F365C2C4F921040181B8B /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1D108454111E28E82A0B04F6 /* DesignKit */; };
@@ -22,6 +24,8 @@
 		3DE3CD55A4E8F4D47BBB186A /* TotpFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30039937E6F1542ACCE29B1D /* TotpFieldView.swift */; };
 		45A42F714F279F1DECDF9060 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 19D9899D8B640FB4F5F8B0E6 /* Localizable.xcstrings */; };
 		469D03A44C80D8C1010565D6 /* ItemEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4590FC000AF13D1212563044 /* ItemEditorView.swift */; };
+		4D11257A2AB715CC77BA22C1 /* SecuritySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73396E5534184EF7CE76A170 /* SecuritySettings.swift */; };
+		4D18C9E35394FE4B518B4CBE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */; };
 		5156E543C4981476E3C13656 /* DebugItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20B8451FA00D38A8278D9655 /* DebugItems.swift */; };
 		56B6F0937E9CFE60521A0DAE /* OnboardingSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214B39B3C661A8FF88275223 /* OnboardingSteps.swift */; };
 		57D1B84C4C839CE948AFE66B /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */; };
@@ -32,12 +36,16 @@
 		7D0DDE3FABB48308DBAC99CD /* OnePassApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D64EBFE57E2DE8181340998 /* OnePassApp.swift */; };
 		7DF62A388EF15365E18729D9 /* FieldValueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7347C36F3EBEC57C4780E87 /* FieldValueView.swift */; };
 		7FFA5A905F221E281C2B3934 /* UrlListEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E2BC05B539890907CE2714F /* UrlListEditor.swift */; };
+		88252B461F361E3E77E3BC1A /* SyncSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E7C87AC5BA6F2B579609522 /* SyncSettings.swift */; };
+		8DA415577E16E2A2EC1F29F0 /* VaultEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 530DC4BC2A94EFF67DD9F0EF /* VaultEditorView.swift */; };
+		92506BF8D288BB8AE298D980 /* VisibleVaultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BFEBDCF2AC2C6C2D8E999C5 /* VisibleVaultsView.swift */; };
 		9765AD0D3EA5E87488F3A218 /* ItemLinkPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F391F505B02B771276A46D5 /* ItemLinkPicker.swift */; };
 		9961C39F1CDB1708FB598A68 /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA59281B681069BA80A59493 /* Snapshot.swift */; };
 		9D7B0465F8F84A1BC0F77CAA /* AddressEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD7A17DB13CA04B2F0C4933 /* AddressEditor.swift */; };
 		9DE84FC2711722167F45A359 /* MoneyNumberEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEB4C1C28B12B7DB3CEF256 /* MoneyNumberEditor.swift */; };
 		9E735A256691AD70E64876A6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */; };
 		A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CBA904F1F157D072B427852 /* ReadOnlyFieldView.swift */; };
+		A4AF77CCB8C26E750F66D3DF /* GeneralSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257C8A4056D753F50F27FF62 /* GeneralSettings.swift */; };
 		A5E46306C491074581373B73 /* ItemEditorModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600D7CCE7887C2B9308B4DA4 /* ItemEditorModel.swift */; };
 		AD29CFEF6D3AB96633FA488F /* SplitBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83485D924585FA30495DE07 /* SplitBrowseView.swift */; };
 		B19D7967A80446677BDC9032 /* PhoneTabsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4681AE91A8FB719ABD3F23AC /* PhoneTabsView.swift */; };
@@ -77,14 +85,19 @@
 		1F8A0A14957792EE5EDF2DCD /* BrowseRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseRoot.swift; sourceTree = "<group>"; };
 		20B8451FA00D38A8278D9655 /* DebugItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugItems.swift; sourceTree = "<group>"; };
 		214B39B3C661A8FF88275223 /* OnboardingSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingSteps.swift; sourceTree = "<group>"; };
+		257C8A4056D753F50F27FF62 /* GeneralSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettings.swift; sourceTree = "<group>"; };
+		2BFEBDCF2AC2C6C2D8E999C5 /* VisibleVaultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisibleVaultsView.swift; sourceTree = "<group>"; };
 		2F6BE31F836D55C599C46C49 /* MoveToVaultMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveToVaultMenu.swift; sourceTree = "<group>"; };
 		30039937E6F1542ACCE29B1D /* TotpFieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TotpFieldView.swift; sourceTree = "<group>"; };
+		3BC87C43ECF5DD8ED3E434B1 /* VaultsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultsSettings.swift; sourceTree = "<group>"; };
 		3E5A4B3BD06C13AC7742D5DB /* HomeTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeTab.swift; sourceTree = "<group>"; };
+		3E7C87AC5BA6F2B579609522 /* SyncSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSettings.swift; sourceTree = "<group>"; };
 		3FFB44CC51A27D430FC17378 /* DemoData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoData.swift; sourceTree = "<group>"; };
 		4590FC000AF13D1212563044 /* ItemEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEditorView.swift; sourceTree = "<group>"; };
 		4681AE91A8FB719ABD3F23AC /* PhoneTabsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneTabsView.swift; sourceTree = "<group>"; };
 		488E4CE89D1B50E9FFA9002E /* DateFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFieldEditor.swift; sourceTree = "<group>"; };
 		4CEB4C1C28B12B7DB3CEF256 /* MoneyNumberEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyNumberEditor.swift; sourceTree = "<group>"; };
+		530DC4BC2A94EFF67DD9F0EF /* VaultEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultEditorView.swift; sourceTree = "<group>"; };
 		556B5099E4A3256C41665C0F /* AccountMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountMenu.swift; sourceTree = "<group>"; };
 		5D40167C0D7679C74A6D594D /* LockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockView.swift; sourceTree = "<group>"; };
 		600D7CCE7887C2B9308B4DA4 /* ItemEditorModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEditorModel.swift; sourceTree = "<group>"; };
@@ -92,9 +105,11 @@
 		63F69FE9CD92A7C0ACFAF883 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		64165D82E996859B750AAF94 /* OnePass.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OnePass.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
+		73396E5534184EF7CE76A170 /* SecuritySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecuritySettings.swift; sourceTree = "<group>"; };
 		75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTab.swift; sourceTree = "<group>"; };
 		79113AA7B53A92888B8DEF34 /* SecretFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretFieldEditor.swift; sourceTree = "<group>"; };
 		7FE4F3CB0CFA4BB2988A5A3B /* DesignKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignKit; path = DesignKit; sourceTree = SOURCE_ROOT; };
+		89863609CCDE5B045CFDE000 /* AboutSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutSettings.swift; sourceTree = "<group>"; };
 		8E2BC05B539890907CE2714F /* UrlListEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UrlListEditor.swift; sourceTree = "<group>"; };
 		9119720BF7C06235BF6ED5AC /* ItemListRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemListRow.swift; sourceTree = "<group>"; };
 		9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -105,6 +120,7 @@
 		D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemHeader.swift; sourceTree = "<group>"; };
 		DA59281B681069BA80A59493 /* Snapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snapshot.swift; sourceTree = "<group>"; };
 		DAABECC4D15FF57A4F3ABA49 /* MenuFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuFieldEditor.swift; sourceTree = "<group>"; };
+		DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyShield.swift; sourceTree = "<group>"; };
 		E9BC40A3955486B6535DA4A9 /* TextFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextFieldEditor.swift; sourceTree = "<group>"; };
 		EAF8989DA7AFD037445B1CA6 /* ItemsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemsTab.swift; sourceTree = "<group>"; };
@@ -137,9 +153,20 @@
 				8915B6635929BCE87278EB13 /* Onboarding */,
 				57AA33CDE0188B85E19CDD66 /* Resources */,
 				87326541FE4E604044BF14F7 /* Root */,
+				D976094E1B98B7700A183D49 /* Settings */,
+				1980F65E74DD51CFFD5BCD73 /* Vaults */,
 				0D64EBFE57E2DE8181340998 /* OnePassApp.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		1980F65E74DD51CFFD5BCD73 /* Vaults */ = {
+			isa = PBXGroup;
+			children = (
+				530DC4BC2A94EFF67DD9F0EF /* VaultEditorView.swift */,
+				2BFEBDCF2AC2C6C2D8E999C5 /* VisibleVaultsView.swift */,
+			);
+			path = Vaults;
 			sourceTree = "<group>";
 		};
 		1DC33836840B9A396DEB7753 /* Mac */ = {
@@ -255,6 +282,19 @@
 			path = Phone;
 			sourceTree = "<group>";
 		};
+		D976094E1B98B7700A183D49 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				89863609CCDE5B045CFDE000 /* AboutSettings.swift */,
+				257C8A4056D753F50F27FF62 /* GeneralSettings.swift */,
+				73396E5534184EF7CE76A170 /* SecuritySettings.swift */,
+				DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */,
+				3E7C87AC5BA6F2B579609522 /* SyncSettings.swift */,
+				3BC87C43ECF5DD8ED3E434B1 /* VaultsSettings.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
 		E8C09A0EF7A6D69680E63744 /* Lock */ = {
 			isa = PBXGroup;
 			children = (
@@ -360,6 +400,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				06396E8300D4CC9C6331BE4A /* AboutSettings.swift in Sources */,
 				0C7E3E6364BDD9C145810C95 /* AccountMenu.swift in Sources */,
 				9D7B0465F8F84A1BC0F77CAA /* AddressEditor.swift in Sources */,
 				19B02EE7F352A2AB453481BE /* AppModel.swift in Sources */,
@@ -371,6 +412,7 @@
 				5156E543C4981476E3C13656 /* DebugItems.swift in Sources */,
 				E62C0A437934476CA1395891 /* DemoData.swift in Sources */,
 				7DF62A388EF15365E18729D9 /* FieldValueView.swift in Sources */,
+				A4AF77CCB8C26E750F66D3DF /* GeneralSettings.swift in Sources */,
 				0283FD5F51CA58AA05D74578 /* GeneratorSheet.swift in Sources */,
 				3DA9195F5E3C77FBE22E96EE /* HomeTab.swift in Sources */,
 				BEE689BB8A0E7E69B6AF46DB /* IntegrityFailureView.swift in Sources */,
@@ -399,13 +441,19 @@
 				0B6E58B02964EE1E945B9C16 /* SearchTab.swift in Sources */,
 				B4E15F549C1237B3AF03FA6B /* SecretFieldEditor.swift in Sources */,
 				727572DCA29C624F6444CEEA /* SecretKeyScanner.swift in Sources */,
+				4D11257A2AB715CC77BA22C1 /* SecuritySettings.swift in Sources */,
+				4D18C9E35394FE4B518B4CBE /* SettingsView.swift in Sources */,
 				365D67E458DDD2161A54A8F8 /* Sidebar.swift in Sources */,
 				9961C39F1CDB1708FB598A68 /* Snapshot.swift in Sources */,
 				AD29CFEF6D3AB96633FA488F /* SplitBrowseView.swift in Sources */,
+				88252B461F361E3E77E3BC1A /* SyncSettings.swift in Sources */,
 				E0F05CC1047E16590D806097 /* TagEditor.swift in Sources */,
 				2298C723CE7AB7505D0CCEFF /* TextFieldEditor.swift in Sources */,
 				3DE3CD55A4E8F4D47BBB186A /* TotpFieldView.swift in Sources */,
 				7FFA5A905F221E281C2B3934 /* UrlListEditor.swift in Sources */,
+				8DA415577E16E2A2EC1F29F0 /* VaultEditorView.swift in Sources */,
+				23057CC4E6C58D81940A688A /* VaultsSettings.swift in Sources */,
+				92506BF8D288BB8AE298D980 /* VisibleVaultsView.swift in Sources */,
 				BF045866C7ACBB554202D61C /* WatchtowerTab.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
