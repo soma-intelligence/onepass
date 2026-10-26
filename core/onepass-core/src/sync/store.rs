@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS pending (
     id BLOB NOT NULL,
     version INTEGER NOT NULL,
     data BLOB,
+    vault BLOB,
     PRIMARY KEY (kind, id)
 );
 CREATE TABLE IF NOT EXISTS staging (
@@ -162,13 +163,18 @@ fn write_pending(tx: &Transaction<'_>, r: &Record) -> Result<()> {
     Ok(())
 }
 
-/// Vaults whose pending manifest is not newer than the `base` manifest: the
-/// server moved on and the local manifest must be rebased before any push.
+/// Vaults whose pending manifest was not built on the current `base`
+/// manifest: the ancestor it captured (the `base` row it was built on) is
+/// gone or older than `base`, so the server moved on and the local manifest
+/// must be rebased before any push.
 fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
     let mut stmt = conn
         .prepare(
-            "SELECT p.id FROM pending p JOIN base b ON b.kind = p.kind AND b.id = p.id
-             WHERE p.kind = ?1 AND p.data IS NOT NULL AND p.version <= b.version",
+            "SELECT p.id FROM pending p
+             JOIN base b ON b.kind = p.kind AND b.id = p.id
+             LEFT JOIN ancestor a ON a.kind = p.kind AND a.id = p.id
+             WHERE p.kind = ?1 AND p.data IS NOT NULL
+               AND (a.id IS NULL OR a.version != b.version)",
         )
         .map_err(store_err)?;
     let rows = stmt
@@ -217,11 +223,7 @@ impl SyncStore {
         let tx = self.conn.unchecked_transaction().map_err(store_err)?;
         let held = held_vaults(&tx)?;
         let mut stmt = tx
-            .prepare(
-                "SELECT p.kind, p.id, p.version, p.data, b.data
-                 FROM pending p LEFT JOIN base b ON b.kind = p.kind AND b.id = p.id
-                 ORDER BY p.kind, p.id",
-            )
+            .prepare("SELECT kind, id, version, data, vault FROM pending ORDER BY kind, id")
             .map_err(store_err)?;
         let rows = stmt
             .query_map([], |r| {
@@ -237,16 +239,16 @@ impl SyncStore {
         let mut writes = Vec::new();
         let mut deletions = Vec::new();
         for row in rows {
-            let (kind, id, version, data, base_data) = row.map_err(store_err)?;
+            let (kind, id, version, data, tomb_vault) = row.map_err(store_err)?;
             let kind = decode_kind(kind)?;
             let id = decode_id(id)?;
             let version =
                 u64::try_from(version).map_err(|_| Error::InvalidFormat("record version"))?;
             let vault = match kind {
                 RecordKind::Manifest => Some(id),
-                RecordKind::Item => match data.as_deref().or(base_data.as_deref()) {
+                RecordKind::Item => match data.as_deref() {
                     Some(d) => Some(split_item_record(d)?.0),
-                    None => None,
+                    None => tomb_vault.map(decode_id).transpose()?,
                 },
                 _ => None,
             };
@@ -265,6 +267,9 @@ impl SyncStore {
                 deletions.push(change);
             }
         }
+        // Deletions go last, highest kind first: a fetching device never
+        // sees a manifest without its key.
+        deletions.sort_by(|a, b| b.kind.cmp(&a.kind).then(a.id.cmp(&b.id)));
         writes.extend(deletions);
         Ok(writes)
     }
@@ -477,9 +482,7 @@ impl SyncStore {
         )
         .map_err(store_err)?;
         tx.execute(
-            "DELETE FROM pending WHERE kind = ?1 AND data IS NULL AND EXISTS (
-                 SELECT 1 FROM base b WHERE b.kind = pending.kind AND b.id = pending.id
-                 AND substr(b.data, 1, 16) = ?2)",
+            "DELETE FROM pending WHERE kind = ?1 AND data IS NULL AND vault = ?2",
             params![item, &vault.0[..]],
         )
         .map_err(store_err)?;
@@ -540,17 +543,23 @@ impl RecordStore for SyncStore {
 
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
         let tx = self.write_tx()?;
-        let base_version: Option<i64> = tx
+        let base_row: Option<(i64, Option<Vec<u8>>)> = tx
             .query_row(
-                "SELECT version FROM base WHERE kind = ?1 AND id = ?2",
+                "SELECT version, substr(data, 1, 16) FROM base WHERE kind = ?1 AND id = ?2",
                 params![kind.code(), &id.0[..]],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()
             .map_err(store_err)?;
-        match base_version {
+        match base_row {
             // Known to the server: a tombstone carrying the deleted version.
-            Some(version) => {
+            Some((version, prefix)) => {
+                // An item tombstone keeps its vault, for holding and dropping.
+                let vault = if kind == RecordKind::Item {
+                    prefix
+                } else {
+                    None
+                };
                 if kind == RecordKind::Manifest {
                     tx.execute(
                         "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
@@ -560,9 +569,9 @@ impl RecordStore for SyncStore {
                     .map_err(store_err)?;
                 }
                 tx.execute(
-                    "INSERT OR REPLACE INTO pending (kind, id, version, data)
-                     VALUES (?1, ?2, ?3, NULL)",
-                    params![kind.code(), &id.0[..], version],
+                    "INSERT OR REPLACE INTO pending (kind, id, version, data, vault)
+                     VALUES (?1, ?2, ?3, NULL, ?4)",
+                    params![kind.code(), &id.0[..], version, vault],
                 )
                 .map_err(store_err)?;
             }
@@ -704,6 +713,9 @@ mod tests {
         s.put(rec(a, RecordKind::AccountParams, 1, b"ap")).unwrap();
         s.put(rec(a, RecordKind::Keyset, 1, b"ks")).unwrap();
         s.delete(RecordKind::Item, gone).unwrap();
+        let gone_key = Id::new();
+        seed_base(&mut s, RecordKind::Keyset, gone_key, 1, b"k".to_vec());
+        s.delete(RecordKind::Keyset, gone_key).unwrap();
         let kinds: Vec<(RecordKind, bool)> = s
             .pending_changes()
             .unwrap()
@@ -721,6 +733,7 @@ mod tests {
                 (RecordKind::Item, true),
                 (RecordKind::Manifest, true),
                 (RecordKind::Item, false),
+                (RecordKind::Keyset, false),
             ]
         );
     }
@@ -936,5 +949,46 @@ mod tests {
             b.get(RecordKind::Keyset, id).unwrap(),
             Some(rec(id, RecordKind::Keyset, 2, b"r"))
         );
+    }
+
+    #[test]
+    fn held_when_remote_advances_behind_local_lead() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let item = Id::new();
+        seed_base(&mut s, RecordKind::Manifest, vault, 1, b"m1".to_vec());
+        s.put(rec(vault, RecordKind::Manifest, 2, b"l2")).unwrap();
+        s.put(rec(vault, RecordKind::Manifest, 3, b"l3")).unwrap();
+        s.put(rec(item, RecordKind::Item, 1, &item_data(vault, b"i")))
+            .unwrap();
+        assert_eq!(s.vaults_needing_rebase().unwrap(), vec![]);
+        assert_eq!(s.pending_changes().unwrap().len(), 2);
+        // Remote v2 lands: 3 > 2, but the local v3 was built on v1.
+        seed_base(&mut s, RecordKind::Manifest, vault, 2, b"r2".to_vec());
+        assert_eq!(s.vaults_needing_rebase().unwrap(), vec![vault]);
+        assert_eq!(s.pending_changes().unwrap(), vec![]);
+    }
+
+    #[test]
+    fn held_vault_keeps_item_tombstones_after_remote_delete() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let item = Id::new();
+        seed_base(&mut s, RecordKind::Manifest, vault, 1, b"m1".to_vec());
+        seed_base(&mut s, RecordKind::Item, item, 1, item_data(vault, b"i"));
+        s.put(rec(vault, RecordKind::Manifest, 2, b"l2")).unwrap();
+        s.delete(RecordKind::Item, item).unwrap();
+        assert_eq!(s.pending_changes().unwrap().len(), 2);
+        // The server deletes the item and advances the manifest.
+        s.stage_remote(remote(RecordKind::Item, item, 2, None))
+            .unwrap();
+        s.stage_remote(remote(RecordKind::Manifest, vault, 2, Some(b"r2".to_vec())))
+            .unwrap();
+        s.commit_remote().unwrap();
+        assert_eq!(count(&s, "base"), 1);
+        assert_eq!(s.vaults_needing_rebase().unwrap(), vec![vault]);
+        assert_eq!(s.pending_changes().unwrap(), vec![]);
+        s.drop_pending_vault(vault).unwrap();
+        assert_eq!(count(&s, "pending"), 0);
     }
 }
