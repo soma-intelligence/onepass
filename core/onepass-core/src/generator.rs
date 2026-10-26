@@ -293,10 +293,10 @@ fn passphrase_words(password: &str) -> Option<(usize, usize)> {
         let parts: Vec<&str> = lower.split(sep).collect();
         for list in [Wordlist::FrenchDiceware, Wordlist::EffEnglish] {
             let words = words_of(list);
-            if let Some(n) = count_words(&parts, sep, words).filter(|n| *n >= 3) {
-                if best.is_none_or(|(b, _)| n < b) {
-                    best = Some((n, words.len()));
-                }
+            if let Some(n) = count_words(&parts, sep, words).filter(|n| *n >= 3)
+                && best.is_none_or(|(b, _)| n < b)
+            {
+                best = Some((n, words.len()));
             }
         }
     }
