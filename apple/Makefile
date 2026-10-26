@@ -24,6 +24,7 @@ test: core-test
 	@if [ -d "$(APPLE_DIR)/DesignKit" ]; then \
 		ONEPASS_FFI_XCFRAMEWORK="$(TEST_XCFRAMEWORK)" swift test --package-path "$(APPLE_DIR)/DesignKit"; \
 	fi
+	ONEPASS_FFI_XCFRAMEWORK="$(TEST_XCFRAMEWORK)" swift test --package-path "$(APPLE_DIR)/CompanionKit"
 
 ## Xcode project from project.yml.
 project: core
@@ -66,5 +67,5 @@ screenshots: core simulators
 	"$(APPLE_DIR)/scripts/screenshots.sh" "$(OUT)"
 
 clean:
-	rm -rf "$(APPLE_DIR)/build" "$(APPLE_DIR)/DerivedData" "$(APPLE_DIR)/VaultKit/.build" \
+	rm -rf "$(APPLE_DIR)/build" "$(APPLE_DIR)/DerivedData" "$(APPLE_DIR)/VaultKit/.build" "$(APPLE_DIR)/CompanionKit/.build" \
 		"$(APPLE_DIR)/VaultKit/Sources/OnePassCore/onepass_ffi.swift"
