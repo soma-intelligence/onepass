@@ -26,52 +26,76 @@ struct WatchSettings: View {
 
     @ViewBuilder private func content(_ phone: PhoneCompanion) -> some View {
         @Bindable var phone = phone
-        Section {
-            Toggle("Envoyer à l'Apple Watch", isOn: $phone.isEnabled)
-                .accessibilityIdentifier("settings.watch.enabled")
-            statusRow(phone.status)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("settings.watch.status")
-            if let last = phone.lastSent {
-                LabeledContent("Dernier envoi") {
-                    Text(last, style: .relative)
+        if phone.status == .unsupported {
+            Section {
+                statusRow(.unsupported)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("settings.watch.status")
+            }
+        } else {
+            Section {
+                Toggle("Envoyer à l'Apple Watch", isOn: $phone.isEnabled)
+                    .accessibilityIdentifier("settings.watch.enabled")
+                    .onChange(of: phone.isEnabled) { _, enabled in
+                        if enabled { Task { await phone.vaultChanged() } }
+                    }
+                if phone.isEnabled {
+                    statusRow(phone.status)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("settings.watch.status")
+                } else {
+                    Label("Désactivé", systemImage: "pause.circle").foregroundStyle(.secondary)
+                        .accessibilityIdentifier("settings.watch.status")
                 }
-                .accessibilityIdentifier("settings.watch.lastSent")
+                if let last = phone.lastSent {
+                    LabeledContent("Dernier envoi", value: Self.relative(last))
+                        .accessibilityIdentifier("settings.watch.lastSent")
+                }
+                if let issue = phone.lastError {
+                    Label(message(issue), systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("settings.watch.error")
+                }
+            } footer: {
+                Text(
+                    "Seuls les éléments marqués « Sur l'Apple Watch » sont envoyés. Au-delà de 50 éléments marqués, les derniers par ordre alphabétique ne sont pas copiés."
+                )
             }
-            if let issue = phone.lastError {
-                Label(message(issue), systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .accessibilityIdentifier("settings.watch.error")
+            Section {
+                Text(
+                    "La montre reçoit les codes à usage unique, l'identifiant d'un Login, les Wi-Fi avec leur mot de passe, les cartes de membre, la carte bancaire réduite aux 4 derniers chiffres, les codes d'accès et les pièces d'identité. Jamais le mot de passe d'un Login, le CVV, le code PIN, le numéro complet d'une carte ni les notes. Les coffres masqués sont exclus."
+                )
+                Text(
+                    "La montre ne sait pas si elle est au poignet : ses codes restent visibles tant qu'elle est déverrouillée. Verrouille-la ou retire-la pour les protéger."
+                )
             }
-        } footer: {
-            Text(
-                "Seuls les éléments marqués « Sur l'Apple Watch » sont envoyés, 50 au maximum. La montre reçoit leur titre, leur identifiant et leur secret TOTP, jamais les mots de passe ni les notes. Les coffres masqués sont exclus."
-            )
-        }
-        Section {
-            Text(
-                "La montre ne sait pas si elle est au poignet : ses codes restent visibles tant qu'elle est déverrouillée. Verrouille-la ou retire-la pour les protéger."
-            )
             .font(.footnote)
             .foregroundStyle(.secondary)
-        }
-        Section {
-            Button("Retirer de l'Apple Watch", role: .destructive) {
-                confirmWipe = true
+            Section {
+                Button("Retirer de l'Apple Watch", role: .destructive) {
+                    confirmWipe = true
+                }
+                .confirmationDialog(
+                    "Retirer les données de l'Apple Watch ?", isPresented: $confirmWipe,
+                    titleVisibility: .visible
+                ) {
+                    Button("Retirer de l'Apple Watch", role: .destructive) { phone.wipeWatch() }
+                    Button("Annuler", role: .cancel) {}
+                } message: {
+                    Text("La montre oublie tous les éléments reçus.")
+                }
+                .accessibilityIdentifier("settings.watch.wipe")
+            } footer: {
+                Text("Efface tout ce que la montre a reçu. Elle peut recevoir de nouveau les éléments marqués ensuite.")
             }
-            .accessibilityIdentifier("settings.watch.wipe")
-        } footer: {
-            Text("Efface tout ce que la montre a reçu. Elle peut recevoir de nouveau les éléments marqués ensuite.")
         }
-        .confirmationDialog(
-            "Retirer les données de l'Apple Watch ?", isPresented: $confirmWipe,
-            titleVisibility: .visible
-        ) {
-            Button("Retirer de l'Apple Watch", role: .destructive) { phone.wipeWatch() }
-            Button("Annuler", role: .cancel) {}
-        } message: {
-            Text("La montre oublie tous les éléments reçus.")
-        }
+    }
+
+    private static func relative(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "fr_FR")
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: .now)
     }
 
     @ViewBuilder private func statusRow(_ status: CompanionStatus) -> some View {

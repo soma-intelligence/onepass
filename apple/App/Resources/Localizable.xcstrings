@@ -429,11 +429,13 @@
     "Retirer de l'Apple Watch": {},
     "Retirer les données de l'Apple Watch ?": {},
     "La montre oublie tous les éléments reçus.": {},
-    "Seuls les éléments marqués « Sur l'Apple Watch » sont envoyés, 50 au maximum. La montre reçoit leur titre, leur identifiant et leur secret TOTP, jamais les mots de passe ni les notes. Les coffres masqués sont exclus.": {},
     "La montre ne sait pas si elle est au poignet : ses codes restent visibles tant qu'elle est déverrouillée. Verrouille-la ou retire-la pour les protéger.": {},
     "Efface tout ce que la montre a reçu. Elle peut recevoir de nouveau les éléments marqués ensuite.": {},
     "Le dernier envoi a échoué. Il sera retenté au prochain changement.": {},
-    "L'effacement n'a pas pu être envoyé : la montre garde peut-être ses données.": {}
+    "L'effacement n'a pas pu être envoyé : la montre garde peut-être ses données.": {},
+    "Désactivé": {},
+    "Seuls les éléments marqués « Sur l'Apple Watch » sont envoyés. Au-delà de 50 éléments marqués, les derniers par ordre alphabétique ne sont pas copiés.": {},
+    "La montre reçoit les codes à usage unique, l'identifiant d'un Login, les Wi-Fi avec leur mot de passe, les cartes de membre, la carte bancaire réduite aux 4 derniers chiffres, les codes d'accès et les pièces d'identité. Jamais le mot de passe d'un Login, le CVV, le code PIN, le numéro complet d'une carte ni les notes. Les coffres masqués sont exclus.": {}
   },
   "version": "1.0"
 }
