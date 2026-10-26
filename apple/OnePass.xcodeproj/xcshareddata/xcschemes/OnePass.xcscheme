@@ -6,6 +6,24 @@
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
       runPostActionsOnFailure = "NO">
+      <PreActions>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
+               title = "Build Rust core"
+               scriptText = "if [ ! -d &quot;${PROJECT_DIR}/build/OnePassFFI.xcframework&quot; ]; then&#10;  make -C &quot;${PROJECT_DIR}&quot; core&#10;fi&#10;">
+               <EnvironmentBuildable>
+                  <BuildableReference
+                     BuildableIdentifier = "primary"
+                     BlueprintIdentifier = "8393ECD4BFF4D241F435C84D"
+                     BuildableName = "OnePass.app"
+                     BlueprintName = "OnePass"
+                     ReferencedContainer = "container:OnePass.xcodeproj">
+                  </BuildableReference>
+               </EnvironmentBuildable>
+            </ActionContent>
+         </ExecutionAction>
+      </PreActions>
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"

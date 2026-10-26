@@ -163,6 +163,26 @@ final class ProbeRemote: RemoteRecordStore {
     func accountAvailable() async -> Bool { await inner.accountAvailable() }
 }
 
+/// Wraps a remote and records the token of every fetch.
+final class TokenRecorder: RemoteRecordStore {
+    let inner: any RemoteRecordStore
+    private let state = Mutex<[Data?]>([])
+
+    init(_ inner: any RemoteRecordStore) { self.inner = inner }
+
+    var tokens: [Data?] { state.withLock { $0 } }
+    var maxBatchRecords: Int { inner.maxBatchRecords }
+    var maxBatchBytes: Int { inner.maxBatchBytes }
+
+    func fetchChanges(since token: Data?) async throws -> RemoteBatch {
+        state.withLock { $0.append(token) }
+        return try await inner.fetchChanges(since: token)
+    }
+
+    func send(_ changes: [RemoteRecord]) async throws -> [SendResult] { try await inner.send(changes) }
+    func accountAvailable() async -> Bool { await inner.accountAvailable() }
+}
+
 /// Polls `condition` for up to 10 s.
 @MainActor
 func eventually(_ condition: () async -> Bool) async -> Bool {
@@ -413,6 +433,29 @@ struct SyncCoordinatorTests {
         #expect(b.session.state == .unlocked && !b.titles.contains("Note v2"))
         await b.sync()
         #expect(await b.coordinator.status.isIdle)
+    }
+
+    @Test func refetchFromScratchStartsFromNoToken() async throws {
+        let recorder = TokenRecorder(InMemoryRemote())
+        let a = try SyncDevice(name: "A", client: recorder)
+        defer { a.cleanUp() }
+        _ = try await a.session.createAccount(password: testPassword, displayName: "Camille Durand", mode: .personal)
+        try await addItem(a.session, title: "Projet Atlas")
+        await a.sync()
+        await a.sync()
+        #expect(recorder.tokens.last.flatMap { $0 } != nil)
+
+        let before = recorder.tokens.count
+        await a.coordinator.refetchFromScratch()
+        #expect(recorder.tokens.count > before)
+        #expect(recorder.tokens[before] == nil)
+        #expect(await a.coordinator.status.isIdle)
+        #expect(try await a.pendingChanges().isEmpty)
+        await a.session.reload()
+        #expect(a.session.state == .unlocked && a.titles == ["Projet Atlas"])
+        // The next round is incremental again.
+        await a.sync()
+        #expect(recorder.tokens.last.flatMap { $0 } != nil)
     }
 
     @Test func conflictOnSendIsRestagedAndResent() async throws {

@@ -10,7 +10,6 @@ struct LockView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var password = ""
     @State private var message: String?
-    @State private var autoAttempted = false
     @State private var lockoutRefresh = 0
     @FocusState private var fieldFocused: Bool
 
@@ -46,8 +45,8 @@ struct LockView: View {
             lockoutRefresh &+= 1
         }
         .task(id: scenePhase == .active) {
-            guard scenePhase == .active, !autoAttempted else { return }
-            autoAttempted = true
+            // One automatic try per app activation (AppModel), not per window or per redraw.
+            guard scenePhase == .active, model.takeAutomaticBiometricAttempt() else { return }
             await unlockWithBiometrics(automatic: true)
         }
     }
@@ -75,7 +74,8 @@ struct LockView: View {
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text(model.settings.displayName.isEmpty ? "Compte OnePass" : model.settings.displayName))
+            .accessibilityLabel(
+                model.settings.displayName.isEmpty ? Text("Compte OnePass") : Text(verbatim: model.settings.displayName))
     }
 
     private var passwordField: some View {
@@ -89,6 +89,7 @@ struct LockView: View {
                     .submitLabel(.go)
                     .onSubmit { Task { await unlockWithPassword() } }
                     .disabled(unlocking || lockedOut)
+                    .privacySensitive()
                     .accessibilityIdentifier("lock.password")
                 if session.canUseBiometrics {
                     Button {
@@ -128,7 +129,9 @@ struct LockView: View {
             if let until = lockoutUntil {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let remaining = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
-                    Text(remaining > 0 ? "Trop d'essais. Nouvel essai possible dans \(Self.duration(remaining))." : "Tu peux réessayer.")
+                    Text(remaining > 0
+                         ? String(localized: "Trop d'essais. Nouvel essai possible dans \(Self.duration(remaining)).")
+                         : String(localized: "Tu peux réessayer."))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -162,8 +165,8 @@ struct LockView: View {
     @ViewBuilder private var footer: some View {
         if let days = daysUntilPassword {
             Text(days <= 1
-                 ? "Mot de passe maître redemandé dans 1 jour, puis tous les 14 jours."
-                 : "Mot de passe maître redemandé dans \(days) jours, puis tous les 14 jours.")
+                 ? String(localized: "Mot de passe maître redemandé dans 1 jour, puis tous les 14 jours.")
+                 : String(localized: "Mot de passe maître redemandé dans \(days) jours, puis tous les 14 jours."))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -184,7 +187,8 @@ struct LockView: View {
     /// Only shown when biometric unlock is on: the date the password is asked again.
     private var daysUntilPassword: Int? {
         guard session.canUseBiometrics, let accountID = model.settings.accountID,
-            let due = session.environment.biometrics.passwordDueDate(accountID: accountID)
+            let due = session.environment.biometrics.passwordDueDate(accountID: accountID),
+            due > Date()
         else { return nil }
         return max(1, Int((due.timeIntervalSinceNow / 86400).rounded(.up)))
     }
@@ -207,7 +211,9 @@ struct LockView: View {
             switch failure {
             case .wrongPassword:
                 let count = model.settings.failedUnlocks
-                message = count > 1 ? "Mot de passe incorrect (\(count) essais)." : "Mot de passe incorrect."
+                message = count > 1
+                    ? String(localized: "Mot de passe incorrect (\(count) essais).")
+                    : String(localized: "Mot de passe incorrect.")
             case .lockedOut:
                 message = nil
             default:

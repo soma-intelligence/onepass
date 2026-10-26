@@ -135,7 +135,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = DD89F9C5EC914BA7155D6D09 /* Build configuration list for PBXNativeTarget "OnePass" */;
 			buildPhases = (
-				A19FC5C2D084CD7AAC20499E /* Build Rust core */,
 				9B2AC3F3A1BFE1D5A3C21C0F /* Sources */,
 				7F6FE6B9681652E855A4ED76 /* Resources */,
 				BEF0711806BF64102FB9DA30 /* Frameworks */,
@@ -201,28 +200,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		A19FC5C2D084CD7AAC20499E /* Build Rust core */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Build Rust core";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/bash;
-			shellScript = "# The XCFramework and the Swift bindings are generated, not committed (ruling R17).\nif [ ! -d \"$SRCROOT/build/OnePassFFI.xcframework\" ]; then\n  make -C \"$SRCROOT\" core\nfi\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		9B2AC3F3A1BFE1D5A3C21C0F /* Sources */ = {

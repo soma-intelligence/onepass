@@ -19,6 +19,7 @@ final class AppModel {
     let session: VaultSession
     @ObservationIgnored let coordinator: SyncCoordinator?
     @ObservationIgnored let iconLoader: SiteIconLoader
+    @ObservationIgnored private let remote: (any RemoteRecordStore)?
 
     /// Built with `ONEPASS_CLOUDKIT` (signed Release-CloudKit configuration, ruling R8).
     let cloudKitEnabled: Bool
@@ -35,6 +36,8 @@ final class AppModel {
 
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var started = false
+    /// One automatic biometric attempt per app activation, whatever the number of windows.
+    @ObservationIgnored private var autoBiometricsPending = true
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "app")
 
@@ -42,6 +45,7 @@ final class AppModel {
         #if DEBUG
         DebugReset.applyIfRequested()
         #endif
+        Self.sweepEmergencyKits()
         let databaseURL = VaultEnvironment.defaultDatabaseURL()
         var coordinator: SyncCoordinator?
         #if ONEPASS_CLOUDKIT
@@ -58,6 +62,7 @@ final class AppModel {
             Self.log.error("sync store not opened, sync disabled")
         }
         self.coordinator = coordinator
+        self.remote = remote
         // `live` uses the same `defaultDatabaseURL()` as the sync store.
         let environment = VaultEnvironment.live(sync: coordinator ?? NoSync())
         session = VaultSession(environment: environment)
@@ -74,8 +79,12 @@ final class AppModel {
 
     /// Starts listening to the sync layer and runs a first round. Called once by the root view.
     func start() {
-        guard !started, let coordinator else { return }
+        guard !started else { return }
         started = true
+        #if DEBUG
+        seedAccountIfRequested()
+        #endif
+        guard let coordinator else { return }
         tasks.append(Task { [weak self] in
             for await _ in await coordinator.remoteChanges() {
                 await self?.session.reload()
@@ -89,9 +98,11 @@ final class AppModel {
         tasks.append(Task { await coordinator.syncNow() })
     }
 
+    /// The app's aggregate scene phase (forwarded from `OnePassApp`), not a single window's.
     func scenePhaseChanged(_ phase: ScenePhase) {
         switch phase {
         case .active:
+            autoBiometricsPending = true
             session.scenePhaseChanged(.active)
             if let coordinator { Task { await coordinator.syncNow() } }
         case .inactive:
@@ -100,6 +111,43 @@ final class AppModel {
             session.scenePhaseChanged(.background)
         @unknown default:
             break
+        }
+    }
+
+    #if DEBUG
+    /// Screenshots: `-OnePassDebugSeedAccount YES` creates a fictional account (Camille Durand) when
+    /// none exists, then locks, so the lock screen can be captured. Debug builds only.
+    private func seedAccountIfRequested() {
+        guard UserDefaults.standard.bool(forKey: "OnePassDebugSeedAccount"), session.state == .noAccount
+        else { return }
+        Task {
+            _ = try? await session.createAccount(
+                password: "ruisseau-tapis-orage-comete", displayName: "Camille Durand", mode: .personal)
+            onboardingInProgress = false
+            session.lock()
+        }
+    }
+    #endif
+
+    /// True once per app activation: the lock screen of the first window that asks may try
+    /// biometric unlock automatically.
+    func takeAutomaticBiometricAttempt() -> Bool {
+        defer { autoBiometricsPending = false }
+        return autoBiometricsPending
+    }
+
+    /// CloudKit build: whether an iCloud account is signed in. Unsigned build: true (local only).
+    func iCloudAccountAvailable() async -> Bool {
+        guard cloudKitEnabled, let remote else { return true }
+        return await remote.accountAvailable()
+    }
+
+    /// Emergency Kit PDFs left in the temporary folder by a previous run (killed during the step).
+    private static func sweepEmergencyKits() {
+        let tmp = FileManager.default.temporaryDirectory
+        let entries = (try? FileManager.default.contentsOfDirectory(atPath: tmp.path)) ?? []
+        for name in entries where name.hasPrefix("kit-") {
+            try? FileManager.default.removeItem(at: tmp.appendingPathComponent(name, isDirectory: true))
         }
     }
 
@@ -112,10 +160,11 @@ final class AppModel {
         return found
     }
 
-    /// "Réessayer" on "Données refusées": a sync round, then the store is read again.
+    /// "Réessayer" on "Données refusées": a complete fetch from scratch, then the store is read again.
     func retryAfterFailure() async {
-        await coordinator?.syncNow()
-        await session.refresh()
+        await coordinator?.refetchFromScratch()
+        await session.reload()
+        if case .failed = session.state { await session.refresh() }
     }
 
     /// Lock button and menu command.

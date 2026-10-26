@@ -74,6 +74,23 @@ public actor SyncCoordinator: SyncTrigger {
         await run?.value
     }
 
+    /// "Réessayer" after "Données refusées": forgets the change token (an empty token is a cleared one),
+    /// so the next round fetches everything from scratch through `beginFullFetch` and settles rows the
+    /// server no longer holds, then sends as usual. Returns when that round is done. No remote: no-op.
+    public func refetchFromScratch() async {
+        guard remote != nil else { return }
+        await acquire()
+        let store = store
+        do {
+            try await CoreThread.run { try store.setMeta(key: Self.tokenKey, value: Data()) }
+        } catch {
+            Self.log.error("change token not cleared")
+        }
+        release()
+        kick()
+        await run?.value
+    }
+
     /// The current status, then every change.
     public func statusUpdates() -> AsyncStream<SyncStatus> {
         let (stream, continuation) = AsyncStream<SyncStatus>.makeStream()

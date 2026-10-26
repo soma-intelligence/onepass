@@ -3,42 +3,54 @@ import SwiftUI
 import VaultKit
 
 /// Chooses the screen from the session state: onboarding, lock screen, "Données refusées",
-/// or the unlocked app. Adds the privacy shield on iPhone and iPad.
+/// or the unlocked app. On iPhone and iPad it also drives this window scene's privacy shield.
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    #if os(iOS)
     @Environment(\.scenePhase) private var scenePhase
+    @State private var windowScene: UIWindowScene?
+    #endif
 
     var body: some View {
         content
             .animation(.smooth(duration: 0.25), value: route)
+            .onAppear { model.start() }
             #if os(iOS)
-            .overlay {
-                if scenePhase != .active { PrivacyShield() }
+            .background { WindowSceneReader(scene: $windowScene).frame(width: 0, height: 0) }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                updateShield(phase)
+            }
+            .onChange(of: windowScene) { _, _ in
+                updateShield(scenePhase)
             }
             #endif
-            .onAppear { model.start() }
-            .onChange(of: scenePhase, initial: false) { _, phase in
-                model.scenePhaseChanged(phase)
-            }
     }
 
+    #if os(iOS)
+    /// Above every presentation (sheets, share sheet, alerts): a window of its own (spec 9).
+    private func updateShield(_ phase: ScenePhase) {
+        guard let windowScene else { return }
+        PrivacyShieldWindows.shared.setVisible(phase != .active, in: windowScene)
+    }
+    #endif
+
     private enum Route: Hashable {
-        case onboarding(restoreOnly: Bool), lock, unlocked, failed
+        case onboarding, lock, unlocked, failed
     }
 
     private var route: Route {
         let state = model.session.state
         if case .failed = state { return .failed }
-        if model.onboardingInProgress || state == .noAccount { return .onboarding(restoreOnly: false) }
+        if model.onboardingInProgress || state == .noAccount { return .onboarding }
         // An account is in the store but this device lacks its Secret Key: Emergency Kit.
-        if model.session.needsSecretKey, state != .unlocked { return .onboarding(restoreOnly: true) }
+        if model.session.needsSecretKey, state != .unlocked { return .onboarding }
         return state == .unlocked ? .unlocked : .lock
     }
 
     @ViewBuilder private var content: some View {
         switch route {
-        case .onboarding(let restoreOnly):
-            OnboardingFlow(restoreOnly: restoreOnly)
+        case .onboarding:
+            OnboardingFlow()
                 .transition(.opacity)
         case .lock:
             LockView()
@@ -61,12 +73,13 @@ struct BrowseRoot: View {
     var body: some View {
         NavigationStack {
             EmptyState(
-                title: "OnePass est déverrouillé", systemImage: "lock.open",
-                message: "Les coffres et les éléments s'afficheront ici.")
+                title: String(localized: "OnePass est déverrouillé"), systemImage: "lock.open",
+                message: String(localized: "Les coffres et les éléments s'afficheront ici."))
                 .navigationTitle("OnePass")
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Button("Verrouiller", systemImage: "lock") { model.lock() }
+                            .accessibilityIdentifier("app.lock")
                     }
                 }
         }

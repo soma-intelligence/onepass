@@ -47,15 +47,6 @@ targets:
         product: VaultKit
       - package: DesignKit
         product: DesignKit
-    preBuildScripts:
-      - name: Build Rust core
-        basedOnDependencyAnalysis: false
-        shell: /bin/bash
-        script: |
-          # The XCFramework and the Swift bindings are generated, not committed (ruling R17).
-          if [ ! -d "$SRCROOT/build/OnePassFFI.xcframework" ]; then
-            make -C "$SRCROOT" core
-          fi
     info:
       path: App/Support/Info.plist
       properties:
@@ -63,7 +54,10 @@ targets:
         CFBundleDevelopmentRegion: fr
         LSApplicationCategoryType: public.app-category.productivity
         AppIdentifierPrefix: $(AppIdentifierPrefix)
-        ITSAppUsesNonExemptEncryption: false
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # The app ships its own cryptography; export compliance is settled before submission (README).
+        ITSAppUsesNonExemptEncryption: true
         NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
         NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit."
         UILaunchScreen: {}
@@ -110,6 +104,16 @@ schemes:
     build:
       targets:
         OnePass: all
+      # Before the build, so before the Swift packages that link the XCFramework. The XCFramework
+      # and the Swift bindings are generated, not committed (ruling R17). On a fresh clone, run
+      # `make -C apple core` first: Xcode resolves packages when the project opens.
+      preActions:
+        - name: Build Rust core
+          settingsTarget: OnePass
+          script: |
+            if [ ! -d "${PROJECT_DIR}/build/OnePassFFI.xcframework" ]; then
+              make -C "${PROJECT_DIR}" core
+            fi
     run:
       config: Debug
     archive:

@@ -50,7 +50,9 @@ struct IntegrityFailureView: View {
                     .buttonStyle(.glassProminent)
                     .controlSize(.large)
                     .disabled(retrying)
+                    .accessibilityIdentifier("integrity.retry")
                     Button("En savoir plus") { showDetails = true }
+                        .accessibilityIdentifier("integrity.learnMore")
                         .buttonStyle(.glass)
                         .controlSize(.large)
                 }

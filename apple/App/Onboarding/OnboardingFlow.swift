@@ -125,7 +125,7 @@ final class OnboardingModel {
 
     var confirmationMismatch: Bool { !confirmation.isEmpty && confirmation != password }
 
-    /// "Continuer" from the "bon" level and when both fields match.
+    /// String(localized: "Continuer") from the "bon" level and when both fields match.
     var passwordAccepted: Bool {
         StrengthMeter.level(forBits: passwordBits) >= 3 && password == confirmation
     }
@@ -133,10 +133,10 @@ final class OnboardingModel {
     var primaryLabel: String? {
         switch step {
         case .welcome: nil
-        case .biometrics: "Activer \(biometryName)"
-        case .restore: "Déverrouiller"
-        case .done: "Ouvrir OnePass"
-        default: "Continuer"
+        case .biometrics: String(localized: "Activer \(biometryName)")
+        case .restore: String(localized: "Déverrouiller")
+        case .done: String(localized: "Ouvrir OnePass")
+        default: String(localized: "Continuer")
         }
     }
 
@@ -171,21 +171,28 @@ final class OnboardingModel {
     // MARK: - Actions
 
     private func createAccount() async {
-        busyMessage = cloudKitEnabled ? "Vérification de ton iCloud..." : "Création du coffre..."
+        busyMessage = cloudKitEnabled ? String(localized: "Vérification de ton iCloud...") : String(localized: "Création du coffre...")
         defer { busyMessage = nil }
         errorMessage = nil
         offerRestore = false
+        guard await model.iCloudAccountAvailable() else {
+            errorMessage = String(localized: "Connecte-toi à iCloud dans Réglages pour créer ton coffre.")
+            return
+        }
         do {
             if try await model.remoteHasAccount() {
-                errorMessage = "Un compte OnePass existe déjà dans ton iCloud, utilise ton Emergency Kit."
+                errorMessage = String(localized: "Un compte OnePass existe déjà dans ton iCloud, utilise ton Emergency Kit.")
                 offerRestore = true
                 return
             }
+        } catch RemoteStoreError.accountUnavailable {
+            errorMessage = String(localized: "Connecte-toi à iCloud dans Réglages pour créer ton coffre.")
+            return
         } catch {
-            errorMessage = "Impossible de vérifier ton iCloud. Vérifie ta connexion puis réessaie."
+            errorMessage = String(localized: "Impossible de vérifier ton iCloud. Vérifie ta connexion puis réessaie.")
             return
         }
-        busyMessage = "Création du coffre..."
+        busyMessage = String(localized: "Création du coffre...")
         do {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
             secretKey = try await session.createAccount(password: password, displayName: name, mode: mode)
@@ -197,7 +204,7 @@ final class OnboardingModel {
     }
 
     private func enrollBiometrics() async {
-        busyMessage = "Activation de \(biometryName)..."
+        busyMessage = String(localized: "Activation de \(biometryName)...")
         defer { busyMessage = nil }
         model.settings.allowWatchUnlock = allowWatch
         do {
@@ -210,9 +217,13 @@ final class OnboardingModel {
     }
 
     private func restore() async {
-        busyMessage = cloudKitEnabled ? "Récupération de ton coffre dans iCloud..." : "Recherche du compte..."
+        busyMessage = cloudKitEnabled ? String(localized: "Récupération de ton coffre dans iCloud...") : String(localized: "Recherche du compte...")
         defer { busyMessage = nil }
         errorMessage = nil
+        guard await model.iCloudAccountAvailable() else {
+            errorMessage = String(localized: "Connecte-toi à iCloud dans Réglages pour retrouver ton coffre.")
+            return
+        }
         do {
             let found: Bool
             if cloudKitEnabled {
@@ -222,14 +233,17 @@ final class OnboardingModel {
                 found = try await CoreThread.run { try hasAccount(dbPath: path) }
             }
             guard found else {
-                errorMessage = "Aucun compte trouvé dans ton iCloud."
+                errorMessage = String(localized: "Aucun compte trouvé dans ton iCloud.")
                 return
             }
+        } catch RemoteStoreError.accountUnavailable {
+            errorMessage = String(localized: "Connecte-toi à iCloud dans Réglages pour retrouver ton coffre.")
+            return
         } catch {
-            errorMessage = "Impossible de joindre iCloud. Vérifie ta connexion puis réessaie."
+            errorMessage = String(localized: "Impossible de joindre iCloud. Vérifie ta connexion puis réessaie.")
             return
         }
-        busyMessage = "Déverrouillage..."
+        busyMessage = String(localized: "Déverrouillage...")
         do {
             try await session.restore(secretKey: restoreKey, password: restorePassword)
         } catch {
@@ -288,7 +302,7 @@ final class OnboardingModel {
             kitURL = url
         } catch {
             try? FileManager.default.removeItem(at: folder)
-            errorMessage = "L'Emergency Kit n'a pas pu être préparé."
+            errorMessage = String(localized: "L'Emergency Kit n'a pas pu être préparé.")
         }
     }
 
@@ -320,14 +334,14 @@ final class OnboardingModel {
 
     static func railLabel(_ step: OnboardingStep) -> String {
         switch step {
-        case .welcome: "Bienvenue"
-        case .device: "Type d'appareil"
-        case .password: "Mot de passe maître"
+        case .welcome: String(localized: "Bienvenue")
+        case .device: String(localized: "Type d'appareil")
+        case .password: String(localized: "Mot de passe maître")
         case .secretKey: "Secret Key"
         case .biometrics: biometryName
-        case .visibleVaults: "Coffres visibles"
+        case .visibleVaults: String(localized: "Coffres visibles")
         case .restore: "Emergency Kit"
-        case .done: "Terminé"
+        case .done: String(localized: "Terminé")
         }
     }
 }
@@ -335,7 +349,6 @@ final class OnboardingModel {
 /// Full-window onboarding: pages with progress dots on iPhone and iPad, a step rail in a native
 /// sidebar on Mac (mockups `PhoneOnboarding` and `Onboarding`).
 struct OnboardingFlow: View {
-    let restoreOnly: Bool
     @Environment(AppModel.self) private var app
     @State private var model: OnboardingModel?
 
@@ -354,6 +367,9 @@ struct OnboardingFlow: View {
         }
         .onAppear {
             app.onboardingInProgress = true
+            // Restore only when the store holds an account whose Secret Key this device lacks,
+            // whatever the reason the onboarding is on screen.
+            let restoreOnly = app.session.needsSecretKey && app.session.state != .noAccount
             if model == nil { model = OnboardingModel(model: app, restoreOnly: restoreOnly) }
         }
     }
@@ -399,6 +415,7 @@ private struct PhoneOnboardingLayout: View {
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
                 .accessibilityLabel(Text("Retour"))
+                .accessibilityIdentifier("onboarding.back")
             } else {
                 Color.clear.frame(width: 40, height: 40)
             }
@@ -435,6 +452,7 @@ private struct PhoneOnboardingLayout: View {
                 Button("Plus tard") { model.skip() }
                     .font(.body)
                     .frame(height: 40)
+                    .accessibilityIdentifier("onboarding.skip")
             }
         }
     }
@@ -498,6 +516,7 @@ private struct MacOnboardingLayout: View {
             if model.canGoBack {
                 Button("Retour") { model.back() }
                     .controlSize(.large)
+                    .accessibilityIdentifier("onboarding.back")
             }
             Spacer()
             if model.step != .welcome, model.step != .done {
@@ -505,6 +524,7 @@ private struct MacOnboardingLayout: View {
                 if model.canSkip {
                     Button("Plus tard") { model.skip() }
                         .controlSize(.large)
+                        .accessibilityIdentifier("onboarding.skip")
                 }
                 if let label = model.primaryLabel {
                     Button(label) { Task { await model.primary() } }

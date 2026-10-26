@@ -8,7 +8,7 @@ TEST_XCFRAMEWORK := ../build/test/OnePassFFI.xcframework
 # The shell script keeps its own content stamp (apple/build/.core-stamp and
 # apple/build/test/.core-stamp) and is a no-op when the Rust sources are
 # unchanged; make always delegates to it.
-.PHONY: core core-test test project build-ios build-mac uitest screenshots clean
+.PHONY: core core-test test project simulators build-ios build-mac uitest screenshots clean
 
 ## Shipped XCFramework (release, ios + ios-simulator + macOS) and bindings.
 core:
@@ -30,20 +30,28 @@ project: core
 	cd "$(APPLE_DIR)" && xcodegen generate
 
 IOS_DESTINATION := platform=iOS Simulator,name=OnePass M2 iPhone
+IOS_RUNTIME := com.apple.CoreSimulator.SimRuntime.iOS-27-0
 
-## Simulator build, unsigned (the dedicated simulator must exist, see README).
-build-ios: project
+## The two dedicated simulators, created when missing. Never boots, stops or erases any simulator.
+simulators:
+	@xcrun simctl list devices | grep -q "OnePass M2 iPhone (" || \
+		xcrun simctl create "OnePass M2 iPhone" com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro $(IOS_RUNTIME)
+	@xcrun simctl list devices | grep -q "OnePass M2 iPad (" || \
+		xcrun simctl create "OnePass M2 iPad" com.apple.CoreSimulator.SimDeviceType.iPad-mini-A17-Pro $(IOS_RUNTIME)
+
+## Simulator build, unsigned. Uses the committed OnePass.xcodeproj (`make project` regenerates it).
+build-ios: core simulators
 	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
 		-destination '$(IOS_DESTINATION)' -derivedDataPath DerivedData \
 		CODE_SIGNING_ALLOWED=NO build
 
 ## Native Mac build (arm64), signed ad hoc so it runs locally.
-build-mac: project
+build-mac: core
 	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
 		-destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData \
 		CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
 
-uitest: project
+uitest: core simulators
 	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
 		-destination '$(IOS_DESTINATION)' -derivedDataPath DerivedData \
 		CODE_SIGNING_ALLOWED=NO test

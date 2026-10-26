@@ -65,8 +65,8 @@ struct OnboardingStepContent: View {
 // MARK: - Shared pieces
 
 private struct StepTitle: View {
-    let title: String
-    let subtitle: String?
+    let title: LocalizedStringResource
+    let subtitle: LocalizedStringResource?
     var centered = false
 
     var body: some View {
@@ -132,12 +132,14 @@ extension View {
 
 /// Text or secure field in the mockup style (filled on iPhone, bordered on Mac).
 private struct OnboardingField: View {
-    let label: String
-    let prompt: String
+    let label: LocalizedStringResource
+    let prompt: LocalizedStringResource
     @Binding var text: String
     var secure = false
     var mismatch = false
     var monospaced = false
+    /// Secret Key entry: no autocorrection, ASCII keyboard, capitals, hidden from screen captures.
+    var secretKey = false
     var identifier: String
 
     var body: some View {
@@ -145,9 +147,9 @@ private struct OnboardingField: View {
             Text(label).font(.subheadline).foregroundStyle(.secondary)
             Group {
                 if secure {
-                    SecureField(label, text: $text, prompt: Text(prompt))
+                    SecureField(text: $text, prompt: Text(prompt)) { Text(label) }
                 } else {
-                    TextField(label, text: $text, prompt: Text(prompt))
+                    TextField(text: $text, prompt: Text(prompt)) { Text(label) }
                 }
             }
             .labelsHidden()
@@ -155,8 +157,10 @@ private struct OnboardingField: View {
             .font(monospaced ? .system(.body, design: .monospaced) : .body)
             .autocorrectionDisabled()
             #if os(iOS)
-            .textInputAutocapitalization(.never)
+            .textInputAutocapitalization(secretKey ? .characters : .never)
+            .keyboardType(secretKey ? .asciiCapable : .default)
             #endif
+            .privacySensitive(secretKey || secure)
             .padding(.horizontal, 14)
             .frame(height: Platform.isMac ? 40 : 52)
             .background {
@@ -176,12 +180,12 @@ private struct OnboardingField: View {
 }
 
 private struct CheckRow: View {
-    let title: String
+    let title: LocalizedStringResource
     @Binding var isOn: Bool
 
     var body: some View {
         #if os(macOS)
-        Toggle(title, isOn: $isOn).toggleStyle(.checkbox)
+        Toggle(isOn: $isOn) { Text(title) }.toggleStyle(.checkbox)
         #else
         Button {
             isOn.toggle()
@@ -240,7 +244,7 @@ private struct WelcomeStep: View {
         .padding(.top, 8)
     }
 
-    private var subtitle: String {
+    private var subtitle: LocalizedStringResource {
         if Platform.isMac {
             "Tous tes mots de passe, passkeys, cartes et documents, chiffrés avec une cryptographie qui résiste aux ordinateurs quantiques."
         } else {
@@ -249,7 +253,8 @@ private struct WelcomeStep: View {
     }
 
     private func choice(
-        _ title: String, _ subtitle: String, symbol: String, prominent: Bool = false, soon: Bool = false,
+        _ title: LocalizedStringResource, _ subtitle: LocalizedStringResource, symbol: String,
+        prominent: Bool = false, soon: Bool = false,
         identifier: String, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -308,7 +313,9 @@ private struct DeviceStep: View {
         }
     }
 
-    private func option(_ mode: DeviceMode, _ title: String, _ subtitle: String) -> some View {
+    private func option(
+        _ mode: DeviceMode, _ title: LocalizedStringResource, _ subtitle: LocalizedStringResource
+    ) -> some View {
         let selected = model.mode == mode
         return Button {
             model.mode = mode
@@ -397,6 +404,7 @@ private struct SecretKeyStep: View {
                 .font(.system(size: 16, design: .monospaced))
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
+                .privacySensitive()
                 .accessibilityIdentifier("onboarding.secretKey")
         }
         .padding(16)
@@ -412,6 +420,7 @@ private struct SecretKeyStep: View {
             }
             .buttonStyle(.glass)
             .controlSize(Platform.isMac ? .large : .regular)
+            .accessibilityIdentifier("onboarding.saveKit")
         }
         CheckRow(title: "Je l'ai rangée hors ligne", isOn: $model.kitStoredOffline)
             .accessibilityIdentifier("onboarding.kitStored")
@@ -496,7 +505,7 @@ private struct RestoreStep: View {
                 : "Scanne le QR code du kit ou tape ta Secret Key. Minuscules, espaces et tirets oubliés sont acceptés.")
         OnboardingField(
             label: "Secret Key", prompt: "XXXX-XXXX-XXXX-...", text: $model.restoreKey,
-            monospaced: true, identifier: "onboarding.restoreKey")
+            monospaced: true, secretKey: true, identifier: "onboarding.restoreKey")
         #if os(iOS)
         if SecretKeyScanner.isSupported {
             Button {
@@ -505,6 +514,7 @@ private struct RestoreStep: View {
                 Label("Scanner le QR code du kit", systemImage: "qrcode.viewfinder")
             }
             .buttonStyle(.glass)
+            .accessibilityIdentifier("onboarding.scan")
             .sheet(isPresented: $scanning) {
                 SecretKeyScannerSheet { key in
                     model.restoreKey = key
@@ -580,24 +590,26 @@ private struct DoneStep: View {
 
     private var title: String {
         let first = model.displayName.split(separator: " ").first.map(String.init) ?? ""
-        return Platform.isMac && !first.isEmpty ? "Tout est prêt, \(first)" : "Tout est prêt"
+        return Platform.isMac && !first.isEmpty
+            ? String(localized: "Tout est prêt, \(first)") : String(localized: "Tout est prêt")
     }
 
     private var rows: [(label: String, value: String)] {
         let biometrics: String
         if model.biometricsEnabled {
-            biometrics = "Activé"
+            biometrics = String(localized: "Activé")
         } else if model.mode == .shared {
-            biometrics = "Désactivé (appareil partagé)"
+            biometrics = String(localized: "Désactivé (appareil partagé)")
         } else if !model.biometricsOffered {
-            biometrics = "Non disponible"
+            biometrics = String(localized: "Non disponible")
         } else {
-            biometrics = "Plus tard"
+            biometrics = String(localized: "Plus tard")
         }
         return [
-            ("Coffre chiffré dans iCloud", model.cloudKitEnabled ? "Oui" : "Non (build local)"),
+            (String(localized: "Coffre chiffré dans iCloud"),
+             model.cloudKitEnabled ? String(localized: "Oui") : String(localized: "Non (build local)")),
             (model.biometryName, biometrics),
-            ("Emergency Kit", model.path == .create ? "Rangé" : "Déjà fait"),
+            ("Emergency Kit", model.path == .create ? String(localized: "Rangé") : String(localized: "Déjà fait")),
         ]
     }
 }

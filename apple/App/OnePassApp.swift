@@ -10,6 +10,8 @@ struct OnePassApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     #endif
     @State private var model = AppModel()
+    /// Aggregate phase of every scene: drives auto-lock and sync, once for the whole app.
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -25,6 +27,9 @@ struct OnePassApp: App {
         .defaultSize(width: 1280, height: 820)
         .windowToolbarStyle(.unified)
         #endif
+        .onChange(of: scenePhase) { _, phase in
+            model.scenePhaseChanged(phase)
+        }
         .commands {
             CommandGroup(after: .appSettings) {
                 Button("Verrouiller OnePass") { model.lock() }
