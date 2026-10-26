@@ -186,7 +186,8 @@ impl<S: RecordStore> Repository<S> {
     /// Unlock the single account of the store (`NotFound` if there is none,
     /// `InvalidFormat("account params")` if there are several). On a device
     /// that pinned nothing yet, the account is pinned now (trust on first
-    /// use); otherwise `Account::unlock` checks it against the pin.
+    /// use); otherwise `Account::unlock` checks it against the pin, and the
+    /// pinned KDF floor is raised to the parameters just accepted.
     pub fn unlock(
         store: S,
         password: &str,
@@ -212,8 +213,9 @@ impl<S: RecordStore> Repository<S> {
         if account.params.account_id != params.id {
             return Err(IntegrityError::WrongContext.into());
         }
-        if device.pinned.is_none() {
-            device.pinned = Some(pin(&account));
+        match &mut device.pinned {
+            None => device.pinned = Some(pin(&account)),
+            Some(p) => p.raise_floor(&account.params.kdf),
         }
         Ok(Repository {
             store,
@@ -783,6 +785,20 @@ mod tests {
         assert!(get(c.id).trashed_at.is_none());
         assert_eq!(repo.store.list(RecordKind::Item).unwrap().len(), 2);
         assert_eq!(repo.delete_item(&v, a.id), Err(Error::NotFound));
+    }
+
+    #[test]
+    fn unlock_ratchets_the_pinned_kdf_floor() {
+        let (repo, _) = fresh(MemoryStore::new());
+        let mut device = repo.device_state().clone();
+        let accepted = repo.account.params.kdf.clone();
+        // A pin from before the params were strengthened.
+        device.pinned.as_mut().unwrap().kdf_floor.m_kib = accepted.m_kib / 2;
+        let repo = Repository::unlock(repo.store, "pw", &shared().secret_key, device).unwrap();
+        assert_eq!(
+            repo.device_state().pinned.as_ref().unwrap().kdf_floor,
+            accepted
+        );
     }
 
     #[test]

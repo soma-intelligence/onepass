@@ -17,6 +17,16 @@ impl KeyType for Len32 {
     }
 }
 
+/// HKDF-SHA256 with 32 output bytes, written straight into a key buffer.
+/// `info` is the concatenation of its parts.
+pub(crate) fn hkdf32(salt: &[u8], ikm: &[u8], info: &[&[u8]]) -> Result<SymmetricKey> {
+    let prk = Salt::new(HKDF_SHA256, salt).extract(ikm);
+    let okm = prk.expand(info, Len32).map_err(|_| Error::Crypto)?;
+    let mut key = SymmetricKey([0u8; 32]);
+    okm.fill(&mut key.0).map_err(|_| Error::Crypto)?;
+    Ok(key)
+}
+
 /// A 256-bit symmetric key, wiped from memory on drop.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct SymmetricKey(pub(crate) [u8; 32]);
@@ -43,12 +53,7 @@ impl SymmetricKey {
 
     /// HKDF-SHA256 with an empty salt, 32 output bytes.
     pub fn derive(&self, info: &[u8]) -> Result<SymmetricKey> {
-        let prk = Salt::new(HKDF_SHA256, &[]).extract(&self.0);
-        let info = [info];
-        let okm = prk.expand(&info, Len32).map_err(|_| Error::Crypto)?;
-        let mut key = SymmetricKey([0u8; 32]);
-        okm.fill(&mut key.0).map_err(|_| Error::Crypto)?;
-        Ok(key)
+        hkdf32(&[], &self.0, &[info])
     }
 }
 

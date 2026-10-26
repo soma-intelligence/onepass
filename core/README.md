@@ -45,6 +45,8 @@ La suite couvre :
 - la suite "stockage malveillant" (`tests/malicious_store.rs`), une attaque par test ;
 - les tests de la CLI (`onepass-cli/tests/cli.rs`).
 
+La suite "stockage malveillant" déverrouille des comptes créés avec des paramètres Argon2id rapides : elle demande la feature `dev-fast-kdf` de `onepass-core`, que `onepass-cli` active, donc `cargo test --workspace` (et `make test`) la lance. Seule : `cargo test -p onepass-core --features dev-fast-kdf --test malicious_store`. Cette feature n'abaisse le plancher Argon2id que dans un build avec assertions de debug ; un build release impose toujours le plancher de la spec.
+
 La signature SLH-DSA est lente (environ 15 s en optimisé, plus en debug). Le profil `dev` compile donc `sha2` avec `opt-level = 3`.
 
 ## Fuzzing

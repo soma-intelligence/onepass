@@ -11,7 +11,9 @@ name = "onepass"
 path = "src/main.rs"
 
 [dependencies]
-onepass-core = { path = "../onepass-core" }
+# dev-fast-kdf: the dev floor only applies in debug builds (ONEPASS_DEV_FAST_KDF);
+# a release build of the CLI enforces the real KDF floor.
+onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }
 serde.workspace = true
 zeroize.workspace = true
 clap = { version = "4", features = ["derive"] }

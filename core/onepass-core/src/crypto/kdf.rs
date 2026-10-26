@@ -1,18 +1,23 @@
 //! Two-secret key derivation (2SKD): password plus Secret Key give the AUK.
 
 use argon2::{Algorithm, Argon2, Block, Params, Version};
-use aws_lc_rs::hkdf::{HKDF_SHA256, KeyType, Salt};
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 use zeroize::Zeroizing;
 
-use super::key::SymmetricKey;
+use super::key::{SymmetricKey, hkdf32};
 use super::random::random_array;
 use super::secret_key::SecretKey;
 use crate::{Error, Result};
 
 /// Minimum accepted Argon2id cost as `(m_kib, t, p)`.
 pub const KDF_FLOOR: (u32, u32, u32) = (262144, 4, 4);
+
+/// The floor of dev and test builds only: the fast parameters of the unit
+/// tests and of `ONEPASS_DEV_FAST_KDF`. Enforced in place of `KDF_FLOOR`
+/// under `cfg(test)`, or with the `dev-fast-kdf` feature in a build with
+/// debug assertions; never in a release build.
+pub const DEV_KDF_FLOOR: (u32, u32, u32) = (8192, 1, 1);
 
 const AUK_INFO: &[u8] = b"onepass/auk/v1";
 
@@ -40,15 +45,6 @@ impl KdfParams {
     /// True when memory, time and parallelism are all at least `floor`'s.
     pub fn is_at_least(&self, floor: &KdfParams) -> bool {
         self.m_kib >= floor.m_kib && self.t >= floor.t && self.p >= floor.p
-    }
-}
-
-/// HKDF output length marker: 32 bytes.
-struct Len32;
-
-impl KeyType for Len32 {
-    fn len(&self) -> usize {
-        32
     }
 }
 
@@ -104,10 +100,5 @@ pub fn derive_auk(
         .map_err(|_| Error::Crypto)?;
     ikm.extend_from_slice(&secret_key.0);
 
-    let prk = Salt::new(HKDF_SHA256, &params.salt).extract(&ikm);
-    let info = [AUK_INFO];
-    let okm = prk.expand(&info, Len32).map_err(|_| Error::Crypto)?;
-    let mut auk = SymmetricKey::from_bytes([0u8; 32]);
-    okm.fill(&mut auk.0).map_err(|_| Error::Crypto)?;
-    Ok(auk)
+    hkdf32(&params.salt, &ikm, &[AUK_INFO])
 }

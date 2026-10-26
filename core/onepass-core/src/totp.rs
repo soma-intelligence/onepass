@@ -92,6 +92,7 @@ pub fn code_at(cfg: &TotpConfig, unix_seconds: u64) -> Result<String> {
 }
 
 /// Seconds until the current code changes (1..=period). 0 for a zero period.
+/// Reserved: no caller in M1, kept for the app's countdown (milestone 2).
 pub fn seconds_remaining(cfg: &TotpConfig, unix_seconds: u64) -> u32 {
     if cfg.period == 0 {
         return 0;
@@ -264,6 +265,8 @@ struct OtpParameters {
 /// Parses `otpauth-migration://offline?data=<base64>` (Google Authenticator
 /// export). HOTP, MD5 and unknown-digit entries are skipped; fails with
 /// `InvalidFormat` when nothing supported remains.
+/// Reserved: no caller in M1, kept for the import flow (fuzzed and tested
+/// already, since it reads untrusted input).
 pub fn parse_migration(uri: &str) -> Result<Vec<TotpConfig>> {
     const BAD: Error = Error::InvalidFormat("migration uri");
     let rest = strip_prefix_ci(uri.trim(), "otpauth-migration://").ok_or(BAD)?;

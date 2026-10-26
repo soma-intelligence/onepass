@@ -13,9 +13,9 @@ use zeroize::Zeroizing;
 
 use crate::crypto::aead::{OpenStage, open_detailed};
 use crate::crypto::{
-    Aad, BlobKind, HybridKemPublic, HybridKemSecret, HybridSigningKey, HybridVerifyingKey,
-    IdentityKey, IdentitySignature, IdentityVerifyingKey, KdfParams, SecretKey, SymmetricKey,
-    derive_auk, seal,
+    Aad, BlobKind, DEV_KDF_FLOOR, HybridKemPublic, HybridKemSecret, HybridSigningKey,
+    HybridVerifyingKey, IdentityKey, IdentitySignature, IdentityVerifyingKey, KDF_FLOOR, KdfParams,
+    SecretKey, SymmetricKey, derive_auk, seal,
 };
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -73,12 +73,46 @@ pub struct NewAccount {
     pub keyset_record: Vec<u8>,
 }
 
-/// What the device remembered about the account at first sign-in.
+/// What the device remembered about the account at first sign-in. The KDF
+/// floor is raised after every successful unlock (`raise_floor`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PinnedAccount {
     pub account_id: Id,
     pub identity_pub: IdentityVerifyingKey,
     pub kdf_floor: KdfParams,
+}
+
+impl PinnedAccount {
+    /// Raise the floor to the componentwise maximum of itself and the
+    /// parameters just accepted (their salt is kept), so that once stronger
+    /// parameters were seen, an older, weaker signed set is refused.
+    pub fn raise_floor(&mut self, accepted: &KdfParams) {
+        let f = &mut self.kdf_floor;
+        f.m_kib = f.m_kib.max(accepted.m_kib);
+        f.t = f.t.max(accepted.t);
+        f.p = f.p.max(accepted.p);
+        f.salt = accepted.salt;
+    }
+}
+
+/// The floor for a build: `DEV_KDF_FLOOR` in a dev build, else `KDF_FLOOR`.
+fn floor_for(dev: bool) -> (u32, u32, u32) {
+    if dev { DEV_KDF_FLOOR } else { KDF_FLOOR }
+}
+
+/// The floor every unlock and every creation enforces. The dev floor needs
+/// `cfg(test)`, or the `dev-fast-kdf` feature together with debug
+/// assertions: a release build always enforces `KDF_FLOOR`.
+fn enforced_floor() -> (u32, u32, u32) {
+    floor_for(cfg!(any(
+        test,
+        all(feature = "dev-fast-kdf", debug_assertions)
+    )))
+}
+
+fn above_floor(kdf: &KdfParams) -> bool {
+    let (m_kib, t, p) = enforced_floor();
+    kdf.m_kib >= m_kib && kdf.t >= t && kdf.p >= p
 }
 
 impl Account {
@@ -93,10 +127,11 @@ impl Account {
 
     /// Create an account with explicit KDF parameters (fast ones in tests).
     ///
-    /// Errors: parameters above the KDF ceiling give
-    /// `InvalidFormat("kdf params")`, since such an account could not unlock.
+    /// Errors: parameters above the KDF ceiling or below the enforced floor
+    /// give `InvalidFormat("kdf params")`, since such an account could not
+    /// unlock.
     pub fn create_with_params(password: &str, kdf: KdfParams) -> Result<NewAccount> {
-        if !within_ceiling(&kdf) {
+        if !within_ceiling(&kdf) || !above_floor(&kdf) {
             return Err(Error::InvalidFormat("kdf params"));
         }
         let account_id = Id::new();
@@ -132,7 +167,9 @@ impl Account {
     ///    `identity_pub`; with `pinned`, the account id and identity must match
     ///    the pinned ones. Otherwise `IntegrityError::ParamsUnsigned`.
     /// 2. With `pinned`, the KDF parameters are at least the pinned floor,
-    ///    otherwise `IntegrityError::ParamsDowngrade`.
+    ///    and with or without it, at least the enforced floor (`KDF_FLOOR`,
+    ///    or `DEV_KDF_FLOOR` in a dev build), otherwise
+    ///    `IntegrityError::ParamsDowngrade`.
     /// 3. The KDF parameters are within the ceiling, otherwise
     ///    `InvalidFormat("kdf params")`. Then the AUK is derived and the
     ///    keyset blob opened.
@@ -171,6 +208,9 @@ impl Account {
             if !params.kdf.is_at_least(&pin.kdf_floor) {
                 return Err(IntegrityError::ParamsDowngrade.into());
             }
+        }
+        if !above_floor(&params.kdf) {
+            return Err(IntegrityError::ParamsDowngrade.into());
         }
         if !within_ceiling(&params.kdf) {
             return Err(Error::InvalidFormat("kdf params"));
@@ -534,6 +574,69 @@ mod tests {
             )
             .unwrap_err(),
             Error::InvalidFormat("kdf params")
+        );
+    }
+
+    #[test]
+    fn the_floor_is_the_spec_floor_outside_dev_builds() {
+        assert_eq!(floor_for(false), KDF_FLOOR);
+        assert_eq!(floor_for(true), DEV_KDF_FLOOR);
+        // Unit tests run with the dev floor.
+        assert_eq!(enforced_floor(), DEV_KDF_FLOOR);
+    }
+
+    #[test]
+    fn signed_params_below_the_floor_are_refused_without_a_pin() {
+        let n = shared();
+        let p = &n.account.params;
+        let weak = KdfParams {
+            m_kib: DEV_KDF_FLOOR.0 / 2,
+            ..p.kdf.clone()
+        };
+        let params = sign_params(
+            p.account_id,
+            weak.clone(),
+            p.signing_pub.clone(),
+            p.kem_pub.clone(),
+            &n.account.keyset().identity,
+        )
+        .unwrap();
+        let record = postcard::to_allocvec(&params).unwrap();
+        // Validly signed, first unlock on this device: the floor still holds.
+        assert_eq!(
+            Account::unlock("pw", &n.secret_key, &record, &n.keyset_record, None).unwrap_err(),
+            Error::Integrity(IntegrityError::ParamsDowngrade)
+        );
+        assert_eq!(
+            Account::create_with_params("pw", weak).unwrap_err(),
+            Error::InvalidFormat("kdf params")
+        );
+    }
+
+    #[test]
+    fn raise_floor_takes_the_componentwise_max() {
+        let mut pin = pin(shared());
+        pin.kdf_floor = KdfParams {
+            m_kib: 4096,
+            t: 3,
+            p: 1,
+            salt: [7; 32],
+        };
+        let accepted = KdfParams {
+            m_kib: 8192,
+            t: 1,
+            p: 2,
+            salt: [9; 32],
+        };
+        pin.raise_floor(&accepted);
+        assert_eq!(
+            pin.kdf_floor,
+            KdfParams {
+                m_kib: 8192,
+                t: 3,
+                p: 2,
+                salt: [9; 32],
+            }
         );
     }
 

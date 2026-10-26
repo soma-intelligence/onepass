@@ -11,13 +11,12 @@ use aws_lc_rs::agreement::{self, PrivateKey, UnparsedPublicKey, X25519};
 use aws_lc_rs::constant_time::verify_slices_are_equal;
 use aws_lc_rs::digest::{self, SHA3_256, SHA256};
 use aws_lc_rs::encoding::{AsBigEndian, Curve25519SeedBin};
-use aws_lc_rs::hkdf::{HKDF_SHA256, KeyType, Salt};
 use aws_lc_rs::kem::{Ciphertext, DecapsulationKey, EncapsulationKey, ML_KEM_1024};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use super::aead::{Aad, BlobKind, HEADER_LEN, open, padded_len, seal};
-use super::key::SymmetricKey;
+use super::aead::{Aad, BlobKind, HEADER_LEN, LEN_PREFIX, TAG_LEN, open, padded_len, seal};
+use super::key::{SymmetricKey, hkdf32};
 use crate::{Error, Id, Result};
 
 const MLKEM_PUBLIC_LEN: usize = 1568;
@@ -30,21 +29,13 @@ const SECRET_LEN: usize = MLKEM_SECRET_LEN + X25519_LEN;
 const MLKEM_EK_START: usize = 1536;
 const MLKEM_EK_END: usize = MLKEM_EK_START + MLKEM_PUBLIC_LEN;
 const MLKEM_HASH_END: usize = MLKEM_EK_END + 32;
-/// AEAD tag length of a blob.
-const TAG_LEN: usize = 16;
-/// Length prefix inside a blob's padded plaintext.
-const LEN_PREFIX: usize = 4;
+/// HKDF info prefix of the combiner. The context follows it unframed,
+/// which is unambiguous only while every context belongs to one family
+/// (`"vault:" || vault_id`, fixed length). Before a second family appears
+/// (device pairing, sharing), the context must be length-prefixed, under
+/// a new label.
 const KEM_INFO: &[u8] = b"onepass/kem/v1";
 const SCHEMA: u16 = 1;
-
-/// HKDF output length marker: 32 bytes.
-struct Len32;
-
-impl KeyType for Len32 {
-    fn len(&self) -> usize {
-        32
-    }
-}
 
 /// Recipient secret: raw key bytes, aws-lc keys are rebuilt at use.
 pub struct HybridKemSecret {
@@ -152,12 +143,7 @@ fn combine(
     ikm.extend_from_slice(ct_mlkem);
     ikm.extend_from_slice(eph_pub);
     ikm.extend_from_slice(recipient_x25519);
-    let prk = Salt::new(HKDF_SHA256, &[]).extract(&ikm);
-    let info = [KEM_INFO, context];
-    let okm = prk.expand(&info, Len32).map_err(|_| Error::Crypto)?;
-    let mut key = SymmetricKey([0u8; 32]);
-    okm.fill(&mut key.0).map_err(|_| Error::Crypto)?;
-    Ok(key)
+    hkdf32(&[], &ikm, &[KEM_INFO, context])
 }
 
 /// Blob context: blob id = first 16 bytes of SHA-256(context).
@@ -243,10 +229,13 @@ pub fn unwrap_key(
         context,
     )?;
     let plain = open(&ss, BlobKind::VaultKey, &blob_aad(context), blob)?;
-    let bytes: [u8; 32] = plain[..]
-        .try_into()
-        .map_err(|_| Error::InvalidFormat("wrapped key length"))?;
-    Ok(SymmetricKey(bytes))
+    if plain.len() != 32 {
+        return Err(Error::InvalidFormat("wrapped key length"));
+    }
+    // Straight into the key buffer: no [u8; 32] temporary.
+    let mut key = SymmetricKey([0u8; 32]);
+    key.0.copy_from_slice(&plain);
+    Ok(key)
 }
 
 #[cfg(test)]

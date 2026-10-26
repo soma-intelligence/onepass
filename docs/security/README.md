@@ -49,7 +49,7 @@ Le stockage voit en clair exactement ceci :
 
 - **Secret Key** : 256 bits tirés du générateur aléatoire du système, créés sur l'appareil.
 - **Affichage** : base32 RFC 4648 sans padding en majuscules (52 caractères), plus un caractère de contrôle, groupés par 4 avec des tirets. Le caractère de contrôle est un Luhn mod N avec N = 32 sur les valeurs des 52 symboles (alphabet base32, `A` = 0 à `7` = 31) : en partant de la droite, une valeur sur deux est doublée et ses deux chiffres en base 32 additionnés, et le contrôle complète la somme à un multiple de 32. Il détecte toute substitution d'un caractère et toute transposition de deux caractères voisins différents, sauf l'échange `A` et `7` (valeurs 0 et 31), seul angle mort connu de Luhn mod N. La lecture ignore les espaces et les tirets, accepte les minuscules, lit `0` comme `O`, `1` comme `I` et `8` comme `B`, et refuse une longueur fausse, un caractère hors alphabet, un caractère de contrôle faux ou des bits de bourrage non nuls (encodage non canonique).
-- **Argon2id** (version 0x13) : `m = 262144 KiB` (256 MiB), `t = 4`, `p = 4`, sortie 32 octets, sel de 32 octets aléatoires. Ce sont des planchers (`KDF_FLOOR`). Le mot de passe est normalisé en NFC avant l'entrée. La mémoire d'Argon2 est allouée par le noyau dans un tampon effacé à la libération.
+- **Argon2id** (version 0x13) : `m = 262144 KiB` (256 MiB), `t = 4`, `p = 4`, sortie 32 octets, sel de 32 octets aléatoires. Ce sont des planchers (`KDF_FLOOR`), imposés à la création et à chaque déverrouillage, avec ou sans épingle. Seuls les tests unitaires (`cfg(test)`) et les builds de développement avec assertions de debug et la feature `dev-fast-kdf` (CLI de développement, tests d'intégration) imposent à la place le plancher de développement `DEV_KDF_FLOOR` (`m = 8192 KiB`, `t = 1`, `p = 1`) ; un build release impose toujours `KDF_FLOOR`. Le mot de passe est normalisé en NFC avant l'entrée. La mémoire d'Argon2 est allouée par le noyau dans un tampon effacé à la libération.
 - **AUK** (Account Unlock Key, 256 bits) : `HKDF-SHA256(salt = kdf.salt, ikm = argon2_out || secret_key, info = "onepass/auk/v1")`, 32 octets. Un mot de passe seul ne suffit donc pas : il faut aussi la Secret Key.
 
 ### 3.2 Chiffrement symétrique des blobs (`crypto/aead.rs`)
@@ -71,7 +71,7 @@ Chaque blob est scellé par AES-256-GCM-SIV avec un engagement de clé HMAC-SHA2
 | 50 à fin moins 16 | texte chiffré (plaintext paddé) |
 | 16 derniers | tag GCM-SIV |
 
-Types de blob : `Keyset` 1, `VaultKey` 2, `VaultMeta` 3, `ItemKey` 4, `Item` 5, `Manifest` 6, `Attachment` 7, `DeviceState` 8.
+Types de blob : `Keyset` 1, `VaultKey` 2, `VaultMeta` 3, `ItemKey` 4, `Item` 5, `Manifest` 6, `Attachment` 7, `DeviceState` 8. `Attachment` et `DeviceState` sont réservés : rien ne les produit au jalon 1 (`device.bin` de la CLI est du postcard en clair), mais leurs numéros restent pris.
 
 **Données associées.** `AAD_base = en-tête[0..18] || blob_id (16) || vault_id (16, ou 16 octets nuls s'il n'y en a pas) || schéma (u16 big-endian)`, soit 52 octets. L'engagement vaut `HMAC-SHA256(K_com, AAD_base)`. Les données associées passées à GCM-SIV sont `AAD_base || engagement` (84 octets). Elles lient donc le format, l'algorithme, le type, le nonce, l'id du blob, l'id du vault et la version de schéma.
 
@@ -81,13 +81,13 @@ Types de blob : `Keyset` 1, `VaultKey` 2, `VaultMeta` 3, `ItemKey` 4, `Item` 5, 
 
 ### 3.3 Chiffrement asymétrique : ML-KEM-1024 + X25519 (`crypto/kem.rs`)
 
-Sert à envelopper une clé de vault pour le compte. Clé publique : ML-KEM-1024 (1568 octets) et X25519 (32 octets). Clé secrète : 3168 octets ML-KEM (format FIPS 203) et 32 octets X25519. À l'import d'une clé secrète, le hash SHA3-256 de la clé d'encapsulation incluse est vérifié.
+Sert à envelopper une clé de vault pour le compte. Toutes les dérivations HKDF du noyau passent par une seule fonction (HKDF-SHA256, 32 octets écrits directement dans le tampon de clé). Clé publique : ML-KEM-1024 (1568 octets) et X25519 (32 octets). Clé secrète : 3168 octets ML-KEM (format FIPS 203) et 32 octets X25519. À l'import d'une clé secrète, le hash SHA3-256 de la clé d'encapsulation incluse est vérifié.
 
 **Enveloppe** : `ct_mlkem (1568) || eph_x25519_pub (32) || blob`, où `blob` scelle la clé enveloppée (32 octets) avec la clé combinée ci-dessous.
 
 **Combinaison** : `HKDF-SHA256(salt vide, ikm = ss_mlkem || ss_x25519 || ct_mlkem || eph_x25519_pub || x25519_destinataire, info = "onepass/kem/v1" || contexte)`, 32 octets. Les deux secrets partagés, le chiffré, la clé éphémère et la clé du destinataire entrent dans la dérivation : casser un seul des deux mécanismes ne suffit pas.
 
-Le blob interne est de type `VaultKey`, de schéma 1, sans vault_id, avec pour id de blob les 16 premiers octets de `SHA-256(contexte)`. Le contexte d'un vault est `"vault:" || vault_id`. Une enveloppe n'est donc valide que pour son vault. Longueur attendue fixe : toute autre longueur est refusée.
+Le blob interne est de type `VaultKey`, de schéma 1, sans vault_id, avec pour id de blob les 16 premiers octets de `SHA-256(contexte)`. Le contexte d'un vault est `"vault:" || vault_id`. Le contexte suit le label sans préfixe de longueur : c'est sans ambiguïté tant qu'il n'existe qu'une famille de contextes de longueur fixe ; il faudra le préfixer de sa longueur, sous un nouveau label, avant d'en ajouter une seconde (appairage, partage). Une enveloppe n'est donc valide que pour son vault. Longueur attendue fixe : toute autre longueur est refusée.
 
 L'enveloppe n'est pas authentifiée : la clé publique KEM du compte est en clair dans les paramètres, n'importe qui peut donc envelopper une clé de son choix pour le compte. La clé de vault est authentifiée par le manifeste signé du vault (section 3.7), scellé avec elle.
 
@@ -106,7 +106,7 @@ Tous les schémas signent le même message encadré : `"onepass/sig/v1" || len(d
 - **Paramètres de compte** (en clair, aucun secret) : `account_id`, paramètres Argon2id, clé d'identité publique, clé de signature publique, clé KEM publique, et `identity_sig`, signature SLH-DSA de `postcard(account_id, kdf, signing_pub, kem_pub)` sous le domaine `"account-params"`.
 - **Keyset** : `postcard((kem_secret, signing_secret, identity_secret))` scellé par l'AUK, blob de type `Keyset`, schéma 1, id de blob `account_id`, sans vault.
 
-**Déverrouillage, dans cet ordre** : décodage complet des paramètres, vérification de `identity_sig` avec la clé d'identité contenue ; si l'appareil a épinglé le compte, l'`account_id` et la clé d'identité doivent correspondre à l'épingle (sinon `ParamsUnsigned`) et les paramètres Argon2id doivent être au moins égaux au plancher épinglé (sinon `ParamsDowngrade`) ; plafond de coût Argon2id à 2 GiB, 16 passes, 16 voies (sinon `InvalidFormat`), avant tout calcul ; dérivation de l'AUK ; ouverture du keyset ; enfin les trois clés publiques déduites du keyset doivent égaler celles des paramètres signés (sinon `Signature`). Un échec d'engagement sur un blob bien formé devient `WrongPassword`. Au premier déverrouillage sur un appareil, le compte est épinglé (confiance au premier usage).
+**Déverrouillage, dans cet ordre** : décodage complet des paramètres, vérification de `identity_sig` avec la clé d'identité contenue ; si l'appareil a épinglé le compte, l'`account_id` et la clé d'identité doivent correspondre à l'épingle (sinon `ParamsUnsigned`) et les paramètres Argon2id doivent être au moins égaux au plancher épinglé (sinon `ParamsDowngrade`) ; avec ou sans épingle, ils doivent atteindre le plancher global (sinon `ParamsDowngrade`) ; plafond de coût Argon2id à 2 GiB, 16 passes, 16 voies (sinon `InvalidFormat`), avant tout calcul ; dérivation de l'AUK ; ouverture du keyset ; enfin les trois clés publiques déduites du keyset doivent égaler celles des paramètres signés (sinon `Signature`). Un échec d'engagement sur un blob bien formé devient `WrongPassword`. Au premier déverrouillage sur un appareil, le compte est épinglé (confiance au premier usage). Après chaque déverrouillage réussi, le plancher épinglé monte au maximum, composante par composante, de lui-même et des paramètres acceptés, et il est enregistré avec l'état de l'appareil : une fois des paramètres plus forts vus, un ancien jeu signé plus faible est refusé.
 
 ### 3.6 Vaults et items (`vault.rs`)
 

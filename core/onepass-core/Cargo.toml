@@ -24,6 +24,17 @@ time = { version = "0.3", default-features = false, features = ["serde", "std"] 
 rusqlite = { version = "0.41", features = ["bundled"] }
 prost = "0.14"
 
+[features]
+# Lowers the enforced Argon2id floor to DEV_KDF_FLOOR, in builds with debug
+# assertions only (a release build ignores it). For the dev CLI and the
+# integration tests: never enable it in a shipped build.
+dev-fast-kdf = []
+
+# Unlocks accounts made with fast KDF parameters: needs the dev floor.
+[[test]]
+name = "malicious_store"
+required-features = ["dev-fast-kdf"]
+
 [dev-dependencies]
 time = { version = "0.3", features = ["macros"] }
 proptest = "1.12"

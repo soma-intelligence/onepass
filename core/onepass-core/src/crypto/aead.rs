@@ -24,7 +24,11 @@ pub enum BlobKind {
     ItemKey = 4,
     Item = 5,
     Manifest = 6,
+    /// Reserved: no producer in M1 (attachment flow, spec 4.2). The number
+    /// stays taken.
     Attachment = 7,
+    /// Reserved: no producer in M1 (`device.bin` of the dev CLI is plain
+    /// postcard). The number stays taken.
     DeviceState = 8,
 }
 
@@ -43,11 +47,12 @@ const MAGIC: &[u8; 3] = b"OPB";
 const FORMAT: u8 = 1;
 const ALGORITHM: u8 = 1;
 const NONCE_LEN: usize = 12;
-const TAG_LEN: usize = 16;
+/// AEAD tag length of a blob.
+pub(crate) const TAG_LEN: usize = 16;
 /// Bytes of the header that are covered by the commitment.
 const PREFIX_LEN: usize = 18;
 /// Bytes of the big-endian length prefix inside the padded plaintext.
-const LEN_PREFIX: usize = 4;
+pub(crate) const LEN_PREFIX: usize = 4;
 const MIN_PADDED: usize = 256;
 const LARGE_STEP: usize = 65536;
 
