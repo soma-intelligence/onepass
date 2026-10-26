@@ -59,7 +59,7 @@ Un `Auk` ouvre le keyset tant que le mot de passe et la Secret Key ne changent p
 
 ### 3.3 Options des menus
 
-- `model::menu_options(item_type, field_id) -> &'static [&'static str]` : les choix des 39 champs `Menu` des modèles (moteurs de base de données, sécurité Wi-Fi, fréquences, etc.), en français, dans l'ordre de la spec 5.4. Les champs oui/non rendent `["oui", "non"]`. Un champ inconnu rend une liste vide (saisie libre). Partagé plus tard avec l'extension.
+- `model::menu_options(item_type, field_id) -> &'static [&'static str]` : les choix des 35 champs `Menu` des modèles (moteurs de base de données, sécurité Wi-Fi, fréquences, etc.), en français, dans l'ordre de la spec 5.4. Les champs oui/non rendent `["oui", "non"]`. Un champ inconnu rend une liste vide (saisie libre). Partagé plus tard avec l'extension.
 
 ### 3.4 Encodage de l'état d'appareil
 
