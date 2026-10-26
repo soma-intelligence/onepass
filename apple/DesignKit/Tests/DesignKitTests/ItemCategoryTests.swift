@@ -40,6 +40,7 @@ import VaultKit
     @Test func integrityTexts() {
         #expect(IntegrityBanner.message(for: "unknown") == "Le stockage a renvoyé des données altérées.")
         #expect(IntegrityBanner.message(for: "manifest_rollback") != IntegrityBanner.message(for: "unknown"))
+        #expect(IntegrityBanner.message(for: "account_missing") == "Le compte a disparu du stockage.")
     }
 
     @Test func noEmDashInTexts() {

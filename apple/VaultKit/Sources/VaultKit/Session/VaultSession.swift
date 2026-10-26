@@ -99,17 +99,42 @@ public final class VaultSession {
         }
     }
 
+    /// Re-reads what the store holds. An account this device knew (pinned by the core, or named in
+    /// the settings) that disappeared from the store is an integrity failure, never "no account": the
+    /// onboarding would otherwise invite the user to create a second account over the first one.
     private func evaluateStoredAccount() {
         do {
-            let exists = try hasAccount(dbPath: dbPath)
-            state = exists ? .locked : .noAccount
-            needsSecretKey = exists && secretKeyPresence() == .missing
+            switch try storeState(dbPath: dbPath) {
+            case .account:
+                state = .locked
+                needsSecretKey = secretKeyPresence() == .missing
+            case .pinnedButMissing:
+                enterAccountMissing()
+            case .empty:
+                if settings.accountID != nil {
+                    enterAccountMissing()
+                } else {
+                    state = .noAccount
+                    needsSecretKey = false
+                }
+            }
         } catch {
             let failure = VaultError(error)
             state = .failed(failure)
             lastError = failure
         }
     }
+
+    private func enterAccountMissing() {
+        let failure = VaultError.integrity(kind: Self.accountMissingKind)
+        needsSecretKey = false
+        state = .failed(failure)
+        lastError = failure
+    }
+
+    /// Integrity kind of an account that disappeared from the store (same as the core's refusal of a
+    /// new account over a pinned one).
+    nonisolated public static let accountMissingKind = "account_missing"
 
     private enum Presence { case present, missing, unknown }
 
@@ -182,8 +207,16 @@ public final class VaultSession {
             try secretKeys.store(created.secretKey, accountID: created.accountID)
         } catch {
             Self.log.error("Secret Key not stored in the keychain, account creation undone")
-            _ = try? await CoreThread.run { created.session.lock() }
-            Self.removeStore(at: environment.databaseURL)
+            let path = dbPath
+            do {
+                // The file stays in place (the sync handle has it open): its tables are emptied.
+                try await CoreThread.run {
+                    created.session.lock()
+                    try resetStore(dbPath: path)
+                }
+            } catch {
+                Self.log.error("store not reset after an undone account creation")
+            }
             evaluateStoredAccount()
             throw fail(.other(Self.secretKeyNotStoredOnCreate))
         }
@@ -354,12 +387,11 @@ public final class VaultSession {
         let path = dbPath
         let auk: SecretBytes
         do {
+            // `verify_password` never writes the device state: the live session may be moving
+            // `last_seen` forward meanwhile (Settings while unlocked).
             auk = try await background {
-                var unlocked = try unlockWithPassword(dbPath: path, password: password, secretKey: secretKey)
-                let auk = SecretBytes(copying: unlocked.auk)
-                Self.wipe(&unlocked.auk)
-                unlocked.session.lock()
-                return auk
+                var bytes = try verifyPassword(dbPath: path, password: password, secretKey: secretKey)
+                return SecretBytes(taking: &bytes)
             }
         } catch {
             let failure = VaultError(error)
@@ -588,8 +620,9 @@ public final class VaultSession {
         return true
     }
 
-    /// Checks the master password without touching the open session: a throwaway core session is
-    /// opened then locked. Counts toward the failure throttle like an unlock.
+    /// Checks the master password without touching the open session (`verify_password`: no session,
+    /// no device state written, so a save meanwhile keeps its newer `last_seen` on disk). Counts toward
+    /// the failure throttle like an unlock.
     public func verifyMasterPassword(_ password: String) async throws {
         guard state == .unlocked else { throw fail(.passwordRequired) }
         try checkLockout()
@@ -600,9 +633,8 @@ public final class VaultSession {
         let gen = generation
         do {
             try await background {
-                var unlocked = try unlockWithPassword(dbPath: path, password: password, secretKey: secretKey)
-                Self.wipe(&unlocked.auk)
-                unlocked.session.lock()
+                var auk = try verifyPassword(dbPath: path, password: password, secretKey: secretKey)
+                Self.wipe(&auk)
             }
         } catch {
             let failure = VaultError(error)
@@ -681,13 +713,6 @@ public final class VaultSession {
         "Impossible de ranger la Secret Key dans le trousseau de cet appareil. Le coffre n'a pas été créé."
     nonisolated static let secretKeyNotStoredOnRestore =
         "Impossible de ranger la Secret Key dans le trousseau de cet appareil. La connexion a été annulée."
-
-    /// The SQLite store and its side files (an account whose Secret Key was lost at creation).
-    private static func removeStore(at url: URL) {
-        for suffix in ["", "-wal", "-shm", "-journal"] {
-            try? FileManager.default.removeItem(atPath: url.path + suffix)
-        }
-    }
 
     private func install(_ session: Session, _ snapshot: Snapshot) {
         self.session = session

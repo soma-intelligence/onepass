@@ -66,6 +66,12 @@ public enum RemoteStoreError: Error, Equatable, Sendable {
     /// The server lost everything it held (its zone was deleted and recreated). The caller forgets its
     /// change token, queues every stored record again and runs a new round.
     case zoneReset
+    /// A record of the zone could not be read (never skipped: the fetch would advance past it).
+    /// Retried like `retryable`; the coordinator reports it apart after several rounds in a row.
+    case recordUnreadable
+    /// The signed-in iCloud account is not the one this store synced with (spec 7, ruling of the final
+    /// review): thrown by the coordinator itself, never by a remote.
+    case accountChanged
     /// French message for the UI, never a record content.
     case other(String)
 }
@@ -82,10 +88,14 @@ public enum RemoteStoreError: Error, Equatable, Sendable {
 ///   comes back with a non-nil `serverMeta`.
 /// - A batch never holds more than `maxBatchRecords` records or `maxBatchBytes` bytes
 ///   (`RemoteRecord.batchBytes`); the caller splits larger sends.
+/// - `accountIdentity()` names the signed-in account (CloudKit: the user record name), stable for that
+///   account and different for any other; nil when the remote cannot tell. The coordinator binds its
+///   store to the first identity it sees and stops on any other one.
 public protocol RemoteRecordStore: Sendable {
     var maxBatchRecords: Int { get }
     var maxBatchBytes: Int { get }
     func fetchChanges(since token: Data?) async throws -> RemoteBatch
     func send(_ changes: [RemoteRecord]) async throws -> [SendResult]
     func accountAvailable() async -> Bool
+    func accountIdentity() async throws -> String?
 }

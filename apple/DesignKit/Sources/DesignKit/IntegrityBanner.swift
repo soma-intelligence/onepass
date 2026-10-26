@@ -11,6 +11,7 @@ public struct IntegrityBanner: View {
     /// French text for a core `Integrity { kind }`.
     public nonisolated static func message(for kind: String) -> String {
         switch kind {
+        case "account_missing": "Le compte a disparu du stockage."
         case "vault_missing": "Un coffre a disparu du stockage."
         case "manifest_rollback": "Une ancienne version des données a été rejouée."
         case "manifest_missing_item": "Un élément a été retenu ou supprimé du stockage."

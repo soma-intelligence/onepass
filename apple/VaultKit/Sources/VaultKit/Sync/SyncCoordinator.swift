@@ -11,6 +11,11 @@ import os
 /// retries after 30 s, 2 min, then every 10 min (or after the delay the server asked for); an integrity
 /// error from the rebase sets `.refused(kind)`, kept until a rebase succeeds.
 ///
+/// iCloud account binding: the first round stores the remote's `accountIdentity()` in the store meta.
+/// A later round (or `remoteHasAccount`) that meets another identity touches nothing (no fetch, no
+/// send) and reports `.accountChanged` until `acceptAccountChange()`: the change token and server tags
+/// of one Apple ID must never meet the zone of another.
+///
 /// One round at a time: every store call (fetch, commit, rebase, send) runs inside the round, so a
 /// rebase never overlaps a commit. Triggers that come during a round coalesce into one more round.
 /// Locked device: fetch and commit still run, held vaults send nothing (the core leaves them out of
@@ -20,6 +25,10 @@ public actor SyncCoordinator: SyncTrigger {
     static let maxTurns = 3
     /// Store meta key of the remote change token (the handle namespaces it under `sync.`).
     static let tokenKey = "remote.token"
+    /// Store meta key of the iCloud account identity the store is bound to.
+    static let accountKey = "remote.account"
+    /// Rounds in a row that met an unreadable record before the status says so plainly.
+    static let unreadableRoundsBeforeReport = 5
 
     private let store: SyncStoreHandle
     private let remote: (any RemoteRecordStore)?
@@ -44,6 +53,8 @@ public actor SyncCoordinator: SyncTrigger {
     private var retryAttempt = 0
     /// Kind of the last integrity refusal of a rebase, until a rebase succeeds.
     private var refusal: String?
+    /// Rounds in a row that ended on `RemoteStoreError.recordUnreadable`.
+    private var unreadableRounds = 0
     /// Tests: runs on the core thread after a page is staged, before its token is saved.
     var afterPageStaged: (@Sendable () throws -> Void)?
 
@@ -122,9 +133,38 @@ public actor SyncCoordinator: SyncTrigger {
         guard let remote else { return false }
         await acquire()
         defer { release() }
-        try await fetchAll(remote)
+        do {
+            try await fetchAll(remote)
+        } catch RemoteStoreError.accountChanged {
+            setStatus(.accountChanged)
+            throw RemoteStoreError.accountChanged
+        }
         let store = store
         return try await CoreThread.run { try store.hasAccount() }
+    }
+
+    /// The user confirmed that this store now syncs with the signed-in iCloud account (after
+    /// `.accountChanged`). The new identity is stored, the old change token and server tags are
+    /// forgotten as after a lost zone (every local record is queued again for the new account's zone
+    /// after the next complete fetch), then a round runs. Not offered in the M2 interface (status text
+    /// and explanation only). No remote: no-op.
+    public func acceptAccountChange() async {
+        guard let remote else { return }
+        await acquire()
+        let store = store
+        do {
+            if let identity = try await remote.accountIdentity() {
+                try await CoreThread.run {
+                    try store.setMeta(key: Self.accountKey, value: Data(identity.utf8))
+                    try store.beginZoneReset(tokenKey: Self.tokenKey)
+                }
+            }
+        } catch {
+            Self.log.error("iCloud account change not accepted")
+        }
+        release()
+        kick()
+        await run?.value
     }
 
     /// Tests: simulates a crash between staging a page and saving its token.
@@ -222,6 +262,7 @@ public actor SyncCoordinator: SyncTrigger {
                 }
             }
             retryAttempt = 0
+            unreadableRounds = 0
             retryTask?.cancel()
             retryTask = nil
             // A locked round cannot clear a refusal: the refused vault is still held.
@@ -235,6 +276,18 @@ public actor SyncCoordinator: SyncTrigger {
         } catch RemoteStoreError.retryable(let after) {
             setStatus(.error("Le serveur est momentanément indisponible, nouvel essai bientôt."))
             scheduleRetry(after: after)
+        } catch RemoteStoreError.recordUnreadable {
+            unreadableRounds += 1
+            if unreadableRounds >= Self.unreadableRoundsBeforeReport {
+                Self.log.error("a remote record stays unreadable")
+                setStatus(.error(Self.unreadableMessage))
+            } else {
+                setStatus(.error("Le serveur est momentanément indisponible, nouvel essai bientôt."))
+            }
+            scheduleRetry(after: nil)
+        } catch RemoteStoreError.accountChanged {
+            Self.log.notice("iCloud account changed, sync stopped")
+            setStatus(.accountChanged)
         } catch RoundError.unsettled {
             Self.log.notice("sync round ended with conflicts left")
             setStatus(.error("La synchronisation n'a pas abouti, nouvel essai bientôt."))
@@ -247,7 +300,8 @@ public actor SyncCoordinator: SyncTrigger {
             switch error {
             case .accountUnavailable: setStatus(.error("Aucun compte iCloud n'est disponible."))
             case .other(let message): setStatus(.error(message))
-            case .offline, .retryable, .zoneReset: setStatus(.offline)
+            case .offline, .retryable, .zoneReset, .recordUnreadable: setStatus(.offline)
+            case .accountChanged: setStatus(.accountChanged)
             }
         } catch {
             setStatus(.error(VaultError(error).localizedMessage))
@@ -260,6 +314,7 @@ public actor SyncCoordinator: SyncTrigger {
     /// so staged rows never outlive a complete fetch. Records whose `serverMeta` matches the stored one
     /// (our own pushes coming back) are not staged; deletions are always staged.
     private func fetchAll(_ remote: any RemoteRecordStore) async throws {
+        try await checkAccountIdentity(remote)
         let store = store
         let hook = afterPageStaged
         var token = try await CoreThread.run { try store.meta(key: Self.tokenKey) }
@@ -306,6 +361,11 @@ public actor SyncCoordinator: SyncTrigger {
             }
             if let next { token = next }
             if !batch.moreComing { break }
+            // More pages without a new token would fetch the same page forever: retry later.
+            if next == nil {
+                Self.log.error("remote announced more changes without a token")
+                throw RemoteStoreError.retryable(after: nil)
+            }
         }
         let (vaults, dropped) = try await CoreThread.run {
             let vaults = try store.commitRemote()
@@ -315,6 +375,23 @@ public actor SyncCoordinator: SyncTrigger {
         }
         if changed > 0 || !vaults.isEmpty || dropped { emitRemoteChange() }
     }
+
+    /// Binds the store to the remote's account at the first sync; throws `accountChanged` on any other
+    /// account. A remote that cannot name its account (nil) is not checked.
+    private func checkAccountIdentity(_ remote: any RemoteRecordStore) async throws {
+        guard let identity = try await remote.accountIdentity() else { return }
+        let current = Data(identity.utf8)
+        let store = store
+        let stored = try await CoreThread.run { try store.meta(key: Self.accountKey) }
+        if let stored, !stored.isEmpty {
+            if stored != current { throw RemoteStoreError.accountChanged }
+            return
+        }
+        try await CoreThread.run { try store.setMeta(key: Self.accountKey, value: current) }
+    }
+
+    nonisolated static let unreadableMessage =
+        "Un enregistrement iCloud reste illisible : la synchronisation est bloquée. OnePass réessaiera."
 
     /// The remote lost everything. Step 1, atomic in the core: server tags, staged pages and the change
     /// token are dropped and a persisted flag is set. Nothing is queued yet, so a stale local record

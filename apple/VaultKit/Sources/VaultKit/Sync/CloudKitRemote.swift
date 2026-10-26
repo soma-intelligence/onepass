@@ -27,6 +27,16 @@ public actor CloudKitRemote: RemoteRecordStore {
         (try? await container.accountStatus()) == .available
     }
 
+    /// The record name of the signed-in user: stable for one Apple ID in this container, different
+    /// for any other.
+    public func accountIdentity() async throws -> String? {
+        do {
+            return try await container.userRecordID().recordName
+        } catch {
+            throw CloudKitMapping.storeError(for: error)
+        }
+    }
+
     // MARK: - Fetch
 
     public func fetchChanges(since token: Data?) async throws -> RemoteBatch {
@@ -67,7 +77,7 @@ public actor CloudKitRemote: RemoteRecordStore {
                 if let remote = try? CloudKitMapping.remote(from: modified.record) { changes.append(remote) }
             case .failure:
                 // Never advance past a record that could not be read.
-                throw RemoteStoreError.retryable(after: nil)
+                throw RemoteStoreError.recordUnreadable
             }
         }
         for deletion in result.deletions {

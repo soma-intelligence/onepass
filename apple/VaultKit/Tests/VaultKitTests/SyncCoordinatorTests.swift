@@ -161,6 +161,7 @@ final class ProbeRemote: RemoteRecordStore {
     }
 
     func accountAvailable() async -> Bool { await inner.accountAvailable() }
+    func accountIdentity() async throws -> String? { try await inner.accountIdentity() }
 }
 
 /// Wraps a remote and records the token of every fetch.
@@ -181,6 +182,7 @@ final class TokenRecorder: RemoteRecordStore {
 
     func send(_ changes: [RemoteRecord]) async throws -> [SendResult] { try await inner.send(changes) }
     func accountAvailable() async -> Bool { await inner.accountAvailable() }
+    func accountIdentity() async throws -> String? { try await inner.accountIdentity() }
 }
 
 /// Polls `condition` for up to 10 s.
@@ -609,6 +611,108 @@ struct SyncCoordinatorTests {
         #expect(a.session.summaries.isEmpty)
     }
 
+    /// C1: forged deletions of the account and of the vault a locked device has read change nothing
+    /// locally: the device stays locked (never `noAccount`) and unlocks with its data.
+    @Test func lockedDeviceIgnoresForgedDeletionsOfItsAccount() async throws {
+        let remote = InMemoryRemote()
+        let (a, b, _) = try await twoSyncedDevices(remote: remote)
+        defer { a.cleanUp(); b.cleanUp() }
+        b.session.lock()
+        await b.session.waitForReleasedSessions()
+        for name in await remote.tags().keys where name.kind != 5 {
+            await remote.forgeDeletion(name: name)
+        }
+        var changes = await b.coordinator.remoteChanges().makeAsyncIterator()
+        await b.coordinator.syncNow()
+        _ = await changes.next()
+        await b.session.reload()
+        #expect(b.session.state == .locked)
+        try await b.session.unlock(password: testPassword)
+        #expect(b.titles == ["Projet Atlas"])
+    }
+
+    /// C1: "Réessayer" against a zone that answers nothing keeps the local copy of a locked device.
+    @Test func emptyZoneOnAFullFetchKeepsTheLocalCopy() async throws {
+        let remote = InMemoryRemote()
+        let (a, b, _) = try await twoSyncedDevices(remote: remote)
+        defer { a.cleanUp(); b.cleanUp() }
+        b.session.lock()
+        await b.session.waitForReleasedSessions()
+        for name in await remote.tags().keys { await remote.withhold(name: name) }
+        await b.coordinator.refetchFromScratch()
+        await b.session.reload()
+        #expect(b.session.state == .locked)
+        if case .noAccount = b.session.state { Issue.record("no account") }
+        try await b.session.unlock(password: testPassword)
+        #expect(b.titles == ["Projet Atlas"])
+    }
+
+    /// I5: another Apple ID signs in. The coordinator neither fetches nor sends until the change is
+    /// accepted, and says so.
+    @Test func iCloudAccountSwitchStopsSyncUntilAccepted() async throws {
+        let remote = InMemoryRemote()
+        let probe = ProbeRemote(remote)
+        let a = try SyncDevice(name: "A", client: probe)
+        defer { a.cleanUp() }
+        _ = try await a.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        await a.sync()
+        #expect(await a.coordinator.status.isIdle)
+
+        await remote.setAccountIdentity("utilisateur-icloud-b")
+        try await addItem(a.session, title: "Projet Atlas")
+        let (fetches, sends) = (probe.fetches, probe.sends)
+        await a.sync()
+        #expect(await a.coordinator.status == .accountChanged)
+        #expect(SyncStatus.accountChanged.label == "Le compte iCloud a changé")
+        #expect(probe.fetches == fetches && probe.sends == sends)
+        await #expect(throws: RemoteStoreError.accountChanged) { _ = try await a.coordinator.remoteHasAccount() }
+        #expect(probe.fetches == fetches)
+        // Still stopped on the next round, and after a relaunch (the binding is in the store).
+        await a.coordinator.syncNow()
+        #expect(await a.coordinator.status == .accountChanged)
+        let relaunched = SyncCoordinator(store: a.store, remote: probe, sleep: { try await a.sleeper.sleep($0) })
+        await relaunched.syncNow()
+        #expect(await relaunched.status == .accountChanged)
+        #expect(probe.sends == sends)
+
+        await a.coordinator.acceptAccountChange()
+        #expect(await a.coordinator.status.isIdle)
+        #expect(try await a.pendingChanges().isEmpty)
+        #expect(probe.sends > sends)
+    }
+
+    /// M8: a record that stays unreadable is reported plainly after five rounds in a row.
+    @Test func unreadableRecordIsReportedAfterFiveRounds() async throws {
+        let remote = InMemoryRemote()
+        let a = try SyncDevice(remote: remote, name: "A")
+        defer { a.cleanUp() }
+        _ = try await a.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        await a.sync()
+        let busy = SyncStatus.error("Le serveur est momentanément indisponible, nouvel essai bientôt.")
+        for round in 1...5 {
+            await remote.failNext(with: .recordUnreadable)
+            await a.coordinator.syncNow()
+            let expected = round < 5 ? busy : .error(SyncCoordinator.unreadableMessage)
+            #expect(await a.coordinator.status == expected, "round \(round)")
+        }
+        await a.coordinator.syncNow()
+        #expect(await a.coordinator.status.isIdle)
+    }
+
+    /// M9: a remote announcing more pages without a token does not loop forever.
+    @Test func morePagesWithoutATokenEndTheRound() async throws {
+        let remote = InMemoryRemote()
+        let a = try SyncDevice(remote: remote, name: "A")
+        defer { a.cleanUp() }
+        _ = try await a.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        await a.sync()
+        await remote.breakNextPageToken()
+        await a.coordinator.syncNow()
+        #expect(await a.coordinator.status == .error("Le serveur est momentanément indisponible, nouvel essai bientôt."))
+        await a.coordinator.syncNow()
+        #expect(await a.coordinator.status.isIdle)
+    }
+
     @Test func offlineThenOnlineSendsEverything() async throws {
         let remote = InMemoryRemote()
         let a = try SyncDevice(remote: remote, name: "A")
@@ -764,6 +868,7 @@ final class ScriptedRemote: RemoteRecordStore {
     }
 
     func accountAvailable() async -> Bool { true }
+    func accountIdentity() async throws -> String? { nil }
 }
 
 struct StagingFailure: Error {}

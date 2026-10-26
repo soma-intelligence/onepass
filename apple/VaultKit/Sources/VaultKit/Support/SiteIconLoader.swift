@@ -24,10 +24,14 @@ extension URLSession {
     public static let ephemeralNoCookies = URLSession(configuration: ephemeralNoCookiesConfiguration)
 }
 
-/// Loads site icons straight from the item's own site. HTTPS only, same host only, 256 KiB
-/// at most per response, no cookies, image type checked by ImageIO, cached by host hash.
+/// Loads site icons straight from the item's own site. HTTPS only, same host only, public host
+/// names only (never an IP literal, `localhost`, a `.local` or single-label name: no LAN probing),
+/// 256 KiB at most per response, no cookies, image type checked by ImageIO, declared size checked
+/// before any decode, cached by host hash.
 public actor SiteIconLoader {
     static let maxBytes = 256 * 1024
+    /// Largest declared width or height decoded: a small file can declare a huge bitmap.
+    static let maxSourcePixels = 4096
     static let failureLifetime: TimeInterval = 7 * 24 * 3600
     static let iconPixels = 128
 
@@ -50,7 +54,7 @@ public actor SiteIconLoader {
         guard enabled() else { return nil }
         guard let components = URLComponents(string: url.trimmingCharacters(in: .whitespacesAndNewlines)),
             components.scheme?.lowercased() == "https",
-            let host = components.host?.lowercased(), !host.isEmpty
+            let host = components.host?.lowercased(), !host.isEmpty, Self.isFetchableHost(host)
         else { return nil }
 
         if let cached = try? Data(contentsOf: cacheFile(host: host, ext: "png")), isImage(cached) {
@@ -64,6 +68,21 @@ public actor SiteIconLoader {
         let result = await task.value
         inFlight[host] = nil
         return result
+    }
+
+    /// A public DNS name: not an IP literal (v4, in any of the shorthand forms resolvers accept, or
+    /// v6), not `localhost`, not a `.local` (Bonjour) name, not a single label (a LAN device name).
+    static func isFetchableHost(_ host: String) -> Bool {
+        var name = host.lowercased()
+        if name.hasSuffix(".") { name.removeLast() }
+        guard !name.isEmpty, !name.contains(":"), !name.hasPrefix("[") else { return false }
+        if name == "localhost" || name.hasSuffix(".localhost") || name.hasSuffix(".local") { return false }
+        let labels = name.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2, labels.allSatisfy({ !$0.isEmpty }), let last = labels.last else { return false }
+        // No top-level domain is numeric: `10.0.0.1`, `127.1`, `0x7f.1` or `192.168.1.0x1` are addresses.
+        if last.allSatisfy(\.isNumber) { return false }
+        if last.hasPrefix("0x"), last.dropFirst(2).allSatisfy(\.isHexDigit) { return false }
+        return true
     }
 
     // MARK: Fetching
@@ -177,13 +196,31 @@ public actor SiteIconLoader {
 
     // MARK: Image
 
-    /// Decodes with ImageIO (rejects anything that is not an image) and re-encodes as a PNG
-    /// no larger than `iconPixels`.
+    /// The width and height the first image declares in its header, read without decoding it.
+    static func declaredPixelSize(_ data: Data) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return declaredPixelSize(source)
+    }
+
+    private static func declaredPixelSize(_ source: CGImageSource) -> (width: Int, height: Int)? {
+        guard CGImageSourceGetCount(source) > 0,
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+            let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue
+        else { return nil }
+        return (width, height)
+    }
+
+    /// Decodes with ImageIO (rejects anything that is not an image, or whose declared size is unknown
+    /// or above `maxSourcePixels` on a side, before any decode) and re-encodes as a PNG no larger
+    /// than `iconPixels`.
     static func normalizedPNG(_ data: Data) -> Data? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
             CGImageSourceGetCount(source) > 0,
             let type = CGImageSourceGetType(source),
-            UTType(type as String)?.conforms(to: .image) == true
+            UTType(type as String)?.conforms(to: .image) == true,
+            let size = declaredPixelSize(source),
+            (1...maxSourcePixels).contains(size.width), (1...maxSourcePixels).contains(size.height)
         else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,

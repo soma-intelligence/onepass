@@ -1,3 +1,4 @@
+import Compression
 import CoreGraphics
 import CryptoKit
 import Foundation
@@ -199,5 +200,74 @@ struct SiteIconLoaderTests {
             [.modificationDate: Date().addingTimeInterval(-8 * 24 * 3600)], ofItemAtPath: marker.path)
         StubProtocol.install(host: "retry.exemple.fr") { _ in .init(body: Self.pngData()) }
         #expect(await loader.icon(for: "https://retry.exemple.fr") != nil)
+    }
+
+    /// A small grayscale PNG whose rows are all zero: `side` x `side` pixels declared and really
+    /// encoded (a decode bomb: a few dozen KiB that inflate to `side`² bytes).
+    static func zeroPNG(side: Int) throws -> Data {
+        func crc32(_ bytes: [UInt8]) -> UInt32 {
+            var crc: UInt32 = 0xFFFF_FFFF
+            for byte in bytes {
+                crc ^= UInt32(byte)
+                for _ in 0..<8 { crc = crc & 1 == 1 ? (crc >> 1) ^ 0xEDB8_8320 : crc >> 1 }
+            }
+            return ~crc
+        }
+        func be(_ v: UInt32) -> [UInt8] {
+            [UInt8(v >> 24), UInt8(v >> 16 & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v & 0xFF)]
+        }
+        func chunk(_ type: String, _ body: [UInt8]) -> [UInt8] {
+            let typed = Array(type.utf8) + body
+            return be(UInt32(body.count)) + typed + be(crc32(typed))
+        }
+        // zlib stream: header, raw DEFLATE of the rows (filter byte 0 then zero pixels), Adler-32.
+        var deflated = Data()
+        let filter = try OutputFilter(.compress, using: .zlib) { if let d = $0 { deflated.append(d) } }
+        let row = Data(count: side + 1)
+        for _ in 0..<side { try filter.write(row) }
+        try filter.finalize()
+        let rawCount = UInt32((side + 1) * side % 65521)
+        let idat = [0x78, 0x01] + Array(deflated) + be(rawCount << 16 | 1)
+        let ihdr = be(UInt32(side)) + be(UInt32(side)) + [8, 0, 0, 0, 0]
+        let signature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        return Data(signature + chunk("IHDR", ihdr) + chunk("IDAT", idat) + chunk("IEND", []))
+    }
+
+    @Test func hugeDeclaredImageIsRefusedBeforeDecoding() async throws {
+        let bomb = try Self.zeroPNG(side: 5000)
+        #expect(bomb.count < SiteIconLoader.maxBytes)
+        let size = try #require(SiteIconLoader.declaredPixelSize(bomb))
+        #expect(size.width == 5000 && size.height == 5000)
+        #expect(SiteIconLoader.normalizedPNG(bomb) == nil)
+        #expect(SiteIconLoader.normalizedPNG(try Self.zeroPNG(side: 512)) != nil)
+        #expect(SiteIconLoader.normalizedPNG(Self.pngData(side: 64)) != nil)
+
+        let (session, _) = Self.makeSession()
+        StubProtocol.install(host: "bombe.exemple.fr") { _ in .init(body: bomb) }
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, enabled: { true })
+        #expect(await loader.icon(for: "https://bombe.exemple.fr") == nil)
+    }
+
+    @Test(arguments: [
+        "https://192.168.1.1/admin", "https://10.0.0.1", "https://127.0.0.1:8443", "https://127.1",
+        "https://0x7f.0x1", "https://[::1]/", "https://[fe80::1]", "https://localhost/",
+        "https://imprimante.local", "https://nas", "https://routeur./", "https://app.localhost",
+    ])
+    func privateHostsAreNeverFetched(url: String) async {
+        let (session, _) = Self.makeSession()
+        let host = URLComponents(string: url)?.host ?? url
+        StubProtocol.install(host: host) { _ in .init(body: Self.pngData()) }
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, enabled: { true })
+        #expect(await loader.icon(for: url) == nil)
+        #expect(StubProtocol.requests(host: host).isEmpty)
+    }
+
+    @Test func publicHostNamesStayFetchable() {
+        for host in ["exemple.fr", "www.exemple.fr", "atlas-42.exemple.fr", "a1.b2.fr", "exemple.fr."] {
+            #expect(SiteIconLoader.isFetchableHost(host), "\(host)")
+        }
+        for host in ["192.168.0.10", "::1", "localhost", "nas", "imprimante.local", "", "a..fr"] {
+            #expect(!SiteIconLoader.isFetchableHost(host), "\(host)")
+        }
     }
 }

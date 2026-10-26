@@ -556,6 +556,82 @@ struct VaultSessionHardeningTests {
         #expect(h.makeSession().state == .noAccount)
     }
 
+    /// I2: the undone creation empties the store in place; a sync handle opened before (the app's
+    /// coordinator) keeps working on the same file and sees the next, successful creation.
+    @Test func undoneCreationResetsTheStoreUnderAnOpenHandle() async throws {
+        let keychain = FailingWriteKeychain()
+        let h = try SessionHarness(keychain: keychain)
+        defer { h.cleanUp() }
+        let handle = try openSyncStore(dbPath: h.environment.databaseURL.path)
+        let session = h.makeSession()
+        await #expect(throws: VaultError.other(VaultSession.secretKeyNotStoredOnCreate)) {
+            _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        }
+        #expect(session.state == .noAccount)
+        #expect(FileManager.default.fileExists(atPath: h.environment.databaseURL.path))
+        #expect(try handle.storeState() == .empty)
+        #expect(try handle.pendingChanges().isEmpty)
+
+        keychain.failWrites(false)
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        #expect(session.state == .unlocked)
+        #expect(try handle.storeState() == .account)
+        #expect(try !handle.pendingChanges().isEmpty)
+    }
+
+    /// C1: the store loses the account this device knew. The session reports an integrity failure,
+    /// never `noAccount` (which would lead to creating a second account over the first).
+    @Test func vanishedAccountIsAnIntegrityFailureNotNoAccount() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        session.lock()
+        await session.waitForReleasedSessions()
+
+        try resetStore(dbPath: h.environment.databaseURL.path)
+        await session.reload()
+        let missing = VaultError.integrity(kind: VaultSession.accountMissingKind)
+        #expect(session.state == .failed(missing))
+        #expect(session.lastError == missing)
+        #expect(h.makeSession().state == .failed(missing))
+        await session.refresh()
+        #expect(session.state == .failed(missing))
+        #expect(missing.localizedMessage == "Données refusées : Le compte a disparu du stockage.")
+    }
+
+    /// I1: the throwaway password check never writes the device state. A save made while the check is
+    /// in flight keeps its newer `last_seen` on disk: a later replay of the older manifest is refused.
+    @Test func passwordCheckKeepsTheNewerLastSeenOnDisk() async throws {
+        let remote = InMemoryRemote()
+        let a = try SyncDevice(remote: remote, name: "A")
+        defer { a.cleanUp() }
+        _ = try await a.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        await a.sync()
+        let vaultID = try #require(a.session.allVaults.first?.id)
+        let manifest = RecordName(kind: 6, id: vaultID)
+        let oldVersion = try #require(await remote.record(manifest)?.version)
+
+        let gate = CoreGate()
+        a.session.coreWorkHook = gate.hook
+        let checking = Task { try await a.session.verifyMasterPassword(testPassword) }
+        try await gate.waitUntilEntered()
+        a.session.coreWorkHook = nil
+        try await addItem(a.session, title: "Projet Atlas")
+        gate.release()
+        try await checking.value
+        await a.sync()
+        #expect(await remote.record(manifest)?.version != oldVersion)
+
+        a.session.lock()
+        await a.session.waitForReleasedSessions()
+        await remote.replay(name: manifest, version: oldVersion)
+        await a.coordinator.syncNow()
+        await #expect(throws: VaultError.integrity(kind: "manifest_rollback")) {
+            try await a.session.unlock(password: testPassword)
+        }
+    }
+
     @Test func restoreIsCancelledWhenSecretKeyCannotBeStored() async throws {
         let first = try SessionHarness()
         defer { first.cleanUp() }

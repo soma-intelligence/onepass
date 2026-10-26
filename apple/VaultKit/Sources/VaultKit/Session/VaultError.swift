@@ -95,6 +95,7 @@ public enum VaultError: Error, Equatable, Sendable {
     /// Plain French description of a detected attack (core `Integrity { kind }`).
     public static func integrityLabel(_ kind: String) -> String {
         switch kind {
+        case "account_missing": "Le compte a disparu du stockage."
         case "vault_missing": "Un vault a disparu du stockage."
         case "manifest_rollback": "Ancienne version rejouée."
         case "manifest_missing_item": "Un élément a été retenu ou supprimé du stockage."

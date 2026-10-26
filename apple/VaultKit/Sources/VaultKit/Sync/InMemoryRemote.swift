@@ -6,7 +6,8 @@ import Foundation
 /// 8 little-endian bytes) that changes on every write, atomic batches with conditional saves and
 /// unconditional deletions, a change log read through tokens (the position in the log, 8 bytes; each
 /// device keeps its own in its store, the server keeps no cursor), paged fetches and batch limits
-/// (a larger batch is refused). It can also attack: `tamper`, `withhold` and `replay`.
+/// (a larger batch is refused). It can also attack: `tamper`, `withhold`, `replay` and `forgeDeletion`,
+/// and change the signed-in account (`setAccountIdentity`).
 public actor InMemoryRemote: RemoteRecordStore {
     private struct Stored {
         var version: UInt64
@@ -31,9 +32,11 @@ public actor InMemoryRemote: RemoteRecordStore {
     private var lastTag: UInt64 = 0
     private var offline = false
     private var available = true
+    private var identity: String? = "utilisateur-icloud-a"
     private var nextFailure: RemoteStoreError?
     private var resetPending = false
     private var tokenExpired = false
+    private var brokenToken = false
     /// Every batch received, in order (names only).
     public private(set) var sentBatches: [[RecordName]] = []
 
@@ -75,6 +78,10 @@ public actor InMemoryRemote: RemoteRecordStore {
             .sorted { $0.value.sequence < $1.value.sequence }
         let page = changed.prefix(pageSize)
         let next = page.last?.value.sequence ?? cursor
+        if brokenToken {
+            brokenToken = false
+            return RemoteBatch(changes: page.map { remoteRecord($0.key, $0.value) }, moreComing: true, token: nil)
+        }
         return RemoteBatch(
             changes: page.map { remoteRecord($0.key, $0.value) },
             moreComing: changed.count > page.count,
@@ -125,6 +132,15 @@ public actor InMemoryRemote: RemoteRecordStore {
 
     public func accountAvailable() async -> Bool { available }
 
+    public func accountIdentity() async throws -> String? {
+        try checkOffline()
+        return identity
+    }
+
+    private func checkOffline() throws {
+        if offline { throw RemoteStoreError.offline }
+    }
+
     private func checkFailure() throws {
         if offline { throw RemoteStoreError.offline }
         if resetPending {
@@ -164,6 +180,15 @@ public actor InMemoryRemote: RemoteRecordStore {
             data[data.index(before: data.endIndex)] ^= 0xFF
             stored.data = data
         }
+    }
+
+    /// Logs a deletion of the record that no client asked for (a forged tombstone).
+    public func forgeDeletion(name: RecordName) {
+        guard records[name] != nil else { return }
+        sequence += 1
+        records[name]?.data = nil
+        records[name]?.tag = nil
+        records[name]?.sequence = sequence
     }
 
     /// Stops serving the record in fetches (it stays on the server for sends).
@@ -206,6 +231,16 @@ public actor InMemoryRemote: RemoteRecordStore {
 
     public func setAccountAvailable(_ available: Bool) {
         self.available = available
+    }
+
+    /// Simulates another Apple ID signing in (or nil: an account the remote cannot name).
+    public func setAccountIdentity(_ identity: String?) {
+        self.identity = identity
+    }
+
+    /// Serves one page that announces more pages without a token (a broken remote), once.
+    public func breakNextPageToken() {
+        brokenToken = true
     }
 
     /// Live record (nil when absent or deleted).

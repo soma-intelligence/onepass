@@ -11,6 +11,9 @@ public enum SyncStatus: Equatable, Sendable {
     case error(String)
     /// The core refused remote data (`Integrity { kind }`).
     case refused(kind: String)
+    /// The iCloud account is not the one this store first synced with: sync stopped until
+    /// `SyncCoordinator.acceptAccountChange()`.
+    case accountChanged
 
     /// French text for the UI.
     public var label: String {
@@ -21,6 +24,7 @@ public enum SyncStatus: Equatable, Sendable {
         case .offline: "Hors ligne"
         case .error(let message): message
         case .refused(let kind): "Données refusées : \(VaultError.integrityLabel(kind))"
+        case .accountChanged: "Le compte iCloud a changé"
         }
     }
 }
