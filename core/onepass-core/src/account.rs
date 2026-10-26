@@ -14,12 +14,16 @@
 //! - v2: params are `"OPP2" || postcard(account_id, kdf, identity_pub,
 //!   signing_pub, kem_pub, epoch, identity_sig)` with `epoch >= 1`, the
 //!   signature covering the epoch under `b"account-params/v2"`; the keyset
-//!   is `"OPK2" || epoch (8 bytes, big endian) || blob`, the blob sealed at
-//!   schema 2 with the epoch XORed into the last 8 bytes of its blob id.
-//!   The clear epoch lets a torn fetch (params of one epoch, keyset of
-//!   another) fail as `IntegrityError::WrongContext` before any key is
-//!   tried, instead of looking like a wrong password; the sealed context
-//!   makes the clear epoch binding.
+//!   is `"OPK2" || epoch (8 bytes, big endian) || params hash (32) || blob`,
+//!   where the params hash is the SHA-256 of the params' signed message.
+//!   The blob is sealed at schema 2 with the epoch XORed into the last 8
+//!   bytes of its blob id and the first 16 bytes of the params hash in the
+//!   context's vault id slot (a keyset has no vault).
+//!   The clear epoch and hash let a torn fetch (params and keyset of two
+//!   epochs, or of two different changes at the same epoch) fail as
+//!   `IntegrityError::WrongContext` before any key is tried, instead of
+//!   looking like a wrong password; the sealed context makes the clear
+//!   header binding.
 //!
 //! Accounts created now write v2 at epoch 1. The epoch is the counter of
 //! the signed params, bumped by every change of them (a master password
@@ -28,6 +32,7 @@
 
 use std::fmt;
 
+use aws_lc_rs::digest::{SHA256, digest};
 use serde::{Deserialize, Serialize};
 use serde_bytes::Bytes;
 use zeroize::Zeroizing;
@@ -50,10 +55,11 @@ const PARAMS_V2_PREFIX: &[u8; 4] = b"OPP2";
 const KEYSET_SCHEMA: u16 = 1;
 /// Schema version bound into a v2 keyset blob.
 const KEYSET_SCHEMA_V2: u16 = 2;
-/// Prefix of a v2 keyset record, followed by the big-endian epoch.
+/// Prefix of a v2 keyset record, followed by the big-endian epoch and the
+/// params hash.
 const KEYSET_V2_PREFIX: &[u8; 4] = b"OPK2";
-/// Bytes before the blob in a v2 keyset record: prefix and epoch.
-const KEYSET_V2_HEADER: usize = 12;
+/// Bytes before the blob in a v2 keyset record: prefix, epoch, params hash.
+const KEYSET_V2_HEADER: usize = 44;
 /// Largest accepted Argon2id cost as `(m_kib, t, p)`: 2 GiB, 16 passes, 16
 /// lanes. Parameters come from the server, so they are bounded before Argon2
 /// runs.
@@ -198,7 +204,7 @@ impl Account {
             &keyset.identity,
         )?;
         let auk = derive_auk(password, &secret_key, &params.kdf)?;
-        let keyset_record = seal_keyset(&auk, account_id, params.epoch, &keyset)?;
+        let keyset_record = seal_keyset(&auk, &params, &keyset)?;
         let params_record = params.encode()?;
         Ok(NewAccount {
             account: Account { params, keyset },
@@ -353,7 +359,7 @@ impl Account {
             &self.keyset.identity,
         )?;
         let key = derive_auk(new_password, secret_key, &params.kdf)?;
-        let keyset_record = seal_keyset(&key, params.account_id, epoch, &self.keyset)?;
+        let keyset_record = seal_keyset(&key, &params, &self.keyset)?;
         let params_record = params.encode()?;
         // Prove the new pair opens before anything is written.
         let account = open_keyset(&key, params, &keyset_record)?;
@@ -432,24 +438,24 @@ fn verify_params(
     Ok(params)
 }
 
-/// Steps 4 and 5 of `Account::unlock`: check the keyset record's epoch
-/// against the params', open the keyset blob under `auk` and check it
-/// against the signed public keys.
+/// Steps 4 and 5 of `Account::unlock`: check the keyset record's epoch and
+/// params hash against the params, open the keyset blob under `auk` and
+/// check it against the signed public keys.
 fn open_keyset(auk: &SymmetricKey, params: AccountParams, keyset_record: &[u8]) -> Result<Account> {
-    let (epoch, blob) = split_keyset(keyset_record)?;
-    if epoch != params.epoch {
+    let (bound, blob) = split_keyset(keyset_record)?;
+    let aad = keyset_aad(&params)?;
+    let expected = match aad.vault_id {
+        None => None,
+        Some(_) => Some((params.epoch, params_hash(&params)?)),
+    };
+    if bound != expected {
         return Err(IntegrityError::WrongContext.into());
     }
-    let plaintext = open_detailed(
-        auk,
-        BlobKind::Keyset,
-        &keyset_aad(params.account_id, epoch),
-        blob,
-    )
-    .map_err(|(stage, e)| match stage {
-        OpenStage::Commitment => Error::WrongPassword,
-        _ => e,
-    })?;
+    let plaintext =
+        open_detailed(auk, BlobKind::Keyset, &aad, blob).map_err(|(stage, e)| match stage {
+            OpenStage::Commitment => Error::WrongPassword,
+            _ => e,
+        })?;
     let keyset = decode_keyset(&plaintext)?;
 
     if keyset.kem.public()? != params.kem_pub
@@ -606,52 +612,74 @@ impl AccountParams {
     }
 }
 
-/// The context a keyset blob is sealed to: at epoch 0 (v1), schema 1 and the
-/// account id; from epoch 1 (v2), schema 2 and the account id with the
-/// big-endian epoch XORed into its last 8 bytes.
-fn keyset_aad(account_id: Id, epoch: u64) -> Aad {
-    if epoch == 0 {
-        return Aad {
-            blob_id: account_id,
-            vault_id: None,
-            schema: KEYSET_SCHEMA,
-        };
-    }
-    let mut blob_id = account_id;
-    for (b, e) in blob_id.0[8..].iter_mut().zip(epoch.to_be_bytes()) {
-        *b ^= e;
-    }
-    Aad {
-        blob_id,
-        vault_id: None,
-        schema: KEYSET_SCHEMA_V2,
-    }
+/// SHA-256 of the params' signed message: binds a v2 keyset to these exact
+/// params (epoch, KDF and salt, public keys).
+fn params_hash(params: &AccountParams) -> Result<[u8; 32]> {
+    let msg = signed_message(
+        &params.account_id,
+        &params.kdf,
+        &params.signing_pub,
+        &params.kem_pub,
+        params.epoch,
+    )?;
+    let mut out = [0u8; 32];
+    out.copy_from_slice(digest(&SHA256, &msg).as_ref());
+    Ok(out)
 }
 
-/// A keyset record's epoch and blob: a v2 record is `"OPK2" || epoch_be ||
-/// blob` with an epoch of at least 1, anything else a v1 blob (epoch 0).
-/// A v2 header that is cut short or carries epoch 0 is
-/// `InvalidFormat("keyset")`.
-fn split_keyset(record: &[u8]) -> Result<(u64, &[u8])> {
+/// The context a keyset blob is sealed to: at epoch 0 (v1), schema 1 and the
+/// account id; from epoch 1 (v2), schema 2, the account id with the
+/// big-endian epoch XORed into its last 8 bytes, and the first 16 bytes of
+/// the params hash in the vault id slot.
+fn keyset_aad(params: &AccountParams) -> Result<Aad> {
+    if params.epoch == 0 {
+        return Ok(Aad {
+            blob_id: params.account_id,
+            vault_id: None,
+            schema: KEYSET_SCHEMA,
+        });
+    }
+    let mut blob_id = params.account_id;
+    for (b, e) in blob_id.0[8..].iter_mut().zip(params.epoch.to_be_bytes()) {
+        *b ^= e;
+    }
+    let mut bound = [0u8; 16];
+    bound.copy_from_slice(&params_hash(params)?[..16]);
+    Ok(Aad {
+        blob_id,
+        vault_id: Some(Id(bound)),
+        schema: KEYSET_SCHEMA_V2,
+    })
+}
+
+/// A keyset record's binding and blob: a v2 record is `"OPK2" || epoch_be ||
+/// params hash || blob` with an epoch of at least 1, giving
+/// `Some((epoch, hash))`; anything else is a v1 blob (`None`). A v2 header
+/// that is cut short or carries epoch 0 is `InvalidFormat("keyset")`.
+type KeysetBinding = Option<(u64, [u8; 32])>;
+
+fn split_keyset(record: &[u8]) -> Result<(KeysetBinding, &[u8])> {
     if !record.starts_with(KEYSET_V2_PREFIX) {
-        return Ok((0, record));
+        return Ok((None, record));
     }
     let bad = Error::InvalidFormat("keyset");
     let (header, blob) = record
         .split_at_checked(KEYSET_V2_HEADER)
         .ok_or(bad.clone())?;
     let mut be = [0u8; 8];
-    be.copy_from_slice(&header[KEYSET_V2_PREFIX.len()..]);
+    be.copy_from_slice(&header[4..12]);
+    let mut hash = [0u8; 32];
+    hash.copy_from_slice(&header[12..KEYSET_V2_HEADER]);
     match u64::from_be_bytes(be) {
         0 => Err(bad),
-        epoch => Ok((epoch, blob)),
+        epoch => Ok((Some((epoch, hash)), blob)),
     }
 }
 
-/// Seal the postcard encoding of the three secret keys' bytes for `epoch`
-/// (a v1 bare blob at epoch 0, a v2 record above). The plaintext is written
-/// into a buffer sized up front and wiped on drop.
-fn seal_keyset(auk: &SymmetricKey, account_id: Id, epoch: u64, keyset: &Keyset) -> Result<Vec<u8>> {
+/// Seal the postcard encoding of the three secret keys' bytes for `params`
+/// (a v1 bare blob at epoch 0, a v2 record bound to the params above). The
+/// plaintext is written into a buffer sized up front and wiped on drop.
+fn seal_keyset(auk: &SymmetricKey, params: &AccountParams, keyset: &Keyset) -> Result<Vec<u8>> {
     let kem = keyset.kem.to_bytes();
     let signing = keyset.signing.to_bytes();
     let identity = keyset.identity.to_bytes();
@@ -672,18 +700,14 @@ fn seal_keyset(auk: &SymmetricKey, account_id: Id, epoch: u64, keyset: &Keyset) 
     )
     .map_err(|_| Error::InvalidFormat("keyset"))?
     .len();
-    let blob = seal(
-        auk,
-        BlobKind::Keyset,
-        &keyset_aad(account_id, epoch),
-        &buf[..used],
-    )?;
-    if epoch == 0 {
+    let blob = seal(auk, BlobKind::Keyset, &keyset_aad(params)?, &buf[..used])?;
+    if params.epoch == 0 {
         return Ok(blob);
     }
     let mut out = Vec::with_capacity(KEYSET_V2_HEADER + blob.len());
     out.extend_from_slice(KEYSET_V2_PREFIX);
-    out.extend_from_slice(&epoch.to_be_bytes());
+    out.extend_from_slice(&params.epoch.to_be_bytes());
+    out.extend_from_slice(&params_hash(params)?);
     out.extend_from_slice(&blob);
     Ok(out)
 }
@@ -1026,8 +1050,7 @@ mod tests {
             identity: IdentityKey::from_bytes(&ks.identity.to_bytes()).unwrap(),
         };
         let auk = derive_auk("pw", &n.secret_key, &n.account.params.kdf).unwrap();
-        let p = &n.account.params;
-        let record = seal_keyset(&auk, p.account_id, p.epoch, &swapped).unwrap();
+        let record = seal_keyset(&auk, &n.account.params, &swapped).unwrap();
         assert!(matches!(
             Account::unlock("pw", &n.secret_key, &n.params_record, &record, None),
             Err(Error::Integrity(IntegrityError::Signature))
@@ -1131,7 +1154,7 @@ mod tests {
         )
         .unwrap();
         let auk = derive_auk("pw", &n.secret_key, &p.kdf).unwrap();
-        let keyset = seal_keyset(&auk, p.account_id, 0, n.account.keyset()).unwrap();
+        let keyset = seal_keyset(&auk, &params, n.account.keyset()).unwrap();
         (params.encode().unwrap(), keyset)
     }
 
@@ -1276,6 +1299,8 @@ mod tests {
         // in the sealed context too, and the blob does not open.
         let mut relabelled = n.keyset_record.clone();
         relabelled[4..12].copy_from_slice(&2u64.to_be_bytes());
+        let hash = params_hash(&AccountParams::decode(&epoch2).unwrap()).unwrap();
+        relabelled[12..KEYSET_V2_HEADER].copy_from_slice(&hash);
         assert_eq!(
             Account::unlock("pw", &n.secret_key, &epoch2, &relabelled, None).unwrap_err(),
             Error::WrongPassword
@@ -1337,6 +1362,106 @@ mod tests {
             Account::unlock_exporting_auk_at("pw", &n.secret_key, &v1_params, &v1_keyset, None, 1)
                 .unwrap_err(),
             rollback
+        );
+    }
+
+    #[test]
+    fn same_epoch_mix_is_wrong_context() {
+        let n = shared();
+        let open = || {
+            Account::unlock(
+                "pw",
+                &n.secret_key,
+                &n.params_record,
+                &n.keyset_record,
+                None,
+            )
+            .unwrap()
+        };
+        // Two different changes from the same epoch: both at epoch 2.
+        let a = open().rekey(&n.secret_key, "mot de passe A").unwrap();
+        let b = open().rekey(&n.secret_key, "mot de passe B").unwrap();
+        assert_eq!(a.account.params.epoch, 2);
+        assert_eq!(b.account.params.epoch, 2);
+        // Each pair opens with its own password.
+        for (r, pw) in [(&a, "mot de passe A"), (&b, "mot de passe B")] {
+            Account::unlock(pw, &n.secret_key, &r.params_record, &r.keyset_record, None).unwrap();
+        }
+        // A mix is a torn pair, never a wrong password, whichever password.
+        for pw in ["mot de passe A", "mot de passe B", "pw"] {
+            assert_eq!(
+                Account::unlock(pw, &n.secret_key, &a.params_record, &b.keyset_record, None)
+                    .unwrap_err(),
+                Error::Integrity(IntegrityError::WrongContext)
+            );
+            assert_eq!(
+                Account::unlock(pw, &n.secret_key, &b.params_record, &a.keyset_record, None)
+                    .unwrap_err(),
+                Error::Integrity(IntegrityError::WrongContext)
+            );
+        }
+        // Relabelling the clear hash does not help: it is sealed too.
+        let mut relabelled = b.keyset_record.clone();
+        relabelled[12..KEYSET_V2_HEADER].copy_from_slice(&params_hash(&a.account.params).unwrap());
+        assert_eq!(
+            Account::unlock(
+                "mot de passe B",
+                &n.secret_key,
+                &a.params_record,
+                &relabelled,
+                None
+            )
+            .unwrap_err(),
+            Error::WrongPassword
+        );
+    }
+
+    #[test]
+    fn rekey_migrates_a_v1_account_to_v2() {
+        let n = shared();
+        let (v1_params, v1_keyset) = v1_records(n);
+        let account = Account::unlock("pw", &n.secret_key, &v1_params, &v1_keyset, None).unwrap();
+        assert_eq!(account.params.epoch, 0);
+        let r = account.rekey(&n.secret_key, "nouveau").unwrap();
+        assert_eq!(r.account.params.epoch, 1);
+        assert!(r.params_record.starts_with(b"OPP2"));
+        assert!(r.keyset_record.starts_with(b"OPK2"));
+        let a = Account::unlock(
+            "nouveau",
+            &n.secret_key,
+            &r.params_record,
+            &r.keyset_record,
+            None,
+        )
+        .unwrap();
+        assert_eq!(a.params.kem_pub, n.account.params.kem_pub);
+        // Old password with the new params: wrong password.
+        assert_eq!(
+            Account::unlock(
+                "pw",
+                &n.secret_key,
+                &r.params_record,
+                &r.keyset_record,
+                None
+            )
+            .unwrap_err(),
+            Error::WrongPassword
+        );
+        // Torn: new params with the v1 keyset, v1 params with the new keyset.
+        assert_eq!(
+            Account::unlock("nouveau", &n.secret_key, &r.params_record, &v1_keyset, None)
+                .unwrap_err(),
+            Error::Integrity(IntegrityError::WrongContext)
+        );
+        assert_eq!(
+            Account::unlock("pw", &n.secret_key, &v1_params, &r.keyset_record, None).unwrap_err(),
+            Error::Integrity(IntegrityError::WrongContext)
+        );
+        // A device that saw epoch 1 refuses the v1 params again.
+        assert_eq!(
+            Account::unlock_exporting_auk_at("pw", &n.secret_key, &v1_params, &v1_keyset, None, 1)
+                .unwrap_err(),
+            Error::Integrity(IntegrityError::ParamsRollback)
         );
     }
 }

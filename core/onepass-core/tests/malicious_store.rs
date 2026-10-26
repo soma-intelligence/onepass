@@ -425,9 +425,13 @@ fn downgrade_kdf() {
     );
     // Control: the forged signature itself is valid. A device that pinned
     // nothing gets past every params check and only fails on the keyset,
-    // sealed under the real parameters. So the refusal above is the pin.
+    // bound to the real parameters (their hash, in its header and sealed
+    // context). So the refusal above is the pin.
     let unpinned = unlock(Attack::DowngradeKdf { params }, DeviceState::default());
-    assert_eq!(unpinned.map(drop), Err(Error::WrongPassword));
+    assert_eq!(
+        unpinned.map(drop),
+        Err(Error::Integrity(IntegrityError::WrongContext))
+    );
 }
 
 #[test]

@@ -326,13 +326,15 @@ impl<S: RecordStore> Repository<S> {
     /// the new Account Unlock Key, which is returned (to enroll biometrics
     /// again).
     ///
-    /// Writes, each conditional on the version just read: the keyset first,
-    /// then the params. A params write that loses a race puts the previous
-    /// keyset back (best effort) and gives `Error::Conflict`; so does a
-    /// keyset write that loses one. Then the new epoch is pinned and the
-    /// session goes on with the new params (same keys: vault keys, manifests
-    /// and pending writes of other devices stay valid). With a `SyncStore`
-    /// the chain state is saved by the next `persist_device_state`.
+    /// The keyset and the params are written together
+    /// (`RecordStore::put_all_if_version`, one transaction in a persistent
+    /// store), each conditional on the version just read: a lost race is
+    /// `Error::Conflict`, and on any error the previous pair stays as it
+    /// was. Then the new epoch is pinned and the session goes on with the
+    /// new params (same keys: vault keys, manifests and pending writes of
+    /// other devices stay valid). With a `SyncStore` the chain state is
+    /// saved by the next `persist_device_state`, which the caller runs right
+    /// after.
     pub fn change_password(
         &mut self,
         current: &str,
@@ -359,37 +361,28 @@ impl<S: RecordStore> Repository<S> {
         } = stored.rekey(secret_key, new)?;
         let id = params.id;
         let next = |r: &Record| r.version.checked_add(1).ok_or(Error::Conflict);
-        let keyset_version = next(&keyset)?;
-        self.store.put_if_version(
-            Record {
-                id,
-                kind: RecordKind::Keyset,
-                version: keyset_version,
-                data: keyset_record,
-            },
-            Some(keyset.version),
-        )?;
-        let written = self.store.put_if_version(
-            Record {
-                id,
-                kind: RecordKind::AccountParams,
-                version: next(&params)?,
-                data: params_record,
-            },
-            Some(params.version),
-        );
-        if let Err(e) = written {
-            // Never leave a new keyset beside the old params: put the
-            // previous one back, as a newer version.
-            let _ = self.store.put_if_version(
+        // Both records in one atomic write: a conflict, a store failure or
+        // a crash leaves the previous pair as it was.
+        self.store.put_all_if_version(vec![
+            (
                 Record {
-                    version: keyset_version.saturating_add(1),
-                    ..keyset
+                    id,
+                    kind: RecordKind::Keyset,
+                    version: next(&keyset)?,
+                    data: keyset_record,
                 },
-                Some(keyset_version),
-            );
-            return Err(e);
-        }
+                Some(keyset.version),
+            ),
+            (
+                Record {
+                    id,
+                    kind: RecordKind::AccountParams,
+                    version: next(&params)?,
+                    data: params_record,
+                },
+                Some(params.version),
+            ),
+        ])?;
         if let Some(p) = &mut self.device.pinned {
             p.raise_floor(&account.params.kdf);
         }

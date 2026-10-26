@@ -68,6 +68,24 @@ pub trait RecordStore {
     fn list(&self, kind: RecordKind) -> Result<Vec<Record>>;
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()>;
 
+    /// Write every record only if the stored record with its key has the
+    /// version paired with it (`None`: no such record), all or nothing:
+    /// on a conflict nothing is written (`Error::Conflict`). The default
+    /// checks every version, then puts in order, which is atomic only for a
+    /// store whose `put` cannot fail (in memory); a persistent store
+    /// overrides it with one transaction (`SqliteStore`, `SyncStore`).
+    fn put_all_if_version(&mut self, writes: Vec<(Record, Option<u64>)>) -> Result<()> {
+        for (r, expected) in &writes {
+            if self.get(r.kind, r.id)?.map(|c| c.version) != *expected {
+                return Err(Error::Conflict);
+            }
+        }
+        for (r, _) in writes {
+            self.put(r)?;
+        }
+        Ok(())
+    }
+
     /// The pinned chain state this store keeps for the device, read by the
     /// `Repository` unlock functions. Only `SyncStore` persists one (meta key
     /// `chain`); other stores give the default, so each session pins on

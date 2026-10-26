@@ -37,7 +37,8 @@ Règle de frontière inchangée : seul le Rust manipule les clés. Le canal d'ap
 ### 3.1 Format
 
 - Nouveau format de l'enregistrement `AccountParams` : préfixe `"OPP2"` puis postcard de `{account_id, kdf, identity_pub, signing_pub, kem_pub, epoch: u64, identity_sig}`. Message signé : `postcard((account_id, kdf, signing_pub, kem_pub, epoch))`, domaine `account-params/v2`, clé d'identité SLH-DSA. Un enregistrement sans préfixe est un v1 : époque 0, vérifié exactement comme avant.
-- Keyset v2 : même contenu, scellé sous l'AUK avec `Aad{blob_id: account_id, vault_id: None, schema: 2}` et l'époque dans le blob id (`account_id XOR epoch_be` sur les 8 derniers octets). Un keyset v1 (schéma 1) n'est accepté qu'avec des paramètres v1. Une récupération déchirée (paramètres neufs, keyset ancien) échoue avec `IntegrityError::WrongContext`, distinct de `WrongPassword`.
+- Keyset v2 : même contenu, enregistrement `"OPK2" || epoch_be (8 octets) || hash (32 octets) || blob`, où `hash` est le SHA-256 du message signé des paramètres. Le blob est scellé sous l'AUK avec `Aad{blob_id: account_id XOR epoch_be sur les 8 derniers octets, vault_id: 16 premiers octets du hash, schema: 2}` : l'en-tête en clair permet de refuser avant toute clé, le contexte scellé le rend contraignant. Un keyset v1 (schéma 1, blob nu) n'est accepté qu'avec des paramètres v1. Une récupération déchirée (paramètres et keyset de deux époques, ou de deux changements différents à la même époque) échoue avec `IntegrityError::WrongContext`, distinct de `WrongPassword`.
+- `AccountParams` n'implémente plus `Serialize`/`Deserialize` : l'enregistrement se lit et s'écrit par `decode`/`encode` (une forme serde serait un troisième format ambigu).
 - Les comptes créés à partir de ce jalon écrivent directement le v2, époque 1.
 
 ### 3.2 État épinglé (`chain`)
@@ -46,15 +47,15 @@ Nouvel état local, à côté de `DeviceState` (dont l'encodage ne change pas), 
 
 ### 3.3 Changement
 
-`Repository::change_password(current: &str, new: &str) -> Result<Auk>` (session ouverte) :
+`Repository::change_password(current: &str, secret_key: &SecretKey, new: &str) -> Result<Auk>` (session ouverte) :
 
 1. Vérifie le mot de passe actuel (Argon2id, mêmes contrôles que `verify_password`).
 2. Nouveaux `KdfParams` : sel neuf, coûts = max(coûts actuels, plancher).
 3. Nouvelle AUK = dérivation(nouveau mot de passe, Secret Key inchangée, nouveaux paramètres).
 4. Paramètres v2 d'époque + 1 signés par la clé d'identité ; keyset (mêmes clés) rescellé sous la nouvelle AUK au schéma 2.
-5. Écriture conditionnelle des deux enregistrements (`put_if_version`), keyset d'abord dans `pending` puis paramètres ; épinglage de la nouvelle époque. Rend la nouvelle AUK pour réenrôler la biométrie.
+5. Écriture conditionnelle des deux enregistrements en une seule transaction (`RecordStore::put_all_if_version`, keyset puis paramètres) : un conflit, une erreur ou un arrêt brutal laisse l'ancienne paire intacte ; épinglage de la nouvelle époque. Rend la nouvelle AUK pour réenrôler la biométrie.
 
-Les clés du keyset, les clés de coffre et les manifestes ne changent pas : les écritures en attente des autres appareils restent valables. Un autre appareil voit l'époque monter à la récupération ; son AUK biométrique échoue (`WrongPassword` sur le keyset) ; l'app supprime l'enrôlement et affiche "Ton mot de passe maître a changé sur un autre appareil. Saisis le nouveau." Le rejeu des anciens paramètres par le serveur est refusé (`ParamsRollback`) par tout appareil qui a vu la nouvelle époque. Deux changements concurrents : le second envoi échoue au conflit de version ; l'app redemande, l'utilisateur recommence avec l'époque la plus récente.
+Les clés du keyset, les clés de coffre et les manifestes ne changent pas : les écritures en attente des autres appareils restent valables. Un autre appareil voit l'époque monter à la récupération ; son AUK biométrique échoue (`WrongPassword` sur le keyset) ; l'app supprime l'enrôlement et affiche "Ton mot de passe maître a changé sur un autre appareil. Saisis le nouveau." Le rejeu des anciens paramètres par le serveur est refusé (`ParamsRollback`) par tout appareil qui a vu la nouvelle époque. Deux changements concurrents : le second envoi échoue au conflit de version. À la récupération suivante, `commit_remote` voit des paramètres serveur d'époque au moins égale à ceux en attente : il retire ensemble les paramètres et le keyset en attente et lève l'indicateur `password_change_superseded` (`SyncStore::take_password_change_superseded`) ; l'app ferme la session et demande le mot de passe en vigueur, l'utilisateur recommence avec l'époque la plus récente. `pending_changes` n'envoie les paramètres et le keyset qu'ensemble, et jamais des paramètres d'époque inférieure ou égale à celle du serveur.
 
 ## 4. Listes signées
 

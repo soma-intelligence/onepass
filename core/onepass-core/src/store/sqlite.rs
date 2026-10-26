@@ -110,32 +110,17 @@ impl RecordStore for SqliteStore {
     /// the expected version, or an `INSERT` that does nothing when the
     /// record exists. No row changed means another writer got there first.
     fn put_if_version(&mut self, r: Record, expected: Option<u64>) -> Result<()> {
-        let version =
-            i64::try_from(r.version).map_err(|_| Error::InvalidFormat("record version"))?;
-        let changed = match expected {
-            None => self.conn.execute(
-                "INSERT INTO records (kind, id, version, data) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT (kind, id) DO NOTHING",
-                params![r.kind.code(), &r.id.0[..], version, r.data],
-            ),
-            Some(old) => {
-                // A version that does not fit an SQLite integer was never stored.
-                let Ok(old) = i64::try_from(old) else {
-                    return Err(Error::Conflict);
-                };
-                self.conn.execute(
-                    "UPDATE records SET version = ?3, data = ?4
-                     WHERE kind = ?1 AND id = ?2 AND version = ?5",
-                    params![r.kind.code(), &r.id.0[..], version, r.data, old],
-                )
-            }
+        put_if_version_on(&self.conn, &r, expected)
+    }
+
+    /// Every conditional write in one transaction: a conflict or a failure
+    /// on any of them rolls all of them back.
+    fn put_all_if_version(&mut self, writes: Vec<(Record, Option<u64>)>) -> Result<()> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        for (r, expected) in &writes {
+            put_if_version_on(&tx, r, *expected)?;
         }
-        .map_err(store_err)?;
-        if changed == 1 {
-            Ok(())
-        } else {
-            Err(Error::Conflict)
-        }
+        tx.commit().map_err(store_err)
     }
 
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
@@ -170,6 +155,35 @@ impl RecordStore for SqliteStore {
             )
             .map_err(store_err)?;
         Ok(())
+    }
+}
+
+/// `put_if_version` on a connection or an open transaction.
+fn put_if_version_on(conn: &Connection, r: &Record, expected: Option<u64>) -> Result<()> {
+    let version = i64::try_from(r.version).map_err(|_| Error::InvalidFormat("record version"))?;
+    let changed = match expected {
+        None => conn.execute(
+            "INSERT INTO records (kind, id, version, data) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (kind, id) DO NOTHING",
+            params![r.kind.code(), &r.id.0[..], version, r.data],
+        ),
+        Some(old) => {
+            // A version that does not fit an SQLite integer was never stored.
+            let Ok(old) = i64::try_from(old) else {
+                return Err(Error::Conflict);
+            };
+            conn.execute(
+                "UPDATE records SET version = ?3, data = ?4
+                 WHERE kind = ?1 AND id = ?2 AND version = ?5",
+                params![r.kind.code(), &r.id.0[..], version, r.data, old],
+            )
+        }
+    }
+    .map_err(store_err)?;
+    if changed == 1 {
+        Ok(())
+    } else {
+        Err(Error::Conflict)
     }
 }
 
