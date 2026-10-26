@@ -142,47 +142,77 @@ pub fn open(
     aad: &Aad,
     blob: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>> {
+    open_detailed(key, kind, aad, blob).map_err(|(_, e)| e)
+}
+
+/// The `open` check that failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OpenStage {
+    /// Minimum length, magic, format, algorithm or kind.
+    Header,
+    /// Subkey derivation or AEAD key setup.
+    Key,
+    Commitment,
+    Aead,
+    Padding,
+}
+
+/// `open`, also naming the failing check: a caller can tell a wrong key on a
+/// well-formed blob (`Commitment`) from a damaged blob.
+pub(crate) fn open_detailed(
+    key: &SymmetricKey,
+    kind: BlobKind,
+    aad: &Aad,
+    blob: &[u8],
+) -> std::result::Result<Zeroizing<Vec<u8>>, (OpenStage, Error)> {
+    let header = |e: Error| Err((OpenStage::Header, e));
     if blob.len() < HEADER_LEN + TAG_LEN {
-        return Err(Error::InvalidFormat("blob too short"));
+        return header(Error::InvalidFormat("blob too short"));
     }
     if &blob[0..3] != MAGIC {
-        return Err(Error::InvalidFormat("magic"));
+        return header(Error::InvalidFormat("magic"));
     }
     if blob[3] != FORMAT {
-        return Err(Error::InvalidFormat("format"));
+        return header(Error::InvalidFormat("format"));
     }
     if blob[4] != ALGORITHM {
-        return Err(Error::InvalidFormat("algorithm"));
+        return header(Error::InvalidFormat("algorithm"));
     }
     if blob[5] != kind as u8 {
-        return Err(IntegrityError::WrongKind.into());
+        return header(IntegrityError::WrongKind.into());
     }
 
-    let k_enc = key.derive(ENC_INFO)?;
-    let k_com = key.derive(COMMIT_INFO)?;
+    let at_key = |e| (OpenStage::Key, e);
+    let k_enc = key.derive(ENC_INFO).map_err(at_key)?;
+    let k_com = key.derive(COMMIT_INFO).map_err(at_key)?;
 
     let mut full_aad = aad_bytes(&blob[0..PREFIX_LEN], aad);
     let expected = commitment(&k_com, &full_aad);
     let stored = &blob[PREFIX_LEN..HEADER_LEN];
-    verify_slices_are_equal(expected.as_ref(), stored)
-        .map_err(|_| Error::Integrity(IntegrityError::Commitment))?;
+    verify_slices_are_equal(expected.as_ref(), stored).map_err(|_| {
+        (
+            OpenStage::Commitment,
+            Error::Integrity(IntegrityError::Commitment),
+        )
+    })?;
     full_aad.extend_from_slice(stored);
 
     let mut nonce = [0u8; NONCE_LEN];
     nonce.copy_from_slice(&blob[6..PREFIX_LEN]);
 
     let mut buf = Zeroizing::new(blob[HEADER_LEN..].to_vec());
-    let pt_len = aead_key(&k_enc)?
+    let pt_len = aead_key(&k_enc)
+        .map_err(at_key)?
         .open_in_place(
             Nonce::assume_unique_for_key(nonce),
             aead::Aad::from(&full_aad[..]),
             &mut buf[..],
         )
-        .map_err(|_| Error::Integrity(IntegrityError::Aead))?
+        .map_err(|_| (OpenStage::Aead, Error::Integrity(IntegrityError::Aead)))?
         .len();
     buf.truncate(pt_len);
 
-    unpad(buf)
+    unpad(buf).map_err(|e| (OpenStage::Padding, e))
 }
 
 /// Strip the length prefix and the zero padding, checking both are canonical.
@@ -319,6 +349,52 @@ mod tests {
         p[4..7].copy_from_slice(b"abc");
         assert_eq!(
             &open(&k, BlobKind::Item, &ctx(), &seal_raw(&k, &p)).unwrap()[..],
+            b"abc"
+        );
+    }
+
+    #[test]
+    fn open_detailed_names_the_failing_stage() {
+        let k = SymmetricKey::from_bytes([3; 32]);
+        let blob = seal(&k, BlobKind::Item, &ctx(), b"abc").unwrap();
+        let stage =
+            |k: &SymmetricKey, b: &[u8]| open_detailed(k, BlobKind::Item, &ctx(), b).unwrap_err().0;
+        assert_eq!(stage(&k, &blob[..10]), OpenStage::Header);
+        let mut b = blob.clone();
+        b[0] ^= 1;
+        assert_eq!(stage(&k, &b), OpenStage::Header);
+        let mut b = blob.clone();
+        b[5] = BlobKind::Manifest as u8;
+        assert_eq!(stage(&k, &b), OpenStage::Header);
+        // Wrong key on a well-formed header: only the commitment fails.
+        let (st, e) = open_detailed(
+            &SymmetricKey::from_bytes([4; 32]),
+            BlobKind::Item,
+            &ctx(),
+            &blob,
+        )
+        .unwrap_err();
+        assert_eq!(
+            (st, e),
+            (
+                OpenStage::Commitment,
+                Error::Integrity(IntegrityError::Commitment)
+            )
+        );
+        // Right key, damaged ciphertext: commitment passes, AEAD fails.
+        let mut b = blob.clone();
+        let last = b.len() - 1;
+        b[last] ^= 1;
+        let (st, e) = open_detailed(&k, BlobKind::Item, &ctx(), &b).unwrap_err();
+        assert_eq!(
+            (st, e),
+            (OpenStage::Aead, Error::Integrity(IntegrityError::Aead))
+        );
+        let mut p = vec![0u8; 256];
+        p[0..4].copy_from_slice(&1000u32.to_be_bytes());
+        assert_eq!(stage(&k, &seal_raw(&k, &p)), OpenStage::Padding);
+        assert_eq!(
+            &open_detailed(&k, BlobKind::Item, &ctx(), &blob).unwrap()[..],
             b"abc"
         );
     }
