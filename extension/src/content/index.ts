@@ -265,6 +265,27 @@ export function createContentScript(o: ContentOptions): ContentScript {
       );
       listen(
         doc,
+        "click",
+        (e) => {
+          // Spec 8.7: a trusted click on a provider button of a site, or on an
+          // account of a provider's chooser, is reported (refs only, plus the
+          // email the chooser shows; the worker checks hosts from `sender`).
+          if (!isTrusted(e) || !(e.target instanceof Node) || sh.isHost(e.target)) return;
+          const a = observer.latest();
+          if (!a) return;
+          const hit = (ref: string) => refs.get(ref)?.contains(e.target as Node) === true;
+          const b = a.providerButtons.find((x) => hit(x.ref));
+          if (b) {
+            void send({ type: "provider_click", provider: b.provider, ref: b.ref });
+            return;
+          }
+          const acc = a.accountChooser.find((x) => hit(x.ref));
+          if (acc) void send({ type: "account_click", email: acc.email, ref: acc.ref });
+        },
+        { capture: true },
+      );
+      listen(
+        doc,
         "pointerdown",
         (e) => {
           // A click anywhere on the page but our host closes the menu.

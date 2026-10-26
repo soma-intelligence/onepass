@@ -1,6 +1,6 @@
 // The surface of the sign-in chain (spec 8.6) used by the menu and the
-// overlay. Task 17 implements it (machine + driver); until then the
-// background runs with `idleChainDriver`, which starts nothing.
+// overlay. `ChainRunner` (driver.ts) implements it; `idleChainDriver` starts
+// nothing (tests of the pages that do not need a chain).
 import type { ProviderId } from "../../shared/messages";
 import type { ChainView } from "../../shared/ui";
 

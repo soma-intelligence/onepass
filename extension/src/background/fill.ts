@@ -1,8 +1,8 @@
 // The single fill path (spec 8.4): verify the target frame, ask the host
 // (which redoes the origin match), verify again, then hand the values to the
 // content script of that exact frame. Values are not kept anywhere.
-import type { Ctx, FillField } from "../bridge/client";
-import type { BgToCs, FieldRole } from "../shared/messages";
+import type { Ctx, FillField, LoginFill } from "../bridge/client";
+import type { BgToCs, FieldRole, ProviderId } from "../shared/messages";
 import type { BgExt } from "./ext";
 import type { Frames } from "./frames";
 import { BgError, type Session } from "./session";
@@ -20,6 +20,15 @@ export type FillValues = Partial<Record<FieldRole, string>>;
 
 function put(values: FillValues, role: FieldRole, v: string | undefined): void {
   if (typeof v === "string" && v !== "") values[role] = v;
+}
+
+function loginValues(r: LoginFill): FillValues {
+  const values: FillValues = {};
+  put(values, "username", r.username);
+  put(values, "email", r.username);
+  put(values, "current_password", r.password);
+  put(values, "otp", r.totp);
+  return values;
 }
 
 export class Filler {
@@ -46,12 +55,32 @@ export class Filler {
   async fillLogin(t: FillTarget, itemId: string, fields: FillField[], ctx: Ctx = "menu"): Promise<void> {
     await this.verify(t);
     const r = await this.session.request({ op: "fill_login", ctx, item_id: itemId, origin: t.origin, fields });
-    const values: FillValues = {};
-    put(values, "username", r.username);
-    put(values, "email", r.username);
-    put(values, "current_password", r.password);
-    put(values, "otp", r.totp);
-    await this.deliver(t, values);
+    await this.deliver(t, loginValues(r));
+  }
+
+  /**
+   * The provider account's own credentials, on an official host of that
+   * provider (the host checks `provider_origin` and the account), during a
+   * sign-in chain to `siteOrigin`.
+   */
+  async fillProvider(
+    t: FillTarget,
+    accountItemId: string,
+    provider: ProviderId,
+    siteOrigin: string,
+    fields: FillField[],
+  ): Promise<void> {
+    await this.verify(t);
+    const r = await this.session.request({
+      op: "fill_provider",
+      ctx: "chain",
+      account_item_id: accountItemId,
+      provider,
+      provider_origin: t.origin,
+      site_origin: siteOrigin,
+      fields,
+    });
+    await this.deliver(t, loginValues(r));
   }
 
   async fillCard(t: FillTarget, itemId: string, ctx: Ctx = "menu"): Promise<void> {

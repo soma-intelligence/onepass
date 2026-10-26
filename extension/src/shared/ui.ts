@@ -43,6 +43,8 @@ export interface MenuInit {
   origin: string;
   formKind: FormKind;
   items: Summary[];
+  /** On a provider's pages: the account linked to the site being signed in to ("Utilisé pour <site>"). */
+  linked?: { itemId: string; site: string };
 }
 
 /** One way to sign in offered by the overlay. */
@@ -74,6 +76,8 @@ export interface SaveInit {
   update?: { itemId: string; title: string };
   vaults: { id: string; name: string }[];
   provider?: { id: ProviderId; email: string };
+  /** Open in the edit view, nothing typed yet (menu "Enregistrer un nouveau login"). */
+  view?: "edit";
 }
 
 export interface PopupStatus {

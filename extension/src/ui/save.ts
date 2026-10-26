@@ -2,7 +2,9 @@
 // `edit` and `saved`, plus the provider-link variant (spec 8.7). The
 // password is not part of `save_init`: it is fetched only when the user
 // clicks "Afficher", and the page never sends it back (the worker keeps the
-// typed or generated one).
+// typed or generated one). Exception: "Enregistrer un nouveau login" from the
+// menu (`view: "edit"`) opens the edit view with nothing typed on the page;
+// the password the user types here is sent with the save.
 import { ext } from "../shared/browser";
 import type { SaveDecision, SaveEdits } from "../shared/messages";
 import type { SaveInit } from "../shared/ui";
@@ -50,6 +52,8 @@ interface Draft {
   /** Shown in clear (revealed or generated), else null. */
   password: string | null;
   revealed: boolean;
+  /** New login from the menu: the password typed here ("" when generated). */
+  typed: string;
 }
 
 export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
@@ -96,8 +100,9 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       msg.edits = {
         title: draft.title,
         username: draft.username,
-        // Never sent back: the worker holds the typed or generated password.
-        password: "",
+        // Never sent back: the worker holds the typed or generated password,
+        // except one typed in this very page (new login from the menu).
+        password: init.view === "edit" ? draft.typed : "",
         vaultId: draft.vaultId,
         rule: draft.rule,
         tags: draft.tags,
@@ -292,7 +297,21 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     const user = h("input", { attrs: { type: "text", "aria-label": "nom d'utilisateur", maxlength: "1024" } });
     user.value = d.username;
     user.addEventListener("input", () => (d.username = user.value));
-    const pwd = h("span", { class: "field-value mono pwd-value" }, d.revealed && d.password !== null ? d.password : MASK);
+    const fresh = i.view === "edit";
+    let pwd: HTMLElement;
+    if (fresh) {
+      const input = h("input", {
+        class: "field-value mono pwd-value",
+        attrs: { type: d.password !== null ? "text" : "password", "aria-label": "mot de passe", maxlength: "4096", autocomplete: "off" },
+      });
+      input.value = d.password ?? d.typed;
+      input.addEventListener("input", () => {
+        d.typed = input.value;
+      });
+      pwd = input;
+    } else {
+      pwd = h("span", { class: "field-value mono pwd-value" }, d.revealed && d.password !== null ? d.password : MASK);
+    }
     const reveal = btn(d.revealed ? "Masquer" : "Afficher", "btn-link", async () => {
       if (d.revealed) {
         d.revealed = false;
@@ -317,6 +336,8 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
         return;
       }
       d.password = r.value.password;
+      // The worker now holds this one; a later edit of the field replaces it.
+      d.typed = "";
       d.revealed = true;
       renderEdit();
     });
@@ -355,7 +376,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           { class: "save-head" },
           mark("m"),
           h("h2", null, "Enregistrer l'élément"),
-          iconBtn("Fermer", "close", () => renderPrompt()),
+          iconBtn("Fermer", "close", () => (fresh ? void decide("dismiss", errLine(), () => undefined) : renderPrompt())),
         ),
       ),
       h(
@@ -370,7 +391,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
             "div",
             { class: "cell" },
             h("span", { class: "stack" }, h("span", { class: "cell-label" }, "mot de passe"), pwd),
-            reveal,
+            fresh ? null : reveal,
             generate,
           ),
         ),
@@ -411,8 +432,10 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       tags: [],
       password: null,
       revealed: false,
+      typed: "",
     };
-    renderPrompt();
+    if (init.view === "edit") renderEdit();
+    else renderPrompt();
   }
 
   return { ready: load() };

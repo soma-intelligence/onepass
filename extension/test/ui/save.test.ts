@@ -197,4 +197,47 @@ describe("save prompt", () => {
     await s.click("Enregistrer");
     expect(text(s.r)).toContain("Trop de demandes. Réessaie dans une minute.");
   });
+
+  it("new login from the menu: edit view at once, site prefilled, identifier and password typed", async () => {
+    const { r, handle, worker, click } = setup({ ...base, username: "", view: "edit" });
+    await handle.ready;
+    expect(text(r)).toContain("Enregistrer l'élément");
+    expect(text(r)).toContain(SITE);
+    const user = r.querySelector<HTMLInputElement>("input[aria-label=\"nom d'utilisateur\"]")!;
+    expect(user.value).toBe("");
+    const pwd = r.querySelector<HTMLInputElement>("input[aria-label=\"mot de passe\"]")!;
+    expect(pwd.type).toBe("password");
+    expect(pwd.value).toBe("");
+    // Nothing to reveal: the worker holds no password yet.
+    expect(() => button(r, "Afficher")).toThrow();
+    user.value = "alex@atlas.dev";
+    user.dispatchEvent(new Event("input"));
+    pwd.value = "Typed-Pass-9";
+    pwd.dispatchEvent(new Event("input"));
+    await click("Enregistrer");
+    expect(worker.sent.at(-1)).toEqual({
+      type: "save_decide",
+      token: TOKEN,
+      decision: "save",
+      edits: { title: "Atlas Cloud", username: "alex@atlas.dev", password: "Typed-Pass-9", vaultId: "v1", rule: "domain", tags: [] },
+    });
+  });
+
+  it("new login: Générer fills the field and the worker keeps that password; Fermer dismisses", async () => {
+    const { r, handle, worker, click } = setup({ ...base, username: "", view: "edit" });
+    await handle.ready;
+    await click("Générer");
+    const pwd = r.querySelector<HTMLInputElement>("input[aria-label=\"mot de passe\"]")!;
+    expect(pwd.value).toBe("Gen-Pass-123");
+    await click("Enregistrer");
+    // The generated one is held by the worker: not sent back.
+    expect((worker.sent.at(-1) as { edits: { password: string } }).edits.password).toBe("");
+    const s2 = setup({ ...base, username: "", view: "edit" });
+    await s2.handle.ready;
+    s2.clock.advance(300);
+    r.ownerDocument.body.append(s2.r);
+    s2.r.querySelector<HTMLButtonElement>("button[aria-label=Fermer]")!.click();
+    await flush();
+    expect(s2.worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "dismiss" });
+  });
 });

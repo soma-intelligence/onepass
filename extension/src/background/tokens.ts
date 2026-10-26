@@ -113,6 +113,18 @@ export class FrameTokens<R extends BoundRecord> {
     await this.opts.area?.remove(this.opts.prefix + token);
   }
 
+  /** A live (unexpired) token of `tabId` exists. */
+  async hasTab(tabId: number): Promise<boolean> {
+    const live = (r: BoundRecord) => r.tabId === tabId && this.now() - r.createdAt <= this.opts.ttlMs && this.now() >= r.createdAt;
+    for (const r of this.mem.values()) if (live(r)) return true;
+    const area = this.opts.area;
+    if (!area) return false;
+    for (const [k, v] of Object.entries(await area.get(null))) {
+      if (k.startsWith(this.opts.prefix) && isBoundRecord(v) && live(v)) return true;
+    }
+    return false;
+  }
+
   async revokeTab(tabId: number): Promise<void> {
     const doomed = new Set<string>();
     for (const [t, r] of this.mem) if (r.tabId === tabId) doomed.add(t);

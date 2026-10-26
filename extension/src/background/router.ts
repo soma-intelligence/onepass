@@ -224,6 +224,7 @@ export function parseUiToBg(m: unknown): UiToBg | null {
     switch (o.type) {
       case "menu_init":
       case "menu_generate":
+      case "menu_new_login":
       case "menu_unlock":
       case "menu_close":
       case "overlay_init":

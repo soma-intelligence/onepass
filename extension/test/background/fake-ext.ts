@@ -72,6 +72,7 @@ export class FakeExt implements BgExt {
   readonly sentToTabs: SentToTab[] = [];
   readonly onRemoved = new Emitter<(tabId: number) => void>();
   readonly onCommitted = new Emitter<(d: { tabId: number; frameId: number; url: string }) => void>();
+  readonly onCompleted = new Emitter<(d: { tabId: number; frameId: number; url: string }) => void>();
   readonly local = new FakeArea();
   readonly session = new FakeArea();
 
@@ -107,6 +108,7 @@ export class FakeExt implements BgExt {
       return f ? { ...f } : null;
     },
     onCommitted: this.onCommitted,
+    onCompleted: this.onCompleted,
   };
 
   readonly storage: BgExt["storage"] = { local: this.local, session: this.session };
@@ -119,6 +121,12 @@ export class FakeExt implements BgExt {
   navigate(tabId: number, frameId: number, url: string, documentId?: string): void {
     this.setFrame(tabId, frameId, url, documentId);
     this.onCommitted.emit({ tabId, frameId, url });
+  }
+
+  /** The document of a frame finished loading. */
+  complete(tabId: number, frameId: number): void {
+    const f = this.frames.get(`${tabId}:${frameId}`);
+    this.onCompleted.emit({ tabId, frameId, url: f?.url ?? "" });
   }
 
   /** Deliver a runtime message; resolves with the reply, or "no-reply". */

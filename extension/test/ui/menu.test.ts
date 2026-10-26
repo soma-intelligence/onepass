@@ -36,7 +36,39 @@ describe("inline menu", () => {
     expect(text(r)).toContain("Se connecter avec Google (alex.perso@example.com)");
     // A provider-only login has no password row.
     expect(text(r)).not.toContain("Atlas Perso alex@atlas.dev");
-    expect(r.querySelectorAll("[role=option]")).toHaveLength(2);
+    // Two sign-in rows, then "Enregistrer un nouveau login".
+    expect(r.querySelectorAll("[role=option]")).toHaveLength(3);
+  });
+
+  it("Enregistrer un nouveau login opens the save prompt (menu_new_login)", async () => {
+    const { r, handle, worker, clock } = setup(def);
+    await handle.ready;
+    clock.advance(300);
+    button(r, "Enregistrer un nouveau login").click();
+    await Promise.resolve();
+    expect(worker.sent.at(-1)).toEqual({ type: "menu_new_login", token: TOKEN });
+  });
+
+  it("no new login entry on card forms", async () => {
+    const { r, handle } = setup(() => ok({ origin: SITE, formKind: "card", items: [] }));
+    await handle.ready;
+    expect(text(r)).not.toContain("Enregistrer un nouveau login");
+  });
+
+  it("on a provider's chooser, the account linked to the site says Utilisé pour <site>", async () => {
+    const { r, handle } = setup(() =>
+      ok({
+        origin: "https://accounts.google.com",
+        formKind: "login",
+        items: [login("g_perso", { title: "Google", subtitle: "alex.perso@example.com" }), login("g_pro", { title: "Google", subtitle: "alex.pro@example.com" })],
+        linked: { itemId: "g_pro", site: "atlas-cloud.test" },
+      }),
+    );
+    await handle.ready;
+    const rows = [...r.querySelectorAll("[role=option]")].map((x) => text(x));
+    expect(rows[0]).toContain("alex.pro@example.com");
+    expect(rows[0]).toContain("Utilisé pour atlas-cloud.test");
+    expect(rows[1]).not.toContain("Utilisé pour");
   });
 
   it("menu_ignores_click_within_300ms", async () => {
@@ -123,9 +155,11 @@ describe("inline menu", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
     expect(document.activeElement).toBe(opts[1]);
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
+    expect(document.activeElement).toBe(opts[2]);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
     expect(document.activeElement).toBe(opts[0]);
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
-    expect(document.activeElement).toBe(opts[1]);
+    expect(document.activeElement).toBe(opts[2]);
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(worker.sent.at(-1)).toEqual({ type: "menu_close", token: TOKEN });
   });

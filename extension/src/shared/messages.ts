@@ -104,6 +104,8 @@ export type UiToBg =
   /** "Se connecter avec <fournisseur> (<email>)": starts the chain. */
   | { type: "menu_signin"; token: string; itemId: string; provider: ProviderId }
   | { type: "menu_generate"; token: string }
+  /** "Enregistrer un nouveau login": the save prompt in its edit view. */
+  | { type: "menu_new_login"; token: string }
   | { type: "menu_unlock"; token: string }
   | { type: "menu_close"; token: string }
   | { type: "overlay_init"; token: string }

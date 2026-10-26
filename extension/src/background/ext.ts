@@ -67,6 +67,8 @@ export interface BgExt {
   webNavigation: {
     getFrame(details: { tabId: number; frameId: number }): Promise<FrameDetails | null>;
     onCommitted: Event<(details: { tabId: number; frameId: number; url: string }) => void>;
+    /** The document of a frame finished loading. */
+    onCompleted: Event<(details: { tabId: number; frameId: number; url: string }) => void>;
   };
   storage: {
     local: StorageArea;

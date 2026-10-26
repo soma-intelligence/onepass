@@ -29,6 +29,8 @@ export interface SavePending {
   update?: { itemId: string; title: string };
   /** Provider link variant: the provider account used on this site. */
   provider?: { id: ProviderId; accountItemId: string; email: string };
+  /** Open straight in the edit view (menu "Enregistrer un nouveau login"). */
+  view?: "edit";
 }
 
 interface SaveRecord extends BoundRecord, Omit<SavePending, "tabId" | "origin" | "documentId"> {
@@ -82,6 +84,7 @@ export class SavePrompts {
     if (p.documentId !== undefined) rec.documentId = p.documentId;
     if (p.update) rec.update = { ...p.update };
     if (p.provider) rec.provider = { ...p.provider };
+    if (p.view) rec.view = p.view;
     const token = await this.tokens.register(rec);
     const msg: BgToCs = { type: "show_frame", kind: "save", url: `${this.deps.ext.runtime.getURL("save.html")}#${token}` };
     const opts = p.documentId !== undefined ? { documentId: p.documentId } : { frameId: 0 };
@@ -114,6 +117,7 @@ export class SavePrompts {
     };
     if (rec.update) out.update = { ...rec.update };
     if (rec.provider) out.provider = { id: rec.provider.id, email: rec.provider.email };
+    if (rec.view) out.view = rec.view;
     return out;
   }
 

@@ -505,3 +505,30 @@ describe("observer", () => {
     expect(document.documentElement.querySelector("onepass-root")).not.toBeNull();
   });
 });
+
+describe("provider and account clicks (spec 8.7)", () => {
+  it("reports a trusted click on a provider button, inner element included; ignores page clicks", () => {
+    setPage(`${LOGIN}<button id="g" type="button"><span id="gs">Continuer avec Google</span></button>`);
+    s = start();
+    const btn = analysis(s).providerButtons[0]!;
+    expect(btn.provider).toBe("google");
+    document.getElementById("g")!.click();
+    expect(s.ext.ofType("provider_click")).toEqual([]);
+    userClick(document.getElementById("gs")!);
+    expect(s.ext.ofType("provider_click")).toEqual([{ type: "provider_click", provider: "google", ref: btn.ref }]);
+    // Elsewhere: nothing.
+    userClick(document.getElementById("u")!);
+    expect(s.ext.ofType("provider_click")).toHaveLength(1);
+  });
+
+  it("reports the account clicked on a provider's chooser", () => {
+    setPage(`<ul><li><div id="a1" role="link" tabindex="0" data-identifier="alex.perso@example.com">Alex Martin</div></li>
+      <li><div id="a2" role="link" tabindex="0"><span>Alex Martin</span><span id="a2e">alex.pro@example.com</span></div></li></ul>`);
+    s = start("https://accounts.google.com/v3/signin/accountchooser");
+    expect(analysis(s).accountChooser).toHaveLength(2);
+    userClick(document.getElementById("a2e")!);
+    const sent = s.ext.ofType("account_click");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ type: "account_click", email: "alex.pro@example.com" });
+  });
+});

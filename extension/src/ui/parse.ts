@@ -89,7 +89,12 @@ export function summary(v: unknown): Summary {
 export const parseMenuInit = (v: unknown): MenuInit | null =>
   guard(() => {
     const o = obj(v);
-    return { origin: origin(o.origin), formKind: oneOf<FormKind>(o.formKind, FORM_KINDS), items: list(o.items, summary) };
+    const m: MenuInit = { origin: origin(o.origin), formKind: oneOf<FormKind>(o.formKind, FORM_KINDS), items: list(o.items, summary) };
+    if (o.linked !== undefined) {
+      const l = obj(o.linked);
+      m.linked = { itemId: str(l.itemId, 128), site: str(l.site, 253) };
+    }
+    return m;
   });
 
 function step(v: unknown): ChainStepView {
@@ -158,6 +163,7 @@ export const parseSaveInit = (v: unknown): SaveInit | null =>
       const p = obj(o.provider);
       s.provider = { id: oneOf<ProviderId>(p.id, PROVIDERS), email: str(p.email, 320) };
     }
+    if (o.view !== undefined) s.view = oneOf<"edit">(o.view, ["edit"]);
     return s;
   });
 

@@ -1,11 +1,15 @@
 // Wiring of the service worker: one session, the pairing flow, menu,
-// overlay and save prompt tokens, the fill pipeline, the popup backend and
-// the router. The chain driver (Task 17) plugs in through `opts.chain`; the
-// save flow opens prompts with `saves.open`.
+// overlay and save prompt tokens, the fill pipeline, the popup backend, the
+// sign-in chain, the save and provider-link proposals, and the router.
 import { BridgeClient, type Summary } from "../bridge/client";
+import { parseOrigin, sameSite } from "../shared/domain";
 import type { ProviderId } from "../shared/messages";
+import type { MenuInit } from "../shared/ui";
 import { PageAnalyses } from "./analyses";
-import { type ChainDriver, idleChainDriver } from "./chain/types";
+import { ChainRunner } from "./chain/driver";
+import { ProviderFlows } from "./chain/provider-flow";
+import { SaveFlow } from "./chain/save-flow";
+import type { ChainDriver } from "./chain/types";
 import type { BgExt } from "./ext";
 import { type FillTarget, Filler } from "./fill";
 import { Frames } from "./frames";
@@ -27,7 +31,7 @@ export interface BackgroundOptions {
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
   browser?: string;
-  /** Sign-in chain (Task 17); none by default. */
+  /** Sign-in chain; the real driver (`ChainRunner`) by default. */
   chain?: ChainDriver;
 }
 
@@ -45,11 +49,49 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const frames = new Frames(ext.webNavigation);
   const menus = new MenuTokens(store.session, opts.now ?? Date.now);
   const filler = new Filler(ext.tabs, frames, session);
-  const chain = opts.chain ?? idleChainDriver;
   const neverSave = new NeverSave(ext.storage.local);
-  const overlays = new Overlays({ ext, area: store.session, session, chain, ...(opts.now ? { now: opts.now } : {}) });
-  const saves = new SavePrompts({ ext, session, neverSave, ...(opts.now ? { now: opts.now } : {}) });
   const analyses = new PageAnalyses(store.session);
+  // The overlay starts and stops the chain; the chain shows the overlay.
+  const chainRef: { current: ChainDriver | null } = { current: null };
+  const lateChain: ChainDriver = {
+    start: (...a) => (chainRef.current ? chainRef.current.start(...a) : Promise.resolve()),
+    stop: (t) => (chainRef.current ? chainRef.current.stop(t) : Promise.resolve()),
+    state: (t) => (chainRef.current ? chainRef.current.state(t) : Promise.resolve(null)),
+  };
+  const overlays = new Overlays({ ext, area: store.session, session, chain: lateChain, ...(opts.now ? { now: opts.now } : {}) });
+  const runner = opts.chain
+    ? null
+    : new ChainRunner({
+        ext,
+        area: store.session,
+        local: ext.storage.local,
+        session,
+        frames,
+        filler,
+        analyses,
+        overlays: { open: (cs) => overlays.open(cs), hasTab: (t) => overlays.tokens.hasTab(t) },
+        ...(opts.now ? { now: opts.now } : {}),
+      });
+  const chain: ChainDriver = opts.chain ?? (runner as ChainRunner);
+  chainRef.current = chain;
+  const chainRunning = async (tabId: number) => (runner ? runner.isRunning(tabId) : false);
+  const saves = new SavePrompts({ ext, session, neverSave, ...(opts.now ? { now: opts.now } : {}) });
+  const saveFlow = new SaveFlow({
+    session,
+    saves,
+    neverSave,
+    frameOrigin: (t, f) => frames.frameOrigin(t, f),
+    chainRunning,
+    ...(opts.now ? { now: opts.now } : {}),
+  });
+  const providerFlows = new ProviderFlows({
+    area: store.session,
+    session,
+    saves,
+    neverSave,
+    chainRunning,
+    ...(opts.now ? { now: opts.now } : {}),
+  });
   const popup = new PopupBackend({
     ext,
     area: store.session,
@@ -57,6 +99,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     pairing,
     filler,
     analyses,
+    onGenerated: (tabId, origin, password) => saveFlow.rememberGenerated(tabId, origin, password),
     ...(opts.now ? { now: opts.now } : {}),
   });
 
@@ -80,6 +123,18 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       close_menu: async (_m, from) => {
         await menus.revokeFrame(from.tabId, from.frameId);
       },
+      submitted_credentials: async (m, from) => {
+        await saveFlow.onSubmitted(m, from);
+        return {};
+      },
+      provider_click: async (m, from) => {
+        await providerFlows.onProviderClick(from, m.provider);
+        return {};
+      },
+      account_click: async (m, from) => {
+        await providerFlows.onAccountClick(from, m.email);
+        return {};
+      },
     },
     ui: {
       menu_init: async (m, from) => {
@@ -91,6 +146,19 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         } else {
           items = (await session.request({ op: "list_for_origin", ctx: "menu", origin: rec.origin })).items;
         }
+        const out: MenuInit = { origin: rec.origin, formKind: rec.formKind, items };
+        // On a provider's pages during a sign-in to a site: the account linked to it.
+        const flow = rec.frameId === 0 ? await providerFlows.signingInto(rec.tabId, rec.origin) : null;
+        if (flow) {
+          try {
+            const r = await session.request({ op: "provider_accounts", ctx: "menu", provider: flow.provider, origin: flow.siteOrigin });
+            if (r.linked_item_id !== undefined && items.some((x) => x.item_id === r.linked_item_id)) {
+              out.linked = { itemId: r.linked_item_id, site: parseOrigin(flow.siteOrigin)?.site ?? flow.siteOrigin };
+            }
+          } catch {
+            // No highlight.
+          }
+        }
         const offered: Record<string, Summary["kind"]> = {};
         const methods: Record<string, ProviderId[]> = {};
         for (const it of items) {
@@ -98,7 +166,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
           methods[it.item_id] = it.methods.map((x) => x.provider);
         }
         await menus.setOffered(m.token, offered, methods);
-        return { origin: rec.origin, formKind: rec.formKind, items };
+        return out;
       },
       menu_pick: async (m, from) => {
         const rec = await menuRecord(m.token, from);
@@ -115,6 +183,18 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         const rec = await menuRecord(m.token, from);
         const g = await session.request({ op: "generate", ctx: "menu", recipe: { kind: "smart" } });
         await filler.fillGenerated(targetOf(rec), g.password);
+        saveFlow.rememberGenerated(rec.tabId, rec.origin, g.password);
+        return {};
+      },
+      menu_new_login: async (m, from) => {
+        const rec = await menuRecord(m.token, from);
+        if (rec.formKind === "card" || rec.formKind === "identity" || rec.formKind === "address") throw new BgError("invalid");
+        // The prompt goes to the top frame: a subframe menu needs a top frame of the same site.
+        const top = await frames.frameOrigin(rec.tabId, 0);
+        if (!top || !sameSite(top, rec.origin)) throw new BgError("cross_site_frame");
+        await menus.revokeFrame(rec.tabId, rec.frameId);
+        await removeFrame(ext.tabs, rec, "menu");
+        await saveFlow.openNewLogin(rec.tabId, rec.origin, rec.frameId === 0 ? rec.documentId : undefined);
         return {};
       },
       menu_signin: async (m, from) => {
@@ -158,6 +238,9 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     menus,
     filler,
     chain,
+    runner,
+    saveFlow,
+    providerFlows,
     neverSave,
     overlays,
     saves,
@@ -171,6 +254,24 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       overlays.tokens.install(ext);
       saves.tokens.install(ext);
       analyses.install(ext);
+      runner?.install(ext);
+      analyses.onAnalysis((a, cs) => {
+        if (cs.frameId !== 0) return;
+        void providerFlows.onAnalysis(a, cs).catch(() => undefined);
+        void saveFlow.onReady(cs.tabId).catch(() => undefined);
+      });
+      ext.webNavigation.onCommitted.addListener((d) => {
+        if (d.frameId !== 0) return;
+        saveFlow.onNavigation(d.tabId);
+        void providerFlows.onNavigation(d.tabId, d.url).catch(() => undefined);
+      });
+      ext.webNavigation.onCompleted.addListener((d) => {
+        if (d.frameId === 0) void saveFlow.onReady(d.tabId).catch(() => undefined);
+      });
+      ext.tabs.onRemoved.addListener((tabId) => {
+        saveFlow.onTabRemoved(tabId);
+        void providerFlows.drop(tabId).catch(() => undefined);
+      });
       ext.runtime.onMessage.addListener(createRouter(ext.runtime, handlers));
     },
   };

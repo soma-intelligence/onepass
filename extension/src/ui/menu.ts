@@ -156,10 +156,14 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       const r = await call(deps.send, { type: "menu_signin", token, itemId, provider }, parseEmpty);
       if (!r.ok) showError(errLine, r.code);
     };
-    for (const it of init.items) {
+    // On a provider's chooser: the account linked to the site comes first.
+    const linked = init.linked;
+    const items = linked ? [...init.items].sort((a, b) => Number(b.item_id === linked.itemId) - Number(a.item_id === linked.itemId)) : init.items;
+    for (const it of items) {
       const providerOnly = it.kind === "login" && !it.has_password && it.methods.length > 0;
       if (!providerOnly) {
-        list.append(option(it.title, it.subtitle, tile(it.icon_letter, it.icon_color, "s"), hintFor(it), pick(it.item_id)));
+        const hint = linked?.itemId === it.item_id ? `Utilisé pour ${linked.site}` : hintFor(it);
+        list.append(option(it.title, it.subtitle, tile(it.icon_letter, it.icon_color, "s"), hint, pick(it.item_id)));
       }
       if (it.kind === "login" && LOGIN_FORMS.has(init.formKind)) {
         for (const m of it.methods) {
@@ -183,6 +187,17 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         option("Générer un mot de passe", null, icon("key", 16), "", async () => {
           if (!token) return;
           const r = await call(deps.send, { type: "menu_generate", token }, parseEmpty);
+          if (!r.ok) showError(errLine, r.code);
+        }),
+      );
+    }
+    if (LOGIN_FORMS.has(init.formKind)) {
+      // Spec 8.3; the save prompt opens in its edit view (nothing typed is read from the page).
+      if (extras.length === 0) extras.push(h("div", { class: "sep" }));
+      extras.push(
+        option("Enregistrer un nouveau login", null, icon("plus", 12), "", async () => {
+          if (!token) return;
+          const r = await call(deps.send, { type: "menu_new_login", token }, parseEmpty);
           if (!r.ok) showError(errLine, r.code);
         }),
       );

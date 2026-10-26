@@ -24,6 +24,8 @@ export interface PopupDeps {
   pairing: Pick<PairingFlow, "startPairing" | "confirmPairing" | "cancelPairing">;
   filler: Pick<Filler, "fillLogin" | "fillCard" | "fillIdentity" | "fillGenerated">;
   analyses: Pick<PageAnalyses, "top">;
+  /** A generated password was filled in `tabId` (feeds the save proposal, spec 8.8). */
+  onGenerated?: (tabId: number, origin: string, password: string) => void;
   now?: () => number;
 }
 
@@ -156,6 +158,7 @@ export class PopupBackend {
   async fillGenerated(password: string): Promise<{ domain: string }> {
     const { t, host } = await this.target(["signup", "change_password"]);
     await this.deps.filler.fillGenerated(t, password);
+    this.deps.onGenerated?.(t.tabId, t.origin, password);
     return { domain: host };
   }
 
