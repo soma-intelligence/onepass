@@ -288,12 +288,42 @@ fn date(d: &mut Draft, label: &str, raw: Option<&str>, apply: fn(&mut Draft, Off
 }
 
 /// Base64url or base64, with or without padding.
+/// A leading `b64.` marker (Bitwarden's own encoding tag) is dropped.
 fn b64(s: &str) -> Option<Vec<u8>> {
-    let t = s.trim().trim_end_matches('=');
+    let t = s.trim();
+    let t = t.strip_prefix("b64.").unwrap_or(t).trim_end_matches('=');
     BASE64URL_NOPAD
         .decode(t.as_bytes())
         .or_else(|_| BASE64_NOPAD.decode(t.as_bytes()))
         .ok()
+}
+
+/// A GUID string (36 characters, dashes at 8/13/18/23, hex elsewhere) as its
+/// 16 bytes. Tested before base64: a dashed GUID is also valid base64url.
+fn guid(s: &str) -> Option<Vec<u8>> {
+    let t = s.trim();
+    if t.len() != 36 || !t.is_char_boundary(36) {
+        return None;
+    }
+    let mut hex = String::with_capacity(32);
+    for (i, c) in t.chars().enumerate() {
+        if matches!(i, 8 | 13 | 18 | 23) {
+            if c != '-' {
+                return None;
+            }
+        } else if c.is_ascii_hexdigit() {
+            hex.push(c);
+        } else {
+            return None;
+        }
+    }
+    data_encoding::HEXLOWER_PERMISSIVE
+        .decode(hex.as_bytes())
+        .ok()
+}
+
+fn credential_id(s: &str) -> Option<Vec<u8>> {
+    guid(s).or_else(|| b64(s))
 }
 
 fn some(s: &Option<String>) -> &str {
@@ -348,6 +378,9 @@ fn item_draft(raw: &RawItem, entry: u32, out: &mut Import) -> Option<Draft> {
     custom_fields(&mut d, &raw.fields);
     for h in &raw.password_history {
         let pw = secret(&h.password);
+        if pw.is_empty() {
+            continue;
+        }
         let when = h.last_used_date.as_deref().and_then(rfc3339);
         if let (Some(raw_date), None) = (h.last_used_date.as_deref(), when) {
             d.bad_value("Date de l'ancien mot de passe", raw_date);
@@ -372,15 +405,17 @@ fn login(d: &mut Draft, l: &Login, raw: &RawItem, entry: u32, out: &mut Import) 
 /// A passkey whose fields decode becomes a `Passkey` value; otherwise its
 /// private key is kept as a hidden extra with a `field_moved` warning.
 fn passkey(d: &mut Draft, p: &Fido2, raw: &RawItem, entry: u32, out: &mut Import) {
-    let credential_id = b64(some(&p.credential_id)).filter(|v| !v.is_empty());
+    let credential_id = credential_id(some(&p.credential_id)).filter(|v| !v.is_empty());
     let user_handle = match some(&p.user_handle).trim() {
         "" => Some(Vec::new()),
         h => b64(h),
     };
     let key = b64(secret(&p.key_value)).filter(|v| !v.is_empty());
-    let created_at = p
-        .creation_date
-        .as_deref()
+    let own_date = p.creation_date.as_deref().filter(|r| !r.trim().is_empty());
+    if let Some(r) = own_date.filter(|r| rfc3339(r).is_none()) {
+        d.bad_value("Date de création du passkey", r);
+    }
+    let created_at = own_date
         .and_then(rfc3339)
         .or_else(|| raw.creation_date.as_deref().and_then(rfc3339))
         .unwrap_or(OffsetDateTime::UNIX_EPOCH);
@@ -738,5 +773,46 @@ mod tests {
                 .iter()
                 .any(|(_, v)| matches!(v, FieldValue::Text(s) if s == "yesterday"))
         );
+    }
+
+    #[test]
+    fn guid_and_prefixed_credential_ids() {
+        let key = "ZmFrZS1wa2NzOC1rZXktYnl0ZXM_Pw";
+        let one = |cid: &str, date: &str| {
+            let src = format!(
+                r#"{{"items":[{{"type":1,"name":"P","login":{{"username":"u","fido2Credentials":[
+                {{"credentialId":"{cid}","keyValue":"{key}","rpId":"example.com",
+                "creationDate":"{date}"}}]}}}}]}}"#
+            );
+            parse_bitwarden_json(src.as_bytes()).unwrap()
+        };
+        let cred = |imp: &Import| match imp.items[0].item.field("passkeys").map(|f| &f.value) {
+            Some(FieldValue::Passkey(p)) => p.credential_id.clone(),
+            _ => panic!("passkey"),
+        };
+        let imp = one(
+            "00112233-4455-6677-8899-aabbccddeeff",
+            "2024-01-01T00:00:00Z",
+        );
+        assert_eq!(
+            cred(&imp),
+            vec![
+                0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd,
+                0xee, 0xff
+            ]
+        );
+        let imp = one("b64.ZmFrZS1jcmVkZW50aWFsLWlk", "2024-01-01T00:00:00Z");
+        assert_eq!(cred(&imp), b"fake-credential-id");
+        let imp = one("ZmFrZS1jcmVkZW50aWFsLWlk", "not a date");
+        assert!(imp.warnings.iter().any(|w| w.code == "bad_date"));
+    }
+
+    #[test]
+    fn empty_history_password_skipped() {
+        let src = br#"{"items":[{"type":1,"name":"H","login":{"username":"u"},
+            "passwordHistory":[{"lastUsedDate":"junk","password":""},{"lastUsedDate":"2023-01-02T03:04:05Z"}]}]}"#;
+        let imp = parse_bitwarden_json(src).unwrap();
+        assert!(imp.items[0].item.password_history.is_empty());
+        assert!(imp.warnings.is_empty());
     }
 }
