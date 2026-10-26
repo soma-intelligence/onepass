@@ -996,3 +996,26 @@ fn full_fetch_hiding_a_seen_vault_keeps_it_readable() {
     b.unlock(&sk);
     assert_eq!(b.items(), before);
 }
+
+#[test]
+fn rebase_after_persisted_local_edits_keeps_vault_readable() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let x = items[0].clone();
+
+    // B edits three times, persisting its device state after each edit (as
+    // the FFI session does), so a high seq is stored for abandoned manifests.
+    for n in 1..=3 {
+        b.save(&edited(&x, &format!("x.b{n}"), T0 + 10 + n));
+        b.repo().persist_device_state().unwrap();
+    }
+    // A pushes another edit of the same item: B's push conflicts.
+    a.save(&edited(&x, "x.a", T0 + 20));
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+
+    // The rebase renumbered the vault below the abandoned seq; it still loads.
+    assert_eq!(b.try_items().unwrap().len(), 1);
+    b.lock();
+    assert_eq!(b.store().device_state().unwrap().last_seen.len(), 1);
+}

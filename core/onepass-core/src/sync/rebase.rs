@@ -79,7 +79,13 @@ impl Repository<SyncStore> {
     /// process's. The merged state replaces `self.device`. Read, merge and
     /// write run in one transaction (a savepoint inside a rebase batch).
     pub fn persist_device_state(&mut self) -> Result<()> {
-        self.device = self.store.merge_device_state(&self.device)?;
+        self.persist_device_state_forcing(&[])
+    }
+
+    /// `persist_device_state`, except that the vaults in `force` keep the
+    /// in-memory entry whatever is stored (a rebase renumbers them).
+    fn persist_device_state_forcing(&mut self, force: &[Id]) -> Result<()> {
+        self.device = self.store.merge_device_state(&self.device, force)?;
         Ok(())
     }
 
@@ -106,7 +112,7 @@ impl Repository<SyncStore> {
                 }
             }
         }
-        let persisted = self.persist_device_state();
+        let persisted = self.persist_device_state_forcing(&rebased);
         match first_error {
             Some(e) => Err(e),
             None => persisted.map(|()| rebased),
@@ -120,7 +126,7 @@ impl Repository<SyncStore> {
         self.store.begin_batch()?;
         let result = self
             .apply(&vault, plan)
-            .and_then(|()| self.persist_device_state())
+            .and_then(|()| self.persist_device_state_forcing(&[v]))
             .and_then(|()| self.store.commit_batch());
         if let Err(e) = result {
             match last_seen {

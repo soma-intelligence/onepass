@@ -657,15 +657,29 @@ impl SyncStore {
     /// Two processes (the app and an extension) each keep their own state
     /// over one file: per vault the entry with the larger `seq` wins (a tie
     /// keeps the memory one), so neither process rewinds `last_seen`. The
-    /// pin is the memory one.
-    pub(crate) fn merge_device_state(&mut self, mem: &DeviceState) -> Result<DeviceState> {
+    /// pin is the memory one, or the stored one if memory has none.
+    ///
+    /// Invariant: on this file a higher stored `seq` is always a descendant
+    /// of a lower one (manifests are committed conditionally), except after
+    /// a rebase, which renumbers a vault and may end below the `seq` of the
+    /// local manifests it abandoned. Those were persisted earlier, so the
+    /// vaults in `force` take the memory entry as is (or none), whatever is
+    /// stored.
+    pub(crate) fn merge_device_state(
+        &mut self,
+        mem: &DeviceState,
+        force: &[Id],
+    ) -> Result<DeviceState> {
         let tx = self.write_tx()?;
         let stored = device_state_in(&tx)?;
         let mut merged = DeviceState {
-            pinned: mem.pinned.clone(),
+            pinned: mem.pinned.clone().or(stored.pinned),
             last_seen: mem.last_seen.clone(),
         };
         for (v, theirs) in stored.last_seen {
+            if force.contains(&v) {
+                continue;
+            }
             match merged.last_seen.get(&v) {
                 Some(ours) if ours.seq >= theirs.seq => {}
                 _ => {
