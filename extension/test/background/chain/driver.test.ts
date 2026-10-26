@@ -259,6 +259,31 @@ describe("chain driver", () => {
     expect(toTab(t, "submit").at(-1)).toMatchObject({ origin: GOOGLE, ref: "gp" });
   });
 
+  it("provider chain via the linked item: the chooser picks that account, the one filled", async () => {
+    // The method says alex.pro, no account has that email; the linked item is alex.perso.
+    const t = await setup(
+      answerWith({
+        provider_accounts: () => ({
+          accounts: [summary("g_perso", { title: "Google", subtitle: "alex.perso@example.com" })],
+          linked_item_id: "g_perso",
+        }),
+      }),
+    );
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [], { providerButtons: [{ provider: "google", ref: "g1" }] }));
+    await t.runner.start(7, "it_02", "google");
+    t.ext.navigate(7, 0, `${GOOGLE}/chooser`, "doc-g");
+    const chooser = page(`${GOOGLE}/chooser`, [], {
+      accountChooser: [
+        { email: "alex.perso@example.com", ref: "a1" },
+        { email: "alex.pro@example.com", ref: "a2" },
+      ],
+    });
+    await analyze(t, `${GOOGLE}/chooser`, chooser, "doc-g");
+    expect(toTab(t, "click").at(-1)).toMatchObject({ origin: GOOGLE, ref: "a1" });
+    await analyze(t, `${GOOGLE}/pwd`, page(`${GOOGLE}/pwd`, [{ ref: "gp", kind: "login", fields: [{ ref: "p", role: "current_password" }] }]), "doc-g");
+    expect(t.client.requests.find((r) => r.op === "fill_provider")).toMatchObject({ account_item_id: "g_perso" });
+  });
+
   it("start refuses an item the site does not have, and a provider-only item without its provider", async () => {
     const t = await setup();
     t.ext.setFrame(7, 0, `${SITE}/login`, "doc-1");

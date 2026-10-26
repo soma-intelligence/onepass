@@ -205,6 +205,43 @@ describe("provider chain (Google, two accounts)", () => {
     expect(r.actions).toEqual([{ type: "stop", reason: "unknown" }]);
   });
 
+  it("back on the site with a login form after the provider: not signed in (unknown), never done", () => {
+    let s = start(site, { provider: "google", providerAccount: account });
+    s = step(s, page([loginForm()], { providerButtons: [{ provider: "google", ref: "g1" }] }), SITE, T0 + 100).state;
+    s = navigated(s, `${GOOGLE}/chooser`, T0 + 200);
+    s = step(s, page([], { accountChooser: [{ email: "alex.pro@example.com", ref: "a2" }] }), GOOGLE, T0 + 300).state;
+    s = navigated(s, `${SITE}/login?error=1`, T0 + 600);
+    // The visit survives a worker restart (serialized state).
+    s = parseChainState(JSON.parse(JSON.stringify(s)))!;
+    const r = step(s, page([loginForm()], {}, `${SITE}/login?error=1`), SITE, T0 + 700);
+    expect(r.actions).toEqual([{ type: "stop", reason: "unknown" }]);
+    expect(r.state.status).toBe("handoff");
+    expect(tick(r.state, T0 + 700 + DONE_SETTLE_MS).state.status).toBe("handoff");
+  });
+
+  it("before the provider visit, the site's own form is left alone (no stop)", () => {
+    const s = start(site, { provider: "google", providerAccount: account });
+    const r = step(s, page([loginForm()]), SITE, T0 + 100);
+    expect(r.actions).toEqual([]);
+    expect(r.state.status).toBe("running");
+  });
+
+  it("the chooser picks the account that is filled (linked item), not the method's email", () => {
+    const linked = summary("g_perso", { title: "Google", subtitle: "alex.perso@example.com" });
+    let s = start(site, { provider: "google", providerAccount: linked });
+    expect(s.account).toEqual({ itemId: "g_perso", email: "alex.perso@example.com", hasTotp: false });
+    s = step(s, page([], { providerButtons: [{ provider: "google", ref: "g1" }] }), SITE, T0 + 100).state;
+    s = navigated(s, `${GOOGLE}/chooser`, T0 + 200);
+    const chooser = {
+      accountChooser: [
+        { email: "alex.perso@example.com", ref: "a1" },
+        { email: "alex.pro@example.com", ref: "a2" },
+      ],
+    };
+    const r = step(s, page([], chooser, `${GOOGLE}/chooser`), GOOGLE, T0 + 300);
+    expect(r.actions).toEqual([{ type: "click", ref: "a1" }]);
+  });
+
   it("a look-alike provider host is out of the allowed list (domain)", () => {
     const s = start(site, { provider: "google", providerAccount: account });
     const r = step(s, page([passOnly()]), "https://accounts.google.com.evil.test", T0 + 100);

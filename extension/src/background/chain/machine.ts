@@ -72,6 +72,8 @@ export interface ChainState {
   siteOrigin: string;
   site: string;
   provider?: ProviderId;
+  /** The top frame committed a document on one of the provider's hosts. */
+  visitedProvider?: boolean;
   /** Provider account (its own login item) and the email linked to the site. */
   account?: { itemId: string; email: string; hasTotp: boolean };
   autoSubmit: boolean;
@@ -157,7 +159,9 @@ export function startChain(p: StartParams): ChainState {
   };
   if (p.provider) {
     s.provider = p.provider;
-    const email = p.item.methods.find((m) => m.provider === p.provider)?.account_email ?? p.providerAccount?.subtitle ?? "";
+    // The chooser picks the account that will be filled: the chosen provider
+    // item's email, which may differ from the method's (linked item fallback).
+    const email = p.providerAccount?.subtitle ?? p.item.methods.find((m) => m.provider === p.provider)?.account_email ?? "";
     if (p.providerAccount) {
       s.account = { itemId: p.providerAccount.item_id, email: norm(email), hasTotp: p.providerAccount.has_totp };
     }
@@ -215,10 +219,16 @@ function hasRole(f: FormInfo, roles: ReadonlySet<FieldRole> | FieldRole): boolea
   return f.fields.some((x) => (typeof roles === "string" ? x.role === roles : roles.has(x.role)));
 }
 
+function loginForm(a: PageAnalysis): FormInfo | undefined {
+  return a.forms.find((f) => (f.kind === "login" || f.kind === "otp") && (hasRole(f, USER_ROLES) || hasRole(f, "current_password")));
+}
+
 function decide(s: ChainState, a: PageAnalysis, onProvider: boolean): Decision | null {
   if (s.provider && !onProvider) {
     const b = a.providerButtons.find((x) => x.provider === s.provider);
     if (b) return { kind: "provider_click", ref: b.ref };
+    // Back from the provider and the site asks to sign in again: not signed in.
+    if (s.visitedProvider && loginForm(a)) return { kind: "stop", reason: "unknown" };
     // A provider chain never fills the site's own password form.
     return null;
   }
@@ -229,7 +239,7 @@ function decide(s: ChainState, a: PageAnalysis, onProvider: boolean): Decision |
   }
   const otp = a.forms.find((f) => hasRole(f, "otp"));
   if (otp) return { kind: "otp", form: otp };
-  const login = a.forms.find((f) => (f.kind === "login" || f.kind === "otp") && (hasRole(f, USER_ROLES) || hasRole(f, "current_password")));
+  const login = loginForm(a);
   if (login) {
     const fields: FillField[] = [];
     if (hasRole(login, USER_ROLES)) fields.push("username");
@@ -362,6 +372,7 @@ export function navigated(s: ChainState, url: string, now: number): ChainState {
   if (!w.ok) return stopped(s, "domain", now, w.host).state;
   const n = clone(s);
   n.page = { nav: s.page.nav + 1, idle: true };
+  if (w.onProvider) n.visitedProvider = true;
   return n;
 }
 
@@ -501,6 +512,7 @@ export function parseChainState(raw: unknown): ChainState | null {
       page,
     };
     if (o.provider !== undefined) s.provider = oneOf(o.provider, PROVIDER_IDS);
+    if (o.visitedProvider !== undefined) s.visitedProvider = bool(o.visitedProvider);
     if (o.account !== undefined) {
       const a = obj(o.account);
       s.account = { itemId: str(a.itemId, 128), email: str(a.email, 320), hasTotp: bool(a.hasTotp) };
