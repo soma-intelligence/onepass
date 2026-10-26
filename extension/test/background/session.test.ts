@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { BridgeError } from "../../src/bridge/bytes";
 import { BridgeAppError } from "../../src/bridge/client";
-import { recordToJson } from "../../src/bridge/pairing";
+import { PairingFlow } from "../../src/background/pairing";
 import { BgError, RECONNECT_DELAYS_MS, Session, toBgError } from "../../src/background/session";
-import { Store } from "../../src/background/store";
+import { MemoryPairingStore, Store } from "../../src/background/store";
 import { FakeClient, record } from "./fake-client";
 import { FakeExt } from "./fake-ext";
 
 async function paired(): Promise<{ ext: FakeExt; store: Store }> {
   const ext = new FakeExt();
-  const store = new Store(ext);
-  await ext.local.set({ pairing: recordToJson(record()) });
+  const store = new Store(ext, new MemoryPairingStore());
+  await store.setPairing(record());
   return { ext, store };
 }
 
@@ -29,7 +29,7 @@ describe("Session", () => {
     const ext = new FakeExt();
     let made = 0;
     const s = new Session({
-      store: new Store(ext),
+      store: new Store(ext, new MemoryPairingStore()),
       newClient: () => {
         made++;
         return new FakeClient();
@@ -98,7 +98,7 @@ describe("Session", () => {
     expect(clients[1]?.isOpen).toBe(true);
   });
 
-  it("host_missing_after_3_attempts (retries spaced 1, 2, 4 s)", async () => {
+  it("host_missing_after_initial_attempt_and_3_retries", async () => {
     const { store } = await paired();
     const slept: number[] = [];
     let made = 0;
@@ -192,7 +192,35 @@ describe("Session", () => {
     expect((await rejection(s.request({ op: "status" }))).code).toBe("invalid");
   });
 
-  it("close during an open does not install the client", async () => {
+  it("a request issued while pairing completes succeeds on the adopted client", async () => {
+    const { store } = await paired();
+    const made: FakeClient[] = [];
+    const status = (r: Record<string, unknown>) =>
+      r.op === "status" ? { locked: false, account: "alex@atlas.dev", vaults: 1 } : {};
+    const newClient = () => {
+      // The first port (old pairing) hangs forever; the second pairs.
+      const c =
+        made.length === 0
+          ? new FakeClient(status, () => new Promise<void>(() => undefined))
+          : new FakeClient(status, undefined, async (cb) => {
+              await cb("123 456");
+              return { ...record(), createdAt: 2 };
+            });
+      made.push(c);
+      return c;
+    };
+    const s = new Session({ store, newClient });
+    const flow = new PairingFlow({ store, session: s, newClient });
+    const pending = s.request({ op: "status" });
+    while (made.length === 0) await new Promise((r) => setTimeout(r, 0));
+    await flow.startPairing();
+    await flow.confirmPairing();
+    expect(await pending).toEqual({ locked: false, account: "alex@atlas.dev", vaults: 1 });
+    expect(made[1]?.requests).toEqual([{ op: "status" }]);
+    expect(made).toHaveLength(2);
+  });
+
+  it("close and forget during an open: waiters see unpaired, the stale client is closed", async () => {
     const { store } = await paired();
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -207,6 +235,7 @@ describe("Session", () => {
     });
     const p = s.getClient();
     while (made.length === 0) await new Promise((r) => setTimeout(r, 0));
+    await store.clearPairing();
     s.close();
     release();
     expect((await rejection(p)).code).toBe("unpaired");

@@ -37,7 +37,7 @@ export class Filler {
   private async deliver(t: FillTarget, values: FillValues): Promise<void> {
     // The host may have taken seconds (Touch ID): the page could have moved.
     await this.verify(t);
-    const msg: BgToCs = { type: "fill", formRef: t.formRef, values };
+    const msg: BgToCs = { type: "fill", origin: t.origin, formRef: t.formRef, values };
     // documentId pins the exact document; frameId alone where unsupported.
     const opts = t.documentId !== undefined ? { documentId: t.documentId } : { frameId: t.frameId };
     await this.tabs.sendMessage(t.tabId, msg, opts);

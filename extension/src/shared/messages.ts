@@ -116,12 +116,18 @@ export type UiToBg =
   | { type: "popup_pair_approve" }
   | { type: "popup_pair_cancel" };
 
-/** Background to content script. */
+/**
+ * Background to content script. `origin` on `fill`, `click` and `submit` is a
+ * pin, not a policy input: the origin the background verified for this
+ * frame. The content script refuses the message when `location.origin`
+ * differs (a navigation raced the message; Firefox has no `documentId` to
+ * target the exact document).
+ */
 export type BgToCs =
   /** Values keyed by role; the content script writes them into the fields of `formRef` only. */
-  | { type: "fill"; formRef: string; values: Partial<Record<FieldRole, string>> }
-  | { type: "click"; ref: string }
-  | { type: "submit"; ref: string }
+  | { type: "fill"; origin: string; formRef: string; values: Partial<Record<FieldRole, string>> }
+  | { type: "click"; origin: string; ref: string }
+  | { type: "submit"; origin: string; ref: string }
   | { type: "show_frame"; kind: FrameKind; url: string; ref?: string }
   | { type: "remove_frame"; kind: FrameKind }
   | { type: "chain_highlight"; ref: string | null };

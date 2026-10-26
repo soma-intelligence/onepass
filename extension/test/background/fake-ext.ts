@@ -17,6 +17,10 @@ class Emitter<F extends (...args: never[]) => unknown> {
 
 export class FakeArea implements StorageArea {
   readonly data = new Map<string, unknown>();
+  readonly accessLevels: string[] = [];
+  async setAccessLevel(o: { accessLevel: "TRUSTED_CONTEXTS" | "TRUSTED_AND_UNTRUSTED_CONTEXTS" }): Promise<void> {
+    this.accessLevels.push(o.accessLevel);
+  }
   async get(keys: string | string[] | null): Promise<Record<string, unknown>> {
     const out: Record<string, unknown> = {};
     const wanted = keys === null ? [...this.data.keys()] : typeof keys === "string" ? [keys] : keys;

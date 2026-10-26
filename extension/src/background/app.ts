@@ -11,9 +11,11 @@ import { NATIVE_HOST, nativeTransport } from "./native";
 import { PairingFlow } from "./pairing";
 import { type Handlers, createRouter } from "./router";
 import { BgError, type BridgeLike, Session } from "./session";
-import { Store } from "./store";
+import { IdbPairingStore, type PairingStore, Store } from "./store";
 
 export interface BackgroundOptions {
+  /** Pairing record storage; IndexedDB of the extension origin by default. */
+  pairings?: PairingStore;
   newClient?: () => BridgeLike;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
@@ -41,7 +43,7 @@ function targetOf(rec: MenuRecord): FillTarget {
 }
 
 export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
-  const store = new Store(ext);
+  const store = new Store(ext, opts.pairings ?? new IdbPairingStore());
   const newClient = opts.newClient ?? (() => new BridgeClient(nativeTransport(NATIVE_HOST, ext.runtime)));
   const session = new Session({ store, newClient, ...(opts.sleep ? { sleep: opts.sleep } : {}) });
   const pairing = new PairingFlow({ store, session, newClient, ...(opts.browser ? { browser: opts.browser } : {}) });
@@ -122,6 +124,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     handlers,
     /** Register every listener; call synchronously at service worker start. */
     install(): void {
+      store.restrictLocal();
       menus.install(ext);
       ext.runtime.onMessage.addListener(createRouter(ext.runtime, handlers));
     },

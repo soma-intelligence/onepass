@@ -90,14 +90,15 @@ export class PairingFlow {
       if (this.current === cur) this.current = undefined;
     }
     try {
-      this.deps.session.close();
       await this.deps.store.setPairing(record);
       try {
         await cur.client.open(record);
+        // Replaces any old session; callers waiting on an opening get this client.
         this.deps.session.adopt(cur.client);
       } catch {
         // Paired all the same; the next request opens a fresh session.
         cur.client.close();
+        this.deps.session.close();
       }
     } finally {
       wipe(record.key);
@@ -116,7 +117,8 @@ export class PairingFlow {
   /** Forget the pairing on this browser. */
   async forgetPairing(): Promise<void> {
     this.cancelPairing();
-    this.deps.session.close();
+    // Cleared first: callers waiting on the session retry and find nothing.
     await this.deps.store.clearPairing();
+    this.deps.session.close();
   }
 }

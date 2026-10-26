@@ -106,10 +106,22 @@ export interface SessionDeps {
   sleep?: (ms: number) => Promise<void>;
 }
 
+/** An opening overtaken by `adopt` or `close`: its waiters ask again. */
+const SUPERSEDED = Symbol("superseded");
+
+interface Opening {
+  promise: Promise<BridgeLike>;
+  cancel: () => void;
+}
+
+function quiet(p: Promise<unknown>): void {
+  p.catch(() => undefined);
+}
+
 export class Session {
   private client: BridgeLike | undefined;
-  private opening: Promise<BridgeLike> | undefined;
-  /** Bumped by `close`: an opening started before it is discarded. */
+  private opening: Opening | undefined;
+  /** Bumped by `adopt` and `close`: an opening started before it is discarded. */
   private generation = 0;
   private readonly lockedListeners = new Set<() => void>();
   private readonly sleep: (ms: number) => Promise<void>;
@@ -119,17 +131,19 @@ export class Session {
   }
 
   /** The open client, opening (or reopening) the session if needed. */
-  getClient(): Promise<BridgeLike> {
-    if (this.client?.isOpen) return Promise.resolve(this.client);
-    if (!this.opening) {
-      const p = this.connect(this.generation);
-      this.opening = p;
-      const clear = () => {
-        if (this.opening === p) this.opening = undefined;
-      };
-      p.then(clear, clear);
+  async getClient(): Promise<BridgeLike> {
+    // Each pass either returns, throws, or follows a generation change
+    // (an adopted client, or a cleared pairing on the next pass).
+    for (let pass = 0; pass < 8; pass++) {
+      if (this.client?.isOpen) return this.client;
+      this.opening ??= this.startOpening();
+      try {
+        return await this.opening.promise;
+      } catch (e) {
+        if (e !== SUPERSEDED) throw e;
+      }
     }
-    return this.opening;
+    throw new BgError("internal");
   }
 
   /** One application request; host and protocol errors become `BgError`. */
@@ -151,24 +165,48 @@ export class Session {
 
   /** Install a client opened elsewhere (the pairing port, reused). */
   adopt(client: BridgeLike): void {
-    this.generation++;
     if (this.client && this.client !== client) this.client.close();
     this.client = client;
+    this.supersede();
   }
 
   /** Drop the session; an opening in flight is discarded. */
   close(): void {
-    this.generation++;
     this.client?.close();
     this.client = undefined;
+    this.supersede();
+  }
+
+  private supersede(): void {
+    this.generation++;
+    const o = this.opening;
+    this.opening = undefined;
+    o?.cancel();
+  }
+
+  private startOpening(): Opening {
+    let cancel!: () => void;
+    const cancelled = new Promise<never>((_, reject) => {
+      cancel = () => reject(SUPERSEDED);
+    });
+    const connecting = this.connect(this.generation);
+    quiet(connecting);
+    quiet(cancelled);
+    const entry: Opening = { promise: Promise.race([connecting, cancelled]), cancel };
+    const clear = () => {
+      if (this.opening === entry) this.opening = undefined;
+    };
+    entry.promise.then(clear, clear);
+    return entry;
   }
 
   private async connect(generation: number): Promise<BridgeLike> {
     const record = await this.deps.store.getPairing();
+    if (generation !== this.generation) throw SUPERSEDED;
     if (!record) throw new BgError("unpaired");
     try {
       for (let attempt = 0; ; attempt++) {
-        if (generation !== this.generation) throw new BgError("unpaired");
+        if (generation !== this.generation) throw SUPERSEDED;
         let client: BridgeLike | undefined;
         try {
           client = this.deps.newClient();
@@ -182,8 +220,9 @@ export class Session {
           continue;
         }
         if (generation !== this.generation) {
+          // Overtaken while opening: this client is not the session.
           client.close();
-          throw new BgError("unpaired");
+          throw SUPERSEDED;
         }
         this.client?.close();
         this.client = client;

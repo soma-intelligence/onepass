@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BridgeAppError } from "../../src/bridge/client";
-import { recordToJson } from "../../src/bridge/pairing";
 import { createBackground } from "../../src/background/app";
 import { parseCsToBg, parseUiToBg } from "../../src/background/router";
+import { MemoryPairingStore, Store } from "../../src/background/store";
 import { type Answer, FakeClient, record } from "./fake-client";
 import { EXT_ID, FakeExt, NO_REPLY, csSender, uiSender } from "./fake-ext";
 
@@ -40,9 +40,10 @@ const defaultAnswer: Answer = (r) => {
 
 async function setup(answer: Answer = defaultAnswer) {
   const ext = new FakeExt();
-  await ext.local.set({ pairing: recordToJson(record()) });
+  const pairings = new MemoryPairingStore();
+  await new Store(ext, pairings).setPairing(record());
   const client = new FakeClient(answer);
-  const bg = createBackground(ext, { newClient: () => client, sleep: async () => undefined });
+  const bg = createBackground(ext, { pairings, newClient: () => client, sleep: async () => undefined });
   bg.install();
   ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
   return { ext, client, bg };
@@ -132,6 +133,7 @@ describe("router", () => {
         tabId: 7,
         message: {
           type: "fill",
+          origin: SITE,
           formRef: "f1",
           values: { username: "alex@atlas.dev", email: "alex@atlas.dev", current_password: "pw-1" },
         },

@@ -190,15 +190,23 @@ describe("BridgeClient", () => {
     const host = new FakeHost(record(), () => undefined);
     const client = new BridgeClient(host, { requestTimeoutMs: 30 });
     await client.open(host.record);
-    const e = await rejection(client.request({ op: "status" }));
-    expect((e as BridgeError).code).toBe("timeout");
-    await host.reply({ id: 1, ok: { locked: true } });
-    const second = client.request({ op: "unlock" });
-    await new Promise((r) => setTimeout(r, 5));
-    expect(host.seen.map((r) => r.id)).toEqual([1, 2]);
-    await host.reply({ id: 2, ok: { locked: false } });
-    expect(await second).toEqual({ locked: false });
-    expect(client.isOpen).toBe(true);
+    // Request deadlines run on a fake clock: nothing expires by load alone.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const first = rejection(client.request({ op: "status" }));
+      await vi.advanceTimersByTimeAsync(30);
+      expect(((await first) as BridgeError).code).toBe("timeout");
+      // Created under the fake clock, this deadline never fires.
+      const second = client.request({ op: "unlock" });
+      vi.useRealTimers();
+      await vi.waitFor(() => expect(host.seen.map((r) => r.id)).toEqual([1, 2]));
+      await host.reply({ id: 1, ok: { locked: true } });
+      await host.reply({ id: 2, ok: { locked: false } });
+      expect(await second).toEqual({ locked: false });
+      expect(client.isOpen).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("an unknown pairing error frame rejects open", async () => {
@@ -223,7 +231,8 @@ describe("BridgeClient", () => {
     const client = new BridgeClient(host);
     await client.open(host.record);
     const p = client.request({ op: "status" });
-    await new Promise((r) => setTimeout(r, 5));
+    // The host has opened the request: its channel is live.
+    await vi.waitFor(() => expect(host.seen).toHaveLength(1));
     const frame = await host.channel!.seal(new TextEncoder().encode('{"id":1,"ok":{}}'));
     const d = fromB64(frame.d);
     d[0] = (d[0] ?? 0) ^ 1;
@@ -238,7 +247,8 @@ describe("BridgeClient", () => {
     const client = new BridgeClient(host);
     await client.open(host.record);
     const p = client.request({ op: "status" });
-    await new Promise((r) => setTimeout(r, 5));
+    // The host has opened the request: its channel is live.
+    await vi.waitFor(() => expect(host.seen).toHaveLength(1));
     await host.channel!.seal(new TextEncoder().encode("{}"));
     await host.reply({ id: 1, ok: {} });
     expect(((await rejection(p)) as BridgeError).code).toBe("replay");

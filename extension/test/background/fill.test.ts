@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { recordToJson } from "../../src/bridge/pairing";
 import { type FillTarget, Filler } from "../../src/background/fill";
 import { Frames } from "../../src/background/frames";
 import { BgError, Session } from "../../src/background/session";
-import { Store } from "../../src/background/store";
+import { MemoryPairingStore, Store } from "../../src/background/store";
 import { type Answer, FakeClient, record } from "./fake-client";
 import { FakeExt } from "./fake-ext";
 
@@ -27,9 +26,10 @@ const answers: Answer = (r) => {
 
 async function setup() {
   const ext = new FakeExt();
-  await ext.local.set({ pairing: recordToJson(record()) });
+  const store = new Store(ext, new MemoryPairingStore());
+  await store.setPairing(record());
   const client = new FakeClient(answers);
-  const session = new Session({ store: new Store(ext), newClient: () => client });
+  const session = new Session({ store, newClient: () => client });
   const filler = new Filler(ext.tabs, new Frames(ext.webNavigation), session);
   return { ext, client, filler };
 }
@@ -66,6 +66,7 @@ describe("fill pipeline", () => {
         tabId: 7,
         message: {
           type: "fill",
+          origin: SITE,
           formRef: "f1",
           values: { username: "alex@atlas.dev", email: "alex@atlas.dev", current_password: "pw-1" },
         },
@@ -82,6 +83,7 @@ describe("fill pipeline", () => {
     expect(ext.sentToTabs[0]?.options).toEqual({ frameId: 2 });
     expect(ext.sentToTabs[0]?.message).toEqual({
       type: "fill",
+      origin: "https://pay.atlas-cloud.test",
       formRef: "f1",
       values: {
         cc_name: "Alex Martin",

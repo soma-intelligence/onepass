@@ -12,6 +12,8 @@ export interface StorageArea {
   get(keys: string | string[] | null): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
   remove(keys: string | string[]): Promise<void>;
+  /** Chromium 102+: restrict the area to trusted extension contexts. */
+  setAccessLevel?(options: { accessLevel: "TRUSTED_CONTEXTS" | "TRUSTED_AND_UNTRUSTED_CONTEXTS" }): Promise<void>;
 }
 
 /** What the browser says about the sender of a runtime message. */

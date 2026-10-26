@@ -3,13 +3,13 @@ import { BridgeError } from "../../src/bridge/bytes";
 import type { PairingRecord } from "../../src/bridge/pairing";
 import { PairingFlow, browserName } from "../../src/background/pairing";
 import { BgError, Session } from "../../src/background/session";
-import { Store } from "../../src/background/store";
+import { MemoryPairingStore, Store } from "../../src/background/store";
 import { FakeClient, record } from "./fake-client";
 import { FakeExt } from "./fake-ext";
 
 function setup(pairImpl: (cb: (sas: string) => Promise<boolean>) => Promise<PairingRecord>) {
   const ext = new FakeExt();
-  const store = new Store(ext);
+  const store = new Store(ext, new MemoryPairingStore());
   const clients: FakeClient[] = [];
   const newClient = () => {
     const c = new FakeClient(() => ({ locked: false, account: "alex@atlas.dev", vaults: 1 }), undefined, pairImpl);
@@ -28,8 +28,10 @@ describe("pairing flow", () => {
       return record();
     });
     expect(await flow.startPairing()).toEqual({ sas: "042 917" });
-    expect(ext.local.data.has("pairing")).toBe(false);
+    expect(await store.getPairing()).toBeNull();
     await flow.confirmPairing();
+    // Never in storage.local, which content scripts may read.
+    expect(ext.local.data.size).toBe(0);
     expect((await store.getPairing())?.pairingId).toEqual(record().pairingId);
     expect(clients[0]?.openCalls).toBe(1);
     expect(await session.getClient()).toBe(clients[0]);
@@ -38,7 +40,7 @@ describe("pairing flow", () => {
 
   it("cancel refuses the codes and stores nothing", async () => {
     let answered: boolean | undefined;
-    const { ext, flow, clients } = setup(async (cb) => {
+    const { ext, store, flow, clients } = setup(async (cb) => {
       answered = await cb("111 222");
       throw new BridgeError("refused");
     });
@@ -48,6 +50,7 @@ describe("pairing flow", () => {
     expect(answered).toBe(false);
     expect(clients[0]?.closed).toBe(true);
     expect(ext.local.data.has("pairing")).toBe(false);
+    expect(await store.getPairing()).toBeNull();
     await expect(flow.confirmPairing()).rejects.toBeInstanceOf(BgError);
   });
 
