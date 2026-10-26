@@ -3,6 +3,7 @@
 pub mod account;
 pub mod crypto;
 pub mod error;
+pub mod generator;
 pub mod id;
 pub mod manifest;
 pub mod model;
