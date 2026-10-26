@@ -9,6 +9,7 @@ TEST_XCFRAMEWORK := ../build/test/OnePassFFI.xcframework
 # apple/build/test/.core-stamp) and is a no-op when the Rust sources are
 # unchanged; make always delegates to it.
 .PHONY: core core-test test project simulators build-ios build-mac uitest screenshots clean
+.PHONY: simulators-m6 build-watch
 
 ## Shipped XCFramework (release, ios + ios-simulator + macOS) and bindings.
 core:
@@ -45,6 +46,26 @@ build-ios: core simulators
 	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
 		-destination '$(IOS_DESTINATION)' -derivedDataPath DerivedData \
 		CODE_SIGNING_ALLOWED=NO build
+
+WATCH_DESTINATION := platform=watchOS Simulator,name=OnePass M6 Watch
+WATCH_RUNTIME := com.apple.CoreSimulator.SimRuntime.watchOS-27-0
+VISION_RUNTIME := com.apple.CoreSimulator.SimRuntime.xrOS-27-0
+
+## Milestone 6 simulators (Apple Watch, Vision Pro when a visionOS 27 runtime exists), created
+## when missing. Never boots, stops or erases any simulator.
+simulators-m6:
+	@xcrun simctl list devices | grep -q "OnePass M6 Watch (" || \
+		xcrun simctl create "OnePass M6 Watch" com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-12-46mm $(WATCH_RUNTIME)
+	@if xcrun simctl list runtimes | grep -q "$(VISION_RUNTIME)"; then \
+		xcrun simctl list devices | grep -q "OnePass M6 Vision Pro (" || \
+			xcrun simctl create "OnePass M6 Vision Pro" com.apple.CoreSimulator.SimDeviceType.Apple-Vision-Pro-4K $(VISION_RUNTIME); \
+	else echo "no visionOS 27 runtime: OnePass M6 Vision Pro not created"; fi
+
+## watchOS Simulator build of the watch app and its complication, signed ad hoc.
+build-watch: core simulators-m6
+	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePassWatch \
+		-destination '$(WATCH_DESTINATION)' -derivedDataPath DerivedData \
+		CODE_SIGN_IDENTITY=- build
 
 ## Native Mac build (arm64), signed ad hoc so it runs locally.
 build-mac: core
