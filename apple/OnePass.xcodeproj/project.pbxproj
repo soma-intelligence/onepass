@@ -24,9 +24,11 @@
 		238EB0035C1DB7402BA3DB8C /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = EABAE413D46D55DEEAFD8298 /* DesignKit */; };
 		2692DC6A6FE5F70B54C63E1F /* AutoFillHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DA50BEC5F27CE8D01F0A5D /* AutoFillHostApp.swift */; };
 		2753A5E46E6521FB36D5AC02 /* GlanceMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B74CE90BFF29298F6BB9A3C /* GlanceMapping.swift */; };
+		291F8E1E5A64CAF3599FA6B0 /* SavePasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28F8B7B44189B3BB3D964112 /* SavePasswordView.swift */; };
 		29FC439915D5B752F395D5E2 /* ItemsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF8989DA7AFD037445B1CA6 /* ItemsTab.swift */; };
 		365D67E458DDD2161A54A8F8 /* Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B70DA81485FABCED6D9346 /* Sidebar.swift */; };
 		369F365C2C4F921040181B8B /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1D108454111E28E82A0B04F6 /* DesignKit */; };
+		3963C3EF4E51F8EE2A8BD086 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E9E954337A597A29939BD2F6 /* Localizable.xcstrings */; };
 		3966FEC30AD7CAC800F12F2C /* DemoWatchModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4807ECE87FEA8C5106548F /* DemoWatchModel.swift */; };
 		3B5912DB886A1E8510C4F27E /* BrowseRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F8A0A14957792EE5EDF2DCD /* BrowseRoot.swift */; };
 		3DA9195F5E3C77FBE22E96EE /* HomeTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5A4B3BD06C13AC7742D5DB /* HomeTab.swift */; };
@@ -34,7 +36,9 @@
 		4399475D3738EE8A726DE3BF /* OpenItemIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82760DEA71118ECB0D50446 /* OpenItemIntent.swift */; };
 		4465F72DEE3CAF7791B626F7 /* AccountChangeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDEA14A7E048E4F8837BDCA3 /* AccountChangeViews.swift */; };
 		45A42F714F279F1DECDF9060 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 19D9899D8B640FB4F5F8B0E6 /* Localizable.xcstrings */; };
+		46302B8ECA84FE76627DEFE1 /* UnlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82139C419F351C3FDA076EE8 /* UnlockView.swift */; };
 		469D03A44C80D8C1010565D6 /* ItemEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4590FC000AF13D1212563044 /* ItemEditorView.swift */; };
+		4A8E2165E6F9C4ABCF0D37D2 /* TextInsertionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FA3E9BC65D3B546BAAE33A /* TextInsertionView.swift */; };
 		4D11257A2AB715CC77BA22C1 /* SecuritySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73396E5534184EF7CE76A170 /* SecuritySettings.swift */; };
 		4D18C9E35394FE4B518B4CBE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */; };
 		4FC983E3F5EEF45E81E52160 /* OnboardingAndItemUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A375FC8CB067AC2E4C863B5E /* OnboardingAndItemUITests.swift */; };
@@ -42,6 +46,7 @@
 		51CFFB68BE02A31F4AB753F5 /* OnePassAutoFill.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8EB6BA4A2EAD63E4BE27D5CE /* OnePassAutoFill.appex */; platformFilters = (ios, macos, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		5280793E24377FB837D7C938 /* WatchRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 330D495CC522DCE23D31E82D /* WatchRootView.swift */; };
 		53AB744F8ECC8196673DB950 /* OnePassWatchWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4A344652AA716F92A12D10F /* OnePassWatchWidgets.swift */; };
+		5488DA9BE99F72271C2E8276 /* AutoFillRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F71DF9FCDFF66C5C246AEE /* AutoFillRootView.swift */; };
 		56B6F0937E9CFE60521A0DAE /* OnboardingSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214B39B3C661A8FF88275223 /* OnboardingSteps.swift */; };
 		57D1B84C4C839CE948AFE66B /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */; };
 		582745A6BDE935DA6DC285D3 /* LockControlIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3180B530BDCA288BB48F08A0 /* LockControlIntent.swift */; };
@@ -65,6 +70,7 @@
 		92506BF8D288BB8AE298D980 /* VisibleVaultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BFEBDCF2AC2C6C2D8E999C5 /* VisibleVaultsView.swift */; };
 		928F96C444AB1DC3468E09CA /* VisionGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29FAC83196CF84E1C4C92CA5 /* VisionGlass.swift */; };
 		9320F3B7178A6EBB186C26AA /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0225137765C7E51FD0667F /* AppRoute.swift */; };
+		93543E3F4F3947F82537D4EA /* PasskeyRegistrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ABC26729FF5D1EFA4922176 /* PasskeyRegistrationView.swift */; };
 		94730FD823AB696BB6E8741F /* EntryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D8BD3F7692AE36317D569D /* EntryDetailView.swift */; };
 		96BDF108BF261EA243296B57 /* AutoFillUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4424E39F848DCBA4C2959EB /* AutoFillUITests.swift */; };
 		9765AD0D3EA5E87488F3A218 /* ItemLinkPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F391F505B02B771276A46D5 /* ItemLinkPicker.swift */; };
@@ -95,6 +101,7 @@
 		C468E1114DE58EEDDBE28A0A /* OnePassShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 123B03A83CDA95FC02A7BE8C /* OnePassShortcuts.swift */; };
 		CB5FED7E67C849940E609196 /* ConcealedValueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46D1ACF819F71AF4273989AD /* ConcealedValueView.swift */; };
 		D21C020FD752FEE1668BF6D7 /* PasswordHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A4EEE56330F9F390B44838 /* PasswordHistoryView.swift */; };
+		D2F831CB6B3AF0F1C4903AC6 /* CandidateListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */; };
 		D5C5B1A5817808ED47A986E0 /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */; };
 		DE6D3F92CC51AA33603525A4 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4184F03FCF4EBB67CF1EFCEA /* VaultKit */; };
 		E04761763662B47771A1A831 /* LockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D40167C0D7679C74A6D594D /* LockView.swift */; };
@@ -108,6 +115,7 @@
 		F5E7599D30A18148EE9AD7D7 /* OnePassWatchWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DF4D9AF4B114E1B41881EA27 /* OnePassWatchWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F7ED18E1061488E44AB2E8F5 /* GlanceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 55B85CDB4BCDFD6D0AE89FF0 /* GlanceKit */; };
 		F9F1D47BCFAE40F3A44CC777 /* OnePassWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70D198370DE24CFF6A929681 /* OnePassWatchApp.swift */; };
+		FA3F1D0B10908B378CF4ADDF /* ConfigurationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC56C781305F7023C4148362 /* ConfigurationView.swift */; };
 		FB411F7806F39B54F7C84C1D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 63F69FE9CD92A7C0ACFAF883 /* Assets.xcassets */; };
 		FE293B57FD1438D41BA37D51 /* EntryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89189A5B59E73F9B657D77B /* EntryListView.swift */; };
 		FE604CA8F8BDE5C06A3E588A /* DateFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488E4CE89D1B50E9FFA9002E /* DateFieldEditor.swift */; };
@@ -217,6 +225,7 @@
 		214B39B3C661A8FF88275223 /* OnboardingSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingSteps.swift; sourceTree = "<group>"; };
 		2276FC48964520BC441BFD23 /* TotpRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TotpRing.swift; sourceTree = "<group>"; };
 		257C8A4056D753F50F27FF62 /* GeneralSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettings.swift; sourceTree = "<group>"; };
+		28F8B7B44189B3BB3D964112 /* SavePasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavePasswordView.swift; sourceTree = "<group>"; };
 		29FAC83196CF84E1C4C92CA5 /* VisionGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionGlass.swift; sourceTree = "<group>"; };
 		2BFEBDCF2AC2C6C2D8E999C5 /* VisibleVaultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisibleVaultsView.swift; sourceTree = "<group>"; };
 		2F4807ECE87FEA8C5106548F /* DemoWatchModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoWatchModel.swift; sourceTree = "<group>"; };
@@ -256,15 +265,19 @@
 		79113AA7B53A92888B8DEF34 /* SecretFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretFieldEditor.swift; sourceTree = "<group>"; };
 		7A9506E7AEA529E14EF1B426 /* IntentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentBridge.swift; sourceTree = "<group>"; };
 		7FE4F3CB0CFA4BB2988A5A3B /* DesignKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignKit; path = DesignKit; sourceTree = SOURCE_ROOT; };
+		82139C419F351C3FDA076EE8 /* UnlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockView.swift; sourceTree = "<group>"; };
+		8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandidateListView.swift; sourceTree = "<group>"; };
 		87D0707F2A1FF871B7D086F5 /* GlanceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceViews.swift; sourceTree = "<group>"; };
 		89863609CCDE5B045CFDE000 /* AboutSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutSettings.swift; sourceTree = "<group>"; };
 		8E2BC05B539890907CE2714F /* UrlListEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UrlListEditor.swift; sourceTree = "<group>"; };
 		8EB6BA4A2EAD63E4BE27D5CE /* OnePassAutoFill.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OnePassAutoFill.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		9119720BF7C06235BF6ED5AC /* ItemListRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemListRow.swift; sourceTree = "<group>"; };
+		9ABC26729FF5D1EFA4922176 /* PasskeyRegistrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeyRegistrationView.swift; sourceTree = "<group>"; };
 		9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotUITests.swift; sourceTree = "<group>"; };
 		A375FC8CB067AC2E4C863B5E /* OnboardingAndItemUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingAndItemUITests.swift; sourceTree = "<group>"; };
 		A3F2B5C4E147CBDF5F09CD14 /* GeneratorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratorSheet.swift; sourceTree = "<group>"; };
+		A5F71DF9FCDFF66C5C246AEE /* AutoFillRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoFillRootView.swift; sourceTree = "<group>"; };
 		AADC8BC0D910001EC096242B /* GlanceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceProvider.swift; sourceTree = "<group>"; };
 		AAF78448AAEC42C44F2E16FB /* ItemEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEntity.swift; sourceTree = "<group>"; };
 		B19AE94E6DFF90D6CABA8FD0 /* OnePassAutoFillUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OnePassAutoFillUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -279,6 +292,7 @@
 		D45B0A2E7E89981FFB0AA858 /* OnePassWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWidgetsBundle.swift; sourceTree = "<group>"; };
 		D53F785E56AE55B95035986B /* CompanionKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CompanionKit; path = CompanionKit; sourceTree = SOURCE_ROOT; };
 		D6DA50BEC5F27CE8D01F0A5D /* AutoFillHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoFillHostApp.swift; sourceTree = "<group>"; };
+		D8FA3E9BC65D3B546BAAE33A /* TextInsertionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInsertionView.swift; sourceTree = "<group>"; };
 		D93279993588E6596ACA28A1 /* CompanionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionCoordinator.swift; sourceTree = "<group>"; };
 		DA59281B681069BA80A59493 /* Snapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snapshot.swift; sourceTree = "<group>"; };
 		DAABECC4D15FF57A4F3ABA49 /* MenuFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuFieldEditor.swift; sourceTree = "<group>"; };
@@ -288,8 +302,10 @@
 		E7AEF89D2CEB58AAF425BA2C /* CodesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodesWidget.swift; sourceTree = "<group>"; };
 		E82760DEA71118ECB0D50446 /* OpenItemIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenItemIntent.swift; sourceTree = "<group>"; };
 		E9BC40A3955486B6535DA4A9 /* TextFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextFieldEditor.swift; sourceTree = "<group>"; };
+		E9E954337A597A29939BD2F6 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		EAF8989DA7AFD037445B1CA6 /* ItemsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemsTab.swift; sourceTree = "<group>"; };
 		EC0225137765C7E51FD0667F /* AppRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoute.swift; sourceTree = "<group>"; };
+		EC56C781305F7023C4148362 /* ConfigurationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationView.swift; sourceTree = "<group>"; };
 		EDB2F5985704FFAAE54D3FEF /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
 		EEFF53CC1ED0153EE5BA51E4 /* ItemListColumn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemListColumn.swift; sourceTree = "<group>"; };
 		F0B70DA81485FABCED6D9346 /* Sidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sidebar.swift; sourceTree = "<group>"; };
@@ -358,6 +374,8 @@
 		10FE93B2BCB525F38987ACE9 /* AutoFill */ = {
 			isa = PBXGroup;
 			children = (
+				B08937FBB3A1D465DD52E235 /* Support */,
+				BEECCDBE43A33DB5D61002F0 /* Views */,
 				BD00F838E547B9C5D469BC6D /* CredentialProviderViewController.swift */,
 			);
 			path = AutoFill;
@@ -527,6 +545,14 @@
 			path = Onboarding;
 			sourceTree = "<group>";
 		};
+		B08937FBB3A1D465DD52E235 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				E9E954337A597A29939BD2F6 /* Localizable.xcstrings */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
 		B1C26DF3EFF5A88D1D2D533A /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -560,6 +586,20 @@
 				6B74CE90BFF29298F6BB9A3C /* GlanceMapping.swift */,
 			);
 			path = Companion;
+			sourceTree = "<group>";
+		};
+		BEECCDBE43A33DB5D61002F0 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A5F71DF9FCDFF66C5C246AEE /* AutoFillRootView.swift */,
+				8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */,
+				EC56C781305F7023C4148362 /* ConfigurationView.swift */,
+				9ABC26729FF5D1EFA4922176 /* PasskeyRegistrationView.swift */,
+				28F8B7B44189B3BB3D964112 /* SavePasswordView.swift */,
+				D8FA3E9BC65D3B546BAAE33A /* TextInsertionView.swift */,
+				82139C419F351C3FDA076EE8 /* UnlockView.swift */,
+			);
+			path = Views;
 			sourceTree = "<group>";
 		};
 		C7818EBDE5C979CF7710DA09 /* Phone */ = {
@@ -650,6 +690,7 @@
 			buildConfigurationList = ED6F72EEEC0E07E10DDAC8F9 /* Build configuration list for PBXNativeTarget "OnePassAutoFill" */;
 			buildPhases = (
 				ED0C858DE019141D856514F6 /* Sources */,
+				215F9B8976AC76CB13D88DF1 /* Resources */,
 				25AE64251C67F393DA24A854 /* Frameworks */,
 			);
 			buildRules = (
@@ -860,6 +901,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		215F9B8976AC76CB13D88DF1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3963C3EF4E51F8EE2A8BD086 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7F6FE6B9681652E855A4ED76 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1020,7 +1069,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5488DA9BE99F72271C2E8276 /* AutoFillRootView.swift in Sources */,
+				D2F831CB6B3AF0F1C4903AC6 /* CandidateListView.swift in Sources */,
+				FA3F1D0B10908B378CF4ADDF /* ConfigurationView.swift in Sources */,
 				6A373D25175955A17E5FA4D5 /* CredentialProviderViewController.swift in Sources */,
+				93543E3F4F3947F82537D4EA /* PasskeyRegistrationView.swift in Sources */,
+				291F8E1E5A64CAF3599FA6B0 /* SavePasswordView.swift in Sources */,
+				4A8E2165E6F9C4ABCF0D37D2 /* TextInsertionView.swift in Sources */,
+				46302B8ECA84FE76627DEFE1 /* UnlockView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
