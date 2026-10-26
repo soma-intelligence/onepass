@@ -5,7 +5,7 @@
 mod rebase;
 mod store;
 
-pub use store::{AccountState, SyncStore};
+pub use store::{AccountState, IgnoredDeletion, MAX_IGNORED_DELETIONS, SyncStore};
 
 use crate::Id;
 use crate::store::RecordKind;

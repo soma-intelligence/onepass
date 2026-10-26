@@ -11,7 +11,7 @@
 
 use std::collections::BTreeSet;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use std::ops::Deref;
 
@@ -25,6 +25,13 @@ use crate::store::{Record, RecordKind, RecordStore};
 use crate::{Error, Id, Result};
 
 const DEVICE_STATE_KEY: &str = "device_state";
+/// The capped log of remote deletions the store refused (outside the `sync.`
+/// namespace of the FFI handle, so only the core writes it).
+const IGNORED_DELETIONS_KEY: &str = "ignored_deletions";
+const IGNORED_LOG_VERSION: u8 = 1;
+const IGNORED_ENTRY_BYTES: usize = 1 + 16 + 8;
+/// Most entries kept in the log of ignored deletions; the oldest go first.
+pub const MAX_IGNORED_DELETIONS: usize = 100;
 const FETCH_MODE_KEY: &str = "zone.full_fetch";
 const FETCH_PLAIN: u8 = 1;
 const FETCH_RESET: u8 = 2;
@@ -452,7 +459,9 @@ impl SyncStore {
     ///   becomes a pending row with the same version and data, a manifest
     ///   keeping its `base` row as ancestor (not held).
     ///
-    /// A pending tombstone or edit is never touched.
+    /// A pending tombstone or edit is never touched. After a plain full fetch,
+    /// the kept rows the server has no right to remove (see `commit_remote`)
+    /// are appended to the log of `ignored_deletions`.
     pub fn finish_full_fetch(&mut self) -> Result<bool> {
         let tx = self.write_tx()?;
         let Some(mode) = fetch_mode(&tx)? else {
@@ -460,6 +469,35 @@ impl SyncStore {
         };
         let missing = "b.server_meta IS NULL AND NOT EXISTS
              (SELECT 1 FROM pending p WHERE p.kind = b.kind AND p.id = b.id)";
+        if mode == FETCH_PLAIN {
+            // The server stopped serving rows it has no right to remove: they
+            // stay (see above) and the refusal is logged.
+            let seen: BTreeSet<Id> = device_state_in(&tx)?.last_seen.into_keys().collect();
+            let rows: Vec<(i64, Vec<u8>)> = {
+                let mut stmt = tx
+                    .prepare(&format!(
+                        "SELECT b.kind, b.id FROM base b WHERE b.kind != ?1 AND {missing}
+                         ORDER BY b.kind, b.id"
+                    ))
+                    .map_err(store_err)?;
+                let rows = stmt
+                    .query_map(params![RecordKind::Item.code()], |r| {
+                        Ok((r.get(0)?, r.get(1)?))
+                    })
+                    .map_err(store_err)?;
+                rows.collect::<rusqlite::Result<_>>().map_err(store_err)?
+            };
+            let mut ignored = Vec::new();
+            for (kind, id) in rows {
+                let kind = decode_kind(kind)?;
+                if protected_from_remote_deletion(kind, &id, &seen)
+                    && let Ok(id) = decode_id(id)
+                {
+                    ignored.push((kind, id));
+                }
+            }
+            append_ignored(&tx, &ignored)?;
+        }
         // Both modes: an item the server did not return, in a vault whose
         // manifest it did return, is gone from that vault.
         let deleted = tx
@@ -521,7 +559,8 @@ impl SyncStore {
     /// manifest of a vault in the device's `last_seen`. The local rows stay
     /// and the vault stays readable from them: nothing the server sends can
     /// make this device forget its account or a vault it has read (the
-    /// repository reports `VaultMissing` if those rows ever disappear).
+    /// repository reports `VaultMissing` if those rows ever disappear). Each
+    /// ignored deletion is appended to the capped log of `ignored_deletions`.
     pub fn commit_remote(&mut self) -> Result<Vec<Id>> {
         let tx = self.write_tx()?;
         let seen: BTreeSet<Id> = device_state_in(&tx)?.last_seen.into_keys().collect();
@@ -539,10 +578,14 @@ impl SyncStore {
             rows.collect::<rusqlite::Result<_>>().map_err(store_err)?
         };
         let mut vaults = BTreeSet::new();
+        let mut ignored = Vec::new();
         for (kind, id, version, data, server_meta) in staged {
             let kind_code = kind;
             let kind = decode_kind(kind)?;
             if data.is_none() && protected_from_remote_deletion(kind, &id, &seen) {
+                if let Ok(id) = decode_id(id) {
+                    ignored.push((kind, id));
+                }
                 continue;
             }
             if kind == RecordKind::Manifest {
@@ -562,6 +605,7 @@ impl SyncStore {
             .map_err(store_err)?;
         }
         tx.execute("DELETE FROM staging", []).map_err(store_err)?;
+        append_ignored(&tx, &ignored)?;
         tx.commit()?;
         Ok(vaults.into_iter().collect())
     }
@@ -639,6 +683,49 @@ impl SyncStore {
         tx.commit()
     }
 
+    /// For a device whose account disappeared from the store (account
+    /// missing): empties every table like `reset`, device state included (the
+    /// pin and the last seen manifests), in one transaction, so a restore or a
+    /// new account can start from scratch. Refused while an account params
+    /// record is visible: a readable account is never wiped by this path.
+    pub fn reset_for_recovery(&mut self) -> Result<()> {
+        let tx = self.write_tx()?;
+        let visible: bool = tx
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM pending WHERE kind = ?1 AND data IS NOT NULL)
+                     OR EXISTS (SELECT 1 FROM base b WHERE kind = ?1 AND NOT EXISTS
+                         (SELECT 1 FROM pending p WHERE p.kind = b.kind AND p.id = b.id))",
+                params![RecordKind::AccountParams.code()],
+                |r| r.get(0),
+            )
+            .map_err(store_err)?;
+        if visible {
+            return Err(Error::InvalidFormat("store holds an account"));
+        }
+        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+            tx.execute(&format!("DELETE FROM {table}"), [])
+                .map_err(store_err)?;
+        }
+        tx.commit()
+    }
+
+    /// Remote deletions (or removals by a full fetch) the store refused,
+    /// oldest first, at most `MAX_IGNORED_DELETIONS`.
+    pub fn ignored_deletions(&self) -> Result<Vec<IgnoredDeletion>> {
+        self.read(ignored_in)
+    }
+
+    /// Empty the log of ignored deletions.
+    pub fn clear_ignored_deletions(&mut self) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM meta WHERE key = ?1",
+                params![IGNORED_DELETIONS_KEY],
+            )
+            .map_err(store_err)?;
+        Ok(())
+    }
+
     /// Vaults held back because the server manifest caught up with, or
     /// passed, the local pending one. Sorted by id.
     pub fn vaults_needing_rebase(&self) -> Result<Vec<Id>> {
@@ -686,6 +773,94 @@ pub enum AccountState {
     Present,
     /// This device pinned an account whose params record is gone.
     PinnedButMissing,
+}
+
+/// A remote deletion (or a removal by a full fetch from scratch) the store
+/// refused: which record, and when (Unix seconds, device clock).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IgnoredDeletion {
+    pub kind: RecordKind,
+    pub id: Id,
+    pub at: i64,
+}
+
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|d| i64::try_from(d.as_secs()).ok())
+        .unwrap_or(0)
+}
+
+/// Version byte, then `kind (1) | id (16) | at (8, big endian)` per entry.
+fn encode_ignored(entries: &[IgnoredDeletion]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(1 + entries.len() * IGNORED_ENTRY_BYTES);
+    out.push(IGNORED_LOG_VERSION);
+    for e in entries {
+        out.push(e.kind.code());
+        out.extend_from_slice(&e.id.0);
+        out.extend_from_slice(&e.at.to_be_bytes());
+    }
+    out
+}
+
+fn decode_ignored(bytes: &[u8]) -> Result<Vec<IgnoredDeletion>> {
+    let bad = || Error::InvalidFormat("ignored deletions");
+    let (&version, rest) = bytes.split_first().ok_or_else(bad)?;
+    if version != IGNORED_LOG_VERSION || rest.len() % IGNORED_ENTRY_BYTES != 0 {
+        return Err(bad());
+    }
+    let (entries, tail) = rest.as_chunks::<IGNORED_ENTRY_BYTES>();
+    if !tail.is_empty() {
+        return Err(bad());
+    }
+    entries
+        .iter()
+        .map(|c| {
+            let id: [u8; 16] = c[1..17].try_into().map_err(|_| bad())?;
+            let at: [u8; 8] = c[17..25].try_into().map_err(|_| bad())?;
+            Ok(IgnoredDeletion {
+                kind: RecordKind::from_code(c[0])?,
+                id: Id(id),
+                at: i64::from_be_bytes(at),
+            })
+        })
+        .collect()
+}
+
+fn ignored_in(conn: &Connection) -> Result<Vec<IgnoredDeletion>> {
+    let bytes: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            params![IGNORED_DELETIONS_KEY],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(store_err)?;
+    bytes.map_or(Ok(Vec::new()), |b| decode_ignored(&b))
+}
+
+/// Append to the capped log, oldest entries dropped past the cap. An
+/// unreadable log (edited file) starts again empty: logging never blocks a
+/// commit.
+fn append_ignored(conn: &Connection, new: &[(RecordKind, Id)]) -> Result<()> {
+    if new.is_empty() {
+        return Ok(());
+    }
+    let mut entries = ignored_in(conn).unwrap_or_default();
+    let at = unix_now();
+    entries.extend(
+        new.iter()
+            .map(|&(kind, id)| IgnoredDeletion { kind, id, at }),
+    );
+    let excess = entries.len().saturating_sub(MAX_IGNORED_DELETIONS);
+    entries.drain(..excess);
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+        params![IGNORED_DELETIONS_KEY, encode_ignored(&entries)],
+    )
+    .map_err(store_err)?;
+    Ok(())
 }
 
 /// The device state persisted in `meta`, or the default one.
@@ -1290,6 +1465,134 @@ mod tests {
         // Item deletions are ordinary remote changes.
         assert_eq!(s.get(RecordKind::Item, item).unwrap(), None);
         assert_eq!(count(&s, "staging"), 0);
+
+        // Every refused deletion is logged (kind, id, time), nothing else.
+        let log = s.ignored_deletions().unwrap();
+        let logged: Vec<(RecordKind, Id)> = log.iter().map(|e| (e.kind, e.id)).collect();
+        assert_eq!(
+            logged,
+            vec![
+                (RecordKind::AccountParams, acct),
+                (RecordKind::Keyset, acct),
+                (RecordKind::VaultKey, seen),
+                (RecordKind::VaultMeta, seen),
+                (RecordKind::Manifest, seen),
+            ]
+        );
+        assert!(log.iter().all(|e| e.at > 1_700_000_000));
+        s.clear_ignored_deletions().unwrap();
+        assert_eq!(s.ignored_deletions().unwrap(), vec![]);
+    }
+
+    #[test]
+    fn ignored_deletion_log_keeps_the_newest_hundred() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let ids: Vec<Id> = (0..130).map(|_| Id::new()).collect();
+        for id in &ids {
+            seed_base(&mut s, RecordKind::Keyset, *id, 1, b"k".to_vec());
+        }
+        for chunk in ids.chunks(40) {
+            for id in chunk {
+                s.stage_remote(remote(RecordKind::Keyset, *id, 1, None))
+                    .unwrap();
+            }
+            s.commit_remote().unwrap();
+        }
+        let log = s.ignored_deletions().unwrap();
+        assert_eq!(log.len(), MAX_IGNORED_DELETIONS);
+        // Oldest dropped: the first 30 ids are gone, order is kept.
+        let mut expected = ids[30..].to_vec();
+        expected.sort();
+        let mut kept: Vec<Id> = log.iter().map(|e| e.id).collect();
+        kept.sort();
+        assert_eq!(kept, expected);
+        assert!(s.has_account().is_ok());
+    }
+
+    #[test]
+    fn plain_full_fetch_logs_rows_the_server_stopped_serving() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (acct, seen, unseen, item) = (Id::new(), Id::new(), Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::AccountParams, acct, 1, b"p".to_vec());
+        seed_base(&mut s, RecordKind::Keyset, acct, 1, b"k".to_vec());
+        seed_base(&mut s, RecordKind::Manifest, seen, 1, b"m".to_vec());
+        seed_base(&mut s, RecordKind::Manifest, unseen, 1, b"u".to_vec());
+        seed_base(&mut s, RecordKind::Item, item, 1, item_data(seen, b"i"));
+        let mut state = DeviceState::default();
+        state.last_seen.insert(
+            seen,
+            crate::manifest::SeenManifest {
+                seq: 1,
+                hash: [7; 32],
+            },
+        );
+        s.set_device_state(&state).unwrap();
+        // The server serves the keyset only.
+        s.begin_full_fetch().unwrap();
+        s.stage_remote(remote(RecordKind::Keyset, acct, 1, Some(b"k".to_vec())))
+            .unwrap();
+        s.commit_remote().unwrap();
+        s.finish_full_fetch().unwrap();
+        let logged: Vec<(RecordKind, Id)> = s
+            .ignored_deletions()
+            .unwrap()
+            .iter()
+            .map(|e| (e.kind, e.id))
+            .collect();
+        assert_eq!(
+            logged,
+            vec![
+                (RecordKind::AccountParams, acct),
+                (RecordKind::Manifest, seen)
+            ]
+        );
+        // A reset requeues instead: nothing more is logged.
+        s.begin_zone_reset("tok").unwrap();
+        s.commit_remote().unwrap();
+        s.finish_full_fetch().unwrap();
+        assert_eq!(s.ignored_deletions().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn unreadable_ignored_log_starts_again() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        s.set_meta(IGNORED_DELETIONS_KEY, &[9, 9, 9]).unwrap();
+        assert!(s.ignored_deletions().is_err());
+        let id = Id::new();
+        seed_base(&mut s, RecordKind::Keyset, id, 1, b"k".to_vec());
+        s.stage_remote(remote(RecordKind::Keyset, id, 1, None))
+            .unwrap();
+        s.commit_remote().unwrap();
+        assert_eq!(s.ignored_deletions().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn reset_for_recovery_clears_the_pin_and_refuses_a_visible_account() {
+        let s = SyncStore::open_in_memory().unwrap();
+        let kdf = crate::crypto::KdfParams {
+            m_kib: 8192,
+            t: 1,
+            p: 1,
+            salt: crate::crypto::random_array().unwrap(),
+        };
+        let (mut repo, _sk) =
+            crate::repo::Repository::create_account(s, "Projet Atlas", kdf).unwrap();
+        repo.persist_device_state().unwrap();
+        let mut s = repo.store;
+        assert_eq!(
+            s.reset_for_recovery(),
+            Err(Error::InvalidFormat("store holds an account"))
+        );
+        assert_eq!(s.account_state().unwrap(), AccountState::Present);
+        let id = s.list(RecordKind::AccountParams).unwrap()[0].id;
+        s.delete(RecordKind::AccountParams, id).unwrap();
+        assert_eq!(s.account_state().unwrap(), AccountState::PinnedButMissing);
+        s.reset_for_recovery().unwrap();
+        assert_eq!(s.account_state().unwrap(), AccountState::Empty);
+        assert_eq!(s.device_state().unwrap(), DeviceState::default());
+        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+            assert_eq!(count(&s, table), 0, "{table}");
+        }
     }
 
     #[test]

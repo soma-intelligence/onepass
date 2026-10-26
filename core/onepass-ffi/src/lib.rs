@@ -155,6 +155,17 @@ pub fn reset_store(db_path: String) -> Result<(), OnePassError> {
     Ok(open_store(&db_path)?.reset()?)
 }
 
+/// "Repartir" from the account-missing screen: empties every table in one
+/// transaction, device state included (the pinned account and the last seen
+/// manifests), so the Emergency Kit restore (data fetched again) or a new
+/// account can start from an empty store. The file stays in place, like
+/// `reset_store`. Refused (`InvalidInput`) while the store shows an account:
+/// a readable account is never wiped by this path.
+#[uniffi::export]
+pub fn reset_store_for_recovery(db_path: String) -> Result<(), OnePassError> {
+    Ok(open_store(&db_path)?.reset_for_recovery()?)
+}
+
 fn account_missing() -> OnePassError {
     OnePassError::Integrity {
         kind: "account_missing".to_owned(),
