@@ -275,6 +275,27 @@ describe("lab server", () => {
     }
   });
 
+  it("signup_requires_generated_password", async () => {
+    const s = flow("signup");
+    const email = field(s, "email");
+    const [p1, p2] = s.fields.filter((f) => f.role === "new_password").map((f) => f.name);
+    const weak = await req(s.host, "/", { [email]: "ada@mail.test", [p1!]: "password1", [p2!]: "password1" });
+    expect(weak.status).toBe(200);
+    expect(server.events()).toEqual([
+      { at: expect.any(Number), host: s.host, kind: "submit", form: "signup", ok: false, fields: [p1], reason: "weak_password" },
+    ]);
+    const ok = await req(s.host, "/", { [email]: "ada@mail.test", [p1!]: "Kp4-vX9m!tQz7", [p2!]: "Kp4-vX9m!tQz7" });
+    expect(ok.location).toBe("/home");
+    expect(server.events().filter((e) => e.kind === "signin")).toMatchObject([{ host: s.host, user: "ada@mail.test" }]);
+  });
+
+  it("canary_post_goes_through_ledger", async () => {
+    const s = flow("login_single");
+    const r = await req("unknown-host.test", CANARY_PATH, { p: s.account!.password });
+    expect(r.body).toBe(server.nonce);
+    expect(server.events()).toMatchObject([{ kind: "leak", secret: "password", host: "unknown-host.test", owner: s.host }]);
+  });
+
   it("canary", async () => {
     for (const h of [world.sites[0]!.host, IDP_HOST.google, "unknown-host.test"]) {
       const r = await req(h, CANARY_PATH);

@@ -1,14 +1,15 @@
 // @vitest-environment node
 // Lab relying party checks: TOTP (RFC 6238 appendix B, SHA-1 vectors, one
 // period of tolerance) and the comparison of posted card / identity fields
-// with the fictional values of the vault fixture.
+// with the fictional values of the vault fixture; signup passwords must look
+// generated.
 import { describe, expect, it } from "vitest";
 import { totp } from "../../e2e/server.ts";
 import patternsJson from "../../lab/corpus/patterns.json";
 import type { Patterns } from "../../lab/corpus/types.ts";
 import { generate } from "../../lab/gen/generate.ts";
 import type { Site } from "../../lab/gen/model.ts";
-import { expectedValues, totpOk, wrongFields } from "../../lab/server/rp.ts";
+import { expectedValues, looksGenerated, totpOk, wrongFields } from "../../lab/server/rp.ts";
 
 // base32("12345678901234567890"), the SHA-1 secret of RFC 6238 appendix B.
 const RFC_SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
@@ -62,5 +63,15 @@ describe("wrongFields", () => {
     const email = site.fields.find((f) => f.role === "email")!;
     const { [email.name]: _drop, ...rest } = body;
     expect(wrongFields(world, site, rest)).toEqual([email.name]);
+  });
+});
+
+describe("looksGenerated", () => {
+  it("length_and_classes", () => {
+    expect(looksGenerated("Kp4-vX9m!tQz")).toBe(true);
+    expect(looksGenerated("abcdefgh1234")).toBe(false); // two classes
+    expect(looksGenerated("Ab1-xyz")).toBe(false); // too short
+    expect(looksGenerated("ABCDEFGH123!")).toBe(true); // upper, digit, symbol
+    expect(looksGenerated("")).toBe(false);
   });
 });

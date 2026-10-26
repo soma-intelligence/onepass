@@ -3,7 +3,8 @@
 // email then password), TOTP (RFC 6238, SHA-1, 30 s, 6 digits, one period of
 // tolerance), WebAuthn passkey assertions, signup, and the card / address /
 // identity forms compared field by field with the fictional values of the
-// vault fixture. Trap fields refuse the post. Events name fields, never values.
+// vault fixture. Signup takes only a generated-looking password. Trap fields
+// refuse the post. Events name fields, never values.
 //
 // Submit events: `form` is the site's flow for the main form (entry or same
 // page in a frame), else the step ("password", "otp", "passkey", "decoy",
@@ -23,6 +24,12 @@ export function totpOk(secret: string, code: string, now: number): boolean {
   const c = code.replace(/\s/g, "");
   if (!/^\d{6}$/.test(c)) return false;
   return [-PERIOD_MS, 0, PERIOD_MS].some((d) => totp(secret, now + d) === c);
+}
+
+/** A password as a generator makes it: 12 characters or more, at least three character classes. */
+export function looksGenerated(pw: string): boolean {
+  const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z\d]/].filter((re) => re.test(pw)).length;
+  return pw.length >= 12 && classes >= 3;
 }
 
 // ---- expected values of the card / address / identity forms ----
@@ -212,6 +219,11 @@ export function handleSite(site: Site, x: Exchange, st: LabState, mode: "site" |
     const exists = st.created.has(site.host);
     if (wrong.length > 0 || exists) {
       note({ form: formName, ok: false, fields: wrong, reason: exists ? "exists" : "wrong_fields" });
+      return page(formPage, { error: MSG.signup });
+    }
+    // The generator's password, not any matching pair: a typed or empty-ish one does not count.
+    if (!looksGenerated(pw)) {
+      note({ form: formName, ok: false, fields: p1 ? [p1] : [], reason: "weak_password" });
       return page(formPage, { error: MSG.signup });
     }
     st.created.set(site.host, { username: user, password: pw });

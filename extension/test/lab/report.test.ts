@@ -103,4 +103,14 @@ describe("lab report", () => {
     expect(md).toContain("leak:password:pw@evil.test");
     expect(md).not.toMatch(/## Fuites\n\nAucune\./);
   });
+  it("lists_are_byte_stable_in_any_result_order", () => {
+    const results = [
+      res(3, "fail", { cause: "timeout" }), res(1, "leak", { cause: "leak:password:pw@evil.test", driver: "lookalike" }),
+      res(1, "fail", { cause: "no_overlay" }), res(2, "xfail", { cause: "no_overlay" }), res(0, "flaky"), res(2, "flaky", { driver: "menu_fill" }),
+    ];
+    const a = renderReport(world, summarize(results), meta);
+    const b = renderReport(world, summarize([...results].reverse()), meta);
+    expect(a).toBe(b);
+    expect(summarize(results).failures.map((r) => `${r.site}:${r.driver}`)).toEqual(["1:lookalike", "1:one_click", "3:one_click"]);
+  });
 });

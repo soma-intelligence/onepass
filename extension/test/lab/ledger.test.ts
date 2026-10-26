@@ -1,9 +1,11 @@
 // @vitest-environment node
 // Leak ledger of the lab server: fictional secrets indexed to their owner
 // host, leaks to another host or into a trap field (honeypot, decoy form),
+// TOTP codes of the current periods, cross-site frame hosts,
 // card number normalization, CVC only in card fields, and events that never
 // carry a value.
 import { describe, expect, it } from "vitest";
+import { totp } from "../../e2e/server.ts";
 import patternsJson from "../../lab/corpus/patterns.json";
 import type { Patterns } from "../../lab/corpus/types.ts";
 import { generate } from "../../lab/gen/generate.ts";
@@ -67,6 +69,47 @@ describe("Ledger", () => {
     l.reset();
     expect(l.events).toEqual([]);
     expect(l.record(login.host, "/", { p: "Fresh-Signup-Pass-123" })).toEqual([]);
+  });
+  it("short_signup_secret_matches_whole_values_only", () => {
+    const l = new Ledger(world);
+    const signup = world.sites.find((s) => s.flow === "signup")!;
+    l.addSecret("ab12", "password", signup.host);
+    expect(l.record(login.host, "/", { note: "xab12y" })).toEqual([]);
+    expect(l.record(login.host, "/", { p: "ab12" })).toHaveLength(1);
+  });
+  it("totp_codes_to_other_host_or_trap_are_leaks", () => {
+    const l = new Ledger(world);
+    const site = world.sites.find((s) => s.account?.totpSecret)!;
+    expect(site, "an 80-site world has a TOTP site").toBeDefined();
+    const otp = site.fields.find((f) => f.role === "otp")!.name;
+    const now = totp(site.account!.totpSecret!);
+    const next = totp(site.account!.totpSecret!, Date.now() + 30_000);
+    // To its owner: fine.
+    expect(l.record(site.host, "/otp", { [otp]: now })).toEqual([]);
+    // To another host, current or next period: leaks (spaces ignored).
+    expect(l.record(login.host, "/", { code: now })).toMatchObject([{ kind: "leak", secret: "totp", field: "code", owner: site.host }]);
+    expect(l.record(login.host, "/", { code: `${next.slice(0, 3)} ${next.slice(3)}` })).toMatchObject([{ secret: "totp" }]);
+    // Only whole values: a code inside a longer value is not counted.
+    expect(l.record(login.host, "/", { note: `ref ${now} x` })).toEqual([]);
+    // Into the owner's decoy form: a trap.
+    expect(l.record(site.host, "/decoy", { [otp]: now })).toMatchObject([{ secret: "totp", owner: site.host }]);
+  });
+  it("csc_into_honeypot_is_leak", () => {
+    // The honeypot imitates the CVC field: its role makes the CVC recognizable there.
+    const w = JSON.parse(JSON.stringify(world)) as typeof world;
+    const site = w.sites.find((s) => s.host === checkout.host)!;
+    site.honeypot = { role: "cc_csc", name: "hp_csc", style: "display_none" };
+    const l = new Ledger(w);
+    expect(l.record(site.host, "/", { hp_csc: cardItem.fields.cvv })).toMatchObject([{ kind: "leak", secret: "csc", field: "hp_csc", owner: site.host }]);
+  });
+  it("frame_host_of_cross_site_frame_gets_a_leak", () => {
+    const framed = world.sites.find((s) => s.traits.includes("iframe_cross_site") && s.account?.password)!;
+    expect(framed, "an 80-site world has a cross-site frame on a login site").toBeDefined();
+    const l = new Ledger(world);
+    const pwName = framed.fields.find((f) => f.role === "password")!.name;
+    // The site's password posted to its cross-site auth widget leaves the site (spec R-10).
+    expect(l.record(framed.frameHost!, "/frame", { [pwName]: framed.account!.password }))
+      .toMatchObject([{ kind: "leak", secret: "password", field: pwName, host: framed.frameHost, owner: framed.host }]);
   });
   it("no_values_in_events", () => {
     const l = new Ledger(world);

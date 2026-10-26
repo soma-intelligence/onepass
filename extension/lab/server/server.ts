@@ -156,13 +156,13 @@ export async function startLabServer(world: World, cert: TestCert): Promise<LabS
       },
     };
 
+    // Every POST meets the ledger first, the canary path included.
+    if (post) ledger.record(host, x.path, body);
     if (x.path === CANARY_PATH) {
       res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
       res.end(nonce);
       return;
     }
-    if (post) ledger.record(host, x.path, body);
-
     const site = sites.get(host);
     if (site) return handleSite(site, x, st, "site");
     const provider = providers.get(host);

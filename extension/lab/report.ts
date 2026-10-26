@@ -56,6 +56,11 @@ function group(results: Result[], keys: (r: Result) => string[]): Record<string,
   return out;
 }
 
+/** Results in (site, driver) order: batches finish in any order, the report must not. */
+function bySiteDriver(results: Result[]): Result[] {
+  return [...results].sort((a, b) => a.site - b.site || a.driver.localeCompare(b.driver));
+}
+
 export function summarize(results: Result[]): Summary {
   const overall = emptyRate();
   for (const r of results) add(overall, r.verdict);
@@ -67,10 +72,10 @@ export function summarize(results: Result[]): Summary {
     byTrait: group(results, (r) => (r.traits.length > 0 ? r.traits : ["(aucun)"])),
     byLang: group(results, (r) => [r.lang]),
     byDriver: group(results, (r) => [r.driver]),
-    failures: results.filter((r) => r.verdict === "fail" || r.verdict === "leak"),
-    leaks: results.filter((r) => r.verdict === "leak"),
-    expected: results.filter((r) => r.verdict === "xfail" || r.verdict === "xpass"),
-    flaky: results.filter((r) => r.verdict === "flaky"),
+    failures: bySiteDriver(results.filter((r) => r.verdict === "fail" || r.verdict === "leak")),
+    leaks: bySiteDriver(results.filter((r) => r.verdict === "leak")),
+    expected: bySiteDriver(results.filter((r) => r.verdict === "xfail" || r.verdict === "xpass")),
+    flaky: bySiteDriver(results.filter((r) => r.verdict === "flaky")),
   };
 }
 
