@@ -14,6 +14,7 @@ pub(crate) mod bitwarden;
 pub(crate) mod build;
 pub(crate) mod csv_logins;
 pub(crate) mod dashlane;
+pub(crate) mod keepass;
 pub(crate) mod lastpass;
 pub(crate) mod limits;
 pub(crate) mod onepux;

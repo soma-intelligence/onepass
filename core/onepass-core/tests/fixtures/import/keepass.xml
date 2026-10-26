@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<KeePassFile>
+	<Meta>
+		<Generator>KeePassXC</Generator>
+		<DatabaseName>Sample</DatabaseName>
+		<RecycleBinEnabled>True</RecycleBinEnabled>
+		<RecycleBinUUID>AAAAAAAAAAAAAAAAAAAAAg==</RecycleBinUUID>
+	</Meta>
+	<Root>
+		<Group>
+			<UUID>AAAAAAAAAAAAAAAAAAAAAQ==</UUID>
+			<Name>Sample</Name>
+			<Entry>
+				<UUID>AAAAAAAAAAAAAAAAAAAB</UUID>
+				<Tags>web;work, shared</Tags>
+				<Times>
+					<CreationTime>2024-01-02T03:04:05Z</CreationTime>
+					<LastModificationTime>2024-02-03T04:05:06Z</LastModificationTime>
+					<ExpiryTime>2030-01-31T00:00:00Z</ExpiryTime>
+					<Expires>True</Expires>
+				</Times>
+				<String><Key>Title</Key><Value>Root login</Value></String>
+				<String><Key>UserName</Key><Value>alice@example.com</Value></String>
+				<String><Key>Password</Key><Value Protected="True">Pw-Root-1</Value></String>
+				<String><Key>URL</Key><Value>https://example.com/login</Value></String>
+				<String><Key>Notes</Key><Value>first line
+second &amp; last</Value></String>
+				<String><Key>otp</Key><Value Protected="True">otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&amp;issuer=Example</Value></String>
+				<String><Key>Recovery question</Key><Value>Blue</Value></String>
+				<String><Key>Backup answer</Key><Value Protected="True">Orange</Value></String>
+				<Binary><Key>scan.pdf</Key><Value Ref="0"/></Binary>
+				<History>
+					<Entry>
+						<String><Key>Title</Key><Value>Root login old</Value></String>
+						<String><Key>Password</Key><Value Protected="True">Pw-Old</Value></String>
+					</Entry>
+				</History>
+			</Entry>
+			<Group>
+				<UUID>AAAAAAAAAAAAAAAAAAAAAw==</UUID>
+				<Name>Work</Name>
+				<Group>
+					<UUID>AAAAAAAAAAAAAAAAAAAABA==</UUID>
+					<Name>Servers</Name>
+					<Entry>
+						<String><Key>Title</Key><Value>Deep entry</Value></String>
+						<String><Key>UserName</Key><Value>bob</Value></String>
+						<String><Key>Password</Key><Value>Pw-Deep-2</Value></String>
+						<String><Key>TimeOtp-Secret-Base32</Key><Value>JBSWY3DPEHPK3PXP</Value></String>
+					</Entry>
+				</Group>
+			</Group>
+			<Group>
+				<UUID>AAAAAAAAAAAAAAAAAAAAAg==</UUID>
+				<Name>Recycle Bin</Name>
+				<Entry>
+					<String><Key>Title</Key><Value>Trashed</Value></String>
+					<String><Key>Password</Key><Value>Pw-Trash</Value></String>
+				</Entry>
+				<Group>
+					<UUID>AAAAAAAAAAAAAAAAAAAABQ==</UUID>
+					<Name>Old</Name>
+					<Entry>
+						<String><Key>Title</Key><Value>Trashed too</Value></String>
+					</Entry>
+				</Group>
+			</Group>
+		</Group>
+	</Root>
+</KeePassFile>
