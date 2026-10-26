@@ -68,6 +68,15 @@ jobs:
           - signature_verify
           - otpauth_parse
           - reference_parse
+          - import_csv
+          - import_1pux
+          - import_bitwarden_json
+          - import_keepass_xml
+          - import_cxf
+          - import_text
+          - archive_open
+          - hibp_range
+          - site_directory
     defaults:
       run:
         working-directory: core
@@ -82,7 +91,7 @@ jobs:
         with:
           tool: cargo-fuzz
       - name: Fuzz 30 s
-        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=30
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=30 -rss_limit_mb=4096
       - name: Keep the crashing input
         if: failure()
         uses: actions/upload-artifact@v4

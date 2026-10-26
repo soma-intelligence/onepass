@@ -55,7 +55,7 @@ La signature SLH-DSA est lente (environ 15 s en optimisé, plus en debug). Le pr
 
 ## Fuzzing
 
-Seize cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'un stockage hostile atteint avant toute authentification :
+Seize cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'un stockage hostile, un fichier d'import ou d'archive hostile, ou un serveur de réponses hostile atteint avant toute authentification :
 
 | Cible | Entrée |
 | --- | --- |
@@ -81,7 +81,10 @@ cd core
 make fuzz                      # 60 s par cible
 make fuzz FUZZ_SECONDS=300     # durée au choix
 cargo +nightly fuzz run blob_open -- -max_total_time=60
+cargo +nightly fuzz run archive_open -- -max_total_time=60 -rss_limit_mb=4096
 ```
+
+`archive_open` est lente (quelques centaines d'exécutions par seconde : Argon2id sur des paramètres mutés) et peut dépasser la limite mémoire par défaut de libFuzzer : passez `-rss_limit_mb=4096` (la CI le fait pour toutes les cibles).
 
 `archive_open` demande la feature `dev-fast-kdf` de `onepass-core` (activée dans `fuzz/Cargo.toml`) pour créer son compte fixe en quelques secondes. Elle ne joue que dans un build avec assertions de debug : `cargo fuzz` en active par défaut (`-a`), ne passez donc pas `-O` pour cette cible, sinon le plancher de production s'applique et la cible échoue à son initialisation.
 

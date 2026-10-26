@@ -134,7 +134,7 @@ Aucun message d'erreur ne contient de secret ni de contenu d'item (`Error`, `Int
 
 ## 4. Validation des entrées
 
-Les décodeurs qu'un stockage hostile atteint avant toute authentification sont fuzzés (`core/fuzz`) : ouverture de blob, enregistrement de manifeste signé (décodage puis signature), paramètres de compte (décodage puis `Account::unlock`), enregistrement d'item (préfixe de vault, `ItemRecord`, confrontation au manifeste), vérification des signatures hybride et d'identité sur des clés et signatures arbitraires, plus `parse_otpauth` et `parse_ref`. Au jalon 5 s'y ajoutent les parseurs d'import (CSV, 1PUX, Bitwarden JSON, KeePass XML, CXF, texte), l'ouverture d'archive (`inspect` et `open`), la réponse de plage HIBP et les catalogues de sites. Le décodage de `Manifest` n'est pas une cible : il ne lit qu'un clair déjà authentifié. Chaque cible exige seulement l'absence de panique. Toutes ont tourné 60 s sans plantage au moment de la livraison, puis tournent 30 s à chaque exécution de la CI.
+Les décodeurs qu'un stockage hostile atteint avant toute authentification sont fuzzés (`core/fuzz`) : ouverture de blob, enregistrement de manifeste signé (décodage puis signature), paramètres de compte (décodage puis `Account::unlock`), enregistrement d'item (préfixe de vault, `ItemRecord`, confrontation au manifeste), vérification des signatures hybride et d'identité sur des clés et signatures arbitraires, plus `parse_otpauth` et `parse_ref`. Au jalon 5 s'y ajoutent les parseurs d'import (CSV, 1PUX, Bitwarden JSON, KeePass XML, CXF, texte), l'ouverture d'archive (`inspect` et `open`), la réponse de plage HIBP et les catalogues de sites. Le décodage de `Manifest` n'est pas une cible : il ne lit qu'un clair déjà authentifié. Chaque cible exige seulement l'absence de panique. Les 7 cibles des jalons précédents ont tourné 60 s et les 9 du jalon 5 (parseurs d'import, `archive_open`, `hibp_range`, `site_directory`) 30 s, sans plantage, au moment de la livraison ; toutes tournent ensuite 30 s à chaque exécution de la CI.
 
 ## 5. Attaques testées
 
@@ -168,7 +168,7 @@ Les décodeurs qu'un stockage hostile atteint avant toute authentification sont 
 - Cryptographie : vecteurs officiels NIST ACVP (ML-KEM-1024, ML-DSA-87 génération et signature, SLH-DSA-SHA2-256s) et test différentiel `aws-lc-rs` contre `libcrux` (`tests/differential.rs`).
 - Secrets : `Debug` n'affiche jamais d'octets de clé, et les messages d'erreur ne contiennent ni secret ni contenu (tests de rédaction).
 
-## 7. Archive OnePass (jalon 5)
+## 6. Archive OnePass (jalon 5)
 
 Un seul conteneur sert à l'export chiffré et à la sauvegarde (`archive/format.rs`, extension `.onepass`).
 
@@ -189,7 +189,7 @@ Un seul conteneur sert à l'export chiffré et à la sauvegarde (`archive/format
 
 **Restauration.** `restore_plan` réutilise le vault du même id s'il existe, sinon en crée un avec la même méta (nouvel id). Un item dont l'id existe déjà est sauté et compté, jamais écrasé. La corbeille et les archivés sont restaurés tels quels.
 
-## 8. Watchtower et k-anonymity (jalon 5)
+## 7. Watchtower et k-anonymity (jalon 5)
 
 Watchtower analyse les items déverrouillés en mémoire (mots de passe faibles, réutilisés, anciens, 2FA ou passkey disponibles, sites compromis, fuites de mots de passe). Il ne persiste rien.
 
@@ -202,17 +202,17 @@ Watchtower analyse les items déverrouillés en mémoire (mots de passe faibles,
 
 Limite : le préfixe de 5 caractères révèle à la source que l'appareil a testé un mot de passe dont le SHA-1 commence par ces caractères, parmi environ un million de mots de passe possibles par préfixe. Un observateur du réseau voit aussi la requête vers le service ; seul le mode hors ligne l'évite.
 
-## 9. Import (jalon 5)
+## 8. Import (jalon 5)
 
 Un fichier d'import est une entrée hostile : un export altéré ou piégé ne doit ni faire paniquer le noyau, ni épuiser la mémoire ou le temps, ni écrire ailleurs que dans le coffre.
 
 - **Plafonds.** Fichier de 256 Mio au plus ; CSV en UTF-8 strict (1 Mio par cellule, 1 000 000 de lignes) ; JSON de profondeur 128 (défaut de `serde_json`) ; XML sans expansion d'entités hors entités prédéfinies, profondeur 256 ; zip (1PUX, Dashlane) de 10 000 entrées au plus, lu en flux et plafonné à 512 Mio décompressés (64 Mio pour `export.data`), noms d'entrée jamais utilisés comme chemins (aucune écriture disque), méthodes stockée et deflate seulement ; 1 000 000 d'items par import. Toute violation donne `InvalidFormat` avec une raison statique, sans contenu du fichier.
 - **Pas de panique.** Les modules d'import interdisent `unwrap`, `expect`, `panic` et l'indexation hors tests (`clippy`), et chaque parseur a une cible de fuzzing (section 4).
-- **Exports chiffrés de tiers refusés.** Un export chiffré d'un autre gestionnaire (Bitwarden `encrypted: true`, Dashlane `.dash`, 1Password `.1pif` chiffré, KDBX) est refusé avec un message qui demande un export en clair : OnePass ne déchiffre pas les formats de tiers. KDBX n'est pas supporté. Seules les archives OnePass sont ouvertes, avec leur phrase de passe, par le module `archive`.
+- **Exports chiffrés de tiers refusés.** Un export Bitwarden `encrypted: true` et un export Dashlane chiffré (`.dash`) sont refusés avec un message qui demande un export en clair (CSV pour Dashlane). KDBX est reconnu par sa signature (`03 D9 A2 9A 67 FB 4B B5`) et refusé avec `KeePass KDBX is not supported: export as KeePass 2 XML` : seul l'XML KeePass 2 est lu. Un `.1pif` chiffré de 1Password n'est pas géré : il est refusé comme format inconnu. OnePass ne déchiffre aucun format de tiers ; seules les archives OnePass sont ouvertes, avec leur phrase de passe, par le module `archive`.
 - **Aucun secret dans les erreurs ni les avertissements.** Les avertissements d'import ne portent que des libellés fixes et des noms de champ.
 - **Export en clair.** L'export CSV en clair est refusé sans `--plaintext`, avertit sur stderr, crée le fichier en mode `0600` et n'écrase jamais un fichier existant. Il n'échappe pas les formules de tableur : ouvrir ce CSV dans un tableur peut les interpréter.
 
-## 10. Écarts entre le code et la spec
+## 9. Écarts entre le code et la spec
 
 1. **Secret Key** : la spec et les contraintes du jalon parlent de 52 caractères. Le code affiche 52 caractères de base32 plus un caractère de contrôle (53 au total, en 14 groupes de 4, le dernier de 1). Les 256 bits de clé sont inchangés.
 2. **`mlock`** : la section 4.7 de la spec prévoit le verrouillage des pages sensibles en mémoire. Le code efface les secrets à la libération (`zeroize`) mais n'appelle pas `mlock`.
@@ -222,4 +222,4 @@ Un fichier d'import est une entrée hostile : un export altéré ou piégé ne d
 6. **Modèle formel** : la spec prévoit un modèle Tamarin ou ProVerif vérifié en CI. Il n'existe pas encore.
 7. **CLI** : la section 9.1 de la spec prévoit un passage par l'app Mac avec Touch ID. Au jalon 1 la CLI est en mode développement autonome (Secret Key en clair dans `device.bin`), écart assumé.
 8. **Liste des vaults non signée** : la spec (4.4) protège chaque vault par son manifeste, pas la liste des vaults du compte. Au jalon 1 cette liste n'est pas authentifiée : un vault planté est refusé (pas de manifeste signé valide), un vault déjà lu par l'appareil puis masqué est détecté (`VaultMissing`), mais un vault jamais lu par l'appareil peut être masqué sans détection. Liste signée prévue au jalon 2.
-9. **Fuzzing** : la spec dit "tous les parseurs". Le jalon 1 fuzze les sept points d'entrée listés en section 4, pas les parseurs d'import et d'export, qui n'existent pas encore.
+9. **Fuzzing** : la spec dit "tous les parseurs". Le jalon 1 fuzze les sept points d'entrée listés en section 4, pas les parseurs d'import et d'export, qui n'existent pas encore. Le jalon 5 ajoute une cible par parseur d'import, d'archive et de réponse externe (section 4).

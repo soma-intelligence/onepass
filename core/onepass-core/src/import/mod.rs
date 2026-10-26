@@ -144,6 +144,11 @@ pub fn detect(_file_name: &str, bytes: &[u8]) -> Option<Format> {
     if bytes.starts_with(b"PK\x03\x04") {
         return detect_zip(bytes);
     }
+    // KDBX is not supported, but reported as KeePass so that `parse` gives
+    // the explicit refusal.
+    if bytes.starts_with(&keepass::KDBX_MAGIC) {
+        return Some(Format::KeePassXml);
+    }
     let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
     let start = bytes.iter().position(|b| !b.is_ascii_whitespace())?;
     let body = bytes.get(start..)?;
@@ -303,5 +308,16 @@ mod tests {
         assert_eq!(Format::OnePassArchive.name(), "onepass");
         assert_eq!(Format::from_name("nope"), None);
         assert_eq!(Format::from_name("1PUX"), None);
+    }
+
+    #[test]
+    fn kdbx_detected_and_refused_with_message() {
+        let mut kdbx = keepass::KDBX_MAGIC.to_vec();
+        kdbx.extend_from_slice(&[0x01, 0x00, 0x04, 0x00, 0xFF, 0xFE]);
+        assert_eq!(detect("db.kdbx", &kdbx), Some(Format::KeePassXml));
+        assert_eq!(
+            parse(Format::KeePassXml, &kdbx).unwrap_err(),
+            Error::InvalidFormat("KeePass KDBX is not supported: export as KeePass 2 XML")
+        );
     }
 }
