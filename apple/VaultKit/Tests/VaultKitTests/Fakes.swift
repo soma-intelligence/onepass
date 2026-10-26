@@ -75,3 +75,55 @@ final class FailingReadKeychain: KeychainStore {
     func write(_ key: String, _ data: Data) throws { try inner.write(key, data) }
     func delete(_ key: String) throws { try inner.delete(key) }
 }
+
+/// Pasteboard double: tracks its own change count like `NSPasteboard`.
+final class FakePasteboard: PasteboardWriter {
+    struct State {
+        var contents: String?
+        var concealed = false
+        var expiresAfter: TimeInterval?
+        var changeCount = 0
+        var ownChange: Int?
+    }
+    private let state = Mutex(State())
+
+    var snapshot: State { state.withLock { $0 } }
+
+    func write(_ s: String, concealed: Bool, expiresAfter: TimeInterval) {
+        state.withLock {
+            $0.contents = s
+            $0.concealed = concealed
+            $0.expiresAfter = expiresAfter
+            $0.changeCount += 1
+            $0.ownChange = $0.changeCount
+        }
+    }
+
+    func clearIfUnchanged() {
+        state.withLock {
+            guard $0.ownChange == $0.changeCount else { return }
+            $0.contents = nil
+            $0.changeCount += 1
+            $0.ownChange = nil
+        }
+    }
+
+    /// Another app copies something.
+    func externalWrite(_ s: String) {
+        state.withLock {
+            $0.contents = s
+            $0.changeCount += 1
+        }
+    }
+}
+
+/// Records the sync notifications, in order.
+final class RecordingSync: SyncTrigger {
+    enum Event: Equatable { case written, unlocked, locked }
+    private let log = Mutex<[Event]>([])
+    var events: [Event] { log.withLock { $0 } }
+
+    func localChangesWritten() async { log.withLock { $0.append(.written) } }
+    func sessionUnlocked(_ session: Session) async { log.withLock { $0.append(.unlocked) } }
+    func sessionLocked() async { log.withLock { $0.append(.locked) } }
+}
