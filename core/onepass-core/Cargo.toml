@@ -20,7 +20,7 @@ slh-dsa = "=0.1.0"
 signature = "=2.3.0-pre.4"
 serde_bytes = "0.11.17"
 postcard = { version = "1", default-features = false, features = ["alloc"] }
-time = { version = "0.3", default-features = false, features = ["serde", "std"] }
+time = { version = "0.3", default-features = false, features = ["serde", "std", "parsing"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
 prost = "0.14"
 zxcvbn = "3"
