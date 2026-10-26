@@ -59,6 +59,9 @@ public enum RemoteStoreError: Error, Equatable, Sendable {
     case accountUnavailable
     /// Busy or rate limited server: retry, after the given delay when the server gave one.
     case retryable(after: Duration?)
+    /// The server lost everything it held (its zone was deleted and recreated). The caller forgets its
+    /// change token, queues every stored record again and runs a new round.
+    case zoneReset
     /// French message for the UI, never a record content.
     case other(String)
 }

@@ -100,10 +100,10 @@ struct CloudKitMappingTests {
         #expect(try CloudKitMapping.sendResult(name: name, isDeletion: false, error: CKError(.unknownItem)).get()
             == .conflict(server: RemoteRecord(name: name, version: 0, data: nil, serverMeta: nil)))
 
-        // Server side deletion: no server record in the error.
-        let gone = try CloudKitMapping.sendResult(
+        // No readable server record: the save failed, it is not a deletion.
+        let unreadable = try CloudKitMapping.sendResult(
             name: name, isDeletion: false, error: CKError(.serverRecordChanged)).get()
-        #expect(gone == .conflict(server: RemoteRecord(name: name, version: 0, data: nil, serverMeta: nil)))
+        #expect(unreadable == .failed(name: name))
 
         // Server record present.
         let server = try CloudKitMapping.record(
@@ -118,5 +118,36 @@ struct CloudKitMappingTests {
         #expect(throws: RemoteStoreError.offline) {
             try CloudKitMapping.sendResult(name: name, isDeletion: false, error: CKError(.networkUnavailable)).get()
         }
+    }
+
+    @Test func zoneLossIsDetectedAlsoInsidePartialFailures() {
+        #expect(CloudKitMapping.zoneLoss(in: CKError(.zoneNotFound)) == .notFound)
+        #expect(CloudKitMapping.zoneLoss(in: CKError(.userDeletedZone)) == .userDeleted)
+        #expect(CloudKitMapping.zoneLoss(in: CKError(.networkFailure)) == nil)
+        #expect(CloudKitMapping.zoneLoss(in: URLError(.timedOut)) == nil)
+        let id = CKRecord.ID(recordName: Self.name.string, zoneID: Self.zone)
+        let other = CKRecord.ID(recordName: "5.ffffffffffffffffffffffffffffffff", zoneID: Self.zone)
+        let partial = CKError(
+            .partialFailure,
+            userInfo: [CKPartialErrorsByItemIDKey: [id: CKError(.batchRequestFailed), other: CKError(.zoneNotFound)]])
+        #expect(CloudKitMapping.zoneLoss(in: partial) == .notFound)
+        #expect(CloudKitMapping.requiresZoneRecreation(partial))
+        #expect(!CloudKitMapping.requiresZoneRecreation(CKError(.serverRecordChanged)))
+    }
+
+    @Test func resetOnlyWhenStateWasLost() {
+        #expect(CloudKitMapping.resetsStore(.userDeleted, hadState: false))
+        #expect(CloudKitMapping.resetsStore(.notFound, hadState: true))
+        #expect(!CloudKitMapping.resetsStore(.notFound, hadState: false))
+    }
+
+    @Test func sameServerVersionComparesChangeTags() {
+        let id = CKRecord.ID(recordName: Self.name.string, zoneID: Self.zone)
+        let record = CKRecord(recordType: CloudKitMapping.recordType, recordID: id)
+        let meta = CloudKitMapping.systemFields(of: record)
+        #expect(CloudKitMapping.sameServerVersion(meta, meta))
+        // Non CloudKit metadata (InMemoryRemote tags) compares by bytes.
+        #expect(CloudKitMapping.sameServerVersion(Data([1, 0, 0, 0, 0, 0, 0, 0]), Data([1, 0, 0, 0, 0, 0, 0, 0])))
+        #expect(!CloudKitMapping.sameServerVersion(Data([1]), Data([2])))
     }
 }

@@ -372,6 +372,33 @@ impl SyncStore {
         tx.commit()
     }
 
+    /// The server lost everything (its zone was deleted and recreated): every
+    /// `base` row without a pending row becomes a pending row with the same
+    /// version and data, and every `server_meta` is cleared, so the next push
+    /// uploads the whole store as new records. One transaction. A manifest
+    /// keeps the `base` row it was built on as its ancestor (not held).
+    pub fn requeue_all(&mut self) -> Result<()> {
+        let tx = self.write_tx()?;
+        tx.execute(
+            "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
+             SELECT b.kind, b.id, b.version, b.data FROM base b
+             WHERE b.kind = ?1
+               AND NOT EXISTS (SELECT 1 FROM pending p WHERE p.kind = b.kind AND p.id = b.id)",
+            params![RecordKind::Manifest.code()],
+        )
+        .map_err(store_err)?;
+        tx.execute(
+            "INSERT INTO pending (kind, id, version, data)
+             SELECT b.kind, b.id, b.version, b.data FROM base b
+             WHERE NOT EXISTS (SELECT 1 FROM pending p WHERE p.kind = b.kind AND p.id = b.id)",
+            [],
+        )
+        .map_err(store_err)?;
+        tx.execute("UPDATE base SET server_meta = NULL", [])
+            .map_err(store_err)?;
+        tx.commit()
+    }
+
     /// Park a change received from the server. Nothing is visible until
     /// `commit_remote`. A later change for the same key replaces it.
     pub fn stage_remote(&mut self, c: RemoteChange) -> Result<()> {
@@ -832,6 +859,46 @@ mod tests {
         assert_eq!(count(&s, "pending"), 0);
         assert_eq!(count(&s, "base"), 0);
         assert_eq!(s.get(RecordKind::Keyset, id).unwrap(), None);
+    }
+
+    #[test]
+    fn requeue_all_resends_base_rows_without_meta() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (a, b, m) = (Id::new(), Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::Keyset, a, 1, b"a".to_vec());
+        seed_base(&mut s, RecordKind::Manifest, m, 4, b"m".to_vec());
+        seed_base(&mut s, RecordKind::Keyset, b, 2, b"old".to_vec());
+        s.put(rec(b, RecordKind::Keyset, 3, b"newer")).unwrap();
+        s.mark_pushed(RecordKind::Keyset, a, 9, Some(vec![1]))
+            .unwrap();
+        s.requeue_all().unwrap();
+
+        // Base rows without a pending row are pending again, same version and data.
+        let pending = s.pending_changes().unwrap();
+        assert_eq!(pending.len(), 3);
+        let find = |id: Id| pending.iter().find(|c| c.id == id).unwrap();
+        assert_eq!(
+            (find(a).version, find(a).data.clone()),
+            (1, Some(b"a".to_vec()))
+        );
+        assert_eq!(
+            (find(m).version, find(m).data.clone()),
+            (4, Some(b"m".to_vec()))
+        );
+        // An existing pending row is kept as is.
+        assert_eq!(
+            (find(b).version, find(b).data.clone()),
+            (3, Some(b"newer".to_vec()))
+        );
+        // No server tag survives, the manifest is not held.
+        for id in [a, b] {
+            assert_eq!(s.server_meta(RecordKind::Keyset, id).unwrap(), None);
+        }
+        assert_eq!(s.server_meta(RecordKind::Manifest, m).unwrap(), None);
+        assert_eq!(count(&s, "base"), 3);
+        // Idempotent.
+        s.requeue_all().unwrap();
+        assert_eq!(s.pending_changes().unwrap().len(), 3);
     }
 
     #[test]

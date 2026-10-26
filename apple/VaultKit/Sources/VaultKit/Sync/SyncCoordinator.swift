@@ -182,12 +182,21 @@ public actor SyncCoordinator: SyncTrigger {
         setStatus(.syncing)
         do {
             var turn = 0
+            var resets = 0
             while true {
-                turn += 1
-                try await fetchAll(remote)
-                try await rebaseIfUnlocked()
-                if try await sendPending(remote) { break }
-                if turn >= Self.maxTurns { throw RoundError.unsettled }
+                do {
+                    turn += 1
+                    try await fetchAll(remote)
+                    try await rebaseIfUnlocked()
+                    if try await sendPending(remote) { break }
+                    if turn >= Self.maxTurns { throw RoundError.unsettled }
+                } catch RemoteStoreError.zoneReset {
+                    // The server lost its data: upload everything again, from a fresh fetch.
+                    resets += 1
+                    if resets > 2 { throw RoundError.unsettled }
+                    try await resetForLostZone()
+                    turn = 0
+                }
             }
             retryAttempt = 0
             retryTask?.cancel()
@@ -215,7 +224,7 @@ public actor SyncCoordinator: SyncTrigger {
             switch error {
             case .accountUnavailable: setStatus(.error("Aucun compte iCloud n'est disponible."))
             case .other(let message): setStatus(.error(message))
-            case .offline, .retryable: setStatus(.offline)
+            case .offline, .retryable, .zoneReset: setStatus(.offline)
             }
         } catch {
             setStatus(.error(VaultError(error).localizedMessage))
@@ -231,9 +240,20 @@ public actor SyncCoordinator: SyncTrigger {
         let store = store
         let hook = afterPageStaged
         var token = try await CoreThread.run { try store.meta(key: Self.tokenKey) }
+        // An empty token is a cleared one (a lost zone): fetch from the start.
+        if token?.isEmpty == true { token = nil }
         var changed = 0
+        var resets = 0
         while true {
-            let batch = try await remote.fetchChanges(since: token)
+            let batch: RemoteBatch
+            do {
+                batch = try await remote.fetchChanges(since: token)
+            } catch RemoteStoreError.zoneReset where resets == 0 {
+                resets += 1
+                try await resetForLostZone()
+                token = nil
+                continue
+            }
             let valid = batch.changes.filter(Self.isValid)
             if valid.count < batch.changes.count {
                 Self.log.notice("skipped \(batch.changes.count - valid.count, privacy: .public) unknown remote records")
@@ -244,7 +264,9 @@ public actor SyncCoordinator: SyncTrigger {
                 for change in valid {
                     let known = try store.serverMeta(kind: change.name.kind, id: change.name.id)
                     if change.data != nil {
-                        if let meta = change.serverMeta, meta == known { continue }
+                        if let meta = change.serverMeta, let known, CloudKitMapping.sameServerVersion(meta, known) {
+                            continue
+                        }
                         count += 1
                     } else if known != nil {
                         count += 1
@@ -260,6 +282,16 @@ public actor SyncCoordinator: SyncTrigger {
         }
         let vaults = try await CoreThread.run { try store.commitRemote() }
         if changed > 0 || !vaults.isEmpty { emitRemoteChange() }
+    }
+
+    /// The remote lost everything: every stored record is queued again (server tags forgotten), then the
+    /// change token is cleared. In that order, so an interruption in between still resends everything.
+    private func resetForLostZone() async throws {
+        let store = store
+        try await CoreThread.run {
+            try store.requeueAll()
+            try store.setMeta(key: Self.tokenKey, value: Data())
+        }
     }
 
     /// A record the core can stage: known kind (1 to 6), canonical id, version that fits SQLite.

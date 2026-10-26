@@ -29,6 +29,7 @@ public actor InMemoryRemote: RemoteRecordStore {
     private var offline = false
     private var available = true
     private var nextFailure: RemoteStoreError?
+    private var resetPending = false
     /// Every batch received, in order (names only).
     public private(set) var sentBatches: [[RecordName]] = []
 
@@ -110,6 +111,10 @@ public actor InMemoryRemote: RemoteRecordStore {
 
     private func checkFailure() throws {
         if offline { throw RemoteStoreError.offline }
+        if resetPending {
+            resetPending = false
+            throw RemoteStoreError.zoneReset
+        }
         if let failure = nextFailure {
             nextFailure = nil
             throw failure
@@ -167,6 +172,14 @@ public actor InMemoryRemote: RemoteRecordStore {
     /// The next fetch or send throws `error`, once.
     public func failNext(with error: RemoteStoreError) {
         nextFailure = error
+    }
+
+    /// Simulates a lost zone: every record is wiped (log positions and tags keep growing) and the next
+    /// fetch or send throws `RemoteStoreError.zoneReset`, once.
+    public func simulateReset() {
+        records.removeAll()
+        withheld.removeAll()
+        resetPending = true
     }
 
     public func setAccountAvailable(_ available: Bool) {

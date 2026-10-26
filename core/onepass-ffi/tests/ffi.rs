@@ -815,6 +815,32 @@ fn sync_handle_sees_pending_after_save() {
 }
 
 #[test]
+fn requeue_all_makes_pushed_records_pending_again() {
+    let fx = fixture();
+    let handle = open_sync_store(fx.path.clone()).unwrap();
+    saved_login(&fx, "pw-requeue");
+    let first = handle.pending_changes().unwrap();
+    for c in &first {
+        handle
+            .mark_pushed(c.kind, c.id.clone(), c.version, Some(vec![5]))
+            .unwrap();
+    }
+    assert!(handle.pending_changes().unwrap().is_empty());
+    let some = &first[0];
+    assert_eq!(
+        handle.server_meta(some.kind, some.id.clone()).unwrap(),
+        Some(vec![5])
+    );
+    handle.requeue_all().unwrap();
+    let again = handle.pending_changes().unwrap();
+    assert_eq!(again.len(), first.len());
+    assert_eq!(
+        handle.server_meta(some.kind, some.id.clone()).unwrap(),
+        None
+    );
+}
+
+#[test]
 fn locked_handle_stages_and_commits_a_remote_change() {
     let fx = fixture();
     fx.session.lock();

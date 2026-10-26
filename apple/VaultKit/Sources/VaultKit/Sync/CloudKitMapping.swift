@@ -26,7 +26,8 @@ public enum CloudKitMapping {
         let recordID = CKRecord.ID(recordName: remote.name.string, zoneID: zoneID)
         let record: CKRecord
         if let meta = remote.serverMeta, let known = self.record(fromSystemFields: meta),
-            known.recordID == recordID
+            known.recordID.recordName == recordID.recordName,
+            known.recordID.zoneID.zoneName == zoneID.zoneName
         {
             record = known
         } else {
@@ -75,6 +76,17 @@ public enum CloudKitMapping {
         return CKRecord(coder: coder)
     }
 
+    /// Whether two `serverMeta` values describe the same server version. System field archives compare by
+    /// `recordChangeTag` (the archive bytes can differ for the same version); anything else by bytes.
+    public static func sameServerVersion(_ lhs: Data, _ rhs: Data) -> Bool {
+        if let left = record(fromSystemFields: lhs), let right = record(fromSystemFields: rhs),
+            let leftTag = left.recordChangeTag, let rightTag = right.recordChangeTag
+        {
+            return left.recordID.recordName == right.recordID.recordName && leftTag == rightTag
+        }
+        return lhs == rhs
+    }
+
     // MARK: - Tokens
 
     public static func encode(token: CKServerChangeToken) -> Data? {
@@ -93,6 +105,39 @@ public enum CloudKitMapping {
     }
 
     // MARK: - Errors
+
+    /// A zone that is gone from the server.
+    public enum ZoneLoss: Equatable, Sendable {
+        /// `zoneNotFound`: the zone never existed or was deleted.
+        case notFound
+        /// `userDeletedZone`: the user deleted the data in iCloud settings.
+        case userDeleted
+    }
+
+    /// The zone loss in `error`, also when it comes inside a partial failure.
+    public static func zoneLoss(in error: Error) -> ZoneLoss? {
+        guard let ck = error as? CKError else { return nil }
+        switch ck.code {
+        case .zoneNotFound: return .notFound
+        case .userDeletedZone: return .userDeleted
+        case .partialFailure:
+            let nested = (ck.partialErrorsByItemID ?? [:]).values.compactMap { zoneLoss(in: $0) }
+            return nested.contains(.userDeleted) ? .userDeleted : nested.first
+        default: return nil
+        }
+    }
+
+    /// Whether the zone has to be created again before a retry.
+    public static func requiresZoneRecreation(_ error: Error) -> Bool {
+        zoneLoss(in: error) != nil
+    }
+
+    /// Whether a recreated zone means the server lost data we hold state for (the caller must upload
+    /// everything again) rather than a zone that was simply not created yet. `hadState`: a change token
+    /// was given, or a sent record carried server metadata.
+    public static func resetsStore(_ loss: ZoneLoss, hadState: Bool) -> Bool {
+        loss == .userDeleted || hadState
+    }
 
     /// The store error of a CloudKit failure, nil when `error` needs a case by case answer
     /// (`serverRecordChanged`, `unknownItem`, `zoneNotFound`, `changeTokenExpired`, partial failures).
@@ -136,8 +181,8 @@ public enum CloudKitMapping {
             {
                 return .success(.conflict(server: remote))
             }
-            // The server record is gone or unreadable: treat as a server side deletion.
-            return .success(.conflict(server: RemoteRecord(name: name, version: 0, data: nil, serverMeta: nil)))
+            // No readable server record: never a deletion (only `unknownItem` on a save means that).
+            return .success(.failed(name: name))
         default:
             return .failure(storeError(for: error))
         }

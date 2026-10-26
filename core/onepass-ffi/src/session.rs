@@ -402,4 +402,9 @@ impl SyncStoreHandle {
     pub fn has_account(&self) -> Result<bool, OnePassError> {
         Ok(self.guard().has_account()?)
     }
+
+    /// The server lost its data: queue every stored record again and forget the server tags.
+    pub fn requeue_all(&self) -> Result<(), OnePassError> {
+        Ok(self.guard().requeue_all()?)
+    }
 }

@@ -264,6 +264,32 @@ struct SyncCoordinatorTests {
         #expect(await b.coordinator.status.isIdle)
     }
 
+    @Test func lostZoneIsUploadedAgainAndOtherDeviceConverges() async throws {
+        let remote = InMemoryRemote()
+        let (a, b, atlas) = try await twoSyncedDevices(remote: remote)
+        defer { a.cleanUp(); b.cleanUp() }
+        await b.sync()
+        let before = await remote.tags().keys.sorted { $0.string < $1.string }
+        #expect(!before.isEmpty)
+
+        await remote.simulateReset()
+        #expect(await remote.tags().isEmpty)
+        await a.sync()
+        #expect(await a.coordinator.status.isIdle)
+        #expect(try await a.pendingChanges().isEmpty)
+        // The server holds every record again.
+        #expect(await remote.tags().keys.sorted { $0.string < $1.string } == before)
+
+        // The other device converges on a change made after the reset.
+        try await rename(a.session, itemID: atlas.id, vaultID: atlas.vaultId, to: "Projet Atlas v2")
+        await a.sync()
+        await b.sync()
+        await b.session.reload()
+        #expect(b.titles == a.titles)
+        #expect(b.titles.contains("Projet Atlas v2"))
+        #expect(await b.coordinator.status.isIdle)
+    }
+
     @Test func conflictOnSendIsRestagedAndResent() async throws {
         let remote = InMemoryRemote()
         let a = try SyncDevice(remote: remote, name: "A")
