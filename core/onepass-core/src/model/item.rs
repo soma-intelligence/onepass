@@ -229,6 +229,61 @@ mod tests {
     }
 
     #[test]
+    fn debug_masks_every_remaining_secret_kind() {
+        use crate::model::field::{PasskeyCredential, SshKeyValue};
+        let mut item = sample_login();
+        item.sections.push(Section {
+            id: "secrets".into(),
+            label: "Secrets".into(),
+            fields: vec![
+                field(
+                    "concealed",
+                    FieldType::Concealed,
+                    FieldValue::Concealed(Zeroizing::new("concealed-plain-7f3a".into())),
+                ),
+                field(
+                    "mnemonic",
+                    FieldType::Mnemonic,
+                    FieldValue::Mnemonic(Zeroizing::new("mnemonic-plain-9c1d".into())),
+                ),
+                field(
+                    "passkey",
+                    FieldType::Passkey,
+                    FieldValue::Passkey(PasskeyCredential {
+                        rp_id: "example.com".into(),
+                        user_name: "quentin".into(),
+                        user_handle: vec![1, 2, 3],
+                        credential_id: vec![4, 5, 6],
+                        private_key: Zeroizing::new(vec![231, 232, 233, 234, 235]),
+                        created_at: datetime!(2026-10-25 12:00 UTC),
+                    }),
+                ),
+                field(
+                    "ssh",
+                    FieldType::SshKey,
+                    FieldValue::SshKey(SshKeyValue {
+                        private_pem: Zeroizing::new("pem-plain-b82e".into()),
+                        public_openssh: "ssh-ed25519 AAAA".into(),
+                        fingerprint_sha256: "SHA256:abc".into(),
+                    }),
+                ),
+            ],
+        });
+        for s in [format!("{item:?}"), format!("{item:#?}")] {
+            for plain in [
+                "concealed-plain-7f3a",
+                "mnemonic-plain-9c1d",
+                "pem-plain-b82e",
+                "231, 232, 233",
+                "231,\n",
+            ] {
+                assert!(!s.contains(plain), "leaked {plain}");
+            }
+            assert!(s.contains("**"));
+        }
+    }
+
+    #[test]
     fn subtitle_uses_username() {
         assert_eq!(sample_login().subtitle(), "quentin@example.com");
     }
