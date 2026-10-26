@@ -10,3 +10,6 @@ apple/build/
 apple/VaultKit/Sources/OnePassCore/
 apple/**/.build/
 apple/DerivedData/
+
+# ProVerif (formal/run.sh logs and intermediate files)
+formal/out/

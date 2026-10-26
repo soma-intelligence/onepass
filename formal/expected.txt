@@ -1,0 +1,18 @@
+# Résultats attendus du modèle formel, lus par formal/run.sh.
+# Format : fichier.pv | texte exact de la requête tel qu'imprimé par ProVerif | true|false
+# "false" = attaque trouvée. Il n'est permis que pour les requêtes de sanité
+# (atteignabilité de la fin du protocole) et les limites documentées (ruling F-03).
+# Un résultat "cannot be proved" ne correspond jamais à une ligne de ce fichier.
+
+# sanity.pv : auto-test de la bibliothèque commune et du harnais.
+sanity.pv | not attacker(secret_msg[]) | true
+sanity.pv | not attacker(auk_msg[]) | true
+sanity.pv | not attacker(bridge_msg[]) | true
+# Sanité : un secret scellé sous une clé dérivée de données publiques fuit.
+sanity.pv | not attacker(leaked_msg[]) | false
+sanity.pv | event(Received(m_4)) ==> event(Sent(m_4)) | true
+# Sanité : le récepteur va au bout.
+sanity.pv | not event(Received(m_4)) | false
+# Sanité : l'échange KEM du pont va au bout.
+sanity.pv | not event(BridgeDone) | false
+sanity.pv | Weak secret pw | true
