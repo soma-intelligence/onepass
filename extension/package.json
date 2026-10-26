@@ -8,7 +8,7 @@
     "build:chromium": "node build.mjs chromium",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test",
+    "e2e": "playwright test -c e2e/playwright.config.ts",
     "check": "npm run typecheck && npm run test && npm run build"
   },
   "devDependencies": {

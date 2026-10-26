@@ -1,7 +1,9 @@
 // Build script: bundles the extension for each browser into dist/<browser>/.
-// Usage: node build.mjs [chromium|firefox|safari ...] [--dev]
+// Usage: node build.mjs [chromium|firefox|safari ...] [--dev] [--e2e]
 // Source maps are off by default (this is a password manager); --dev enables
-// inline maps.
+// inline maps. --e2e writes dist/<browser>-e2e/ instead, whose service worker
+// entry is src/background/e2e-entry.ts (the regular one plus a handle for the
+// end-to-end security suite); the regular build never bundles that file.
 import { build as esbuild } from "esbuild";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -35,8 +37,8 @@ export function mergeManifest(browser, dir = join(root, "manifests")) {
   return merged;
 }
 
-async function buildBrowser(browser, dev) {
-  const out = join(root, "dist", browser);
+async function buildBrowser(browser, dev, e2e = false) {
+  const out = join(root, "dist", e2e ? `${browser}-e2e` : browser);
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   const common = {
@@ -48,7 +50,7 @@ async function buildBrowser(browser, dev) {
   };
   await esbuild({
     ...common,
-    entryPoints: [join(root, "src/background/index.ts")],
+    entryPoints: [join(root, e2e ? "src/background/e2e-entry.ts" : "src/background/index.ts")],
     outfile: join(out, "background.js"),
     format: browser === "firefox" ? "iife" : "esm",
   });
@@ -74,16 +76,17 @@ async function buildBrowser(browser, dev) {
   );
 }
 
-export async function buildAll(browsers = BROWSERS, dev = false) {
-  for (const b of browsers) await buildBrowser(b, dev);
+export async function buildAll(browsers = BROWSERS, dev = false, e2e = false) {
+  for (const b of browsers) await buildBrowser(b, dev, e2e);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const args = process.argv.slice(2);
   const dev = args.includes("--dev");
+  const e2e = args.includes("--e2e");
   const picked = args.filter((a) => !a.startsWith("--"));
   for (const b of picked) {
     if (!BROWSERS.includes(b)) throw new Error(`unknown browser: ${b}`);
   }
-  await buildAll(picked.length ? picked : BROWSERS, dev);
+  await buildAll(picked.length ? picked : BROWSERS, dev, e2e);
 }

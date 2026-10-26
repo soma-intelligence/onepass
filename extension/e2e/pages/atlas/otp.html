@@ -1,0 +1,8 @@
+<div class="brand">Atlas Cloud</div>
+<h1>Vérification en deux étapes</h1>
+<p class="error" id="error">{{error}}</p>
+<form id="otp" action="{{action}}" method="post">
+  <label for="code">Code de vérification</label>
+  <input id="code" name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+  <button id="submit" type="submit">Valider</button>
+</form>
