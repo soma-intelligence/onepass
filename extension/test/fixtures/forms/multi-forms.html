@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr"><head><title>Atlas Cloud</title></head>
+<body>
+  <header>
+    <form id="search" action="/recherche" role="search">
+      <input id="q" name="q" type="search" placeholder="Rechercher">
+      <button id="q-go" type="submit">OK</button>
+    </form>
+  </header>
+  <section>
+    <form id="login" action="/session" method="post">
+      <h2>Déjà client ?</h2>
+      <input id="lu" name="email" type="email" placeholder="Adresse e-mail">
+      <input id="lp" name="password" type="password" placeholder="Mot de passe">
+      <button id="l-go" type="submit">Connexion</button>
+    </form>
+    <form id="signup" action="/inscription" method="post">
+      <h2>Nouveau client ?</h2>
+      <input id="su" name="email" type="email" placeholder="Adresse e-mail">
+      <input id="sp" name="password" type="password" autocomplete="new-password" placeholder="Choisissez un mot de passe">
+      <button id="s-go" type="submit">Créer un compte</button>
+    </form>
+  </section>
+</body></html>

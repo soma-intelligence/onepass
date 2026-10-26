@@ -45,6 +45,11 @@ export type FormKind = "login" | "signup" | "change_password" | "otp" | "card" |
 export interface FieldInfo {
   ref: string;
   role: FieldRole;
+  /**
+   * Refs of every cell of a split field, in order (spec 8.2: 4 to 8 one-character
+   * OTP inputs form one logical field). `ref` is then the first cell.
+   */
+  parts?: string[];
 }
 
 export interface FormInfo {
