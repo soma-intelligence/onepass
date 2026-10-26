@@ -14,6 +14,7 @@ final class SessionHarness {
     let clock = FakeClock()
     let pasteboard = FakePasteboard()
     let sync = RecordingSync()
+    let presence = FakePresence()
     let settings: VaultSettings
     let environment: VaultEnvironment
 
@@ -36,7 +37,8 @@ final class SessionHarness {
             sync: sync,
             clock: clock,
             pasteboard: pasteboard,
-            accountKdf: Self.fastKdf)
+            accountKdf: Self.fastKdf,
+            presence: presence)
     }
 
     func makeSession() -> VaultSession { VaultSession(environment: environment) }

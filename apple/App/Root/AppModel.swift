@@ -33,6 +33,10 @@ final class AppModel {
     var selection: ItemFilter = .all
     var selectedItem: ItemRef?
     var editing = false
+    #if DEBUG
+    /// `-OnePassDebugNewItem`: a new item's editor shown by the placeholder browse screen.
+    var debugNewDraft: ItemDraft?
+    #endif
 
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var started = false
@@ -83,6 +87,7 @@ final class AppModel {
         started = true
         #if DEBUG
         seedAccountIfRequested()
+        openDebugItemIfRequested()
         #endif
         guard let coordinator else { return }
         tasks.append(Task { [weak self] in

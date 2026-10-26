@@ -27,11 +27,14 @@ public struct VaultEnvironment: Sendable {
     public var pasteboard: any PasteboardWriter
     /// Argon2id parameters for new accounts; nil = the core default (tests pass fast ones).
     public var accountKdf: FfiKdfParams?
+    /// Confirms the user before a `reprompt` item shows its secrets.
+    public var presence: any PresenceChecker
 
     public init(
         databaseURL: URL, keychain: any KeychainStore, biometrics: BiometricUnlock,
         settings: VaultSettings, sync: any SyncTrigger, clock: any BootClock,
-        pasteboard: any PasteboardWriter, accountKdf: FfiKdfParams? = nil
+        pasteboard: any PasteboardWriter, accountKdf: FfiKdfParams? = nil,
+        presence: any PresenceChecker = SystemPresenceChecker()
     ) {
         self.databaseURL = databaseURL
         self.keychain = keychain
@@ -41,6 +44,7 @@ public struct VaultEnvironment: Sendable {
         self.clock = clock
         self.pasteboard = pasteboard
         self.accountKdf = accountKdf
+        self.presence = presence
     }
 
     /// Suffix of the shared keychain access group `$(AppIdentifierPrefix)me.somalabs.onepass.shared`.

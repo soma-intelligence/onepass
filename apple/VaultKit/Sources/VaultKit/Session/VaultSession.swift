@@ -561,6 +561,46 @@ public final class VaultSession {
         noteActivity()
     }
 
+    // MARK: - Reprompt
+
+    /// `reprompt` items: when biometric unlock is enrolled, Face ID / Touch ID (or the device
+    /// passcode) confirms the user. False means: ask the master password (`verifyMasterPassword`).
+    public func confirmUserPresence(prompt: String) async -> Bool {
+        guard state == .unlocked, canUseBiometrics else { return false }
+        let gen = generation
+        let confirmed = await environment.presence.confirm(prompt: prompt)
+        guard confirmed, gen == generation, state == .unlocked else { return false }
+        noteActivity()
+        return true
+    }
+
+    /// Checks the master password without touching the open session: a throwaway core session is
+    /// opened then locked. Counts toward the failure throttle like an unlock.
+    public func verifyMasterPassword(_ password: String) async throws {
+        guard state == .unlocked else { throw fail(.passwordRequired) }
+        try checkLockout()
+        let secretKey = try loadSecretKey().secretKey
+        try beginPasswordCheck()
+        defer { passwordCheckInFlight = false }
+        let path = dbPath
+        let gen = generation
+        do {
+            try await background {
+                var unlocked = try unlockWithPassword(dbPath: path, password: password, secretKey: secretKey)
+                Self.wipe(&unlocked.auk)
+                unlocked.session.lock()
+            }
+        } catch {
+            let failure = VaultError(error)
+            if failure == .wrongPassword { recordFailedUnlock() }
+            throw fail(failure)
+        }
+        settings.resetFailedUnlocks()
+        settings.lockoutUntil = nil
+        guard gen == generation, state == .unlocked else { throw fail(.passwordRequired) }
+        noteActivity()
+    }
+
     // MARK: - Plumbing
 
     /// Lists loaded after an unlock or a write.

@@ -11,12 +11,18 @@ public struct FieldRow: View {
     private let autoHideAfter: TimeInterval
     private let onCopy: () -> Void
     private let onReveal: ((Bool) -> Void)?
+    private let copyIdentifier: String?
+    private let allowsLarge: Bool
+
+    /// What a masked value shows (spec: the mockup's eleven bullets).
+    public static let mask = "•••••••••••"
 
     @State private var disclosure = FieldDisclosure()
 
     public init(
         label: String, value: String, isSecret: Bool, monospaced: Bool,
         autoHideAfter: TimeInterval = 30,
+        copyIdentifier: String? = nil, allowsLarge: Bool = true,
         onCopy: @escaping () -> Void, onReveal: ((Bool) -> Void)?
     ) {
         self.label = label
@@ -26,6 +32,8 @@ public struct FieldRow: View {
         self.autoHideAfter = autoHideAfter
         self.onCopy = onCopy
         self.onReveal = onReveal
+        self.copyIdentifier = copyIdentifier
+        self.allowsLarge = allowsLarge
     }
 
     private var revealed: Bool { disclosure.revealed }
@@ -38,7 +46,7 @@ public struct FieldRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.footnote).foregroundStyle(.secondary)
-                Text(hidden ? "••••••••" : value)
+                Text(hidden ? Self.mask : value)
                     .font(monospaced ? .body.monospaced() : .body)
                     .textSelection(.disabled)
                     .accessibilityLabel(Text(label))
@@ -47,14 +55,17 @@ public struct FieldRow: View {
             Spacer(minLength: 0)
             Menu {
                 Button("Copier", systemImage: "doc.on.doc", action: onCopy)
+                    .accessibilityIdentifier(copyIdentifier ?? "")
                 if isSecret {
                     Button(
                         revealed ? "Masquer" : "Révéler",
                         systemImage: revealed ? "eye.slash" : "eye"
                     ) { setRevealed(!revealed) }
                 }
-                Button("Afficher en grand", systemImage: "arrow.up.left.and.arrow.down.right") {
-                    showLarge()
+                if allowsLarge {
+                    Button("Afficher en grand", systemImage: "arrow.up.left.and.arrow.down.right") {
+                        showLarge()
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")

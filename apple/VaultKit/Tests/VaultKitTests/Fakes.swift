@@ -127,3 +127,17 @@ final class RecordingSync: SyncTrigger {
     func sessionUnlocked(_ session: Session) async { log.withLock { $0.append(.unlocked) } }
     func sessionLocked() async { log.withLock { $0.append(.locked) } }
 }
+
+/// Answers the presence prompt with a preset result and counts the prompts.
+final class FakePresence: PresenceChecker {
+    private let state = Mutex<(answer: Bool, prompts: Int)>((true, 0))
+    var prompts: Int { state.withLock { $0.prompts } }
+    func answer(_ value: Bool) { state.withLock { $0.answer = value } }
+
+    func confirm(prompt: String) async -> Bool {
+        state.withLock {
+            $0.prompts += 1
+            return $0.answer
+        }
+    }
+}

@@ -66,23 +66,47 @@ struct RootView: View {
     }
 }
 
-/// The unlocked app. Placeholder until the browse screens land (Tasks 14 and 15).
+/// The unlocked app. Placeholder until the browse screens land (Tasks 14 and 15): shows the
+/// selected item's detail when there is one.
 struct BrowseRoot: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         NavigationStack {
-            EmptyState(
-                title: String(localized: "OnePass est déverrouillé"), systemImage: "lock.open",
-                message: String(localized: "Les coffres et les éléments s'afficheront ici."))
-                .navigationTitle("OnePass")
+            content
                 .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
+                    ToolbarItem(placement: .navigation) {
                         Button("Verrouiller", systemImage: "lock") { model.lock() }
                             .accessibilityIdentifier("app.lock")
                     }
                 }
         }
         .onTapGesture { model.session.noteActivity() }
+    }
+
+    @ViewBuilder private var content: some View {
+        if let ref = model.selectedItem {
+            ItemDetailView(ref: ref).id(ref)
+        } else if let draft = debugDraft {
+            ItemEditorView(draft: draft, isNew: true) { saved in
+                #if DEBUG
+                model.debugNewDraft = nil
+                #endif
+                if let saved { model.selectedItem = ItemRef(vaultID: saved.vaultId, itemID: saved.id) }
+            }
+        } else {
+            EmptyState(
+                title: String(localized: "OnePass est déverrouillé"), systemImage: "lock.open",
+                message: String(localized: "Les coffres et les éléments s'afficheront ici."))
+                .navigationTitle("OnePass")
+        }
+    }
+
+    private var debugDraft: ItemDraft? {
+        #if DEBUG
+        model.debugNewDraft
+        #else
+        nil
+        #endif
     }
 }
