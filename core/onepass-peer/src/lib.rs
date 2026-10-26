@@ -9,6 +9,7 @@
 //! This crate holds the `unsafe` code of the MCP server and the SSH agent:
 //! libc calls in `cred` and Security.framework calls in `macos`, each block
 //! with a SAFETY comment. Everything else is safe Rust.
+#![deny(unsafe_code)]
 
 pub mod code;
 pub mod cred;
@@ -16,7 +17,7 @@ pub mod cred;
 mod macos;
 
 pub use code::{
-    ClientIdentity, CodeIdentity, LAUNCHERS, MAX_LAUNCHERS, PeerError, file_sha256,
-    identify_mcp_parent, identify_peer, identify_pid,
+    ClientIdentity, CodeIdentity, LAUNCHERS, LINUX_LAUNCHER_PATHS, MAX_LAUNCHERS, PeerError,
+    file_sha256, identify_mcp_parent, identify_peer, identify_pid, identity_of_file,
 };
 pub use cred::{PeerCred, effective_uid, exe_path, parent_of, parent_pid, peer_cred};

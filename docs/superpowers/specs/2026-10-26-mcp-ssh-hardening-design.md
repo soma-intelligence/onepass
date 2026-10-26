@@ -36,21 +36,26 @@ Une crate dédiée regroupe ce que le noyau sait du processus en face :
 - `CodeIdentity` : ce que le système dit du code exécuté.
   - `Platform { identifier }` : binaire Apple (exigence `anchor apple`).
   - `Team { team_id, identifier }` : signé par un développeur (exigence `anchor apple generic` valide, équipe lue dans les informations de signature).
-  - `Unsigned { path, sha256 }` : non signé ou signé ad hoc (tout binaire compilé localement sur Apple Silicon), épinglé par l'empreinte SHA-256 du fichier exécutable.
-- `identify(pid | audit_token) -> ClientIdentity { code: CodeIdentity, exe, pid, chain }`. Sur macOS, `SecCodeCopyGuestWithAttributes` (par jeton d'audit pour un socket, sinon par pid), `SecCodeCheckValidity`, puis `SecCodeCopySigningInformation` pour l'équipe et l'identifiant. Un code dont la signature ne se vérifie pas (modifié sur le disque) est `Unsigned`. Sur Linux, toujours `Unsigned`.
-- Identifiant stable d'un client : `platform:<identifier>`, `team:<team_id>:<identifier>`, `unsigned:<sha256>`.
+  - `AdHoc { path, cdhash }` (macOS) : signé ad hoc (tout binaire compilé localement sur Apple Silicon) ou dont la signature de développeur ne tient pas, épinglé par le hachage du répertoire de code (cdhash) que le noyau a enregistré pour l'image en cours d'exécution (`csops` par pid, `csops_audittoken` par jeton d'audit), jamais par une relecture du fichier.
+  - `Unsigned { path, sha256 }` (Linux seulement) : épinglé par l'empreinte SHA-256 de l'image en cours d'exécution, lue par `/proc/<pid>/exe`, qui reste liée à cette image même si le chemin est remplacé.
+  - Un code macOS sans aucune signature (possible seulement sur Intel) est refusé (`Unreadable("unsigned code")`), de même qu'une image que le noyau ne tient plus pour valide.
+- `identify(pid | audit_token) -> ClientIdentity { code: CodeIdentity, exe, pid, chain }`. Sur macOS, `SecCodeCopyGuestWithAttributes` (par jeton d'audit pour un socket, sinon par pid), le cdhash du noyau, puis `SecCodeCheckValidity` contre des exigences qui nomment ce cdhash (`anchor apple and cdhash H"..."`, puis `anchor apple generic and ...`) : une identité de plateforme ou d'équipe ne vaut que pour l'image exacte en cours d'exécution. `SecCodeCopySigningInformation` donne l'équipe et l'identifiant, revérifiés par une exigence qui les nomme exactement. Tout code qui ne satisfait aucune des deux exigences est `AdHoc`. Avec un jeton d'audit, le chemin de l'exécutable ne vient que de l'objet de code, jamais d'une lecture par pid. Sur Linux, toujours `Unsigned`.
+- `identity_of_file(path)` pour l'appairage explicite (`--exe`) : sur macOS le cdhash du code statique (égal à celui du noyau pour un binaire non modifié), après validation complète des pages ; plateforme et équipe comme pour un processus. Sur Linux, l'empreinte SHA-256 du fichier.
+- Identifiant stable d'un client : `platform:<identifier>`, `team:<team_id>:<identifier>`, `adhoc:<cdhash>` (macOS), `unsigned:<sha256>` (Linux).
 
 Le module `peer.rs` de `onepass-ssh-agent` est remplacé par cette crate.
 
 Ruling: identité de code par les exigences de signature du système (Security.framework) plutôt que par le chemin - un chemin se remplace, une signature d'équipe non - coût si faux : un client signé mais compromis reste accepté (hors périmètre, attaquant root ou chaîne de signature compromise).
 
-Ruling: binaire ad hoc ou non signé épinglé par l'empreinte SHA-256 de son fichier - sur Apple Silicon tout binaire local est signé ad hoc, sans identité ; l'empreinte change à chaque recompilation - coût si faux : il faut réappairer un outil local après chaque mise à jour.
+Ruling: binaire ad hoc épinglé sur macOS par le cdhash que le noyau tient pour l'image en cours d'exécution, jamais par le fichier - un attaquant du même uid peut renommer un autre fichier sur le chemin après `exec`, et une relecture du fichier lui prêterait l'identité du remplaçant ; le cdhash change à chaque recompilation - coût si faux : il faut réappairer un outil local après chaque mise à jour.
+
+Ruling: `Unsigned` réservé à Linux, épinglé par l'empreinte SHA-256 de `/proc/<pid>/exe` ; un code macOS sans aucune signature est refusé - Linux n'a pas de signature de code, et `/proc/<pid>/exe` reste lié à l'image exécutée ; sur macOS seul Intel exécute du code non signé, sans cdhash à épingler - coût si faux : un outil non signé sur un Mac Intel ne peut pas être appairé (le signer ad hoc suffit).
 
 Ruling: jeton d'audit (`LOCAL_PEERTOKEN`) plutôt que pid pour le socket SSH - un pid peut être réutilisé entre `accept` et la vérification - coût si faux : aucun sur macOS ; Linux garde le pid.
 
 ### 3.2 Client MCP
 
-Le client MCP est le processus qui lance `onepass mcp` (stdio). Son identité est celle du premier ancêtre qui n'est pas un lanceur : les shells et `env` du système (`com.apple.sh`, `com.apple.bash`, `com.apple.zsh`, `com.apple.dash`, `com.apple.env`) sont traversés, au plus 8 niveaux. La chaîne complète est journalisée. Le nom déclaré par le client dans `initialize` n'est qu'une étiquette affichée.
+Le client MCP est le processus qui lance `onepass mcp` (stdio). Son identité est celle du premier ancêtre qui n'est pas un lanceur : les shells et `env` du système (`com.apple.sh`, `com.apple.bash`, `com.apple.zsh`, `com.apple.dash`, `com.apple.env`) sont traversés, au plus 8 niveaux. La chaîne complète est journalisée. Sur Linux, où rien n'est signé, les lanceurs sont reconnus par le chemin de leur exécutable (`/bin` et `/usr/bin` : `sh`, `bash`, `dash`, `zsh`, `env`). Le pid 1 et `systemd` ne sont jamais un client (`Unreadable("no client process")`). Après l'identification de chaque ancêtre, le parent de son enfant est relu : s'il a changé (ancêtre terminé, pid réutilisé), l'identification échoue. Le nom déclaré par le client dans `initialize` n'est qu'une étiquette affichée.
 
 Ruling: identité MCP = premier ancêtre non lanceur - un hôte MCP lance souvent le serveur par un shell ; appairer `sh` reviendrait à appairer tout le monde - coût si faux : un hôte qui passe par un interpréteur générique (`node`, `python`) appaire cet interpréteur ; documenté.
 
@@ -66,7 +71,7 @@ Registre signé `<data-dir>/clients.json` (`SignedConfig`, domaine `clients`), p
 
 - Un client inconnu n'est jamais servi : MCP répond à chaque appel d'outil `Refused("client not paired: run onepass clients pair ...")` et écrit une entrée d'audit ; SSH répond `FAILURE`, aucune clé listée.
 - Appairage interactif à la première connexion, seulement pour un client `Platform` ou `Team`, par une approbation forte (section 4.4) qui affiche l'identité vérifiée. Scopes MCP par défaut à l'appairage : `metadata` et `use` sur chaque vault MCP ; clés SSH : toutes.
-- Un client `Unsigned` ne s'appaire que par la commande explicite `onepass clients pair --surface <s> --exe <chemin>` (mot de passe maître, empreinte affichée).
+- Un client `AdHoc` (macOS) ou `Unsigned` (Linux) ne s'appaire que par la commande explicite `onepass clients pair --surface <s> --exe <chemin>` (mot de passe maître, empreinte affichée).
 - `onepass clients list | pair | unpair <id> | scopes <id> --vault <v> --scopes <liste> | keys <id> --key <empreinte>...`.
 - Les serveurs relisent et vérifient le registre à chaque requête : un désappairage prend effet tout de suite.
 
@@ -156,7 +161,7 @@ Ruling: exception `git` pour les signatures de commits - `ssh-keygen -Y sign` ne
 
 - Agent qui demande des secrets hors de sa portée : scope absent du client, vault hors des scopes du client, vault non MCP ; l'approbateur n'est jamais appelé.
 - Injection de prompt dans un titre : le titre revient balisé, nettoyé à l'affichage, et n'ouvre aucune autorisation.
-- Client non signé : un binaire de test ad hoc se connecte au socket SSH et lance `onepass mcp` : refusé tant qu'il n'est pas appairé ; appairé par `clients pair --exe`, il est servi ; le binaire modifié d'un octet est refusé.
+- Client non signé : un binaire de test ad hoc se connecte au socket SSH et lance `onepass mcp` : refusé tant qu'il n'est pas appairé ; appairé par `clients pair --exe`, il est servi ; le binaire modifié (recompilé ou re-signé ; sur Linux, un octet de plus suffit) est refusé, de même que le binaire en cours d'exécution dont le chemin est remplacé par un autre fichier.
 - Rejeu d'une autorisation expirée : autorisation créée, horloge avancée (horloge injectable), requête refusée et invite de nouveau ; fichier `grants.json` restauré après révocation : refusé (génération plus basse) ; autorisation copiée vers un autre client : refusée.
 - Fatigue : 7 invites en une minute (la 7e refusée sans invite) ; 3 refus puis blocage ; requêtes identiques simultanées regroupées.
 - SSH : clé avec `hosts` sans liaison refusée ; liaison vers un autre hôte refusée ; signature `git` acceptée seulement avec `git_signing`.
@@ -175,7 +180,7 @@ Avant la revue finale, une équipe rouge (modèle le plus puissant) attaque MCP 
 
 1. Modèle de menace limité aux 4 attaquants.
 2. Identité de code par les exigences de signature du système.
-3. Binaire ad hoc ou non signé épinglé par SHA-256.
+3. Binaire ad hoc épinglé par le cdhash du noyau (macOS) ; `Unsigned` par SHA-256 de l'image sur Linux seulement ; code macOS non signé refusé.
 4. Jeton d'audit pour le socket SSH.
 5. Identité MCP = premier ancêtre non lanceur.
 6. Aucun client servi sans appairage.

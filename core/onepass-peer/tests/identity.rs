@@ -1,11 +1,13 @@
 //! Kernel credentials and code-signing identity of real processes: the test
-//! binary itself (unsigned or ad hoc), a system binary, copies of the test
-//! binary, a socket pair, and the MCP client behind a shell.
+//! binary itself (ad hoc on macOS, unsigned on Linux), a system binary,
+//! copies of the test binary (re-signed, or renamed over while running), a
+//! socket pair, and the MCP client behind a shell.
 //!
 //! Helper processes are this test binary re-invoked with `HELPER_ENV` set,
 //! which turns `peer_test_helper` into a sleeper or an identity printer.
 //! Every child is waited for with a deadline and killed only by its own pid.
 
+#[cfg(not(target_os = "macos"))]
 use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -13,8 +15,8 @@ use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 use onepass_peer::{
-    ClientIdentity, CodeIdentity, PeerError, effective_uid, file_sha256, identify_mcp_parent,
-    identify_peer, identify_pid, parent_of, parent_pid, peer_cred,
+    CodeIdentity, PeerError, effective_uid, file_sha256, identify_mcp_parent, identify_peer,
+    identify_pid, identity_of_file, parent_of, parent_pid, peer_cred,
 };
 
 const HELPER_ENV: &str = "ONEPASS_PEER_TEST_HELPER";
@@ -78,11 +80,25 @@ fn wait_output(mut child: Child) -> Output {
     }
 }
 
-fn unsigned_sha(id: &ClientIdentity) -> &str {
-    match &id.code {
+/// The image SHA-256 of a Linux identity.
+#[cfg(not(target_os = "macos"))]
+fn pin(code: &CodeIdentity) -> &str {
+    match code {
         CodeIdentity::Unsigned { sha256, .. } => sha256,
         other => panic!("expected an unsigned identity, got {other:?}"),
     }
+}
+
+#[cfg(target_os = "macos")]
+/// Runs `cmd` to completion within the deadline and requires success.
+fn run_ok(cmd: &mut Command) {
+    let child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn");
+    assert!(wait_output(child).status.success(), "{cmd:?} failed");
 }
 
 fn current_exe() -> PathBuf {
@@ -154,8 +170,10 @@ fn identifies_platform_binary() {
     #[cfg(not(target_os = "macos"))]
     {
         let exe = id.exe.clone().expect("exe of sleep");
-        assert_eq!(unsigned_sha(&id), file_sha256(&exe).expect("hash sleep"));
+        assert_eq!(pin(&id.code), file_sha256(&exe).expect("hash sleep"));
     }
+    let file = identity_of_file(Path::new("/bin/sleep")).expect("file identity");
+    assert_eq!(file.client_id(), id.code.client_id());
     assert!(id.chain.is_empty());
 }
 
@@ -174,16 +192,25 @@ fn gone_process_is_reported() {
 }
 
 #[test]
-fn test_binary_is_unsigned_with_sha256() {
+fn test_binary_is_pinned_by_its_running_image() {
     let id = identify_pid(std::process::id() as i32).expect("identify self");
     let exe = current_exe();
-    assert_eq!(unsigned_sha(&id), file_sha256(&exe).expect("hash self"));
-    match &id.code {
-        CodeIdentity::Unsigned { path, .. } => {
-            assert_eq!(path.canonicalize().expect("canonical"), exe);
-        }
+    #[cfg(target_os = "macos")]
+    assert!(
+        matches!(id.code, CodeIdentity::AdHoc { .. }),
+        "{:?}",
+        id.code
+    );
+    #[cfg(not(target_os = "macos"))]
+    assert_eq!(pin(&id.code), file_sha256(&exe).expect("hash self"));
+    // The file's identity is the running one: what `--exe` pairing records.
+    let file = identity_of_file(&exe).expect("file identity");
+    assert_eq!(file.client_id(), id.code.client_id());
+    let path = match &id.code {
+        CodeIdentity::AdHoc { path, .. } | CodeIdentity::Unsigned { path, .. } => path,
         _ => unreachable!(),
-    }
+    };
+    assert_eq!(path.canonicalize().expect("canonical"), exe);
     assert!(!id.code.is_signed());
     assert_eq!(id.pid, std::process::id() as i32);
 }
@@ -195,6 +222,22 @@ fn modified_binary_changes_identity() {
     let modified = dir.path().join("peer-copy-modified");
     std::fs::copy(current_exe(), &original).expect("copy");
     std::fs::copy(current_exe(), &modified).expect("copy");
+    // macOS pins the code directory, which bytes appended past the
+    // signature do not change: modify by re-signing with another
+    // identifier. Linux pins the file bytes: append one.
+    #[cfg(target_os = "macos")]
+    run_ok(
+        Command::new("/usr/bin/codesign")
+            .args([
+                "--force",
+                "--sign",
+                "-",
+                "--identifier",
+                "onepass.peer.modified",
+            ])
+            .arg(&modified),
+    );
+    #[cfg(not(target_os = "macos"))]
     std::fs::OpenOptions::new()
         .append(true)
         .open(&modified)
@@ -210,9 +253,44 @@ fn modified_binary_changes_identity() {
     };
     let a = identify_running(&original);
     let b = identify_running(&modified);
-    assert_eq!(unsigned_sha(&a), file_sha256(&original).expect("hash"));
-    assert_eq!(unsigned_sha(&b), file_sha256(&modified).expect("hash"));
+    assert_eq!(
+        a.code.client_id(),
+        identity_of_file(&original).expect("file").client_id()
+    );
+    assert_eq!(
+        b.code.client_id(),
+        identity_of_file(&modified).expect("file").client_id()
+    );
     assert_ne!(a.code.client_id(), b.code.client_id());
+}
+
+#[test]
+fn renaming_over_a_running_binary_keeps_its_identity() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let victim = dir.path().join("peer-running");
+    let replacement = dir.path().join("peer-replacement");
+    std::fs::copy(current_exe(), &victim).expect("copy");
+    // The replacement is a genuine Apple binary: if identity were read back
+    // from the path, the running ad hoc process would pass for it.
+    std::fs::copy("/bin/sleep", &replacement).expect("copy sleep");
+
+    let child = helper_command(&victim, "sleep")
+        .spawn()
+        .expect("spawn copy");
+    let pid = child.id() as i32;
+    let before = identify_pid(pid);
+    let renamed = std::fs::rename(&replacement, &victim);
+    let after = identify_pid(pid);
+    kill(child);
+    renamed.expect("rename over");
+    let (before, after) = (before.expect("before"), after.expect("after"));
+
+    assert_eq!(after.code, before.code);
+    assert!(!after.code.is_signed());
+    let file = identity_of_file(&victim).expect("replacement identity");
+    assert_ne!(file.client_id(), after.code.client_id());
+    #[cfg(target_os = "macos")]
+    assert_eq!(file.client_id(), "platform:com.apple.sleep");
 }
 
 #[test]
@@ -254,7 +332,6 @@ fn mcp_parent_skips_launchers() {
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn sh");
-    let sh_pid = child.id() as i32;
     let out = wait_output(child);
     let stdout = String::from_utf8(out.stdout).expect("utf8");
     // libtest prints "test peer_test_helper ... " before the helper's line.
@@ -271,11 +348,16 @@ fn mcp_parent_skips_launchers() {
     let chain: Vec<String> = field("chain").split(',').map(str::to_string).collect();
     let me = identify_pid(std::process::id() as i32).expect("identify self");
 
+    // Both platforms skip the shell: by signature on macOS, by path on
+    // Linux. The client is this test process.
+    assert_eq!(field("pid"), std::process::id().to_string());
+    assert_eq!(field("id"), me.code.client_id());
+    assert_eq!(chain.last(), Some(&me.code.client_id()));
+    assert_eq!(chain.len(), 2, "chain {chain:?}");
+    // /bin/sh is itself com.apple.sh, but it re-executes the shell that
+    // /private/var/select/sh names (bash by default) in the same process.
     #[cfg(target_os = "macos")]
     {
-        let _ = sh_pid;
-        // /bin/sh is itself com.apple.sh, but it re-executes the shell that
-        // /private/var/select/sh names (bash by default) in the same process.
         let shells = [
             "platform:com.apple.sh",
             "platform:com.apple.bash",
@@ -283,18 +365,5 @@ fn mcp_parent_skips_launchers() {
             "platform:com.apple.dash",
         ];
         assert!(shells.contains(&chain[0].as_str()), "chain {chain:?}");
-        assert_eq!(field("pid"), std::process::id().to_string());
-        assert_eq!(field("id"), me.code.client_id());
-        assert_eq!(chain.last(), Some(&me.code.client_id()));
-        assert_eq!(chain.len(), 2);
-    }
-    // Linux has no code signatures, so no process is known to be a
-    // launcher: the shell itself is the client.
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = me;
-        assert_eq!(field("pid"), sh_pid.to_string());
-        assert_eq!(chain.len(), 1);
-        assert_eq!(chain[0], field("id"));
     }
 }
