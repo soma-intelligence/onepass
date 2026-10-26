@@ -9,6 +9,13 @@
 // The identifier and password are read when the gesture happens (the page
 // often clears the fields right after) and sent once per submission:
 // identical reports within 2 s are dropped.
+//
+// A `submit` event is trusted even when a page script called
+// `requestSubmit()` or `button.click()`: it is reported only under real user
+// activation (`navigator.userActivation.isActive`; where the browser lacks
+// it, a trusted click or keydown inside that form within the last second).
+// Otherwise a page could make OnePass report credentials of its choosing at
+// will (save prompt spoofing, probing for stored credentials).
 import type { CsToBg, FormInfo, FormKind, PageAnalysis } from "../shared/messages";
 import type { RefRegistry } from "./detect/refs";
 import { type Geometry, isRendered } from "./detect/visibility";
@@ -17,6 +24,8 @@ import { nativeValue } from "./filler";
 export const DEDUPE_MS = 2000;
 export const SPA_WINDOW_MS = 2000;
 const SPA_POLL_MS = 250;
+/** Fallback activation window: a trusted gesture in the form this recent. */
+export const GESTURE_MS = 1000;
 
 const CREDENTIAL_KINDS: ReadonlySet<FormKind> = new Set<FormKind>(["login", "signup", "change_password"]);
 const BUTTONS =
@@ -57,7 +66,11 @@ function isSubmitType(el: Element): boolean {
 
 export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
   const { doc, refs, geometry, isTrusted } = opts;
-  let last: { key: string; at: number } | null = null;
+  // Dedupe key: form, identifier and password LENGTH only; cleared after 2 s
+  // so no password outlives the submission in this script's memory.
+  let last: string | null = null;
+  let lastTimer: ReturnType<typeof setTimeout> | null = null;
+  let gesture: { formRef: string; at: number } | null = null;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const view = doc.defaultView;
 
@@ -105,10 +118,22 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
 
   const report = (c: Credentials | null) => {
     if (!c) return;
-    const key = `${c.formRef}\u0000${c.username}\u0000${c.password}`;
-    const now = Date.now();
-    if (last && last.key === key && now - last.at < DEDUPE_MS) return;
-    last = { key, at: now };
+    const key = `${c.formRef}\u0000${c.username}\u0000${c.password.length}`;
+    if (last === key) return;
+    last = key;
+    if (lastTimer !== null) {
+      clearTimeout(lastTimer);
+      timers.delete(lastTimer);
+    }
+    const t = setTimeout(() => {
+      timers.delete(t);
+      if (lastTimer === t) {
+        last = null;
+        lastTimer = null;
+      }
+    }, DEDUPE_MS);
+    lastTimer = t;
+    timers.add(t);
     opts.onCredentials({ type: "submitted_credentials", ...c });
   };
 
@@ -136,14 +161,28 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     timers.add(t);
   };
 
+  /** Real user activation for a submission of `f`. */
+  const activated = (f: FormInfo): boolean => {
+    const ua = (view?.navigator as (Navigator & { userActivation?: { isActive: boolean } }) | undefined)?.userActivation;
+    if (ua && typeof ua.isActive === "boolean") return ua.isActive;
+    return gesture !== null && gesture.formRef === f.ref && Date.now() - gesture.at <= GESTURE_MS;
+  };
+
+  /** Remembers a trusted click or keydown inside a credential form. */
+  const noteGesture = (target: Element) => {
+    const f = formOf(target);
+    if (f) gesture = { formRef: f.ref, at: Date.now() };
+  };
+
   const onSubmit = (e: Event) => {
     if (!isTrusted(e) || !(e.target instanceof Element)) return;
     const f = formOf(e.target);
-    if (f) report(read(f));
+    if (f && activated(f)) report(read(f));
   };
 
   const onClick = (e: Event) => {
     if (!isTrusted(e) || !(e.target instanceof Element)) return;
+    noteGesture(e.target);
     const button = e.target.closest(BUTTONS);
     if (!button) return;
     const f = formOf(button);
@@ -155,7 +194,9 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
   };
 
   const onKey = (e: Event) => {
-    if (!isTrusted(e) || !(e instanceof KeyboardEvent) || e.key !== "Enter" || e.isComposing) return;
+    if (!isTrusted(e) || !(e instanceof KeyboardEvent)) return;
+    if (e.target instanceof Element) noteGesture(e.target);
+    if (e.key !== "Enter" || e.isComposing) return;
     if (!(e.target instanceof HTMLInputElement)) return;
     const f = formOf(e.target);
     if (f) report(read(f));
@@ -175,6 +216,9 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       target.removeEventListener("keydown", onKey, true);
       for (const t of timers) clearTimeout(t);
       timers.clear();
+      last = null;
+      lastTimer = null;
+      gesture = null;
     },
     clickRef(ref) {
       const el = refs.get(ref);

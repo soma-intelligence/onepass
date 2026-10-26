@@ -282,6 +282,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         parts.observer.stop();
         parts.submit.stop();
         parts.icons.destroy();
+        parts.frames.destroy();
       }
       shell?.destroy();
       parts = null;

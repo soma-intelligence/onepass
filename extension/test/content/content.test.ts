@@ -303,13 +303,15 @@ describe("submission watcher", () => {
 
   it("submission_captured_on_submit_click_enter_and_spa", async () => {
     useTimers();
-    // 1. submit event (trusted, as dispatched by the browser).
+    // 1. submit event (trusted, as dispatched by the browser) right after a
+    // user gesture in the form.
     setPage(LOGIN);
     s = start();
     input("u").value = "alex@atlas.dev";
     input("p").value = "s3cret";
     const form = document.getElementById("login") as HTMLFormElement;
     form.addEventListener("submit", (e) => e.preventDefault());
+    userClick(input("p"));
     form.requestSubmit();
     expect(creds(s)).toEqual([["alex@atlas.dev", "s3cret", false]]);
     // A forged (untrusted) submit event is ignored, and a second report within 2 s is deduplicated.
@@ -362,6 +364,73 @@ describe("submission watcher", () => {
     userClick(document.getElementById("other")!);
     vi.advanceTimersByTime(2500);
     expect(creds(s)).toHaveLength(0);
+  });
+
+  it("does not report a submission triggered by page script alone", () => {
+    useTimers();
+    setPage(LOGIN);
+    s = start();
+    input("u").value = "alex@atlas.dev";
+    input("p").value = "chosen-by-page";
+    const form = document.getElementById("login") as HTMLFormElement;
+    form.addEventListener("submit", (e) => e.preventDefault());
+    form.requestSubmit();
+    document.getElementById("go")!.click();
+    expect(creds(s)).toHaveLength(0);
+    // A user gesture that is too old does not count either.
+    userClick(input("p"));
+    vi.advanceTimersByTime(1500);
+    form.requestSubmit();
+    expect(creds(s)).toHaveLength(0);
+    // A gesture in another form does not count.
+    s.cs.stop();
+    setPage(`${LOGIN}<form id="other"><input id="q" autocomplete="username"><input id="r" type="password" autocomplete="current-password"></form>`);
+    s = start();
+    input("u").value = "alex@atlas.dev";
+    input("p").value = "chosen-by-page";
+    (document.getElementById("login") as HTMLFormElement).addEventListener("submit", (e) => e.preventDefault());
+    userClick(input("q"));
+    (document.getElementById("login") as HTMLFormElement).requestSubmit();
+    expect(creds(s)).toHaveLength(0);
+  });
+
+  it("uses navigator.userActivation when the browser has it", () => {
+    setPage(LOGIN);
+    const nav = window.navigator as Navigator & { userActivation?: { isActive: boolean } };
+    const ua = { isActive: false };
+    Object.defineProperty(nav, "userActivation", { configurable: true, value: ua });
+    try {
+      s = start();
+      input("u").value = "alex@atlas.dev";
+      input("p").value = "s3cret";
+      const form = document.getElementById("login") as HTMLFormElement;
+      form.addEventListener("submit", (e) => e.preventDefault());
+      userClick(input("p"));
+      form.requestSubmit();
+      expect(creds(s)).toHaveLength(0);
+      ua.isActive = true;
+      form.requestSubmit();
+      expect(creds(s)).toEqual([["alex@atlas.dev", "s3cret", false]]);
+    } finally {
+      delete (nav as { userActivation?: unknown }).userActivation;
+    }
+  });
+
+  it("forgets the dedupe key after 2 s and on stop", () => {
+    useTimers();
+    setPage(LOGIN);
+    s = start();
+    input("u").value = "alex@atlas.dev";
+    input("p").value = "s3cret";
+    document.getElementById("login")!.addEventListener("submit", (e) => e.preventDefault());
+    userClick(document.getElementById("go")!);
+    userClick(document.getElementById("go")!);
+    expect(creds(s)).toHaveLength(1);
+    vi.advanceTimersByTime(2000);
+    userClick(document.getElementById("go")!);
+    expect(creds(s)).toHaveLength(2);
+    s.cs.stop();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("reports the new password of a signup form", () => {

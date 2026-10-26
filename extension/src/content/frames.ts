@@ -91,8 +91,13 @@ export interface Shell {
   readonly layer: HTMLElement;
   /** True for the host element (events retargeted out of the shadow root). */
   isHost(node: EventTarget | null): boolean;
-  /** Puts the host back if the page removed it. */
-  ensureAttached(): void;
+  /**
+   * Puts the host back as the last child of `<html>` if the page removed,
+   * re-parented or covered it with a later sibling. True when it moved.
+   */
+  ensureAttached(): boolean;
+  /** Registers a callback run after the host was moved back. */
+  onReattach(cb: () => void): void;
   destroy(): void;
 }
 
@@ -106,9 +111,12 @@ export function createShell(doc: Document): Shell {
   const layer = doc.createElement("div");
   layer.className = "layer";
   root.append(style, layer);
-  const attach = () => {
+  const reattached: (() => void)[] = [];
+  const attach = (): boolean => {
     const html = doc.documentElement;
-    if (html && (host.parentNode !== html || host !== html.lastElementChild)) html.appendChild(host);
+    if (!html || (host.parentNode === html && host === html.lastElementChild)) return false;
+    html.appendChild(host);
+    return true;
   };
   attach();
   return {
@@ -116,18 +124,23 @@ export function createShell(doc: Document): Shell {
     layer,
     isHost: (node) => node === host,
     ensureAttached: () => {
-      if (!host.isConnected) attach();
+      const moved = attach();
+      if (moved) for (const cb of reattached) cb();
+      return moved;
     },
+    onReattach: (cb) => void reattached.push(cb),
     destroy: () => host.remove(),
   };
 }
 
 /**
- * True when `url` may be loaded as the `kind` frame: an extension scheme, the
- * page of that kind, a token fragment, nothing else; and either under our own
- * `runtime.getURL("")` base or vouched for by the service worker (Chromium
- * `use_dynamic_url` serves the pages from a per-session URL that `getURL` in a
- * content script may not report). A page never supplies these URLs.
+ * The checked URL when `url` may be loaded as the `kind` frame, else null:
+ * the scheme of our own `runtime.getURL("")` base, the page of that kind, a
+ * token fragment, nothing else; and our own extension host. Only on Chromium
+ * (`chrome-extension:`), where `use_dynamic_url` serves the pages from a
+ * per-session host that `getURL` in a content script may not report, another
+ * host is accepted, and only when `vouched`: the URL is exactly the one the
+ * service worker returned for this frame. A page never supplies these URLs.
  */
 export function checkFrameUrl(url: string, kind: FrameKind, base: string, vouched: boolean): string | null {
   let u: URL;
@@ -136,10 +149,17 @@ export function checkFrameUrl(url: string, kind: FrameKind, base: string, vouche
   } catch {
     return null;
   }
-  if (!EXTENSION_SCHEMES.has(u.protocol)) return null;
+  let own: URL;
+  try {
+    own = new URL(base);
+  } catch {
+    return null;
+  }
+  if (!EXTENSION_SCHEMES.has(u.protocol) || u.protocol !== own.protocol) return null;
   if (u.username !== "" || u.password !== "" || u.search !== "") return null;
   if (u.pathname !== `/${PAGE_OF[kind]}` || !TOKEN_HASH.test(u.hash)) return null;
-  if (u.href.startsWith(base) || vouched) return u.href;
+  if (u.host === own.host && own.host !== "") return u.href;
+  if (u.protocol === "chrome-extension:" && vouched && u.href === url) return u.href;
   return null;
 }
 
@@ -148,6 +168,9 @@ export interface FramesOptions {
   doc: Document;
   geometry: Geometry;
 }
+
+/** Clicks into a frame are ignored this long after it moved (spec 8.3). */
+export const MOVE_GUARD_MS = 300;
 
 export interface Frames {
   /** Shows (or replaces) the `kind` frame at an already checked extension URL. */
@@ -158,12 +181,41 @@ export interface Frames {
   reposition(): void;
   /** Rings the element (chain step), or clears the ring. */
   highlight(el: Element | null): void;
+  destroy(): void;
 }
 
 export function createFrames(opts: FramesOptions): Frames {
   const { shell, doc, geometry } = opts;
   const frames = new Map<FrameKind, { iframe: HTMLIFrameElement; anchor: Element | null }>();
   let ring: { box: HTMLElement; el: Element } | null = null;
+  const guards = new Map<HTMLIFrameElement, ReturnType<typeof setTimeout>>();
+
+  /**
+   * Anti-clickjacking (spec 8.3): the menu cannot see its own position, so
+   * the content script makes a frame ignore pointer input for 300 ms after
+   * any change of its position or size, and after the host moved back.
+   */
+  const guard = (iframe: HTMLIFrameElement) => {
+    const prev = guards.get(iframe);
+    if (prev !== undefined) clearTimeout(prev);
+    iframe.style.setProperty("pointer-events", "none");
+    guards.set(
+      iframe,
+      setTimeout(() => {
+        guards.delete(iframe);
+        iframe.style.removeProperty("pointer-events");
+      }, MOVE_GUARD_MS),
+    );
+  };
+  const drop = (iframe: HTMLIFrameElement) => {
+    const t = guards.get(iframe);
+    if (t !== undefined) clearTimeout(t);
+    guards.delete(iframe);
+    iframe.remove();
+  };
+  shell.onReattach(() => {
+    for (const f of frames.values()) guard(f.iframe);
+  });
 
   const viewport = () => {
     const view = doc.defaultView;
@@ -181,10 +233,11 @@ export function createFrames(opts: FramesOptions): Frames {
       top = r.top + r.height + GAP;
     }
     const s = iframe.style;
-    s.setProperty("left", `${Math.round(left)}px`);
-    s.setProperty("top", `${Math.round(top)}px`);
-    s.setProperty("width", `${width}px`);
-    s.setProperty("height", `${FRAME_HEIGHT[kind]}px`);
+    const next = [`${Math.round(left)}px`, `${Math.round(top)}px`, `${width}px`, `${FRAME_HEIGHT[kind]}px`];
+    const props = ["left", "top", "width", "height"];
+    const changed = props.some((p, i) => s.getPropertyValue(p) !== next[i]);
+    props.forEach((p, i) => s.setProperty(p, next[i] as string));
+    return changed;
   };
 
   const placeRing = () => {
@@ -201,7 +254,8 @@ export function createFrames(opts: FramesOptions): Frames {
   return {
     showFrame(kind, url, anchor = null) {
       shell.ensureAttached();
-      frames.get(kind)?.iframe.remove();
+      const old = frames.get(kind);
+      if (old) drop(old.iframe);
       const iframe = doc.createElement("iframe");
       // Extension pages need scripts: no `sandbox`. Nothing delegated.
       iframe.setAttribute("allow", "");
@@ -214,18 +268,19 @@ export function createFrames(opts: FramesOptions): Frames {
       frames.set(kind, { iframe, anchor });
     },
     removeFrame(kind) {
-      frames.get(kind)?.iframe.remove();
+      const f = frames.get(kind);
+      if (f) drop(f.iframe);
       frames.delete(kind);
     },
     has: (kind) => frames.has(kind),
     reposition() {
       for (const [kind, f] of frames) {
         if (f.anchor && !f.anchor.isConnected) {
-          f.iframe.remove();
+          drop(f.iframe);
           frames.delete(kind);
           continue;
         }
-        place(kind, f.iframe, f.anchor);
+        if (place(kind, f.iframe, f.anchor)) guard(f.iframe);
       }
       placeRing();
     },
@@ -238,6 +293,12 @@ export function createFrames(opts: FramesOptions): Frames {
       shell.layer.appendChild(box);
       ring = { box, el };
       placeRing();
+    },
+    destroy() {
+      for (const f of frames.values()) drop(f.iframe);
+      frames.clear();
+      ring?.box.remove();
+      ring = null;
     },
   };
 }
