@@ -28,3 +28,27 @@ public enum SyncStatus: Equatable, Sendable {
         }
     }
 }
+
+/// What the zone of a newly signed-in iCloud account holds (`SyncCoordinator.checkAccountChange`).
+public enum AccountChangeCheck: Equatable, Sendable {
+    /// The same OnePass account as this store (same account id).
+    case sameVault
+    /// No OnePass account: accepting uploads the encrypted vault there.
+    case emptyZone
+    /// Another OnePass account: refused.
+    case otherVault
+}
+
+/// Result of `SyncCoordinator.acceptAccountChange()`.
+public enum AccountChangeOutcome: Equatable, Sendable {
+    case accepted
+    /// The zone holds another OnePass account: nothing changed, sync stays stopped.
+    case refusedOtherVault
+    /// French message for the UI.
+    case failed(String)
+
+    /// The refusal shown to the user.
+    public static let otherVaultMessage =
+        "Ce compte iCloud contient déjà un autre coffre OnePass. Reviens au compte iCloud d'origine pour synchroniser."
+}
+

@@ -91,6 +91,10 @@ public enum RemoteStoreError: Error, Equatable, Sendable {
 /// - `accountIdentity()` names the signed-in account (CloudKit: the user record name), stable for that
 ///   account and different for any other; nil when the remote cannot tell. The coordinator binds its
 ///   store to the first identity it sees and stops on any other one.
+/// - `accountChangeCount()` grows each time the remote learns that the signed-in account may have
+///   changed (CloudKit: `CKAccountChanged`), without any network call. Default: always 0.
+/// - `accountRecordIDs()` lists the account ids (32 hex characters) of the account params records the
+///   zone holds, without touching any local store. Default: every page read from the start.
 public protocol RemoteRecordStore: Sendable {
     var maxBatchRecords: Int { get }
     var maxBatchBytes: Int { get }
@@ -98,4 +102,25 @@ public protocol RemoteRecordStore: Sendable {
     func send(_ changes: [RemoteRecord]) async throws -> [SendResult]
     func accountAvailable() async -> Bool
     func accountIdentity() async throws -> String?
+    func accountChangeCount() async -> UInt64
+    func accountRecordIDs() async throws -> Set<String>
+}
+
+extension RemoteRecordStore {
+    public func accountChangeCount() async -> UInt64 { 0 }
+
+    public func accountRecordIDs() async throws -> Set<String> {
+        var ids: Set<String> = []
+        var token: Data?
+        while true {
+            let batch = try await fetchChanges(since: token)
+            for change in batch.changes where change.name.kind == 1 && change.data != nil {
+                ids.insert(change.name.id)
+            }
+            guard batch.moreComing else { return ids }
+            // More pages without a token would read the same page forever.
+            guard let next = batch.token else { throw RemoteStoreError.retryable(after: nil) }
+            token = next
+        }
+    }
 }

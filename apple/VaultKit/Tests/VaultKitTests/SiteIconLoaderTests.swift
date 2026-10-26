@@ -45,6 +45,26 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
     }
 }
 
+/// Answers from a table (default: one public address) and records every lookup.
+final class StaticResolver: HostResolver, Sendable {
+    let table: [String: [String]?]
+    let fallback: [String]
+    private let seen = Mutex<[String]>([])
+
+    init(_ table: [String: [String]?] = [:], fallback: [String] = ["93.184.215.14"]) {
+        self.table = table
+        self.fallback = fallback
+    }
+
+    var lookups: [String] { seen.withLock { $0 } }
+
+    func addresses(for host: String) async -> [ResolvedAddress]? {
+        seen.withLock { $0.append(host) }
+        let texts: [String]? = table.keys.contains(host) ? table[host] ?? nil : fallback
+        return texts?.compactMap(ResolvedAddress.init)
+    }
+}
+
 @Suite("SiteIconLoader")
 struct SiteIconLoaderTests {
     static func makeSession() -> (URLSession, HTTPCookieStorage) {
@@ -80,7 +100,7 @@ struct SiteIconLoaderTests {
     @Test func iconLoaderRefusesHTTP() async {
         let (session, _) = Self.makeSession()
         StubProtocol.install(host: "http-only.exemple.fr") { _ in .init(body: Self.pngData()) }
-        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, enabled: { true })
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true })
         #expect(await loader.icon(for: "http://http-only.exemple.fr/login") == nil)
         #expect(await loader.icon(for: "not a url") == nil)
         #expect(await loader.icon(for: "https://") == nil)
@@ -91,7 +111,7 @@ struct SiteIconLoaderTests {
     @Test func iconLoaderDisabledReturnsNil() async {
         let (session, _) = Self.makeSession()
         StubProtocol.install(host: "disabled.exemple.fr") { _ in .init(body: Self.pngData()) }
-        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, enabled: { false })
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { false })
         #expect(await loader.icon(for: "https://disabled.exemple.fr") == nil)
         #expect(StubProtocol.requests(host: "disabled.exemple.fr").isEmpty)
     }
@@ -101,7 +121,7 @@ struct SiteIconLoaderTests {
         let directory = Self.tempDirectory()
         let big = Self.pngData() + Data(count: 300 * 1024)
         StubProtocol.install(host: "big.exemple.fr") { _ in .init(body: big) }
-        let loader = SiteIconLoader(cacheDirectory: directory, session: session, enabled: { true })
+        let loader = SiteIconLoader(cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true })
         #expect(await loader.icon(for: "https://big.exemple.fr") == nil)
         #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent(Self.cacheName("big.exemple.fr")).path))
         // The failure is remembered: no further traffic.
@@ -123,7 +143,7 @@ struct SiteIconLoaderTests {
         StubProtocol.install(host: "cookies.exemple.fr") { _ in
             .init(headers: ["Set-Cookie": "tracker=1; Path=/"], body: Self.pngData())
         }
-        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, enabled: { true })
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true })
         let data = await loader.icon(for: "https://cookies.exemple.fr/compte")
         #expect(data != nil)
         let requests = StubProtocol.requests(host: "cookies.exemple.fr")
@@ -140,7 +160,7 @@ struct SiteIconLoaderTests {
         StubProtocol.install(host: "touch.exemple.fr") { request in
             request.url?.path == "/apple-touch-icon.png" ? .init(body: Self.pngData()) : .init(status: 404)
         }
-        let loader = SiteIconLoader(cacheDirectory: directory, session: session, enabled: { true })
+        let loader = SiteIconLoader(cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true })
         let data = try #require(await loader.icon(for: "https://Touch.Exemple.fr/a/b?x=1"))
         #expect(CGImageSourceCreateWithData(data as CFData, nil) != nil)
         let file = directory.appendingPathComponent(Self.cacheName("touch.exemple.fr"))
@@ -155,7 +175,7 @@ struct SiteIconLoaderTests {
         StubProtocol.install(host: "favicon.exemple.fr") { request in
             request.url?.path == "/favicon.ico" ? .init(body: Self.pngData()) : .init(status: 404)
         }
-        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, enabled: { true })
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true })
         #expect(await loader.icon(for: "https://favicon.exemple.fr") != nil)
 
         let html = #"<html><head><link rel="stylesheet" href="/s.css"><link rel="shortcut icon" href="/assets/i.png"></head></html>"#
@@ -178,7 +198,7 @@ struct SiteIconLoaderTests {
             default: .init(body: Self.pngData())
             }
         }
-        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, enabled: { true })
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true })
         #expect(await loader.icon(for: "https://fake.exemple.fr") == nil)
         #expect(!StubProtocol.requests(host: "fake.exemple.fr").contains { $0.url?.scheme == "http" })
     }
@@ -187,7 +207,7 @@ struct SiteIconLoaderTests {
         let (session, _) = Self.makeSession()
         let directory = Self.tempDirectory()
         StubProtocol.install(host: "retry.exemple.fr") { _ in .init(status: 404) }
-        let loader = SiteIconLoader(cacheDirectory: directory, session: session, enabled: { true })
+        let loader = SiteIconLoader(cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true })
         #expect(await loader.icon(for: "https://retry.exemple.fr") == nil)
         let first = StubProtocol.requests(host: "retry.exemple.fr").count
         #expect(await loader.icon(for: "https://retry.exemple.fr") == nil)
@@ -244,7 +264,7 @@ struct SiteIconLoaderTests {
 
         let (session, _) = Self.makeSession()
         StubProtocol.install(host: "bombe.exemple.fr") { _ in .init(body: bomb) }
-        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, enabled: { true })
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true })
         #expect(await loader.icon(for: "https://bombe.exemple.fr") == nil)
     }
 
@@ -252,21 +272,102 @@ struct SiteIconLoaderTests {
         "https://192.168.1.1/admin", "https://10.0.0.1", "https://127.0.0.1:8443", "https://127.1",
         "https://0x7f.0x1", "https://[::1]/", "https://[fe80::1]", "https://localhost/",
         "https://imprimante.local", "https://nas", "https://routeur./", "https://app.localhost",
+        "https://box.lan", "https://nas.home.arpa", "https://wiki.internal", "https://srv.localdomain",
+        "https://routeur.home", "https://portail.intranet", "https://git.corp", "https://nas.private",
+        "https://NAS.LAN.",
     ])
     func privateHostsAreNeverFetched(url: String) async {
         let (session, _) = Self.makeSession()
         let host = URLComponents(string: url)?.host ?? url
         StubProtocol.install(host: host) { _ in .init(body: Self.pngData()) }
-        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, enabled: { true })
+        let resolver = StaticResolver()
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: resolver, enabled: { true })
         #expect(await loader.icon(for: url) == nil)
         #expect(StubProtocol.requests(host: host).isEmpty)
+        // Refused by name: not even resolved.
+        #expect(resolver.lookups.isEmpty)
+    }
+
+    /// A public name that resolves to a private address (or a mix) is refused before any request.
+    @Test(arguments: [
+        ["10.1.2.3"], ["192.168.1.20"], ["172.20.0.5"], ["127.0.0.1"], ["169.254.10.1"], ["100.100.1.1"],
+        ["0.0.0.0"], ["224.0.0.251"], ["255.255.255.255"], ["::1"], ["::"], ["fe80::1"], ["fd12:3456::1"],
+        ["fc00::7"], ["ff02::fb"], ["::ffff:192.168.1.1"], ["64:ff9b::a00:1"], ["93.184.215.14", "10.0.0.1"],
+        ["2606:2800:21f:cb07:6820:80da:af6b:8b2c", "fd00::1"], [],
+    ])
+    func namesResolvingToPrivateAddressesAreNeverFetched(addresses: [String]) async {
+        let (session, _) = Self.makeSession()
+        let host = "rebind-\(UUID().uuidString.prefix(8).lowercased()).exemple.fr"
+        StubProtocol.install(host: host) { _ in .init(body: Self.pngData()) }
+        let resolver = StaticResolver([host: addresses])
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: resolver, enabled: { true })
+        #expect(await loader.icon(for: "https://\(host)/") == nil)
+        #expect(resolver.lookups == [host])
+        #expect(StubProtocol.requests(host: host).isEmpty)
+        // Remembered as a failure: not resolved again right away.
+        #expect(await loader.icon(for: "https://\(host)/") == nil)
+        #expect(resolver.lookups == [host])
+    }
+
+    @Test func publicAddressesAreFetched() async throws {
+        let (session, _) = Self.makeSession()
+        StubProtocol.install(host: "public.exemple.fr") { _ in .init(body: Self.pngData()) }
+        let resolver = StaticResolver([
+            "public.exemple.fr": ["93.184.215.14", "2606:2800:21f:cb07:6820:80da:af6b:8b2c"]
+        ])
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: resolver, enabled: { true })
+        #expect(await loader.icon(for: "https://public.exemple.fr") != nil)
+        #expect(!StubProtocol.requests(host: "public.exemple.fr").isEmpty)
+    }
+
+    /// No answer in time: no request, and no failure marker (the next display tries again).
+    @Test func unresolvedNameIsNotFetchedNorRemembered() async {
+        let (session, _) = Self.makeSession()
+        StubProtocol.install(host: "lent.exemple.fr") { _ in .init(body: Self.pngData()) }
+        let resolver = StaticResolver(["lent.exemple.fr": nil])
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: resolver, enabled: { true })
+        #expect(await loader.icon(for: "https://lent.exemple.fr") == nil)
+        #expect(await loader.icon(for: "https://lent.exemple.fr") == nil)
+        #expect(resolver.lookups.count == 2)
+        #expect(StubProtocol.requests(host: "lent.exemple.fr").isEmpty)
+    }
+
+    @Test func addressClassification() {
+        for text in ["93.184.215.14", "1.1.1.1", "100.63.255.255", "100.128.0.1", "172.15.0.1", "172.32.0.1",
+            "2606:2800:21f:cb07:6820:80da:af6b:8b2c", "::ffff:93.184.215.14", "64:ff9b::5db8:d70e"]
+        {
+            #expect(ResolvedAddress(text)?.isPublic == true, "\(text)")
+        }
+        for text in ["10.0.0.1", "100.64.0.1", "100.127.255.255", "127.0.0.1", "169.254.169.254", "172.16.0.1",
+            "172.31.255.255", "192.168.0.1", "0.1.2.3", "224.0.0.1", "239.255.255.250", "255.255.255.255",
+            "::1", "::", "fe80::1", "febf::1", "fc00::1", "fdff::1", "ff02::1", "::ffff:10.0.0.1", "::7f00:1",
+            "64:ff9b::7f00:1"]
+        {
+            #expect(ResolvedAddress(text)?.isPublic == false, "\(text)")
+        }
+        #expect(ResolvedAddress("pas une adresse") == nil)
+        #expect(ResolvedAddress(bytes: [1, 2, 3]) == nil)
+    }
+
+    /// The system resolver answers for a literal without the network, off the main thread.
+    @Test func systemResolverParsesLiterals() async throws {
+        let resolver = SystemHostResolver(timeout: .seconds(2))
+        let v4 = try #require(await resolver.addresses(for: "127.0.0.1"))
+        #expect(v4.contains(ResolvedAddress("127.0.0.1")!))
+        #expect(v4.allSatisfy { !$0.isPublic })
     }
 
     @Test func publicHostNamesStayFetchable() {
-        for host in ["exemple.fr", "www.exemple.fr", "atlas-42.exemple.fr", "a1.b2.fr", "exemple.fr."] {
+        for host in [
+            "exemple.fr", "www.exemple.fr", "atlas-42.exemple.fr", "a1.b2.fr", "exemple.fr.", "lan.exemple.fr",
+            "corp.exemple.fr", "private.exemple.fr", "home.exemple.fr", "maison.homes", "atlas.corporate",
+        ] {
             #expect(SiteIconLoader.isFetchableHost(host), "\(host)")
         }
-        for host in ["192.168.0.10", "::1", "localhost", "nas", "imprimante.local", "", "a..fr"] {
+        for host in [
+            "192.168.0.10", "::1", "localhost", "nas", "imprimante.local", "", "a..fr", "box.lan",
+            "nas.home.arpa", "home.arpa", "wiki.internal", "srv.localdomain", "routeur.home", "git.corp",
+        ] {
             #expect(!SiteIconLoader.isFetchableHost(host), "\(host)")
         }
     }

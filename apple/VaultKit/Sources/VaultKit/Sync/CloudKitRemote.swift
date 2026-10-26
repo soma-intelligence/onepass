@@ -4,6 +4,7 @@
 #if canImport(CloudKit)
 import CloudKit
 import Foundation
+import os
 
 /// CloudKit private database as a `RemoteRecordStore` (spec 4 point 7, rulings R7 and R8): zone
 /// `OnePass`, record type `OPRecord`, atomic conditional batches, zone change tokens owned by the caller.
@@ -16,6 +17,7 @@ public actor CloudKitRemote: RemoteRecordStore {
     private let zoneID: CKRecordZone.ID
     private var zoneReady = false
     private var subscriptionReady = false
+    private let accountChanges = AccountChangeCounter()
 
     public init(containerIdentifier: String = "iCloud.me.somalabs.onepass") {
         container = CKContainer(identifier: containerIdentifier)
@@ -25,6 +27,12 @@ public actor CloudKitRemote: RemoteRecordStore {
 
     public func accountAvailable() async -> Bool {
         (try? await container.accountStatus()) == .available
+    }
+
+    /// Bumped on every `CKAccountChanged` (posted by CloudKit when the signed-in Apple ID changes or
+    /// signs out): the coordinator then checks the identity again before its next send. No network.
+    public func accountChangeCount() async -> UInt64 {
+        accountChanges.value
     }
 
     /// The record name of the signed-in user: stable for one Apple ID in this container, different
@@ -214,6 +222,27 @@ public actor CloudKitRemote: RemoteRecordStore {
         } catch {
             subscriptionReady = false
         }
+    }
+}
+/// Counts `CKAccountChanged` notifications from creation on. The observer only bumps a locked counter
+/// (no actor hop, no `Task`), and is removed with the counter.
+final class AccountChangeCounter: @unchecked Sendable {
+    private let count = OSAllocatedUnfairLock(initialState: UInt64(0))
+    private var observer: (any NSObjectProtocol)?
+
+    init() {
+        let count = count
+        observer = NotificationCenter.default.addObserver(
+            forName: .CKAccountChanged, object: nil, queue: nil
+        ) { _ in
+            count.withLock { $0 &+= 1 }
+        }
+    }
+
+    var value: UInt64 { count.withLock { $0 } }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 }
 #endif
