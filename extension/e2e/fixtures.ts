@@ -120,149 +120,159 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     const dir = mkdtempSync(join(tmpdir(), "onepass-e2e-test-"));
     const profile = join(dir, "profile");
     const extPath = join(EXT_ROOT, "dist", build === "e2e" ? "chromium-e2e" : "chromium");
-    const context = await chromium.launchPersistentContext(profile, {
-      channel: "chromium",
-      headless: true,
-      viewport: { width: 1280, height: 860 },
-      locale: "fr-FR",
-      args: [
-        `--disable-extensions-except=${extPath}`,
-        `--load-extension=${extPath}`,
-        `--host-resolver-rules=MAP * 127.0.0.1:${server.port}, EXCLUDE localhost`,
-        `--ignore-certificate-errors-spki-list=${cert.spki}`,
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-sync",
-        "--disable-background-networking",
-        "--disable-component-update",
-      ],
-    });
-    // Second safety net: nothing but the local test hosts and extension pages.
-    await context.route("**/*", (route) => {
-      const u = new URL(route.request().url());
-      const ok =
-        u.protocol === "chrome-extension:" ||
-        u.protocol === "data:" ||
-        ((u.protocol === "https:" || u.protocol === "http:") && LOCAL_HOSTS.has(u.hostname));
-      return ok ? route.continue() : route.abort("blockedbyclient");
-    });
-    // Third net: every network response must come from the loopback server,
-    // so a real accounts.google.com (say) can never answer.
-    const remote: string[] = [];
+    // Whatever fails below (launch, canary, test, loopback check), the
+    // browser closes and the temporary profile and host data go.
+    let context: BrowserContext | undefined;
     const pendingChecks: Promise<void>[] = [];
-    context.on("response", (r) => {
-      pendingChecks.push(
-        r
-          .serverAddr()
-          .then((a) => {
-            if (a && !LOOPBACK.has(a.ipAddress)) remote.push(`${r.url()} from ${a.ipAddress}`);
-          })
-          .catch(() => undefined),
-      );
-    });
-    const worker = async (): Promise<Worker> => {
-      const live = context.serviceWorkers().find((w) => w.url().startsWith("chrome-extension://"));
-      return live ?? (await context.waitForEvent("serviceworker", { timeout: 15_000 }));
-    };
-    const id = new URL((await worker()).url()).host;
-    if (id !== unpackedExtensionId(extPath)) {
-      console.warn(`e2e: extension id ${id} differs from the path-derived id ${unpackedExtensionId(extPath)}`);
+    const remote: string[] = [];
+    try {
+      const ctx = await chromium.launchPersistentContext(profile, {
+        channel: "chromium",
+        headless: true,
+        viewport: { width: 1280, height: 860 },
+        locale: "fr-FR",
+        args: [
+          `--disable-extensions-except=${extPath}`,
+          `--load-extension=${extPath}`,
+          `--host-resolver-rules=MAP * 127.0.0.1:${server.port}, EXCLUDE localhost`,
+          `--ignore-certificate-errors-spki-list=${cert.spki}`,
+          "--no-first-run",
+          "--no-default-browser-check",
+          "--disable-sync",
+          "--disable-background-networking",
+          "--disable-component-update",
+        ],
+      });
+      context = ctx;
+      // Second safety net: nothing but the local test hosts and extension pages.
+      await ctx.route("**/*", (route) => {
+        const u = new URL(route.request().url());
+        const ok =
+          u.protocol === "chrome-extension:" ||
+          u.protocol === "data:" ||
+          ((u.protocol === "https:" || u.protocol === "http:") && LOCAL_HOSTS.has(u.hostname));
+        return ok ? route.continue() : route.abort("blockedbyclient");
+      });
+      // Third net: every network response must come from the loopback server,
+      // so a real accounts.google.com (say) can never answer.
+      ctx.on("response", (r) => {
+        pendingChecks.push(
+          r
+            .serverAddr()
+            .then((a) => {
+              if (a && !LOOPBACK.has(a.ipAddress)) remote.push(`${r.url()} from ${a.ipAddress}`);
+            })
+            .catch(() => undefined),
+        );
+      });
+      const worker = async (): Promise<Worker> => {
+        const live = ctx.serviceWorkers().find((w) => w.url().startsWith("chrome-extension://"));
+        return live ?? (await ctx.waitForEvent("serviceworker", { timeout: 15_000 }));
+      };
+      const id = new URL((await worker()).url()).host;
+      if (id !== unpackedExtensionId(extPath)) {
+        console.warn(`e2e: extension id ${id} differs from the path-derived id ${unpackedExtensionId(extPath)}`);
+      }
+      // The browser reads the host manifest at connectNative time: writing it
+      // now, before the first connection, is enough.
+      const host = installHost(dir, join(profile, "NativeMessagingHosts"), id, cache);
+      const page = ctx.pages()[0] ?? (await ctx.newPage());
+      // Canary: the local server (this nonce) answers for a real provider name.
+      const canary = await page.goto(`https://accounts.google.com${CANARY_PATH}`);
+      expect(canary?.status()).toBe(200);
+      expect(await canary?.text()).toBe(server.nonce);
+      expect(LOOPBACK.has((await canary?.serverAddr())?.ipAddress ?? "")).toBe(true);
+
+      const findExtFrame = (p: Page, kind: "menu" | "overlay" | "save") =>
+        p.frames().find((f) => f.url().startsWith("chrome-extension://") && new URL(f.url()).pathname === `/${kind}.html`);
+      const extFrame = async (p: Page, kind: "menu" | "overlay" | "save"): Promise<Frame> => {
+        let f: Frame | undefined;
+        await expect.poll(() => (f = findExtFrame(p, kind)) !== undefined, { timeout: 15_000, message: `${kind} frame` }).toBe(true);
+        return f as Frame;
+      };
+      const settle = (ms = GUARD_WAIT_MS) => new Promise<void>((r) => setTimeout(r, ms));
+
+      const ext: Ext = {
+        context: ctx,
+        id,
+        host,
+        server,
+        page,
+        worker,
+        findExtFrame,
+        extFrame,
+        settle,
+        async pair() {
+          const popup = await ctx.newPage();
+          await popup.goto(`chrome-extension://${id}/popup.html`);
+          await popup.getByRole("button", { name: "Appairer avec OnePass" }).click();
+          const sas = popup.locator(".sas");
+          await expect(sas).toHaveText(/^\d{3} \d{3}$/, { timeout: 60_000 });
+          const shown = (await sas.textContent())?.trim() ?? "";
+          await expect.poll(() => host.codes().at(-1), { timeout: 10_000 }).toBe(shown);
+          await popup.getByRole("button", { name: "Les codes sont identiques" }).click();
+          await expect(popup.getByRole("button", { name: "Appairer avec OnePass" })).toHaveCount(0);
+          await expect(popup.locator(".sas")).toHaveCount(0);
+          await expect.poll(() => host.log().includes("pairing stored")).toBe(true);
+          await popup.close();
+          return shown;
+        },
+        async stopWorker() {
+          const cdp = await ctx.newCDPSession(page);
+          await cdp.send("ServiceWorker.enable");
+          await cdp.send("ServiceWorker.stopAllWorkers");
+          await cdp.detach();
+        },
+        async openMenu(p, selector, frame) {
+          const scope = frame ?? p.mainFrame();
+          // The content script has started in that document (its host element).
+          await expect(scope.locator("onepass-root")).toHaveCount(1);
+          await scope.focus(selector, { timeout: 10_000 });
+          // One trusted keystroke, as a user would press it.
+          await p.keyboard.press("ArrowDown");
+          const f = await extFrame(p, "menu");
+          await f.waitForLoadState("domcontentloaded");
+          return f;
+        },
+        async pickRow(menu, title, subtitle) {
+          let row = menu.locator("button.row").filter({ has: menu.locator(".t1", { hasText: exact(title) }) });
+          if (subtitle !== undefined) row = row.filter({ has: menu.locator(".t2", { hasText: exact(subtitle) }) });
+          await expect(row).toHaveCount(1);
+          await settle();
+          await row.click();
+        },
+        async overlayStart(p, title) {
+          const overlay = await extFrame(p, "overlay");
+          const account = overlay.locator(".ov-account").filter({ has: overlay.locator(".t1", { hasText: exact(title) }) });
+          await expect(account).toHaveCount(1);
+          await settle();
+          await account.getByRole("button", { name: "Se connecter" }).click();
+          return overlay;
+        },
+        async chainState() {
+          const all = await this.sessionStorage();
+          const chains = Object.entries(all).filter(([k]) => k.startsWith("chain:"));
+          return chains.length === 0 ? null : (chains[chains.length - 1]?.[1] as { status: string; reason?: string; host?: string });
+        },
+        audit() {
+          const path = join(host.dataDir, "audit.log");
+          return existsSync(path) ? readFileSync(path, "utf8") : "";
+        },
+        async sessionStorage() {
+          const w = await worker();
+          return w.evaluate(() => chrome.storage.session.get(null));
+        },
+      };
+      await use(ext);
+    } finally {
+      try {
+        await context?.close();
+        await Promise.all(pendingChecks);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
-    // The browser reads the host manifest at connectNative time: writing it
-    // now, before the first connection, is enough.
-    const host = installHost(dir, join(profile, "NativeMessagingHosts"), id, cache);
-    const page = context.pages()[0] ?? (await context.newPage());
-    // Canary: the local server (this nonce) answers for a real provider name.
-    const canary = await page.goto(`https://accounts.google.com${CANARY_PATH}`);
-    expect(canary?.status()).toBe(200);
-    expect(await canary?.text()).toBe(server.nonce);
-    expect(LOOPBACK.has((await canary?.serverAddr())?.ipAddress ?? "")).toBe(true);
-
-    const findExtFrame = (p: Page, kind: "menu" | "overlay" | "save") =>
-      p.frames().find((f) => f.url().startsWith("chrome-extension://") && new URL(f.url()).pathname === `/${kind}.html`);
-    const extFrame = async (p: Page, kind: "menu" | "overlay" | "save"): Promise<Frame> => {
-      let f: Frame | undefined;
-      await expect.poll(() => (f = findExtFrame(p, kind)) !== undefined, { timeout: 15_000, message: `${kind} frame` }).toBe(true);
-      return f as Frame;
-    };
-    const settle = (ms = GUARD_WAIT_MS) => new Promise<void>((r) => setTimeout(r, ms));
-
-    const ext: Ext = {
-      context,
-      id,
-      host,
-      server,
-      page,
-      worker,
-      findExtFrame,
-      extFrame,
-      settle,
-      async pair() {
-        const popup = await context.newPage();
-        await popup.goto(`chrome-extension://${id}/popup.html`);
-        await popup.getByRole("button", { name: "Appairer avec OnePass" }).click();
-        const sas = popup.locator(".sas");
-        await expect(sas).toHaveText(/^\d{3} \d{3}$/, { timeout: 60_000 });
-        const shown = (await sas.textContent())?.trim() ?? "";
-        await expect.poll(() => host.codes().at(-1), { timeout: 10_000 }).toBe(shown);
-        await popup.getByRole("button", { name: "Les codes sont identiques" }).click();
-        await expect(popup.getByRole("button", { name: "Appairer avec OnePass" })).toHaveCount(0);
-        await expect(popup.locator(".sas")).toHaveCount(0);
-        await expect.poll(() => host.log().includes("pairing stored")).toBe(true);
-        await popup.close();
-        return shown;
-      },
-      async stopWorker() {
-        const cdp = await context.newCDPSession(page);
-        await cdp.send("ServiceWorker.enable");
-        await cdp.send("ServiceWorker.stopAllWorkers");
-        await cdp.detach();
-      },
-      async openMenu(p, selector, frame) {
-        const scope = frame ?? p.mainFrame();
-        // The content script has started in that document (its host element).
-        await expect(scope.locator("onepass-root")).toHaveCount(1);
-        await scope.focus(selector, { timeout: 10_000 });
-        // One trusted keystroke, as a user would press it.
-        await p.keyboard.press("ArrowDown");
-        const f = await extFrame(p, "menu");
-        await f.waitForLoadState("domcontentloaded");
-        return f;
-      },
-      async pickRow(menu, title, subtitle) {
-        let row = menu.locator("button.row").filter({ has: menu.locator(".t1", { hasText: exact(title) }) });
-        if (subtitle !== undefined) row = row.filter({ has: menu.locator(".t2", { hasText: exact(subtitle) }) });
-        await expect(row).toHaveCount(1);
-        await settle();
-        await row.click();
-      },
-      async overlayStart(p, title) {
-        const overlay = await extFrame(p, "overlay");
-        const account = overlay.locator(".ov-account").filter({ has: overlay.locator(".t1", { hasText: exact(title) }) });
-        await expect(account).toHaveCount(1);
-        await settle();
-        await account.getByRole("button", { name: "Se connecter" }).click();
-        return overlay;
-      },
-      async chainState() {
-        const all = await this.sessionStorage();
-        const chains = Object.entries(all).filter(([k]) => k.startsWith("chain:"));
-        return chains.length === 0 ? null : (chains[chains.length - 1]?.[1] as { status: string; reason?: string; host?: string });
-      },
-      audit() {
-        const path = join(host.dataDir, "audit.log");
-        return existsSync(path) ? readFileSync(path, "utf8") : "";
-      },
-      async sessionStorage() {
-        const w = await worker();
-        return w.evaluate(() => chrome.storage.session.get(null));
-      },
-    };
-    await use(ext);
-    await context.close();
-    await Promise.all(pendingChecks);
     expect(remote, "responses from a non-loopback address").toEqual([]);
-    rmSync(dir, { recursive: true, force: true });
   },
 });
 
