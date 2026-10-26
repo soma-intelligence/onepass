@@ -495,7 +495,7 @@ impl<S: RecordStore> Repository<S> {
         prev: Option<&Manifest>,
         entries: Vec<ManifestEntry>,
     ) -> Result<SeenManifest> {
-        let m = Manifest::next(prev, vault.id, entries);
+        let m = Manifest::next(prev, vault.id, entries)?;
         let sm = sign_manifest(vault, &self.account.keyset().signing, &m)?;
         let data = postcard::to_allocvec(&sm).map_err(|_| Error::InvalidFormat("manifest"))?;
         self.store.put_if_version(

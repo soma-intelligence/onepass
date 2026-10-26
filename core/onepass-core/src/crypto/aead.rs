@@ -85,19 +85,37 @@ fn aead_key(k_enc: &SymmetricKey) -> Result<LessSafeKey> {
     Ok(LessSafeKey::new(unbound))
 }
 
-/// Seal `plaintext` as a blob of `kind`, bound to `aad`.
+/// Seal `plaintext` as a blob of `kind`, bound to `aad`, under a fresh
+/// random nonce.
 pub fn seal(key: &SymmetricKey, kind: BlobKind, aad: &Aad, plaintext: &[u8]) -> Result<Vec<u8>> {
+    let mut nonce = [0u8; NONCE_LEN];
+    fill_random(&mut nonce)?;
+    seal_with_nonce(key, kind, aad, plaintext, nonce)
+}
+
+/// `seal` with a given nonce. Kept private: only `seal` (random nonce) and
+/// the wire-format test call it.
+fn seal_with_nonce(
+    key: &SymmetricKey,
+    kind: BlobKind,
+    aad: &Aad,
+    plaintext: &[u8],
+    nonce: [u8; NONCE_LEN],
+) -> Result<Vec<u8>> {
     let k_enc = key.derive(ENC_INFO)?;
     let k_com = key.derive(COMMIT_INFO)?;
 
-    // The prefixed length must itself fit in the u32 prefix.
-    let len = u32::try_from(plaintext.len() + LEN_PREFIX)
+    // The prefixed length must itself fit in the u32 prefix (and in usize
+    // on 32-bit targets).
+    let too_large = Error::InvalidFormat("plaintext too large");
+    let prefixed = plaintext
+        .len()
+        .checked_add(LEN_PREFIX)
+        .ok_or(too_large.clone())?;
+    let len = u32::try_from(prefixed)
         .map(|l| l - LEN_PREFIX as u32)
-        .map_err(|_| Error::InvalidFormat("plaintext too large"))?;
-    let padded = padded_len(plaintext.len() + LEN_PREFIX);
-
-    let mut nonce = [0u8; NONCE_LEN];
-    fill_random(&mut nonce)?;
+        .map_err(|_| too_large)?;
+    let padded = padded_len(prefixed);
 
     let mut prefix = [0u8; PREFIX_LEN];
     prefix[0..3].copy_from_slice(MAGIC);
@@ -396,6 +414,33 @@ mod tests {
         assert_eq!(
             &open_detailed(&k, BlobKind::Item, &ctx(), &blob).unwrap()[..],
             b"abc"
+        );
+    }
+
+    #[test]
+    fn wire_format_known_answer() {
+        // Computed independently with Python (cryptography 49 AESGCMSIV,
+        // hmac/hashlib HKDF): key [0x42; 32], kind Item, nonce 0..12,
+        // blob id [0x11; 16], vault id [0x22; 16], schema 1, "onepass".
+        // Any change to this output is a wire format change.
+        let expected = "4f5042010105000102030405060708090a0b4ca9726f7b6422500463a993d115d64868cea1725b18c1422467c315e58bbc4aba561d24a5896a53ea7a78d369d7622f7448205113f98426bfffa8bba2fdbff8ec151becd523960213df0b3d072389589528a7ab3db0ad38c1b7c876cc778d0b420347ad40a24a5f2a5f22ad163128578d6f19f2c835e319e0f63e07d965ea0eff72d286ccf25fd470aeb1f4e49e88322488d5bd9f70b25ae32a9e7d7ba9ef1d94b060402f0c6b736aa245980dde077a96a1b82dc54a1b07bce64ced0b57d817155b165cee3635bd179740f64542ef070bf911355d868abd4be93e4b65b9bb578d25ded781e438097ce01c3aa8d47cd41f45c7f9d3484af61649666b2f17060d9d55ffdd8dca9346c9abceb78529627996c4b596ed5aa1a5a9336b8434fb97d085a54e31224e7a137f274c666a5a5122";
+        let k = SymmetricKey::from_bytes([0x42; 32]);
+        let aad = Aad {
+            blob_id: Id([0x11; 16]),
+            vault_id: Some(Id([0x22; 16])),
+            schema: 1,
+        };
+        let mut nonce = [0u8; NONCE_LEN];
+        for (i, b) in nonce.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        let blob = seal_with_nonce(&k, BlobKind::Item, &aad, b"onepass", nonce).unwrap();
+        let hex: String = blob.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, expected);
+        assert_eq!(blob.len(), HEADER_LEN + 256 + TAG_LEN);
+        assert_eq!(
+            &open(&k, BlobKind::Item, &aad, &blob).unwrap()[..],
+            b"onepass"
         );
     }
 

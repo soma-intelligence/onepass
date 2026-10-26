@@ -89,13 +89,22 @@ impl SecretKey {
     }
 }
 
-/// Sum of the 5-bit values of the body characters, modulo 32, as a base32 char.
+/// Luhn mod N check character, N = 32, over the base32 symbol values of
+/// the body: from the rightmost symbol, every other value is doubled and
+/// its two base-32 digits added. It catches every single substitution and
+/// every adjacent transposition except `A` (0) with `7` (31), the one blind
+/// pair of Luhn mod N.
 fn checksum_char(body: &[u8]) -> u8 {
-    let sum: usize = body
-        .iter()
-        .map(|b| ALPHABET.iter().position(|a| a == b).unwrap_or(0))
-        .sum();
-    ALPHABET[sum % 32]
+    const N: usize = ALPHABET.len();
+    let mut factor = 2;
+    let mut sum = 0usize;
+    for b in body.iter().rev() {
+        let value = ALPHABET.iter().position(|a| a == b).unwrap_or(0);
+        let addend = factor * value;
+        factor = 3 - factor;
+        sum += addend / N + addend % N;
+    }
+    ALPHABET[(N - sum % N) % N]
 }
 
 impl fmt::Debug for SecretKey {
@@ -145,7 +154,7 @@ mod tests {
     fn display_shape_and_known_vector() {
         let sk = SecretKey([0u8; 32]);
         let shown = sk.to_display();
-        // 52 'A' (value 0), check value 0 = 'A', groups of 4.
+        // 52 'A' (value 0): Luhn sum 0, check value 0 = 'A', groups of 4.
         let expected = format!("{}A", "AAAA-".repeat(13));
         assert_eq!(shown, expected);
         assert_eq!(SecretKey::parse(&shown).unwrap().0, [0u8; 32]);
@@ -190,6 +199,86 @@ mod tests {
             SecretKey::parse(&b),
             Err(Error::InvalidFormat("secret key checksum"))
         ));
+    }
+
+    /// Key bytes 0..32: no adjacent A/7 pair in its display (see below).
+    fn fixed() -> SecretKey {
+        let mut b = [0u8; 32];
+        for (i, x) in b.iter_mut().enumerate() {
+            *x = i as u8;
+        }
+        SecretKey(b)
+    }
+
+    const FIXED_SHOWN: &str = "AAAQ-EAYE-AUDA-OCAJ-BIFQ-YDIO-B4IB-CEQT-CQKR-MFYY-DENB-WHA5-DYPQ-B";
+
+    fn parse_chars(chars: &[u8]) -> Result<SecretKey> {
+        SecretKey::parse(std::str::from_utf8(chars).unwrap())
+    }
+
+    #[test]
+    fn luhn_mod_32_known_vector() {
+        // Check char computed independently (Python, Luhn mod N, N = 32).
+        assert_eq!(fixed().to_display(), FIXED_SHOWN);
+        assert_eq!(SecretKey::parse(FIXED_SHOWN).unwrap().0, fixed().0);
+    }
+
+    #[test]
+    fn every_single_substitution_is_rejected() {
+        let clean: Vec<u8> = FIXED_SHOWN.bytes().filter(|&b| b != b'-').collect();
+        assert_eq!(clean.len(), BODY_LEN + 1);
+        for i in 0..clean.len() {
+            for &c in ALPHABET {
+                if c == clean[i] {
+                    continue;
+                }
+                let mut typo = clean.clone();
+                typo[i] = c;
+                assert_eq!(
+                    parse_chars(&typo).err(),
+                    Some(Error::InvalidFormat("secret key checksum")),
+                    "position {i}, symbol {}",
+                    c as char
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_adjacent_transposition_is_rejected() {
+        let clean: Vec<u8> = FIXED_SHOWN.bytes().filter(|&b| b != b'-').collect();
+        for i in 0..clean.len() - 1 {
+            if clean[i] == clean[i + 1] {
+                continue;
+            }
+            let mut swapped = clean.clone();
+            swapped.swap(i, i + 1);
+            assert_eq!(
+                parse_chars(&swapped).err(),
+                Some(Error::InvalidFormat("secret key checksum")),
+                "positions {i} and {}",
+                i + 1
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_a_7_transposition_is_blind() {
+        // Luhn mod N misses exactly one transposition: the symbols of value
+        // 0 and N - 1 ('A' and '7'), whose doubled forms are themselves.
+        let mut blind = Vec::new();
+        for &x in ALPHABET {
+            for &y in ALPHABET {
+                let mut a = [b'A'; BODY_LEN];
+                (a[10], a[11]) = (x, y);
+                let mut b = a;
+                b.swap(10, 11);
+                if x < y && checksum_char(&a) == checksum_char(&b) {
+                    blind.push((x as char, y as char));
+                }
+            }
+        }
+        assert_eq!(blind, vec![('7', 'A')]);
     }
 
     #[test]

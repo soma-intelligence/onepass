@@ -147,24 +147,32 @@ impl Manifest {
     /// The manifest following `prev` (or the first one): `seq = prev.seq + 1`
     /// (or 1), `prev_hash = SHA-256(postcard(prev))` (or zeros). Entries are
     /// sorted by item id. Duplicates are kept, and refused by `sign_manifest`.
+    ///
+    /// Errors: a `prev` at `u64::MAX` has no next seq,
+    /// `InvalidFormat("manifest seq")`.
     pub fn next(
         prev: Option<&Manifest>,
         vault_id: Id,
         mut entries: Vec<ManifestEntry>,
-    ) -> Manifest {
+    ) -> Result<Manifest> {
         entries.sort_by_key(|e| e.item_id);
         let (seq, prev_hash) = match prev {
-            Some(p) => (p.seq + 1, manifest_hash(p)),
+            Some(p) => (
+                p.seq
+                    .checked_add(1)
+                    .ok_or(Error::InvalidFormat("manifest seq"))?,
+                manifest_hash(p),
+            ),
             None => (1, [0u8; 32]),
         };
         let merkle_root = merkle_root(&entries);
-        Manifest {
+        Ok(Manifest {
             vault_id,
             seq,
             prev_hash,
             entries,
             merkle_root,
-        }
+        })
     }
 }
 
@@ -382,6 +390,35 @@ mod tests {
     }
 
     #[test]
+    fn merkle_root_fixed_vectors() {
+        // Computed independently in Python (hashlib, hand-written postcard).
+        let hex = |h: [u8; 32]| h.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        assert_eq!(
+            hex(merkle_root(&[])),
+            "dbc1b4c900ffe48d575b5da5c638040125f65db0fe3e24494b76ea986457d986"
+        );
+        assert_eq!(
+            hex(merkle_root(&[entry(1), entry(2), entry(3)])),
+            "cdbb4ce5809f4b97414e92b566f9f4925b9c5ab50d8fa1a66b9ac5e531d5401d"
+        );
+        let five: Vec<ManifestEntry> = (1..=5).map(entry).collect();
+        assert_eq!(
+            hex(merkle_root(&five)),
+            "41e1053b5055afb5181b4ab2a836ad51957f694ed4be1abf7d88e9396f9c1293"
+        );
+    }
+
+    #[test]
+    fn next_after_the_last_seq_is_refused() {
+        let mut m = Manifest::next(None, Id([9; 16]), vec![]).unwrap();
+        m.seq = u64::MAX;
+        assert_eq!(
+            Manifest::next(Some(&m), m.vault_id, vec![]),
+            Err(Error::InvalidFormat("manifest seq"))
+        );
+    }
+
+    #[test]
     fn record_hash_is_sha256_of_postcard() {
         let v = vault();
         let rec = record(&v, 3);
@@ -391,14 +428,14 @@ mod tests {
     #[test]
     fn next_sorts_and_chains() {
         let v = vault();
-        let m1 = Manifest::next(None, v.id, vec![entry(3), entry(1), entry(2)]);
+        let m1 = Manifest::next(None, v.id, vec![entry(3), entry(1), entry(2)]).unwrap();
         assert_eq!(m1.seq, 1);
         assert_eq!(m1.prev_hash, [0u8; 32]);
         assert_eq!(m1.vault_id, v.id);
         assert_eq!(m1.entries, vec![entry(1), entry(2), entry(3)]);
         assert_eq!(m1.merkle_root, merkle_root(&m1.entries));
 
-        let m2 = Manifest::next(Some(&m1), v.id, vec![entry(1)]);
+        let m2 = Manifest::next(Some(&m1), v.id, vec![entry(1)]).unwrap();
         assert_eq!(m2.seq, 2);
         assert_eq!(m2.prev_hash, sha(&[&postcard::to_allocvec(&m1).unwrap()]));
     }
@@ -406,7 +443,7 @@ mod tests {
     #[test]
     fn trailing_bytes_after_the_manifest_are_refused() {
         let v = vault();
-        let m = Manifest::next(None, v.id, vec![entry(1)]);
+        let m = Manifest::next(None, v.id, vec![entry(1)]).unwrap();
         let mut plain = postcard::to_allocvec(&m).unwrap();
         plain.push(0);
         let aad = Aad {
@@ -423,7 +460,7 @@ mod tests {
     #[test]
     fn sign_verify_roundtrip() {
         let v = vault();
-        let m = Manifest::next(None, v.id, vec![entry(2), entry(1)]);
+        let m = Manifest::next(None, v.id, vec![entry(2), entry(1)]).unwrap();
         let sm = sign_manifest(&v, signer(), &m).unwrap();
         assert_eq!(verify_manifest(&v, &verifier(), &sm, None).unwrap(), m);
         // The same manifest read again is accepted.
@@ -432,7 +469,7 @@ mod tests {
             m
         );
         // Empty vault.
-        let empty = Manifest::next(Some(&m), v.id, vec![]);
+        let empty = Manifest::next(Some(&m), v.id, vec![]).unwrap();
         let sm = sign_manifest(&v, signer(), &empty).unwrap();
         assert_eq!(
             verify_manifest(&v, &verifier(), &sm, Some(&seen(&m))).unwrap(),
@@ -443,8 +480,8 @@ mod tests {
     #[test]
     fn older_seq_is_rollback() {
         let v = vault();
-        let m1 = Manifest::next(None, v.id, vec![entry(1)]);
-        let m2 = Manifest::next(Some(&m1), v.id, vec![entry(1), entry(2)]);
+        let m1 = Manifest::next(None, v.id, vec![entry(1)]).unwrap();
+        let m2 = Manifest::next(Some(&m1), v.id, vec![entry(1), entry(2)]).unwrap();
         let s1 = sign_manifest(&v, signer(), &m1).unwrap();
         let s2 = sign_manifest(&v, signer(), &m2).unwrap();
         assert_eq!(
@@ -459,13 +496,15 @@ mod tests {
 
     #[test]
     fn manifest_hash_is_sha256_of_postcard() {
-        let m = Manifest::next(None, Id([9; 16]), vec![entry(1)]);
+        let m = Manifest::next(None, Id([9; 16]), vec![entry(1)]).unwrap();
         assert_eq!(
             manifest_hash(&m),
             sha(&[&postcard::to_allocvec(&m).unwrap()])
         );
         assert_eq!(
-            Manifest::next(Some(&m), m.vault_id, vec![]).prev_hash,
+            Manifest::next(Some(&m), m.vault_id, vec![])
+                .unwrap()
+                .prev_hash,
             manifest_hash(&m)
         );
     }
@@ -473,9 +512,9 @@ mod tests {
     #[test]
     fn same_seq_with_other_content_is_refused() {
         let v = vault();
-        let m1 = Manifest::next(None, v.id, vec![entry(1), entry(2)]);
+        let m1 = Manifest::next(None, v.id, vec![entry(1), entry(2)]).unwrap();
         // A fork at the same seq that silently drops an item.
-        let fork = Manifest::next(None, v.id, vec![entry(1)]);
+        let fork = Manifest::next(None, v.id, vec![entry(1)]).unwrap();
         assert_eq!(fork.seq, m1.seq);
         let sf = sign_manifest(&v, signer(), &fork).unwrap();
         assert_eq!(
@@ -493,10 +532,10 @@ mod tests {
     #[test]
     fn next_seq_must_chain_to_the_seen_manifest() {
         let v = vault();
-        let m1 = Manifest::next(None, v.id, vec![entry(1)]);
-        let fork = Manifest::next(None, v.id, vec![entry(2)]);
+        let m1 = Manifest::next(None, v.id, vec![entry(1)]).unwrap();
+        let fork = Manifest::next(None, v.id, vec![entry(2)]).unwrap();
         // seq 2 built on a fork of seq 1, not on the manifest that was seen.
-        let off = Manifest::next(Some(&fork), v.id, vec![entry(2)]);
+        let off = Manifest::next(Some(&fork), v.id, vec![entry(2)]).unwrap();
         assert_eq!(off.seq, 2);
         let so = sign_manifest(&v, signer(), &off).unwrap();
         assert_eq!(
@@ -504,14 +543,14 @@ mod tests {
             IntegrityError::ManifestRollback
         );
         // The correct chain is accepted.
-        let m2 = Manifest::next(Some(&m1), v.id, vec![entry(1), entry(2)]);
+        let m2 = Manifest::next(Some(&m1), v.id, vec![entry(1), entry(2)]).unwrap();
         let s2 = sign_manifest(&v, signer(), &m2).unwrap();
         assert_eq!(
             verify_manifest(&v, &verifier(), &s2, Some(&seen(&m1))).unwrap(),
             m2
         );
         // A gap (seq 3 seen from seq 1) cannot be chained, and is accepted.
-        let m3 = Manifest::next(Some(&off), v.id, vec![]);
+        let m3 = Manifest::next(Some(&off), v.id, vec![]).unwrap();
         assert_eq!(m3.seq, 3);
         let s3 = sign_manifest(&v, signer(), &m3).unwrap();
         assert_eq!(
@@ -523,7 +562,7 @@ mod tests {
     #[test]
     fn manifest_signed_by_other_key_is_refused() {
         let v = vault();
-        let m = Manifest::next(None, v.id, vec![entry(1)]);
+        let m = Manifest::next(None, v.id, vec![entry(1)]).unwrap();
         let other = HybridSigningKey::generate().unwrap();
         let sm = sign_manifest(&v, &other, &m).unwrap();
         assert_eq!(
@@ -535,7 +574,7 @@ mod tests {
     #[test]
     fn tampered_blob_fails_signature() {
         let v = vault();
-        let m = Manifest::next(None, v.id, vec![entry(1)]);
+        let m = Manifest::next(None, v.id, vec![entry(1)]).unwrap();
         let mut sm = sign_manifest(&v, signer(), &m).unwrap();
         let last = sm.blob.len() - 1;
         sm.blob[last] ^= 1;
@@ -549,7 +588,7 @@ mod tests {
     fn manifest_of_another_vault_is_refused() {
         let a = vault();
         let b = vault();
-        let m = Manifest::next(None, a.id, vec![entry(1)]);
+        let m = Manifest::next(None, a.id, vec![entry(1)]).unwrap();
         let sm = sign_manifest(&a, signer(), &m).unwrap();
         // Valid signature, but sealed under another vault key and context.
         assert!(matches!(
@@ -557,7 +596,7 @@ mod tests {
             Err(Error::Integrity(_))
         ));
         // Sealed in this vault's context but naming another vault inside.
-        let inner = Manifest::next(None, a.id, vec![entry(1)]);
+        let inner = Manifest::next(None, a.id, vec![entry(1)]).unwrap();
         let sm = forge(&b, &inner);
         assert_eq!(
             integrity(verify_manifest(&b, &verifier(), &sm, None)),
@@ -574,7 +613,7 @@ mod tests {
     fn unsorted_or_duplicate_entries_are_refused() {
         let v = vault();
         for entries in [vec![entry(2), entry(1)], vec![entry(1), entry(1)]] {
-            let mut m = Manifest::next(None, v.id, vec![]);
+            let mut m = Manifest::next(None, v.id, vec![]).unwrap();
             m.merkle_root = merkle_root(&entries);
             m.entries = entries;
             assert_eq!(
@@ -591,7 +630,7 @@ mod tests {
     #[test]
     fn wrong_merkle_root_is_refused() {
         let v = vault();
-        let mut m = Manifest::next(None, v.id, vec![entry(1), entry(2)]);
+        let mut m = Manifest::next(None, v.id, vec![entry(1), entry(2)]).unwrap();
         m.merkle_root[0] ^= 1;
         assert_eq!(
             integrity(verify_manifest(&v, &verifier(), &forge(&v, &m), None)),
@@ -607,7 +646,7 @@ mod tests {
     fn check_records_detects_each_case() {
         let v = vault();
         let (r1, r2) = (record(&v, 1), record(&v, 1));
-        let m = Manifest::next(None, v.id, vec![entry_for(&r1), entry_for(&r2)]);
+        let m = Manifest::next(None, v.id, vec![entry_for(&r1), entry_for(&r2)]).unwrap();
         let err = |records: &[ItemRecord]| match check_records(&m, records) {
             Err(Error::Integrity(e)) => e,
             other => panic!("expected an integrity error, got {other:?}"),

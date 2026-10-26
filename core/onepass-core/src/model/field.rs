@@ -10,6 +10,9 @@ use crate::model::item::Location;
 /// Marker printed in place of any secret value in `Debug` output.
 const MASK: &str = "**";
 
+/// Kind of a field. Postcard encodes variants by index: new variants
+/// must only ever be appended at the end, never inserted or reordered
+/// (pinned by `model::wire_tests`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FieldType {
     Text,
@@ -117,6 +120,9 @@ impl fmt::Debug for PasswordHistoryEntry {
     }
 }
 
+/// Value of a field. Postcard encodes variants by index: new variants
+/// must only ever be appended at the end, never inserted or reordered
+/// (pinned by `model::wire_tests`).
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum FieldValue {
     Text(String),

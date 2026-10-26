@@ -89,7 +89,7 @@ fn auk_matches_independent_vector() {
     // Argon2id, version 19, m=8192, t=1, p=1, 32 bytes) and hmac/hashlib HKDF:
     // password "hunter2", secret key bytes 0..=31, salt [1; 32],
     // info "onepass/auk/v1", L = 32.
-    let sk = SecretKey::parse("AAAQ-EAYE-AUDA-OCAJ-BIFQ-YDIO-B4IB-CEQT-CQKR-MFYY-DENB-WHA5-DYPQ-V")
+    let sk = SecretKey::parse("AAAQ-EAYE-AUDA-OCAJ-BIFQ-YDIO-B4IB-CEQT-CQKR-MFYY-DENB-WHA5-DYPQ-B")
         .unwrap();
     let expected: [u8; 32] = [
         0x33, 0x8e, 0xae, 0x36, 0x16, 0x6f, 0x61, 0x4f, 0xf4, 0x2c, 0xe5, 0xfc, 0x94, 0x83, 0x6e,

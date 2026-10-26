@@ -11,7 +11,8 @@ use crate::model::field::{Field, FieldType as K, FieldValue, Section};
 use crate::model::item::Item;
 
 /// Kind of an item. Postcard encodes variants by index: new variants must
-/// only ever be appended at the end, never inserted or reordered.
+/// only ever be appended at the end, never inserted or reordered (pinned by
+/// `model::wire_tests`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemType {
     Login,
@@ -557,7 +558,7 @@ fn identity() -> Vec<Section> {
             "main",
             "Identité",
             vec![
-                tx("title", "Civilité"),
+                tx("honorific", "Civilité"),
                 tx("first_name", "Prénom").req(),
                 tx("middle_name", "Deuxième prénom"),
                 tx("last_name", "Nom"),
@@ -941,6 +942,18 @@ mod tests {
             validate(&item),
             Err(Error::Validation(ValidationError { ref field, .. })) if field == "title"
         ));
+    }
+
+    #[test]
+    fn no_field_id_is_title() {
+        // `title` is the item's own title in references and `--field`.
+        for t in ItemType::ALL {
+            for section in template(t) {
+                for f in &section.fields {
+                    assert_ne!(f.id, "title", "{t:?}");
+                }
+            }
+        }
     }
 
     #[test]

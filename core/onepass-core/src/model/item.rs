@@ -31,6 +31,9 @@ pub struct Location {
     pub suggest_nearby: bool,
 }
 
+/// Identity provider of a login. Postcard encodes variants by index: new variants
+/// must only ever be appended at the end, never inserted or reordered
+/// (pinned by `model::wire_tests`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Provider {
     Google,
