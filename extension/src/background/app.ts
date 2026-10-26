@@ -92,6 +92,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     chainRunning,
     ...(opts.now ? { now: opts.now } : {}),
   });
+  session.onLocked(() => saveFlow.clearGenerated());
   const popup = new PopupBackend({
     ext,
     area: store.session,
@@ -99,6 +100,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     pairing,
     filler,
     analyses,
+    onLock: () => saveFlow.clearGenerated(),
     onGenerated: (tabId, origin, password) => saveFlow.rememberGenerated(tabId, origin, password),
     ...(opts.now ? { now: opts.now } : {}),
   });

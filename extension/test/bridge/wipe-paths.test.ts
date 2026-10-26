@@ -33,11 +33,12 @@ vi.mock("../../src/bridge/kdf", async (orig) => {
   };
 });
 
+import { Session } from "../../src/background/session";
 import { BridgeClient, type Transport } from "../../src/bridge/client";
 import { decapsulate, encapsulate, generateKem, kemFromSeeds } from "../../src/bridge/kem";
-import { ExtPairing } from "../../src/bridge/pairing";
+import { ExtPairing, type PairingRecord } from "../../src/bridge/pairing";
 import { extHelloDeterministic } from "../../src/bridge/session";
-import type { PairOffer, WelcomeEnvelope } from "../../src/bridge/wire";
+import type { PairDone, PairOffer, WelcomeEnvelope } from "../../src/bridge/wire";
 import { type PairingVector, type SessionVector, b, loadVector } from "./vectors";
 
 const pv = loadVector<PairingVector>("pairing");
@@ -81,7 +82,10 @@ describe("wipe on error paths", () => {
       { now: () => 0 },
     );
     snaps.length = 0;
-    fail.sha256At = fail.sha256Calls + 2; // the first hash is inside the encapsulation
+    // No seam between the encapsulation and the transcript hash other than the
+    // call order: the first sha256 is inside the encapsulation (HKDF info), the
+    // second is the transcript. Update the index if `encaps` hashes more.
+    fail.sha256At = fail.sha256Calls + 2;
     await expect(
       state.onOfferDeterministic(pv.pair_offer as unknown as PairOffer, b(pv.encaps_mlkem_seed), b(pv.encaps_x25519_eph)),
     ).rejects.toThrow("injected sha256");
@@ -110,5 +114,72 @@ describe("wipe on error paths", () => {
     (client as unknown as { channel: unknown }).channel = { open: async () => plain, closed: false, close: () => undefined };
     await (client as unknown as { onMsg(m: unknown): Promise<void> }).onMsg({ v: 1, t: "msg", c: 0, d: "" });
     expect(Array.from(plain)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("a queued request is wiped when the client already failed", async () => {
+    const transport: Transport = { send: () => undefined, onMessage: () => undefined, onClose: () => undefined, close: () => undefined };
+    const client = new BridgeClient(transport);
+    const sealed: Uint8Array[] = [];
+    (client as unknown as { channel: unknown }).channel = {
+      seal: async (p: Uint8Array) => (sealed.push(p), { v: 1, t: "msg", c: 0, d: "" }),
+      closed: false,
+      close: () => undefined,
+    };
+    const priv = client as unknown as { fail(e: Error): void; failure?: Error; sendChain: Promise<void> };
+    const req = client.request({ op: "save_login", password: "Secret-Pw-1" } as never);
+    req.catch(() => undefined);
+    // The failure lands between the request being queued and its turn in the chain.
+    priv.failure = new Error("gone");
+    await priv.sendChain;
+    expect(sealed).toHaveLength(0);
+    expect(snaps.some((x) => Buffer.from(x).toString().includes("Secret-Pw-1"))).toBe(true);
+  });
+
+  it("pair wipes the record key when the send or pair_ok fails after confirm", async () => {
+    const transport: Transport = { send: () => undefined, onMessage: () => undefined, onClose: () => undefined, close: () => undefined };
+    const client = new BridgeClient(transport);
+    vi.spyOn(ExtPairing, "start").mockImplementation(async () => {
+      const started = await ExtPairing.startDeterministic(
+        pv.ext_name,
+        pv.browser,
+        kemFromSeeds(b(pv.ext_mlkem_seed), b(pv.ext_x25519_secret)),
+        b(pv.ext_nonce),
+        { now: () => 0 },
+      );
+      // Vector host MACs need the vector encapsulation randomness.
+      const st = started.state;
+      st.onOffer = (o) => st.onOfferDeterministic(o, b(pv.encaps_mlkem_seed), b(pv.encaps_x25519_eph));
+      return started;
+    });
+    const replies: Record<string, unknown> = { pair_offer: pv.pair_offer, pair_sas: pv.pair_sas, pair_done: pv.pair_done };
+    (client as unknown as { next: unknown }).next = async (t: string) => {
+      if (t === "pair_ok") throw new Error("no pair_ok");
+      return replies[t];
+    };
+    snaps.length = 0;
+    await expect(client.pair(pv.ext_name, pv.browser, async () => true)).rejects.toThrow("no pair_ok");
+    expect(snaps.some((x) => Buffer.from(x).toString("base64") === pv.pairing_key)).toBe(true);
+    vi.restoreAllMocks();
+  });
+
+  it("Session.connect wipes the record key when superseded and tolerates unpaired", async () => {
+    const rec: PairingRecord = { pairingId: new Uint8Array(16).fill(1), key: new Uint8Array(32).fill(7), createdAt: 0 };
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const s = new Session({
+      store: { getPairing: async () => (await gate, rec) },
+      newClient: () => {
+        throw new Error("must not open");
+      },
+    });
+    const first = s.getClient().catch(() => undefined);
+    s.close(); // generation bump while the store read is pending
+    snaps.length = 0;
+    release();
+    await Promise.race([first, new Promise((r) => setTimeout(r, 50))]);
+    expect(snaps.some((x) => x.length === 32 && x.every((v) => v === 7))).toBe(true);
+
+    const unpaired = new Session({ store: { getPairing: async () => null }, newClient: () => { throw new Error("no"); } });
+    await expect(unpaired.getClient()).rejects.toMatchObject({ code: "unpaired" });
   });
 });

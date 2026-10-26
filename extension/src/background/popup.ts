@@ -22,6 +22,11 @@ export const HISTORY_MAX = 20;
 /** Memory only: a restart of the worker (a new module evaluation) empties it. */
 let historyEntries: GeneratorEntry[] = [];
 
+/** Test-only: the state a fresh worker would have (tests share one module instance). */
+export function resetGeneratorHistoryForTests(): void {
+  historyEntries = [];
+}
+
 export interface PopupDeps {
   ext: Pick<BgExt, "tabs">;
   area: StorageArea;
@@ -31,6 +36,8 @@ export interface PopupDeps {
   analyses: Pick<PageAnalyses, "top">;
   /** A generated password was filled in `tabId` (feeds the save proposal, spec 8.8). */
   onGenerated?: (tabId: number, origin: string, password: string) => void;
+  /** The host reported a locked vault (secrets held elsewhere must go too). */
+  onLock?: () => void;
   now?: () => number;
 }
 
@@ -65,9 +72,7 @@ export class PopupBackend {
 
   constructor(private readonly deps: PopupDeps) {
     this.now = deps.now ?? Date.now;
-    // One backend per worker: a new one starts with an empty history, and the
-    // history an older version kept in `storage.session` is removed once.
-    historyEntries = [];
+    // The history an older version kept in `storage.session` is removed once.
     void Promise.resolve(deps.area.remove(HISTORY_KEY)).catch(() => undefined);
     deps.session.onLocked(() => {
       this.known.clear();
@@ -120,6 +125,7 @@ export class PopupBackend {
     if (s.locked) {
       this.known.clear();
       this.clearHistory();
+      this.deps.onLock?.();
     }
     return s;
   }

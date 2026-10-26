@@ -507,8 +507,8 @@ export class BridgeClient {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
     });
     this.sendChain = this.sendChain.then(async () => {
-      if (this.failure) return;
       try {
+        if (this.failure) return;
         this.send(await channel.seal(plain));
       } catch (e) {
         this.fail(e instanceof Error ? e : new BridgeError("crypto"));

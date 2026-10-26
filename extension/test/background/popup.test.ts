@@ -1,12 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BridgeAppError } from "../../src/bridge/client";
 import { createBackground } from "../../src/background/app";
-import { HISTORY_KEY } from "../../src/background/popup";
+import { HISTORY_KEY, resetGeneratorHistoryForTests } from "../../src/background/popup";
 import { MemoryPairingStore, Store } from "../../src/background/store";
 import { type Answer, FakeClient, record } from "./fake-client";
 import { FakeExt, csSender, uiSender } from "./fake-ext";
 
 const SITE = "https://atlas-cloud.test";
+
+beforeEach(() => resetGeneratorHistoryForTests());
 
 const summary = (id: string, kind = "login") => ({
   item_id: id,
@@ -217,21 +219,24 @@ describe("generator history memory hygiene (security hardening 6.3)", () => {
   });
 
   it("generator_history_survives_restart_as_empty", async () => {
-    const { send } = await setup();
-    await send({ type: "popup_generate", kind: "pin" });
-    expect(await send({ type: "popup_history" })).toMatchObject({ ok: { entries: [{ kind: "pin" }] } });
+    const mk = async () => {
+      const mod = await import("../../src/background/popup");
+      const { FakeArea } = await import("./fake-ext");
+      return new mod.PopupBackend({
+        ext: {} as never,
+        area: new FakeArea(),
+        session: { request: (async () => ({ password: "gen-x", entropy_bits: 1 })) as never, onLocked: () => undefined },
+        pairing: {} as never,
+        filler: {} as never,
+        analyses: {} as never,
+      });
+    };
+    const before = await mk();
+    await before.generate("pin");
+    expect((await before.history()).entries).toHaveLength(1);
     // Service worker restart: the module is evaluated again.
     vi.resetModules();
-    const fresh = await import("../../src/background/popup");
-    const { FakeArea } = await import("./fake-ext");
-    const popup = new fresh.PopupBackend({
-      ext: {} as never,
-      area: new FakeArea(),
-      session: { request: (async () => ({})) as never, onLocked: () => undefined },
-      pairing: {} as never,
-      filler: {} as never,
-      analyses: {} as never,
-    });
-    await expect(popup.history()).resolves.toEqual({ entries: [] });
+    const after = await mk();
+    await expect(after.history()).resolves.toEqual({ entries: [] });
   });
 });

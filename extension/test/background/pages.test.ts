@@ -332,6 +332,15 @@ describe("save prompt", () => {
     expect(rec?.password).toBe("");
   });
 
+  it("the password is blanked when an expired record is dropped on resolve", async () => {
+    const { bg, clock } = await setup();
+    const token = await bg.saves.open(pending);
+    const rec = await bg.saves.tokens.resolve(token, { tabId: 7 } as never);
+    clock.t += SAVE_TTL_MS + 1;
+    expect(await bg.saves.tokens.resolve(token, { tabId: 7 } as never)).toBeNull();
+    expect(rec?.password).toBe("");
+  });
+
   it("the password is blanked as soon as the prompt is dismissed or closed", async () => {
     const { ext, bg } = await setup();
     const token = await bg.saves.open(pending);
