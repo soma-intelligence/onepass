@@ -8,6 +8,8 @@ public final class InMemoryTransport: CompanionTransport {
     public var onMessage: ((CompanionMessage) -> Void)?
     /// Every message sent through this end, in order.
     public var sent: [CompanionMessage] = []
+    /// When set, `sendLatest` throws it and delivers nothing (tests of send failures).
+    public var sendLatestError: (any Error)?
     public private(set) var isActivated = false
     private weak var peer: InMemoryTransport?
 
@@ -26,6 +28,7 @@ public final class InMemoryTransport: CompanionTransport {
     }
 
     public func sendLatest(_ m: CompanionMessage) throws {
+        if let sendLatestError { throw sendLatestError }
         deliver(m)
     }
 

@@ -9,8 +9,9 @@ public protocol WatchKeyStore: Sendable {
     func saveSecret(_ secret: Data) throws
     func loadPublicKey() throws -> Data?
     func savePublicKey(_ publicKey: Data) throws
-    /// 0 when none was saved (or the store cannot be read).
-    func loadGeneration() -> UInt64
+    /// 0 when none was saved. Throws when the store cannot be read: the caller must then refuse
+    /// every payload (a read failure must never lower the replay floor).
+    func loadGeneration() throws -> UInt64
     func saveGeneration(_ g: UInt64) throws
     func deleteAll() throws
 }
@@ -37,8 +38,9 @@ public struct SystemWatchKeyStore: WatchKeyStore {
     public func loadPublicKey() throws -> Data? { try read(.publicKey) }
     public func savePublicKey(_ publicKey: Data) throws { try write(publicKey, to: .publicKey) }
 
-    public func loadGeneration() -> UInt64 {
-        guard let data = try? read(.generation), data.count == 8 else { return 0 }
+    public func loadGeneration() throws -> UInt64 {
+        guard let data = try read(.generation) else { return 0 }
+        guard data.count == 8 else { throw WatchKeyStoreError.keychain(errSecDecode) }
         return data.withUnsafeBytes { UInt64(bigEndian: $0.loadUnaligned(as: UInt64.self)) }
     }
 
@@ -77,12 +79,13 @@ public struct SystemWatchKeyStore: WatchKeyStore {
         }
     }
 
+    /// Updates in place (never a window without the item, which would reset the generation),
+    /// and adds with the accessibility class only when the item does not exist yet.
     private func write(_ data: Data, to account: Account) throws {
-        // Delete then add, so the accessibility class is always the one set here.
-        let deleted = SecItemDelete(query(account) as CFDictionary)
-        guard deleted == errSecSuccess || deleted == errSecItemNotFound else {
-            throw WatchKeyStoreError.keychain(deleted)
-        }
+        let updated = SecItemUpdate(
+            query(account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if updated == errSecSuccess { return }
+        guard updated == errSecItemNotFound else { throw WatchKeyStoreError.keychain(updated) }
         var add = query(account)
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly
@@ -104,22 +107,52 @@ public final class InMemoryWatchKeyStore: WatchKeyStore {
         var generation: UInt64 = 0
     }
 
+    private struct Switches {
+        var passcodeSet: Bool
+        var isLocked = false
+        var generationReadFails = false
+    }
+
     private let state = Mutex(State())
-    private let passcode: Mutex<Bool>
+    private let switches: Mutex<Switches>
 
     public init(passcodeSet: Bool = true) {
-        passcode = Mutex(passcodeSet)
+        switches = Mutex(Switches(passcodeSet: passcodeSet))
     }
 
     /// Whether the simulated watch has a passcode (settable: the user may add one later).
     public var passcodeSet: Bool {
-        get { passcode.withLock { $0 } }
-        set { passcode.withLock { $0 = newValue } }
+        get { switches.withLock { $0.passcodeSet } }
+        set { switches.withLock { $0.passcodeSet = newValue } }
     }
 
-    public func loadSecret() throws -> Data? { state.withLock { $0.secret } }
-    public func loadPublicKey() throws -> Data? { state.withLock { $0.publicKey } }
-    public func loadGeneration() -> UInt64 { state.withLock { $0.generation } }
+    /// A locked watch: every read throws, as the keychain does for `WhenPasscodeSet` items.
+    public var isLocked: Bool {
+        get { switches.withLock { $0.isLocked } }
+        set { switches.withLock { $0.isLocked = newValue } }
+    }
+
+    /// Only the generation read throws.
+    public var generationReadFails: Bool {
+        get { switches.withLock { $0.generationReadFails } }
+        set { switches.withLock { $0.generationReadFails = newValue } }
+    }
+
+    public func loadSecret() throws -> Data? {
+        try requireUnlocked()
+        return state.withLock { $0.secret }
+    }
+
+    public func loadPublicKey() throws -> Data? {
+        try requireUnlocked()
+        return state.withLock { $0.publicKey }
+    }
+
+    public func loadGeneration() throws -> UInt64 {
+        try requireUnlocked()
+        if generationReadFails { throw WatchKeyStoreError.keychain(errSecInteractionNotAllowed) }
+        return state.withLock { $0.generation }
+    }
 
     public func saveSecret(_ secret: Data) throws {
         try requirePasscode()
@@ -140,7 +173,12 @@ public final class InMemoryWatchKeyStore: WatchKeyStore {
         state.withLock { $0 = State() }
     }
 
+    private func requireUnlocked() throws {
+        if isLocked { throw WatchKeyStoreError.keychain(errSecInteractionNotAllowed) }
+    }
+
     private func requirePasscode() throws {
+        try requireUnlocked()
         if !passcodeSet { throw WatchKeyStoreError.passcodeRequired }
     }
 }

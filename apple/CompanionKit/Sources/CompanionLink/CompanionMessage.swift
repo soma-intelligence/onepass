@@ -34,7 +34,9 @@ public enum CompanionMessage: Hashable, Sendable {
         switch self {
         case .watchKey(let data): ["kind": Kind.watchKey.rawValue, "data": data]
         case .payload(let data): ["kind": Kind.payload.rawValue, "data": data]
-        case .wipe: ["kind": Kind.wipe.rawValue]
+        // The nonce keeps two wipes distinct: WatchConnectivity drops an application context
+        // equal to the previous one.
+        case .wipe: ["kind": Kind.wipe.rawValue, "nonce": UUID().uuidString]
         case .refreshRequest: ["kind": Kind.refresh.rawValue]
         }
     }

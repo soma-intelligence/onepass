@@ -39,6 +39,22 @@ public final class WatchVault: WatchEntriesModel {
     /// A refresh was requested and no payload was accepted since: do not ask again, so a phone
     /// stuck on a bad key cannot ping-pong with the watch.
     @ObservationIgnored private var refreshPending = false
+    /// A payload arrived while the keychain was unreadable (watch locked) and was dropped:
+    /// `activate()` asks for a fresh one once the key reads again. Mirrored by an empty marker
+    /// file next to the payload (no secret in it) so it survives a relaunch.
+    private var missedPayload: Bool {
+        get { FileManager.default.fileExists(atPath: missedURL.path) }
+        set {
+            if newValue {
+                try? FileManager.default.createDirectory(
+                    at: missedURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                FileManager.default.createFile(atPath: missedURL.path, contents: Data())
+            } else {
+                try? FileManager.default.removeItem(at: missedURL)
+            }
+        }
+    }
+    private var missedURL: URL { payloadURL.appendingPathExtension("missed") }
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "companion")
 
@@ -65,7 +81,9 @@ public final class WatchVault: WatchEntriesModel {
             close(to: .needsPasscode)
             return
         } catch {
+            // Keychain unreadable (watch locked): the next start() retries.
             Self.log.error("watch key unavailable")
+            close(to: .closed)
             return
         }
         if state == .needsPasscode { state = .closed }
@@ -77,12 +95,21 @@ public final class WatchVault: WatchEntriesModel {
     public func activate() {
         isActive = true
         guard state != .needsPasscode else { return }
-        guard let sealed = try? Data(contentsOf: payloadURL) else {
-            close(to: .waitingForPhone)
+        let secret: Data
+        do {
+            guard let stored = try keys.loadSecret() else {
+                close(to: .waitingForPhone)
+                return
+            }
+            secret = stored
+        } catch {
+            // Locked keychain: not the phone's fault, show the vault as closed.
+            Self.log.error("watch key unreadable")
+            close(to: .closed)
             return
         }
-        guard let secret = try? keys.loadSecret() else {
-            Self.log.error("watch key unreadable")
+        if missedPayload { requestRefresh() }
+        guard let sealed = try? Data(contentsOf: payloadURL) else {
             close(to: .waitingForPhone)
             return
         }
@@ -114,9 +141,18 @@ public final class WatchVault: WatchEntriesModel {
     }
 
     private func accept(_ sealed: Data) {
-        // Keychain unreadable (watch locked) or no key yet: not the payload's fault, no refresh.
-        guard let secret = try? keys.loadSecret() else {
-            Self.log.notice("watch payload ignored: key unavailable")
+        // Keychain unreadable (watch locked): not the payload's fault, so no refresh now (that
+        // would loop while locked), but remember the miss for the next activate().
+        let secret: Data
+        do {
+            guard let stored = try keys.loadSecret() else {
+                Self.log.notice("watch payload ignored: no key")
+                return
+            }
+            secret = stored
+        } catch {
+            Self.log.notice("watch payload missed: key unavailable")
+            missedPayload = true
             return
         }
         let opened: CompanionVault
@@ -127,32 +163,56 @@ public final class WatchVault: WatchEntriesModel {
             requestRefresh()
             return
         }
-        guard opened.generation() > keys.loadGeneration() else {
+        let floor: UInt64
+        do {
+            floor = try keys.loadGeneration()
+        } catch {
+            // Without the floor, any replay could pass: refuse everything.
+            Self.log.error("watch payload missed: generation unreadable")
+            missedPayload = true
+            return
+        }
+        guard opened.generation() > floor else {
             Self.log.error("watch payload refused: replayed generation")
             requestRefresh()
+            return
+        }
+        // Raise the floor first: if the file write then fails, an older payload still cannot
+        // come back.
+        do {
+            try keys.saveGeneration(opened.generation())
+        } catch {
+            Self.log.error("watch payload missed: generation not saved")
+            missedPayload = true
             return
         }
         do {
             try FileManager.default.createDirectory(
                 at: payloadURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try sealed.write(to: payloadURL, options: [.atomic, .completeFileProtection])
-            try keys.saveGeneration(opened.generation())
         } catch {
             Self.log.error("watch payload could not be stored")
+            missedPayload = true
             return
         }
+        missedPayload = false
         refreshPending = false
         if isActive { open(opened) }
     }
 
     private func wipe() {
-        try? FileManager.default.removeItem(at: payloadURL)
+        close(to: .closed)
+        missedPayload = false
         do {
+            if FileManager.default.fileExists(atPath: payloadURL.path) {
+                try FileManager.default.removeItem(at: payloadURL)
+            }
             try keys.deleteAll()
         } catch {
-            Self.log.error("watch keys could not be deleted")
+            // Never restart with the old key: that would quietly undo the wipe.
+            Self.log.error("watch wipe failed")
+            return
         }
-        close(to: .closed)
         start()
     }
 

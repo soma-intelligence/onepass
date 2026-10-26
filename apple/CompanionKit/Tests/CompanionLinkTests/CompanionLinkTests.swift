@@ -163,7 +163,7 @@ struct CompanionLinkTests {
         let code = rig.watch.code(for: rig.watch.entries[0].itemId, at: Date())
         #expect(code?.code.count == 6)
         #expect(FileManager.default.fileExists(atPath: rig.payloadURL.path))
-        #expect(rig.keys.loadGeneration() == rig.phone.generation)
+        #expect(try rig.keys.loadGeneration() == rig.phone.generation)
     }
 
     @Test func lockedPhoneSendsNothing() async throws {
@@ -185,14 +185,13 @@ struct CompanionLinkTests {
         let first = try #require(rig.payloads.first)
 
         try rig.core.addWatchLogin(title: "Exemple Boreal")
-        try await nextMillisecond()
         await rig.phone.vaultChanged()
         #expect(rig.watch.entries.count == 2)
-        let accepted = rig.keys.loadGeneration()
+        let accepted = try rig.keys.loadGeneration()
 
         try rig.phoneLink.sendLatest(.payload(first))
         #expect(rig.watch.entries.count == 2)
-        #expect(rig.keys.loadGeneration() == accepted)
+        #expect(try rig.keys.loadGeneration() == accepted)
         #expect(rig.watchLink.sent.contains(.refreshRequest))
         await rig.phone.settle()
     }
@@ -213,7 +212,6 @@ struct CompanionLinkTests {
 
         // The phone answers the request with a fresh generation.
         let before = rig.payloads.count
-        try await nextMillisecond()
         await rig.phone.settle()
         #expect(rig.payloads.count == before + 1)
         #expect(rig.watch.entries.count == 1)
@@ -223,7 +221,7 @@ struct CompanionLinkTests {
         let rig = try await Rig()
         defer { rig.cleanUp() }
         await rig.startBoth()
-        let accepted = rig.keys.loadGeneration()
+        let accepted = try rig.keys.loadGeneration()
         #expect(accepted > 0)
 
         // The phone loses its settings (reinstall): fresh defaults, counter back to zero.
@@ -238,7 +236,7 @@ struct CompanionLinkTests {
         rig.phone.start()
         rig.watch.start()
         await rig.phone.settle()
-        #expect(rig.keys.loadGeneration() > accepted)
+        #expect(try rig.keys.loadGeneration() > accepted)
         #expect(rig.watch.entries.count == 2)
     }
 
@@ -256,7 +254,7 @@ struct CompanionLinkTests {
         let newKey = try #require(rig.watchKeys.last)
         #expect(newKey != oldKey)
         #expect(try rig.keys.loadPublicKey() == newKey)
-        #expect(rig.keys.loadGeneration() == 0)
+        #expect(try rig.keys.loadGeneration() == 0)
         // The phone forgot the old key and learned the new one from the restarted watch.
         #expect(rig.phone.watchPublicKey == newKey)
         await rig.phone.settle()
@@ -276,7 +274,6 @@ struct CompanionLinkTests {
         // A new key (watch reset, the old app is gone): stored, then a payload sealed for it.
         rig.watchLink.onMessage = nil
         let other = try companionGenerateKey()
-        try await nextMillisecond()
         rig.watchLink.sendQueued(.watchKey(other.public))
         await rig.phone.settle()
         #expect(rig.phone.watchPublicKey == other.public)
@@ -319,7 +316,6 @@ struct CompanionLinkTests {
 
         // A payload arriving in the background is stored but not opened.
         try rig.core.addWatchLogin(title: "Exemple Boreal")
-        try await nextMillisecond()
         await rig.phone.vaultChanged()
         #expect(rig.watch.state == .closed)
         #expect(rig.watch.entries.isEmpty)
@@ -363,6 +359,126 @@ struct CompanionLinkTests {
         #expect(restored.lastSent != nil)
     }
 
+    @Test func wipeIsNotUndoneByStaleKey() async throws {
+        let rig = try await Rig()
+        defer { rig.cleanUp() }
+        await rig.startBoth()
+        let oldKey = try #require(rig.watchKeys.first)
+        let sentBefore = rig.payloads.count
+
+        // The watch has not processed the wipe yet when its queued old key reaches the phone.
+        rig.watchLink.onMessage = nil
+        rig.phone.wipeWatch()
+        #expect(rig.phoneLink.sent.filter { $0 == .wipe }.count == 2)
+        #expect(rig.phone.lastError == nil)
+        rig.watchLink.sendQueued(.watchKey(oldKey))
+        await rig.phone.settle()
+        #expect(rig.phone.watchPublicKey == nil)
+        #expect(rig.payloads.count == sentBefore)
+
+        // Still ignored after a relaunch of the phone app.
+        rig.phone = rig.makePhone(defaults: rig.defaults)
+        rig.phone.start()
+        rig.watchLink.sendQueued(.watchKey(oldKey))
+        await rig.phone.settle()
+        #expect(rig.payloads.count == sentBefore)
+
+        // The rekeyed watch's new key resumes sending.
+        let fresh = try companionGenerateKey()
+        rig.watchLink.sendQueued(.watchKey(fresh.public))
+        await rig.phone.settle()
+        #expect(rig.phone.watchPublicKey == fresh.public)
+        #expect(rig.payloads.count == sentBefore + 1)
+    }
+
+    @Test func wipeSendFailureIsPublished() async throws {
+        let rig = try await Rig()
+        defer { rig.cleanUp() }
+        await rig.startBoth()
+        rig.phoneLink.sendLatestError = SealRefused()
+        rig.phone.wipeWatch()
+        #expect(rig.phone.lastError == .wipeFailed)
+        // The queued copy still went out.
+        #expect(rig.phoneLink.sent.last == .wipe)
+
+        rig.phoneLink.sendLatestError = nil
+        await rig.phone.vaultChanged()
+        #expect(rig.phone.lastError == nil)
+    }
+
+    @Test func missedPayloadRequestsRefreshOnActivate() async throws {
+        let rig = try await Rig()
+        defer { rig.cleanUp() }
+        await rig.startBoth()
+        rig.watch.deactivate()
+
+        // The watch is locked when the next payload arrives: dropped, no refresh yet.
+        rig.keys.isLocked = true
+        try rig.core.addWatchLogin(title: "Exemple Boreal")
+        await rig.phone.vaultChanged()
+        #expect(!rig.watchLink.sent.contains(.refreshRequest))
+        rig.watch.activate()
+        #expect(rig.watch.state == .closed)
+        #expect(!rig.watchLink.sent.contains(.refreshRequest))
+
+        // A relaunched watch app remembers the miss too.
+        let relaunched = WatchVault(transport: rig.watchLink, keys: rig.keys, payloadURL: rig.payloadURL)
+        rig.keys.isLocked = false
+        relaunched.start()
+        #expect(rig.watchLink.sent.filter { $0 == .refreshRequest }.count == 1)
+        await rig.phone.settle()
+        #expect(relaunched.entries.count == 2)
+
+        // Accepted: the miss is cleared, the next activation asks for nothing.
+        relaunched.deactivate()
+        relaunched.activate()
+        #expect(rig.watchLink.sent.filter { $0 == .refreshRequest }.count == 1)
+    }
+
+    @Test func unreadableGenerationRefusesPayload() async throws {
+        let rig = try await Rig()
+        defer { rig.cleanUp() }
+        await rig.startBoth()
+        let floor = try rig.keys.loadGeneration()
+        let first = try #require(rig.payloads.first)
+
+        rig.keys.generationReadFails = true
+        try rig.core.addWatchLogin(title: "Exemple Boreal")
+        await rig.phone.vaultChanged()
+        #expect(rig.watch.entries.count == 1)
+        try rig.phoneLink.sendLatest(.payload(first))
+        #expect(rig.watch.entries.count == 1)
+
+        rig.keys.generationReadFails = false
+        #expect(try rig.keys.loadGeneration() == floor)
+        rig.watch.deactivate()
+        rig.watch.activate()
+        await rig.phone.settle()
+        #expect(rig.watch.entries.count == 2)
+    }
+
+    @Test func generationSavedBeforeFile() async throws {
+        let rig = try await Rig()
+        defer { rig.cleanUp() }
+        await rig.startBoth()
+        let first = try #require(rig.payloads.first)
+
+        // Make the file write fail: a directory now sits at the payload path.
+        try FileManager.default.removeItem(at: rig.payloadURL)
+        try FileManager.default.createDirectory(at: rig.payloadURL, withIntermediateDirectories: false)
+        try rig.core.addWatchLogin(title: "Exemple Boreal")
+        await rig.phone.vaultChanged()
+        #expect(try rig.keys.loadGeneration() == rig.phone.generation)
+
+        // The floor was raised before the write failed: the older payload is refused.
+        try FileManager.default.removeItem(at: rig.payloadURL)
+        rig.watch.deactivate()
+        try rig.phoneLink.sendLatest(.payload(first))
+        #expect(!FileManager.default.fileExists(atPath: rig.payloadURL.path))
+        #expect(try rig.keys.loadGeneration() == rig.phone.generation)
+        await rig.phone.settle()
+    }
+
     @Test func messageDictionaryRoundTrip() {
         let messages: [CompanionMessage] = [
             .watchKey(Data([1, 2, 3])), .payload(Data([4, 5])), .wipe, .refreshRequest,
@@ -371,6 +487,7 @@ struct CompanionLinkTests {
             #expect(CompanionMessage(dictionary: message.dictionary) == message)
         }
         #expect(CompanionMessage.refreshRequest.dictionary["kind"] as? String == "refresh")
+        #expect(CompanionMessage.wipe.dictionary["nonce"] as? String != CompanionMessage.wipe.dictionary["nonce"] as? String)
         #expect(CompanionMessage(dictionary: ["kind": "launch"]) == nil)
         #expect(CompanionMessage(dictionary: [:]) == nil)
         #expect(CompanionMessage(dictionary: ["kind": "payload"]) == nil)

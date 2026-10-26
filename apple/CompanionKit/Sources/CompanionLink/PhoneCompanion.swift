@@ -1,6 +1,15 @@
+import CryptoKit
 import Foundation
 import Observation
 import os
+
+/// A failure the settings page shows ("Dernier envoi" area). Cleared by the next success.
+public enum CompanionIssue: Equatable, Sendable {
+    /// A sealed payload could not be handed to the transport.
+    case sendFailed
+    /// The wipe could not be handed to the transport: the watch may still hold its data.
+    case wipeFailed
+}
 
 /// iPhone side of the watch link. Keeps the watch public key (not a secret), the payload
 /// generation and the last send date in `defaults`, and pushes a freshly sealed payload with
@@ -13,6 +22,7 @@ public final class PhoneCompanion {
         static let watchKey = "companion.watchKey"
         static let generation = "companion.generation"
         static let lastSent = "companion.lastSent"
+        static let wipedKey = "companion.wipedKey"
     }
 
     /// The "Apple Watch" setting (on by default).
@@ -22,6 +32,7 @@ public final class PhoneCompanion {
     public private(set) var watchPublicKey: Data?
     public private(set) var generation: UInt64
     public private(set) var lastSent: Date?
+    public private(set) var lastError: CompanionIssue?
     public var status: CompanionStatus { transport.status }
 
     @ObservationIgnored private let transport: any CompanionTransport
@@ -59,16 +70,26 @@ public final class PhoneCompanion {
         await scheduleSend().value
     }
 
-    /// Asks the watch to forget everything and rekey; the phone forgets the old key first, so
-    /// the new one is learned when the watch sends it.
+    /// Asks the watch to forget everything and rekey. The phone forgets the key and remembers
+    /// its SHA-256: a stale copy of that key arriving later (queued before the wipe was
+    /// processed, or resent by a watch that never got the wipe) is ignored, so no payload can
+    /// replace the wipe. Only a different key (the rekeyed watch) resumes sending.
+    /// The wipe goes through both channels: the latest-only context, and the queue, which a
+    /// later context cannot replace. A failure is published in `lastError`.
     public func wipeWatch() {
+        if let key = watchPublicKey {
+            defaults.set(Self.fingerprint(key), forKey: Key.wipedKey)
+        }
         watchPublicKey = nil
         defaults.removeObject(forKey: Key.watchKey)
         do {
             try transport.sendLatest(.wipe)
+            lastError = nil
         } catch {
             Self.log.error("watch wipe could not be sent")
+            lastError = .wipeFailed
         }
+        transport.sendQueued(.wipe)
     }
 
     /// Waits for the sends scheduled so far (tests).
@@ -80,6 +101,11 @@ public final class PhoneCompanion {
         switch message {
         case .watchKey(let key):
             guard key != watchPublicKey else { return }
+            if defaults.data(forKey: Key.wipedKey) == Self.fingerprint(key) {
+                Self.log.notice("wiped watch key ignored")
+                return
+            }
+            defaults.removeObject(forKey: Key.wipedKey)
             watchPublicKey = key
             defaults.set(key, forKey: Key.watchKey)
             scheduleSend()
@@ -120,11 +146,17 @@ public final class PhoneCompanion {
             try transport.sendLatest(.payload(sealed))
         } catch {
             Self.log.error("watch payload could not be sent")
+            lastError = .sendFailed
             return
         }
         generation = next
         lastSent = now
+        lastError = nil
         defaults.set(NSNumber(value: next), forKey: Key.generation)
         defaults.set(now, forKey: Key.lastSent)
+    }
+
+    private static func fingerprint(_ key: Data) -> Data {
+        Data(SHA256.hash(data: key))
     }
 }
