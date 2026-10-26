@@ -2,23 +2,24 @@ import SwiftUI
 import VaultKit
 
 /// Keyboard commands, identical on Mac and iPad (spec 6.1, 6.3): ⌘N new item, ⌘E edit, ⌘S save,
-/// ⌘⌫ move to Supprimés récemment, ⌘F search, ⌘L lock. The views on screen act on the requests
-/// (`AppModel.editRequest`, `saveRequest`, `searchFocusRequest`). ⌥⌘N opens another window.
+/// ⌘F search, ⌘L lock, ⌘⌫ move to Supprimés récemment. The views on screen act on the requests
+/// (`AppModel.editRequest`, `saveRequest`, `searchFocusRequest`). ⌘⌫ is enabled only while the
+/// item list has keyboard focus (`FocusedValues.itemListFocused`): never from a text field.
 struct BrowseCommands: Commands {
     let model: AppModel
-    @Environment(\.openWindow) private var openWindow
+    @FocusedValue(\.itemListFocused) private var listFocused
 
     private var unlocked: Bool { model.session.state == .unlocked && !model.onboardingInProgress }
 
     var body: some Commands {
+        // Replaces "New Window": one window in milestone 2.
         CommandGroup(replacing: .newItem) {
             Button("Nouvel élément") { model.showNewItemPicker = true }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(!unlocked)
-            Button("Nouvelle fenêtre") { openWindow(id: OnePassApp.mainWindowID) }
-                .keyboardShortcut("n", modifiers: [.command, .option])
         }
-        CommandGroup(after: .textEditing) {
+        // Replaces the standard Find submenu, whose ⌘F would compete with this one.
+        CommandGroup(replacing: .textEditing) {
             Button("Rechercher") { model.searchFocusRequest &+= 1 }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(!unlocked)
@@ -33,7 +34,7 @@ struct BrowseCommands: Commands {
             Divider()
             Button("Mettre à la corbeille") { model.trashSelection() }
                 .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(!unlocked || !model.canTrashSelection)
+                .disabled(!unlocked || listFocused != true || !model.canTrashSelection)
         }
         CommandGroup(after: .appSettings) {
             Button("Verrouiller OnePass") { model.perform(.lock) }
@@ -41,4 +42,9 @@ struct BrowseCommands: Commands {
                 .disabled(model.session.state != .unlocked)
         }
     }
+}
+
+extension FocusedValues {
+    /// True while the item list (not a text field) has keyboard focus.
+    @Entry var itemListFocused: Bool?
 }

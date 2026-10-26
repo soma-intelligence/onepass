@@ -193,7 +193,7 @@ Structure reprise de la maquette approuvée (artefact `7XoCLnvsAXhKUFKJ5qzfQv`).
 
 ### 6.3 iPad
 
-Même app que l'iPhone, mise en page Mac : `NavigationSplitView` 3 colonnes en largeur normale, repli sur la pile iPhone en largeur compacte (Split View, Slide Over). Raccourcis clavier identiques au Mac. Multi-fenêtres et Stage Manager acceptés (une session partagée par processus).
+Même app que l'iPhone, mise en page Mac : `NavigationSplitView` 3 colonnes en largeur normale, repli sur la pile iPhone en largeur compacte (Split View, Slide Over). Raccourcis clavier identiques au Mac. Une seule fenêtre au jalon 2 (l'état de navigation est global au processus) ; Stage Manager accepté.
 
 ### 6.4 Éditeur des 26 types
 

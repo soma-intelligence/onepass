@@ -13,28 +13,40 @@ struct OnePassApp: App {
     /// Aggregate phase of every scene: drives auto-lock and sync, once for the whole app.
     @Environment(\.scenePhase) private var scenePhase
 
-    static let mainWindowID = "main"
-
     var body: some Scene {
-        WindowGroup(id: Self.mainWindowID) {
-            RootView()
-                .environment(model)
-                .tint(Theme.accent)
-                .onAppear { appDelegate.model = model }
-            #if os(macOS)
-                .frame(minWidth: 820, minHeight: 600)
-            #endif
-        }
+        // One window in milestone 2: navigation and editing state live in the process-wide
+        // `AppModel` (spec 6.3). iPad: `UIApplicationSupportsMultipleScenes` is false.
         #if os(macOS)
+        Window("OnePass", id: "main") {
+            root
+                .frame(minWidth: 820, minHeight: 600)
+        }
         .defaultSize(width: 1280, height: 820)
         .windowToolbarStyle(.unified)
-        #endif
         .onChange(of: scenePhase) { _, phase in
             model.scenePhaseChanged(phase)
         }
         .commands {
             BrowseCommands(model: model)
         }
+        #else
+        WindowGroup {
+            root
+        }
+        .onChange(of: scenePhase) { _, phase in
+            model.scenePhaseChanged(phase)
+        }
+        .commands {
+            BrowseCommands(model: model)
+        }
+        #endif
+    }
+
+    private var root: some View {
+        RootView()
+            .environment(model)
+            .tint(Theme.accent)
+            .onAppear { appDelegate.model = model }
     }
 }
 

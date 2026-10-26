@@ -92,6 +92,8 @@ struct ItemEditorView: View {
         .onChange(of: editor.isDirty, initial: true) { _, dirty in model.editorDirty = dirty }
         .onDisappear { model.editorDirty = false }
         .onChange(of: model.saveRequest) { save() }
+        // Typing counts as activity: a long edit does not auto-lock under the user's fingers.
+        .onChange(of: editor.draft) { model.session.noteActivity() }
         .task {
             #if DEBUG
             if UserDefaults.standard.bool(forKey: "OnePassDebugAutoSave") {

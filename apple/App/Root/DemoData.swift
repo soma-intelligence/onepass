@@ -24,6 +24,14 @@ enum DemoData {
     private static let suiteName = "me.somalabs.onepass.demo"
     private static let folderPrefix = "OnePassDemo-"
 
+    /// Settings and list order of the demo, never the real ones. Reset once per launch.
+    /// `UserDefaults` is thread safe; the type is just not marked `Sendable` in this SDK.
+    nonisolated(unsafe) static let defaults: UserDefaults = {
+        guard let suite = UserDefaults(suiteName: suiteName) else { return .standard }
+        suite.removePersistentDomain(forName: suiteName)
+        return suite
+    }()
+
     static var requested: Bool {
         UserDefaults.standard.bool(forKey: "OnePassDemoData") || snapshotFolder != nil
     }
@@ -53,14 +61,19 @@ enum DemoData {
     static func environment() -> VaultEnvironment {
         let manager = FileManager.default
         let tmp = manager.temporaryDirectory
+        // Only demo stores older than a day: another demo run may still be using a recent one.
+        let dayAgo = Date().addingTimeInterval(-86_400)
         for name in (try? manager.contentsOfDirectory(atPath: tmp.path)) ?? [] where name.hasPrefix(folderPrefix) {
-            try? manager.removeItem(at: tmp.appendingPathComponent(name, isDirectory: true))
+            let url = tmp.appendingPathComponent(name, isDirectory: true)
+            let created = (try? manager.attributesOfItem(atPath: url.path)[.creationDate]) as? Date
+            if let created, created < dayAgo { try? manager.removeItem(at: url) }
         }
         let folder = tmp.appendingPathComponent(folderPrefix + UUID().uuidString, isDirectory: true)
         try? manager.createDirectory(at: folder, withIntermediateDirectories: true)
 
-        UserDefaults.standard.removePersistentDomain(forName: suiteName)
-        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        let defaults = Self.defaults
+        // Fictional sites: no network request for their icons.
+        defaults.set(false, forKey: "onepass.siteIconsEnabled")
         let keychain = InMemoryKeychain()
         let clock = SystemClock()
         return VaultEnvironment(

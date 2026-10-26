@@ -45,6 +45,8 @@ final class AppModel {
     var editRequest = 0
     var saveRequest = 0
     var searchFocusRequest = 0
+    /// Short confirmation shown at the bottom of the browse screens ("Mis à la corbeille").
+    private(set) var toast: String?
 
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var started = false
@@ -289,14 +291,44 @@ final class AppModel {
 
     func trashSelection() {
         guard canTrashSelection, let ref = selectedItem else { return }
+        trash(ref)
+    }
+
+    /// No confirmation (the item stays 30 days in Supprimés récemment): a toast says it happened.
+    func trash(_ ref: ItemRef) {
+        let title = session.summaries.first { $0.id == ref.itemID }?.title ?? ""
         Task {
             do {
                 try await session.trash(itemID: ref.itemID, vaultID: ref.vaultID)
-                if selectedItem == ref { selectedItem = nil }
+                if selectedItem == ref, !isEditing { selectedItem = nil }
+                showToast(String(localized: "« \(title) » mis à la corbeille"))
             } catch {
-                session.lastError = VaultError(error)
+                showToast(VaultError(error).localizedMessage)
             }
         }
+    }
+
+    func showToast(_ text: String) {
+        toast = text
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            if toast == text { toast = nil }
+        }
+    }
+
+    /// The list changed (filter, search, remote reload): a selected item that is no longer in it
+    /// is dropped, unless its editor is open.
+    func keepSelection(in visibleItemIDs: Set<String>) {
+        guard !isEditing, let ref = selectedItem, !visibleItemIDs.contains(ref.itemID) else { return }
+        perform(.select(nil))
+    }
+
+    /// Defaults of the browse screens (list order): the demo's own suite in demo mode.
+    static var browseDefaults: UserDefaults {
+        #if DEBUG
+        if DemoData.requested { return DemoData.defaults }
+        #endif
+        return .standard
     }
 
     /// Initials for the account badge ("Camille Durand" gives "CD"), empty without a name.

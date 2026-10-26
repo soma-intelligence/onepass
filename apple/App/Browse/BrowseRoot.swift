@@ -28,6 +28,19 @@ struct BrowseRoot: View {
             } message: {
                 Text("Les modifications de cet élément ne sont pas enregistrées.")
             }
+            .overlay(alignment: .bottom) {
+                if let toast = model.toast {
+                    Text(toast)
+                        .font(.footnote.weight(.medium))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .glassEffect(.regular, in: Capsule())
+                        .padding(.bottom, 18)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .accessibilityIdentifier("browse.toast")
+                }
+            }
+            .animation(.snappy, value: model.toast)
             .simultaneousGesture(TapGesture().onEnded { model.session.noteActivity() })
     }
 

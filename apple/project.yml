@@ -62,7 +62,7 @@ targets:
         NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit."
         UILaunchScreen: {}
         UIApplicationSceneManifest:
-          UIApplicationSupportsMultipleScenes: true
+          UIApplicationSupportsMultipleScenes: false
         UIBackgroundModes: [remote-notification]
         UISupportedInterfaceOrientations~iphone:
           - UIInterfaceOrientationPortrait

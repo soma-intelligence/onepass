@@ -1,15 +1,36 @@
 import DesignKit
 import SwiftUI
 import VaultKit
+#if os(macOS)
+import AppKit
+
+/// ⌘F on Mac: puts the keyboard focus in the window's toolbar search field.
+@MainActor
+enum SearchFieldFocus {
+    static func focus() {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible),
+            let frame = window.contentView?.superview,
+            let field = find(in: frame)
+        else { return }
+        window.makeFirstResponder(field)
+    }
+
+    private static func find(in view: NSView) -> NSSearchField? {
+        if let field = view as? NSSearchField { return field }
+        for sub in view.subviews { if let field = find(in: sub) { return field } }
+        return nil
+    }
+}
+#endif
 
 /// Middle column (spec 6.1): items of the sidebar filter, search (⌘F), sort by title or by
 /// modification date (then grouped by month, "OCTOBRE 2026"), "Nouvel élément" (⌘N).
 struct ItemListColumn: View {
     @Environment(AppModel.self) private var model
     @State private var query = ""
-    @State private var searchFocused = false
+    @FocusState private var searchFocused: Bool
     /// Not secret: the list order only.
-    @AppStorage("onepass.browse.sortByDate") private var sortByDate = false
+    @AppStorage("onepass.browse.sortByDate", store: AppModel.browseDefaults) private var sortByDate = false
 
     private var session: VaultSession { model.session }
     private var sort: ItemSort { sortByDate ? .updated : .title }
@@ -35,8 +56,17 @@ struct ItemListColumn: View {
                 rows(items)
             }
         }
+        .focusedValue(\.itemListFocused, true)
+        #if os(macOS)
+        // Delete key on the focused list (Edit > Supprimer): same as ⌘⌫, never from a text field.
+        .onDeleteCommand { model.trashSelection() }
+        #endif
         .overlay {
             if items.isEmpty { emptyState }
+        }
+        // Filter, search or remote reload: a selection no longer listed goes away (M2, M3).
+        .onChange(of: items.map(\.id), initial: true) { _, ids in
+            model.keepSelection(in: Set(ids))
         }
         .navigationTitle(title)
         #if os(macOS)
@@ -56,8 +86,16 @@ struct ItemListColumn: View {
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .searchable(text: $query, isPresented: $searchFocused, prompt: Text("Rechercher"))
-        .onChange(of: model.searchFocusRequest) { searchFocused = true }
+        .searchable(text: $query, prompt: Text("Rechercher"))
+        .searchFocused($searchFocused)
+        .onChange(of: model.searchFocusRequest) {
+            searchFocused = true
+            #if os(macOS)
+            // `searchFocused` only works the first time once the focus left the field (macOS 26):
+            // the toolbar search field is focused directly.
+            SearchFieldFocus.focus()
+            #endif
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -104,15 +142,7 @@ struct ItemListColumn: View {
             }
             Divider()
             Button("Mettre à la corbeille", systemImage: "trash", role: .destructive) {
-                let ref = ItemRef(vaultID: summary.vaultId, itemID: summary.id)
-                Task {
-                    do {
-                        try await session.trash(itemID: summary.id, vaultID: summary.vaultId)
-                        if model.selectedItem == ref, !model.isEditing { model.selectedItem = nil }
-                    } catch {
-                        session.lastError = VaultError(error)
-                    }
-                }
+                model.trash(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
             }
             .disabled(model.isEditing && model.selectedItem == ItemRef(vaultID: summary.vaultId, itemID: summary.id))
         }
