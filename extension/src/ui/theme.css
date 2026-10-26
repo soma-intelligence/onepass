@@ -333,6 +333,9 @@ body.popup { width: 780px; height: 600px; overflow: hidden; }
 .pp-empty { margin: 0; padding: 6px 18px; font-size: 13px; color: var(--text2); }
 .verified { margin: 12px; margin-top: auto; padding: 12px; border-radius: 10px; background: var(--pop); border: 1px solid var(--cardline); display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; line-height: 1.45; color: var(--text2); }
 .verified .glyph { color: var(--ok-mark); margin-top: 1px; }
+.pp-foot { margin-top: auto; padding: 0 12px 12px; display: flex; justify-content: center; }
+.verified + .pp-foot { margin-top: 0; }
+.pp-foot .btn-link, .center .btn-link { min-height: 32px; color: var(--text2); }
 .pp-main { flex-grow: 1; min-width: 0; position: relative; display: flex; flex-direction: column; }
 .pp-main > .center p { font-size: 13.5px; }
 .pp-bar { height: 60px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 16px 0 24px; }

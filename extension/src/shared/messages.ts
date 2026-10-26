@@ -132,7 +132,8 @@ export type UiToBg =
   | { type: "popup_fill_generated"; password: string }
   | { type: "popup_pair_start" }
   | { type: "popup_pair_approve" }
-  | { type: "popup_pair_cancel" };
+  | { type: "popup_pair_cancel" }
+  | { type: "popup_forget" };
 
 /**
  * Background to content script. `origin` on `fill`, `click` and `submit` is a

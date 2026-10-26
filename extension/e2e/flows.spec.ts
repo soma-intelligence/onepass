@@ -14,6 +14,13 @@ test("pairing_shows_same_code", async ({ ext }) => {
   const popup = await ext.context.newPage();
   await popup.goto(`chrome-extension://${ext.id}/popup.html`);
   await expect(popup.getByPlaceholder("Rechercher dans OnePass")).toBeVisible();
+  // "Oublier cet appairage" (spec 6.4): confirmed, the popup is unpaired, and stays so.
+  await popup.getByRole("button", { name: "Oublier cet appairage" }).click();
+  await expect(popup.getByRole("heading", { name: "Oublier cet appairage ?" })).toBeVisible();
+  await popup.getByRole("button", { name: "Oublier", exact: true }).click();
+  await expect(popup.getByRole("button", { name: "Appairer avec OnePass" })).toBeVisible();
+  await popup.reload();
+  await expect(popup.getByRole("button", { name: "Appairer avec OnePass" })).toBeVisible();
   await popup.close();
 });
 

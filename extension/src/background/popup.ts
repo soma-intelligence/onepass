@@ -2,7 +2,7 @@
 // "Remplir" goes to the top frame of the active tab, whose origin the worker
 // reads from the browser, into a form the content script reported there.
 // Generator history: 20 entries in `storage.session`, cleared when the host
-// answers `locked`.
+// answers `locked` or the pairing is forgotten.
 import type { FillField, Summary } from "../bridge/client";
 import { parseOrigin } from "../shared/domain";
 import type { FormInfo, FormKind } from "../shared/messages";
@@ -21,7 +21,7 @@ export interface PopupDeps {
   ext: Pick<BgExt, "tabs">;
   area: StorageArea;
   session: Pick<Session, "request" | "onLocked">;
-  pairing: Pick<PairingFlow, "startPairing" | "confirmPairing" | "cancelPairing">;
+  pairing: Pick<PairingFlow, "startPairing" | "confirmPairing" | "cancelPairing" | "forgetPairing">;
   filler: Pick<Filler, "fillLogin" | "fillCard" | "fillIdentity" | "fillGenerated">;
   analyses: Pick<PageAnalyses, "top">;
   /** A generated password was filled in `tabId` (feeds the save proposal, spec 8.8). */
@@ -60,7 +60,10 @@ export class PopupBackend {
 
   constructor(private readonly deps: PopupDeps) {
     this.now = deps.now ?? Date.now;
-    deps.session.onLocked(() => void this.clearHistory());
+    deps.session.onLocked(() => {
+      this.known.clear();
+      void this.clearHistory();
+    });
   }
 
   /** The active tab and its HTTPS origin, from the browser. */
@@ -105,7 +108,10 @@ export class PopupBackend {
 
   async status() {
     const s = await this.deps.session.request({ op: "status" });
-    if (s.locked) await this.clearHistory();
+    if (s.locked) {
+      this.known.clear();
+      await this.clearHistory();
+    }
     return s;
   }
 
@@ -192,6 +198,14 @@ export class PopupBackend {
     await this.deps.area.remove(HISTORY_KEY);
   }
 
+  /** "Oublier cet appairage" (spec 6.4): drops the record and everything the popup was shown. */
+  async forget(): Promise<Record<string, never>> {
+    await this.deps.pairing.forgetPairing();
+    this.known.clear();
+    await this.clearHistory();
+    return {};
+  }
+
   handlers(): Handlers["ui"] {
     return {
       popup_status: async () => this.status(),
@@ -214,6 +228,7 @@ export class PopupBackend {
         this.deps.pairing.cancelPairing();
         return {};
       },
+      popup_forget: async () => this.forget(),
     };
   }
 }

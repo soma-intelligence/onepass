@@ -133,6 +133,53 @@ describe("popup", () => {
     expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
   });
 
+  it("Oublier cet appairage: confirmation, then the unpaired state", async () => {
+    let paired = true;
+    const w = worker((m) => {
+      if (m.type === "popup_status" && !paired) return { err: "unpaired" };
+      if (m.type === "popup_forget") {
+        paired = false;
+        return { ok: {} };
+      }
+      return null;
+    });
+    const { r, handle } = setup(w);
+    await handle.ready;
+    button(r, "Oublier cet appairage").click();
+    await handle.settled();
+    expect(r.querySelector("h1")?.textContent).toBe("Oublier cet appairage ?");
+    expect(text(r)).toContain("Il faudra appairer à nouveau.");
+    expect(w.types()).not.toContain("popup_forget");
+    button(r, "Annuler").click();
+    await handle.settled();
+    expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+    button(r, "Oublier cet appairage").click();
+    await handle.settled();
+    button(r, "Oublier").click();
+    await handle.settled();
+    expect(w.types().filter((t) => t === "popup_forget")).toHaveLength(1);
+    expect(text(r)).toContain("OnePass n'est pas appairé");
+    expect(button(r, "Appairer avec OnePass")).toBeTruthy();
+  });
+
+  it("Oublier cet appairage is reachable while locked", async () => {
+    const w = worker((m) => (m.type === "popup_status" ? { ok: { ...STATUS, locked: true } } : null));
+    const { r, handle } = setup(w);
+    await handle.ready;
+    expect(text(r)).toContain("OnePass est verrouillé");
+    button(r, "Oublier cet appairage").click();
+    await handle.settled();
+    button(r, "Annuler").click();
+    await handle.settled();
+    expect(text(r)).toContain("OnePass est verrouillé");
+    button(r, "Oublier cet appairage").click();
+    await handle.settled();
+    button(r, "Oublier").click();
+    await handle.settled();
+    expect(w.types()).toContain("popup_forget");
+    expect(text(r)).toContain("Appairer avec OnePass");
+  });
+
   it("host missing: App OnePass introuvable", async () => {
     const { r, handle } = setup(worker((m) => (m.type === "popup_status" ? { err: "host_missing" } : null)));
     await handle.ready;

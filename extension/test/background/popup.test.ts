@@ -61,7 +61,7 @@ async function setup(a: Answer = answer, opts: { paired?: boolean; openError?: E
   const send = (m: unknown) => ext.send(m, popup);
   const reportForms = (forms: unknown[]) =>
     ext.send({ type: "page_analysis", analysis: analysis(forms) }, csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }));
-  return { ext, client, bg, send, reportForms };
+  return { ext, client, bg, send, reportForms, pairings };
 }
 
 describe("popup background", () => {
@@ -169,5 +169,27 @@ describe("popup background", () => {
     expect(await send({ type: "popup_status" })).toEqual({ err: "unpaired" });
     const fresh = await setup(answer, { paired: false });
     expect(await fresh.send({ type: "popup_status" })).toEqual({ err: "unpaired" });
+  });
+
+  it("Oublier cet appairage drops the record, the items shown and the history", async () => {
+    const { ext, send, pairings, client } = await setup();
+    await send({ type: "popup_suggestions" });
+    await send({ type: "popup_generate", kind: "pin" });
+    expect(await send({ type: "popup_item", itemId: "it_01" })).toMatchObject({ ok: { summary: { item_id: "it_01" } } });
+    expect(await send({ type: "popup_forget" })).toEqual({ ok: {} });
+    expect(pairings.value).toBeUndefined();
+    expect(ext.session.data.has(HISTORY_KEY)).toBe(false);
+    expect(await send({ type: "popup_item", itemId: "it_01" })).toEqual({ err: "not_found" });
+    expect(client.closed).toBe(true);
+    expect(await send({ type: "popup_status" })).toEqual({ err: "unpaired" });
+  });
+
+  it("locked forgets the items the popup was shown", async () => {
+    let locked = false;
+    const { send } = await setup((r) => (r.op === "reveal" && locked ? new BridgeAppError("locked", "x") : answer(r)));
+    await send({ type: "popup_suggestions" });
+    locked = true;
+    expect(await send({ type: "popup_reveal", itemId: "it_01" })).toEqual({ err: "locked" });
+    expect(await send({ type: "popup_item", itemId: "it_01" })).toEqual({ err: "not_found" });
   });
 });

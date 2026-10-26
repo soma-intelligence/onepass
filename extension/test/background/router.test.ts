@@ -269,6 +269,7 @@ describe("message validation", () => {
       symbols: true,
     });
     expect(parseUiToBg({ type: "popup_generate", kind: "smart" })).toEqual({ type: "popup_generate", kind: "smart" });
+    expect(parseUiToBg({ type: "popup_forget", itemId: "x" })).toEqual({ type: "popup_forget" });
     for (const bad of [
       { type: "popup_generate", kind: "words" },
       { type: "popup_generate", kind: "random", length: 3 },

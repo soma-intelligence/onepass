@@ -1,6 +1,7 @@
 // Toolbar popup (spec 8.8, Extension mockup): pairing, locked and missing
 // host states, suggestions for the active tab, search, item detail with
-// reveal and TOTP, "Remplir", and the generator with its history.
+// reveal and TOTP, "Remplir", the generator with its history, and
+// "Oublier cet appairage" (spec 6.4) from the main and locked views.
 import { ext } from "../shared/browser";
 import type { GeneratorEntry, GeneratorKind, PopupStatus, Summary } from "../shared/ui";
 import {
@@ -138,6 +139,34 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     await load();
   }
 
+  const forgetButton = () => button("Oublier cet appairage", "btn-link", () => confirmForget());
+
+  /** Confirmation step; "Annuler" goes back to the current state. */
+  function confirmForget(): void {
+    stopTotp();
+    center(
+      mark("m"),
+      h("h1", null, "Oublier cet appairage ?"),
+      h("p", null, "Il faudra appairer à nouveau."),
+      h(
+        "div",
+        { class: "actions" },
+        button("Annuler", "btn", () => void track(load())),
+        button("Oublier", "btn btn-primary", () => void track(forget())),
+      ),
+    );
+  }
+
+  async function forget(): Promise<void> {
+    const r = await call(deps.send, { type: "popup_forget" }, parseEmpty);
+    status = null;
+    suggestions = [];
+    results = null;
+    selected = null;
+    view = "none";
+    renderUnpaired(r.ok ? undefined : errorText(r.code));
+  }
+
   function renderLocked(): void {
     center(
       mark("m"),
@@ -151,6 +180,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
           }),
         ),
       ),
+      forgetButton(),
     );
   }
 
@@ -259,6 +289,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             h("span", null, `Domaine vérifié : ${domain}. Le remplissage ne marche que sur ce site exact.`),
           )
         : null,
+      h("div", { class: "pp-foot" }, forgetButton()),
     );
   }
 

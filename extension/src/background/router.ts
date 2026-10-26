@@ -267,6 +267,7 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "popup_pair_start":
       case "popup_pair_approve":
       case "popup_pair_cancel":
+      case "popup_forget":
         return { type: o.type };
       case "popup_search":
         return { type: "popup_search", query: str(o.query, MAX_QUERY) };
