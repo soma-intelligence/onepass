@@ -13,7 +13,11 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::Duration;
 
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use std::ops::Deref;
+
+use rusqlite::{
+    Connection, OptionalExtension, Savepoint, Transaction, TransactionBehavior, params,
+};
 
 use super::{Change, MAX_RECORD_BYTES, RemoteChange};
 use crate::repo::{DeviceState, split_item_record};
@@ -145,7 +149,7 @@ fn effective_get(conn: &Connection, kind: RecordKind, id: Id) -> Result<Option<R
 
 /// Write a pending data row. A manifest write over a `base` manifest with no
 /// `ancestor` yet first keeps that `base` row as its ancestor.
-fn write_pending(tx: &Transaction<'_>, r: &Record) -> Result<()> {
+fn write_pending(tx: &Connection, r: &Record) -> Result<()> {
     let version = to_i64(r.version)?;
     if r.kind == RecordKind::Manifest {
         tx.execute(
@@ -185,6 +189,60 @@ fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
     rows.map(|id| decode_id(id.map_err(store_err)?)).collect()
 }
 
+/// `SyncStore::pending_changes` on a consistent view.
+fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
+    let held = held_vaults(tx)?;
+    let mut stmt = tx
+        .prepare("SELECT kind, id, version, data, vault FROM pending ORDER BY kind, id")
+        .map_err(store_err)?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Vec<u8>>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, Option<Vec<u8>>>(3)?,
+                r.get::<_, Option<Vec<u8>>>(4)?,
+            ))
+        })
+        .map_err(store_err)?;
+    let mut writes = Vec::new();
+    let mut deletions = Vec::new();
+    for row in rows {
+        let (kind, id, version, data, tomb_vault) = row.map_err(store_err)?;
+        let kind = decode_kind(kind)?;
+        let id = decode_id(id)?;
+        let version = u64::try_from(version).map_err(|_| Error::InvalidFormat("record version"))?;
+        let vault = match kind {
+            RecordKind::Manifest => Some(id),
+            RecordKind::Item => match data.as_deref() {
+                Some(d) => Some(split_item_record(d)?.0),
+                None => tomb_vault.map(decode_id).transpose()?,
+            },
+            _ => None,
+        };
+        if vault.is_some_and(|v| held.contains(&v)) {
+            continue;
+        }
+        let change = Change {
+            kind,
+            id,
+            version,
+            data,
+        };
+        if change.data.is_some() {
+            writes.push(change);
+        } else {
+            deletions.push(change);
+        }
+    }
+    // Deletions go last, highest kind first: a fetching device never
+    // sees a manifest without its key.
+    deletions.sort_by(|a, b| b.kind.cmp(&a.kind).then(a.id.cmp(&b.id)));
+    writes.extend(deletions);
+    Ok(writes)
+}
+
 impl SyncStore {
     /// Open or create the store at `path`: WAL, `synchronous = FULL` and a
     /// 5 s busy timeout, so a session and a sync manager can each hold a
@@ -210,68 +268,58 @@ impl SyncStore {
         Ok(SyncStore { conn })
     }
 
-    fn write_tx(&mut self) -> Result<Transaction<'_>> {
+    /// A write transaction: an `IMMEDIATE` one, or a savepoint inside an
+    /// open batch (`begin_batch`), so a batch nests the per-call writes and
+    /// commits or rolls them back together.
+    fn write_tx(&mut self) -> Result<WriteTx<'_>> {
+        if self.conn.is_autocommit() {
+            self.conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map(WriteTx::Top)
+                .map_err(store_err)
+        } else {
+            self.conn
+                .savepoint()
+                .map(WriteTx::Nested)
+                .map_err(store_err)
+        }
+    }
+
+    /// Run `f` on a consistent view: a read transaction, or the open batch.
+    fn read<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+        if self.conn.is_autocommit() {
+            let tx = self.conn.unchecked_transaction().map_err(store_err)?;
+            f(&tx)
+        } else {
+            f(&self.conn)
+        }
+    }
+
+    /// Open a batch: every write until `commit_batch` or `rollback_batch`
+    /// lands in one `IMMEDIATE` transaction, so a crash leaves all of it or
+    /// none. Batches do not nest.
+    pub(crate) fn begin_batch(&mut self) -> Result<()> {
+        if !self.conn.is_autocommit() {
+            return Err(Error::Store("batch already open".into()));
+        }
         self.conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .execute_batch("BEGIN IMMEDIATE")
             .map_err(store_err)
+    }
+
+    pub(crate) fn commit_batch(&mut self) -> Result<()> {
+        self.conn.execute_batch("COMMIT").map_err(store_err)
+    }
+
+    pub(crate) fn rollback_batch(&mut self) -> Result<()> {
+        self.conn.execute_batch("ROLLBACK").map_err(store_err)
     }
 
     /// Local writes to push, minus the held vaults. Order: account params,
     /// keysets, vault keys, vault metas, items, manifests, then deletions,
     /// so a manifest never reaches the server before its items.
     pub fn pending_changes(&self) -> Result<Vec<Change>> {
-        let tx = self.conn.unchecked_transaction().map_err(store_err)?;
-        let held = held_vaults(&tx)?;
-        let mut stmt = tx
-            .prepare("SELECT kind, id, version, data, vault FROM pending ORDER BY kind, id")
-            .map_err(store_err)?;
-        let rows = stmt
-            .query_map([], |r| {
-                Ok((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, Vec<u8>>(1)?,
-                    r.get::<_, i64>(2)?,
-                    r.get::<_, Option<Vec<u8>>>(3)?,
-                    r.get::<_, Option<Vec<u8>>>(4)?,
-                ))
-            })
-            .map_err(store_err)?;
-        let mut writes = Vec::new();
-        let mut deletions = Vec::new();
-        for row in rows {
-            let (kind, id, version, data, tomb_vault) = row.map_err(store_err)?;
-            let kind = decode_kind(kind)?;
-            let id = decode_id(id)?;
-            let version =
-                u64::try_from(version).map_err(|_| Error::InvalidFormat("record version"))?;
-            let vault = match kind {
-                RecordKind::Manifest => Some(id),
-                RecordKind::Item => match data.as_deref() {
-                    Some(d) => Some(split_item_record(d)?.0),
-                    None => tomb_vault.map(decode_id).transpose()?,
-                },
-                _ => None,
-            };
-            if vault.is_some_and(|v| held.contains(&v)) {
-                continue;
-            }
-            let change = Change {
-                kind,
-                id,
-                version,
-                data,
-            };
-            if change.data.is_some() {
-                writes.push(change);
-            } else {
-                deletions.push(change);
-            }
-        }
-        // Deletions go last, highest kind first: a fetching device never
-        // sees a manifest without its key.
-        deletions.sort_by(|a, b| b.kind.cmp(&a.kind).then(a.id.cmp(&b.id)));
-        writes.extend(deletions);
-        Ok(writes)
+        self.read(pending_changes_in)
     }
 
     /// The server confirmed `(kind, id, version)`. If the pending row has
@@ -321,7 +369,7 @@ impl SyncStore {
             )
             .map_err(store_err)?;
         }
-        tx.commit().map_err(store_err)
+        tx.commit()
     }
 
     /// Park a change received from the server. Nothing is visible until
@@ -377,7 +425,7 @@ impl SyncStore {
             .map_err(store_err)?;
         }
         tx.execute("DELETE FROM staging", []).map_err(store_err)?;
-        tx.commit().map_err(store_err)?;
+        tx.commit()?;
         Ok(vaults.into_iter().collect())
     }
 
@@ -461,67 +509,11 @@ impl SyncStore {
     /// Remove every pending row of `vault` (its manifest and its items,
     /// deletions included) and the manifest's ancestor, so the next local
     /// write starts again from the current `base`. Read
-    /// `ancestor_manifest` first. Returns what was removed, for
-    /// `restore_pending_vault`.
-    pub(crate) fn drop_pending_vault(&mut self, vault: Id) -> Result<PendingVault> {
+    /// `ancestor_manifest` first.
+    pub(crate) fn drop_pending_vault(&mut self, vault: Id) -> Result<()> {
         let tx = self.write_tx()?;
-        let id = &vault.0[..];
-        let codes = (RecordKind::Manifest.code(), RecordKind::Item.code());
-        let rows: Vec<PendingRow> = {
-            let mut stmt = tx
-                .prepare(&format!(
-                    "SELECT kind, id, version, data, vault FROM pending WHERE {VAULT_ROWS}"
-                ))
-                .map_err(store_err)?;
-            let rows = stmt
-                .query_map(params![codes.0, codes.1, id], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-                })
-                .map_err(store_err)?;
-            rows.collect::<rusqlite::Result<_>>().map_err(store_err)?
-        };
-        let ancestor: Option<(i64, Vec<u8>)> = tx
-            .query_row(
-                "SELECT version, data FROM ancestor WHERE kind = ?1 AND id = ?2",
-                params![codes.0, id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()
-            .map_err(store_err)?;
         delete_vault_rows(&tx, vault)?;
-        tx.commit().map_err(store_err)?;
-        Ok(PendingVault {
-            vault,
-            rows,
-            ancestor,
-        })
-    }
-
-    /// Put back what `drop_pending_vault` removed, replacing any pending
-    /// row of that vault written since (a rebase that failed half way).
-    pub(crate) fn restore_pending_vault(&mut self, snapshot: PendingVault) -> Result<()> {
-        let tx = self.write_tx()?;
-        delete_vault_rows(&tx, snapshot.vault)?;
-        for (kind, id, version, data, vault) in snapshot.rows {
-            tx.execute(
-                "INSERT INTO pending (kind, id, version, data, vault) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![kind, id, version, data, vault],
-            )
-            .map_err(store_err)?;
-        }
-        if let Some((version, data)) = snapshot.ancestor {
-            tx.execute(
-                "INSERT INTO ancestor (kind, id, version, data) VALUES (?1, ?2, ?3, ?4)",
-                params![
-                    RecordKind::Manifest.code(),
-                    &snapshot.vault.0[..],
-                    version,
-                    data
-                ],
-            )
-            .map_err(store_err)?;
-        }
-        tx.commit().map_err(store_err)
+        tx.commit()
     }
 }
 
@@ -532,18 +524,34 @@ const VAULT_ROWS: &str = "(kind = ?1 AND id = ?3)
     OR (kind = ?2 AND data IS NOT NULL AND substr(data, 1, 16) = ?3)
     OR (kind = ?2 AND data IS NULL AND vault = ?3)";
 
-/// A `pending` row: `(kind, id, version, data, vault)`.
-type PendingRow = (i64, Vec<u8>, i64, Option<Vec<u8>>, Option<Vec<u8>>);
-
-/// What `drop_pending_vault` removed: the vault's pending rows and its
-/// manifest's ancestor row (`version, data`).
-pub(crate) struct PendingVault {
-    vault: Id,
-    rows: Vec<PendingRow>,
-    ancestor: Option<(i64, Vec<u8>)>,
+/// A write transaction of `SyncStore::write_tx`.
+enum WriteTx<'a> {
+    Top(Transaction<'a>),
+    Nested(Savepoint<'a>),
 }
 
-fn delete_vault_rows(tx: &Transaction<'_>, vault: Id) -> Result<()> {
+impl Deref for WriteTx<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        match self {
+            WriteTx::Top(t) => t,
+            WriteTx::Nested(s) => s,
+        }
+    }
+}
+
+impl WriteTx<'_> {
+    fn commit(self) -> Result<()> {
+        match self {
+            WriteTx::Top(t) => t.commit(),
+            WriteTx::Nested(s) => s.commit(),
+        }
+        .map_err(store_err)
+    }
+}
+
+fn delete_vault_rows(tx: &Connection, vault: Id) -> Result<()> {
     let codes = (RecordKind::Manifest.code(), RecordKind::Item.code());
     tx.execute(
         &format!("DELETE FROM pending WHERE {VAULT_ROWS}"),
@@ -563,7 +571,7 @@ impl RecordStore for SyncStore {
         check_size(&r.data)?;
         let tx = self.write_tx()?;
         write_pending(&tx, &r)?;
-        tx.commit().map_err(store_err)
+        tx.commit()
     }
 
     fn put_if_version(&mut self, r: Record, expected: Option<u64>) -> Result<()> {
@@ -573,12 +581,11 @@ impl RecordStore for SyncStore {
             return Err(Error::Conflict);
         }
         write_pending(&tx, &r)?;
-        tx.commit().map_err(store_err)
+        tx.commit()
     }
 
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
-        let tx = self.conn.unchecked_transaction().map_err(store_err)?;
-        effective_get(&tx, kind, id)
+        self.read(|c| effective_get(c, kind, id))
     }
 
     fn list(&self, kind: RecordKind) -> Result<Vec<Record>> {
@@ -647,7 +654,7 @@ impl RecordStore for SyncStore {
                 .map_err(store_err)?;
             }
         }
-        tx.commit().map_err(store_err)
+        tx.commit()
     }
 }
 
@@ -1056,7 +1063,7 @@ mod tests {
     }
 
     #[test]
-    fn restore_puts_back_exactly_what_drop_removed() {
+    fn batch_rolls_back_or_commits_everything() {
         let mut s = SyncStore::open_in_memory().unwrap();
         let (held, free) = (Id::new(), Id::new());
         let (item, old) = (Id::new(), Id::new());
@@ -1068,30 +1075,55 @@ mod tests {
         s.delete(RecordKind::Item, old).unwrap();
         s.put(rec(free, RecordKind::Manifest, 1, b"f1")).unwrap();
         seed_base(&mut s, RecordKind::Manifest, held, 3, b"remote".to_vec());
-        let before = (
-            s.pending_changes().unwrap(),
-            s.vaults_needing_rebase().unwrap(),
-            s.ancestor_manifest(held).unwrap(),
-        );
-        let local = s.get(RecordKind::Manifest, held).unwrap();
+        let state = |s: &SyncStore| {
+            (
+                s.pending_changes().unwrap(),
+                s.vaults_needing_rebase().unwrap(),
+                s.ancestor_manifest(held).unwrap(),
+                s.get(RecordKind::Manifest, held).unwrap(),
+                s.device_state().unwrap(),
+            )
+        };
+        let before = state(&s);
 
-        let snapshot = s.drop_pending_vault(held).unwrap();
-        assert_eq!(count(&s, "pending"), 1);
-        // A rebase that wrote again before failing.
+        // A rebase that drops, writes again, then fails: nothing changed.
+        s.begin_batch().unwrap();
+        assert!(s.begin_batch().is_err(), "batches do not nest");
+        s.drop_pending_vault(held).unwrap();
         s.put(rec(held, RecordKind::Manifest, 4, b"half")).unwrap();
-        s.put(rec(Id::new(), RecordKind::Item, 1, &item_data(held, b"h")))
-            .unwrap();
-        s.restore_pending_vault(snapshot).unwrap();
-
-        let after = (
-            s.pending_changes().unwrap(),
-            s.vaults_needing_rebase().unwrap(),
-            s.ancestor_manifest(held).unwrap(),
+        // A refused write inside the batch undoes only itself.
+        assert_eq!(
+            s.put_if_version(rec(free, RecordKind::Manifest, 9, b"x"), Some(7)),
+            Err(Error::Conflict)
         );
-        assert_eq!(after, before);
-        assert_eq!(after.1, vec![held]);
-        assert_eq!(s.get(RecordKind::Manifest, held).unwrap(), local);
-        assert_eq!(s.get(RecordKind::Item, old).unwrap(), None);
-        assert_eq!(count(&s, "pending"), 4);
+        let mut dev = DeviceState::default();
+        dev.last_seen.insert(
+            held,
+            crate::manifest::SeenManifest {
+                seq: 4,
+                hash: [1; 32],
+            },
+        );
+        s.set_device_state(&dev).unwrap();
+        assert_eq!(
+            s.get(RecordKind::Manifest, held).unwrap(),
+            Some(rec(held, RecordKind::Manifest, 4, b"half"))
+        );
+        s.rollback_batch().unwrap();
+        assert_eq!(state(&s), before);
+
+        // The same, committed: all of it stays.
+        s.begin_batch().unwrap();
+        s.drop_pending_vault(held).unwrap();
+        s.put(rec(held, RecordKind::Manifest, 4, b"done")).unwrap();
+        s.set_device_state(&dev).unwrap();
+        s.commit_batch().unwrap();
+        assert_eq!(s.vaults_needing_rebase().unwrap(), vec![]);
+        assert_eq!(s.device_state().unwrap(), dev);
+        assert_eq!(
+            s.ancestor_manifest(held).unwrap(),
+            Some(rec(held, RecordKind::Manifest, 3, b"remote"))
+        );
+        assert!(s.get(RecordKind::Item, old).unwrap().is_some());
     }
 }

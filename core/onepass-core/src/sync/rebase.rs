@@ -14,14 +14,25 @@
 //! every device. An item the server left as it was in the ancestor keeps
 //! the local change whatever the clocks say. A local deletion applies only
 //! if the server still has the very record the ancestor listed; otherwise
-//! the server's change is kept.
+//! the server's change is kept. A local edit of an item the server deleted
+//! brings it back (a deletion carries no date).
 //!
-//! Nothing local is lost on a failure: if anything goes wrong after the
-//! pending rows are dropped (a server manifest that does not chain, an item
-//! withheld, a write error), they are put back as they were, with the
-//! device's last seen manifest, and the vault stays held.
+//! No ancestor row: the pending manifest was written before the vault had
+//! any `base` manifest (a vault created here whose push was never
+//! confirmed). The ancestor is then empty: every local entry is an intent,
+//! nothing is deleted, and the server manifest is accepted without history
+//! for that vault (its signature and vault key are still checked). If the
+//! server manifest is exactly the local one, it is simply adopted.
+//!
+//! One vault's rebase is one SQLite transaction (`SyncStore::begin_batch`):
+//! dropping the pending rows, the replay and the device state with the new
+//! last seen manifest commit together. A failure or a crash leaves the
+//! previous pending writes with their last seen manifest, and the vault
+//! stays held.
 
-use crate::manifest::{Manifest, ManifestEntry, SignedManifest, record_hash, verify_manifest};
+use crate::manifest::{
+    Manifest, ManifestEntry, SignedManifest, manifest_hash, record_hash, verify_manifest,
+};
 use crate::model::Item;
 use crate::repo::{Repository, seen, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore};
@@ -35,21 +46,22 @@ struct Changed {
     hash: [u8; 32],
 }
 
-/// What to do with a held vault, worked out before anything is dropped.
-enum Plan {
-    /// Replay the local intents on top of the server manifest, which must
-    /// chain to `ancestor`.
-    Replay {
-        ancestor: Manifest,
-        changed: Vec<Changed>,
-        /// Ancestor entries the local manifest no longer lists.
-        deleted: Vec<ManifestEntry>,
-    },
-    /// No ancestor: the pending manifest was written before the vault had
-    /// any `base` manifest (a new vault). The only way the server can have
-    /// one is that our own push went through unconfirmed: adopt it if it is
-    /// exactly the local manifest.
-    Adopt { local: Record, manifest: Manifest },
+/// A held vault's intents, worked out before anything is written.
+struct Plan {
+    /// The local pending manifest, as stored and decoded.
+    local: Record,
+    local_manifest: Manifest,
+    /// `None`: no ancestor row, an empty ancestor without history.
+    ancestor: Option<Manifest>,
+    changed: Vec<Changed>,
+    /// Ancestor entries the local manifest no longer lists.
+    deleted: Vec<ManifestEntry>,
+}
+
+impl Plan {
+    fn ancestor_entries(&self) -> &[ManifestEntry] {
+        self.ancestor.as_ref().map_or(&[], |a| &a.entries)
+    }
 }
 
 impl Repository<SyncStore> {
@@ -59,47 +71,56 @@ impl Repository<SyncStore> {
     }
 
     /// Rebase every held vault (see the module doc) and return their ids.
-    /// The device state is persisted at the end, also on error: a rebased
-    /// vault's new last seen manifest must survive the session.
+    /// Each vault is tried, in one transaction with the device state; a
+    /// failing vault does not stop the others. The device state is
+    /// persisted again at the end.
     ///
-    /// Errors: a held vault with no ancestor whose server manifest is not
-    /// the local one is `InvalidFormat("rebase ancestor")`; a server
-    /// manifest that does not chain to the ancestor is `ManifestRollback`;
-    /// then any error of `load`, `save_item` or `delete_item`. The vault in
-    /// error keeps its pending writes and stays held; the vaults before it
-    /// stay rebased.
+    /// Errors, the first one met after trying every vault: a local
+    /// manifest that does not descend from its ancestor, or a server
+    /// manifest that does not chain to the ancestor, is `ManifestRollback`;
+    /// then any error of `load`, `save_item` or `delete_item`. A vault in
+    /// error keeps its pending writes and stays held; the others stay
+    /// rebased.
     pub fn rebase(&mut self) -> Result<Vec<Id>> {
-        let result = self.rebase_held();
-        let persisted = self.persist_device_state();
-        let rebased = result?;
-        persisted?;
-        Ok(rebased)
-    }
-
-    fn rebase_held(&mut self) -> Result<Vec<Id>> {
         let held = self.store.vaults_needing_rebase()?;
-        for &v in &held {
-            self.rebase_vault(v)?;
+        let mut rebased = Vec::new();
+        let mut first_error = None;
+        for v in held {
+            match self.rebase_vault(v) {
+                Ok(()) => rebased.push(v),
+                Err(e) => {
+                    first_error.get_or_insert(e);
+                }
+            }
         }
-        Ok(held)
+        let persisted = self.persist_device_state();
+        match first_error {
+            Some(e) => Err(e),
+            None => persisted.map(|()| rebased),
+        }
     }
 
     fn rebase_vault(&mut self, v: Id) -> Result<()> {
         let vault = self.open_vault(v)?;
         let plan = self.plan(&vault)?;
         let last_seen = self.device.last_seen.get(&v).cloned();
-        let snapshot = self.store.drop_pending_vault(v)?;
-        match self.apply(&vault, plan) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                self.store.restore_pending_vault(snapshot)?;
-                match last_seen {
-                    Some(s) => self.device.last_seen.insert(v, s),
-                    None => self.device.last_seen.remove(&v),
-                };
-                Err(e)
-            }
+        self.store.begin_batch()?;
+        let result = self
+            .apply(&vault, plan)
+            .and_then(|()| self.persist_device_state())
+            .and_then(|()| self.store.commit_batch());
+        if let Err(e) = result {
+            match last_seen {
+                Some(s) => self.device.last_seen.insert(v, s),
+                None => self.device.last_seen.remove(&v),
+            };
+            // The original error wins. If the rollback fails too, SQLite
+            // undoes the open transaction when the connection closes, and
+            // the next batch on it is refused ("batch already open").
+            let _ = self.store.rollback_batch();
+            return Err(e);
         }
+        Ok(())
     }
 
     /// The vault from its key and meta records, without reading its
@@ -127,18 +148,20 @@ impl Repository<SyncStore> {
     /// Nothing is written.
     fn plan(&self, vault: &Vault) -> Result<Plan> {
         // Held means a pending manifest with data: that is what `get` sees.
-        let local_rec = self
+        let local = self
             .store
             .get(RecordKind::Manifest, vault.id)?
             .ok_or(IntegrityError::ManifestMissingItem)?;
-        let local = self.open_manifest(vault, &local_rec.data)?;
-        let Some(ancestor_rec) = self.store.ancestor_manifest(vault.id)? else {
-            return Ok(Plan::Adopt {
-                local: local_rec,
-                manifest: local,
-            });
+        let local_manifest = self.open_manifest(vault, &local.data)?;
+        let ancestor = match self.store.ancestor_manifest(vault.id)? {
+            Some(rec) => {
+                let a = self.open_manifest(vault, &rec.data)?;
+                descends(&local_manifest, &a)?;
+                Some(a)
+            }
+            None => None,
         };
-        let ancestor = self.open_manifest(vault, &ancestor_rec.data)?;
+        let ancestor_entries: &[ManifestEntry] = ancestor.as_ref().map_or(&[], |a| &a.entries);
 
         // The local records of this vault, to find each changed entry's.
         let records: Vec<ItemRecord> = self
@@ -151,8 +174,8 @@ impl Repository<SyncStore> {
             })
             .collect();
         let mut changed = Vec::new();
-        for e in &local.entries {
-            if ancestor.entries.contains(e) {
+        for e in &local_manifest.entries {
+            if ancestor_entries.contains(e) {
                 continue;
             }
             let rec = records
@@ -168,63 +191,61 @@ impl Repository<SyncStore> {
                 hash: e.record_hash,
             });
         }
-        let deleted = ancestor
-            .entries
+        let deleted = ancestor_entries
             .iter()
-            .filter(|a| !local.entries.iter().any(|e| e.item_id == a.item_id))
+            .filter(|a| {
+                !local_manifest
+                    .entries
+                    .iter()
+                    .any(|e| e.item_id == a.item_id)
+            })
             .cloned()
             .collect();
-        Ok(Plan::Replay {
+        Ok(Plan {
+            local,
+            local_manifest,
             ancestor,
             changed,
             deleted,
         })
     }
 
-    /// Carry out the plan, the vault's pending rows already dropped.
+    /// Carry out the plan inside the open batch.
     fn apply(&mut self, vault: &Vault, plan: Plan) -> Result<()> {
-        match plan {
-            Plan::Adopt { local, manifest } => {
-                let server = self.store.get(RecordKind::Manifest, vault.id)?;
-                if server.as_ref() != Some(&local) {
-                    return Err(Error::InvalidFormat("rebase ancestor"));
-                }
-                // Our own manifest, already seen: check its records are all
-                // there, as for any load.
-                self.device.last_seen.insert(vault.id, seen(&manifest));
-                self.load(vault)?;
-                Ok(())
+        self.store.drop_pending_vault(vault.id)?;
+        match &plan.ancestor {
+            // The server manifest must chain to the ancestor, as if the
+            // local writes had never happened.
+            Some(a) => {
+                self.device.last_seen.insert(vault.id, seen(a));
             }
-            Plan::Replay {
-                ancestor,
-                changed,
-                deleted,
-            } => self.replay(vault, &ancestor, changed, &deleted),
+            None => {
+                if self.store.get(RecordKind::Manifest, vault.id)?.as_ref() == Some(&plan.local) {
+                    // Our own unconfirmed push came back as it was: adopt it,
+                    // checking its records like any load.
+                    self.device
+                        .last_seen
+                        .insert(vault.id, seen(&plan.local_manifest));
+                    self.load(vault)?;
+                    return Ok(());
+                }
+                // First use for this vault: no history to check against.
+                self.device.last_seen.remove(&vault.id);
+            }
         }
-    }
-
-    fn replay(
-        &mut self,
-        vault: &Vault,
-        ancestor: &Manifest,
-        changed: Vec<Changed>,
-        deleted: &[ManifestEntry],
-    ) -> Result<()> {
-        // The server manifest must chain to the ancestor, as if the local
-        // writes had never happened.
-        self.device.last_seen.insert(vault.id, seen(ancestor));
         let loaded = self.load(vault)?;
         self.device
             .last_seen
             .insert(vault.id, seen(&loaded.manifest));
 
+        let ancestor = plan.ancestor_entries();
         let mut saves = Vec::new();
-        for c in changed {
+        for c in &plan.changed {
             let keep = match loaded.listed(c.item.id) {
                 None => true,
                 Some((_, remote)) => {
                     let remote_hash = record_hash(remote);
-                    let untouched = ancestor.entries.iter().any(|a| {
+                    let untouched = ancestor.iter().any(|a| {
                         a.item_id == remote.item_id
                             && a.version == remote.version
                             && a.record_hash == remote_hash
@@ -237,10 +258,11 @@ impl Repository<SyncStore> {
                 }
             };
             if keep {
-                saves.push(c.item);
+                saves.push(c.item.clone());
             }
         }
-        let deletes: Vec<Id> = deleted
+        let deletes: Vec<Id> = plan
+            .deleted
             .iter()
             .filter(|a| {
                 loaded
@@ -257,5 +279,43 @@ impl Repository<SyncStore> {
             self.delete_item(vault, id)?;
         }
         Ok(())
+    }
+}
+
+/// The local manifest must have been built on the ancestor: a later seq,
+/// and the very next one must point at it. Otherwise `ManifestRollback`.
+fn descends(local: &Manifest, ancestor: &Manifest) -> Result<()> {
+    let chained = local.seq > ancestor.seq
+        && (local.seq != ancestor.seq + 1 || local.prev_hash == manifest_hash(ancestor));
+    if chained {
+        Ok(())
+    } else {
+        Err(IntegrityError::ManifestRollback.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_manifest_must_descend_from_its_ancestor() {
+        let v = Id::new();
+        let a = Manifest::next(None, v, vec![]).unwrap();
+        let next = Manifest::next(Some(&a), v, vec![]).unwrap();
+        let later = Manifest::next(Some(&next), v, vec![]).unwrap();
+        assert_eq!(descends(&next, &a), Ok(()));
+        // Two local writes on the ancestor: no direct link to check.
+        assert_eq!(descends(&later, &a), Ok(()));
+
+        let rollback = Err(Error::Integrity(IntegrityError::ManifestRollback));
+        // Same seq, or older.
+        assert_eq!(descends(&a, &a), rollback);
+        assert_eq!(descends(&a, &next), rollback);
+        // The next seq, built on another manifest (a fork).
+        let other = Manifest::next(None, v, vec![]).unwrap();
+        let mut forked = Manifest::next(Some(&other), v, vec![]).unwrap();
+        forked.prev_hash[0] ^= 1;
+        assert_eq!(descends(&forked, &a), rollback);
     }
 }

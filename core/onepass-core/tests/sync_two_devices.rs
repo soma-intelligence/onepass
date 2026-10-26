@@ -754,3 +754,153 @@ fn move_against_a_remote_edit_keeps_both_copies() {
         assert_eq!(users(&dev.repo().items(&w).unwrap()), vec!["x"]);
     }
 }
+
+#[test]
+fn new_vault_with_unconfirmed_push_then_more_writes_converges() {
+    let mut server = Server::default();
+    let (mut a, mut b, sk, _) = setup(&mut server, &[("x", T0)]);
+    let w = a.repo().create_vault(meta("Projet Atlas")).unwrap();
+    let first = login(w.id, "atlas", T0);
+    a.repo().save_item(&w, first.clone()).unwrap();
+    send(&mut server, &a, outbox(&a), false).unwrap();
+
+    // More writes before the next sync: the pending manifest is no longer
+    // the one the server holds, and there is still no ancestor.
+    let edit = edited(&first, "atlas.v2", T0 + 10);
+    a.repo().save_item(&w, edit.clone()).unwrap();
+    let second = login(w.id, "atlas.second", T0 + 11);
+    a.repo().save_item(&w, second.clone()).unwrap();
+
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(outbox(&a), vec![]);
+    assert!(a.store().vaults_needing_rebase().unwrap().is_empty());
+    let w = a.vault_named("Projet Atlas");
+    assert_eq!(
+        users(&a.repo().items(&w).unwrap()),
+        vec!["atlas.second", "atlas.v2"]
+    );
+
+    sync(&mut server, &mut b).unwrap();
+    b.lock();
+    b.unlock(&sk);
+    let wb = b.vault_named("Projet Atlas");
+    assert_eq!(b.repo().items(&wb).unwrap(), a.repo().items(&w).unwrap());
+}
+
+#[test]
+fn long_offline_device_with_several_local_writes_converges() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) =
+        setup(&mut server, &[("x", T0), ("y", T0), ("z", T0), ("w", T0)]);
+    let (x, y, z, w) = (&items[0], &items[1], &items[2], &items[3]);
+    let v = x.vault_id;
+
+    // B, offline, writes several times.
+    b.save(&edited(x, "x.b", T0 + 30));
+    b.delete(y.id);
+    let n1 = login(v, "n1", T0 + 31);
+    b.save(&n1);
+    b.save(&edited(&n1, "n1.b2", T0 + 32));
+    let n2 = login(v, "n2", T0 + 33);
+    b.save(&n2);
+    b.delete(n2.id);
+    b.delete(w.id);
+
+    // Meanwhile A advances the server several times.
+    a.save(&edited(z, "z.a", T0 + 10));
+    sync(&mut server, &mut a).unwrap();
+    let a1 = login(v, "a1", T0 + 12);
+    a.save(&a1);
+    sync(&mut server, &mut a).unwrap();
+    // Older than B's edit of X: B wins it.
+    a.save(&edited(x, "x.a", T0 + 5));
+    sync(&mut server, &mut a).unwrap();
+    // A edits W, which B deleted: the edit wins.
+    a.save(&edited(w, "w.a", T0 + 14));
+    sync(&mut server, &mut a).unwrap();
+
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(users(&a.items()), vec!["a1", "n1.b2", "w.a", "x.b", "z.a"]);
+    assert_eq!(a.items(), b.items());
+    assert_eq!(outbox(&a), vec![]);
+    assert_eq!(outbox(&b), vec![]);
+}
+
+#[test]
+fn failing_vault_does_not_block_other_vaults() {
+    let mut server = Server::default();
+    let (mut a, sk) = Device::create();
+    let atlas = a.repo().create_vault(meta("Projet Atlas")).unwrap();
+    let personal = a.vault_named("Personnel");
+    // The vault that fails is the one rebased first (lower id).
+    let (bad, good) = if personal.id < atlas.id {
+        (personal, atlas)
+    } else {
+        (atlas, personal)
+    };
+    let bx = login(bad.id, "bad.x", T0);
+    let gx = login(good.id, "good.x", T0);
+    a.repo().save_item(&bad, bx.clone()).unwrap();
+    a.repo().save_item(&good, gx.clone()).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let bad_seq2 = server.get(RecordKind::Manifest, bad.id).unwrap();
+    for v in [&bad, &good] {
+        a.repo().save_item(v, login(v.id, "second", T0)).unwrap();
+    }
+    sync(&mut server, &mut a).unwrap();
+
+    let mut b = Device::empty();
+    pull(&server, &mut b);
+    b.unlock(&sk);
+    let (bb, bg) = (
+        b.vault_named(&bad.meta.name),
+        b.vault_named(&good.meta.name),
+    );
+    b.repo().items(&bb).unwrap();
+    b.repo().items(&bg).unwrap();
+    b.repo()
+        .save_item(&bb, edited(&bx, "bad.b", T0 + 10))
+        .unwrap();
+    b.repo()
+        .save_item(&bg, edited(&gx, "good.b", T0 + 10))
+        .unwrap();
+
+    // A advances the good vault; the server rolls the bad one back.
+    let ag = a.vault_named(&good.meta.name);
+    a.repo()
+        .save_item(&ag, login(good.id, "good.a", T0 + 11))
+        .unwrap();
+    sync(&mut server, &mut a).unwrap();
+    server.replay(bad_seq2);
+    pull(&server, &mut b);
+    let mut both = vec![bad.id, good.id];
+    both.sort();
+    assert_eq!(b.store().vaults_needing_rebase().unwrap(), both);
+
+    // The first vault fails, the second is still rebased.
+    assert_eq!(
+        integrity(b.repo().rebase()),
+        IntegrityError::ManifestRollback
+    );
+    assert_eq!(b.store().vaults_needing_rebase().unwrap(), vec![bad.id]);
+    assert_eq!(
+        users(&b.repo().items(&bb).unwrap()),
+        vec!["bad.b", "second"]
+    );
+    // The good vault goes out; the bad one keeps its edit and waits.
+    push(&mut server, &b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let ag = a.vault_named(&good.meta.name);
+    assert_eq!(
+        users(&a.repo().items(&ag).unwrap()),
+        vec!["good.a", "good.b", "second"]
+    );
+    b.lock();
+    b.unlock(&sk);
+    let bb = b.vault_named(&bad.meta.name);
+    assert_eq!(
+        users(&b.repo().items(&bb).unwrap()),
+        vec!["bad.b", "second"]
+    );
+}
