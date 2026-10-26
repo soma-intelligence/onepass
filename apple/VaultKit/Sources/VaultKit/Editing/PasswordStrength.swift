@@ -8,4 +8,16 @@ public enum PasswordStrength {
     public static func estimatedBits(_ password: String) -> Double {
         password.isEmpty ? 0 : passwordStrengthBits(password: password)
     }
+
+    /// The master password gate of the onboarding, separate from the meter's labels: five words
+    /// drawn at random from a generator list (5 x log2(7776), about 64.6 bits) pass, four do not.
+    public static let masterPasswordMinimumBits: Double = 64
+
+    public static func acceptsMasterPassword(_ password: String) -> Bool {
+        estimatedBits(password) >= masterPasswordMinimumBits
+    }
+
+    /// The "Générer" recipe of the master password step: five French words, hyphenated.
+    public static let masterPasswordRecipe = FfiPasswordRecipe.words(
+        count: 5, separator: "-", french: true, capitalize: false)
 }

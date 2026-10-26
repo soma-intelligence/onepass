@@ -241,3 +241,27 @@ struct PasswordStrengthAgreementTests {
         #expect(bits < 80)
     }
 }
+
+/// The onboarding gate: five random list words pass, four do not; the meter labels stay shared.
+@Suite("Master password gate")
+struct MasterPasswordGateTests {
+    @Test func fiveRandomWordsPassFourDoNot() throws {
+        for _ in 0..<20 {
+            let five = try generatePassword(recipe: PasswordStrength.masterPasswordRecipe)
+            #expect(PasswordStrength.acceptsMasterPassword(five))
+            let four = try generatePassword(recipe: .words(count: 4, separator: "-", french: true, capitalize: false))
+            #expect(!PasswordStrength.acceptsMasterPassword(four))
+            let english = try generatePassword(recipe: .words(count: 5, separator: " ", french: false, capitalize: false))
+            #expect(PasswordStrength.acceptsMasterPassword(english))
+        }
+        // The tip's example is five words of the French list.
+        #expect(abs(PasswordStrength.estimatedBits("tapis-orage-girafe-violon-nuage") - 5 * log2(7776.0)) < 1e-9)
+        #expect(PasswordStrength.acceptsMasterPassword("tapis-orage-girafe-violon-nuage"))
+    }
+
+    @Test func generatorAndFieldStillAgree() throws {
+        let recipe = PasswordStrength.masterPasswordRecipe
+        let generated = try generatePassword(recipe: recipe)
+        #expect(abs(PasswordStrength.estimatedBits(generated) - passwordEntropyBits(recipe: recipe)) < 1e-9)
+    }
+}

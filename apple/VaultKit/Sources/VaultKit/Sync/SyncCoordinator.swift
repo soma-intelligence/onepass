@@ -716,3 +716,25 @@ extension FfiRemoteRecord {
             serverMeta: record.serverMeta)
     }
 }
+
+/// Whether the Emergency Kit screen of a device without its Secret Key offers "Créer un nouveau
+/// coffre": a new vault there would be pointless while iCloud still holds the account (it comes
+/// back with the next sync and blocks the creation).
+public enum NewVaultOffer: Equatable, Sendable {
+    /// No account in iCloud, or no sync (unsigned build).
+    case offered
+    /// iCloud holds the account: only the Emergency Kit path is offered.
+    case accountInICloud
+    /// iCloud could not be asked (offline, no iCloud account): nothing is offered yet.
+    case unavailable
+}
+
+extension SyncCoordinator {
+    public func newVaultOffer() async -> NewVaultOffer {
+        do {
+            return try await remoteHasAccount() ? .accountInICloud : .offered
+        } catch {
+            return .unavailable
+        }
+    }
+}

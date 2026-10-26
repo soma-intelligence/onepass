@@ -1136,3 +1136,29 @@ struct InMemoryRemoteTests {
         #expect(await remote.tags().isEmpty)
     }
 }
+
+/// Review I4: "Créer un nouveau coffre" on the Emergency Kit screen is only offered when iCloud holds
+/// no account (the vault would come back with the next sync otherwise). No remote (unsigned
+/// build): offered, as before.
+@MainActor
+@Suite("New vault offer", .timeLimit(.minutes(2)))
+struct NewVaultOfferTests {
+    @Test func offeredOnlyWhenTheRemoteHasNoAccount() async throws {
+        let remote = InMemoryRemote()
+        let a = try SyncDevice(remote: remote, name: "A")
+        defer { a.cleanUp() }
+        let empty = try SyncDevice(remote: InMemoryRemote(), name: "empty")
+        defer { empty.cleanUp() }
+        let local = try SyncDevice(remote: nil, name: "local")
+        defer { local.cleanUp() }
+
+        #expect(await empty.coordinator.newVaultOffer() == .offered)
+        #expect(await local.coordinator.newVaultOffer() == .offered)
+
+        _ = try await a.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        await a.sync()
+        let b = try SyncDevice(remote: remote, name: "B")
+        defer { b.cleanUp() }
+        #expect(await b.coordinator.newVaultOffer() == .accountInICloud)
+    }
+}

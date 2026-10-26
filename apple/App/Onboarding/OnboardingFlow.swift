@@ -131,9 +131,23 @@ final class OnboardingModel {
 
     var confirmationMismatch: Bool { !confirmation.isEmpty && confirmation != password }
 
-    /// "Continuer" from the "bon" level and when both fields match.
+    /// "Continuer" once the password reaches the master password gate (five random words pass,
+    /// `PasswordStrength.masterPasswordMinimumBits`) and both fields match.
     var passwordAccepted: Bool {
-        StrengthMeter.level(forBits: passwordBits) >= 3 && password == confirmation
+        PasswordStrength.acceptsMasterPassword(password) && password == confirmation
+    }
+
+    /// Shown under "Générer" so it can be written down; cleared with the password.
+    private(set) var generatedPassword: String?
+
+    /// "Générer": five French words drawn at random, put in both fields.
+    func generateMasterPassword() {
+        guard let value = try? generatePassword(recipe: PasswordStrength.masterPasswordRecipe) else {
+            return
+        }
+        password = value
+        confirmation = value
+        generatedPassword = value
     }
 
     var primaryLabel: String? {
@@ -273,6 +287,8 @@ final class OnboardingModel {
         try await model.startOver()
     }
 
+    func newVaultOffer() async -> NewVaultOffer { await model.newVaultOffer() }
+
     func switchToRestore() {
         offerRestore = false
         errorMessage = nil
@@ -287,6 +303,7 @@ final class OnboardingModel {
         deleteKit()
         password = ""
         confirmation = ""
+        generatedPassword = nil
         restorePassword = ""
         restoreKey = ""
         secretKey = nil
@@ -297,6 +314,7 @@ final class OnboardingModel {
     private func finish() {
         password = ""
         confirmation = ""
+        generatedPassword = nil
         restorePassword = ""
         secretKey = nil
         model.onboardingInProgress = false

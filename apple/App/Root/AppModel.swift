@@ -273,7 +273,7 @@ final class AppModel {
     /// Screenshots: `-OnePassDebugSeedAccount YES` (with `-OnePassTestIsolation YES`) creates a fictional account (Camille Durand) when
     /// none exists, then locks, so the lock screen can be captured. Debug builds only.
     private func seedAccountIfRequested() {
-        // Only into the isolated store: never creates an account in the user's.
+        // `TestIsolation` is forced by this flag: never creates an account in the user's store.
         guard UserDefaults.standard.bool(forKey: "OnePassDebugSeedAccount"), TestIsolation.isActive,
             session.state == .noAccount
         else { return }
@@ -315,6 +315,15 @@ final class AppModel {
         let found = try await coordinator.remoteHasAccount()
         await session.reload()
         return found
+    }
+
+    /// "Créer un nouveau coffre" on the Emergency Kit screen of a device without its Secret Key:
+    /// offered only when iCloud holds no account (always without sync).
+    func newVaultOffer() async -> NewVaultOffer {
+        guard cloudKitEnabled, let coordinator else { return .offered }
+        let offer = await coordinator.newVaultOffer()
+        await session.reload()
+        return offer
     }
 
     /// "Réessayer" on "Données refusées": a complete fetch from scratch, then the store is read again.
@@ -729,7 +738,7 @@ final class AppModel {
 }
 
 #if DEBUG
-/// `-OnePassTestIsolation YES` (UI tests and screenshot runs, Debug builds only): the app uses a store
+/// `-OnePassTestIsolation YES` (UI tests, screenshot runs and the Debug item helpers, Debug builds only): the app uses a store
 /// in `<tmp>/OnePassUITest`, the `me.somalabs.onepass.uitest` defaults suite and the
 /// `me.somalabs.onepass.uitest` keychain service, never the user's store, settings or Secret Keys.
 /// No sync, no widget or watch data.
@@ -737,7 +746,15 @@ enum TestIsolation {
     static let keychainService = "me.somalabs.onepass.uitest"
     static let suiteName = "me.somalabs.onepass.uitest"
 
-    static var isActive: Bool { UserDefaults.standard.bool(forKey: "OnePassTestIsolation") }
+    /// Also forced by the Debug helpers that create or unlock a fictional account
+    /// (`-OnePassDebugItem`, `-OnePassDebugNewItem`, `-OnePassDebugSeedAccount`): they never touch
+    /// the user's store.
+    static var isActive: Bool {
+        let defaults = UserDefaults.standard
+        return defaults.bool(forKey: "OnePassTestIsolation") || defaults.bool(forKey: "OnePassDebugSeedAccount")
+            || defaults.string(forKey: "OnePassDebugItem") != nil
+            || defaults.string(forKey: "OnePassDebugNewItem") != nil
+    }
 
     static var folder: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("OnePassUITest", isDirectory: true)
@@ -754,6 +771,12 @@ enum TestIsolation {
     /// Empties the isolated store, settings and keychain service (both keychains: the file one is
     /// the Debug fallback of an ad hoc signed build).
     static func wipe() {
+        // The Secure Enclave key of the test account (biometric unlock), named after its id.
+        if let accountID = UserDefaults(suiteName: suiteName)?.string(forKey: "onepass.accountID") {
+            let tag = "me.somalabs.onepass.auk.\(accountID)"
+            try? SecureEnclaveKeyring(accessGroup: VaultEnvironment.sharedAccessGroup()).deleteKey(tag: tag)
+            try? SecureEnclaveKeyring(accessGroup: nil).deleteKey(tag: tag)
+        }
         try? FileManager.default.removeItem(at: folder)
         UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         for legacy in [false, true] {
