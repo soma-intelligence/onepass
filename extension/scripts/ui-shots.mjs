@@ -6,20 +6,27 @@
 //   npm run build:chromium && node scripts/ui-shots.mjs <out-dir> [--only name,name]
 //
 // Output: <out-dir>/site/ (the harness pages, also usable with any browser
-// or page inspector) and <out-dir>/<state>-<light|dark>.png. Nothing here is
-// bundled into the extension.
+// or page inspector) and <out-dir>/<state>-<light|dark>.png. <out-dir> must be
+// under extension/ or the OS temp dir; only its `site` folder is replaced, and
+// only when this harness created it (marker file). Nothing here is bundled
+// into the extension.
 import { chromium } from "@playwright/test";
-import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkOutDir, prepareSite, servedPath } from "./shots-paths.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const args = process.argv.slice(2);
 const onlyIdx = args.indexOf("--only");
 const only = onlyIdx === -1 ? null : new Set(args.splice(onlyIdx, 2)[1].split(","));
-const out = resolve(args[0] ?? join(root, "test-results", "ui-shots"));
+const out = checkOutDir(args[0] ?? join(root, "test-results", "ui-shots"), root);
+if (out === null) {
+  console.error("the output directory must be under extension/ or the OS temp dir");
+  process.exit(2);
+}
 const dist = join(root, "dist", "chromium");
 if (!existsSync(join(dist, "popup.js"))) {
   console.error("dist/chromium is missing: run `npm run build:chromium` first");
@@ -301,9 +308,14 @@ const DEFAULTS = {
 };
 
 // ---- harness site ----
-const site = join(out, "site");
-rmSync(out, { recursive: true, force: true });
-mkdirSync(site, { recursive: true });
+mkdirSync(out, { recursive: true });
+let site;
+try {
+  site = prepareSite(out);
+} catch (e) {
+  console.error(e instanceof Error ? e.message : String(e));
+  process.exit(2);
+}
 for (const f of ["theme.css", "popup.js", "menu.js", "overlay.js", "save.js"]) cpSync(join(dist, f), join(site, f));
 
 const stub = (replies) => `"use strict";
@@ -340,8 +352,8 @@ for (const [name, s] of Object.entries(STATES)) {
 // ---- photographs ----
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css" };
 const server = createServer((req, res) => {
-  const f = join(site, decodeURIComponent(new URL(req.url, "http://x").pathname));
-  if (!f.startsWith(site) || !existsSync(f) || statSync(f).isDirectory()) {
+  const f = servedPath(site, new URL(req.url, "http://x").pathname);
+  if (f === null || !existsSync(f) || statSync(f).isDirectory()) {
     res.writeHead(404);
     res.end();
     return;
