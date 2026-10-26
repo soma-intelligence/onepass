@@ -675,7 +675,7 @@ struct SyncCoordinatorTests {
         #expect(await relaunched.status == .accountChanged)
         #expect(probe.sends == sends)
 
-        await a.coordinator.acceptAccountChange()
+        await a.coordinator.acceptAccountChange(expected: .sameVault)
         #expect(await a.coordinator.status.isIdle)
         #expect(try await a.pendingChanges().isEmpty)
         #expect(probe.sends > sends)

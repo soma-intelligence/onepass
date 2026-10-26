@@ -12,7 +12,7 @@ public enum SyncStatus: Equatable, Sendable {
     /// The core refused remote data (`Integrity { kind }`).
     case refused(kind: String)
     /// The iCloud account is not the one this store first synced with: sync stopped until
-    /// `SyncCoordinator.acceptAccountChange()`.
+    /// `SyncCoordinator.acceptAccountChange(expected:)`.
     case accountChanged
 
     /// French text for the UI.
@@ -39,11 +39,14 @@ public enum AccountChangeCheck: Equatable, Sendable {
     case otherVault
 }
 
-/// Result of `SyncCoordinator.acceptAccountChange()`.
+/// Result of `SyncCoordinator.acceptAccountChange(expected:)`.
 public enum AccountChangeOutcome: Equatable, Sendable {
     case accepted
     /// The zone holds another OnePass account: nothing changed, sync stays stopped.
     case refusedOtherVault
+    /// The zone no longer holds what the user confirmed, or the signed-in account changed during the
+    /// check: nothing changed, the user checks again.
+    case changedDuringCheck
     /// French message for the UI.
     case failed(String)
 

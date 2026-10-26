@@ -26,9 +26,10 @@ public struct ResolvedAddress: Equatable, Sendable, CustomStringConvertible {
     public var description: String { bytes.map(String.init).joined(separator: ".") }
 
     /// Reachable on the public internet: not private, loopback, link-local, CGNAT (100.64.0.0/10),
-    /// unique-local IPv6 (fc00::/7), multicast, unspecified, reserved or broadcast. An IPv4 address
-    /// embedded in IPv6 (mapped `::ffff:0:0/96`, compatible `::/96`, NAT64 `64:ff9b::/96`) is judged as
-    /// IPv4.
+    /// unique-local IPv6 (fc00::/7), multicast, unspecified, reserved, documentation or broadcast. An
+    /// IPv4 address embedded in IPv6 (mapped `::ffff:0:0/96`, compatible `::/96`, NAT64
+    /// `64:ff9b::/96`, 6to4 `2002::/16`) is judged as IPv4; SIIT `::ffff:0:0:0/96`, local NAT64
+    /// `64:ff9b:1::/48`, Teredo `2001::/32`, discard `100::/64` and `2001:db8::/32` are refused.
     public var isPublic: Bool {
         bytes.count == 4 ? Self.isPublicV4(bytes) : Self.isPublicV6(bytes)
     }
@@ -43,6 +44,9 @@ public struct ResolvedAddress: Equatable, Sendable, CustomStringConvertible {
         case (172, 16...31): return false  // private
         case (192, 168): return false  // private
         case (192, 0) where b[2] == 0: return false  // IETF protocol assignments
+        case (192, 0) where b[2] == 2: return false  // documentation TEST-NET-1
+        case (198, 51) where b[2] == 100: return false  // documentation TEST-NET-2
+        case (203, 0) where b[2] == 113: return false  // documentation TEST-NET-3
         case (198, 18...19): return false  // benchmarking
         case (224...255, _): return false  // multicast, reserved, broadcast
         default: return true
@@ -60,6 +64,16 @@ public struct ResolvedAddress: Equatable, Sendable, CustomStringConvertible {
             // `::` and `::1` land here too: 0.0.0.0 and 0.0.0.1 are not public.
             return isPublicV4(v4)
         }
+        // SIIT translated (::ffff:0:a.b.c.d): an IPv4 host behind a translator, refused outright.
+        if prefix96 == [0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0, 0] { return false }
+        // 6to4 (2002:a.b.c.d::/48): the IPv4 address is in bytes 2 to 5.
+        if b[0] == 0x20, b[1] == 0x02 { return isPublicV4(Array(b[2..<6])) }
+        // Local-use NAT64 (64:ff9b:1::/48), Teredo (2001::/32), discard-only (100::/64) and
+        // documentation (2001:db8::/32): never a site's own address.
+        if b[0..<6] == [0, 0x64, 0xFF, 0x9B, 0, 0x01] { return false }
+        if b[0..<4] == [0x20, 0x01, 0, 0] { return false }
+        if b[0..<8] == [0x01, 0, 0, 0, 0, 0, 0, 0] { return false }
+        if b[0..<4] == [0x20, 0x01, 0x0D, 0xB8] { return false }
         if b[0] == 0xFF { return false }  // multicast
         if b[0] & 0xFE == 0xFC { return false }  // unique-local fc00::/7
         if b[0] == 0xFE, b[1] & 0xC0 == 0x80 { return false }  // link-local fe80::/10

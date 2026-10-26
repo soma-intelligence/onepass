@@ -278,11 +278,11 @@ final class AppModel {
     }
 
     /// "Utiliser ce compte iCloud", after the zone check (and the confirmation for an empty zone).
-    func acceptAccountChange() async -> AccountChangeOutcome {
+    func acceptAccountChange(expected: AccountChangeCheck) async -> AccountChangeOutcome {
         guard let coordinator else {
             return .failed(String(localized: "La synchronisation iCloud n'est pas active dans ce build."))
         }
-        return await coordinator.acceptAccountChange()
+        return await coordinator.acceptAccountChange(expected: expected)
     }
 
     // MARK: - Refused remote deletions

@@ -46,7 +46,7 @@ struct UseICloudAccountButton: View {
         do {
             switch try await model.checkAccountChange() {
             case .otherVault: message = String(localized: "Ce compte iCloud contient déjà un autre coffre OnePass. Reviens au compte iCloud d'origine pour synchroniser.")
-            case .sameVault: await finish(model.acceptAccountChange())
+            case .sameVault: await finish(model.acceptAccountChange(expected: .sameVault))
             case .emptyZone: confirmUpload = true
             }
         } catch {
@@ -57,13 +57,14 @@ struct UseICloudAccountButton: View {
     private func accept() async {
         working = true
         defer { working = false }
-        await finish(model.acceptAccountChange())
+        await finish(model.acceptAccountChange(expected: .emptyZone))
     }
 
     private func finish(_ outcome: AccountChangeOutcome) async {
         switch outcome {
         case .accepted: break
         case .refusedOtherVault: message = String(localized: "Ce compte iCloud contient déjà un autre coffre OnePass. Reviens au compte iCloud d'origine pour synchroniser.")
+        case .changedDuringCheck: message = String(localized: "Ce compte iCloud a changé pendant la vérification. Réessaie.")
         case .failed(let text): message = text
         }
     }

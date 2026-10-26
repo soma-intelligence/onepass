@@ -20,13 +20,24 @@ final class AccountSwitchingRemote: RemoteRecordStore {
     var maxBatchRecords: Int { 400 }
     var maxBatchBytes: Int { 1_572_864 }
 
+    private let pendingSwitch = Mutex<String?>(nil)
+
     /// Another Apple ID signs in (CloudKit posts `CKAccountChanged`).
     func signIn(_ identity: String) {
         current.withLock { $0 = identity }
         changes.withLock { $0 += 1 }
     }
 
-    func fetchChanges(since token: Data?) async throws -> RemoteBatch { try await zone.fetchChanges(since: token) }
+    /// `identity` signs in right after the next fetch page is served.
+    func switchDuringNextFetch(to identity: String) {
+        pendingSwitch.withLock { $0 = identity }
+    }
+
+    func fetchChanges(since token: Data?) async throws -> RemoteBatch {
+        let batch = try await zone.fetchChanges(since: token)
+        if let next = pendingSwitch.withLock({ s -> String? in defer { s = nil }; return s }) { signIn(next) }
+        return batch
+    }
     func send(_ changes: [RemoteRecord]) async throws -> [SendResult] { try await zone.send(changes) }
     func accountAvailable() async -> Bool { true }
     func accountIdentity() async throws -> String? { current.withLock { $0 } }
@@ -75,7 +86,8 @@ struct AccountChangeTests {
         let sentBefore = await zoneB.sentBatches.count
 
         #expect(try await a.coordinator.checkAccountChange() == .otherVault)
-        #expect(await a.coordinator.acceptAccountChange() == .refusedOtherVault)
+        #expect(await a.coordinator.acceptAccountChange(expected: .emptyZone) == .refusedOtherVault)
+        #expect(await a.coordinator.acceptAccountChange(expected: .sameVault) == .refusedOtherVault)
         #expect(await a.coordinator.status == .accountChanged)
         await a.coordinator.syncNow()
         #expect(await a.coordinator.status == .accountChanged)
@@ -94,7 +106,7 @@ struct AccountChangeTests {
         _ = try await zoneB.send(copy)
 
         #expect(try await a.coordinator.checkAccountChange() == .sameVault)
-        #expect(await a.coordinator.acceptAccountChange() == .accepted)
+        #expect(await a.coordinator.acceptAccountChange(expected: .sameVault) == .accepted)
         #expect(await a.coordinator.status.isIdle)
         #expect(try await a.pendingChanges().isEmpty)
         try await addItem(a.session, title: "Camille Durand")
@@ -110,7 +122,7 @@ struct AccountChangeTests {
         #expect(await zoneB.sentBatches.isEmpty)
 
         #expect(try await a.coordinator.checkAccountChange() == .emptyZone)
-        #expect(await a.coordinator.acceptAccountChange() == .accepted)
+        #expect(await a.coordinator.acceptAccountChange(expected: .emptyZone) == .accepted)
         #expect(await a.coordinator.status.isIdle)
         #expect(try await a.pendingChanges().isEmpty)
         // The whole vault went to the new zone: a new device restores from it.
@@ -121,6 +133,74 @@ struct AccountChangeTests {
         await fresh.session.reload()
         try await fresh.session.restore(secretKey: try #require(a.secretKey), password: testPassword)
         #expect(fresh.titles == ["Projet Atlas"])
+    }
+
+    /// The user confirmed "same vault" but the zone is empty now: the upload confirmation was never
+    /// shown, so nothing is accepted. Same the other way round.
+    @Test func zoneThatChangedSinceTheConfirmationIsRefused() async throws {
+        let zoneB = InMemoryRemote()
+        let (a, _, _) = try await switchedDevice(zoneB: zoneB)
+        defer { a.cleanUp() }
+        #expect(try await a.coordinator.checkAccountChange() == .emptyZone)
+        #expect(await a.coordinator.acceptAccountChange(expected: .sameVault) == .changedDuringCheck)
+        #expect(await a.coordinator.status == .accountChanged)
+        #expect(await zoneB.sentBatches.isEmpty)
+        await a.coordinator.syncNow()
+        #expect(await a.coordinator.status == .accountChanged)
+        #expect(await zoneB.sentBatches.isEmpty)
+    }
+
+    /// Another Apple ID signs in while the zone is being inspected: refused, nothing stored.
+    @Test func identityChangeDuringTheInspectionIsRefused() async throws {
+        let zoneB = InMemoryRemote()
+        let zoneC = InMemoryRemote()
+        let zoneA = InMemoryRemote()
+        let remote = AccountSwitchingRemote(["a": zoneA, "b": zoneB, "c": zoneC], signedIn: "a")
+        let a = try SyncDevice(name: "A", client: remote)
+        defer { a.cleanUp() }
+        _ = try await a.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        await a.sync()
+        remote.signIn("b")
+        await a.coordinator.syncNow()
+        #expect(await a.coordinator.status == .accountChanged)
+
+        // "c" signs in during the inspection of "b" (after its first page).
+        remote.switchDuringNextFetch(to: "c")
+        #expect(await a.coordinator.acceptAccountChange(expected: .emptyZone) == .changedDuringCheck)
+        #expect(await zoneB.sentBatches.isEmpty)
+        #expect(await zoneC.sentBatches.isEmpty)
+        await a.coordinator.syncNow()
+        #expect(await a.coordinator.status == .accountChanged)
+    }
+
+    /// The same identity, but CloudKit signalled an account change during the inspection: refused.
+    @Test func accountChangeSignalDuringTheInspectionIsRefused() async throws {
+        let zoneB = InMemoryRemote()
+        let (a, remote, _) = try await switchedDevice(zoneB: zoneB)
+        defer { a.cleanUp() }
+        remote.switchDuringNextFetch(to: "b")
+        #expect(await a.coordinator.acceptAccountChange(expected: .emptyZone) == .changedDuringCheck)
+        #expect(await zoneB.sentBatches.isEmpty)
+        #expect(await a.coordinator.acceptAccountChange(expected: .emptyZone) == .accepted)
+        #expect(await !zoneB.sentBatches.isEmpty)
+    }
+
+    /// A clock set back after the fetch: the check counts as stale and is done again before sending.
+    @Test func clockSetBackMakesTheIdentityCheckStale() async throws {
+        let remote = InMemoryRemote()
+        let clock = Mutex(Date(timeIntervalSince1970: 2_000_000))
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("onepass-back-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = dir.appendingPathComponent("vault.sqlite").path
+        try createAccountWithKdf(dbPath: path, password: testPassword, kdf: SessionHarness.fastKdf).session.lock()
+        let store = try openSyncStore(dbPath: path)
+        let ticking = ClockTickingRemote(remote) { clock.withLock { $0 = $0.addingTimeInterval(-3600) } }
+        let coordinator = SyncCoordinator(store: store, remote: ticking, now: { clock.withLock { $0 } })
+        await remote.changeIdentityAfterNextFetch(to: "utilisateur-icloud-b", announce: false)
+        await coordinator.syncNow()
+        #expect(await coordinator.status == .accountChanged)
+        #expect(await remote.sentBatches.isEmpty)
     }
 
     // MARK: - Identity checked before the send

@@ -165,23 +165,32 @@ public actor SyncCoordinator: SyncTrigger {
         return try await inspectZone(remote)
     }
 
-    /// The user chose "Utiliser ce compte iCloud" (after `.accountChanged`). The zone is checked first:
-    /// another OnePass account there is refused (nothing changes, sync stays stopped). Otherwise (our
-    /// account, or an empty zone the user agreed to fill) the new identity is stored, the old change
-    /// token and server tags are forgotten as after a lost zone (`begin_zone_reset`: every local record
-    /// the new zone lacks is queued again after the next complete fetch), then a round runs.
+    /// The user chose "Utiliser ce compte iCloud" (after `.accountChanged`), having seen `expected`
+    /// (`checkAccountChange`, and for an empty zone the upload confirmation). The zone is inspected
+    /// again: another OnePass account is refused (`.refusedOtherVault`); a zone that no longer holds
+    /// what the user confirmed, or an identity that changed during the inspection (other identity, or
+    /// a `CKAccountChanged` signal meanwhile), is refused as `.changedDuringCheck`, so an empty zone is
+    /// never filled without its confirmation. Otherwise the new identity is stored, the old change token
+    /// and server tags are forgotten as after a lost zone (`begin_zone_reset`: every local record the
+    /// new zone lacks is queued again after the next complete fetch), then a round runs. Nothing
+    /// changes on a refusal: sync stays stopped.
     @discardableResult
-    public func acceptAccountChange() async -> AccountChangeOutcome {
+    public func acceptAccountChange(expected: AccountChangeCheck) async -> AccountChangeOutcome {
         guard let remote else { return .failed(Self.noAccountMessage) }
         await acquire()
         let store = store
         let outcome: AccountChangeOutcome
         do {
+            let changeCount = await remote.accountChangeCount()
             if let identity = try await remote.accountIdentity() {
-                switch try await inspectZone(remote) {
-                case .otherVault:
+                let found = try await inspectZone(remote)
+                let identityAfter = try await remote.accountIdentity()
+                let changeCountAfter = await remote.accountChangeCount()
+                if found == .otherVault {
                     outcome = .refusedOtherVault
-                case .sameVault, .emptyZone:
+                } else if found != expected || identityAfter != identity || changeCountAfter != changeCount {
+                    outcome = .changedDuringCheck
+                } else {
                     try await CoreThread.run {
                         try store.setMeta(key: Self.accountKey, value: Data(identity.utf8))
                         try store.beginZoneReset(tokenKey: Self.tokenKey)
@@ -496,9 +505,11 @@ public actor SyncCoordinator: SyncTrigger {
     /// account change since, or the check is older than `identityRecheckInterval`; only then is it
     /// fetched again (a mismatch throws `accountChanged`, nothing is sent).
     private func verifyIdentityBeforeSend(_ remote: any RemoteRecordStore) async throws {
+        // A clock set back gives a negative age: stale, like an old check.
         if let verified = verifiedIdentity,
             await remote.accountChangeCount() == verified.changeCount,
-            now().timeIntervalSince(verified.at) < Self.identityRecheckInterval
+            case let age = now().timeIntervalSince(verified.at),
+            age >= 0, age < Self.identityRecheckInterval
         {
             return
         }

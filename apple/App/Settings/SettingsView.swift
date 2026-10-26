@@ -40,7 +40,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
 
     /// The page's content, without its own navigation container.
-    @ViewBuilder var content: some View {
+    @MainActor @ViewBuilder var content: some View {
         switch self {
         case .general: GeneralSettings()
         case .security: SecuritySettings()
