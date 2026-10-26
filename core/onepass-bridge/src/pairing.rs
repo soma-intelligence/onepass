@@ -61,6 +61,26 @@ struct Keys {
     confirm: Zeroizing<[u8; 32]>,
 }
 
+/// Intermediate values of a pairing, for cross-language test vectors only.
+#[cfg(any(test, feature = "vectors"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VectorKeys {
+    pub transcript_hash: [u8; 32],
+    pub pairing_key: [u8; 32],
+    pub confirm_key: [u8; 32],
+}
+
+#[cfg(any(test, feature = "vectors"))]
+impl Keys {
+    fn vector_keys(&self) -> VectorKeys {
+        VectorKeys {
+            transcript_hash: self.t,
+            pairing_key: *self.pairing_key,
+            confirm_key: *self.confirm,
+        }
+    }
+}
+
 fn random<const N: usize>() -> Result<[u8; N]> {
     let mut b = [0u8; N];
     aws_lc_rs::rand::fill(&mut b).map_err(|_| BridgeError::Crypto)?;
@@ -191,6 +211,15 @@ impl HostPairing {
         Ok((host, offer))
     }
 
+    /// Derived values once the code is known, for test vectors only.
+    #[cfg(any(test, feature = "vectors"))]
+    pub fn vector_keys(&self) -> Option<VectorKeys> {
+        match &self.state {
+            HostState::AwaitApproval(k) | HostState::AwaitConfirm(k) => Some(k.vector_keys()),
+            _ => None,
+        }
+    }
+
     /// Take the state, leaving `Closed`: any early return wipes it.
     fn take(&mut self, now: u64) -> Result<HostState> {
         let state = std::mem::replace(&mut self.state, HostState::Closed);
@@ -319,6 +348,17 @@ impl ExtPairing {
             },
         };
         Ok((ext, hello))
+    }
+
+    /// Derived values once the code is known, for test vectors only.
+    #[cfg(any(test, feature = "vectors"))]
+    pub fn vector_keys(&self) -> Option<VectorKeys> {
+        match &self.state {
+            ExtState::AwaitDone { keys, .. } | ExtState::Verified { keys, .. } => {
+                Some(keys.vector_keys())
+            }
+            _ => None,
+        }
     }
 
     fn take(&mut self, now: u64) -> Result<ExtState> {

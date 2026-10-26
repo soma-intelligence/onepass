@@ -62,6 +62,16 @@ fn derive(
     })
 }
 
+/// Intermediate values of a session handshake, for test vectors only.
+#[cfg(any(test, feature = "vectors"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VectorKeys {
+    pub transcript_hash: [u8; 32],
+    pub key_e2h: [u8; 32],
+    pub key_h2e: [u8; 32],
+    pub key_confirm: [u8; 32],
+}
+
 fn random<const N: usize>() -> Result<[u8; N]> {
     let mut b = [0u8; N];
     aws_lc_rs::rand::fill(&mut b).map_err(|_| BridgeError::Crypto)?;
@@ -135,6 +145,17 @@ fn accept_with(
 }
 
 impl PendingSession {
+    /// Derived values, for test vectors only.
+    #[cfg(any(test, feature = "vectors"))]
+    pub fn vector_keys(&self) -> VectorKeys {
+        VectorKeys {
+            transcript_hash: self.keys.t,
+            key_e2h: *self.keys.e2h,
+            key_h2e: *self.keys.h2e,
+            key_confirm: *self.keys.confirm,
+        }
+    }
+
     /// Handle `finish`: verify the extension MAC, open the channel. `now`
     /// starts the idle timer.
     pub fn on_finish(self, finish: Finish, now: u64) -> Result<Channel> {

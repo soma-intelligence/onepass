@@ -25,5 +25,10 @@ libcrux-ml-kem = { version = "0.0.11", optional = true }
 # a shipped build.
 vectors = ["dep:libcrux-ml-kem"]
 
+# Cross-language vectors need the deterministic helpers of feature `vectors`.
+[[test]]
+name = "vectors"
+required-features = ["vectors"]
+
 [dev-dependencies]
 libcrux-ml-kem = "0.0.11"
