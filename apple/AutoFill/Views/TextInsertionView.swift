@@ -76,7 +76,7 @@ struct TextFieldsView: View {
     @State private var busy = false
 
     var body: some View {
-        AutoFillScaffold(title: Text("Choisis un champ"), model: model, back: { model.showTextItems() }) {
+        AutoFillScaffold(title: Text("Choisis un champ"), model: model, back: { Task { await model.showTextItems() } }) {
             List {
                 Section {
                     SessionErrorText(session: session)

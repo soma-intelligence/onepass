@@ -57,8 +57,12 @@ struct ItemDetailView: View {
         .onChange(of: model.remoteRevision) {
             Task { await remoteChanged() }
         }
+        // Same for a write of the AutoFill extension (a passkey added to this Login, for instance).
+        .onChange(of: session.externalChangeRevision) {
+            Task { await remoteChanged() }
+        }
         .alert(
-            "Élément modifié sur un autre appareil",
+            "Élément modifié entre-temps",
             isPresented: Binding(get: { remoteVersion != nil }, set: { if !$0 { remoteVersion = nil } })
         ) {
             Button("Recharger", role: .destructive) {

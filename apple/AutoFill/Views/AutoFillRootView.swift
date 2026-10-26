@@ -60,7 +60,7 @@ struct AutoFillRootView: View {
     /// One-time code list, or the list a direct code request falls back to.
     private var isOneTimeCodeList: Bool {
         switch request {
-        case .oneTimeCodeList, .credential(_, .oneTimeCode, _): true
+        case .oneTimeCodeList, .credential(_, .oneTimeCode, _, _): true
         default: false
         }
     }

@@ -104,7 +104,8 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         begin(request)
     }
 
-    /// Ruling A9: never a passkey created without the interface.
+    /// Conditional registration (a site upgrading to a passkey automatically): always `.failed`
+    /// (`resultWithoutUserInteraction`), ruling A9: never a passkey created without an explicit choice.
     override func performWithoutUserInteractionIfPossible(passkeyRegistration registrationRequest: ASPasskeyCredentialRequest) {
         guard let request = Self.registrationRequest(registrationRequest) else {
             answer(.cancelled(.failed), for: nil)
@@ -304,15 +305,18 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         identifiers.map(\.identifier).filter { !$0.isEmpty }
     }
 
-    /// A QuickType suggestion. `recordIdentifier` is `"<vault id>:<item id>"`; a passkey request
+    /// A QuickType suggestion. `recordIdentifier` is `"<vault id>:<item id>"`; a password or code
+    /// request carries the identity's service (the Login must still match it); a passkey request
     /// carries the identity's credential id (the model refuses an empty allow list).
     private static func directRequest(_ request: any ASCredentialRequest) -> AutoFillRequest? {
         let recordID = request.credentialIdentity.recordIdentifier ?? ""
+        // The host the identity was published for: the model checks the Login still matches it.
+        let service = request.credentialIdentity.serviceIdentifier.identifier
         switch request.type {
         case .password:
-            return .credential(recordID: recordID, kind: .password, passkey: nil)
+            return .credential(recordID: recordID, kind: .password, passkey: nil, service: service)
         case .oneTimeCode:
-            return .credential(recordID: recordID, kind: .oneTimeCode, passkey: nil)
+            return .credential(recordID: recordID, kind: .oneTimeCode, passkey: nil, service: service)
         case .passkeyAssertion:
             guard let passkeyRequest = request as? ASPasskeyCredentialRequest,
                 let identity = passkeyRequest.credentialIdentity as? ASPasskeyCredentialIdentity

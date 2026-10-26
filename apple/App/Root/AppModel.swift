@@ -124,6 +124,7 @@ final class AppModel {
         let isolated = false
         #endif
         var coordinator: SyncCoordinator?
+        var storeSplit = false
         #if ONEPASS_CLOUDKIT
         let remote: (any RemoteRecordStore)? = demo == nil
             ? CloudKitRemote(containerIdentifier: "iCloud.me.somalabs.onepass") : nil
@@ -140,39 +141,49 @@ final class AppModel {
             // Before anything opens the store: the extension and the app share the moved database.
             // UI tests (Debug, `TestIsolation`) never move nor open the user's store.
             #if DEBUG
-            let container = isolated ? resolved : Self.migrateToSharedContainer(resolved)
-            let databaseURL = isolated ? TestIsolation.databaseURL : container.databaseURL
+            let migrated = isolated ? resolved : Self.migrateToSharedContainer(resolved)
             #else
-            let container = Self.migrateToSharedContainer(resolved)
-            let databaseURL = container.databaseURL
+            let migrated = Self.migrateToSharedContainer(resolved)
             #endif
-            do {
-                let store = try openSyncStore(dbPath: databaseURL.path)
-                coordinator = SyncCoordinator(store: store, remote: isolated ? nil : remote)
-            } catch {
-                Self.log.error("sync store not opened, sync disabled")
-            }
-            #if DEBUG
-            if isolated {
-                // UI tests: their own store, settings and keychain service (never the user's), and
-                // nothing published to the system identity store.
-                var isolatedEnvironment = VaultEnvironment.live(
-                    sync: coordinator ?? NoSync(), container: container, databaseURL: databaseURL,
-                    settings: VaultSettings(defaults: TestIsolation.defaults),
-                    keychainService: TestIsolation.keychainService)
-                isolatedEnvironment.identityStore = NoIdentityStore()
-                environment = isolatedEnvironment
-            } else {
+            if let container = migrated {
+                #if DEBUG
+                let databaseURL = isolated ? TestIsolation.databaseURL : container.databaseURL
+                #else
+                let databaseURL = container.databaseURL
+                #endif
+                do {
+                    let store = try openSyncStore(dbPath: databaseURL.path)
+                    coordinator = SyncCoordinator(store: store, remote: isolated ? nil : remote)
+                } catch {
+                    Self.log.error("sync store not opened, sync disabled")
+                }
+                #if DEBUG
+                if isolated {
+                    // UI tests: their own store, settings and keychain service (never the user's), and
+                    // nothing published to the system identity store.
+                    var isolatedEnvironment = VaultEnvironment.live(
+                        sync: coordinator ?? NoSync(), container: container, databaseURL: databaseURL,
+                        settings: VaultSettings(defaults: TestIsolation.defaults),
+                        keychainService: TestIsolation.keychainService)
+                    isolatedEnvironment.identityStore = NoIdentityStore()
+                    environment = isolatedEnvironment
+                } else {
+                    environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), container: container)
+                }
+                #else
+                // `live` uses the same container as the sync store.
                 environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), container: container)
+                #endif
+            } else {
+                // Split store: nothing is opened (no sync store), the session is refused below.
+                storeSplit = true
+                environment = VaultEnvironment.live(sync: NoSync(), container: resolved)
             }
-            #else
-            // `live` uses the same container as the sync store.
-            environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), container: container)
-            #endif
         }
         self.coordinator = coordinator
         self.remote = remote
         session = VaultSession(environment: environment)
+        if storeSplit { session.refuseStore(.other(Self.storeSplitMessage)) }
         // Demo data never reaches the widgets.
         companion = CompanionCoordinator(
             session: session, glanceStore: demo == nil && !isolated ? GlanceStore.shared() : nil,
@@ -204,18 +215,29 @@ final class AppModel {
     /// and this launch keeps the legacy store and settings: the vault stays usable in the app. The
     /// AutoFill extension finds no shared store and never creates one (it shows "open OnePass"), so a
     /// later launch completes the move; an empty shared store left by an older extension is set aside.
-    private static func migrateToSharedContainer(_ container: SharedContainer) -> SharedContainer {
+    /// Nil when the files could not be put back either (store split between the two folders): no store
+    /// is opened this launch, the session shows "Données refusées".
+    private static func migrateToSharedContainer(_ container: SharedContainer) -> SharedContainer? {
         guard container.isShared else { return container }
         let legacy = legacyContainer
         do {
             try SharedContainerMigration.run(
                 from: legacy.databaseURL, legacyDefaults: .standard, to: container)
             return container
+        } catch SharedContainerMigrationError.rollbackFailed {
+            // The legacy database lost its sidecars and the shared folder has no database: opening
+            // either one would lose writes or invite a new account. Nothing is opened this launch.
+            log.fault("shared container migration failed and could not be undone, no store opened")
+            return nil
         } catch {
             log.error("shared container migration failed, legacy store kept for this launch")
             return legacy
         }
     }
+
+    /// Shown on "Données refusées" when the store is split between the two folders.
+    static let storeSplitMessage =
+        "Le déplacement du stockage vers le dossier partagé avec l'extension AutoFill a échoué et n'a pas pu être annulé. Aucune donnée n'est ouverte pour éviter toute perte. Quitte puis relance OnePass : le déplacement reprend au lancement suivant."
 
     /// Starts listening to the sync layer and runs a first round. Called once by the root view.
     func start() {
@@ -265,6 +287,9 @@ final class AppModel {
             // A lock asked by a Control while the app was in the background or not notified.
             lockIfRequested()
             companion.sessionChanged()
+            // An item saved by the AutoFill extension appears even if its store-changed notification
+            // was lost (sent while the app was suspended).
+            if session.state == .unlocked { Task { await session.reloadAfterExternalChange() } }
             if let coordinator { Task { await coordinator.syncNow() } }
             // The provider may have been turned on or off in the system settings meanwhile.
             Task { await refreshAutoFillStatus() }

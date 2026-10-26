@@ -2,7 +2,7 @@
 
 Les applications Apple s'appuient sur le coeur Rust (`core/onepass-ffi`, exposé par UniFFI) via le paquet Swift `VaultKit`. Ce dossier est le jalon 2 : création de compte, déverrouillage (mot de passe, Face ID, Touch ID, Apple Watch sur Mac), les 26 types d'items, vaults, recherche, synchronisation CloudKit et verrouillage automatique. Le jalon 3 y ajoute l'AutoFill système (extension `OnePassAutoFill`), les passkeys et les codes à usage unique dans les champs. Specs : `docs/superpowers/specs/2026-10-25-milestone-2-apps-design.md` et `docs/superpowers/specs/2026-10-26-milestone-3-autofill-design.md`. Sécurité : sections "Jalon 2 : apps Apple" et "Jalon 3 : AutoFill et passkeys" de [`docs/security/README.md`](../docs/security/README.md).
 
-Le jalon 6 ajoute l'app Apple Watch, l'app Vision Pro, les widgets, les Contrôles et les Raccourcis (voir "Jalon 6" plus bas). Spec : `docs/superpowers/specs/2026-10-26-milestone-6-watch-vision-design.md`. Sécurité : section 12 de [`docs/security/README.md`](../docs/security/README.md).
+Le jalon 6 ajoute l'app Apple Watch, l'app Vision Pro, les widgets, les Contrôles et les Raccourcis (voir "Jalon 6" plus bas). Spec : `docs/superpowers/specs/2026-10-26-milestone-6-watch-vision-design.md`. Sécurité : section 13 de [`docs/security/README.md`](../docs/security/README.md).
 
 ## Architecture
 
@@ -188,7 +188,7 @@ Autres limites connues :
 - iOS : une app suspendue garde ses clés en mémoire jusqu'au retour au premier plan ou au prochain réveil par notification, si le délai de verrouillage dépasse le temps d'arrière-plan accordé par le système.
 
 - Une seule fenêtre (voir Architecture).
-- iOS peut proposer "Enregistrer le mot de passe ?" (mots de passe du système) après l'enregistrement d'un Login : il faut refuser. Corrigé au jalon 3 quand OnePass est le fournisseur de remplissage automatique et que l'appareil est en iOS 26.2 ou plus (l'extension referme la demande venue de OnePass lui-même, sans interface). Toujours possible avec un autre fournisseur, ou en iOS 26.0 et 26.1.
+- iOS peut proposer "Enregistrer le mot de passe ?" (mots de passe du système) après l'enregistrement d'un Login : il faut refuser. Corrigé au jalon 3 quand OnePass est le fournisseur de remplissage automatique et que l'appareil est en iOS 26.2 ou plus (l'extension referme la demande venue de OnePass lui-même, service de type app, sans interface ; une valeur identique à un Login existant se referme juste après le déverrouillage, sans feuille). Toujours possible avec un autre fournisseur, ou en iOS 26.0 et 26.1.
 - Pas de liste "À proximité" ni de géofences sur l'Accueil (R11).
 - Mac : pas de scan du QR de l'Emergency Kit, la Secret Key se tape (R19).
 - Une modification locale d'un item supprimé sur un autre appareil le fait revenir (une suppression ne porte pas de date) ; un déplacement local concurrent d'une modification distante peut laisser l'item dans les deux vaults, sans perte.
@@ -220,6 +220,7 @@ Ce qui demande un build signé ou un appareil réel (spec, section 10) :
 - **Passkeys avec un vrai site** : le Simulateur n'a pas de domaines associés signés ; la cryptographie est vérifiée par les tests Rust (signature vérifiée avec `aws-lc-rs`).
 - **Synchronisation CloudKit d'une passkey** créée dans l'extension : build `Release-CloudKit` (R8).
 - **Flux hybride** (QR code d'un autre appareil) : fourni par le système, à vérifier sur un appareil.
+- **Base partagée et suspension (`0xdead10cc`)** : la base WAL vit dans le conteneur App Group et l'app y garde des connexions longues ; iOS peut tuer un processus suspendu qui tient un verrou sur un fichier d'un conteneur partagé. À vérifier sur appareil. Mitigation prévue, non implémentée : tâche d'arrière-plan autour des écritures et de la sync, ou point de contrôle WAL et fermeture des connexions au passage en arrière-plan.
 - **État "Activé" du fournisseur** : dans le Simulateur iOS 27.0, `ASCredentialIdentityStore.state()` répond "désactivé" même quand l'interrupteur du système est allumé (ruling X18) ; l'affichage "Activé" de la page Remplissage automatique n'est vérifié que sur un appareil.
 
 Hors périmètre du jalon 3 (spec, section 11) :
@@ -229,12 +230,12 @@ Hors périmètre du jalon 3 (spec, section 11) :
 - Vision Pro (jalon 6), extension Safari et icône dans le champ des pages web (jalon 4). Aucun fournisseur ne peut dessiner dans les champs des autres apps : l'expérience système est la barre QuickType, la touche clé et la feuille passkey.
 - Signal des passkeys inconnues ou renommées au système (`reportUnknownPublicKeyCredential`, `reportAllAcceptedPublicKeyCredentials`).
 - Extensions WebAuthn PRF et largeBlob.
-- Création de passkey sans interface (mise à niveau automatique) : refusée, l'extension n'est jamais déverrouillée hors requête.
+- Création de passkey sans interface (mise à niveau automatique) : répond `failed`, l'extension n'est jamais déverrouillée hors requête et une passkey n'est créée qu'après un choix explicite (ruling X21).
 - Identités limitées aux Logins : un compte Email ou un Server ne remonte pas en suggestion QuickType (l'insertion de texte couvre les autres types).
 
 ## Jalon 6 : Apple Watch, Vision Pro, widgets, Contrôles et Raccourcis
 
-Spec : `docs/superpowers/specs/2026-10-26-milestone-6-watch-vision-design.md` (décisions W1 à W18 en section 14, rulings d'exécution en section 15). Modèle de sécurité : section 12 de [`docs/security/README.md`](../docs/security/README.md).
+Spec : `docs/superpowers/specs/2026-10-26-milestone-6-watch-vision-design.md` (décisions W1 à W18 en section 14, rulings d'exécution en section 15). Modèle de sécurité : section 13 de [`docs/security/README.md`](../docs/security/README.md).
 
 ### Cibles
 
