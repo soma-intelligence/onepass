@@ -49,8 +49,6 @@ const realTimers: Timers = {
 
 interface Pending {
   origin: string;
-  /** The submitting document, when it is the top frame (prompt target while no navigation). */
-  documentId?: string;
   username: string;
   password: string;
   at: number;
@@ -69,14 +67,11 @@ export interface SaveFlowDeps {
   session: Pick<Session, "request">;
   saves: Pick<SavePrompts, "open">;
   neverSave: Pick<NeverSave, "has">;
-  /** Current origin of a frame, from the browser. */
-  frameOrigin: (tabId: number, frameId: number) => Promise<string | null>;
   /**
-   * Current document of the top frame (`webNavigation.getFrame`), where the
-   * browser reports it: the submission message can reach the worker after
-   * the top frame already committed the next page.
+   * The top frame of a tab as the browser reports it now
+   * (`webNavigation.getFrame`): its URL, and its document where supported.
    */
-  topDocumentId?: (tabId: number) => Promise<string | null>;
+  topFrame: (tabId: number) => Promise<{ url: string; documentId?: string } | null>;
   /** A sign-in chain runs in this tab: its submissions are not proposed. */
   chainRunning?: (tabId: number) => Promise<boolean>;
   now?: () => number;
@@ -128,7 +123,6 @@ export class SaveFlow {
       check: null,
       expire: null,
     };
-    if (cs.frameId === 0 && cs.documentId !== undefined) p.documentId = cs.documentId;
     p.check = this.timers.setTimeout(() => void this.check(cs.tabId), CHECK_DELAY_MS);
     // Spec 8.5: kept at most 2 minutes.
     p.expire = this.timers.setTimeout(() => this.drop(cs.tabId), SUBMIT_TTL_MS);
@@ -168,14 +162,14 @@ export class SaveFlow {
   async check(tabId: number): Promise<void> {
     const p = this.pending.get(tabId);
     if (!p) return;
-    const { origin, username, password, documentId, navigated, at } = p;
+    const { origin, username, password, at } = p;
     this.drop(tabId);
     if (this.now() - at > SUBMIT_TTL_MS) return;
     const site = parseOrigin(origin)?.site;
     if (!site || (await this.deps.neverSave.has(site))) return;
-    // The prompt goes to the top frame: it must still show this site.
-    const top = await this.deps.frameOrigin(tabId, 0);
-    if (!top || parseOrigin(top)?.https !== true || !sameSite(top, origin)) return;
+    // The prompt goes to the top frame: it must show this site (checked
+    // again below, after the host answered).
+    if (!(await this.verifiedTop(tabId, origin))) return;
     let r: { status: "new" | "same" | "update"; item_id?: string; title?: string };
     try {
       r = await this.deps.session.request({ op: "check_credentials", ctx: "save_prompt", origin, username, password });
@@ -183,8 +177,13 @@ export class SaveFlow {
       return;
     }
     if (r.status === "same") return;
-    const pending: SavePending = { tabId, origin, kind: "login", status: r.status, username, password };
-    if (!navigated && documentId !== undefined && (await this.stillTop(tabId, documentId))) pending.documentId = documentId;
+    // The top frame may have moved during the host request (or before the
+    // submission was even registered): read it again and pin the prompt to
+    // that very document, of this site.
+    const top = await this.verifiedTop(tabId, origin);
+    if (!top) return;
+    const pending: SavePending = { tabId, origin, kind: "login", status: r.status, username, password, topOrigin: top.origin };
+    if (top.documentId !== undefined) pending.documentId = top.documentId;
     if (r.status === "update" && r.item_id !== undefined) pending.update = { itemId: r.item_id, title: r.title ?? "" };
     try {
       await this.deps.saves.open(pending);
@@ -194,17 +193,20 @@ export class SaveFlow {
   }
 
   /**
-   * The submitting document is still the top one. A navigation committed
-   * before the submission was even registered is not seen by
-   * `onNavigation`: pinning the prompt to that dead document would lose it.
+   * The current top document of `tabId` if it is HTTPS and of the same
+   * registrable domain as `origin`: its origin and, where the browser
+   * reports it, its documentId (the prompt is delivered to exactly it).
    */
-  private async stillTop(tabId: number, documentId: string): Promise<boolean> {
-    if (!this.deps.topDocumentId) return true;
+  private async verifiedTop(tabId: number, origin: string): Promise<{ origin: string; documentId?: string } | null> {
+    let f: { url: string; documentId?: string } | null;
     try {
-      return (await this.deps.topDocumentId(tabId)) === documentId;
+      f = await this.deps.topFrame(tabId);
     } catch {
-      return false;
+      return null;
     }
+    const top = f ? parseOrigin(f.url) : null;
+    if (!f || !top?.https || !sameSite(f.url, origin)) return null;
+    return f.documentId !== undefined ? { origin: top.origin, documentId: f.documentId } : { origin: top.origin };
   }
 
   /** Menu "Enregistrer un nouveau login": the edit view, site prefilled, nothing typed. */

@@ -31,6 +31,11 @@ export interface SavePending {
   provider?: { id: ProviderId; accountItemId: string; email: string };
   /** Open straight in the edit view (menu "Enregistrer un nouveau login"). */
   view?: "edit";
+  /**
+   * Verified origin of the top document, sent as an origin pin when no
+   * `documentId` is known (the content script shows the prompt only there).
+   */
+  topOrigin?: string;
 }
 
 interface SaveRecord extends BoundRecord, Omit<SavePending, "tabId" | "origin" | "documentId"> {
@@ -87,6 +92,7 @@ export class SavePrompts {
     if (p.view) rec.view = p.view;
     const token = await this.tokens.register(rec);
     const msg: BgToCs = { type: "show_frame", kind: "save", url: `${this.deps.ext.runtime.getURL("save.html")}#${token}` };
+    if (p.documentId === undefined && p.topOrigin !== undefined) msg.origin = p.topOrigin;
     const opts = p.documentId !== undefined ? { documentId: p.documentId } : { frameId: 0 };
     await this.deps.ext.tabs.sendMessage(p.tabId, msg, opts);
     return token;

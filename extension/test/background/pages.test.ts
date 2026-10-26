@@ -259,6 +259,19 @@ describe("save prompt", () => {
     expect(JSON.stringify([...ext.session.data.values(), ...ext.local.data.values()])).not.toContain("typed-Secret-1");
   });
 
+  it("without a documentId, the prompt carries an origin pin and goes to frame 0", async () => {
+    const { ext, bg } = await setup();
+    const { documentId: _drop, ...rest } = pending;
+    const token = await bg.saves.open({ ...rest, topOrigin: SITE });
+    expect(ext.sentToTabs[0]?.message).toEqual({
+      type: "show_frame",
+      kind: "save",
+      url: `chrome-extension://${EXT_ID}/save.html#${token}`,
+      origin: SITE,
+    });
+    expect(ext.sentToTabs[0]?.options).toEqual({ frameId: 0 });
+  });
+
   it("save uses the typed password unless one was generated", async () => {
     const { ext, bg, client } = await setup();
     const token = await bg.saves.open(pending);

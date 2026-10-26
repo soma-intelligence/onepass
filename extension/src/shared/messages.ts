@@ -146,7 +146,8 @@ export type BgToCs =
   | { type: "fill"; origin: string; formRef: string; values: Partial<Record<FieldRole, string>> }
   | { type: "click"; origin: string; ref: string }
   | { type: "submit"; origin: string; ref: string }
-  | { type: "show_frame"; kind: FrameKind; url: string; ref?: string }
+  /** `origin`: when set, shown only by a frame still at exactly this origin (no documentId pin). */
+  | { type: "show_frame"; kind: FrameKind; url: string; ref?: string; origin?: string }
   | { type: "remove_frame"; kind: FrameKind }
   | { type: "chain_highlight"; ref: string | null };
 

@@ -82,9 +82,9 @@ export class Frames {
     }
   }
 
-  /** Current document of a frame, or null (gone, or not reported by this browser). */
-  async documentId(tabId: number, frameId: number): Promise<string | null> {
-    return (await this.frame(tabId, frameId))?.documentId ?? null;
+  /** A frame as the browser reports it now (URL, documentId where supported), or null. */
+  async details(tabId: number, frameId: number): Promise<FrameDetails | null> {
+    return this.frame(tabId, frameId);
   }
 
   /** Current origin of a frame, or null (gone, about:, data:, ...). */

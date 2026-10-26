@@ -319,7 +319,8 @@ describe("save and link proposals (wired)", () => {
       username: "alex@atlas.dev",
       password: "Typed-1",
     });
-    expect(toTab(t, "show_frame").at(-1)).toMatchObject({ kind: "save", opts: { frameId: 0 } });
+    // Pinned to the new top document, verified after the host answered.
+    expect(toTab(t, "show_frame").at(-1)).toMatchObject({ kind: "save", opts: { documentId: "doc-2" } });
   });
 
   it("menu_generate feeds the proposal of a submission without identifier", async () => {

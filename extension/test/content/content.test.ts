@@ -167,6 +167,16 @@ describe("show_frame / remove_frame", () => {
     s.ext.deliver({ type: "remove_frame", kind: "save" });
     expect(root.querySelector("iframe")).toBeNull();
   });
+
+  it("an origin pin must match this document's origin", () => {
+    setPage(LOGIN);
+    s = start();
+    const root = s.cs.internals.root;
+    s.ext.deliver({ type: "show_frame", kind: "save", url: `${EXT_BASE}save.html#${TOKEN}`, origin: "https://evil.test" });
+    expect(root.querySelector("iframe")).toBeNull();
+    s.ext.deliver({ type: "show_frame", kind: "save", url: `${EXT_BASE}save.html#${TOKEN}`, origin: "https://atlas-cloud.test" });
+    expect(root.querySelector("iframe")).not.toBeNull();
+  });
 });
 
 describe("filler", () => {

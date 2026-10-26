@@ -45,11 +45,13 @@ function setup(status: "new" | "same" | "update" = "new", never: string[] = []) 
   let top: string | null = `${SITE}/login`;
   let chain = false;
   let topDoc: string | null = "doc-1";
+  let onCheck: (() => void) | null = null;
   const flow = new SaveFlow({
     session: {
       request: (async (r: Record<string, unknown>) => {
         requests.push(r);
         if (r.op === "check_credentials") {
+          onCheck?.();
           return status === "update" ? { status, item_id: "it_01", title: "Atlas Cloud" } : { status };
         }
         return {};
@@ -57,8 +59,7 @@ function setup(status: "new" | "same" | "update" = "new", never: string[] = []) 
     },
     saves: { open: async (p: SavePending) => (opened.push(structuredClone(p)), "tok") },
     neverSave: { has: async (s: string) => never.includes(s) },
-    frameOrigin: async () => (top === null ? null : new URL(top).origin),
-    topDocumentId: async () => topDoc,
+    topFrame: async () => (top === null ? null : topDoc === null ? { url: top } : { url: top, documentId: topDoc }),
     chainRunning: async () => chain,
     now: () => timers.t,
     timers,
@@ -75,6 +76,8 @@ function setup(status: "new" | "same" | "update" = "new", never: string[] = []) 
     setTop: (u: string | null) => (top = u),
     setChain: (v: boolean) => (chain = v),
     setTopDoc: (d: string | null) => (topDoc = d),
+    /** Runs while the host answers check_credentials. */
+    duringCheck: (fn: () => void) => (onCheck = fn),
   };
 }
 
@@ -89,7 +92,16 @@ describe("save flow", () => {
       { op: "check_credentials", ctx: "save_prompt", origin: SITE, username: "alex@atlas.dev", password: "Atlas-Pass-1" },
     ]);
     expect(t.opened).toEqual([
-      { tabId: 7, origin: SITE, documentId: "doc-1", kind: "login", status: "new", username: "alex@atlas.dev", password: "Atlas-Pass-1" },
+      {
+        tabId: 7,
+        origin: SITE,
+        documentId: "doc-1",
+        topOrigin: SITE,
+        kind: "login",
+        status: "new",
+        username: "alex@atlas.dev",
+        password: "Atlas-Pass-1",
+      },
     ]);
     expect(t.flow.size).toBe(0);
   });
@@ -101,11 +113,12 @@ describe("save flow", () => {
     await t.timers.advance(CHECK_DELAY_MS * 2);
     expect(t.requests).toEqual([]);
     t.setTop(`${SITE}/home`);
+    t.setTopDoc("doc-2");
     await t.flow.onReady(7);
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({ status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } });
-    // The old document is gone: no documentId pin.
-    expect(t.opened[0]?.documentId).toBeUndefined();
+    // The old document is gone: pinned to the new, verified one.
+    expect(t.opened[0]?.documentId).toBe("doc-2");
   });
 
   it("a navigation committed before the submission was registered: the prompt goes to the new top document", async () => {
@@ -117,16 +130,52 @@ describe("save flow", () => {
     await t.submit();
     await t.timers.advance(CHECK_DELAY_MS);
     expect(t.opened).toHaveLength(1);
-    // Not pinned to doc-1, which is gone: delivered to the top frame.
-    expect(t.opened[0]?.documentId).toBeUndefined();
+    // Not pinned to doc-1, which is gone: to the verified new document.
+    expect(t.opened[0]?.documentId).toBe("doc-2");
   });
 
-  it("the top document is unknown: no pin to the submitting document", async () => {
+  it("the browser reports no documentId: an origin pin instead", async () => {
     const t = setup("new");
     t.setTopDoc(null);
     await t.submit();
     await t.timers.advance(CHECK_DELAY_MS);
     expect(t.opened[0]?.documentId).toBeUndefined();
+    expect(t.opened[0]?.topOrigin).toBe(SITE);
+  });
+
+  it("the top frame goes to another site during check_credentials: no prompt", async () => {
+    const t = setup("new");
+    await t.submit();
+    t.duringCheck(() => {
+      t.setTop("https://evil.test/");
+      t.setTopDoc("doc-evil");
+    });
+    await t.timers.advance(CHECK_DELAY_MS);
+    expect(t.requests.filter((r) => r.op === "check_credentials")).toHaveLength(1);
+    expect(t.opened).toEqual([]);
+  });
+
+  it("the top frame loads a new same-site document during check_credentials: prompt pinned to it", async () => {
+    const t = setup("update");
+    await t.submit("alex@atlas.dev", "New-Pass-2");
+    t.duringCheck(() => {
+      t.setTop(`${SITE}/home`);
+      t.setTopDoc("doc-3");
+    });
+    await t.timers.advance(CHECK_DELAY_MS);
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]).toMatchObject({ documentId: "doc-3", topOrigin: SITE, status: "update" });
+  });
+
+  it("navigated path: a new top document of another site after the commit gets no prompt", async () => {
+    const t = setup("new");
+    await t.submit();
+    t.flow.onNavigation(7);
+    t.setTop("https://evil.test/");
+    t.setTopDoc("doc-evil");
+    await t.flow.onReady(7);
+    expect(t.requests).toEqual([]);
+    expect(t.opened).toEqual([]);
   });
 
   it("same: nothing", async () => {
@@ -207,7 +256,7 @@ describe("save flow", () => {
       session: { request: (async () => Promise.reject(new Error("locked"))) as never },
       saves: { open: async () => "tok" },
       neverSave: { has: async () => false },
-      frameOrigin: async () => SITE,
+      topFrame: async () => ({ url: `${SITE}/login`, documentId: "doc-1" }),
       now: () => t.timers.t,
       timers: t.timers,
     });

@@ -168,6 +168,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
         break;
       case "show_frame": {
         if (typeof m.kind !== "string" || !FRAME_KINDS.has(m.kind) || typeof m.url !== "string") break;
+        // An origin pin (delivery by frameId only) must match this document.
+        if (m.origin !== undefined && !pinned(m.origin)) break;
         const kind = m.kind as FrameKind;
         // Sent by our service worker (sender checked above): vouched.
         const url = checkFrameUrl(m.url, kind, ext.runtime.getURL(""), true);
