@@ -563,3 +563,60 @@ fn closed_stdout_exits_quietly() {
     // The device state was still saved: later commands work.
     assert_eq!(run(dir, &["item", "list"]).code, 0);
 }
+
+#[test]
+fn account_create_with_closed_stdout_fails_and_leaves_no_account() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("data");
+    let out = run_closed_stdout(&dir, &["account", "create"]);
+    assert_ne!(out.code, 0, "{}", out.stderr);
+    assert!(
+        out.stderr.contains("the account was not created"),
+        "{}",
+        out.stderr
+    );
+    assert!(!dir.join("device.bin").exists());
+    assert!(!dir.join("vault.sqlite").exists());
+    // The directory is usable for a new attempt.
+    assert_eq!(run(&dir, &["account", "create"]).code, 0);
+}
+
+#[test]
+fn a_pending_password_prompt_does_not_hold_the_lock() {
+    let tmp = fresh();
+    let dir = tmp.path();
+    // Another process holds the data directory lock.
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(dir.join("lock"))
+        .unwrap();
+    held.lock().unwrap();
+    // No env password and no terminal: the prompt fails at once. It must
+    // fail before waiting for the lock, not hang behind it.
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("onepass"))
+        .arg("--data-dir")
+        .arg(dir)
+        .args(["item", "list"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let status = loop {
+        if let Some(s) = child.try_wait().unwrap() {
+            break Some(s);
+        }
+        if std::time::Instant::now() > deadline {
+            child.kill().unwrap();
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    let status = status.expect("the command waited on the lock before prompting");
+    assert_eq!(status.code(), Some(1));
+    drop(held);
+}

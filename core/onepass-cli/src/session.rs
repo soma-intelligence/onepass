@@ -114,21 +114,33 @@ impl CliError {
 
 impl From<std::io::Error> for CliError {
     fn from(e: std::io::Error) -> CliError {
-        if e.kind() == std::io::ErrorKind::BrokenPipe {
-            return CliError::quiet();
-        }
         CliError::usage(format!("i/o error: {}", e.kind()))
     }
+}
+
+/// The error of a write to stdout: a broken pipe there means the reader
+/// went away (`CliError::quiet`); anything else, and any broken pipe
+/// elsewhere, stays an error.
+pub fn stdout_error(e: std::io::Error) -> CliError {
+    if e.kind() == std::io::ErrorKind::BrokenPipe {
+        CliError::quiet()
+    } else {
+        CliError::from(e)
+    }
+}
+
+/// Write one line to stdout and flush it, raw I/O result.
+pub fn write_line(line: std::fmt::Arguments<'_>) -> std::io::Result<()> {
+    let mut out = std::io::stdout().lock();
+    out.write_fmt(format_args!("{line}\n"))?;
+    out.flush()
 }
 
 /// Write one line to stdout. Unlike `println!`, a closed stdout is an
 /// error (`CliError::quiet`), not a panic: the release profile aborts on
 /// panic.
 pub fn emit(line: std::fmt::Arguments<'_>) -> Result<(), CliError> {
-    let mut out = std::io::stdout().lock();
-    out.write_fmt(format_args!("{line}\n"))?;
-    out.flush()?;
-    Ok(())
+    write_line(line).map_err(stdout_error)
 }
 
 /// `println!` through `emit`, returning early on error.
@@ -142,6 +154,17 @@ macro_rules! out {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_broken_stdout_is_quiet() {
+        use std::io::{Error as IoError, ErrorKind};
+        assert_eq!(stdout_error(IoError::from(ErrorKind::BrokenPipe)).code, 0);
+        assert_eq!(stdout_error(IoError::from(ErrorKind::Other)).code, 1);
+        // A broken pipe anywhere else is an error.
+        let e = CliError::from(IoError::from(ErrorKind::BrokenPipe));
+        assert_eq!(e.code, 1);
+        assert!(e.msg.contains("broken pipe"));
+    }
 
     #[test]
     fn conflict_exits_5_and_stays_out_of_the_tampering_path() {
@@ -259,8 +282,10 @@ impl Session {
         }
     }
 
-    /// Unlock the account of the data directory.
-    pub fn open(ctx: &Ctx) -> Result<Session, CliError> {
+    /// Unlock the account of the data directory with `password`. The
+    /// caller holds the data directory lock: this reads `device.bin` and
+    /// the store.
+    pub fn open(ctx: &Ctx, password: &str) -> Result<Session, CliError> {
         let device_path = ctx.device_path();
         if !ctx.has_account() {
             return Err(no_account(ctx));
@@ -269,10 +294,9 @@ impl Session {
         let file: DeviceFile = postcard::from_bytes(&bytes)
             .map_err(|_| CliError::usage("device.bin is unreadable"))?;
         let key = SecretKey::parse(&file.secret_key)?;
-        let password = read_password("Password: ")?;
         let store = stored(SqliteStore::open(&ctx.store_path()))?;
         harden(ctx)?;
-        let repo = stored(Repository::unlock(store, &password, &key, file.state))?;
+        let repo = stored(Repository::unlock(store, password, &key, file.state))?;
         Ok(Session {
             repo,
             secret_key: file.secret_key,
@@ -316,9 +340,11 @@ fn no_account(ctx: &Ctx) -> CliError {
     ))
 }
 
-/// Lock the data directory, unlock, run `f`, then save the device state.
-/// The state is saved even when `f` fails, because reading items updates
-/// the last manifest seen. The lock is held until the state is saved.
+/// Read the password, lock the data directory, unlock, run `f`, then save
+/// the device state. The state is saved even when `f` fails, because
+/// reading items updates the last manifest seen. The lock is taken after
+/// the prompt (a pending prompt never blocks other commands) and held from
+/// the first read of `device.bin` until the state is saved.
 pub fn with_session<T>(
     ctx: &Ctx,
     f: impl FnOnce(&mut Repository<SqliteStore>) -> Result<T, CliError>,
@@ -328,8 +354,9 @@ pub fn with_session<T>(
     if !ctx.has_account() {
         return Err(no_account(ctx));
     }
+    let password = read_password("Password: ")?;
     let _lock = lock(ctx)?;
-    let mut session = Session::open(ctx)?;
+    let mut session = Session::open(ctx, &password)?;
     let result = f(&mut session.repo);
     let saved = harden(ctx).and_then(|()| session.persist());
     match result {

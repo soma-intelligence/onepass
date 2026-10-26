@@ -15,7 +15,20 @@ fn exists(ctx: &Ctx) -> Result<(), CliError> {
     Ok(())
 }
 
-/// `onepass account create`: new account, Secret Key shown once.
+/// Remove what `build` created: the account did not exist before.
+fn remove_account(ctx: &Ctx) {
+    for suffix in ["", "-wal", "-shm"] {
+        let mut p = ctx.store_path().into_os_string();
+        p.push(suffix);
+        let _ = fs::remove_file(p);
+    }
+    let _ = fs::remove_file(ctx.device_path());
+}
+
+/// `onepass account create`: new account, Secret Key shown once. If the
+/// key cannot be shown (stdout closed or failing), the account is removed
+/// again and the command fails: an account nobody saw the key of would be
+/// lost with the device.
 pub fn create(ctx: &Ctx) -> Result<(), CliError> {
     // Checked early to fail before the prompt, and again under the lock.
     exists(ctx)?;
@@ -35,20 +48,26 @@ pub fn create(ctx: &Ctx) -> Result<(), CliError> {
     exists(ctx)?;
     let result = build(ctx, &password, kdf);
     if result.is_err() {
-        // Leave nothing half made behind: the account did not exist before.
-        for suffix in ["", "-wal", "-shm"] {
-            let mut p = ctx.store_path().into_os_string();
-            p.push(suffix);
-            let _ = fs::remove_file(p);
-        }
-        let _ = fs::remove_file(ctx.device_path());
+        remove_account(ctx);
     }
     let key = result?;
-    if ctx.json {
-        crate::out!("{}", serde_json::json!({ "secret_key": *key }));
+    // Still under the lock: the account becomes usable only once its key
+    // was shown.
+    let shown = if ctx.json {
+        session::write_line(format_args!(
+            "{}",
+            serde_json::json!({ "secret_key": *key })
+        ))
     } else {
-        crate::out!("Secret Key: {}", *key);
         eprintln!("Write the Secret Key down now: it is shown only once.");
+        session::write_line(format_args!("Secret Key: {}", *key))
+    };
+    if let Err(e) = shown {
+        remove_account(ctx);
+        return Err(CliError::usage(format!(
+            "cannot show the Secret Key (i/o error: {}): the account was not created",
+            e.kind()
+        )));
     }
     Ok(())
 }

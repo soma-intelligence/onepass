@@ -2,7 +2,7 @@ use std::io::{IsTerminal, Write};
 
 use onepass_core::reference::parse_ref;
 
-use crate::session::{CliError, Ctx, stored, with_session};
+use crate::session::{CliError, Ctx, stdout_error, stored, with_session};
 
 /// `onepass read onepass://vault/item/[section/]field`: the bare value.
 pub fn run(ctx: &Ctx, reference: &str) -> Result<(), CliError> {
@@ -13,10 +13,10 @@ pub fn run(ctx: &Ctx, reference: &str) -> Result<(), CliError> {
         return Ok(());
     }
     let mut out = std::io::stdout().lock();
-    out.write_all(value.as_bytes())?;
+    out.write_all(value.as_bytes()).map_err(stdout_error)?;
     if out.is_terminal() {
-        out.write_all(b"\n")?;
+        out.write_all(b"\n").map_err(stdout_error)?;
     }
-    out.flush()?;
+    out.flush().map_err(stdout_error)?;
     Ok(())
 }

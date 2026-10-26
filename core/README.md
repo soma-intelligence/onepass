@@ -57,7 +57,7 @@ Sept cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'un
 | --- | --- |
 | `blob_open` | octets arbitraires passés à `open`, avec une clé fixe, bruts, derrière un en-tête valide, puis en mutation d'un blob valide |
 | `signed_manifest` | enregistrement de manifeste : `SignedManifest::decode`, puis vérification de la signature avec une clé fixe |
-| `account_params` | enregistrement de paramètres de compte : `AccountParams::decode`, puis `Account::unlock` (signature d'identité, plancher, plafond) |
+| `account_params` | enregistrement de paramètres de compte : `AccountParams::decode`, puis `Account::unlock` jusqu'à la vérification de la signature d'identité (des octets aléatoires ne la passent jamais : le plancher, le plafond et Argon2 ne sont pas atteints) |
 | `item_record` | enregistrement d'item : `split_item_record`, `ItemRecord::decode`, hash et confrontation à un manifeste |
 | `signature_verify` | `HybridVerifyingKey::verify` et `IdentityVerifyingKey::verify` sur des clés et signatures arbitraires, encodées (postcard) et aux longueurs exactes |
 | `otpauth_parse` | texte UTF-8 passé à `parse_otpauth` |
@@ -93,11 +93,11 @@ onepass generate --words 5
 
 Références `onepass://` (commande `read`) : sans section, un nom de champ qui désigne plusieurs champs de l'item est refusé (`ambiguous field, add the section`) plutôt que de livrer le premier à un script ; `totp` désigne l'unique champ OTP rempli de l'item (`onepass totp` choisit le même) ; un secret OTP nu est décodé en base32 tel quel, jamais recopié dans une URI.
 
-Si la sortie standard est fermée par son lecteur (`onepass read ... | head -c1`), la commande s'arrête sans message avec le code 0, sans panique.
+Si la sortie standard est fermée par son lecteur (`onepass read ... | head -c1`), la commande s'arrête sans message avec le code 0, sans panique. Seule une écriture sur la sortie standard est traitée ainsi : toute autre erreur d'entrée-sortie reste une erreur. Exception : `account create` échoue (code 1, message sur stderr) s'il ne peut pas afficher la Secret Key, et supprime le compte qu'il venait de créer, pour ne jamais laisser un compte dont personne n'a vu la clé.
 
 Options globales : `--data-dir <dossier>` (défaut `~/.onepass-dev`) et `--json`. Codes de sortie : 0 succès, 1 erreur d'usage, 2 mauvais mot de passe, 3 échec d'intégrité (données stockées altérées), 4 introuvable, 5 écriture concurrente (`concurrent write, retry` : rien n'a été enregistré, relancez la commande).
 
-Chaque commande qui ouvre le dossier de données prend un verrou exclusif sur `<data-dir>/lock` (droits `0600`) pendant toute son exécution, lectures comprises : deux commandes lancées en parallèle s'exécutent l'une après l'autre. Le code 5 ne sort donc que si un autre programme écrit dans la base sans ce verrou ; le noyau refuse alors l'écriture perdante au lieu de perdre un item en silence.
+Chaque commande qui ouvre le dossier de données prend un verrou exclusif sur `<data-dir>/lock` (droits `0600`) de la première lecture de `device.bin` jusqu'à l'enregistrement de l'état, lectures comprises. Le mot de passe est demandé avant de prendre le verrou : une invite en attente ne bloque pas les autres commandes : deux commandes lancées en parallèle s'exécutent l'une après l'autre. Le code 5 ne sort donc que si un autre programme écrit dans la base sans ce verrou ; le noyau refuse alors l'écriture perdante au lieu de perdre un item en silence.
 
 ### Mode développement : limites
 
