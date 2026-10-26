@@ -4,6 +4,7 @@ pub mod account;
 pub mod crypto;
 pub mod error;
 pub mod id;
+pub mod manifest;
 pub mod model;
 pub mod vault;
 
