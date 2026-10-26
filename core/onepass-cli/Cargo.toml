@@ -16,6 +16,10 @@ path = "src/main.rs"
 onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }
 onepass-guard = { path = "../onepass-guard" }
 onepass-mcp = { path = "../onepass-mcp" }
+onepass-ssh-agent = { path = "../onepass-ssh-agent" }
+data-encoding.workspace = true
+# SIGINT and SIGTERM handlers of `onepass ssh-agent` (commands/ssh_agent.rs).
+libc = "0.2.191"
 serde.workspace = true
 zeroize.workspace = true
 clap = { version = "4", features = ["derive"] }

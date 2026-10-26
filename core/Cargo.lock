@@ -1368,9 +1368,12 @@ version = "0.1.0"
 dependencies = [
  "assert_cmd",
  "clap",
+ "data-encoding",
+ "libc",
  "onepass-core",
  "onepass-guard",
  "onepass-mcp",
+ "onepass-ssh-agent",
  "postcard",
  "predicates",
  "rpassword",

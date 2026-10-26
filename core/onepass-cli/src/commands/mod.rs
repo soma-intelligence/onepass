@@ -8,6 +8,8 @@ pub mod import;
 pub mod item;
 pub mod mcp;
 pub mod read;
+pub mod ssh_agent;
+pub mod ssh_key;
 pub mod totp;
 pub mod vault;
 pub mod watchtower;

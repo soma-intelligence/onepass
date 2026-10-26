@@ -5,8 +5,9 @@
 //! Exit codes: 0 success, 1 usage error, 2 wrong password, 3 integrity
 //! error, 4 not found, 5 concurrent write (nothing was saved, retry).
 //! Commands that open the data directory hold its lock (`<data-dir>/lock`)
-//! for their whole run, except the long-running `onepass mcp`, which holds
-//! it for each request only (the rest of the CLI stays usable meanwhile).
+//! for their whole run, except the long-running `onepass mcp` and
+//! `onepass ssh-agent`, which hold it for each request only (the rest of
+//! the CLI stays usable meanwhile).
 //! So 5 only comes from a writer that bypasses the lock.
 
 mod commands;
@@ -24,6 +25,8 @@ use commands::generate::GenerateArgs;
 use commands::import::ImportArgs;
 use commands::item::ItemCmd;
 use commands::mcp::McpCmd;
+use commands::ssh_agent::SshAgentArgs;
+use commands::ssh_key::SshKeyCmd;
 use commands::vault::VaultCmd;
 use commands::watchtower::WatchtowerArgs;
 use session::{CliError, Ctx};
@@ -79,6 +82,14 @@ enum Command {
     /// MCP server over stdio (password on /dev/tty), its policy and audit log.
     /// Policy changes apply on the next server start.
     Mcp(McpCmd),
+    /// SSH Key items: generate, import, public key, host bookmarks and an
+    /// OpenSSH client config.
+    #[command(subcommand)]
+    SshKey(SshKeyCmd),
+    /// SSH agent over a Unix socket, serving the vault's agent keys behind
+    /// approval (password on /dev/tty). Prints SSH_AUTH_SOCK on stderr;
+    /// SIGINT or SIGTERM stop it and remove the socket.
+    SshAgent(SshAgentArgs),
 }
 
 #[derive(Subcommand)]
@@ -126,6 +137,8 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Watchtower(a) => commands::watchtower::run(&ctx, a),
         Command::Backup(c) => commands::backup::run(&ctx, c),
         Command::Mcp(c) => commands::mcp::run(&ctx, c),
+        Command::SshKey(c) => commands::ssh_key::run(&ctx, c),
+        Command::SshAgent(a) => commands::ssh_agent::run(&ctx, a),
         Command::Generate(_) => unreachable!("handled above"),
     }
 }

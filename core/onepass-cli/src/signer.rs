@@ -7,6 +7,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use onepass_core::crypto::HybridSignature;
 use onepass_core::repo::Repository;
@@ -68,6 +69,25 @@ impl LocalSigner for SharedSigner {
 
     fn verify(&self, domain: &[u8], msg: &[u8], sig: &[u8]) -> Result<(), GuardError> {
         verify(self.0.borrow().repo(), domain, msg, sig)
+    }
+}
+
+/// [`SharedSigner`] for a session shared between threads (`onepass
+/// ssh-agent`). Like it, it takes no data directory lock.
+pub struct SyncSigner(pub Arc<Mutex<LongSession>>);
+
+impl LocalSigner for SyncSigner {
+    fn sign(&self, domain: &[u8], msg: &[u8]) -> Result<Vec<u8>, GuardError> {
+        let session = self
+            .0
+            .lock()
+            .map_err(|_| GuardError::Format("local signature"))?;
+        sign(session.repo(), domain, msg)
+    }
+
+    fn verify(&self, domain: &[u8], msg: &[u8], sig: &[u8]) -> Result<(), GuardError> {
+        let session = self.0.lock().map_err(|_| GuardError::Signature)?;
+        verify(session.repo(), domain, msg, sig)
     }
 }
 
