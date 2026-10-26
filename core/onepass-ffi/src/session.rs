@@ -46,7 +46,7 @@ impl Session {
 
     /// Run `f` on the unlocked repository. A `Conflict` is retried once. The
     /// device state is persisted after every success.
-    fn with<R>(
+    pub(crate) fn with<R>(
         &self,
         mut f: impl FnMut(&mut Repo) -> Result<R, OnePassError>,
     ) -> Result<R, OnePassError> {
