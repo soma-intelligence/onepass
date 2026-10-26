@@ -2,14 +2,20 @@
 //! back verified.
 //!
 //! Entering checks every vault to hide through the verified path (`load`,
-//! with the last manifest seen) and checks that the upstream holds each of
-//! its records byte for byte, for all vaults, before deleting anything: the
-//! Travel Mode never deletes the only copy. The last manifest seen of each
+//! with the last manifest seen) and checks that the upstream holds byte for
+//! byte each record that verified state is made of (key, meta, manifest and
+//! the item records the manifest lists), for all vaults, before deleting
+//! anything: the Travel Mode never deletes the only copy. Records the
+//! upstream holds beyond those (older versions or deleted items left by a
+//! put-only push) are ignored. The last manifest seen of each
 //! hidden vault moves from the device state into a `TravelState`, sealed to
 //! the account.
 //!
-//! Leaving copies the records back from the upstream, which is not trusted,
-//! puts the parked last seen back into the device state, and loads the
+//! Leaving copies the records back from the upstream, which is not trusted:
+//! the key, meta and manifest, and only the item records whose item id and
+//! version the upstream manifest lists (it is decoded to choose, not
+//! trusted; upstream orphans are never copied). It then puts the parked last
+//! seen back into the device state, and loads the
 //! vaults through `vaults()` then `items()`, exactly as in normal use: a
 //! replayed manifest or a dropped item is refused. On failure the copied
 //! records are deleted and the device state is restored, so the
@@ -32,7 +38,9 @@ use crate::crypto::{
     Aad, BlobKind, HybridSignature, SymmetricKey, open, seal, unwrap_key, wrap_key,
 };
 use crate::manifest::SeenManifest;
+use crate::manifest::{SignedManifest, verify_manifest};
 use crate::store::{Record, RecordKind, RecordStore};
+use crate::vault::{ItemRecord, Vault};
 use crate::{Error, Id, IntegrityError, Result};
 
 /// Length of a sealed `TravelState`, padding included: fixed, so the file
@@ -109,9 +117,11 @@ fn decode_exact<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T> {
 
 impl<S: RecordStore> Repository<S> {
     /// Hide every vault without `travel_safe`: verify it, check that
-    /// `upstream` holds each of its records (same version and data, and the
-    /// same set of item records), then delete it locally and move its last
-    /// manifest seen into the returned state.
+    /// `upstream` holds each record of its verified state (same version and
+    /// data: key, meta, manifest and the item records the manifest lists),
+    /// then delete it locally and move its last manifest seen into the
+    /// returned state. Upstream records beyond those (orphans of older
+    /// versions or deleted items) are ignored.
     ///
     /// Everything is checked for all vaults before anything is deleted: a
     /// vault the upstream lacks or holds differently is
@@ -120,7 +130,6 @@ impl<S: RecordStore> Repository<S> {
     /// device is left unchanged. `upstream` is only read.
     pub fn enter_travel<U: RecordStore>(&mut self, upstream: &U) -> Result<TravelState> {
         let local_items = self.store.list(RecordKind::Item)?;
-        let upstream_items = upstream.list(RecordKind::Item)?;
         let mut plan: Vec<(Id, SeenManifest, Vec<Record>)> = Vec::new();
         for vault in self.vaults()? {
             if vault.meta.travel_safe {
@@ -130,25 +139,27 @@ impl<S: RecordStore> Repository<S> {
             for (_, r) in &loaded.records {
                 vault.open_item(r)?;
             }
-            let items: Vec<&Record> = items_of(&local_items, vault.id).collect();
-            let mut records = Vec::new();
+            let mut required = Vec::new();
             for kind in VAULT_KINDS {
                 // `vaults()` and `load` just read them.
-                records.push(self.store.get(kind, vault.id)?.ok_or(Error::NotFound)?);
+                required.push(self.store.get(kind, vault.id)?.ok_or(Error::NotFound)?);
             }
-            records.extend(items.iter().map(|r| (*r).clone()));
-            for r in &records {
+            for (blob, _) in &loaded.records {
+                required.push(
+                    self.store
+                        .get(RecordKind::Item, *blob)?
+                        .ok_or(Error::NotFound)?,
+                );
+            }
+            for r in &required {
                 match upstream.get(r.kind, r.id)? {
                     Some(u) if same(&u, r) => {}
                     _ => return Err(UPSTREAM_MISMATCH),
                 }
             }
-            let local_ids: BTreeSet<Id> = items.iter().map(|r| r.id).collect();
-            let upstream_ids: BTreeSet<Id> =
-                items_of(&upstream_items, vault.id).map(|r| r.id).collect();
-            if local_ids != upstream_ids {
-                return Err(UPSTREAM_MISMATCH);
-            }
+            // Every local record of the vault goes, ignored leftovers too.
+            let mut records: Vec<Record> = required.into_iter().take(VAULT_KINDS.len()).collect();
+            records.extend(items_of(&local_items, vault.id).cloned());
             plan.push((vault.id, seen(&loaded.manifest), records));
         }
 
@@ -266,7 +277,17 @@ impl<S: RecordStore> Repository<S> {
         let upstream_items = upstream.list(RecordKind::Item)?;
         let mut copy = Vec::new();
         for v in vaults.iter().filter(|v| v.copy) {
-            copy.extend(items_of(&upstream_items, v.id).cloned());
+            let listed = self.upstream_listed(upstream, v.id)?;
+            copy.extend(
+                items_of(&upstream_items, v.id)
+                    .filter(|r| {
+                        split_item_record(&r.data)
+                            .ok()
+                            .and_then(|(_, body)| ItemRecord::decode(body).ok())
+                            .is_some_and(|rec| listed.contains(&(rec.item_id, rec.version)))
+                    })
+                    .cloned(),
+            );
             for kind in VAULT_KINDS.iter().rev() {
                 if let Some(r) = upstream.get(*kind, v.id)? {
                     copy.push(r);
@@ -309,6 +330,33 @@ impl<S: RecordStore> Repository<S> {
             rollback?;
         }
         result
+    }
+
+    /// The `(item id, version)` pairs the upstream manifest of `vault_id`
+    /// lists, used only to choose which item records to copy: trust comes
+    /// from the normal verification after the copy. Empty when the upstream
+    /// lacks the vault's key, meta or manifest, or when they do not open:
+    /// that verification then reports the problem.
+    fn upstream_listed<U: RecordStore>(
+        &self,
+        upstream: &U,
+        vault_id: Id,
+    ) -> Result<BTreeSet<(Id, u64)>> {
+        let (Some(key), Some(meta), Some(manifest)) = (
+            upstream.get(RecordKind::VaultKey, vault_id)?,
+            upstream.get(RecordKind::VaultMeta, vault_id)?,
+            upstream.get(RecordKind::Manifest, vault_id)?,
+        ) else {
+            return Ok(BTreeSet::new());
+        };
+        let listed = Vault::open(&self.account, vault_id, &key.data, &meta.data)
+            .and_then(|vault| {
+                let sm = SignedManifest::decode(&manifest.data)?;
+                verify_manifest(&vault, &self.account.params.signing_pub, &sm, None)
+            })
+            .map(|m| m.entries.iter().map(|e| (e.item_id, e.version)).collect())
+            .unwrap_or_default();
+        Ok(listed)
     }
 
     fn copy_and_verify(

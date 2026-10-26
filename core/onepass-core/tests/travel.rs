@@ -286,7 +286,9 @@ fn enter_refuses_when_upstream_record_differs() {
 }
 
 #[test]
-fn enter_refuses_when_upstream_has_an_extra_item_record() {
+fn enter_ignores_an_extra_upstream_item_record() {
+    // An upstream-only record (here a copy under another blob id) is not
+    // part of what the device verified: entering does not depend on it.
     let mut f = fx();
     mirror(&f.local, &f.upstream);
     let mut extra = f
@@ -297,9 +299,112 @@ fn enter_refuses_when_upstream_has_an_extra_item_record() {
         .unwrap();
     extra.id = Id::new();
     f.upstream.put_all(&[extra]);
-    let records = f.local.all();
-    assert!(f.repo.enter_travel(&f.upstream).is_err());
-    assert_eq!(f.local.all(), records);
+    f.repo.enter_travel(&f.upstream).unwrap();
+    assert!(f.local.vault_records(f.perso.id).is_empty());
+}
+
+/// Edits then deletes items of "Perso" with a push (put-only mirror) after
+/// each step, as `onepass travel push` does: the upstream keeps the older
+/// versions and the deleted item as orphans. Returns the item records the
+/// local store holds for "Perso" before entering.
+fn upstream_with_orphans(f: &mut Fx) -> Vec<Record> {
+    mirror(&f.local, &f.upstream);
+    let perso_item = f.repo.items(&f.perso).unwrap()[0].clone();
+    let mut edited = perso_item.clone();
+    edited.field_mut("username").unwrap().value = FieldValue::Text("edited".into());
+    f.repo.save_item(&f.perso, edited).unwrap();
+    mirror(&f.local, &f.upstream);
+    // An item edited (version 2) then deleted: its orphan is not a version
+    // 1 record, which loading would take for an interrupted write.
+    let doomed = login(f.perso.id, "doomed");
+    f.repo.save_item(&f.perso, doomed.clone()).unwrap();
+    let mut doomed2 = doomed.clone();
+    doomed2.title = "Doomed 2".into();
+    f.repo.save_item(&f.perso, doomed2).unwrap();
+    mirror(&f.local, &f.upstream);
+    f.repo.delete_item(&f.perso, doomed.id).unwrap();
+    mirror(&f.local, &f.upstream);
+    let local: Vec<Record> = f
+        .local
+        .vault_records(f.perso.id)
+        .into_iter()
+        .filter(|r| r.kind == RecordKind::Item)
+        .collect();
+    let upstream_items = f
+        .upstream
+        .vault_records(f.perso.id)
+        .into_iter()
+        .filter(|r| r.kind == RecordKind::Item)
+        .count();
+    assert_eq!(local.len(), 1);
+    // Current "Perso" item, its version 1, and "Doomed" at version 2.
+    assert_eq!(upstream_items, 3);
+    local
+}
+
+#[test]
+fn enter_and_exit_ignore_upstream_orphans() {
+    let mut f = fx();
+    let local_items = upstream_with_orphans(&mut f);
+    let before = snapshot(&mut f);
+    let state = f.repo.enter_travel(&f.upstream).unwrap();
+    assert!(f.local.vault_records(f.perso.id).is_empty());
+    f.repo.exit_travel(&f.upstream, &state).unwrap();
+    assert_eq!(snapshot(&mut f), before);
+    // Only the records the manifest lists came back, no orphan.
+    let restored: Vec<Record> = f
+        .local
+        .vault_records(f.perso.id)
+        .into_iter()
+        .filter(|r| r.kind == RecordKind::Item)
+        .collect();
+    assert_eq!(restored, local_items);
+}
+
+#[test]
+fn unpinned_exit_ignores_upstream_orphans() {
+    let mut f = fx();
+    let local_items = upstream_with_orphans(&mut f);
+    let before = snapshot(&mut f);
+    f.repo.enter_travel(&f.upstream).unwrap();
+    assert_eq!(
+        f.repo.exit_travel_unpinned(&f.upstream).unwrap(),
+        vec![f.perso.id]
+    );
+    assert_eq!(snapshot(&mut f), before);
+    let restored: Vec<Record> = f
+        .local
+        .vault_records(f.perso.id)
+        .into_iter()
+        .filter(|r| r.kind == RecordKind::Item)
+        .collect();
+    assert_eq!(restored, local_items);
+}
+
+#[test]
+fn exit_refuses_a_listed_item_with_other_content() {
+    let mut f = fx();
+    mirror(&f.local, &f.upstream);
+    let state = f.repo.enter_travel(&f.upstream).unwrap();
+    let travel_records = f.local.all();
+    let travel_device = f.repo.device_state().clone();
+    // The upstream keeps the blob id, item id and version of the listed
+    // record but changes its content.
+    let mut item = f
+        .upstream
+        .vault_records(f.perso.id)
+        .into_iter()
+        .find(|r| r.kind == RecordKind::Item)
+        .unwrap();
+    let last = item.data.len() - 1;
+    item.data[last] ^= 0x01;
+    f.upstream.put_all(&[item]);
+    assert_eq!(
+        integrity(f.repo.exit_travel(&f.upstream, &state)),
+        IntegrityError::ManifestItemMismatch
+    );
+    assert_eq!(f.local.all(), travel_records);
+    assert_eq!(f.repo.device_state(), &travel_device);
 }
 
 #[test]
