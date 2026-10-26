@@ -33,7 +33,8 @@ use crate::session::{
 /// Printed on stderr before a plaintext export is written.
 const PLAINTEXT_WARNING: &str = "WARNING: this file holds every secret in clear text. \
 Opening it in a spreadsheet can run formulas stored in it; keep it off shared \
-or synced folders and delete it once used.";
+or synced folders and delete it once used. It is not a full backup: passkey \
+private keys and location values are left out.";
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ExportFormat {

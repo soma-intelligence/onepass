@@ -423,6 +423,7 @@ fn export_csv_warns_and_is_0600() {
         out.stderr
     );
     assert!(out.stderr.contains("spreadsheet"), "{}", out.stderr);
+    assert!(out.stderr.contains("passkey"), "{}", out.stderr);
     assert_eq!(mode(&out_file), 0o600);
     let csv = fs::read_to_string(&out_file).unwrap();
     assert!(csv.starts_with("title,type,vault,url,username,password"));
@@ -1048,4 +1049,123 @@ fn backup_inspect_needs_no_password() {
     let mut c = Command::cargo_bin("onepass").unwrap();
     c.args(["backup", "inspect", path_str(&junk)]);
     assert_eq!(output(c).code, 1);
+}
+
+#[test]
+fn text_output_never_carries_control_characters() {
+    let tmp = fresh();
+    let dir = tmp.path();
+    let csv = dir.join("esc.csv");
+    fs::write(
+        &csv,
+        "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n\
+         Evil\x1b[31mVault,,login,Esc\x1b[2JOne,,,,https://one.example.com,alice,Reused-Invented-9,\n\
+         Evil\x1b[31mVault,,login,Esc\x1b[2JTwo,,,,https://two.example.com,bob,Reused-Invented-9,\n",
+    )
+    .unwrap();
+    let out = run(dir, &["import", path_str(&csv)]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(!out.stdout.contains('\x1b'), "{:?}", out.stdout);
+    assert!(
+        out.stdout.contains("Created vault: Evil\u{FFFD}[31mVault"),
+        "{:?}",
+        out.stdout
+    );
+    let out = run(dir, &["watchtower", "--offline"]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(!out.stdout.contains('\x1b'), "{:?}", out.stdout);
+    assert!(out.stdout.contains("Esc\u{FFFD}[2JOne"), "{:?}", out.stdout);
+    // JSON keeps the exact title, escaped by serde.
+    let report = json(&run(dir, &["watchtower", "--offline", "--json"]));
+    assert!(checks_of(&report).iter().any(|(_, t)| t == "Esc\x1b[2JOne"));
+}
+
+/// An export archive (passphrase recipient) of `items` in one vault.
+fn crafted_archive(items: Vec<onepass_core::model::Item>) -> Vec<u8> {
+    use onepass_core::archive::{ArchivedVault, export};
+    use onepass_core::crypto::kdf::KdfParams;
+    use onepass_core::vault::VaultMeta;
+    let mut kdf = KdfParams::new_default().unwrap();
+    kdf.m_kib = 8192;
+    kdf.t = 1;
+    kdf.p = 1;
+    let vault = ArchivedVault {
+        id: onepass_core::Id::new(),
+        meta: VaultMeta {
+            name: "Crafted".into(),
+            icon: String::new(),
+            color: String::new(),
+            travel_safe: false,
+            mcp_access: false,
+        },
+        items,
+    };
+    export(vec![vault], ARCHIVE_PASSPHRASE, kdf).unwrap()
+}
+
+#[test]
+fn import_archive_with_invalid_item_writes_nothing() {
+    use onepass_core::Id;
+    use onepass_core::model::{ItemType, new_item};
+    let tmp = fresh();
+    let dir = tmp.path();
+    let good = new_item(ItemType::SecureNote, Id::new(), "Fine note");
+    // An empty title never validates.
+    let bad = new_item(ItemType::SecureNote, Id::new(), " ");
+    let file = dir.join("crafted.onepass");
+    fs::write(&file, crafted_archive(vec![good, bad])).unwrap();
+    let out = run(dir, &["import", path_str(&file)]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(out.stderr.contains("nothing written"), "{}", out.stderr);
+    assert!(titles(dir, &[]).is_empty());
+    assert!(!vault_names(dir).contains(&"Crafted".to_owned()));
+}
+
+#[test]
+fn import_of_account_backup_without_passphrase_points_to_restore() {
+    let tmp = fresh();
+    let dir = tmp.path();
+    json(&run(
+        dir,
+        &["import", path_str(&fixture("chrome.csv")), "--json"],
+    ));
+    let out_dir = tempfile::tempdir().unwrap();
+    let backup = out_dir.path().join("b.onepass");
+    let out = run(dir, &["backup", "create", "--out", path_str(&backup)]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let out = run(dir, &["import", path_str(&backup)]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(
+        out.stderr
+            .contains("this is an account backup without passphrase: use `onepass backup restore`"),
+        "{}",
+        out.stderr
+    );
+}
+
+#[test]
+fn csv_export_imports_back() {
+    let src = fresh();
+    json(&run(
+        src.path(),
+        &["import", path_str(&fixture("chrome.csv")), "--json"],
+    ));
+    let out_dir = tempfile::tempdir().unwrap();
+    let csv = out_dir.path().join("plain.csv");
+    let out = run(
+        src.path(),
+        &[
+            "export",
+            "--out",
+            path_str(&csv),
+            "--format",
+            "csv",
+            "--plaintext",
+        ],
+    );
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let dst = fresh();
+    let report = json(&run(dst.path(), &["import", path_str(&csv), "--json"]));
+    assert_eq!(report["imported"], 3);
+    assert_eq!(titles(dst.path(), &[]), titles(src.path(), &[]));
 }

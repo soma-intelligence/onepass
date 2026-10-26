@@ -27,11 +27,12 @@ use onepass_core::Id;
 use onepass_core::archive::{
     self, ArchiveKind, ArchivedVault, HeaderInfo, Unlock, inspect as read_header, restore_plan,
 };
+use onepass_core::model::validate;
 use serde_json::json;
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
-use super::import::ARCHIVE_PASSPHRASE_ENV;
+use super::import::{ARCHIVE_PASSPHRASE_ENV, partial};
 use super::vault::all;
 use crate::session::{
     CliError, Ctx, env_secrets_allowed, kdf_params, read_secret, stored, with_session,
@@ -137,10 +138,20 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
         }
         let plan = restore_plan(&contents, &existing);
         drop(contents);
+        // Every item is checked before the first write (vaults included).
+        for (i, (_, item)) in plan.writes.iter().enumerate() {
+            if validate(item).is_err() {
+                return Err(CliError::usage(format!(
+                    "item {} of the backup is invalid: nothing written",
+                    i + 1
+                )));
+            }
+        }
+        let total = plan.writes.len();
         let mut index: HashMap<Id, usize> =
             vaults.iter().enumerate().map(|(i, v)| (v.id, i)).collect();
         for (archive_id, meta) in plan.new_vaults.iter().cloned() {
-            let v = stored(repo.create_vault(meta))?;
+            let v = stored(repo.create_vault(meta)).map_err(|e| partial(e, 0, total))?;
             vaults.push(v);
             index.insert(archive_id, vaults.len() - 1);
         }
@@ -151,7 +162,8 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
                 .and_then(|&i| vaults.get(i))
                 .ok_or_else(|| CliError::usage("restore plan names an unknown vault"))?;
             item.vault_id = target.id;
-            stored(repo.save_item(target, item))?;
+            stored(repo.save_item(target, item))
+                .map_err(|e| partial(e, usize::try_from(restored).unwrap_or(usize::MAX), total))?;
             restored += 1;
         }
         Ok((plan.new_vaults.len(), restored, plan.skipped))

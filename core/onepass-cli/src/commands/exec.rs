@@ -1,10 +1,13 @@
-//! Running system commands (`networksetup`, `security`) behind a trait, so
-//! the tests can answer in their place.
+//! Running system commands (`networksetup`, `security`, `curl`) behind a
+//! trait, so the tests can answer in their place. Callers name programs by
+//! absolute path ([`NETWORKSETUP`], [`SECURITY`], `/usr/bin/curl`), so
+//! `PATH` cannot substitute another program.
 //!
 //! In a debug build, `ONEPASS_DEV_FAKE_EXEC_DIR=<dir>` replaces every run
 //! of `program args...` by the content of
-//! `<dir>/<program>-<args joined by _>.out`, each character outside
-//! `[A-Za-z0-9._-]` replaced by `_`. A missing file is a failed command.
+//! `<dir>/<program base name>-<args joined by _>.out`, each character
+//! outside `[A-Za-z0-9._-]` replaced by `_`. A missing file is a failed
+//! command.
 
 #![cfg_attr(
     not(test),
@@ -17,7 +20,7 @@
 )]
 
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::session::CliError;
@@ -26,6 +29,20 @@ use crate::session::CliError;
 const MAX_OUTPUT: u64 = 16 * 1024 * 1024;
 
 const FAKE_ENV: &str = "ONEPASS_DEV_FAKE_EXEC_DIR";
+
+/// macOS network configuration tool.
+pub const NETWORKSETUP: &str = "/usr/sbin/networksetup";
+/// macOS keychain tool.
+pub const SECURITY: &str = "/usr/bin/security";
+
+/// Last component of `program` (`curl` for `/usr/bin/curl`), for messages
+/// and fake answers.
+fn base_name(program: &str) -> &str {
+    Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(program)
+}
 
 pub trait CommandRunner {
     /// Standard output of `program args...`. A non-zero exit is an error
@@ -37,8 +54,9 @@ pub trait CommandRunner {
 pub struct SystemRunner;
 
 impl CommandRunner for SystemRunner {
-    fn run(&mut self, program: &str, args: &[&str]) -> Result<Vec<u8>, CliError> {
-        let mut child = Command::new(program)
+    fn run(&mut self, path: &str, args: &[&str]) -> Result<Vec<u8>, CliError> {
+        let program = base_name(path);
+        let mut child = Command::new(path)
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -74,6 +92,7 @@ pub struct FakeRunner {
 
 impl CommandRunner for FakeRunner {
     fn run(&mut self, program: &str, args: &[&str]) -> Result<Vec<u8>, CliError> {
+        let program = base_name(program);
         std::fs::read(self.dir.join(fake_file_name(program, args)))
             .map_err(|_| CliError::usage(format!("{program} failed")))
     }
@@ -139,6 +158,25 @@ mod tests {
             ),
             "security-find-generic-password_-D_AirPort_network_password_-a_Cafe_..___-w.out"
         );
+    }
+
+    #[test]
+    fn fake_runner_maps_absolute_paths_by_base_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("networksetup--listallhardwareports.out"),
+            b"ports",
+        )
+        .unwrap();
+        let mut r = FakeRunner {
+            dir: dir.path().to_path_buf(),
+        };
+        assert_eq!(
+            r.run(NETWORKSETUP, &["-listallhardwareports"]).unwrap(),
+            b"ports"
+        );
+        let e = r.run(SECURITY, &["x"]).unwrap_err();
+        assert_eq!(e.msg, "security failed");
     }
 
     #[test]

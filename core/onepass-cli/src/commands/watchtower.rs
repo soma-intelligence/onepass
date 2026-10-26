@@ -30,6 +30,7 @@ use onepass_core::{Error, Id};
 use serde_json::json;
 use time::{Date, OffsetDateTime};
 
+use super::display::clean;
 use super::exec::{CommandRunner, runner};
 use super::vault::{all, find_vault};
 use crate::session::{CliError, Ctx, stored, with_session};
@@ -65,6 +66,10 @@ pub struct WatchtowerArgs {
     breaches: Option<PathBuf>,
 }
 
+/// Absolute path of `curl`, so that `PATH` cannot substitute another
+/// program.
+const CURL: &str = "/usr/bin/curl";
+
 /// `curl` arguments fetching `url`, with the HIBP padding header or not.
 fn curl_args(url: &str, padding: bool) -> Vec<&str> {
     let mut args = vec!["-sS", "--fail", "--max-time", "15"];
@@ -81,7 +86,7 @@ fn fetch<R: CommandRunner + ?Sized>(
     url: &str,
     padding: bool,
 ) -> Result<Vec<u8>, CliError> {
-    runner.run("curl", &curl_args(url, padding))
+    runner.run(CURL, &curl_args(url, padding))
 }
 
 /// HIBP range source over `curl`. The prefix is checked (5 upper-case hex
@@ -346,11 +351,13 @@ fn print(
         );
         return Ok(());
     }
+    // Text mode: titles, vault names, field ids and catalog names are
+    // untrusted, so every line goes through `clean`.
     crate::out!("Score: {}/100", report.score);
     for v in &report.vaults {
         crate::out!(
             "  {}: {}/100 ({} items)",
-            vault_name(&v.vault_id),
+            clean(&vault_name(&v.vault_id)),
             v.score,
             v.items
         );
@@ -376,7 +383,7 @@ fn print(
                     line.push_str(&part);
                 }
             }
-            crate::out!("{line}");
+            crate::out!("{}", clean(&line));
         }
     }
     Ok(())
@@ -426,7 +433,7 @@ mod tests {
         assert!(body.starts_with(b"0018A"));
         assert_eq!(r.calls.len(), 1);
         let (program, args) = &r.calls[0];
-        assert_eq!(program, "curl");
+        assert_eq!(program, "/usr/bin/curl");
         assert_eq!(
             args,
             &[

@@ -26,13 +26,15 @@ use onepass_core::import::text::{
     WifiNetwork, parse_hardware_ports, parse_preferred_networks, router_item,
 };
 use onepass_core::import::{Format, Import, ImportedItem, Warning, detect, parse};
+use onepass_core::model::validate;
 use onepass_core::repo::Repository;
 use onepass_core::store::SqliteStore;
 use onepass_core::vault::{Vault, VaultMeta};
 use serde_json::json;
 use zeroize::Zeroizing;
 
-use super::exec::{CommandRunner, runner};
+use super::display::clean;
+use super::exec::{CommandRunner, NETWORKSETUP, SECURITY, runner};
 use super::vault::{all, find_vault};
 use crate::session::{CliError, Ctx, read_secret, stored, with_session};
 
@@ -102,6 +104,13 @@ fn read_import(path: &Path, format: Option<&str>) -> Result<Import, CliError> {
         }
     };
     if format == Format::OnePassArchive {
+        // An account backup without a passphrase recipient opens only with
+        // its account key: that is `backup restore`, not an import.
+        if !archive::inspect(&bytes)?.passphrase {
+            return Err(CliError::usage(
+                "this is an account backup without passphrase: use `onepass backup restore`",
+            ));
+        }
         let passphrase = read_secret("Archive passphrase: ", ARCHIVE_PASSPHRASE_ENV)?;
         let contents = archive::open(&bytes, Unlock::Passphrase(&passphrase))?;
         // An import copies: every item gets a new id, so nothing in the
@@ -150,10 +159,10 @@ fn read_capped(path: &Path) -> Result<Zeroizing<Vec<u8>>, CliError> {
 /// cannot be read (refused, missing) leaves the network without one and
 /// adds a `password_unavailable` warning.
 fn wifi_keychain(r: &mut dyn CommandRunner) -> Result<Import, CliError> {
-    let ports = r.run("networksetup", &["-listallhardwareports"])?;
+    let ports = r.run(NETWORKSETUP, &["-listallhardwareports"])?;
     let device = parse_hardware_ports(&String::from_utf8_lossy(&ports))
         .ok_or_else(|| CliError::usage("no Wi-Fi interface found"))?;
-    let listed = r.run("networksetup", &["-listpreferredwirelessnetworks", &device])?;
+    let listed = r.run(NETWORKSETUP, &["-listpreferredwirelessnetworks", &device])?;
     let mut out = Import::default();
     for (entry, ssid) in parse_preferred_networks(&String::from_utf8_lossy(&listed))
         .into_iter()
@@ -162,7 +171,7 @@ fn wifi_keychain(r: &mut dyn CommandRunner) -> Result<Import, CliError> {
         let entry = u32::try_from(entry).unwrap_or(u32::MAX);
         let password = r
             .run(
-                "security",
+                SECURITY,
                 &[
                     "find-generic-password",
                     "-D",
@@ -197,16 +206,44 @@ fn wifi_keychain(r: &mut dyn CommandRunner) -> Result<Import, CliError> {
     Ok(out)
 }
 
+/// Refuses the whole import when one item does not validate, before
+/// anything is written. Parser output always validates; an archive is
+/// opaque data and may not.
+fn validate_all(items: &[ImportedItem]) -> Result<(), CliError> {
+    for (i, it) in items.iter().enumerate() {
+        if validate(&it.item).is_err() {
+            return Err(CliError::usage(format!(
+                "item {} of the import is invalid: nothing written",
+                i + 1
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// A write error after `written` of `total` items: the message says how
+/// far the import went, the exit code stays the one of `e`.
+pub(crate) fn partial(e: CliError, written: usize, total: usize) -> CliError {
+    CliError {
+        code: e.code,
+        msg: format!("{} ({written} of {total} items written)", e.msg),
+    }
+}
+
 /// Put each item in its vault: `--vault`, else the vault named like its
 /// folder (ignoring case, created when absent), else the first vault.
 /// Returns the names of the vaults created (or that a dry run would
-/// create). A dry run writes nothing.
+/// create). A dry run writes nothing. Every item is validated before the
+/// first write; a write error reports how many items were written.
 fn store_items(
     repo: &mut Repository<SqliteStore>,
     items: Vec<ImportedItem>,
     vault: Option<&str>,
     dry_run: bool,
 ) -> Result<Vec<String>, CliError> {
+    validate_all(&items)?;
+    let total = items.len();
+    let mut written = 0usize;
     let mut vaults = all(repo)?;
     let forced = match vault {
         Some(v) => Some(find_vault(&vaults, v)?),
@@ -236,7 +273,8 @@ fn store_items(
                             color: "gray".into(),
                             travel_safe: false,
                             mcp_access: false,
-                        }))?;
+                        }))
+                        .map_err(|e| partial(e, written, total))?;
                         created.push(folder);
                         vaults.push(v);
                         vaults.len() - 1
@@ -257,7 +295,8 @@ fn store_items(
             .get(index)
             .ok_or_else(|| CliError::usage("the account has no vault"))?;
         item.vault_id = target.id;
-        stored(repo.save_item(target, item))?;
+        stored(repo.save_item(target, item)).map_err(|e| partial(e, written, total))?;
+        written += 1;
     }
     Ok(created)
 }
@@ -308,7 +347,7 @@ impl Summary {
             crate::out!("  {t}: {count}");
         }
         for name in created {
-            crate::out!("Created vault: {name}{suffix}");
+            crate::out!("Created vault: {}{suffix}", clean(name));
         }
         for (code, count) in &self.warnings {
             crate::out!("Warnings: {code} x {count}");
