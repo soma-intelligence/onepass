@@ -4,6 +4,7 @@
 //! application messages.
 
 pub mod api;
+pub mod audit;
 pub mod channel;
 pub mod error;
 pub mod framing;
@@ -11,7 +12,9 @@ pub mod kdf;
 pub mod kem;
 pub mod origin;
 pub mod pairing;
+pub mod policy;
 pub mod provider;
+pub mod service;
 pub mod session;
 pub mod transcript;
 pub mod wire;
