@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use common::*;
 use onepass_guard::testing::ScriptedApprover;
-use onepass_mcp::{Policy, Scope, ToolOutcome};
+use onepass_mcp::{Narrowing, Policy, Scope, ToolOutcome};
 use serde_json::json;
 
 fn default_policy() -> Policy {
@@ -172,9 +172,10 @@ fn metadata_scope_required() {
         )),
         msg
     );
+    // Without a vault, Dev is not searched: no scope oracle on titles.
     assert_eq!(
         refused(call(&mut t, "get_item", json!({"item": "GitHub"}))),
-        msg
+        "not found"
     );
     // Without a vault, Dev is skipped: Shared holds no item.
     let v = ok(call(&mut t, "list_items", json!({})));
@@ -331,4 +332,87 @@ fn get_item_ambiguous_title_across_vaults() {
         json!({"item": "GitHub", "vault": "Dev"}),
     ));
     assert_eq!(v["untrusted_vault_data"]["type"], "login");
+}
+
+#[test]
+fn get_item_never_reveals_titles_of_metadata_less_vaults() {
+    let a = approver();
+    let (mut t, _) = tools_with_policy(
+        |repo| {
+            let mut p = default_policy();
+            p.vaults
+                .insert(vault(repo, "Dev").id.to_string(), BTreeSet::new());
+            p
+        },
+        a.clone(),
+    );
+    let present = refused(call(&mut t, "get_item", json!({"item": "GitHub"})));
+    let absent = refused(call(&mut t, "get_item", json!({"item": "zzz"})));
+    assert_eq!(present, "not found");
+    assert_eq!(present, absent);
+
+    // The same title in Shared (metadata) and Dev (none): no ambiguity.
+    let repo = &mut *t.port_mut().0;
+    let shared_vault = vault(repo, "Shared");
+    repo.save_item(&shared_vault, note(shared_vault.id, "GitHub"))
+        .unwrap();
+    let v = ok(call(&mut t, "get_item", json!({"item": "github"})));
+    assert_eq!(v["untrusted_vault_data"]["vault"], "Shared");
+    assert!(a.calls().is_empty());
+}
+
+#[test]
+fn narrowed_out_vault_reads_like_not_found() {
+    let (mut t, audit) = tools_with(
+        |_| default_policy(),
+        |repo| Narrowing {
+            vaults: Some(BTreeSet::from([vault(repo, "Dev").id.to_string()])),
+            scopes: None,
+        },
+        approver(),
+    );
+    let shared_id = vault_id(&mut t, "Shared").to_string();
+    let missing = refused(call(&mut t, "list_items", json!({"vault": "Nowhere"})));
+    assert_eq!(missing, "not found");
+    for key in ["Shared", shared_id.as_str()] {
+        let r = call(&mut t, "list_items", json!({"vault": key}));
+        assert_eq!(refused(r), missing);
+    }
+    let names: Vec<String> = ok(call(&mut t, "list_vaults", json!({})))["untrusted_vault_data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["name"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(names, ["Dev"]);
+    let entries = audit.entries();
+    assert_eq!(entries[0], entries[1]);
+    assert_eq!(entries[0], entries[2]);
+    assert!(entries[..3].iter().all(|e| e.vault_id.is_none()));
+}
+
+#[test]
+fn non_mcp_vault_audit_matches_missing_vault() {
+    let (mut t, audit) = tools_with_audit(default_policy(), approver());
+    let perso_id = vault_id(&mut t, "Perso").to_string();
+    refused(call(&mut t, "list_items", json!({"vault": perso_id})));
+    refused(call(&mut t, "list_items", json!({"vault": "Nowhere"})));
+    refused(call(
+        &mut t,
+        "get_item",
+        json!({"item": "Bank", "vault": perso_id}),
+    ));
+    refused(call(
+        &mut t,
+        "get_item",
+        json!({"item": "Bank", "vault": "Nowhere"}),
+    ));
+    let e = audit.entries();
+    assert_eq!(e.len(), 4);
+    assert_eq!(e[0], e[1]);
+    assert_eq!(e[2], e[3]);
+    assert!(
+        e.iter()
+            .all(|x| x.vault_id.is_none() && x.item_id.is_none())
+    );
 }

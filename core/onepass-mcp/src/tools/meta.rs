@@ -185,8 +185,8 @@ impl<P: VaultPort> McpTools<P> {
     }
 
     /// `get_item {item, vault?}`: one card. Without `vault`, the item is
-    /// looked up in every visible vault, then the scope of its own vault is
-    /// checked.
+    /// looked up only in the visible vaults that grant `metadata`: a title
+    /// held by a vault without that scope is neither found nor ambiguous.
     pub(super) fn get_item(&mut self, args: &Map<String, Value>, call: &mut Call) -> CallResult {
         let key = arg_str(args, "item").unwrap_or_default();
         let ambiguous = "ambiguous item, use its id";
@@ -200,12 +200,10 @@ impl<P: VaultPort> McpTools<P> {
                 (v, item)
             }
             None => {
-                let vaults = self.visible_vaults()?;
+                let vaults = self.metadata_targets(None, call)?;
                 let all = self.collect(vaults, |_| true)?;
                 let (v, item) = pick(&all, key, ambiguous, |(_, i)| i.id, |(_, i)| &i.title)?;
                 call.vault_id = Some(v.id);
-                call.item_id = Some(item.id);
-                self.require(v, Scope::Metadata)?;
                 (v.clone(), item.clone())
             }
         };

@@ -162,13 +162,24 @@ pub fn tools_with_policy(
     policy: impl FnOnce(&Repository<MemoryStore>) -> Policy,
     approver: Arc<dyn Approver>,
 ) -> (Tools, SharedAudit) {
+    tools_with(policy, |_| Narrowing::default(), approver)
+}
+
+/// Tools over a fresh fixture whose policy and launch narrowing are built
+/// from the fixture (its vault ids are new), with their audit sink.
+pub fn tools_with(
+    policy: impl FnOnce(&Repository<MemoryStore>) -> Policy,
+    narrowing: impl FnOnce(&Repository<MemoryStore>) -> Narrowing,
+    approver: Arc<dyn Approver>,
+) -> (Tools, SharedAudit) {
     let repo = repo();
     let policy = policy(repo);
+    let narrowing = narrowing(repo);
     let audit = SharedAudit::default();
     let tools = McpTools::new(
         RepoPort(repo),
         policy,
-        Narrowing::default(),
+        narrowing,
         approver,
         Box::new(audit.clone()),
         None,

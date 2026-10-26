@@ -9,9 +9,9 @@ use onepass_guard::{GuardError, LocalSigner, open_config, seal_config};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::Write;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -198,34 +198,24 @@ pub fn load_policy(
     Ok(policy)
 }
 
-/// Signs `p` and writes it to `path` atomically (temporary file, fsync,
-/// rename, fsync of the directory), mode `0600`.
+/// Signs `p` and writes it to `path` atomically (fresh temporary file in
+/// the same directory, mode `0600`, fsync, rename, fsync of the directory).
 pub fn save_policy(path: &Path, signer: &dyn LocalSigner, p: &Policy) -> Result<(), PolicyError> {
     let payload = serde_json::to_string(p).map_err(|_| PolicyError::Format)?;
     let sealed = seal_config(signer, POLICY_DOMAIN, &payload)?;
-    let mut tmp_name = path.as_os_str().to_owned();
-    tmp_name.push(".tmp");
-    let tmp = Path::new(&tmp_name);
-    let mut f = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(tmp)?;
-    // An existing temporary file keeps its old mode: set it again.
-    f.set_permissions(fs::Permissions::from_mode(0o600))?;
-    f.write_all(sealed.as_bytes())?;
-    f.sync_all()?;
-    drop(f);
-    fs::rename(tmp, path)?;
-    if let Some(dir) = path.parent() {
-        let dir = if dir.as_os_str().is_empty() {
-            Path::new(".")
-        } else {
-            dir
-        };
-        File::open(dir)?.sync_all()?;
-    }
+    let dir = match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    };
+    // A fresh, randomly named file created with O_EXCL: a planted file or
+    // symlink cannot redirect the write.
+    let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
+    tmp.as_file()
+        .set_permissions(fs::Permissions::from_mode(0o600))?;
+    tmp.write_all(sealed.as_bytes())?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path).map_err(|e| PolicyError::from(e.error))?;
+    File::open(dir)?.sync_all()?;
     Ok(())
 }
 
@@ -381,6 +371,19 @@ mod tests {
             load_policy(&path, &s, ACCOUNT),
             Err(PolicyError::WrongAccount)
         );
+    }
+
+    #[test]
+    fn save_does_not_follow_a_planted_temp_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mcp-policy.json");
+        let victim = dir.path().join("victim");
+        fs::write(&victim, "keep").unwrap();
+        std::os::unix::fs::symlink(&victim, dir.path().join("mcp-policy.json.tmp")).unwrap();
+        let s = TestSigner([3; 32]);
+        save_policy(&path, &s, &sample()).unwrap();
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");
+        assert_eq!(load_policy(&path, &s, ACCOUNT).unwrap(), sample());
     }
 
     #[test]

@@ -61,7 +61,7 @@ pub(crate) fn all() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "search_items",
-            description: "Search item metadata: case-insensitive substring of title, URL or tag. At most 50 results, never values.",
+            description: "Search item metadata: case-insensitive substring of title, URL or tag. Archived items are included. At most 50 results, never values.",
             input_schema: object(
                 json!({
                     "query": {"type": "string", "minLength": 1, "maxLength": MAX_QUERY, "description": "Text to look for."},

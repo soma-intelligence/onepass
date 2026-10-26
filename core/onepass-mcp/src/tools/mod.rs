@@ -215,13 +215,16 @@ impl<P: VaultPort> McpTools<P> {
         }
     }
 
-    /// The vaults that exist for the server: `mcp_access` only.
+    /// The vaults that exist for the server: `mcp_access`, and inside the
+    /// launch narrowing (`--vault`) when there is one. Any other vault is
+    /// treated exactly like a missing one.
     pub(crate) fn visible_vaults(&mut self) -> Result<Vec<VaultInfo>, PortError> {
+        let only = self.narrowing.vaults.as_ref();
         Ok(self
             .port
             .vaults()?
             .into_iter()
-            .filter(|v| v.mcp_access)
+            .filter(|v| v.mcp_access && only.is_none_or(|o| o.contains(&v.id.to_string())))
             .collect())
     }
 
@@ -324,6 +327,8 @@ impl<P: VaultPort> ToolHost for McpTools<P> {
             Ok(()) => self.dispatch(name, args, &mut call),
             Err(m) => Err(Failure::Params(m)),
         };
+        // Audit outcome labels: "ok", "refused" (business refusal) and
+        // "invalid" (arguments that violate the schema, a -32602 error).
         let (outcome, label) = match result {
             Ok(v) => (ToolOutcome::Ok(v), "ok"),
             Err(Failure::Refused(r)) => (ToolOutcome::Refused(r.message()), "refused"),
