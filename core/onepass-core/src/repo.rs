@@ -11,19 +11,25 @@
 //!
 //! Item versions get their own blob ids so that writing a new version never
 //! overwrites the one the current manifest lists. Writes go record first,
-//! manifest second, cleanup last. The manifest write is conditional on the
-//! stored manifest still being the one loaded (`put_if_version` on the
-//! seq): two writers racing on one vault cannot both win, the loser gets
-//! `Error::Conflict` instead of silently dropping the other's item. A crash before the manifest leaves an
-//! interrupted write, which loading ignores: a record that opens under the
-//! vault key and carries exactly the next version of a listed item, or
-//! version 1 of an item the manifest does not list. Any other record that
-//! does not match the manifest is reported, as `check_records` does.
+//! manifest second, cleanup last: nothing is deleted before the manifest
+//! write succeeds. The manifest write is conditional on the stored manifest
+//! still being the one loaded (`put_if_version` on the seq): two writers
+//! racing on one vault, on different items or on the same one, cannot both
+//! win; the loser gets `Error::Conflict`, deletes the record it just wrote
+//! (only that one), and the winner's state stays readable. This holds in
+//! the core alone, without the CLI lock.
 //!
-//! A crash after the manifest but before the old record is deleted leaves a
-//! stale record: an older version of a listed item. It is ignored when the
-//! exact current record (same version and hash) is present; served instead
-//! of the current one, it stays an error.
+//! A crash before the manifest leaves an interrupted write, which loading
+//! ignores: a record that opens under the vault key and carries exactly the
+//! next version of a listed item, or version 1 of an item the manifest does
+//! not list. Any other record that does not match the manifest is reported,
+//! as `check_records` does, except the leftovers below.
+//!
+//! Beside the exact current record (same version and hash) of a listed
+//! item, two leftovers are ignored: an older version (a crash after the
+//! manifest but before the old record is deleted) and the same version with
+//! another hash (a race loser stopped before deleting its record). Served
+//! instead of the current record, both stay errors.
 
 use std::collections::BTreeMap;
 
@@ -308,29 +314,34 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// Store a new version of the item (or its first one), then the
-    /// manifest that lists it, then delete the previous record.
+    /// manifest that lists it, then delete the previous record and the
+    /// ignored leftovers of this item. Nothing is deleted before the
+    /// manifest write succeeds: an ignored record may be another writer's
+    /// write in flight. A lost race (`Conflict`) deletes only the record
+    /// this call wrote.
     pub fn save_item(&mut self, vault: &Vault, item: Item) -> Result<()> {
         let loaded = self.load(vault)?;
         let rec = vault.seal_item(&item, loaded.next_version(item.id)?)?;
         let old = loaded.listed(item.id).map(|(blob, _)| *blob);
-        self.delete_ignored(&loaded, item.id)?;
-        self.put_item(vault.id, &rec)?;
+        let written = self.put_item(vault.id, &rec)?;
         let mut entries = loaded.entries_without(item.id);
         entries.push(entry(&rec));
-        self.write_manifest(vault, &loaded.manifest, entries)?;
+        self.commit_manifest(vault, &loaded.manifest, entries, Some(written))?;
+        self.delete_ignored(&loaded, item.id)?;
         if let Some(blob) = old {
             self.store.delete(RecordKind::Item, blob)?;
         }
         Ok(())
     }
 
-    /// Remove an item for good: manifest without it first, then its record.
+    /// Remove an item for good: manifest without it first, then its record
+    /// and its ignored leftovers.
     pub fn delete_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
         let loaded = self.load(vault)?;
         let (blob, _) = *loaded.listed(item_id).ok_or(Error::NotFound)?;
-        self.delete_ignored(&loaded, item_id)?;
         let entries = loaded.entries_without(item_id);
-        self.write_manifest(vault, &loaded.manifest, entries)?;
+        self.commit_manifest(vault, &loaded.manifest, entries, None)?;
+        self.delete_ignored(&loaded, item_id)?;
         self.store.delete(RecordKind::Item, blob)
     }
 
@@ -346,9 +357,11 @@ impl<S: RecordStore> Repository<S> {
 
     /// Move an item to another vault: the record re-sealed for `to`
     /// (version 1 there, or the next one if `to` already lists it), the
-    /// manifest of `to`, the manifest of `from`, then the old record. A crash
-    /// between the two manifests leaves the item in both vaults, both
-    /// loadable; moving it again replaces the copy in `to` and heals it.
+    /// manifest of `to`, the manifest of `from`, then the old records. A
+    /// crash or a lost race (`Conflict`) between the two manifests leaves
+    /// the item in both vaults, both loadable; moving it again replaces the
+    /// copy in `to` and heals it. A lost race on the manifest of `to`
+    /// deletes the moved record and changes nothing.
     pub fn move_item(&mut self, item_id: Id, from: &Vault, to: &Vault) -> Result<()> {
         if from.id == to.id {
             return Err(Error::InvalidFormat("move to the same vault"));
@@ -358,13 +371,13 @@ impl<S: RecordStore> Repository<S> {
         let dst = self.load(to)?;
         let moved = from.move_item(to, &rec, dst.next_version(item_id)?)?;
         let replaced = dst.listed(item_id).map(|(b, _)| *b);
-        self.delete_ignored(&dst, item_id)?;
-        self.put_item(to.id, &moved)?;
+        let written = self.put_item(to.id, &moved)?;
         let mut entries = dst.entries_without(item_id);
         entries.push(entry(&moved));
-        self.write_manifest(to, &dst.manifest, entries)?;
+        self.commit_manifest(to, &dst.manifest, entries, Some(written))?;
+        self.delete_ignored(&dst, item_id)?;
         let entries = src.entries_without(item_id);
-        self.write_manifest(from, &src.manifest, entries)?;
+        self.commit_manifest(from, &src.manifest, entries, None)?;
         self.delete_ignored(&src, item_id)?;
         self.store.delete(RecordKind::Item, blob)?;
         if let Some(b) = replaced {
@@ -416,8 +429,10 @@ impl<S: RecordStore> Repository<S> {
                 records.push((r.id, item));
             }
         }
-        // Stale leftovers of a cleanup cut short: an older version of a
-        // listed item, ignored only beside the exact current record.
+        // Leftovers ignored only beside the exact current record of a listed
+        // item: an older version (cleanup cut short) or the same version
+        // with other content (the record of a writer that lost a race on
+        // this item and stopped before deleting it).
         let current: Vec<Id> = manifest
             .entries
             .iter()
@@ -430,9 +445,9 @@ impl<S: RecordStore> Repository<S> {
             })
             .map(|e| e.item_id)
             .collect();
-        let (stale, mut records): (Vec<_>, Vec<_>) = records.into_iter().partition(|(_, r)| {
-            current.contains(&r.item_id) && entry_version(&manifest, r.item_id) > Some(r.version)
-        });
+        let (stale, mut records): (Vec<_>, Vec<_>) = records
+            .into_iter()
+            .partition(|(_, r)| current.contains(&r.item_id) && is_leftover(&manifest, r));
         ignored.extend(stale.iter().map(|(blob, r)| (*blob, r.item_id)));
         records.sort_by_key(|(_, r)| r.item_id);
         let plain: Vec<ItemRecord> = records.iter().map(|(_, r)| r.clone()).collect();
@@ -463,15 +478,41 @@ impl<S: RecordStore> Repository<S> {
         Ok(())
     }
 
-    fn put_item(&mut self, vault_id: Id, rec: &ItemRecord) -> Result<()> {
+    /// Store an item record under a fresh blob id, returned.
+    fn put_item(&mut self, vault_id: Id, rec: &ItemRecord) -> Result<Id> {
         let mut data = vault_id.0.to_vec();
         data.extend(postcard::to_allocvec(rec).map_err(|_| Error::InvalidFormat("item record"))?);
+        let id = Id::new();
         self.store.put(Record {
-            id: Id::new(),
+            id,
             kind: RecordKind::Item,
             version: rec.version,
             data,
-        })
+        })?;
+        Ok(id)
+    }
+
+    /// `write_manifest`; on a lost race, delete `written` (the record this
+    /// write put just before, if any) and return `Conflict`. Other errors
+    /// keep the record: the manifest may have been written after all.
+    fn commit_manifest(
+        &mut self,
+        vault: &Vault,
+        prev: &Manifest,
+        entries: Vec<ManifestEntry>,
+        written: Option<Id>,
+    ) -> Result<()> {
+        match self.write_manifest(vault, prev, entries) {
+            Err(Error::Conflict) => {
+                if let Some(blob) = written {
+                    // Best effort: if this fails too, the record is a
+                    // leftover that loading ignores beside the winner's.
+                    let _ = self.store.delete(RecordKind::Item, blob);
+                }
+                Err(Error::Conflict)
+            }
+            other => other,
+        }
     }
 
     /// Sign and store the manifest following `prev` with `entries`, and
@@ -510,6 +551,20 @@ impl<S: RecordStore> Repository<S> {
             prev.map(|p| p.seq),
         )?;
         Ok(seen(&m))
+    }
+}
+
+/// Beside the exact current record of its item: an older version, or the
+/// same version with another hash. The exact current record served twice is
+/// not a leftover (`check_records` refuses it).
+fn is_leftover(m: &Manifest, rec: &ItemRecord) -> bool {
+    match m.entries.binary_search_by_key(&rec.item_id, |e| e.item_id) {
+        Ok(i) => {
+            let e = &m.entries[i];
+            e.version > rec.version
+                || (e.version == rec.version && e.record_hash != record_hash(rec))
+        }
+        Err(_) => false,
     }
 }
 
@@ -871,6 +926,8 @@ mod tests {
     struct Hooked<S> {
         inner: S,
         on: RecordKind,
+        /// Only for this record id, when set.
+        on_id: Option<Id>,
         hook: Option<Box<dyn FnOnce()>>,
         refuse: Option<(RecordKind, Id)>,
         refuse_kind: Option<RecordKind>,
@@ -881,6 +938,7 @@ mod tests {
             Hooked {
                 inner,
                 on: RecordKind::Item,
+                on_id: None,
                 hook: None,
                 refuse: None,
                 refuse_kind: None,
@@ -892,6 +950,7 @@ mod tests {
                 return Err(Error::Store("cut".into()));
             }
             if r.kind == self.on
+                && self.on_id.is_none_or(|id| id == r.id)
                 && let Some(hook) = self.hook.take()
             {
                 hook();
@@ -1034,6 +1093,235 @@ mod tests {
         repo.move_item(item.id, &a, &b).unwrap();
         assert_eq!(repo.items(&a).unwrap(), vec![]);
         assert_eq!(repo.items(&b).unwrap(), vec![in_b]);
+        assert_eq!(repo.store.list(RecordKind::Item).unwrap().len(), 1);
+    }
+
+    /// A store that stops before its first write of a `kind` record: it
+    /// says so on `arrived`, then waits for `go`. For races between threads.
+    struct Gated<S> {
+        inner: S,
+        kind: RecordKind,
+        gate: Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>,
+    }
+
+    impl<S> Gated<S> {
+        fn before_put(&mut self, r: &Record) {
+            if r.kind == self.kind
+                && let Some((arrived, go)) = self.gate.take()
+            {
+                arrived.send(()).unwrap();
+                go.recv().unwrap();
+            }
+        }
+    }
+
+    impl<S: RecordStore> RecordStore for Gated<S> {
+        fn put(&mut self, r: Record) -> Result<()> {
+            self.before_put(&r);
+            self.inner.put(r)
+        }
+
+        fn put_if_version(&mut self, r: Record, expected: Option<u64>) -> Result<()> {
+            self.before_put(&r);
+            self.inner.put_if_version(r, expected)
+        }
+
+        fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+            self.inner.get(kind, id)
+        }
+
+        fn list(&self, kind: RecordKind) -> Result<Vec<Record>> {
+            self.inner.list(kind)
+        }
+
+        fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
+            self.inner.delete(kind, id)
+        }
+    }
+
+    /// How the loser of a same-item race touches the item.
+    #[derive(Clone, Copy)]
+    enum Loser {
+        Edit,
+        Delete,
+        /// Move the item out of the vault the winner writes to.
+        MoveOut,
+    }
+
+    /// Two writers on one item over one SQLite file. The winner edits the
+    /// item, writes its record and stops just before its manifest. The
+    /// loser then loads (the winner's record looks like an interrupted
+    /// write), runs up to its own manifest write, lets the winner commit,
+    /// and writes its manifest last. Returns the loser's result, a fresh
+    /// reader over the file, the vaults and the winner's item.
+    fn same_item_race(
+        loser: Loser,
+    ) -> (
+        Result<()>,
+        Repository<SqliteStore>,
+        Vault,
+        Vault,
+        Item,
+        tempfile::TempDir,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("onepass.sqlite");
+        let (mut repo, a) = fresh(SqliteStore::open(&path).unwrap());
+        let b = repo.create_vault(meta("B")).unwrap();
+        let item = login(&a, "v1");
+        repo.save_item(&a, item.clone()).unwrap();
+        let device = repo.device_state().clone();
+        drop(repo);
+        fn on<S: RecordStore>(store: S, device: &DeviceState) -> Repository<S> {
+            Repository::unlock(store, "pw", &shared().secret_key, device.clone()).unwrap()
+        }
+
+        let (arrived_tx, arrived) = std::sync::mpsc::channel();
+        let (go, go_rx) = std::sync::mpsc::channel();
+        let winner_store = Gated {
+            inner: SqliteStore::open(&path).unwrap(),
+            kind: RecordKind::Manifest,
+            gate: Some((arrived_tx, go_rx)),
+        };
+        let mut winner = on(winner_store, &device);
+        let (wa, winner_item) = (vault_of(&winner, a.id), login_as(&item, "winner"));
+        let edit = winner_item.clone();
+        let winner = std::thread::spawn(move || winner.save_item(&wa, edit));
+        arrived.recv().unwrap();
+
+        // The loser lets the winner commit right before its manifest write.
+        let mut store = Hooked::new(SqliteStore::open(&path).unwrap());
+        store.on = RecordKind::Manifest;
+        if let Loser::MoveOut = loser {
+            store.on_id = Some(a.id);
+        }
+        let done = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let done_in = std::sync::Arc::clone(&done);
+        store.hook = Some(Box::new(move || {
+            go.send(()).unwrap();
+            *done_in.lock().unwrap() = Some(winner.join().unwrap());
+        }));
+        let mut l = on(store, &device);
+        let (la, lb) = (vault_of(&l, a.id), vault_of(&l, b.id));
+        let result = match loser {
+            Loser::Edit => l.save_item(&la, login_as(&item, "loser")),
+            Loser::Delete => l.delete_item(&la, item.id),
+            Loser::MoveOut => l.move_item(item.id, &la, &lb),
+        };
+        assert_eq!(
+            done.lock().unwrap().take(),
+            Some(Ok(())),
+            "the winner commits"
+        );
+        let reader = on(SqliteStore::open(&path).unwrap(), &device);
+        (result, reader, a, b, winner_item, dir)
+    }
+
+    #[test]
+    fn same_item_race_edit_leaves_the_winner_readable() {
+        let (result, mut reader, a, _, winner, _dir) = same_item_race(Loser::Edit);
+        assert_eq!(result, Err(Error::Conflict));
+        assert_eq!(reader.items(&a).unwrap(), vec![winner.clone()]);
+        // The loser cleaned up: only the winner's record is left.
+        assert_eq!(reader.store.list(RecordKind::Item).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn same_item_race_delete_leaves_the_winner_readable() {
+        let (result, mut reader, a, _, winner, _dir) = same_item_race(Loser::Delete);
+        assert_eq!(result, Err(Error::Conflict));
+        assert_eq!(reader.items(&a).unwrap(), vec![winner]);
+        assert_eq!(reader.store.list(RecordKind::Item).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn same_item_race_move_duplicates_and_heals() {
+        let (result, mut reader, a, b, winner, _dir) = same_item_race(Loser::MoveOut);
+        // The target manifest went through, the source one lost the race:
+        // the item is in both vaults, as after a crash between the two.
+        assert_eq!(result, Err(Error::Conflict));
+        assert_eq!(reader.items(&a).unwrap(), vec![winner.clone()]);
+        assert_eq!(reader.items(&b).unwrap().len(), 1);
+        // Moving again heals it, with the winner's content.
+        reader.move_item(winner.id, &a, &b).unwrap();
+        let mut moved = winner;
+        moved.vault_id = b.id;
+        assert_eq!(reader.items(&a).unwrap(), vec![]);
+        assert_eq!(reader.items(&b).unwrap(), vec![moved]);
+        assert_eq!(reader.store.list(RecordKind::Item).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn lost_race_on_the_target_vault_leaves_no_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("onepass.sqlite");
+        let (mut repo, a) = fresh(SqliteStore::open(&path).unwrap());
+        let b = repo.create_vault(meta("B")).unwrap();
+        let item = login(&a, "mover");
+        repo.save_item(&a, item.clone()).unwrap();
+        let device = repo.device_state().clone();
+        drop(repo);
+        let open = |device: DeviceState| {
+            Repository::unlock(
+                SqliteStore::open(&path).unwrap(),
+                "pw",
+                &shared().secret_key,
+                device,
+            )
+            .unwrap()
+        };
+        // Another writer adds an item to `b` right before the move's
+        // first manifest write (the one of `b`).
+        let mut other = open(device.clone());
+        let vb = vault_of(&other, b.id);
+        let extra = login(&b, "extra");
+        let extra_c = extra.clone();
+        let mut store = Hooked::new(SqliteStore::open(&path).unwrap());
+        store.on = RecordKind::Manifest;
+        store.on_id = Some(b.id);
+        store.hook = Some(Box::new(move || other.save_item(&vb, extra_c).unwrap()));
+        let mut mover =
+            Repository::unlock(store, "pw", &shared().secret_key, device.clone()).unwrap();
+        let (ma, mb) = (vault_of(&mover, a.id), vault_of(&mover, b.id));
+        assert_eq!(mover.move_item(item.id, &ma, &mb), Err(Error::Conflict));
+        // Nothing moved, the moved record is gone, both vaults load.
+        let mut reader = open(device);
+        assert_eq!(reader.items(&a).unwrap(), vec![item]);
+        assert_eq!(reader.items(&b).unwrap(), vec![extra]);
+        assert_eq!(reader.store.list(RecordKind::Item).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn loser_record_left_by_a_crash_is_ignored_beside_the_current_one() {
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let item = login(&v, "v1");
+        repo.save_item(&v, item.clone()).unwrap();
+        repo.save_item(&v, login_as(&item, "winner")).unwrap();
+        // A loser that crashed before deleting its record: same item, same
+        // version as listed, other content.
+        let leftover = put_raw(
+            &mut repo,
+            v.id,
+            &v.seal_item(&login_as(&item, "loser"), 2).unwrap(),
+        );
+        let items = repo.items(&v).unwrap();
+        assert_eq!(user(&items[0]), "winner");
+        // Served alone, in place of the current record, it stays an error.
+        let current = repo
+            .store
+            .list(RecordKind::Item)
+            .unwrap()
+            .into_iter()
+            .find(|r| r.id != leftover)
+            .unwrap();
+        repo.store.delete(RecordKind::Item, current.id).unwrap();
+        assert_eq!(
+            integrity(repo.items(&v)),
+            IntegrityError::ManifestItemMismatch
+        );
+        repo.store.put(current).unwrap();
+        // The next save clears it.
+        repo.save_item(&v, login_as(&item, "v3")).unwrap();
         assert_eq!(repo.store.list(RecordKind::Item).unwrap().len(), 1);
     }
 
