@@ -65,6 +65,13 @@ fn install_signal_handlers() -> Result<(), CliError> {
         if previous == libc::SIG_ERR {
             return Err(CliError::usage("cannot install the signal handlers"));
         }
+        // Started with the signal ignored (`nohup`, a background job of a
+        // non-interactive shell): keep it ignored.
+        if previous == libc::SIG_IGN {
+            // SAFETY: restores the disposition the process started with;
+            // `SIG_IGN` is a valid disposition for a catchable signal.
+            unsafe { libc::signal(sig, libc::SIG_IGN) };
+        }
     }
     Ok(())
 }
@@ -94,6 +101,11 @@ impl KeySource for SessionKeys {
     fn load(&mut self, item_id: &str) -> Result<AgentKey, String> {
         self.with(|repo| Ok(load_key_of(repo, item_id)))?
     }
+}
+
+/// `s` as one POSIX shell word: single quotes, embedded ones as `'\''`.
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 /// `$HOME/.ssh/known_hosts` if it exists. It is only ever read.
@@ -140,7 +152,10 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
     install_signal_handlers()?;
     let listener = bind_socket(&socket)
         .map_err(|e| CliError::usage(format!("cannot listen on {}: {e}", socket.display())))?;
-    eprintln!("SSH_AUTH_SOCK={}; export SSH_AUTH_SOCK;", socket.display());
+    eprintln!(
+        "SSH_AUTH_SOCK={}; export SSH_AUTH_SOCK;",
+        shell_quote(&socket.display().to_string())
+    );
     let stop = Arc::new(AtomicBool::new(false));
     // `serve` watches an `Arc` flag; the handlers can only set a static.
     let watcher = {
@@ -165,4 +180,15 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
     removed?;
     eprintln!("onepass ssh-agent: stopped");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn socket_paths_are_one_shell_word() {
+        assert_eq!(shell_quote("/a b/s"), "'/a b/s'");
+        assert_eq!(shell_quote("/it's;rm"), "'/it'\\''s;rm'");
+    }
 }

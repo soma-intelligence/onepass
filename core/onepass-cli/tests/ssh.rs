@@ -320,6 +320,7 @@ fn import_ssh_keygen_key_and_encrypted_key() {
     assert_eq!(key_part(&public), pubkey(&plain));
     // The fingerprint matches what ssh-keygen computes.
     let lf = StdCommand::new("ssh-keygen")
+        .env("HOME", keys.path())
         .arg("-lf")
         .arg(&plain)
         .output()
@@ -384,6 +385,7 @@ fn import_ssh_keygen_key_and_encrypted_key() {
     fs::write(&back, pem.as_str().unwrap()).unwrap();
     fs::set_permissions(&back, fs::Permissions::from_mode(0o600)).unwrap();
     let y = StdCommand::new("ssh-keygen")
+        .env("HOME", keys.path())
         .args(["-y", "-P", "", "-f"])
         .arg(&back)
         .output()
@@ -489,7 +491,7 @@ fn bookmark_add_remove_and_config() {
     let config_path = out.join("config");
     assert!(
         o.stdout
-            .contains(&format!("Include {}", config_path.display())),
+            .contains(&format!("Include \"{}\"", config_path.display())),
         "{}",
         o.stdout
     );
@@ -559,6 +561,68 @@ fn bookmark_add_remove_and_config() {
     ]);
     assert_eq!(o.code, 1, "{}", o.stderr);
     e.assert_home_untouched();
+}
+
+#[test]
+fn config_never_replaces_foreign_files_nor_loosens_directories() {
+    let e = fresh();
+    e.ok(&[
+        "ssh-key",
+        "generate",
+        "--title",
+        "Git",
+        "--agent",
+        "--host",
+        "git.example.test",
+    ]);
+    let work = tempfile::tempdir().unwrap();
+    let out_arg = |p: &Path| p.to_str().unwrap().to_owned();
+
+    // A directory holding someone else's `config` (a kubeconfig, say).
+    let foreign = work.path().join("foreign");
+    fs::create_dir(&foreign).unwrap();
+    fs::set_permissions(&foreign, fs::Permissions::from_mode(0o700)).unwrap();
+    let theirs = "apiVersion: v1\nclusters: []\n";
+    fs::write(foreign.join("config"), theirs).unwrap();
+    let o = e.run(&["ssh-key", "config", "--out", &out_arg(&foreign)]);
+    assert_eq!(o.code, 1, "{}", o.stderr);
+    assert_eq!(fs::read_to_string(foreign.join("config")).unwrap(), theirs);
+    assert_eq!(fs::read_dir(&foreign).unwrap().count(), 1);
+
+    // An existing directory that is not 0700 is neither used nor chmodded.
+    let open = work.path().join("open");
+    fs::create_dir(&open).unwrap();
+    fs::set_permissions(&open, fs::Permissions::from_mode(0o755)).unwrap();
+    let o = e.run(&["ssh-key", "config", "--out", &out_arg(&open)]);
+    assert_eq!(o.code, 1, "{}", o.stderr);
+    assert_eq!(mode(&open), 0o755);
+    assert_eq!(fs::read_dir(&open).unwrap().count(), 0);
+
+    // `..` and symlinks do not lead into ~/.ssh.
+    let dotdot = e.home.path().join("nonexistent").join("..").join(".ssh");
+    let o = e.run(&["ssh-key", "config", "--out", &out_arg(&dotdot)]);
+    assert_eq!(o.code, 1, "{}", o.stderr);
+    let link = work.path().join("home-link");
+    std::os::unix::fs::symlink(e.home.path(), &link).unwrap();
+    let o = e.run(&["ssh-key", "config", "--out", &out_arg(&link.join(".ssh"))]);
+    assert_eq!(o.code, 1, "{}", o.stderr);
+    e.assert_home_untouched();
+
+    // A directory the command made, then a rerun over its own config.
+    let mine = work.path().join("a").join("b");
+    e.ok(&["ssh-key", "config", "--out", &out_arg(&mine)]);
+    assert_eq!(mode(&mine), 0o700);
+    e.ok(&["ssh-key", "config", "--out", &out_arg(&mine)]);
+    // A config symlinked elsewhere is refused, its target untouched.
+    let target = work.path().join("target");
+    fs::write(&target, theirs).unwrap();
+    fs::remove_file(mine.join("config")).unwrap();
+    std::os::unix::fs::symlink(&target, mine.join("config")).unwrap();
+    assert_eq!(
+        e.run(&["ssh-key", "config", "--out", &out_arg(&mine)]).code,
+        1
+    );
+    assert_eq!(fs::read_to_string(&target).unwrap(), theirs);
 }
 
 /// A running `onepass ssh-agent`.
@@ -786,7 +850,7 @@ fn agent_end_to_end_with_ssh_add() {
     assert!(stdout.is_empty(), "{stdout}");
     assert!(
         stderr.contains(&format!(
-            "SSH_AUTH_SOCK={}; export SSH_AUTH_SOCK;",
+            "SSH_AUTH_SOCK='{}'; export SSH_AUTH_SOCK;",
             socket.display()
         )),
         "{stderr}"

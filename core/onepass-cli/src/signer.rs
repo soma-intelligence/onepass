@@ -78,14 +78,14 @@ pub struct SyncSigner(pub Arc<Mutex<LongSession>>);
 
 impl LocalSigner for SyncSigner {
     fn sign(&self, domain: &[u8], msg: &[u8]) -> Result<Vec<u8>, GuardError> {
-        let session = self
-            .0
-            .lock()
-            .map_err(|_| GuardError::Format("local signature"))?;
+        // A poisoned lock (a panic mid-request) leaves the session suspect:
+        // no signature from it, reported like any bad signature.
+        let session = self.0.lock().map_err(|_| GuardError::Signature)?;
         sign(session.repo(), domain, msg)
     }
 
     fn verify(&self, domain: &[u8], msg: &[u8], sig: &[u8]) -> Result<(), GuardError> {
+        // Same mapping as `sign` for a poisoned lock.
         let session = self.0.lock().map_err(|_| GuardError::Signature)?;
         verify(session.repo(), domain, msg, sig)
     }
