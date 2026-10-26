@@ -13,6 +13,7 @@
 // `parse_1pux` is consumed by the import dispatcher (task 9).
 #![allow(dead_code)]
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value};
 use time::{Date, Month, OffsetDateTime};
@@ -204,14 +205,23 @@ fn category_type(c: &str) -> ItemType {
     }
 }
 
-/// Router `wireless_security` menu value; an unknown value is kept as is.
+/// Router `wireless_security` menu value, case-insensitive: `wpa3*`,
+/// `wpa2*`, other `wpa*`, `wep`, `none` or `open`. Anything else is kept
+/// as is.
 fn router_security(raw: &str) -> &str {
-    match raw.trim() {
-        "wpa2p" => "WPA2",
-        "wpa3p" => "WPA3",
-        "wep" => "WEP",
-        "none" => "ouvert",
-        _ => raw,
+    let v = raw.trim().to_ascii_lowercase();
+    if v.starts_with("wpa3") {
+        "WPA3"
+    } else if v.starts_with("wpa2") {
+        "WPA2"
+    } else if v.starts_with("wpa") {
+        "WPA"
+    } else if v == "wep" {
+        "WEP"
+    } else if v == "none" || v == "open" {
+        "ouvert"
+    } else {
+        raw
     }
 }
 
@@ -227,6 +237,32 @@ fn lenient_secret<'de, D: Deserializer<'de>>(
     Ok(scalar(Value::deserialize(d)?))
 }
 
+/// A JSON array of `T`; `null` or any other type is empty, and an element
+/// that does not decode is left out. Strings are moved out of the
+/// intermediate `Value`, not copied.
+fn lenient_vec<'de, D: Deserializer<'de>, T: DeserializeOwned>(
+    d: D,
+) -> std::result::Result<Vec<T>, D::Error> {
+    Ok(match Value::deserialize(d)? {
+        Value::Array(a) => a
+            .into_iter()
+            .filter_map(|v| serde_json::from_value(v).ok())
+            .collect(),
+        _ => Vec::new(),
+    })
+}
+
+/// A JSON object as `T`; `null`, any other type, or an object that does
+/// not decode is `T::default()`.
+fn lenient_obj<'de, D: Deserializer<'de>, T: DeserializeOwned + Default>(
+    d: D,
+) -> std::result::Result<T, D::Error> {
+    Ok(match Value::deserialize(d)? {
+        v @ Value::Object(_) => serde_json::from_value(v).unwrap_or_default(),
+        _ => T::default(),
+    })
+}
+
 /// Text of a scalar JSON value; a string is moved, not copied.
 fn scalar(v: Value) -> Option<Zeroizing<String>> {
     match v {
@@ -240,19 +276,23 @@ fn scalar(v: Value) -> Option<Zeroizing<String>> {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct Root {
+    #[serde(deserialize_with = "lenient_vec")]
     accounts: Vec<Account>,
 }
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct Account {
+    #[serde(deserialize_with = "lenient_vec")]
     vaults: Vec<Vault>,
 }
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct Vault {
+    #[serde(deserialize_with = "lenient_obj")]
     attrs: VaultAttrs,
+    #[serde(deserialize_with = "lenient_vec")]
     items: Vec<RawItem>,
 }
 
@@ -276,21 +316,24 @@ struct RawItem {
     state: Option<String>,
     #[serde(rename = "categoryUuid", deserialize_with = "lenient")]
     category_uuid: Option<String>,
+    #[serde(deserialize_with = "lenient_obj")]
     details: Details,
+    #[serde(deserialize_with = "lenient_obj")]
     overview: Overview,
 }
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct Details {
-    #[serde(rename = "loginFields")]
+    #[serde(rename = "loginFields", deserialize_with = "lenient_vec")]
     login_fields: Vec<LoginField>,
     #[serde(rename = "notesPlain", deserialize_with = "lenient")]
     notes_plain: Option<String>,
     #[serde(deserialize_with = "lenient_secret")]
     password: Option<Zeroizing<String>>,
+    #[serde(deserialize_with = "lenient_vec")]
     sections: Vec<RawSection>,
-    #[serde(rename = "passwordHistory")]
+    #[serde(rename = "passwordHistory", deserialize_with = "lenient_vec")]
     password_history: Vec<HistoryEntry>,
 }
 
@@ -310,6 +353,7 @@ struct LoginField {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct RawSection {
+    #[serde(deserialize_with = "lenient_vec")]
     fields: Vec<RawField>,
 }
 
@@ -340,7 +384,9 @@ struct Overview {
     title: Option<String>,
     #[serde(deserialize_with = "lenient")]
     url: Option<String>,
+    #[serde(deserialize_with = "lenient_vec")]
     urls: Vec<OverviewUrl>,
+    #[serde(deserialize_with = "lenient_vec")]
     tags: Vec<Value>,
 }
 
@@ -527,7 +573,7 @@ fn item_draft(raw: RawItem) -> Draft {
             .iter()
             .find(|(c, src, _)| *c == category && *src == id)
             .map(|(_, _, t)| *t);
-        let value = field_value(field.value);
+        let (value, rest) = field_value(field.value);
         // Email accounts: the required address is the first user name
         // that looks like one.
         if category == "111"
@@ -538,10 +584,15 @@ fn item_draft(raw: RawItem) -> Draft {
         {
             first_email = Some(text.trim().to_owned());
         }
-        if let Some(t) = target {
+        if let Some(t) = target
+            && !value.is_blank()
+        {
             filled.push(t);
         }
         apply(&mut d, kind, category, target, &label, value);
+        for v in rest {
+            apply(&mut d, kind, category, None, &label, v);
+        }
     }
     if let Some(address) = first_email
         && !filled.contains(&"address")
@@ -553,12 +604,16 @@ fn item_draft(raw: RawItem) -> Draft {
             d.set(id, &title);
         }
     }
+    // A missing or unreadable entry time falls back to the item's
+    // modification date, then its creation date.
+    let item_time = updated_at
+        .as_deref()
+        .and_then(unix)
+        .or_else(|| created_at.as_deref().and_then(unix))
+        .unwrap_or(OffsetDateTime::UNIX_EPOCH);
     for h in &details.password_history {
-        let when = h.time.as_deref().and_then(unix);
-        if let (Some(raw_time), None) = (h.time.as_deref(), when) {
-            d.bad_value("Date de l'ancien mot de passe", raw_time);
-        }
-        d.history(secret(&h.value), when.unwrap_or(OffsetDateTime::UNIX_EPOCH));
+        let when = h.time.as_deref().and_then(unix).unwrap_or(item_time);
+        d.history(secret(&h.value), when);
     }
     d
 }
@@ -587,39 +642,93 @@ enum Val {
     None,
 }
 
-/// Decodes `{ "<kind>": <inner> }`.
-fn field_value(v: Value) -> Val {
-    let Value::Object(map) = v else {
-        return match scalar(v) {
+impl Val {
+    /// Holds nothing to store.
+    fn is_blank(&self) -> bool {
+        match self {
+            Val::None => true,
+            Val::Text { text, .. } | Val::Totp(text) => text.trim().is_empty(),
+            _ => false,
+        }
+    }
+}
+
+/// Value kinds this importer decodes.
+const KNOWN_KINDS: [&str; 15] = [
+    "string",
+    "url",
+    "phone",
+    "menu",
+    "creditCardType",
+    "gender",
+    "concealed",
+    "creditCardNumber",
+    "totp",
+    "email",
+    "date",
+    "monthYear",
+    "address",
+    "sshKey",
+    "reference",
+];
+
+/// Decodes `{ "<kind>": <inner> }`. The main value comes from the first
+/// known kind key (else the first key); every other key is decoded on its
+/// own and returned second, for the `imported` section.
+fn field_value(v: Value) -> (Val, Vec<Val>) {
+    let Value::Object(mut map) = v else {
+        let val = match scalar(v) {
             Some(text) => Val::Text {
                 text,
                 hidden: false,
             },
             None => Val::None,
         };
+        return (val, Vec::new());
     };
-    let Some((kind, inner)) = map.into_iter().next() else {
-        return Val::None;
+    let main = map
+        .keys()
+        .find(|k| KNOWN_KINDS.contains(&k.as_str()))
+        .or_else(|| map.keys().next())
+        .cloned();
+    let Some((kind, inner)) = main.and_then(|k| map.remove_entry(&k)) else {
+        return (Val::None, Vec::new());
     };
+    let rest = map
+        .into_iter()
+        .map(|(k, v)| decode(&k, v))
+        .filter(|v| !v.is_blank())
+        .collect();
+    (decode(&kind, inner), rest)
+}
+
+/// Decodes the inner value of kind `kind`.
+fn decode(kind: &str, inner: Value) -> Val {
     let text = |inner: Value, hidden: bool| match inner {
         Value::Null => Val::None,
-        Value::Object(_) | Value::Array(_) => unknown(&inner),
+        Value::Object(_) | Value::Array(_) => unknown(&inner, hidden),
         other => match scalar(other) {
             Some(text) => Val::Text { text, hidden },
             None => Val::None,
         },
     };
-    match kind.as_str() {
+    match kind {
         "string" | "url" | "phone" | "menu" | "creditCardType" | "gender" => text(inner, false),
         "concealed" | "creditCardNumber" => text(inner, true),
-        "totp" => match scalar(inner) {
-            Some(t) => Val::Totp(t),
-            None => Val::None,
+        "totp" => match inner {
+            Value::Object(_) | Value::Array(_) => unknown(&inner, true),
+            other => match scalar(other) {
+                Some(t) => Val::Totp(t),
+                None => Val::None,
+            },
         },
         "email" => match inner {
             Value::Object(mut m) => text(m.remove("email_address").unwrap_or(Value::Null), false),
             other => text(other, false),
         },
+        "date" | "monthYear" if matches!(inner, Value::Object(_) | Value::Array(_)) => {
+            unknown(&inner, false)
+        }
         "date" => match scalar(inner) {
             None => Val::None,
             Some(raw) => match unix(&raw) {
@@ -643,20 +752,17 @@ fn field_value(v: Value) -> Val {
             other => text(other, true),
         },
         "reference" => Val::None,
-        _ => match inner {
-            Value::Null => Val::None,
-            Value::Object(_) | Value::Array(_) => unknown(&inner),
-            other => text(other, false),
-        },
+        _ => text(inner, false),
     }
 }
 
-/// Compact JSON of an unknown value, hidden when it is an object.
-fn unknown(v: &Value) -> Val {
+/// Compact JSON of an unknown value, hidden when it is an object or
+/// when `hidden`.
+fn unknown(v: &Value, hidden: bool) -> Val {
     match serde_json::to_string(v) {
         Ok(json) => Val::Unknown {
             json: Zeroizing::new(json),
-            hidden: v.is_object(),
+            hidden: hidden || v.is_object(),
         },
         Err(_) => Val::None,
     }
@@ -692,13 +798,20 @@ fn address(mut m: Map<String, Value>) -> Val {
     if blank { Val::None } else { Val::Address(a) }
 }
 
+/// Without a private key, whatever else the object holds (public key,
+/// fingerprint) is kept as hidden JSON.
 fn ssh_key(mut m: Map<String, Value>) -> Val {
-    let Some(pem) = m.remove("privateKey").and_then(scalar) else {
-        return Val::None;
+    let pem = m
+        .remove("privateKey")
+        .and_then(scalar)
+        .filter(|p| !p.trim().is_empty());
+    let Some(pem) = pem else {
+        return if m.is_empty() {
+            Val::None
+        } else {
+            unknown(&Value::Object(m), true)
+        };
     };
-    if pem.trim().is_empty() {
-        return Val::None;
-    }
     let mut meta = match m.remove("metadata") {
         Some(Value::Object(meta)) => meta,
         _ => Map::new(),
@@ -788,7 +901,7 @@ mod tests {
     use zip::write::{SimpleFileOptions, ZipWriter};
 
     use super::*;
-    use crate::model::{FieldType, FieldValue, Item, ItemType, template, validate};
+    use crate::model::{FieldValue, Item, ItemType, template, validate};
 
     const DATA: &[u8] = include_bytes!("../../tests/fixtures/import/1pux-export.data.json");
 
@@ -938,13 +1051,21 @@ mod tests {
     fn router_security_values() {
         for (raw, want) in [
             ("wpa2p", "WPA2"),
+            ("wpa2e", "WPA2"),
+            ("WPA2P", "WPA2"),
             ("wpa3p", "WPA3"),
+            ("wpa3e", "WPA3"),
+            ("wpa", "WPA"),
+            ("wpap", "WPA"),
             ("wep", "WEP"),
+            ("WEP", "WEP"),
             ("none", "ouvert"),
+            ("open", "ouvert"),
+            ("Open", "ouvert"),
         ] {
-            assert_eq!(router_security(raw), want);
+            assert_eq!(router_security(raw), want, "{raw}");
         }
-        assert_eq!(router_security("wpa2e"), "wpa2e");
+        assert_eq!(router_security("dynamic"), "dynamic");
     }
 
     #[test]
@@ -1212,7 +1333,6 @@ mod tests {
         ] {
             assert!(FIELD_MAP.iter().any(|(c, _, _)| *c == cat), "{cat}");
         }
-        let _ = FieldType::Text;
     }
 
     #[test]
@@ -1229,5 +1349,201 @@ mod tests {
         assert!(notes.contains(&5), "{notes:?}");
         assert!(notes.contains(&10), "{notes:?}");
         assert_eq!(imp.items.last().unwrap().item.title, "Work Portal");
+    }
+
+    /// One export with the given vaults, each `(name, items JSON)`.
+    fn export(vaults: &[(&str, &str)]) -> Import {
+        let vaults: Vec<String> = vaults
+            .iter()
+            .map(|(name, items)| format!(r#"{{"attrs":{{"name":"{name}"}},"items":[{items}]}}"#))
+            .collect();
+        let data = format!(r#"{{"accounts":[{{"vaults":[{}]}}]}}"#, vaults.join(","));
+        parse_1pux(&zip_of(&[("export.data", data.as_bytes())])).unwrap()
+    }
+
+    fn codes(imp: &Import) -> Vec<(u32, &'static str)> {
+        imp.warnings.iter().map(|w| (w.entry, w.code)).collect()
+    }
+
+    const NO_USER: &str = r#"{"state":"active","categoryUuid":"001",
+        "details":{"loginFields":[{"value":"pw","designation":"password"}]},
+        "overview":{"title":"No user"}}"#;
+
+    #[test]
+    fn running_entry_index_across_vaults_with_skips() {
+        let trashed = r#"{"state":"trashed","categoryUuid":"001","overview":{"title":"T"}}"#;
+        let deleted = r#"{"state":"deleted","categoryUuid":"001","overview":{"title":"D"}}"#;
+        let a = format!("{trashed},{NO_USER}");
+        let b = format!("{deleted},{NO_USER}");
+        let imp = export(&[("A", &a), ("B", &b)]);
+        assert_eq!(imp.skipped, 2);
+        assert_eq!(imp.items.len(), 2);
+        assert!(
+            imp.items
+                .iter()
+                .all(|i| i.item.item_type == ItemType::Password)
+        );
+        assert_eq!(
+            codes(&imp),
+            vec![(1, "login_to_password"), (3, "login_to_password")]
+        );
+        assert_eq!(imp.items[1].folder.as_deref(), Some("B"));
+    }
+
+    #[test]
+    fn bad_month_year_is_bad_date() {
+        let card = r#"{"categoryUuid":"002","overview":{"title":"Card"},
+            "details":{"sections":[{"fields":[
+              {"title":"cardholder","id":"cardholder","value":{"string":"A"}},
+              {"title":"number","id":"ccnum","value":{"creditCardNumber":"4111111111111111"}},
+              {"title":"expiry date","id":"expiry","value":{"monthYear":203013}}
+            ]}]}}"#;
+        let imp = export(&[("V", card)]);
+        assert!(codes(&imp).contains(&(0, "bad_date")));
+        let item = &imp.items[0].item;
+        assert_eq!(
+            imported_text(item, "expiry date"),
+            Some(("203013".to_owned(), false))
+        );
+        validate(item).unwrap();
+    }
+
+    #[test]
+    fn overview_url_dedup() {
+        let login = r#"{"categoryUuid":"001","overview":{"title":"L",
+            "url":"https://a.example.com",
+            "urls":[{"url":"https://b.example.com"},{"url":" https://a.example.com "},
+                    {"url":"https://b.example.com"}]},
+            "details":{"loginFields":[{"value":"u","designation":"username"}]}}"#;
+        let imp = export(&[("V", login)]);
+        let urls: Vec<_> = imp.items[0]
+            .item
+            .urls
+            .iter()
+            .map(|u| u.url.as_str())
+            .collect();
+        assert_eq!(urls, ["https://a.example.com", "https://b.example.com"]);
+    }
+
+    #[test]
+    fn email_address_from_smtp_username() {
+        let mail = r#"{"categoryUuid":"111","overview":{"title":"M"},
+            "details":{"sections":[{"fields":[
+              {"id":"pop_username","value":{"string":"alice"}},
+              {"id":"smtp_username","value":{"string":"alice@example.org"}}
+            ]}]}}"#;
+        let imp = export(&[("V", mail)]);
+        let item = &imp.items[0].item;
+        assert_eq!(item.item_type, ItemType::Email);
+        assert_eq!(text(item, "address"), "alice@example.org");
+        assert_eq!(text(item, "incoming_username"), "alice");
+    }
+
+    #[test]
+    fn empty_patient_uses_title() {
+        let med = r#"{"categoryUuid":"113","overview":{"title":"Visit"},
+            "details":{"sections":[{"fields":[
+              {"id":"patient","value":{"string":"  "}}
+            ]}]}}"#;
+        let imp = export(&[("V", med)]);
+        let item = &imp.items[0].item;
+        assert_eq!(item.item_type, ItemType::MedicalRecord);
+        assert_eq!(text(item, "patient"), "Visit");
+    }
+
+    #[test]
+    fn several_value_keys_are_all_kept() {
+        let login = r#"{"categoryUuid":"001","overview":{"title":"L"},
+            "details":{"loginFields":[{"value":"u","designation":"username"}],
+              "sections":[{"fields":[
+                {"title":"Multi","id":"x","value":{"zz":"extra-x","concealed":"hidden-x"}},
+                {"title":"Odd totp","id":"t","value":{"totp":{"secret":"S"}}},
+                {"title":"Odd date","id":"d","value":{"date":[1,2]}},
+                {"title":"Odd secret","id":"c","value":{"concealed":[1,2]}}
+              ]}]}}"#;
+        let imp = export(&[("V", login)]);
+        let item = &imp.items[0].item;
+        let multi: Vec<_> = imported(item)
+            .into_iter()
+            .filter(|(l, _)| l == "Multi")
+            .map(|(_, v)| v)
+            .collect();
+        assert_eq!(multi.len(), 2, "known kind and the other key");
+        assert!(matches!(&multi[0], FieldValue::Concealed(s) if s.as_str() == "hidden-x"));
+        assert!(matches!(&multi[1], FieldValue::Text(s) if s == "extra-x"));
+        assert_eq!(
+            imported_text(item, "Odd totp"),
+            Some((r#"{"secret":"S"}"#.to_owned(), true))
+        );
+        assert_eq!(
+            imported_text(item, "Odd date"),
+            Some(("[1,2]".to_owned(), false))
+        );
+        assert_eq!(
+            imported_text(item, "Odd secret"),
+            Some(("[1,2]".to_owned(), true)),
+            "a concealed kind stays hidden whatever its inner type"
+        );
+        assert_eq!(text(item, "totp"), "");
+    }
+
+    #[test]
+    fn ssh_key_without_private_key_keeps_metadata() {
+        let key = r#"{"categoryUuid":"114","overview":{"title":"K"},
+            "details":{"sections":[{"fields":[
+              {"title":"private key","id":"private_key","value":{"sshKey":
+                {"metadata":{"publicKey":"ssh-ed25519 AAAAPUB","fingerprint":"SHA256:FP"}}}}
+            ]}]}}"#;
+        let imp = export(&[("V", key)]);
+        let item = &imp.items[0].item;
+        let (json, hidden) = imported_text(item, "private key").unwrap();
+        assert!(hidden);
+        assert!(json.contains("ssh-ed25519 AAAAPUB") && json.contains("SHA256:FP"));
+    }
+
+    #[test]
+    fn history_without_time_uses_item_date() {
+        let login = r#"{"categoryUuid":"001","createdAt":1600000000,"updatedAt":1700000000,
+            "overview":{"title":"L"},
+            "details":{"loginFields":[{"value":"u","designation":"username"}],
+              "passwordHistory":[{"value":"old-1"},{"value":"old-2","time":"soon"}]}}"#;
+        let imp = export(&[("V", login)]);
+        let item = &imp.items[0].item;
+        assert_eq!(item.password_history.len(), 2);
+        for h in &item.password_history {
+            assert_eq!(h.replaced_at.unix_timestamp(), 1_700_000_000);
+        }
+        assert!(imp.warnings.is_empty(), "{:?}", codes(&imp));
+
+        let created_only = r#"{"categoryUuid":"001","createdAt":1600000000,
+            "overview":{"title":"L"},
+            "details":{"loginFields":[{"value":"u","designation":"username"}],
+              "passwordHistory":[{"value":"old-1"}]}}"#;
+        let imp = export(&[("V", created_only)]);
+        assert_eq!(
+            imp.items[0].item.password_history[0]
+                .replaced_at
+                .unix_timestamp(),
+            1_600_000_000
+        );
+    }
+
+    #[test]
+    fn null_containers_are_empty() {
+        let item = r#"{"categoryUuid":"001","overview":{"title":"L","urls":null,"tags":7},
+            "details":{"loginFields":[{"value":"u","designation":"username"}],
+              "sections":[{"fields":null},null,"x"],"passwordHistory":null}}"#;
+        let nulls = r#"{"categoryUuid":"003","overview":null,"details":null}"#;
+        let fields_null = r#"{"categoryUuid":"001","overview":{"title":"F"},
+            "details":{"loginFields":null,"sections":null}}"#;
+        let imp = export(&[("V", &format!("{item},{nulls},{fields_null}"))]);
+        assert_eq!(imp.items.len(), 3);
+        assert_eq!(text(&imp.items[0].item, "username"), "u");
+        for li in &imp.items {
+            validate(&li.item).unwrap();
+        }
+        let data = r#"{"accounts":[{"vaults":null},{"vaults":[{"attrs":null,"items":null}]}]}"#;
+        let imp = parse_1pux(&zip_of(&[("export.data", data.as_bytes())])).unwrap();
+        assert!(imp.items.is_empty());
     }
 }
