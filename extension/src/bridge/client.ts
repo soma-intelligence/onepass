@@ -195,6 +195,8 @@ export class BridgeClient {
   private sendChain: Promise<void> = Promise.resolve();
   private recvChain: Promise<void> = Promise.resolve();
   private failure: Error | undefined;
+  private handshaking = false;
+  private readonly failListeners = new Set<(e: Error) => void>();
 
   constructor(
     private readonly transport: Transport,
@@ -345,6 +347,8 @@ export class BridgeClient {
   private fail(e: Error): void {
     if (this.failure) return;
     this.failure = e;
+    for (const l of this.failListeners) l(e);
+    this.failListeners.clear();
     this.channel?.close();
     if (this.waiter) {
       clearTimeout(this.waiter.timer);
@@ -377,18 +381,31 @@ export class BridgeClient {
     browser: string,
     confirmCodes: (sas: string) => Promise<boolean>,
   ): Promise<PairingRecord> {
-    if (this.channel) throw new BridgeError("bad_frame", "session already open");
-    const { state, hello } = await ExtPairing.start(extName, browser, this.pairingOpts);
+    this.beginHandshake();
+    let state: ExtPairing | undefined;
+    // The whole pairing, user step included, is bounded by 120 s (spec 6.4
+    // item 7): past it the state is wiped and the transport closed.
+    const deadline = setTimeout(
+      () => this.fail(new BridgeError("expired", "pairing deadline")),
+      PAIRING_TIMEOUT_MS,
+    );
+    const failed = this.untilFailure();
     try {
-      this.send(hello);
+      const started = await Promise.race([
+        ExtPairing.start(extName, browser, this.pairingOpts),
+        failed.promise,
+      ]);
+      state = started.state;
+      const st = state;
+      this.send(started.hello);
       const offer = await this.next("pair_offer", this.stepTimeoutMs);
-      const { reveal, sas } = await state.onOffer(offer);
+      const { reveal, sas } = await st.onOffer(offer);
       this.send(reveal);
       const hostVerified = (async () => {
         await this.next("pair_sas", this.stepTimeoutMs);
         // The host waits for its user before `pair_done`.
         const done = await this.next("pair_done", PAIRING_TIMEOUT_MS);
-        await state.onDone(done);
+        await st.onDone(done);
       })();
       const userAgreed = Promise.resolve()
         .then(() => confirmCodes(sas))
@@ -397,39 +414,72 @@ export class BridgeClient {
         });
       quiet(hostVerified);
       quiet(userAgreed);
-      await Promise.all([hostVerified, userAgreed]);
-      const { confirm, record } = await state.confirm();
+      // A user step that never settles still ends at the deadline or when
+      // the connection fails.
+      await Promise.race([Promise.all([hostVerified, userAgreed]), failed.promise]);
+      const { confirm, record } = await Promise.race([st.confirm(), failed.promise]);
       this.send(confirm);
       await this.next("pair_ok", this.stepTimeoutMs);
       return record;
     } catch (e) {
-      state.abort();
+      state?.abort();
       const err = e instanceof Error ? e : new BridgeError("bad_frame");
       this.fail(err);
-      throw err;
+      throw this.failure ?? err;
+    } finally {
+      clearTimeout(deadline);
+      failed.dispose();
+      this.handshaking = false;
     }
   }
 
   /** Open a session for a stored pairing (spec 6.5). */
   async open(record: PairingRecord): Promise<void> {
-    if (this.channel) throw new BridgeError("bad_frame", "session already open");
-    const { pending, hello } = extHello(record);
+    this.beginHandshake();
     try {
-      this.send(hello);
-      const welcome = await this.next("welcome", this.stepTimeoutMs);
-      const { channel, finish } = await pending.onWelcome(welcome);
-      this.send(finish);
-      if (this.failure) {
-        channel.close();
-        throw this.failure;
+      const { pending, hello } = extHello(record);
+      try {
+        this.send(hello);
+        const welcome = await this.next("welcome", this.stepTimeoutMs);
+        const { channel, finish } = await pending.onWelcome(welcome);
+        this.send(finish);
+        if (this.failure) {
+          channel.close();
+          throw this.failure;
+        }
+        this.channel = channel;
+      } catch (e) {
+        pending.abort();
+        const err = e instanceof Error ? e : new BridgeError("bad_frame");
+        this.fail(err);
+        throw err;
       }
-      this.channel = channel;
-    } catch (e) {
-      pending.abort();
-      const err = e instanceof Error ? e : new BridgeError("bad_frame");
-      this.fail(err);
-      throw err;
+    } finally {
+      this.handshaking = false;
     }
+  }
+
+  /**
+   * One handshake at a time per client: a second concurrent `pair` or
+   * `open` is refused with `busy` and leaves the first one untouched.
+   */
+  private beginHandshake(): void {
+    if (this.failure) throw this.failure;
+    if (this.handshaking) throw new BridgeError("busy", "handshake in progress");
+    if (this.channel) throw new BridgeError("bad_frame", "session already open");
+    this.handshaking = true;
+  }
+
+  /** A promise rejected by the next `fail`, and its disposer. */
+  private untilFailure(): { promise: Promise<never>; dispose: () => void } {
+    let listener: ((e: Error) => void) | undefined;
+    const promise = new Promise<never>((_, reject) => {
+      listener = reject;
+    });
+    quiet(promise);
+    const l = listener as (e: Error) => void;
+    this.failListeners.add(l);
+    return { promise, dispose: () => this.failListeners.delete(l) };
   }
 
   // ---- requests ----

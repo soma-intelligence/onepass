@@ -30,11 +30,19 @@ describe.skipIf(!hasCargo)("interop with onepass-native-host", () => {
   const transports: NodeTransport[] = [];
 
   beforeAll(() => {
-    execFileSync("cargo", ["build", "-p", "onepass-native-host"], {
-      cwd: CORE,
-      env: { ...process.env, PATH },
-      stdio: "inherit",
-    });
+    try {
+      execFileSync("cargo", ["build", "-p", "onepass-native-host"], {
+        cwd: CORE,
+        env: { ...process.env, PATH },
+        stdio: "pipe",
+        maxBuffer: 64 * 1024 * 1024,
+      });
+    } catch (e) {
+      // The build output only matters when it fails.
+      const out = e as { stdout?: Buffer; stderr?: Buffer };
+      console.error(`${out.stdout?.toString() ?? ""}${out.stderr?.toString() ?? ""}`);
+      throw e;
+    }
     dir = mkdtempSync(join(tmpdir(), "onepass-interop-"));
     config = join(dir, "native-host.json");
     writeFileSync(

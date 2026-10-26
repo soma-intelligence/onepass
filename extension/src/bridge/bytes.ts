@@ -13,6 +13,8 @@ export type BridgeErrorCode =
   | "timeout"
   | "transport"
   | "refused"
+  // A handshake is already running on this client.
+  | "busy"
   // Error frame of the host (`{"t":"error","code"}`): the code is in `hostCode`.
   | "host";
 

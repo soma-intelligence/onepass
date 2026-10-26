@@ -1,13 +1,13 @@
 // @vitest-environment node
 // BridgeClient against an in-memory host that runs the host side of the
 // session handshake (spec 6.5) with the client's own primitives.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { BridgeError, concat, fromB64, randomBytes, toB64 } from "../../src/bridge/bytes";
 import { BridgeAppError, BridgeClient, type Transport } from "../../src/bridge/client";
 import { Channel } from "../../src/bridge/channel";
 import { expand, hmac } from "../../src/bridge/kdf";
-import { encapsulate } from "../../src/bridge/kem";
-import type { PairingRecord } from "../../src/bridge/pairing";
+import { decapsulate, encapsulate, generateKem } from "../../src/bridge/kem";
+import { ExtPairing, PAIRING_TIMEOUT_MS, type PairingRecord } from "../../src/bridge/pairing";
 import { TRANSCRIPT_LABEL, Transcript } from "../../src/bridge/transcript";
 import { type Envelope, type MsgEnvelope, parseEnvelope } from "../../src/bridge/wire";
 
@@ -48,9 +48,46 @@ class FakeHost implements Transport {
     this.onCl?.(new Error("gone"));
   }
 
+  private pairingHost:
+    | { hello: Record<string, string>; kem: ReturnType<typeof generateKem>; nH: Uint8Array; id: Uint8Array }
+    | undefined;
+  pairedKey: Uint8Array | undefined;
+
   private async handle(raw: unknown): Promise<void> {
     const env = parseEnvelope(raw);
-    if (env.t === "hello") {
+    if (env.t === "pair_hello") {
+      const kem = generateKem();
+      const nH = randomBytes(32);
+      const id = randomBytes(16);
+      this.pairingHost = { hello: env as unknown as Record<string, string>, kem, nH, id };
+      this.deliver({ v: 1, t: "pair_offer", pairing_id: toB64(id), pk: toB64(kem.public), n: toB64(nH) });
+    } else if (env.t === "pair_reveal") {
+      const h = this.pairingHost!;
+      const ct = fromB64(env.ct);
+      const ss = await decapsulate(h.kem.secret, ct);
+      const tr = new Transcript(TRANSCRIPT_LABEL);
+      const enc = new TextEncoder();
+      for (const f of [
+        enc.encode(h.hello.ext_name),
+        enc.encode(h.hello.browser),
+        fromB64(h.hello.commit!),
+        h.id,
+        h.kem.public,
+        h.nH,
+        fromB64(env.pk),
+        fromB64(env.n),
+        ct,
+      ]) {
+        tr.push(f);
+      }
+      const t = await tr.hash();
+      const confirm = await expand(t, ss, "onepass/bridge/pair-confirm/v1");
+      this.pairedKey = await expand(t, ss, "onepass/bridge/pairing-key/v1");
+      this.deliver({ v: 1, t: "pair_sas" });
+      this.deliver({ v: 1, t: "pair_done", mac: toB64(await hmac(confirm, "host", t)) });
+    } else if (env.t === "pair_confirm") {
+      this.deliver({ v: 1, t: "pair_ok" });
+    } else if (env.t === "hello") {
       if (this.opts.errorOnHello) {
         this.deliver({ v: 1, t: "error", code: this.opts.errorOnHello });
         return;
@@ -228,5 +265,79 @@ describe("BridgeClient", () => {
   it("requests before a session are refused", async () => {
     const client = new BridgeClient(new FakeHost(record(), () => undefined));
     expect(((await rejection(client.request({ op: "status" }))) as BridgeError).code).toBe("closed");
+  });
+});
+
+describe("BridgeClient pairing", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("pairs with a host that follows spec 6.4", async () => {
+    const host = new FakeHost(record(), () => undefined);
+    const client = new BridgeClient(host);
+    let shown = "";
+    const rec = await client.pair("OnePass", "Chromium", async (sas) => {
+      shown = sas;
+      return true;
+    });
+    expect(shown).toMatch(/^\d{3} \d{3}$/);
+    expect(rec.key).toEqual(host.pairedKey);
+  });
+
+  /** Start a pairing whose user step never settles; resolves once the host MAC verified. */
+  async function stuckAtUserStep(host: FakeHost) {
+    const onDone = vi.spyOn(ExtPairing.prototype, "onDone");
+    const abort = vi.spyOn(ExtPairing.prototype, "abort");
+    const client = new BridgeClient(host);
+    const p = client.pair("OnePass", "Chromium", () => new Promise<boolean>(() => undefined));
+    const outcome = p.then(
+      () => "resolved",
+      (e: unknown) => e,
+    );
+    while (onDone.mock.results.length === 0) await new Promise((r) => setImmediate(r));
+    await onDone.mock.results[0]!.value;
+    const state = onDone.mock.contexts[0] as ExtPairing;
+    expect(state.vectorKeys()).toBeDefined();
+    return { outcome, abort, state };
+  }
+
+  it("a user step that never settles expires at 120 s and wipes the state", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const host = new FakeHost(record(), () => undefined);
+    const { outcome, abort, state } = await stuckAtUserStep(host);
+    await vi.advanceTimersByTimeAsync(PAIRING_TIMEOUT_MS - 1);
+    expect(abort).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    const e = (await outcome) as BridgeError;
+    expect(e).toBeInstanceOf(BridgeError);
+    expect(e.code).toBe("expired");
+    expect(abort).toHaveBeenCalled();
+    expect(state.vectorKeys()).toBeUndefined();
+    expect(host.closed).toBe(true);
+  });
+
+  it("a transport closing during the user step rejects the pairing", async () => {
+    const host = new FakeHost(record(), () => undefined);
+    const { outcome, abort, state } = await stuckAtUserStep(host);
+    host.dropConnection();
+    const e = (await outcome) as BridgeError;
+    expect(e.code).toBe("transport");
+    expect(abort).toHaveBeenCalled();
+    expect(state.vectorKeys()).toBeUndefined();
+  });
+
+  it("a second concurrent handshake is refused with busy", async () => {
+    const host = new FakeHost(record(), () => ({ id: 1, ok: { locked: false } }));
+    const client = new BridgeClient(host);
+    const first = client.open(host.record);
+    const second = (await rejection(client.open(host.record))) as BridgeError;
+    expect(second.code).toBe("busy");
+    const third = (await rejection(client.pair("OnePass", "Chromium", async () => true))) as BridgeError;
+    expect(third.code).toBe("busy");
+    await first;
+    expect(client.isOpen).toBe(true);
+    expect(await client.request({ op: "unlock" })).toEqual({ locked: false });
   });
 });
