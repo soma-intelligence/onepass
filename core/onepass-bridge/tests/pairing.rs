@@ -297,5 +297,6 @@ fn mitm_two_sessions_get_independent_sas() {
 fn record_debug_hides_key() {
     let (rec, _) = run();
     let s = format!("{rec:?}");
-    assert!(!s.contains(&format!("{:?}", &rec.key[..4])));
+    assert!(!s.contains(&format!("{:?}", *rec.key)), "{s}");
+    assert!(s.contains("key: \"**\""), "{s}");
 }
