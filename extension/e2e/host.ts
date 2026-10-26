@@ -49,7 +49,7 @@ export interface StagedHost {
 }
 
 /**
- * Copies the host binary and the fixture vault into `dir` (a temporary
+ * Copies the host binary and the fixture vault (default: the e2e one) into `dir` (a temporary
  * directory). The browser must never exec the binary from the checkout:
  * when the repository lives in a privacy-protected folder (~/Desktop,
  * ~/Documents, ~/Downloads on macOS), the native host process inherits the
@@ -57,14 +57,14 @@ export interface StagedHost {
  * blocks on a folder-access consent that headless Chromium never answers.
  * The host then never starts and pairing hangs with no host log at all.
  */
-export function stageHost(dir: string): StagedHost {
+export function stageHost(dir: string, fixture: string = FIXTURE): StagedHost {
   mkdirSync(dir, { recursive: true });
   const bin = join(dir, "onepass-native-host");
   copyFileSync(HOST_BIN, bin);
   chmodSync(bin, 0o755);
-  const fixture = join(dir, "e2e.json");
-  copyFileSync(FIXTURE, fixture);
-  return { bin, fixture };
+  const staged = join(dir, "e2e.json");
+  copyFileSync(fixture, staged);
+  return { bin, fixture: staged };
 }
 
 export function hostConfig(dataDir: string, extensionId: string, fixture: string): HostConfig {
