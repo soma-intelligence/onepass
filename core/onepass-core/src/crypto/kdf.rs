@@ -1,6 +1,6 @@
 //! Two-secret key derivation (2SKD): password plus Secret Key give the AUK.
 
-use argon2::{Algorithm, Argon2, Params, Version};
+use argon2::{Algorithm, Argon2, Block, Params, Version};
 use aws_lc_rs::hkdf::{HKDF_SHA256, KeyType, Salt};
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
@@ -82,12 +82,25 @@ pub fn derive_auk(
     let pw = nfc_password(password);
     let argon_params =
         Params::new(params.m_kib, params.t, params.p, Some(32)).map_err(|_| Error::Crypto)?;
+    // Caller-owned working memory, so it is wiped on drop (the crate's own
+    // allocation is freed unwiped). try_reserve_exact turns an allocation
+    // failure into an error instead of an abort, and never reallocates.
+    let mut memory: Zeroizing<Vec<Block>> = Zeroizing::new(Vec::new());
+    memory
+        .try_reserve_exact(argon_params.block_count())
+        .map_err(|_| Error::Crypto)?;
+    memory.resize(argon_params.block_count(), Block::new());
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params);
 
     let mut ikm: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(64));
     ikm.resize(32, 0);
     argon
-        .hash_password_into(pw.as_bytes(), &params.salt, &mut ikm[..32])
+        .hash_password_into_with_memory(
+            pw.as_bytes(),
+            &params.salt,
+            &mut ikm[..32],
+            memory.as_mut_slice(),
+        )
         .map_err(|_| Error::Crypto)?;
     ikm.extend_from_slice(&secret_key.0);
 
