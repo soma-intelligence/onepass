@@ -16,3 +16,5 @@ sanity.pv | not event(Received(m_4)) | false
 # Sanité : l'échange KEM du pont va au bout.
 sanity.pv | not event(BridgeDone) | false
 sanity.pv | Weak secret pw | true
+# Sanité : Secret Key publiée, le mot de passe tombe au dictionnaire hors ligne.
+sanity.pv | Weak secret pw_leaky | false

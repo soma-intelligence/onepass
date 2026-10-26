@@ -7,4 +7,4 @@ Modèles ProVerif 2.05 des constructions cryptographiques de OnePass. La documen
 - `expected.txt` : résultat attendu de chaque requête (`fichier.pv | requête telle qu'imprimée | true|false`).
 - `run.sh` : lance les modèles (300 s maximum par fichier), compare à `expected.txt`, écrit `docs/security/formal/results.md`.
 
-Lancer : `make formal` à la racine (ou `formal/run.sh fichier.pv` pour un seul modèle). `PROVERIF` choisit le binaire (par défaut `proverif` dans le `PATH`, puis `~/.local/bin/proverif`), `FORMAL_TIMEOUT` le délai en secondes. Les journaux de ProVerif sont dans `formal/out/` (ignoré par git).
+Lancer : `make formal` à la racine (ou `formal/run.sh fichier.pv` pour un seul modèle). `PROVERIF` choisit le binaire (par défaut `proverif` dans le `PATH`, puis `~/.local/bin/proverif`), `FORMAL_TIMEOUT` le délai en secondes entières. Les journaux de ProVerif et `formal/out/results.md` (avec les temps) sont dans `formal/out/` (ignoré par git) ; seul un lancement complet réécrit `docs/security/formal/results.md`, sans les temps.

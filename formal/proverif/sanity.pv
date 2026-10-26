@@ -12,6 +12,9 @@ free secret_msg: bitstring [private].
 free auk_msg: bitstring [private].
 free bridge_msg: bitstring [private].
 free pw: password [private].
+(* Same derivation with the secret key published: the password falls to
+   an offline dictionary attack, so weaksecret must fail. *)
+free pw_leaky: password [private].
 (* Secret, but sealed under a key the attacker can derive: must leak. *)
 free leaked_msg: bitstring [private].
 
@@ -29,6 +32,7 @@ query m: bitstring; event(Received(m)) ==> event(Sent(m)).
 query m: bitstring; event(Received(m)).
 query event(BridgeDone).
 weaksecret pw.
+weaksecret pw_leaky.
 
 let Sender(sig_sk: skey, rpkm: mlkem_pk, rpkx: x25519_pk, sk_account: key) =
   new rm: seed; new rx: seed; new k: key;
@@ -42,6 +46,12 @@ let Sender(sig_sk: skey, rpkm: mlkem_pk, rpkx: x25519_pk, sk_account: key) =
   out(c, (salt, aead_seal(auk, blob_aad(kind_keyset, empty, no_vault), auk_msg)));
   (* Key derived from public data only: the attacker opens it. *)
   out(c, aead_seal(hkdf(empty, n2b(salt), lbl_auk), empty, leaked_msg)).
+
+let LeakySender =
+  new sk_leaky: key; new salt: nonce;
+  out(c, (sk_leaky, salt));
+  let auk = derive_auk(pw_leaky, sk_leaky, n2b(salt)) in
+  out(c, aead_seal(auk, blob_aad(kind_keyset, empty, no_vault), empty)).
 
 let Receiver(vk: pkey, skm: seed, skx: seed) =
   in(c, (env: bitstring, ct: bitstring, s: bitstring));
@@ -69,4 +79,5 @@ process
   ( !Sender(sig_sk, kem_pk_m(skm), kem_pk_x(skx), sk_account)
   | !Receiver(pk(sig_sk), skm, skx)
   | !BridgeInit(kem_pk_m(bskm), kem_pk_x(bskx))
-  | !BridgeResp(bskm, bskx) )
+  | !BridgeResp(bskm, bskx)
+  | LeakySender )
