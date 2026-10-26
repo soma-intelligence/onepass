@@ -33,10 +33,25 @@ final class CompanionCoordinator {
         self.phone = phone
     }
 
+    /// The watch link of this device: iPhone only (macOS and visionOS have no paired watch).
+    /// The payload excludes hidden vaults and is sealed to the watch key.
+    static func makePhone(session: VaultSession) -> PhoneCompanion? {
+        #if os(iOS)
+        return PhoneCompanion(
+            transport: WatchConnectivityTransport(), defaults: .standard,
+            seal: { key, generation in
+                try await session.companionPayload(recipientPublicKey: key, generation: generation)
+            })
+        #else
+        return nil
+        #endif
+    }
+
     /// Called once by `AppModel.start()`.
     func start() {
         guard !started else { return }
         started = true
+        phone?.start()
         sessionChanged()
     }
 
@@ -50,6 +65,7 @@ final class CompanionCoordinator {
             try? await Task.sleep(for: Self.debounce)
             guard !Task.isCancelled else { return }
             await self?.publishGlance()
+            await self?.phone?.vaultChanged()
         }
     }
 

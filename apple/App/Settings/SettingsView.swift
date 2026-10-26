@@ -81,6 +81,7 @@ struct SettingsView: View {
                 }
                 Section {
                     row(.vaults)
+                    watchRow
                 }
                 Section {
                     row(.about)
@@ -101,6 +102,27 @@ struct SettingsView: View {
             }
         }
         .simultaneousGesture(TapGesture().onEnded { model.session.noteActivity() })
+    }
+
+    /// "Apple Watch": iOS only, so not a `SettingsPage` (the Mac window iterates over those).
+    /// An iPad has no pairing and the page says so.
+    private var watchRow: some View {
+        NavigationLink {
+            WatchSettings()
+        } label: {
+            Label {
+                Text("Apple Watch")
+            } icon: {
+                Image(systemName: "applewatch")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Color(red: 0.20, green: 0.52, blue: 0.80),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+        }
+        .accessibilityIdentifier("settings.watch")
     }
 
     private func row(_ page: SettingsPage) -> some View {

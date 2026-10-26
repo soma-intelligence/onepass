@@ -135,7 +135,8 @@ final class AppModel {
         session = VaultSession(environment: environment)
         // Demo data never reaches the widgets.
         companion = CompanionCoordinator(
-            session: session, glanceStore: demo == nil ? GlanceStore.shared() : nil, phone: nil)
+            session: session, glanceStore: demo == nil ? GlanceStore.shared() : nil,
+            phone: demo == nil ? CompanionCoordinator.makePhone(session: session) : nil)
 
         let settings = environment.settings
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]

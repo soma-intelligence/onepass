@@ -418,7 +418,22 @@
     "Étape %lld sur %lld": {},
     "Étiquette": {},
     "Étoile": {},
-    "Études": {}
+    "Études": {},
+    "Sur l'Apple Watch": {},
+    "Envoyer à l'Apple Watch": {},
+    "Dernier envoi": {},
+    "Prête": {},
+    "Aucune Apple Watch appairée": {},
+    "Installe OnePass sur ton Apple Watch": {},
+    "Non disponible sur cet appareil": {},
+    "Retirer de l'Apple Watch": {},
+    "Retirer les données de l'Apple Watch ?": {},
+    "La montre oublie tous les éléments reçus.": {},
+    "Seuls les éléments marqués « Sur l'Apple Watch » sont envoyés, 50 au maximum. La montre reçoit leur titre, leur identifiant et leur secret TOTP, jamais les mots de passe ni les notes. Les coffres masqués sont exclus.": {},
+    "La montre ne sait pas si elle est au poignet : ses codes restent visibles tant qu'elle est déverrouillée. Verrouille-la ou retire-la pour les protéger.": {},
+    "Efface tout ce que la montre a reçu. Elle peut recevoir de nouveau les éléments marqués ensuite.": {},
+    "Le dernier envoi a échoué. Il sera retenté au prochain changement.": {},
+    "L'effacement n'a pas pu être envoyé : la montre garde peut-être ses données.": {}
   },
   "version": "1.0"
 }

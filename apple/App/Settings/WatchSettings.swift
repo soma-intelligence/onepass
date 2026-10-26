@@ -1,0 +1,100 @@
+#if os(iOS)
+import CompanionLink
+import SwiftUI
+
+/// Apple Watch: what the iPhone sends to the watch and how to take it back. iOS only (the Mac
+/// settings window has no such page).
+struct WatchSettings: View {
+    @Environment(AppModel.self) private var model
+    @State private var confirmWipe = false
+
+    var body: some View {
+        Form {
+            if let phone = model.companion.phone {
+                content(phone)
+            } else {
+                Section {
+                    Label("Non disponible sur cet appareil", systemImage: "applewatch.slash")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Apple Watch")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder private func content(_ phone: PhoneCompanion) -> some View {
+        @Bindable var phone = phone
+        Section {
+            Toggle("Envoyer à l'Apple Watch", isOn: $phone.isEnabled)
+                .accessibilityIdentifier("settings.watch.enabled")
+            statusRow(phone.status)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("settings.watch.status")
+            if let last = phone.lastSent {
+                LabeledContent("Dernier envoi") {
+                    Text(last, style: .relative)
+                }
+                .accessibilityIdentifier("settings.watch.lastSent")
+            }
+            if let issue = phone.lastError {
+                Label(message(issue), systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("settings.watch.error")
+            }
+        } footer: {
+            Text(
+                "Seuls les éléments marqués « Sur l'Apple Watch » sont envoyés, 50 au maximum. La montre reçoit leur titre, leur identifiant et leur secret TOTP, jamais les mots de passe ni les notes. Les coffres masqués sont exclus."
+            )
+        }
+        Section {
+            Text(
+                "La montre ne sait pas si elle est au poignet : ses codes restent visibles tant qu'elle est déverrouillée. Verrouille-la ou retire-la pour les protéger."
+            )
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+        Section {
+            Button("Retirer de l'Apple Watch", role: .destructive) {
+                confirmWipe = true
+            }
+            .accessibilityIdentifier("settings.watch.wipe")
+        } footer: {
+            Text("Efface tout ce que la montre a reçu. Elle peut recevoir de nouveau les éléments marqués ensuite.")
+        }
+        .confirmationDialog(
+            "Retirer les données de l'Apple Watch ?", isPresented: $confirmWipe,
+            titleVisibility: .visible
+        ) {
+            Button("Retirer de l'Apple Watch", role: .destructive) { phone.wipeWatch() }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text("La montre oublie tous les éléments reçus.")
+        }
+    }
+
+    @ViewBuilder private func statusRow(_ status: CompanionStatus) -> some View {
+        switch status {
+        case .ready:
+            Label("Prête", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        case .notPaired:
+            Label("Aucune Apple Watch appairée", systemImage: "applewatch.slash")
+                .foregroundStyle(.secondary)
+        case .appNotInstalled:
+            Label("Installe OnePass sur ton Apple Watch", systemImage: "arrow.down.app")
+                .foregroundStyle(.orange)
+        case .unsupported:
+            Label("Non disponible sur cet appareil", systemImage: "applewatch.slash")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func message(_ issue: CompanionIssue) -> String {
+        switch issue {
+        case .sendFailed: "Le dernier envoi a échoué. Il sera retenté au prochain changement."
+        case .wipeFailed: "L'effacement n'a pas pu être envoyé : la montre garde peut-être ses données."
+        }
+    }
+}
+#endif

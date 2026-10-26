@@ -33,6 +33,8 @@ struct ItemEditorView: View {
                     VaultPicker(vaultID: $editor.targetVaultID)
                     Toggle("Favori", isOn: $editor.draft.item.favorite)
                         .accessibilityIdentifier("editor.favorite")
+                    Toggle("Sur l'Apple Watch", isOn: $editor.draft.item.onWatch)
+                        .accessibilityIdentifier("editor.onWatch")
                 }
                 Section("Sites web") {
                     UrlListEditor(editor: editor)
