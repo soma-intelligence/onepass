@@ -240,7 +240,9 @@ fn login() -> Vec<Section> {
             cn("pin", "PIN"),
             ph("recovery_phone", "Téléphone pour la 2FA"),
             cn("backup_codes", "Codes de secours 2FA").rep(),
-            tx("security_questions", "Questions de sécurité").rep(),
+            tx("security_question", "Question de sécurité").rep(),
+            // Paired with `security_question` by order; masked as Concealed.
+            cn("security_answer", "Réponse").rep(),
         ],
     )]
 }
@@ -1136,6 +1138,23 @@ mod tests {
             }
             validate(&item).unwrap_or_else(|e| panic!("{t:?}: {e}"));
         }
+    }
+
+    #[test]
+    fn login_security_answer_is_concealed_and_repeatable() {
+        let t = template(ItemType::Login);
+        let f = |id: &str| {
+            t.iter()
+                .flat_map(|s| &s.fields)
+                .find(|f| f.id == id)
+                .unwrap()
+        };
+        assert!(f("security_question").repeatable);
+        assert_eq!(
+            f("security_answer").kind,
+            crate::model::field::FieldType::Concealed
+        );
+        assert!(f("security_answer").repeatable);
     }
 
     #[test]
