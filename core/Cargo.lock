@@ -1367,7 +1367,10 @@ name = "onepass-bridge"
 version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
+ "data-encoding",
  "libcrux-ml-kem",
+ "serde",
+ "serde_json",
  "zeroize",
 ]
 

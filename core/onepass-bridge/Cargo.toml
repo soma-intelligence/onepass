@@ -8,6 +8,9 @@ rust-version.workspace = true
 
 [dependencies]
 aws-lc-rs.workspace = true
+data-encoding.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 zeroize.workspace = true
 # Seeded ML-KEM for the test-vector helpers only. The production path uses
 # aws-lc-rs alone; this crate is compiled in only with feature `vectors`.
