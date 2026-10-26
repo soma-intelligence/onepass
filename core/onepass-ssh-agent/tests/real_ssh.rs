@@ -427,6 +427,14 @@ fn ssh_connects_to_local_sshd() {
     let source = FakeSource::with(&[KeyType::Ed25519]);
     source.edit(KeyType::Ed25519, |k| k.hosts = vec!["127.0.0.1".into()]);
     let agent = Running::start(source, vec![known_hosts.clone()], dir);
+    // The agent is proven reachable and listing the key before the ssh
+    // attempt: only then may an sshd refusal be blamed on the environment.
+    let listed = have("ssh-add", &["-h"]) && {
+        let l = agent.command("ssh-add").arg("-l").output().unwrap();
+        l.status.success()
+            && String::from_utf8_lossy(&l.stdout)
+                .contains(&fingerprint_of_blob(&user_key.public_blob()))
+    };
     let out = agent
         .command("ssh")
         .arg("-F")
@@ -451,13 +459,14 @@ fn ssh_connects_to_local_sshd() {
     if !out.status.success() {
         let log = fs::read_to_string(agent.home().join("sshd.log")).unwrap_or_default();
         eprintln!("sshd log:\n{log}");
-        // A signature or agent error always fails the test.
-        let agent_failed = agent
-            .audit
-            .entries()
-            .iter()
-            .any(|e| e.action == "ssh_sign" && e.outcome != "ok");
-        if !agent_failed && let Some(reason) = environmental_refusal(&log) {
+        // Skipped only when the agent listed the key, was never asked to
+        // sign (so no signature or agent error is possible), and sshd logs
+        // an environmental refusal. Anything else fails below.
+        let asked_to_sign = agent.audit.entries().iter().any(|e| e.action == "ssh_sign");
+        if listed
+            && !asked_to_sign
+            && let Some(reason) = environmental_refusal(&log)
+        {
             eprintln!("skipping: the test sshd refused the session ({reason})");
             return;
         }
@@ -490,14 +499,16 @@ fn ssh_connects_to_local_sshd() {
 /// the agent (CI accounts that are locked, privilege separation or PAM set
 /// up differently, file ownership checks). `None` when the log shows none.
 fn environmental_refusal(sshd_log: &str) -> Option<&'static str> {
+    // Lower case: the log is lowered before matching.
     const PATTERNS: [(&str, &str); 9] = [
         ("account is locked", "account locked"),
         ("account has expired", "account expired"),
+        // sshd: "User <name> not allowed because ...".
         ("not allowed because", "user not allowed"),
-        ("user not allowed", "user not allowed"),
         ("privilege separation", "privilege separation"),
         ("privsep", "privilege separation"),
-        ("pam", "PAM"),
+        ("pam: ", "PAM"),
+        ("pam_", "PAM"),
         ("bad ownership or modes", "permissions or ownership"),
         ("bad permissions", "permissions or ownership"),
     ];
@@ -528,6 +539,15 @@ fn environmental_refusals_are_recognized() {
     );
     assert_eq!(
         environmental_refusal("Failed publickey for runner from 127.0.0.1: signature mismatch"),
+        None
+    );
+    assert_eq!(
+        environmental_refusal("sshd[1]: pam_unix(sshd:account): account expired"),
+        Some("PAM")
+    );
+    // A bare "pam" inside another word is not a PAM refusal.
+    assert_eq!(
+        environmental_refusal("Received disconnect: spam filter"),
         None
     );
     assert_eq!(environmental_refusal(""), None);

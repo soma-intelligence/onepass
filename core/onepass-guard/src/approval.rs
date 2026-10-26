@@ -168,47 +168,53 @@ fn flush_input(f: &File) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Reads one line from `f`, waiting at most `timeout` in total. `None` on
-/// timeout, end of input before a newline, an error or an over-long line.
+/// Pause between two non-blocking reads while no answer is available.
+const READ_POLL: Duration = Duration::from_millis(20);
+
+/// Reads one line (ended by `\n` or `\r`, so raw-mode terminals work too)
+/// from `f`, waiting at most `timeout` in total. `None` on timeout, end of
+/// input before the end of line, any error or an over-long line.
+///
+/// `f` is switched to non-blocking mode and polled by reading: `poll(2)` is
+/// not usable here, since on macOS it answers `POLLNVAL` at once for
+/// `/dev/tty`. The mode is not restored: `f` is always our own open of
+/// `/dev/tty` (its own open file description, never the client's
+/// descriptors) and is closed right after the prompt.
 fn read_line_with_timeout(f: &File, timeout: Duration) -> Option<String> {
+    let fd = f.as_raw_fd();
+    // SAFETY: fcntl only reads and sets the status flags of `fd`, which `f`
+    // keeps open for the duration of the calls.
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return None;
+    }
     let deadline = Instant::now() + timeout;
     let mut line: Vec<u8> = Vec::new();
     let mut reader = f;
     loop {
-        let left = deadline.checked_duration_since(Instant::now())?;
-        let mut pfd = libc::pollfd {
-            fd: f.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        let ms = left.as_millis().clamp(1, i32::MAX as u128) as libc::c_int;
-        // SAFETY: `pfd` is a valid pollfd for the duration of the call.
-        let r = unsafe { libc::poll(&mut pfd, 1, ms) };
-        if r < 0 {
-            if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
-                continue;
-            }
-            return None;
-        }
-        if r == 0 {
-            if Instant::now() >= deadline {
-                return None;
-            }
-            continue;
-        }
         let mut buf = [0u8; 64];
-        let n = match reader.read(&mut buf) {
-            Ok(0) | Err(_) => return None,
-            Ok(n) => n,
-        };
-        for &b in &buf[..n] {
-            if b == b'\n' {
-                return String::from_utf8(line).ok();
+        match reader.read(&mut buf) {
+            Ok(0) => return None,
+            Ok(n) => {
+                for &b in &buf[..n] {
+                    if b == b'\n' || b == b'\r' {
+                        return String::from_utf8(line).ok();
+                    }
+                    line.push(b);
+                    if line.len() > MAX_ANSWER {
+                        return None;
+                    }
+                }
             }
-            line.push(b);
-            if line.len() > MAX_ANSWER {
-                return None;
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                let left = deadline.checked_duration_since(Instant::now())?;
+                std::thread::sleep(left.min(READ_POLL));
+                if Instant::now() >= deadline {
+                    return None;
+                }
             }
+            Err(_) => return None,
         }
     }
 }
@@ -252,21 +258,27 @@ impl Approver for TtyApprover {
         let Ok(mut tty) = OpenOptions::new().read(true).write(true).open("/dev/tty") else {
             return Decision::Deny;
         };
-        if flush_input(&tty).is_err() {
-            return Decision::Deny;
-        }
-        let text = render_prompt(req, &code);
-        if tty.write_all(text.as_bytes()).is_err() || tty.flush().is_err() {
-            return Decision::Deny;
-        }
-        match read_line_with_timeout(&tty, self.timeout) {
-            Some(line) => parse_answer(&line, &code, req.remember_allowed),
-            None => {
-                let _ = tty.write_all(b"\nno valid answer, denied\n");
-                Decision::Deny
-            }
-        }
+        prompt_on(&mut tty, req, &code, self.timeout)
         // The terminal is closed when `tty` is dropped.
+    }
+}
+
+/// One approval prompt on the terminal `tty`: flush pending input, write the
+/// prompt for `code`, read one answer within `timeout`. Any error denies.
+fn prompt_on(tty: &mut File, req: &ApprovalRequest, code: &str, timeout: Duration) -> Decision {
+    if flush_input(tty).is_err() {
+        return Decision::Deny;
+    }
+    let text = render_prompt(req, code);
+    if tty.write_all(text.as_bytes()).is_err() || tty.flush().is_err() {
+        return Decision::Deny;
+    }
+    match read_line_with_timeout(tty, timeout) {
+        Some(line) => parse_answer(&line, code, req.remember_allowed),
+        None => {
+            let _ = tty.write_all(b"\nno valid answer, denied\n");
+            Decision::Deny
+        }
     }
 }
 
@@ -347,6 +359,7 @@ pub mod testing {
 mod tests {
     use super::testing::ScriptedApprover;
     use super::*;
+    use std::os::fd::FromRawFd;
 
     fn req(remember_allowed: bool) -> ApprovalRequest {
         ApprovalRequest {
@@ -454,6 +467,158 @@ mod tests {
         let file = File::from(std::os::fd::OwnedFd::from(r));
         assert_eq!(read_line_with_timeout(&file, Duration::from_secs(5)), None);
     }
+
+    /// A pseudo-terminal: (master, slave).
+    fn pty() -> (File, File) {
+        let mut master: libc::c_int = -1;
+        let mut slave: libc::c_int = -1;
+        // SAFETY: both out pointers are valid; name, termios and winsize may
+        // be null.
+        let r = unsafe {
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(r, 0, "openpty failed");
+        // SAFETY: openpty returned two fresh descriptors that we now own.
+        unsafe {
+            (
+                File::from(std::os::fd::OwnedFd::from_raw_fd(master)),
+                File::from(std::os::fd::OwnedFd::from_raw_fd(slave)),
+            )
+        }
+    }
+
+    /// Env var that turns [`tty_child_helper`] into the child side.
+    const CHILD_ENV: &str = "ONEPASS_GUARD_TTY_CHILD_TIMEOUT_MS";
+
+    /// Child side of the pty tests (a no-op in a normal run): opens
+    /// `/dev/tty`, whose controlling terminal the parent set to a pty, runs
+    /// one prompt for code `kq` and prints the decision.
+    #[test]
+    fn tty_child_helper() {
+        let Ok(ms) = std::env::var(CHILD_ENV) else {
+            return;
+        };
+        let timeout = Duration::from_millis(ms.parse().unwrap());
+        let mut tty = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .unwrap();
+        let d = prompt_on(&mut tty, &req(true), "kq", timeout);
+        // On its own line: libtest may have printed `test ... ` already.
+        println!("\ndecision={d:?}");
+    }
+
+    /// Runs [`tty_child_helper`] in a child process whose controlling
+    /// terminal is the slave of a fresh pty. `answer` is written to the
+    /// master after 300 ms, if any. Returns the decision printed by the
+    /// child, or `None` if it did not exit within `limit`, and the time it
+    /// took.
+    fn prompt_in_child(
+        timeout: Duration,
+        answer: Option<&'static [u8]>,
+        limit: Duration,
+    ) -> (Option<String>, Duration) {
+        use std::os::unix::process::CommandExt;
+        let (master, slave) = pty();
+        drain(&master);
+        let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+        cmd.args([
+            "approval::tests::tty_child_helper",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(CHILD_ENV, timeout.as_millis().to_string())
+        .stdin(std::process::Stdio::from(slave))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+        // SAFETY: only async-signal-safe calls between fork and exec.
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let start = Instant::now();
+        let mut child = cmd.spawn().unwrap();
+        if let Some(a) = answer {
+            let mut w = master.try_clone().unwrap();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(300));
+                let _ = w.write_all(a);
+            });
+        }
+        let status = loop {
+            if let Some(st) = child.try_wait().unwrap() {
+                break Some(st);
+            }
+            if start.elapsed() > limit {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        let elapsed = start.elapsed();
+        let Some(status) = status else {
+            return (None, elapsed);
+        };
+        assert!(status.success(), "child failed: {status:?}");
+        let mut out = String::new();
+        child
+            .stdout
+            .take()
+            .unwrap()
+            .read_to_string(&mut out)
+            .unwrap();
+        let decision = out
+            .lines()
+            .find_map(|l| l.split_once("decision=").map(|(_, d)| d))
+            .map(|d| d.split_whitespace().next().unwrap_or("").to_owned());
+        (decision, elapsed)
+    }
+
+    /// Reads the master side in the background so prompt writes never fill
+    /// the pty buffer.
+    fn drain(master: &File) {
+        let mut m = master.try_clone().unwrap();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 1024];
+            while matches!(m.read(&mut buf), Ok(n) if n > 0) {}
+        });
+    }
+
+    #[test]
+    fn tty_prompt_times_out_on_a_real_terminal() {
+        let timeout = Duration::from_millis(1000);
+        // Process start-up is part of the limit: allow it on top.
+        let (d, elapsed) =
+            prompt_in_child(timeout, None, timeout + Duration::from_secs(1) + STARTUP);
+        assert_eq!(d.as_deref(), Some("Deny"), "no decision after {elapsed:?}");
+        assert!(elapsed >= Duration::from_millis(900));
+    }
+
+    #[test]
+    fn tty_prompt_reads_the_code_ended_by_cr() {
+        let (d, _) = prompt_in_child(
+            Duration::from_secs(10),
+            Some(b"kq\r"),
+            Duration::from_secs(10) + STARTUP,
+        );
+        assert_eq!(d.as_deref(), Some("AllowOnce"));
+    }
+
+    /// Allowance for starting the child test process.
+    const STARTUP: Duration = Duration::from_secs(2);
 
     #[test]
     fn pending_input_is_flushed_before_reading() {
