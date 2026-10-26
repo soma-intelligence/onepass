@@ -22,6 +22,7 @@ serde_bytes = "0.11.17"
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 time = { version = "0.3", default-features = false, features = ["serde", "std"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
+prost = "0.14"
 
 [dev-dependencies]
 time = { version = "0.3", features = ["macros"] }
