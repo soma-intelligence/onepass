@@ -2,27 +2,6 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Local strength estimate for the master password meter (never sent anywhere):
-/// length times log2 of the alphabet of the classes present (lowercase 26, uppercase 26,
-/// digits 10, anything else 33), plus 20 bits for 4 words or more separated by spaces or hyphens.
-func estimatedBits(_ password: String) -> Double {
-    guard !password.isEmpty else { return 0 }
-    var lower = false, upper = false, digit = false, other = false
-    for scalar in password.unicodeScalars {
-        switch scalar.value {
-        case 0x61...0x7A: lower = true
-        case 0x41...0x5A: upper = true
-        case 0x30...0x39: digit = true
-        default: other = true
-        }
-    }
-    let alphabet = (lower ? 26 : 0) + (upper ? 26 : 0) + (digit ? 10 : 0) + (other ? 33 : 0)
-    var bits = Double(password.count) * log2(Double(alphabet))
-    let words = password.split(whereSeparator: { $0 == " " || $0 == "-" })
-    if words.count >= 4 { bits += 20 }
-    return bits
-}
-
 /// The body of the current step, shared by the iPhone, iPad and Mac layouts.
 struct OnboardingStepContent: View {
     @Bindable var model: OnboardingModel
@@ -515,6 +494,7 @@ private struct VisibleVaultsStep: View {
 private struct RestoreStep: View {
     @Bindable var model: OnboardingModel
     @State private var scanning = false
+    @State private var confirmStartOver = false
 
     var body: some View {
         StepTitle(
@@ -522,6 +502,16 @@ private struct RestoreStep: View {
             subtitle: Platform.secretKeyText(
                 mac: "Tape la Secret Key imprimée sur ton kit. Minuscules, espaces et tirets oubliés sont acceptés.",
                 phone: "Scanne le QR code du kit ou tape ta Secret Key. Minuscules, espaces et tirets oubliés sont acceptés."))
+        if model.restoreOnly {
+            // Only reached when the keychain really lost the Secret Key of the account in the store.
+            Label(
+                "La Secret Key de ce compte n'est plus dans le trousseau de cet appareil. Saisis-la depuis ton Emergency Kit.",
+                systemImage: "key.slash"
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("onboarding.secretKeyMissing")
+        }
         OnboardingField(
             label: "Secret Key", prompt: "XXXX-XXXX-XXXX-...", text: $model.restoreKey,
             monospaced: true, secretKey: true, identifier: "onboarding.restoreKey")
@@ -559,6 +549,19 @@ private struct RestoreStep: View {
             )
             .font(.footnote)
             .foregroundStyle(.secondary)
+        }
+        if model.restoreOnly {
+            // No Emergency Kit: the local copy cannot be opened, the only way out is a new vault.
+            Button {
+                confirmStartOver = true
+            } label: {
+                Label("Créer un nouveau coffre", systemImage: "plus.circle")
+            }
+            .buttonStyle(.glass)
+            .accessibilityIdentifier("onboarding.startOver")
+            .sheet(isPresented: $confirmStartOver) {
+                StartOverConfirmation { try await model.startOver() }
+            }
         }
     }
 }

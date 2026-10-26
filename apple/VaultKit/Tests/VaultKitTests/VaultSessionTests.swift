@@ -602,6 +602,76 @@ struct VaultSessionHardeningTests {
         #expect(!relaunched.needsSecretKey)
     }
 
+    /// Bug 4: each Secret Key mistake has its own message, never "Valeur invalide".
+    @Test func restoreExplainsSecretKeyMistakes() async throws {
+        let first = try SessionHarness()
+        defer { first.cleanUp() }
+        let session = first.makeSession()
+        let secretKey = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        session.lock()
+        await session.waitForReleasedSessions()
+        let accountID = try #require(first.settings.accountID)
+        try SecretKeyVault(keychain: first.keychain).remove(accountID: accountID)
+        let restored = first.makeSession()
+        #expect(restored.needsSecretKey)
+
+        let format = VaultError.validation(field: "secretKey", reason: VaultError.secretKeyFormat)
+        await #expect(throws: format) {
+            try await restored.restore(secretKey: String(secretKey.dropLast(3)), password: testPassword)
+        }
+        await #expect(throws: format) {
+            try await restored.restore(secretKey: "é" + String(secretKey.dropFirst()), password: testPassword)
+        }
+        #expect(format.localizedMessage
+            == "Format de Secret Key incorrect : 53 caractères attendus (lettres et chiffres).")
+
+        // One character changed: the check character catches it.
+        var typo = Array(secretKey)
+        typo[0] = typo[0] == "A" ? "C" : "A"
+        let checksum = VaultError.validation(field: "secretKey", reason: VaultError.secretKeyChecksum)
+        await #expect(throws: checksum) {
+            try await restored.restore(secretKey: String(typo), password: testPassword)
+        }
+        #expect(checksum.localizedMessage
+            == "Cette Secret Key contient une faute de frappe : vérifie chaque caractère sur ton Emergency Kit.")
+
+        // A well formed key of another account.
+        let other = try SessionHarness()
+        defer { other.cleanUp() }
+        let otherKey = try await other.makeSession().createAccount(
+            password: testPassword, displayName: "", mode: .personal)
+        await #expect(throws: VaultError.wrongPassword) {
+            try await restored.restore(secretKey: otherKey, password: testPassword)
+        }
+        #expect(VaultError.wrongPassword.restoreMessage
+            == "Cette Secret Key ne correspond pas à ce compte, ou le mot de passe est faux.")
+        #expect(restored.state == .locked)
+    }
+
+    /// Bug 2: a device without the Secret Key can start over (after the typed confirmation).
+    @Test func resetIsAllowedWhenTheSecretKeyIsMissing() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "Camille", mode: .personal)
+        session.lock()
+        await #expect(throws: VaultError.other(VaultSession.recoveryRefused)) {
+            try await session.resetForRecovery()
+        }
+        #expect(session.state == .locked)
+        await session.waitForReleasedSessions()
+
+        let accountID = try #require(h.settings.accountID)
+        try SecretKeyVault(keychain: h.keychain).remove(accountID: accountID)
+        let relaunched = h.makeSession()
+        #expect(relaunched.needsSecretKey)
+        try await relaunched.resetForRecovery()
+        #expect(relaunched.state == .noAccount)
+        #expect(!relaunched.needsSecretKey)
+        #expect(h.settings.accountID == nil)
+        #expect(try !hasAccount(dbPath: h.environment.databaseURL.path))
+    }
+
     /// I2: the undone creation empties the store in place; a sync handle opened before (the app's
     /// coordinator) keeps working on the same file and sees the next, successful creation.
     @Test func undoneCreationResetsTheStoreUnderAnOpenHandle() async throws {
