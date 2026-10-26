@@ -1161,4 +1161,31 @@ struct NewVaultOfferTests {
         defer { b.cleanUp() }
         #expect(await b.coordinator.newVaultOffer() == .accountInICloud)
     }
+
+    /// Round 3: the restore-only device already holds the account locally; only the remote zone
+    /// decides. Empty zone: offered. Zone with an account: not offered. Offline or no iCloud
+    /// account: unavailable (explained, nothing offered).
+    @Test func localAccountDoesNotCountOnlyTheZone() async throws {
+        let local = try SyncDevice(remote: nil, name: "local")
+        defer { local.cleanUp() }
+        _ = try await local.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        #expect(try local.store.hasAccount())
+
+        let emptyZone = InMemoryRemote()
+        #expect(await SyncCoordinator(store: local.store, remote: emptyZone).newVaultOffer() == .offered)
+
+        let filled = InMemoryRemote()
+        let other = try SyncDevice(remote: filled, name: "other")
+        defer { other.cleanUp() }
+        _ = try await other.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        await other.sync()
+        #expect(await SyncCoordinator(store: local.store, remote: filled).newVaultOffer() == .accountInICloud)
+
+        let offline = InMemoryRemote()
+        await offline.setOffline(true)
+        #expect(await SyncCoordinator(store: local.store, remote: offline).newVaultOffer() == .unavailable)
+        let signedOut = InMemoryRemote()
+        await signedOut.setAccountAvailable(false)
+        #expect(await SyncCoordinator(store: local.store, remote: signedOut).newVaultOffer() == .unavailable)
+    }
 }

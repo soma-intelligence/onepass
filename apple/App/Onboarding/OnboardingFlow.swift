@@ -216,7 +216,9 @@ final class OnboardingModel {
         do {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
             secretKey = try await session.createAccount(password: password, displayName: name, mode: mode)
+            // The password stays in memory for the biometric enrollment; its shown copy goes now.
             confirmation = ""
+            generatedPassword = nil
             advance()
         } catch {
             errorMessage = VaultError(error).localizedMessage

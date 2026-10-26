@@ -730,9 +730,15 @@ public enum NewVaultOffer: Equatable, Sendable {
 }
 
 extension SyncCoordinator {
+    /// Asks the remote zone only (`accountRecordIDs`): the local store of a device without its
+    /// Secret Key already holds the account and must not count, and nothing is fetched into it.
     public func newVaultOffer() async -> NewVaultOffer {
+        guard let remote else { return .offered }
+        await acquire()
+        defer { release() }
+        guard await remote.accountAvailable() else { return .unavailable }
         do {
-            return try await remoteHasAccount() ? .accountInICloud : .offered
+            return try await remote.accountRecordIDs().isEmpty ? .offered : .accountInICloud
         } catch {
             return .unavailable
         }
