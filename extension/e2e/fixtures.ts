@@ -45,6 +45,11 @@ const LOCAL_HOSTS = new Set([
 
 export type Build = "regular" | "e2e";
 
+/** A whole-text matcher for a literal string. */
+export function exact(s: string | RegExp): RegExp {
+  return typeof s === "string" ? new RegExp(`^\\s*${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`) : s;
+}
+
 export interface Ext {
   context: BrowserContext;
   /** Extension id (read from the service worker URL, checked against the path). */
@@ -60,8 +65,12 @@ export interface Ext {
   stopWorker(): Promise<void>;
   /** Opens the in-field menu of `selector` (focus + trusted ArrowDown). */
   openMenu(page: Page, selector: string, frame?: Frame): Promise<Frame>;
-  /** Clicks a menu row by its exact title, once the click guard allows it. */
-  pickRow(menu: Frame, title: string | RegExp): Promise<void>;
+  /** Clicks a menu row by its exact title (and subtitle), once the click guard allows it. */
+  pickRow(menu: Frame, title: string | RegExp, subtitle?: string): Promise<void>;
+  /** Clicks "Se connecter" on an overlay account by its exact title. */
+  overlayStart(page: Page, title: string): Promise<Frame>;
+  /** The chain state of the page's tab (`storage.session`), if any. */
+  chainState(): Promise<{ status: string; reason?: string; host?: string } | null>;
   extFrame(page: Page, kind: "menu" | "overlay" | "save"): Promise<Frame>;
   findExtFrame(page: Page, kind: "menu" | "overlay" | "save"): Frame | undefined;
   /** Waits until the click guard of a freshly shown extension frame is past. */
@@ -192,13 +201,25 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         }
         throw new Error(`no menu opened for ${selector}`);
       },
-      async pickRow(menu, title) {
-        const row = menu.locator("button.row").filter({
-          has: menu.locator(".t1", { hasText: typeof title === "string" ? new RegExp(`^${title.replace(/[()]/g, "\\$&")}$`) : title }),
-        });
+      async pickRow(menu, title, subtitle) {
+        let row = menu.locator("button.row").filter({ has: menu.locator(".t1", { hasText: exact(title) }) });
+        if (subtitle !== undefined) row = row.filter({ has: menu.locator(".t2", { hasText: exact(subtitle) }) });
         await expect(row).toHaveCount(1);
         await settle();
         await row.click();
+      },
+      async overlayStart(p, title) {
+        const overlay = await extFrame(p, "overlay");
+        const account = overlay.locator(".ov-account").filter({ has: overlay.locator(".t1", { hasText: exact(title) }) });
+        await expect(account).toHaveCount(1);
+        await settle();
+        await account.getByRole("button", { name: "Se connecter" }).click();
+        return overlay;
+      },
+      async chainState() {
+        const all = await this.sessionStorage();
+        const chains = Object.entries(all).filter(([k]) => k.startsWith("chain:"));
+        return chains.length === 0 ? null : (chains[chains.length - 1]?.[1] as { status: string; reason?: string; host?: string });
       },
       async sessionStorage() {
         const w = await worker();
