@@ -226,6 +226,29 @@ describe("lab server", () => {
     expect(server.events().filter((e) => e.kind === "signin")).toMatchObject([{ host: s.host, user: s.account!.username }]);
   });
 
+  it("password_then_passkey_requires_both", async () => {
+    let w: World | undefined;
+    for (let k = 0; k < 500 && !w; k++) {
+      const c = generate(`lab-server-pk-${k}`, { sites: 10, patterns: PATTERNS });
+      if (c.sites.some((x) => x.flow === "login_passkey" && !x.passkeyOnly && x.loginStyle === "single")) w = c;
+    }
+    const s = w!.sites.find((x) => x.flow === "login_passkey" && !x.passkeyOnly && x.loginStyle === "single")!;
+    const d = mkdtempSync(join(tmpdir(), "lab-server-pk-"));
+    const own = await startLabServer(w!, generateCert(d, w!.hosts));
+    try {
+      const r = client(own.port);
+      // Without the password step, the passkey endpoint refuses.
+      expect((await r(s.host, "/passkey", undefined, { credentialId: s.account!.passkey!.credentialId })).status).toBe(403);
+      const first = await r(s.host, "/", { [field(s, "username")]: s.account!.username, [field(s, "password")]: s.account!.password });
+      expect(first.location).toBe("/passkey");
+      expect(own.events().filter((e) => e.kind === "signin")).toEqual([]);
+      expect(own.events().filter((e) => e.kind === "submit").map((e) => e.kind === "submit" && e.reason)).toEqual(["no_pending", undefined]);
+    } finally {
+      await own.close();
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
   it("canary", async () => {
     for (const h of [world.sites[0]!.host, IDP_HOST.google, "unknown-host.test"]) {
       const r = await req(h, CANARY_PATH);

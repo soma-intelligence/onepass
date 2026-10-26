@@ -1,0 +1,154 @@
+// Lab run (spec 7.2, 7.5): one test per batch of LAB_BATCH sites. A batch
+// launches a fresh profile with the real extension, pairs once, then plays
+// its scenarios one after the other (server reset, new tab, driver, oracle).
+// A failed scenario is replayed once in a fresh paired profile: a pass on
+// the second try is `flaky`. Every result goes to results.jsonl. A batch test
+// fails only when every one of its scenarios is a lab_error; the verdicts
+// themselves are the report's business. In smoke mode a last test compares
+// the verdicts with lab/smoke-expected.json.
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { expect, test as base } from "@playwright/test";
+import { loadCert } from "../../e2e/cert.ts";
+import type { Scenario, Site, World } from "../gen/model.ts";
+import { type LabServer, startLabServer } from "../server/server.ts";
+import { type Lab, launchLab, launchPlain, readState, readWorld } from "./browser.ts";
+import { lookalike, menuFill, oneClick, passkeyControl } from "./drive.ts";
+import { EXT_ROOT, isSmoke, type LabState } from "./global-setup.ts";
+import { judge, type Judgement, type Observation, type Result, type Verdict } from "./oracle.ts";
+
+const state: LabState = readState();
+const world: World = readWorld(state);
+const { config } = state;
+export const SMOKE_EXPECTED = join(EXT_ROOT, "lab", "smoke-expected.json");
+
+const test = base.extend<object, { server: LabServer }>({
+  server: [
+    async ({}, use) => {
+      const server = await startLabServer(world, loadCert(state.certDir));
+      await use(server);
+      await server.close();
+    },
+    { scope: "worker" },
+  ],
+});
+
+function batches(): Scenario[][] {
+  const indices = world.sites.map((s) => s.index).filter((i) => config.only === undefined || i === config.only);
+  const out: Scenario[][] = [];
+  for (let k = 0; k < indices.length; k += config.batch) {
+    const chunk = new Set(indices.slice(k, k + config.batch));
+    out.push(world.scenarios.filter((s) => chunk.has(s.site)));
+  }
+  return out;
+}
+
+const labError = (driver: Scenario["driver"], e: unknown): Observation => {
+  const msg = (e as Error)?.message ?? String(e);
+  return {
+    driver, overlayShown: false, itemOffered: false, events: [], filled: {}, durationMs: 0,
+    error: msg.startsWith("lab:") ? msg : `lab: ${msg}`,
+  };
+};
+
+/** A fresh profile with the extension, paired (closed again if pairing fails). */
+async function pairedLab(server: LabServer): Promise<Lab> {
+  const lab = await launchLab(state, world, server);
+  try {
+    await lab.pair();
+    return lab;
+  } catch (e) {
+    await lab.close().catch(() => undefined);
+    throw e;
+  }
+}
+
+/** One attempt of a scenario; `lab` is the batch profile (unused by the passkey control). */
+async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Promise<Lab>): Promise<Observation> {
+  server.reset();
+  if (s.driver === "passkey_control") {
+    let plain;
+    try {
+      plain = await launchPlain(state, world, server);
+    } catch (e) {
+      return labError(s.driver, e);
+    }
+    try {
+      return await passkeyControl({ server }, plain, site);
+    } finally {
+      await plain.close().catch(() => undefined);
+    }
+  }
+  let l: Lab;
+  try {
+    l = await lab();
+  } catch (e) {
+    return labError(s.driver, e);
+  }
+  switch (s.driver) {
+    case "one_click": return oneClick(l, site);
+    case "menu_fill": return menuFill(l, site);
+    case "lookalike": return lookalike(l, site);
+  }
+}
+
+function record(s: Scenario, site: Site, j: Judgement, retried: boolean, durationMs: number): Result {
+  const r: Result = {
+    worldSeed: world.seed, site: site.index, siteSeed: site.seed, flow: site.flow, traits: site.traits, lang: site.lang,
+    labelLang: site.labelLang, driver: s.driver, expect: s.expect, verdict: j.verdict, ...(j.cause ? { cause: j.cause } : {}),
+    retried, durationMs, repro: `npm run lab:repro -- --seed ${world.seed} --site ${site.index}`,
+  };
+  appendFileSync(state.results, `${JSON.stringify(r)}\n`);
+  return r;
+}
+
+test.describe.configure({ mode: "parallel" });
+
+batches().forEach((scenarios, k) => {
+  test(`batch ${k}`, async ({ server }) => {
+    // Up to ~2.5 min per scenario with its replay, plus a pairing per profile.
+    test.setTimeout(scenarios.length * 180_000 + 120_000);
+    let shared: Lab | undefined;
+    const batchLab = async () => (shared ??= await pairedLab(server));
+    const verdicts: Verdict[] = [];
+    for (const s of scenarios) {
+      const site = world.sites[s.site]!;
+      const first = await attempt(s, site, server, batchLab);
+      if (process.env.LAB_DEBUG) console.log(`[lab debug] ${s.id} ${JSON.stringify({ ...first, durationMs: undefined })}`);
+      let j = judge(s, site, first);
+      let duration = first.durationMs;
+      let retried = false;
+      // A broken profile is not reused.
+      if (j.verdict === "lab_error" && shared) {
+        await shared.close().catch(() => undefined);
+        shared = undefined;
+      }
+      if (j.verdict === "fail") {
+        retried = true;
+        let fresh: Lab | undefined;
+        const second = await attempt(s, site, server, async () => (fresh = await pairedLab(server)));
+        await fresh?.close().catch(() => undefined);
+        duration += second.durationMs;
+        const again = judge(s, site, second);
+        if (again.verdict === "pass") j = { verdict: "flaky", cause: j.cause };
+        else if (again.verdict === "leak") j = again;
+      }
+      const r = record(s, site, j, retried, duration);
+      verdicts.push(r.verdict);
+      console.log(`${s.id} ${site.flow} [${site.traits.join(",")}] expect ${s.expect}: ${r.verdict}${r.cause ? ` (${r.cause})` : ""}`);
+    }
+    await shared?.close().catch(() => undefined);
+    expect(verdicts.length > 0 && verdicts.every((v) => v === "lab_error"), "every scenario of the batch is a lab_error").toBe(false);
+  });
+});
+
+if (isSmoke(config)) {
+  test("smoke_matches_expected", () => {
+    const lines = readFileSync(state.results, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Result);
+    const actual = Object.fromEntries(lines.map((r) => [`${r.site}:${r.driver}`, r.verdict === "flaky" ? "pass" : r.verdict]));
+    expect(existsSync(SMOKE_EXPECTED), `missing ${SMOKE_EXPECTED}; verdicts of this run:\n${JSON.stringify(actual, null, 2)}`).toBe(true);
+    const expected = JSON.parse(readFileSync(SMOKE_EXPECTED, "utf8")) as Record<string, string>;
+    const want = Object.fromEntries(Object.entries(expected).map(([id, v]) => [id, v === "flaky" ? "pass" : v]));
+    expect(actual).toEqual(want);
+  });
+}

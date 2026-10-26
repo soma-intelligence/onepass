@@ -227,6 +227,11 @@ export function handleSite(site: Site, x: Exchange, st: LabState, mode: "site" |
   const idName = nameOf(site, "username", "email") ?? "";
   const pwName = nameOf(site, "password") ?? "";
   const afterPassword = () => {
+    // Password then passkey (login_passkey without passkeyOnly): the assertion is the second step.
+    if (site.flow === "login_passkey" && account.passkey) {
+      x.session().pending = account.username;
+      return x.redirect(PAGE_PATH.passkey);
+    }
     if (account.totpSecret) {
       x.session().pending = account.username;
       return x.redirect(PAGE_PATH.otp);
@@ -277,6 +282,8 @@ function passkeyPost(site: Site, x: Exchange, st: LabState): void {
     x.json(403, { ok: false, reason });
   };
   if (!key || !site.account) return fail("no_passkey");
+  // After a password step, only the session that passed it may finish with the passkey.
+  if (!site.passkeyOnly && s.pending !== site.account.username) return fail("no_pending");
   const { credentialId = "", clientDataJSON = "", authenticatorData = "", signature = "" } = x.body;
   if (credentialId !== key.credentialId) return fail("unknown_credential");
   const r = verifyAssertion({ credentialId, clientDataJSON, authenticatorData, signature }, {
@@ -287,6 +294,7 @@ function passkeyPost(site: Site, x: Exchange, st: LabState): void {
   st.counters.set(site.host, r.counter);
   st.ledger.note({ at: Date.now(), host: x.host, kind: "submit", form: "passkey", ok: true, fields: [] });
   s.user = site.account.username;
+  delete s.pending;
   st.ledger.note({ at: Date.now(), host: x.host, kind: "signin", user: site.account.username });
   // 200, not a redirect: the page script then goes to /home itself.
   x.json(200, { ok: true });
