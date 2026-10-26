@@ -1,27 +1,23 @@
 import Foundation
 
-/// Rough entropy of a typed password, for the strength meter (a generated one uses the core's
-/// `passwordEntropyBits(recipe:)`): length times log2 of the character pool it draws from.
-/// Overestimates words and patterns; a hint, not a guarantee. Never logged.
+/// The one strength estimate of typed and stored passwords (master password, password fields, item
+/// detail), the core's `passwordStrengthBits`: on the scale of `passwordEntropyBits(recipe:)`, so a
+/// generated password shows the same level in the generator and once saved (a 5 word passphrase
+/// is about 64.6 bits wherever it is shown). A hint, not a guarantee. Never logged.
 public enum PasswordStrength {
     public static func estimatedBits(_ password: String) -> Double {
-        guard !password.isEmpty else { return 0 }
-        var pool = 0
-        var lower = false, upper = false, digit = false, symbol = false, other = false
-        for scalar in password.unicodeScalars {
-            switch scalar.value {
-            case 0x61...0x7A: lower = true
-            case 0x41...0x5A: upper = true
-            case 0x30...0x39: digit = true
-            case 0x21...0x7E, 0x20: symbol = true
-            default: other = true
-            }
-        }
-        if lower { pool += 26 }
-        if upper { pool += 26 }
-        if digit { pool += 10 }
-        if symbol { pool += 33 }
-        if other { pool += 100 }
-        return Double(password.count) * log2(Double(pool))
+        password.isEmpty ? 0 : passwordStrengthBits(password: password)
     }
+
+    /// The master password gate of the onboarding, separate from the meter's labels: five words
+    /// drawn at random from a generator list (5 x log2(7776), about 64.6 bits) pass, four do not.
+    public static let masterPasswordMinimumBits: Double = 64
+
+    public static func acceptsMasterPassword(_ password: String) -> Bool {
+        estimatedBits(password) >= masterPasswordMinimumBits
+    }
+
+    /// The "Générer" recipe of the master password step: five French words, hyphenated.
+    public static let masterPasswordRecipe = FfiPasswordRecipe.words(
+        count: 5, separator: "-", french: true, capitalize: false)
 }

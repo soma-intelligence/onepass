@@ -69,9 +69,24 @@ public enum VaultError: Error, Equatable, Sendable {
         }
     }
 
+    /// Validation reasons of a typed Secret Key (`VaultSession.restore`).
+    public static let secretKeyFormat = "secret key format"
+    public static let secretKeyChecksum = "secret key checksum"
+
+    /// The message of a failed Emergency Kit restore: a wrong password there may as well be a well
+    /// formed Secret Key of another account (the core cannot tell them apart).
+    public var restoreMessage: String {
+        self == .wrongPassword
+            ? "Cette Secret Key ne correspond pas à ce compte, ou le mot de passe est faux."
+            : localizedMessage
+    }
+
     /// French text for a core validation reason (English, fixed strings).
     public static func validationMessage(_ reason: String) -> String {
         switch reason {
+        case secretKeyFormat: "Format de Secret Key incorrect : 53 caractères attendus (lettres et chiffres)."
+        case secretKeyChecksum:
+            "Cette Secret Key contient une faute de frappe : vérifie chaque caractère sur ton Emergency Kit."
         case "is required": "Champ obligatoire"
         case "is not a valid card number": "Numéro de carte invalide"
         case "is not a valid IBAN": "IBAN invalide"

@@ -84,18 +84,10 @@ struct CategoryListView: View {
         }
     }
 
-    @ViewBuilder private var emptyState: some View {
-        let message: String =
-            if !query.trimmingCharacters(in: .whitespaces).isEmpty {
-                String(localized: "Essaie avec d'autres mots.")
-            } else if filter == .trash {
-                String(localized: "Les éléments mis à la corbeille restent ici 30 jours.")
-            } else if filter == .archive {
-                String(localized: "Les éléments archivés apparaîtront ici.")
-            } else {
-                String(localized: "Crée un élément avec « Nouvel élément ».")
-            }
-        EmptyState(title: String(localized: "Aucun élément ne correspond."), systemImage: "magnifyingglass", message: message)
+    private var emptyState: some View {
+        ItemListEmptyState(reason: EmptyListReason(filter: filter, query: query)) {
+            model.showNewItemPicker = true
+        }
     }
 }
 #endif

@@ -2,27 +2,6 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Local strength estimate for the master password meter (never sent anywhere):
-/// length times log2 of the alphabet of the classes present (lowercase 26, uppercase 26,
-/// digits 10, anything else 33), plus 20 bits for 4 words or more separated by spaces or hyphens.
-func estimatedBits(_ password: String) -> Double {
-    guard !password.isEmpty else { return 0 }
-    var lower = false, upper = false, digit = false, other = false
-    for scalar in password.unicodeScalars {
-        switch scalar.value {
-        case 0x61...0x7A: lower = true
-        case 0x41...0x5A: upper = true
-        case 0x30...0x39: digit = true
-        default: other = true
-        }
-    }
-    let alphabet = (lower ? 26 : 0) + (upper ? 26 : 0) + (digit ? 10 : 0) + (other ? 33 : 0)
-    var bits = Double(password.count) * log2(Double(alphabet))
-    let words = password.split(whereSeparator: { $0 == " " || $0 == "-" })
-    if words.count >= 4 { bits += 20 }
-    return bits
-}
-
 /// The body of the current step, shared by the iPhone, iPad and Mac layouts.
 struct OnboardingStepContent: View {
     @Bindable var model: OnboardingModel
@@ -379,9 +358,26 @@ private struct PasswordStep: View {
         #endif
         OnboardingField(
             label: "Mot de passe maître",
-            prompt: Platform.isMac ? "Au moins 12 caractères, une phrase marche bien" : "Une phrase de 4 mots marche bien",
+            prompt: Platform.isMac ? "Cinq mots tirés au hasard marchent bien" : "Cinq mots tirés au hasard",
             text: $model.password, secure: true, identifier: "onboarding.password")
         StrengthMeter(bits: model.passwordBits)
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Button {
+                model.generateMasterPassword()
+            } label: {
+                Label("Générer", systemImage: "wand.and.stars")
+            }
+            .buttonStyle(.glass)
+            .accessibilityIdentifier("onboarding.generate")
+            if let generated = model.generatedPassword, generated == model.password {
+                Text(verbatim: generated)
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .privacySensitive()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("onboarding.generated")
+            }
+        }
         OnboardingField(
             label: "Confirme-le", prompt: "", text: $model.confirmation, secure: true,
             mismatch: model.confirmationMismatch, identifier: "onboarding.confirm")
@@ -390,7 +386,7 @@ private struct PasswordStep: View {
         }
         if Platform.isMac {
             Label {
-                Text("Conseil : quatre mots au hasard (« ruisseau-tapis-orage-comète ») sont plus solides et plus faciles à retenir qu'un mot compliqué.")
+                Text("Conseil : cinq mots tirés au hasard (« tapis-orage-girafe-violon-nuage ») sont plus solides et plus faciles à retenir qu'un mot compliqué. « Générer » en tire cinq pour toi.")
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "lightbulb")
@@ -515,13 +511,34 @@ private struct VisibleVaultsStep: View {
 private struct RestoreStep: View {
     @Bindable var model: OnboardingModel
     @State private var scanning = false
+    @State private var confirmStartOver = false
+    /// Restore only: whether "Créer un nouveau coffre" is offered (asked to iCloud with sync).
+    @State private var newVaultOffer: NewVaultOffer?
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 18) { content }
+            .task {
+                guard model.restoreOnly, newVaultOffer == nil else { return }
+                newVaultOffer = await model.newVaultOffer()
+            }
+    }
+
+    @ViewBuilder private var content: some View {
         StepTitle(
             title: "Utiliser ton Emergency Kit",
             subtitle: Platform.secretKeyText(
                 mac: "Tape la Secret Key imprimée sur ton kit. Minuscules, espaces et tirets oubliés sont acceptés.",
                 phone: "Scanne le QR code du kit ou tape ta Secret Key. Minuscules, espaces et tirets oubliés sont acceptés."))
+        if model.restoreOnly {
+            // Only reached when the keychain really lost the Secret Key of the account in the store.
+            Label(
+                "La Secret Key de ce compte n'est plus dans le trousseau de cet appareil. Saisis-la depuis ton Emergency Kit.",
+                systemImage: "key.slash"
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("onboarding.secretKeyMissing")
+        }
         OnboardingField(
             label: "Secret Key", prompt: "XXXX-XXXX-XXXX-...", text: $model.restoreKey,
             monospaced: true, secretKey: true, identifier: "onboarding.restoreKey")
@@ -559,6 +576,39 @@ private struct RestoreStep: View {
             )
             .font(.footnote)
             .foregroundStyle(.secondary)
+        }
+        if model.restoreOnly {
+            switch newVaultOffer {
+            case .offered:
+                // No Emergency Kit: the local copy cannot be opened, the only way out is a new vault.
+                Button {
+                    confirmStartOver = true
+                } label: {
+                    Label("Créer un nouveau coffre", systemImage: "plus.circle")
+                }
+                .buttonStyle(.glass)
+                .accessibilityIdentifier("onboarding.startOver")
+                .sheet(isPresented: $confirmStartOver) {
+                    StartOverConfirmation { try await model.startOver() }
+                }
+            case .accountInICloud:
+                Label(
+                    "Ton coffre est dans iCloud : il reviendrait sur cet appareil. Pour l'ouvrir, saisis la Secret Key de ton Emergency Kit.",
+                    systemImage: "icloud"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("onboarding.vaultInICloud")
+            case .unavailable:
+                Label(
+                    "Impossible de vérifier iCloud pour le moment. Vérifie ta connexion puis reviens sur cet écran.",
+                    systemImage: "icloud.slash"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            case nil:
+                EmptyView()
+            }
         }
     }
 }

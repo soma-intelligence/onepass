@@ -25,6 +25,8 @@ struct GeneratorSheet: View {
     }
 
     let onUse: (String) -> Void
+    /// Also called on "Utiliser", with the recipe bits the sheet's meter showed.
+    var onUseWithBits: (@MainActor (String, Double) -> Void)?
     var purpose: Purpose = .use
     @Environment(\.dismiss) private var dismiss
 
@@ -111,6 +113,7 @@ struct GeneratorSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(purpose == .copy ? "Copier" : "Utiliser") {
                         onUse(generated)
+                        onUseWithBits?(generated, passwordEntropyBits(recipe: recipe))
                         dismiss()
                     }
                     .disabled(generated.isEmpty)

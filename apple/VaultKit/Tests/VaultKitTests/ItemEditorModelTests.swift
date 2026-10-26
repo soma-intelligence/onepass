@@ -211,3 +211,57 @@ struct ItemEditorFixTests {
         #expect(NumberInput.text(-2.0) == "-2")
     }
 }
+
+/// Bug 6: the generator sheet (recipe bits) and the field meter (estimate of the string) agree.
+@Suite("Password strength agreement")
+struct PasswordStrengthAgreementTests {
+    static let recipes: [FfiPasswordRecipe] = [
+        .words(count: 5, separator: "-", french: true, capitalize: false),
+        .words(count: 3, separator: " ", french: false, capitalize: true),
+        .words(count: 7, separator: ".", french: true, capitalize: false),
+        .pin(length: 6),
+        .characters(length: 20, digits: true, symbols: true, avoidAmbiguous: false),
+        .characters(length: 16, digits: true, symbols: false, avoidAmbiguous: false),
+        .characters(length: 12, digits: false, symbols: true, avoidAmbiguous: false),
+    ]
+
+    @Test(arguments: recipes)
+    func generatedPasswordGetsItsRecipeBits(recipe: FfiPasswordRecipe) throws {
+        for _ in 0..<10 {
+            let generated = try generatePassword(recipe: recipe)
+            let expected = passwordEntropyBits(recipe: recipe)
+            #expect(abs(PasswordStrength.estimatedBits(generated) - expected) < 1e-9)
+        }
+    }
+
+    @Test func fiveWordPassphraseIsNotExcellentOnceSaved() throws {
+        let generated = try generatePassword(recipe: .words(count: 5, separator: "-", french: true, capitalize: false))
+        let bits = PasswordStrength.estimatedBits(generated)
+        #expect(abs(bits - 5 * log2(7776.0)) < 1e-9)
+        #expect(bits < 80)
+    }
+}
+
+/// The onboarding gate: five random list words pass, four do not; the meter labels stay shared.
+@Suite("Master password gate")
+struct MasterPasswordGateTests {
+    @Test func fiveRandomWordsPassFourDoNot() throws {
+        for _ in 0..<20 {
+            let five = try generatePassword(recipe: PasswordStrength.masterPasswordRecipe)
+            #expect(PasswordStrength.acceptsMasterPassword(five))
+            let four = try generatePassword(recipe: .words(count: 4, separator: "-", french: true, capitalize: false))
+            #expect(!PasswordStrength.acceptsMasterPassword(four))
+            let english = try generatePassword(recipe: .words(count: 5, separator: " ", french: false, capitalize: false))
+            #expect(PasswordStrength.acceptsMasterPassword(english))
+        }
+        // The tip's example is five words of the French list.
+        #expect(abs(PasswordStrength.estimatedBits("tapis-orage-girafe-violon-nuage") - 5 * log2(7776.0)) < 1e-9)
+        #expect(PasswordStrength.acceptsMasterPassword("tapis-orage-girafe-violon-nuage"))
+    }
+
+    @Test func generatorAndFieldStillAgree() throws {
+        let recipe = PasswordStrength.masterPasswordRecipe
+        let generated = try generatePassword(recipe: recipe)
+        #expect(abs(PasswordStrength.estimatedBits(generated) - passwordEntropyBits(recipe: recipe)) < 1e-9)
+    }
+}

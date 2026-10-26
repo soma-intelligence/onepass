@@ -1136,3 +1136,56 @@ struct InMemoryRemoteTests {
         #expect(await remote.tags().isEmpty)
     }
 }
+
+/// Review I4: "Créer un nouveau coffre" on the Emergency Kit screen is only offered when iCloud holds
+/// no account (the vault would come back with the next sync otherwise). No remote (unsigned
+/// build): offered, as before.
+@MainActor
+@Suite("New vault offer", .timeLimit(.minutes(2)))
+struct NewVaultOfferTests {
+    @Test func offeredOnlyWhenTheRemoteHasNoAccount() async throws {
+        let remote = InMemoryRemote()
+        let a = try SyncDevice(remote: remote, name: "A")
+        defer { a.cleanUp() }
+        let empty = try SyncDevice(remote: InMemoryRemote(), name: "empty")
+        defer { empty.cleanUp() }
+        let local = try SyncDevice(remote: nil, name: "local")
+        defer { local.cleanUp() }
+
+        #expect(await empty.coordinator.newVaultOffer() == .offered)
+        #expect(await local.coordinator.newVaultOffer() == .offered)
+
+        _ = try await a.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        await a.sync()
+        let b = try SyncDevice(remote: remote, name: "B")
+        defer { b.cleanUp() }
+        #expect(await b.coordinator.newVaultOffer() == .accountInICloud)
+    }
+
+    /// Round 3: the restore-only device already holds the account locally; only the remote zone
+    /// decides. Empty zone: offered. Zone with an account: not offered. Offline or no iCloud
+    /// account: unavailable (explained, nothing offered).
+    @Test func localAccountDoesNotCountOnlyTheZone() async throws {
+        let local = try SyncDevice(remote: nil, name: "local")
+        defer { local.cleanUp() }
+        _ = try await local.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        #expect(try local.store.hasAccount())
+
+        let emptyZone = InMemoryRemote()
+        #expect(await SyncCoordinator(store: local.store, remote: emptyZone).newVaultOffer() == .offered)
+
+        let filled = InMemoryRemote()
+        let other = try SyncDevice(remote: filled, name: "other")
+        defer { other.cleanUp() }
+        _ = try await other.session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        await other.sync()
+        #expect(await SyncCoordinator(store: local.store, remote: filled).newVaultOffer() == .accountInICloud)
+
+        let offline = InMemoryRemote()
+        await offline.setOffline(true)
+        #expect(await SyncCoordinator(store: local.store, remote: offline).newVaultOffer() == .unavailable)
+        let signedOut = InMemoryRemote()
+        await signedOut.setAccountAvailable(false)
+        #expect(await SyncCoordinator(store: local.store, remote: signedOut).newVaultOffer() == .unavailable)
+    }
+}

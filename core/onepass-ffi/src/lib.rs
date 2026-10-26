@@ -244,6 +244,15 @@ pub fn password_entropy_bits(recipe: FfiPasswordRecipe) -> f64 {
     recipe_to_core(&recipe).map_or(0.0, |r| generator::entropy_bits(&r))
 }
 
+/// Strength estimate of a typed or stored password in bits, on the scale of
+/// `password_entropy_bits`: a generated password gets the bits of its recipe
+/// (see `generator::strength_bits`). Never logged.
+#[uniffi::export]
+pub fn password_strength_bits(password: String) -> f64 {
+    let password = Zeroizing::new(password);
+    generator::strength_bits(&password)
+}
+
 /// The code at `unix_seconds` for a bare base32 secret or an `otpauth://`
 /// URI.
 #[uniffi::export]

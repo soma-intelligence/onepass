@@ -112,8 +112,10 @@ final class AppModel {
         Self.sweepEmergencyKits()
         #if DEBUG
         let demo = DemoData.requested ? DemoData.environment() : nil
+        let isolated = TestIsolation.isActive
         #else
         let demo: VaultEnvironment? = nil
+        let isolated = false
         #endif
         var coordinator: SyncCoordinator?
         #if ONEPASS_CLOUDKIT
@@ -129,23 +131,39 @@ final class AppModel {
             // Demonstration store (Debug): temporary database, no sync.
             environment = demo
         } else {
+            #if DEBUG
+            let databaseURL = isolated ? TestIsolation.databaseURL : VaultEnvironment.defaultDatabaseURL()
+            #else
             let databaseURL = VaultEnvironment.defaultDatabaseURL()
+            #endif
             do {
                 let store = try openSyncStore(dbPath: databaseURL.path)
-                coordinator = SyncCoordinator(store: store, remote: remote)
+                coordinator = SyncCoordinator(store: store, remote: isolated ? nil : remote)
             } catch {
                 Self.log.error("sync store not opened, sync disabled")
             }
-            // `live` uses the same `defaultDatabaseURL()` as the sync store.
-            environment = VaultEnvironment.live(sync: coordinator ?? NoSync())
+            #if DEBUG
+            if isolated {
+                // UI tests: their own store, settings and keychain service (never the user's).
+                environment = VaultEnvironment.live(
+                    sync: coordinator ?? NoSync(), databaseURL: databaseURL,
+                    settings: VaultSettings(defaults: TestIsolation.defaults),
+                    keychainService: TestIsolation.keychainService)
+            } else {
+                environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), databaseURL: databaseURL)
+            }
+            #else
+            // `live` uses the same database as the sync store.
+            environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), databaseURL: databaseURL)
+            #endif
         }
         self.coordinator = coordinator
         self.remote = remote
         session = VaultSession(environment: environment)
         // Demo data never reaches the widgets.
         companion = CompanionCoordinator(
-            session: session, glanceStore: demo == nil ? GlanceStore.shared() : nil,
-            phone: demo == nil ? CompanionCoordinator.makePhone(session: session) : nil)
+            session: session, glanceStore: demo == nil && !isolated ? GlanceStore.shared() : nil,
+            phone: demo == nil && !isolated ? CompanionCoordinator.makePhone(session: session) : nil)
 
         let settings = environment.settings
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -252,10 +270,12 @@ final class AppModel {
     #endif
 
     #if DEBUG
-    /// Screenshots: `-OnePassDebugSeedAccount YES` creates a fictional account (Camille Durand) when
+    /// Screenshots: `-OnePassDebugSeedAccount YES` (with `-OnePassTestIsolation YES`) creates a fictional account (Camille Durand) when
     /// none exists, then locks, so the lock screen can be captured. Debug builds only.
     private func seedAccountIfRequested() {
-        guard UserDefaults.standard.bool(forKey: "OnePassDebugSeedAccount"), session.state == .noAccount
+        // `TestIsolation` is forced by this flag: never creates an account in the user's store.
+        guard UserDefaults.standard.bool(forKey: "OnePassDebugSeedAccount"), TestIsolation.isActive,
+            session.state == .noAccount
         else { return }
         Task {
             _ = try? await session.createAccount(
@@ -295,6 +315,15 @@ final class AppModel {
         let found = try await coordinator.remoteHasAccount()
         await session.reload()
         return found
+    }
+
+    /// "Créer un nouveau coffre" on the Emergency Kit screen of a device without its Secret Key:
+    /// offered only when iCloud holds no account (always without sync).
+    func newVaultOffer() async -> NewVaultOffer {
+        guard cloudKitEnabled, let coordinator else { return .offered }
+        let offer = await coordinator.newVaultOffer()
+        await session.reload()
+        return offer
     }
 
     /// "Réessayer" on "Données refusées": a complete fetch from scratch, then the store is read again.
@@ -709,25 +738,70 @@ final class AppModel {
 }
 
 #if DEBUG
-/// `-OnePassUITestReset YES` (UI tests, Task 17): wipes the store, the settings and this app's
-/// keychain items before anything is opened. Debug builds only.
-enum DebugReset {
-    static func applyIfRequested() {
-        guard UserDefaults.standard.bool(forKey: "OnePassUITestReset") else { return }
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.removeItem(at: base.appendingPathComponent("OnePass", isDirectory: true))
-        if let domain = Bundle.main.bundleIdentifier {
-            UserDefaults.standard.removePersistentDomain(forName: domain)
+/// `-OnePassTestIsolation YES` (UI tests, screenshot runs and the Debug item helpers, Debug builds only): the app uses a store
+/// in `<tmp>/OnePassUITest`, the `me.somalabs.onepass.uitest` defaults suite and the
+/// `me.somalabs.onepass.uitest` keychain service, never the user's store, settings or Secret Keys.
+/// No sync, no widget or watch data.
+enum TestIsolation {
+    static let keychainService = "me.somalabs.onepass.uitest"
+    static let suiteName = "me.somalabs.onepass.uitest"
+
+    /// Also forced by the Debug helpers that create or unlock a fictional account
+    /// (`-OnePassDebugItem`, `-OnePassDebugNewItem`, `-OnePassDebugSeedAccount`): they never touch
+    /// the user's store.
+    static var isActive: Bool {
+        let defaults = UserDefaults.standard
+        return defaults.bool(forKey: "OnePassTestIsolation") || defaults.bool(forKey: "OnePassDebugSeedAccount")
+            || defaults.string(forKey: "OnePassDebugItem") != nil
+            || defaults.string(forKey: "OnePassDebugNewItem") != nil
+    }
+
+    static var folder: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("OnePassUITest", isDirectory: true)
+    }
+
+    static var databaseURL: URL {
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder.appendingPathComponent("vault.sqlite")
+    }
+
+    /// `UserDefaults` is thread safe; the type is just not marked `Sendable` in this SDK.
+    nonisolated(unsafe) static let defaults: UserDefaults = UserDefaults(suiteName: suiteName) ?? .standard
+
+    /// Empties the isolated store, settings and keychain service (both keychains: the file one is
+    /// the Debug fallback of an ad hoc signed build).
+    static func wipe() {
+        // The Secure Enclave key of the test account (biometric unlock), named after its id.
+        if let accountID = UserDefaults(suiteName: suiteName)?.string(forKey: "onepass.accountID") {
+            let tag = "me.somalabs.onepass.auk.\(accountID)"
+            try? SecureEnclaveKeyring(accessGroup: VaultEnvironment.sharedAccessGroup()).deleteKey(tag: tag)
+            try? SecureEnclaveKeyring(accessGroup: nil).deleteKey(tag: tag)
         }
-        // Only the service VaultKit writes to, in both keychains (the legacy one is the Debug fallback).
+        try? FileManager.default.removeItem(at: folder)
+        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         for legacy in [false, true] {
             var query: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: "me.somalabs.onepass",
+                kSecAttrService as String: keychainService,
             ]
             if !legacy { query[kSecUseDataProtectionKeychain as String] = true }
             SecItemDelete(query as CFDictionary)
         }
+    }
+}
+
+/// UI tests, with `-OnePassTestIsolation YES` only: `-OnePassUITestReset YES` starts from an empty
+/// isolated store (also how a test cleans up after itself: a last launch with it, then terminate).
+/// Without isolation it is ignored: the user's store, settings and keychain are never wiped.
+enum DebugReset {
+    static func applyIfRequested() {
+        guard UserDefaults.standard.bool(forKey: "OnePassUITestReset") else { return }
+        guard TestIsolation.isActive else {
+            Logger(subsystem: "me.somalabs.onepass", category: "app")
+                .error("UI test reset ignored without -OnePassTestIsolation")
+            return
+        }
+        TestIsolation.wipe()
     }
 }
 #endif

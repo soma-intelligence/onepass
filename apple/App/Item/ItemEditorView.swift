@@ -10,6 +10,8 @@ struct ItemEditorView: View {
     @Environment(AppModel.self) private var model
     @State private var editor: ItemEditorModel
     @State private var confirmDiscard = false
+    /// The generator asked by a password field (presented here, not from the field's row).
+    @State private var generatorRequest: GeneratorRequest?
     @FocusState private var titleFocused: Bool
     private let onDone: (FfiItem?) -> Void
 
@@ -61,6 +63,10 @@ struct ItemEditorView: View {
                 }
             }
             .formStyle(.grouped)
+            .environment(\.requestGenerator) { request in generatorRequest = request }
+            .sheet(item: $generatorRequest) { request in
+                GeneratorSheet(onUse: { _ in }, onUseWithBits: { text, bits in request.apply(text, bits) })
+            }
             .onChange(of: editor.scrollRequest) {
                 guard let anchor = editor.errorAnchor else { return }
                 withAnimation { proxy.scrollTo(anchor, anchor: .center) }

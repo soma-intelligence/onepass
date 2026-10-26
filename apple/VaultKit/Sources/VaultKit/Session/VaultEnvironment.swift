@@ -61,14 +61,19 @@ public struct VaultEnvironment: Sendable {
 
     /// The app's environment: store in `Application Support/OnePass/vault.sqlite`, system keychain in
     /// the shared access group, Secure Enclave biometrics, system pasteboard, no sync (Task 8 plugs it).
-    public static func live(sync: any SyncTrigger = NoSync()) -> VaultEnvironment {
-        let settings = VaultSettings()
+    ///
+    /// UI tests and screenshots (Debug builds of the app) pass their own store, settings and keychain
+    /// service so they never touch the user's: `databaseURL`, `settings`, `keychainService`.
+    public static func live(
+        sync: any SyncTrigger = NoSync(), databaseURL: URL? = nil, settings: VaultSettings = VaultSettings(),
+        keychainService: String = SystemKeychain.defaultService
+    ) -> VaultEnvironment {
         let clock = SystemClock()
         let group = sharedAccessGroup()
-        let keychain = SystemKeychain(accessGroup: group)
+        let keychain = SystemKeychain(service: keychainService, accessGroup: group)
         let keyring = SecureEnclaveKeyring(accessGroup: group, allowWatch: settings.allowWatchUnlock)
         return VaultEnvironment(
-            databaseURL: defaultDatabaseURL(),
+            databaseURL: databaseURL ?? defaultDatabaseURL(),
             keychain: keychain,
             biometrics: BiometricUnlock(keyring: keyring, keychain: keychain, clock: clock),
             settings: settings,

@@ -2,13 +2,16 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Lock screen (mockup `PhoneLock`): glyph, account badge, master password field with the
-/// biometric button inside, "Déverrouiller", and when the password is asked again. Biometric
-/// unlock is tried once automatically when the screen shows up in an active scene.
+/// Lock screen (mockup `PhoneLock`): the app glyph straddling a separator line (horizontal on iPhone
+/// and iPad, the sidebar edge on Mac), the account badge, ONE master password field (show or hide
+/// button, then the biometric button behind a thin divider) and "Déverrouiller" once something is
+/// typed. Return unlocks. The Secret Key is never asked here: it stays in this device's keychain.
+/// Biometric unlock is tried once automatically when the screen shows up in an active scene.
 struct LockView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @State private var password = ""
+    @State private var revealed = false
     @State private var message: String?
     @State private var lockoutRefresh = 0
     @FocusState private var fieldFocused: Bool
@@ -16,30 +19,15 @@ struct LockView: View {
     private var session: VaultSession { model.session }
     private var unlocking: Bool { session.state == .unlocking }
 
+    static let glyphSize: CGFloat = 104
+    #if os(macOS)
+    static let sidebarWidth: CGFloat = 236
+    #endif
+
     var body: some View {
         ZStack {
             background
-            GeometryReader { geometry in
-                ScrollView {
-                    VStack(spacing: 16) {
-                        AppGlyph(size: 104)
-                        badge
-                            .padding(.top, 10)
-                        passwordField
-                            .padding(.top, 4)
-                        unlockButton
-                        footer
-                    }
-                    .frame(maxWidth: 334)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 40)
-                    #if os(visionOS)
-                    .glassBackgroundEffect()
-                    #endif
-                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
-                }
-                .scrollBounceBehavior(.basedOnSize)
-            }
+            layout
         }
         .task(id: lockoutUntil) {
             // Re-renders when the wait ends so the field and the button come back.
@@ -49,9 +37,88 @@ struct LockView: View {
         }
         .task(id: scenePhase == .active) {
             // One automatic try per app activation (AppModel), not per window or per redraw.
-            guard scenePhase == .active, model.takeAutomaticBiometricAttempt() else { return }
-            await unlockWithBiometrics(automatic: true)
+            // The password field takes the focus (and the keyboard comes up) only when no automatic
+            // biometric attempt runs, or once it failed or was cancelled.
+            guard scenePhase == .active else { return }
+            if model.takeAutomaticBiometricAttempt(), session.canUseBiometrics {
+                await unlockWithBiometrics(automatic: true)
+            } else {
+                fieldFocused = true
+            }
         }
+    }
+
+    #if os(macOS)
+    /// Mac: a sidebar-wide panel on the left; the glyph sits on its edge, the form is centered in
+    /// the rest of the window.
+    private var layout: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.035))
+                    .frame(width: Self.sidebarWidth)
+                    .frame(maxHeight: .infinity)
+                    .ignoresSafeArea()
+                Rectangle()
+                    .fill(Color.primary.opacity(0.1))
+                    .frame(width: 1)
+                    .frame(maxHeight: .infinity)
+                    .offset(x: Self.sidebarWidth)
+                    .ignoresSafeArea()
+                AppGlyph(size: Self.glyphSize)
+                    .position(x: Self.sidebarWidth + 0.5, y: geometry.size.height / 2)
+                form
+                    .frame(maxWidth: 334)
+                    .padding(.horizontal, 28)
+                    .frame(
+                        width: max(0, geometry.size.width - Self.sidebarWidth - Self.glyphSize / 2),
+                        height: geometry.size.height)
+                    .offset(x: Self.sidebarWidth + Self.glyphSize / 2)
+            }
+        }
+    }
+    #else
+    /// iPhone, iPad and Vision Pro: the glyph on a full-width line, the form below, all centered.
+    private var layout: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 16) {
+                    AppGlyph(size: Self.glyphSize)
+                        .background {
+                            Rectangle()
+                                .fill(Color.primary.opacity(0.12))
+                                .frame(width: max(geometry.size.width, 1) * 2, height: 1)
+                                .accessibilityHidden(true)
+                        }
+                    form
+                }
+                .frame(maxWidth: 334)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 40)
+                #if os(visionOS)
+                .glassBackgroundEffect()
+                #endif
+                .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .clipped()
+        }
+    }
+    #endif
+
+    private var form: some View {
+        VStack(spacing: 16) {
+            badge
+                .padding(.top, 10)
+            passwordField
+                .padding(.top, 4)
+            if !password.isEmpty || unlocking {
+                unlockButton
+                    .transition(.opacity)
+            }
+            footer
+        }
+        .animation(.smooth(duration: 0.2), value: password.isEmpty)
     }
 
     private var background: some View {
@@ -87,17 +154,46 @@ struct LockView: View {
     private var passwordField: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                SecureField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
-                    .labelsHidden()
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 17))
-                    .focused($fieldFocused)
-                    .submitLabel(.go)
-                    .onSubmit { Task { await unlockWithPassword() } }
-                    .disabled(unlocking || lockedOut)
-                    .privacySensitive()
-                    .accessibilityIdentifier("lock.password")
+                Group {
+                    if revealed {
+                        TextField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                            .autocorrectionDisabled()
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                    } else {
+                        SecureField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                    }
+                }
+                .labelsHidden()
+                .textFieldStyle(.plain)
+                .font(.system(size: 17))
+                .focused($fieldFocused)
+                .submitLabel(.go)
+                .onSubmit { Task { await unlockWithPassword() } }
+                .disabled(unlocking || lockedOut)
+                .privacySensitive()
+                .accessibilityIdentifier("lock.password")
+                Button {
+                    revealed.toggle()
+                    fieldFocused = true
+                } label: {
+                    Image(systemName: revealed ? "eye.slash" : "eye")
+                        .font(.system(size: 17))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, height: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .visionHoverEffect()
+                .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
+                .accessibilityIdentifier("lock.reveal")
                 if session.canUseBiometrics {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.15))
+                        .frame(width: 1, height: 24)
+                        .padding(.horizontal, 4)
+                        .accessibilityHidden(true)
                     Button {
                         Task { await unlockWithBiometrics(automatic: false) }
                     } label: {

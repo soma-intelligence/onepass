@@ -74,6 +74,30 @@ public actor CloudKitRemote: RemoteRecordStore {
         }
     }
 
+    /// The account ids of the zone's account params records, read from the start without creating
+    /// the zone or its subscription: a missing zone holds no account.
+    public func accountRecordIDs() async throws -> Set<String> {
+        var ids: Set<String> = []
+        var cursor: CKServerChangeToken?
+        while true {
+            let batch: RemoteBatch
+            do {
+                batch = try await fetchPage(since: cursor)
+            } catch {
+                if CloudKitMapping.zoneLoss(in: error) != nil { return [] }
+                throw error is RemoteStoreError ? error : CloudKitMapping.storeError(for: error)
+            }
+            for change in batch.changes where change.name.kind == 1 && change.data != nil {
+                ids.insert(change.name.id)
+            }
+            guard batch.moreComing else { return ids }
+            guard let next = CloudKitMapping.decodeToken(batch.token) else {
+                throw RemoteStoreError.retryable(after: nil)
+            }
+            cursor = next
+        }
+    }
+
     private func fetchPage(since cursor: CKServerChangeToken?) async throws -> RemoteBatch {
         let result = try await database.recordZoneChanges(
             inZoneWith: zoneID, since: cursor, resultsLimit: maxBatchRecords)

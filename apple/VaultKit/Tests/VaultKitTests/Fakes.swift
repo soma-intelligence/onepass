@@ -154,3 +154,11 @@ final class FakePresence: PresenceChecker {
         }
     }
 }
+
+/// Keychain whose writes report success but land where reads never look (the Debug fallback bug:
+/// written to the file keychain, looked up in the data protection keychain only).
+final class WriteOnlyKeychain: KeychainStore {
+    func read(_ key: String) throws -> Data? { nil }
+    func write(_ key: String, _ data: Data) throws {}
+    func delete(_ key: String) throws {}
+}

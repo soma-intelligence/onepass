@@ -4,22 +4,28 @@ import Security
 /// Generic-password items in the data protection keychain,
 /// `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. Exercised by the apps only.
 ///
-/// Without the keychain entitlement (unsigned local build) the data protection
-/// keychain answers `errSecMissingEntitlement` (-34018). Debug builds then fall
-/// back to the classic keychain without access group; release builds never do.
+/// Without the keychain entitlement (unsigned or ad hoc signed local build) the data
+/// protection keychain refuses writes with `errSecMissingEntitlement` (-34018) but
+/// answers lookups with `errSecItemNotFound` (-25300), never -34018. Debug builds then
+/// write to the classic (file) keychain without access group, and every lookup that
+/// finds nothing in the data protection keychain also looks there; deletes clear both.
+/// Release builds only ever use the data protection keychain.
 public struct SystemKeychain: KeychainStore {
     public static let missingEntitlement: OSStatus = -34018
 
     public let service: String
     public let accessGroup: String?
 
-    public init(service: String = "me.somalabs.onepass", accessGroup: String?) {
+    /// The app's service. Tests use their own (`me.somalabs.onepass.uitest`, `me.somalabs.onepass.tests.*`).
+    public static let defaultService = "me.somalabs.onepass"
+
+    public init(service: String = SystemKeychain.defaultService, accessGroup: String?) {
         self.service = service
         self.accessGroup = accessGroup
     }
 
     public func read(_ key: String) throws -> Data? {
-        try withFallback { legacy in
+        try lookup { legacy in
             var query = baseQuery(key, legacy: legacy)
             query[kSecReturnData as String] = true
             query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -35,7 +41,7 @@ public struct SystemKeychain: KeychainStore {
 
     /// Attributes only: the secret data is never loaded.
     public func contains(_ key: String) throws -> Bool {
-        try withFallback { legacy in
+        try lookup { legacy -> Bool? in
             var query = baseQuery(key, legacy: legacy)
             query[kSecReturnAttributes as String] = true
             query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -43,10 +49,10 @@ public struct SystemKeychain: KeychainStore {
             let status = SecItemCopyMatching(query as CFDictionary, &result)
             switch status {
             case errSecSuccess: return true
-            case errSecItemNotFound: return false
+            case errSecItemNotFound: return nil
             default: throw KeychainError.unexpectedStatus(status)
             }
-        }
+        } ?? false
     }
 
     public func write(_ key: String, _ data: Data) throws {
@@ -71,12 +77,20 @@ public struct SystemKeychain: KeychainStore {
     }
 
     public func delete(_ key: String) throws {
-        try withFallback { legacy in
+        let remove = { (legacy: Bool) throws in
             let status = SecItemDelete(baseQuery(key, legacy: legacy) as CFDictionary)
             guard status == errSecSuccess || status == errSecItemNotFound else {
                 throw KeychainError.unexpectedStatus(status)
             }
         }
+        #if DEBUG
+        do {
+            try remove(false)
+        } catch KeychainError.unexpectedStatus(let status) where status == Self.missingEntitlement {}
+        try remove(true)
+        #else
+        try remove(false)
+        #endif
     }
 
     private func baseQuery(_ key: String, legacy: Bool) -> [String: Any] {
@@ -90,6 +104,19 @@ public struct SystemKeychain: KeychainStore {
             if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
         }
         return query
+    }
+
+    /// A lookup: nil means not found. Debug builds look in the classic keychain when the data
+    /// protection keychain has nothing (or refuses), since that is where `write` fell back.
+    private func lookup<T>(_ body: (_ legacy: Bool) throws -> T?) throws -> T? {
+        #if DEBUG
+        do {
+            if let found = try body(false) { return found }
+        } catch KeychainError.unexpectedStatus(let status) where status == Self.missingEntitlement {}
+        return try body(true)
+        #else
+        return try body(false)
+        #endif
     }
 
     private func withFallback<T>(_ body: (_ legacy: Bool) throws -> T) throws -> T {

@@ -69,3 +69,33 @@ public struct ItemCounts: Equatable, Sendable {
         }
     }
 }
+
+/// Why a list shows no row: a search that matches nothing, or a scope that holds nothing yet.
+/// Only an active query is "no match"; an empty vault is never shown as a failed search.
+public enum EmptyListReason: Equatable, Sendable {
+    case noMatch
+    case emptyLibrary
+    case emptyCategory
+    case emptyTag
+    case noFavorites
+    case emptyArchive
+    case emptyTrash
+
+    public init(filter: ItemFilter, query: String) {
+        if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            self = .noMatch
+            return
+        }
+        switch filter {
+        case .all, .vault: self = .emptyLibrary
+        case .category: self = .emptyCategory
+        case .tag: self = .emptyTag
+        case .favorites: self = .noFavorites
+        case .archive: self = .emptyArchive
+        case .trash: self = .emptyTrash
+        }
+    }
+
+    /// The "Nouvel élément" button belongs to the empty state of a scope items can be created in.
+    public var offersNewItem: Bool { self == .emptyLibrary || self == .emptyCategory }
+}

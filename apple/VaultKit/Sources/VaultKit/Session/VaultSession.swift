@@ -148,12 +148,19 @@ public final class VaultSession {
     /// enrollment of the vanished account are removed; the account id, name, failure throttle and
     /// biometric wish are cleared. Ends in `.noAccount`: the app then shows the Emergency Kit restore
     /// (the data comes back from iCloud) or the onboarding. Nothing in iCloud is deleted.
+    ///
+    /// Also allowed on a locked device that definitely lacks the Secret Key of the account in the
+    /// store (`needsSecretKey`): "Créer un nouveau coffre" from the Emergency Kit screen, confirmed by
+    /// typing EFFACER. The local copy, unreadable without the key, is emptied the same way.
     public func resetForRecovery() async throws {
-        guard isAccountMissing else { throw fail(.other(Self.recoveryRefused)) }
+        let missing = isAccountMissing
+        guard missing || (state == .locked && needsSecretKey) else { throw fail(.other(Self.recoveryRefused)) }
         let path = dbPath
         generation &+= 1
         do {
-            try await environment.sync.resetStore { try resetStoreForRecovery(dbPath: path) }
+            try await environment.sync.resetStore {
+                if missing { try resetStoreForRecovery(dbPath: path) } else { try resetStore(dbPath: path) }
+            }
         } catch {
             Self.log.error("store not reset for recovery")
             evaluateStoredAccount()
@@ -177,14 +184,16 @@ public final class VaultSession {
         if state == .noAccount { lastError = nil }
     }
 
-    nonisolated static let recoveryRefused = "Cette action n'est possible que lorsque le compte a disparu du stockage."
+    nonisolated static let recoveryRefused =
+        "Cette action n'est possible que lorsque le compte a disparu du stockage ou que sa Secret Key manque."
 
     private enum Presence { case present, missing, unknown }
 
     /// Presence only, nothing loaded. `unknown` when the keychain cannot answer (device locked at a
-    /// background launch, for example): that is not a missing Secret Key.
+    /// background launch, for example) or the account cannot be named: that is not a missing
+    /// Secret Key.
     private func secretKeyPresence() -> Presence {
-        guard let accountID = settings.accountID else { return .missing }
+        guard let accountID = knownAccountID() else { return .unknown }
         do {
             return try secretKeys.contains(accountID: accountID) ? .present : .missing
         } catch {
@@ -192,10 +201,20 @@ public final class VaultSession {
         }
     }
 
+    /// The account of this device: from the settings, else (settings wiped, store kept) the account
+    /// the store shows, adopted into the settings once this device's keychain holds its Secret Key.
+    /// Nil when it cannot be told.
+    private func knownAccountID() -> String? {
+        if let accountID = settings.accountID { return accountID }
+        guard let stored = try? openSyncStore(dbPath: dbPath).accountId() else { return nil }
+        if (try? secretKeys.contains(accountID: stored)) == true { settings.accountID = stored }
+        return stored
+    }
+
     /// The stored Secret Key for an unlock. Missing: `needsSecretKey`. Keychain error: thrown as is.
     private func loadSecretKey() throws -> (accountID: String, secretKey: String) {
-        let missing = VaultError.other("La Secret Key de ce compte n'est pas sur cet appareil : utilisez votre Emergency Kit.")
-        guard let accountID = settings.accountID else {
+        let missing = VaultError.other("La Secret Key de ce compte n'est pas sur cet appareil : utilise ton Emergency Kit.")
+        guard let accountID = knownAccountID() else {
             needsSecretKey = true
             throw fail(missing)
         }
@@ -294,11 +313,29 @@ public final class VaultSession {
         try checkLockout()
         let normalized: String
         do {
-            normalized = try normalizeSecretKey(text: secretKey)
+            normalized = try Self.normalizedSecretKey(secretKey)
         } catch {
-            throw fail(.validation(field: "secretKey", reason: "Cette Secret Key n'a pas le bon format."))
+            throw fail(VaultError(error))
         }
         try await passwordUnlock(password: password, secretKey: normalized, storeSecretKey: true)
+    }
+
+    /// The canonical form of a typed Secret Key, or a `secretKey` validation error naming what is
+    /// wrong: its format (length, a character that is neither a letter nor a digit) or its check
+    /// character (a typo). A well formed key of another account only fails at the unlock.
+    nonisolated static func normalizedSecretKey(_ text: String) throws -> String {
+        let allowed = text.unicodeScalars.allSatisfy {
+            ($0.isASCII && CharacterSet.alphanumerics.contains($0)) || $0 == "-"
+                || CharacterSet.whitespacesAndNewlines.contains($0)
+        }
+        guard allowed else { throw VaultError.validation(field: "secretKey", reason: VaultError.secretKeyFormat) }
+        do {
+            return try normalizeSecretKey(text: text)
+        } catch OnePassError.InvalidInput(let what) where what == "secret key checksum" {
+            throw VaultError.validation(field: "secretKey", reason: VaultError.secretKeyChecksum)
+        } catch {
+            throw VaultError.validation(field: "secretKey", reason: VaultError.secretKeyFormat)
+        }
     }
 
     private func passwordUnlock(password: String, secretKey: String, storeSecretKey: Bool) async throws {

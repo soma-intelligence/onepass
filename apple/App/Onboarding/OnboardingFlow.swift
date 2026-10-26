@@ -127,13 +127,27 @@ final class OnboardingModel {
 
     // MARK: - Primary action
 
-    var passwordBits: Double { estimatedBits(password) }
+    var passwordBits: Double { PasswordStrength.estimatedBits(password) }
 
     var confirmationMismatch: Bool { !confirmation.isEmpty && confirmation != password }
 
-    /// "Continuer" from the "bon" level and when both fields match.
+    /// "Continuer" once the password reaches the master password gate (five random words pass,
+    /// `PasswordStrength.masterPasswordMinimumBits`) and both fields match.
     var passwordAccepted: Bool {
-        StrengthMeter.level(forBits: passwordBits) >= 3 && password == confirmation
+        PasswordStrength.acceptsMasterPassword(password) && password == confirmation
+    }
+
+    /// Shown under "Générer" so it can be written down; cleared with the password.
+    private(set) var generatedPassword: String?
+
+    /// "Générer": five French words drawn at random, put in both fields.
+    func generateMasterPassword() {
+        guard let value = try? generatePassword(recipe: PasswordStrength.masterPasswordRecipe) else {
+            return
+        }
+        password = value
+        confirmation = value
+        generatedPassword = value
     }
 
     var primaryLabel: String? {
@@ -202,7 +216,9 @@ final class OnboardingModel {
         do {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
             secretKey = try await session.createAccount(password: password, displayName: name, mode: mode)
+            // The password stays in memory for the biometric enrollment; its shown copy goes now.
             confirmation = ""
+            generatedPassword = nil
             advance()
         } catch {
             errorMessage = VaultError(error).localizedMessage
@@ -253,7 +269,7 @@ final class OnboardingModel {
         do {
             try await session.restore(secretKey: restoreKey, password: restorePassword)
         } catch {
-            errorMessage = VaultError(error).localizedMessage
+            errorMessage = VaultError(error).restoreMessage
             return
         }
         if !restoreOnly { session.setDeviceMode(mode) }
@@ -266,6 +282,14 @@ final class OnboardingModel {
         restoreKey = ""
         advance()
     }
+
+    /// "Créer un nouveau coffre" on the Emergency Kit screen of a device without the Secret Key,
+    /// confirmed by typing EFFACER: the unreadable local copy is cleared, the onboarding starts over.
+    func startOver() async throws {
+        try await model.startOver()
+    }
+
+    func newVaultOffer() async -> NewVaultOffer { await model.newVaultOffer() }
 
     func switchToRestore() {
         offerRestore = false
@@ -281,6 +305,7 @@ final class OnboardingModel {
         deleteKit()
         password = ""
         confirmation = ""
+        generatedPassword = nil
         restorePassword = ""
         restoreKey = ""
         secretKey = nil
@@ -291,6 +316,7 @@ final class OnboardingModel {
     private func finish() {
         password = ""
         confirmation = ""
+        generatedPassword = nil
         restorePassword = ""
         secretKey = nil
         model.onboardingInProgress = false
@@ -409,6 +435,12 @@ struct OnboardingFlow: View {
             // whatever the reason the onboarding is on screen.
             let restoreOnly = app.session.needsSecretKey && app.session.state != .noAccount
             if model == nil { model = OnboardingModel(model: app, restoreOnly: restoreOnly) }
+        }
+        .onChange(of: app.session.needsSecretKey) { _, needed in
+            // "Créer un nouveau coffre": the restore-only flow gives way to the full onboarding.
+            if !needed, app.session.state == .noAccount, model?.restoreOnly == true {
+                model = OnboardingModel(model: app, restoreOnly: false)
+            }
         }
         .onChange(of: app.session.state) { old, new in
             // A lock after the creation or restore unlocked the session (spec 4 point 5).

@@ -12,10 +12,12 @@
 # - Mac: `screencapture` is refused on the development host, so the app's own
 #   Debug snapshot mode is used instead (`-OnePassSnapshot <folder>`,
 #   App/Root/Snapshot.swift): it renders its window with `cacheDisplay` (no
-#   screen recording permission), light then dark, then quits. The app is
-#   sandboxed, so the PNGs land in its container
-#   (~/Library/Containers/me.somalabs.onepass/Data/tmp/OnePassSnapshot) and are
-#   copied from there.
+#   screen recording permission), light then dark, then quits. It runs as a
+#   copy re-signed under its own bundle identifier (me.somalabs.onepass.screenshots),
+#   so its sandbox container, defaults and keychain are not the app's: the real
+#   container ~/Library/Containers/me.somalabs.onepass is never touched. The
+#   PNGs land in that copy's container (Data/tmp/OnePassSnapshot), are copied
+#   from there, and the copy and its container are removed at the end.
 #
 # The folder must be outside the repository. Only the two dedicated
 # simulators are used; the iPad one is shut down again if this script booted it.
@@ -108,10 +110,17 @@ echo "screenshots: Mac"
 (cd "$APPLE_DIR" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
   -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build -quiet)
-MAC_APP="$DERIVED/Build/Products/Debug/OnePass.app"
-CONTAINER_SHOTS="$HOME/Library/Containers/me.somalabs.onepass/Data/tmp/OnePassSnapshot"
+# A copy under its own bundle identifier: its own container, defaults and keychain items.
+SHOTS_ID="me.somalabs.onepass.screenshots"
+SHOTS_CONTAINER="$HOME/Library/Containers/$SHOTS_ID"
 MAC_STAGING="$STAGING/mac"
 mkdir -p "$MAC_STAGING"
+MAC_APP="$STAGING/OnePassScreenshots.app"
+rm -rf "$MAC_APP"
+cp -R "$DERIVED/Build/Products/Debug/OnePass.app" "$MAC_APP"
+plutil -replace CFBundleIdentifier -string "$SHOTS_ID" "$MAC_APP/Contents/Info.plist"
+codesign --force --sign - --preserve-metadata=entitlements "$MAC_APP" >/dev/null 2>&1
+CONTAINER_SHOTS="$SHOTS_CONTAINER/Data/tmp/OnePassSnapshot"
 # Only the files this mode writes, from an earlier run.
 rm -f "$CONTAINER_SHOTS"/mac-*.png "$CONTAINER_SHOTS/trace.txt"
 
@@ -132,6 +141,8 @@ if ! ls "$MAC_STAGING"/mac-*.png >/dev/null 2>&1 && [ -d "$CONTAINER_SHOTS" ]; t
 fi
 
 cp "$MAC_STAGING"/*.png "$OUT"/ 2>/dev/null || true
+# The screenshot copy and everything it wrote (its container only, never the app's).
+rm -rf "$MAC_APP" "$SHOTS_CONTAINER"
 
 COUNT="$(find "$OUT" -maxdepth 1 -name '*.png' | wc -l | tr -d ' ')"
 echo "screenshots: $COUNT PNG in $OUT"

@@ -2,7 +2,8 @@
 import Foundation
 import VaultKit
 
-/// Screenshots and manual checks, Debug builds only. Fictional data only.
+/// Screenshots and manual checks, Debug builds only. Fictional data only, in the isolated test
+/// store (`TestIsolation` is forced by `-OnePassDebugItem` and `-OnePassDebugNewItem`).
 ///
 /// - `-OnePassDebugItem login|card|note|reward`: unlocks the fictional account (created when
 ///   missing), adds a few fictional items once, and opens the chosen one.
