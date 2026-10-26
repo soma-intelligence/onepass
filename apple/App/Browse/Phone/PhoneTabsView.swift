@@ -30,6 +30,8 @@ struct PhoneTabsView: View {
     @State private var paths: [PhoneTab: [PhoneRoute]] = [:]
     @State private var searchQuery = ""
     @State private var searching = false
+    /// Choosing Rechercher opens its field (off for the demo captures of the list).
+    @State private var openSearchOnSelect = true
 
     var body: some View {
         TabView(selection: $tab) {
@@ -50,12 +52,17 @@ struct PhoneTabsView: View {
             }
             .accessibilityIdentifier("tab.search")
         }
+        // On the tab view, not in the search tab's stack: the `.search` tab then turns into the
+        // search field of the tab bar (a `searchable` inside the tab showed no field at all).
+        .searchable(text: $searchQuery, isPresented: $searching, prompt: Text("Titre, site, identifiant, tag"))
         .tabBarMinimizeBehavior(.onScrollDown)
         .sheet(isPresented: newItemShown) {
             PhoneNewItemSheet()
         }
         // The top of the visible stack is the selection: a tab switch selects that tab's item.
         .onChange(of: tab) { _, newTab in
+            // The search field shows only while presented: choosing Rechercher opens it.
+            if newTab == .search, openSearchOnSelect, paths[.search]?.isEmpty ?? true { searching = true }
             let ref = paths[newTab]?.last?.itemRef
             if model.selectedItem != ref { model.perform(.select(ref)) }
         }
@@ -129,6 +136,7 @@ struct PhoneTabsView: View {
     private func applyDemoArguments() {
         let defaults = UserDefaults.standard
         if let name = defaults.string(forKey: "OnePassDemoTab"), let demoTab = PhoneTab(rawValue: name) {
+            openSearchOnSelect = false
             tab = demoTab
         }
         if let query = defaults.string(forKey: "OnePassDemoQuery") {

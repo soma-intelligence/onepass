@@ -76,13 +76,14 @@ extension View {
 }
 
 #if os(iOS)
+/// No `.password` or `.oneTimeCode`: the editor holds vault secrets, and those content types make
+/// iOS offer to save the value in the system password manager (outside the vault's encryption)
+/// or fill in a code received by SMS.
 private func contentType(_ kind: FfiFieldType) -> UITextContentType? {
     switch kind {
     case .url: .URL
     case .email: .emailAddress
     case .phone: .telephoneNumber
-    case .password: .password
-    case .otp: .oneTimeCode
     default: nil
     }
 }

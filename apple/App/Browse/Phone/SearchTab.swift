@@ -4,7 +4,8 @@ import SwiftUI
 import VaultKit
 
 /// Rechercher (spec 6.2, mockup `PhoneSearch`): the search tab (role `.search`) searches every
-/// active item.
+/// active item. The search field belongs to the tab view (`PhoneTabsView`): iOS 26 shows it in
+/// the tab bar only when `searchable` is applied there.
 /// Category chips (types present only) narrow the results; with an empty search they are the
 /// suggestions and the list shows every item of the chosen category.
 struct SearchTab: View {
@@ -60,7 +61,6 @@ struct SearchTab: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Rechercher")
-        .searchable(text: $query, isPresented: $isSearching, prompt: Text("Titre, site, identifiant, tag"))
     }
 
     private func chips(_ categories: [ItemCategory]) -> some View {
