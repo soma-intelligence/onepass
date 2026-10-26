@@ -1,7 +1,7 @@
 import SwiftUI
 import VaultKit
 
-/// The unlocked app. Mac and iPad in regular width: `SplitBrowseView` (three columns). iPhone and
+/// The unlocked app. Mac, Vision Pro and iPad in regular width: `SplitBrowseView` (three columns). iPhone and
 /// iPad in compact width (Split View, Slide Over): `PhoneTabsView`. Both share the guarded actions:
 /// the ⌘N type picker and "Abandonner les modifications ?" before a lock or a navigation would
 /// drop an edited draft.
@@ -14,11 +14,41 @@ struct BrowseRoot: View {
     var body: some View {
         @Bindable var model = model
         return layout
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             .sheet(isPresented: $model.showSettings) {
                 SettingsView()
             }
             #endif
+            // "Générer un mot de passe" Control (`onepass://generator`): the value is only copied.
+            .sheet(isPresented: $model.showGenerator) {
+                GeneratorSheet(
+                    onUse: { value in
+                        model.session.copy(value, concealed: true)
+                        model.showToast(String(localized: "Copié · effacé dans 90 s"))
+                    },
+                    purpose: .copy)
+            }
+            // "Copier le code à usage unique" when the device cannot confirm the user itself.
+            .sheet(item: $model.totpPasswordRequest) { ref in
+                PasswordPromptSheet(
+                    title: "Copier le code à usage unique",
+                    footer: "Le mot de passe maître est demandé pour copier le code à usage unique."
+                ) { password in
+                    try await model.session.verifyMasterPassword(password)
+                    await model.copyTotpCode(ref)
+                }
+                .onAppear { model.totpPromptShown = true }
+            }
+            // The split view shows a revealed item through the selection, and searches through
+            // `searchFocusRequest`; the iPhone tabs handle the reveal themselves.
+            .onChange(of: model.browseReveal, initial: true) { _, reveal in
+                guard let reveal, !handlesRevealInTabs else { return }
+                model.browseReveal = nil
+                if reveal == .search {
+                    // The list column may appear in this same update: asked again once it is there.
+                    Task { model.searchFocusRequest &+= 1 }
+                }
+            }
             // On iPhone the new item sheet carries its own confirmation (shown over the sheet).
             .discardConfirmation(active: !phoneNewItemShown)
             .overlay(alignment: .bottom) {
@@ -27,7 +57,11 @@ struct BrowseRoot: View {
                         .font(.footnote.weight(.medium))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
+                        #if os(visionOS)
+                        .glassBackgroundEffect(in: Capsule())
+                        #else
                         .glassEffect(.regular, in: Capsule())
+                        #endif
                         .padding(.bottom, 18)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .accessibilityIdentifier("browse.toast")
@@ -38,7 +72,7 @@ struct BrowseRoot: View {
     }
 
     @ViewBuilder private var layout: some View {
-        #if os(macOS)
+        #if os(macOS) || os(visionOS)
         split
         #else
         if usesTabs {
@@ -61,6 +95,14 @@ struct BrowseRoot: View {
     #if os(iOS)
     private var usesTabs: Bool { !(UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular) }
     #endif
+
+    private var handlesRevealInTabs: Bool {
+        #if os(iOS)
+        usesTabs
+        #else
+        false
+        #endif
+    }
 
     private var phoneNewItemShown: Bool {
         #if os(iOS)
@@ -102,4 +144,9 @@ private struct DiscardConfirmation: ViewModifier {
             get: { active && model.pendingDiscard != nil },
             set: { if !$0 { model.pendingDiscard = nil } })
     }
+}
+
+/// The master password sheet of "Copier le code à usage unique" is presented for an item.
+extension ItemRef: Identifiable {
+    var id: Self { self }
 }

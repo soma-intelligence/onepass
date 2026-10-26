@@ -47,7 +47,7 @@ struct GeneralSettings: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Général")
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
     }

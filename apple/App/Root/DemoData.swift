@@ -133,7 +133,7 @@ extension AppModel {
                 if defaults.bool(forKey: "OnePassDemoLocked") { lock() }
                 // `-OnePassDemoAccountChanged YES`: the "Le compte iCloud a changé" banner.
                 if defaults.bool(forKey: "OnePassDemoAccountChanged") { debugSetSyncStatus(.accountChanged) }
-                #if os(iOS)
+                #if os(iOS) || os(visionOS)
                 // Screenshots: `-OnePassDemoSettings YES [-OnePassDemoSettingsPage security]`.
                 showSettings = defaults.bool(forKey: "OnePassDemoSettings")
                 #endif

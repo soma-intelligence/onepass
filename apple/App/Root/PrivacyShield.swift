@@ -16,7 +16,7 @@ struct PrivacyShield: View {
     }
 }
 
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 /// One shield window per window scene, at a level above alerts, so it also covers sheets and the
 /// share sheet presented by the scene's windows. Shown while the scene is not active.
 @MainActor

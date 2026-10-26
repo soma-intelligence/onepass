@@ -4,6 +4,10 @@
 //! seals the wrapped key under
 //! `HKDF-SHA256(salt = empty, ikm = ss_mlkem || ss_x25519 || ct_mlkem ||
 //! eph_x25519_pub || recipient_x25519, info = "onepass/kem/v1" || context)`.
+//!
+//! Labeled envelopes (`wrap_key_labeled`) use the same layout and combiner
+//! with `info = label || u32_be(len(context)) || context`, and bind the
+//! inner blob to that whole info string.
 
 use std::fmt;
 
@@ -106,6 +110,33 @@ impl HybridKemSecret {
     }
 }
 
+impl HybridKemPublic {
+    /// `mlkem (1568) || x25519 (32)`.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(MLKEM_PUBLIC_LEN + X25519_LEN);
+        out.extend_from_slice(&self.mlkem);
+        out.extend_from_slice(&self.x25519);
+        out
+    }
+
+    /// Inverse of `to_bytes`: 1600 bytes whose ML-KEM part parses as an
+    /// encapsulation key.
+    pub fn from_bytes(b: &[u8]) -> Result<HybridKemPublic> {
+        if b.len() != MLKEM_PUBLIC_LEN + X25519_LEN {
+            return Err(Error::InvalidFormat("kem public key length"));
+        }
+        let (mlkem, x) = b.split_at(MLKEM_PUBLIC_LEN);
+        EncapsulationKey::new(&ML_KEM_1024, mlkem)
+            .map_err(|_| Error::InvalidFormat("mlkem public key"))?;
+        Ok(HybridKemPublic {
+            mlkem: mlkem.to_vec(),
+            x25519: x
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("kem public key length"))?,
+        })
+    }
+}
+
 impl fmt::Debug for HybridKemSecret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("HybridKemSecret(**)")
@@ -133,7 +164,7 @@ fn combine(
     ct_mlkem: &[u8],
     eph_pub: &[u8; 32],
     recipient_x25519: &[u8; 32],
-    context: &[u8],
+    info: &[&[u8]],
 ) -> Result<SymmetricKey> {
     let mut ikm = Zeroizing::new(Vec::with_capacity(
         ss_mlkem.len() + ss_x25519.len() + ct_mlkem.len() + 2 * X25519_LEN,
@@ -143,7 +174,7 @@ fn combine(
     ikm.extend_from_slice(ct_mlkem);
     ikm.extend_from_slice(eph_pub);
     ikm.extend_from_slice(recipient_x25519);
-    hkdf32(&[], &ikm, &[KEM_INFO, context])
+    hkdf32(&[], &ikm, info)
 }
 
 /// Blob context: blob id = first 16 bytes of SHA-256(context).
@@ -158,7 +189,8 @@ fn blob_aad(context: &[u8]) -> Aad {
     }
 }
 
-fn envelope_len() -> usize {
+/// Length of every envelope: it wraps a 32-byte key.
+pub(crate) fn envelope_len() -> usize {
     MLKEM_CT_LEN + X25519_LEN + HEADER_LEN + padded_len(LEN_PREFIX + 32) + TAG_LEN
 }
 
@@ -167,6 +199,60 @@ pub fn wrap_key(
     recipient: &HybridKemPublic,
     key: &SymmetricKey,
     context: &[u8],
+) -> Result<Vec<u8>> {
+    wrap_with_info(recipient, key, &[KEM_INFO, context], context)
+}
+
+/// Unwrap a key wrapped to `secret` under `context`.
+pub fn unwrap_key(
+    secret: &HybridKemSecret,
+    envelope: &[u8],
+    context: &[u8],
+) -> Result<SymmetricKey> {
+    unwrap_with_info(secret, envelope, &[KEM_INFO, context], context)
+}
+
+/// `label || u32_be(len(context)) || context`. The length prefix makes
+/// the split between label and context unambiguous, and the info differs
+/// from the unframed `KEM_INFO || context` of `wrap_key` for the same
+/// context. Callers use a label of their own, never `KEM_INFO`.
+fn labeled_info(label: &[u8], context: &[u8]) -> Result<Vec<u8>> {
+    let len = u32::try_from(context.len()).map_err(|_| Error::InvalidFormat("kem context"))?;
+    let mut info = Vec::with_capacity(label.len() + 4 + context.len());
+    info.extend_from_slice(label);
+    info.extend_from_slice(&len.to_be_bytes());
+    info.extend_from_slice(context);
+    Ok(info)
+}
+
+/// Wrap `key` to `recipient` under a label of its own (a context family
+/// other than the vault keys), bound to `context`.
+pub fn wrap_key_labeled(
+    recipient: &HybridKemPublic,
+    key: &SymmetricKey,
+    label: &[u8],
+    context: &[u8],
+) -> Result<Vec<u8>> {
+    let info = labeled_info(label, context)?;
+    wrap_with_info(recipient, key, &[&info], &info)
+}
+
+/// Unwrap a key wrapped with `wrap_key_labeled` under `label` and `context`.
+pub fn unwrap_key_labeled(
+    secret: &HybridKemSecret,
+    envelope: &[u8],
+    label: &[u8],
+    context: &[u8],
+) -> Result<SymmetricKey> {
+    let info = labeled_info(label, context)?;
+    unwrap_with_info(secret, envelope, &[&info], &info)
+}
+
+fn wrap_with_info(
+    recipient: &HybridKemPublic,
+    key: &SymmetricKey,
+    info: &[&[u8]],
+    aad_context: &[u8],
 ) -> Result<Vec<u8>> {
     if recipient.mlkem.len() != MLKEM_PUBLIC_LEN {
         return Err(Error::InvalidFormat("mlkem public key length"));
@@ -185,9 +271,14 @@ pub fn wrap_key(
         ct.as_ref(),
         &eph_pub,
         &recipient.x25519,
-        context,
+        info,
     )?;
-    let blob = seal(&ss, BlobKind::VaultKey, &blob_aad(context), key.expose())?;
+    let blob = seal(
+        &ss,
+        BlobKind::VaultKey,
+        &blob_aad(aad_context),
+        key.expose(),
+    )?;
 
     let mut out = Vec::with_capacity(MLKEM_CT_LEN + X25519_LEN + blob.len());
     out.extend_from_slice(ct.as_ref());
@@ -196,11 +287,11 @@ pub fn wrap_key(
     Ok(out)
 }
 
-/// Unwrap a key wrapped to `secret` under `context`.
-pub fn unwrap_key(
+fn unwrap_with_info(
     secret: &HybridKemSecret,
     envelope: &[u8],
-    context: &[u8],
+    info: &[&[u8]],
+    aad_context: &[u8],
 ) -> Result<SymmetricKey> {
     if envelope.len() != envelope_len() {
         return Err(Error::InvalidFormat("kem envelope length"));
@@ -220,15 +311,8 @@ pub fn unwrap_key(
     let own_pub = x25519_public(&x)?;
     let ss_x25519 = x25519_agree(&x, &eph_pub)?;
 
-    let ss = combine(
-        ss_mlkem.as_ref(),
-        &ss_x25519,
-        ct,
-        &eph_pub,
-        &own_pub,
-        context,
-    )?;
-    let plain = open(&ss, BlobKind::VaultKey, &blob_aad(context), blob)?;
+    let ss = combine(ss_mlkem.as_ref(), &ss_x25519, ct, &eph_pub, &own_pub, info)?;
+    let plain = open(&ss, BlobKind::VaultKey, &blob_aad(aad_context), blob)?;
     if plain.len() != 32 {
         return Err(Error::InvalidFormat("wrapped key length"));
     }
@@ -375,5 +459,96 @@ mod tests {
     fn debug_never_prints_bytes() {
         let sk = HybridKemSecret::generate().unwrap();
         assert_eq!(format!("{sk:?}"), "HybridKemSecret(**)");
+    }
+
+    #[test]
+    fn labeled_round_trip() {
+        let sk = HybridKemSecret::generate().unwrap();
+        let k = SymmetricKey::generate().unwrap();
+        let env = wrap_key_labeled(&sk.public().unwrap(), &k, b"onepass/test/v1", b"ctx").unwrap();
+        let got = unwrap_key_labeled(&sk, &env, b"onepass/test/v1", b"ctx").unwrap();
+        assert_eq!(got.expose(), k.expose());
+    }
+
+    #[test]
+    fn labeled_rejects_other_label_or_context() {
+        let sk = HybridKemSecret::generate().unwrap();
+        let k = SymmetricKey::generate().unwrap();
+        let env = wrap_key_labeled(&sk.public().unwrap(), &k, b"label/a", b"ctx").unwrap();
+        assert!(unwrap_key_labeled(&sk, &env, b"label/b", b"ctx").is_err());
+        assert!(unwrap_key_labeled(&sk, &env, b"label/a", b"ctx2").is_err());
+        // Moving bytes between label and context changes the framing.
+        assert!(unwrap_key_labeled(&sk, &env, b"label/ac", b"tx").is_err());
+        let other = HybridKemSecret::generate().unwrap();
+        assert!(unwrap_key_labeled(&other, &env, b"label/a", b"ctx").is_err());
+    }
+
+    #[test]
+    fn wrap_key_unchanged() {
+        let sk = HybridKemSecret::generate().unwrap();
+        let k = SymmetricKey::generate().unwrap();
+        let env = wrap_key(&sk.public().unwrap(), &k, b"vault:1").unwrap();
+        assert_eq!(env.len(), envelope_len());
+        assert_eq!(
+            unwrap_key(&sk, &env, b"vault:1").unwrap().expose(),
+            k.expose()
+        );
+        // Same combiner bytes as before the refactor: info is the plain
+        // concatenation `KEM_INFO || context`.
+        let ss_a = combine(
+            b"a",
+            b"b",
+            b"c",
+            &[1; 32],
+            &[2; 32],
+            &[KEM_INFO, b"vault:1"],
+        )
+        .unwrap();
+        let ss_b = hkdf32(
+            &[],
+            &[&b"abc"[..], &[1; 32], &[2; 32]].concat(),
+            &[b"onepass/kem/v1vault:1"],
+        )
+        .unwrap();
+        assert_eq!(ss_a.expose(), ss_b.expose());
+    }
+
+    #[test]
+    fn labeled_is_not_interchangeable() {
+        let sk = HybridKemSecret::generate().unwrap();
+        let k = SymmetricKey::generate().unwrap();
+        let pk = sk.public().unwrap();
+        let env = wrap_key_labeled(&pk, &k, KEM_INFO, b"vault:1").unwrap();
+        assert!(unwrap_key(&sk, &env, b"vault:1").is_err());
+        let env = wrap_key(&pk, &k, b"vault:1").unwrap();
+        assert!(unwrap_key_labeled(&sk, &env, KEM_INFO, b"vault:1").is_err());
+    }
+
+    #[test]
+    fn public_bytes_roundtrip() {
+        let pk = HybridKemSecret::generate().unwrap().public().unwrap();
+        let bytes = pk.to_bytes();
+        assert_eq!(bytes.len(), 1600);
+        assert_eq!(&bytes[..1568], &pk.mlkem[..]);
+        assert_eq!(&bytes[1568..], &pk.x25519[..]);
+        assert_eq!(HybridKemPublic::from_bytes(&bytes).unwrap(), pk);
+        assert!(HybridKemPublic::from_bytes(&bytes[..1599]).is_err());
+        let mut longer = bytes.clone();
+        longer.push(0);
+        assert!(HybridKemPublic::from_bytes(&longer).is_err());
+    }
+
+    #[test]
+    fn wrap_key_golden_vector() {
+        const V: &str = include_str!("../../tests/vectors/kem_wrap_key_v1.hex");
+        let hex = |l: &str| data_encoding::HEXLOWER.decode(l.as_bytes()).unwrap();
+        let lines: Vec<Vec<u8>> = V.lines().map(hex).collect();
+        let [secret, key, context, envelope] = &lines[..] else {
+            panic!("four lines");
+        };
+        let sk = HybridKemSecret::from_bytes(secret).unwrap();
+        let got = unwrap_key(&sk, envelope, context).unwrap();
+        assert_eq!(&got.expose()[..], &key[..]);
+        assert!(unwrap_key_labeled(&sk, envelope, KEM_INFO, context).is_err());
     }
 }

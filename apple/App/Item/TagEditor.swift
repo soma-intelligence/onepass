@@ -35,6 +35,7 @@ struct TagEditor: View {
                         .background(.tint.opacity(0.14), in: Capsule())
                     }
                     .buttonStyle(.plain)
+                    .visionHoverEffect()
                     .accessibilityLabel(Text("Retirer le tag \(tag)"))
                 }
             }

@@ -4,7 +4,7 @@ import VaultKit
 
 @main
 struct OnePassApp: App {
-    #if os(iOS)
+    #if os(iOS) || os(visionOS)
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     #else
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -38,6 +38,9 @@ struct OnePassApp: App {
         WindowGroup {
             root
         }
+        #if os(visionOS)
+        .defaultSize(width: 1280, height: 820)
+        #endif
         .onChange(of: scenePhase) { _, phase in
             model.scenePhaseChanged(phase)
         }
@@ -57,7 +60,7 @@ struct OnePassApp: App {
 
 /// Remote notifications (CloudKit database subscription) start a sync round.
 /// Registration only happens in the CloudKit build: the unsigned build has no push entitlement.
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 final class AppDelegate: NSObject, UIApplicationDelegate {
     var model: AppModel?
 
@@ -65,7 +68,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        #if ONEPASS_CLOUDKIT
+        // visionOS: no push registration (iOS only).
+        #if ONEPASS_CLOUDKIT && os(iOS)
         application.registerForRemoteNotifications()
         #endif
         return true

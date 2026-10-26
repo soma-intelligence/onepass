@@ -2,6 +2,7 @@
 //! sees vault keys, item keys or the keyset: it gets decrypted items for
 //! display and editing only.
 
+mod companion;
 mod convert;
 mod error;
 mod session;
@@ -19,6 +20,7 @@ use onepass_core::sync::{AccountState, SyncStore};
 use onepass_core::totp;
 use zeroize::Zeroizing;
 
+pub use companion::*;
 use convert::{sections_to_ffi, type_label};
 pub use error::OnePassError;
 use error::invalid;

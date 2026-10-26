@@ -284,7 +284,7 @@ public actor SiteIconLoader {
 
     private func write(_ data: Data, to url: URL) {
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         let options: Data.WritingOptions = [.atomic, .completeFileProtectionUnlessOpen]
         #else
         let options: Data.WritingOptions = [.atomic]

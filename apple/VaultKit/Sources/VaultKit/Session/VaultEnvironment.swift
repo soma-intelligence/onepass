@@ -84,12 +84,12 @@ public struct VaultEnvironment: Sendable {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let folder = base.appendingPathComponent("OnePass", isDirectory: true)
         var attributes: [FileAttributeKey: Any] = [:]
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         attributes[.protectionKey] = FileProtectionType.completeUntilFirstUserAuthentication
         #endif
         try? FileManager.default.createDirectory(
             at: folder, withIntermediateDirectories: true, attributes: attributes)
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         try? FileManager.default.setAttributes(attributes, ofItemAtPath: folder.path)
         #endif
         return folder.appendingPathComponent("vault.sqlite")

@@ -1,4 +1,5 @@
 import DesignKit
+import GlanceKit
 import SwiftUI
 import VaultKit
 
@@ -6,7 +7,7 @@ import VaultKit
 /// or the unlocked app. On iPhone and iPad it also drives this window scene's privacy shield.
 struct RootView: View {
     @Environment(AppModel.self) private var model
-    #if os(iOS)
+    #if os(iOS) || os(visionOS)
     @Environment(\.scenePhase) private var scenePhase
     @State private var windowScene: UIWindowScene?
     #endif
@@ -16,9 +17,25 @@ struct RootView: View {
             .animation(.smooth(duration: 0.25), value: route)
             .onAppear { model.start() }
             .onChange(of: model.session.state) { _, state in
-                if state != .unlocked { model.resetNavigation() }
+                model.sessionStateChanged(state)
             }
-            #if os(iOS)
+            // Favorites, titles and codes of the widgets follow the data.
+            .onChange(of: model.session.summaries) {
+                model.companion.sessionChanged()
+            }
+            // A vault hidden on this device leaves the widgets too.
+            .onChange(of: model.session.hiddenVaultIDs) {
+                model.companion.sessionChanged()
+            }
+            // A route kept during the onboarding (its account creation unlocks first).
+            .onChange(of: model.onboardingInProgress) { _, inProgress in
+                if !inProgress { model.consumePendingRoute() }
+            }
+            .onOpenURL { url in
+                // Anything but the three `onepass://` links is ignored.
+                if let link = OnePassLink(url: url) { model.open(link) }
+            }
+            #if os(iOS) || os(visionOS)
             .background { WindowSceneReader(scene: $windowScene).frame(width: 0, height: 0) }
             .onChange(of: scenePhase, initial: true) { _, phase in
                 updateShield(phase)
@@ -29,7 +46,7 @@ struct RootView: View {
             #endif
     }
 
-    #if os(iOS)
+    #if os(iOS) || os(visionOS)
     /// Above every presentation (sheets, share sheet, alerts): a window of its own (spec 9).
     private func updateShield(_ phase: ScenePhase) {
         guard let windowScene else { return }

@@ -51,8 +51,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
 }
 
-#if os(iOS)
-/// iPhone and iPad (mockup `PhoneSettings`): grouped list of pages, "OK" closes. Later milestones
+#if os(iOS) || os(visionOS)
+/// iPhone, iPad and Vision Pro (mockup `PhoneSettings`): grouped list of pages, "OK" closes. Later milestones
 /// add their pages (Extension Safari, Remplissage auto, Appareils) to this list.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
@@ -81,6 +81,9 @@ struct SettingsView: View {
                 }
                 Section {
                     row(.vaults)
+                    #if os(iOS)
+                    watchRow
+                    #endif
                 }
                 Section {
                     row(.about)
@@ -102,6 +105,29 @@ struct SettingsView: View {
         }
         .simultaneousGesture(TapGesture().onEnded { model.session.noteActivity() })
     }
+
+    #if os(iOS)
+    /// "Apple Watch": iOS only, so not a `SettingsPage` (the Mac window iterates over those).
+    /// An iPad has no pairing and the page says so.
+    private var watchRow: some View {
+        NavigationLink {
+            WatchSettings()
+        } label: {
+            Label {
+                Text("Apple Watch")
+            } icon: {
+                Image(systemName: "applewatch")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Color(red: 0.20, green: 0.52, blue: 0.80),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+        }
+        .accessibilityIdentifier("settings.watch")
+    }
+    #endif
 
     private func row(_ page: SettingsPage) -> some View {
         NavigationLink(value: page) {

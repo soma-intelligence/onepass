@@ -15,6 +15,11 @@ import VaultKit
         }
     }
 
+    @Test func hexMatchesTileColor() {
+        #expect(ItemCategory.of(.login).hex == 0x0E9F9F)
+        #expect(ItemCategory.all.allSatisfy { $0.hex <= 0xFFFFFF })
+    }
+
     @Test func orderMatchesCore() {
         #expect(ItemCategory.all.map(\.type) == itemTypes().map(\.itemType))
     }

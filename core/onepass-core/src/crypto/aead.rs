@@ -34,6 +34,8 @@ pub enum BlobKind {
     Archive = 9,
     /// The sealed Travel Mode state (`repo::travel`, milestone 7).
     TravelState = 10,
+    /// Watch companion payload (milestone 6).
+    Companion = 11,
 }
 
 /// Context a blob is bound to. Opening under any other context fails.
@@ -264,6 +266,11 @@ mod tests {
     #[test]
     fn blob_kind_archive_code() {
         assert_eq!(BlobKind::Archive as u8, 9);
+    }
+
+    #[test]
+    fn blob_kind_companion_code() {
+        assert_eq!(BlobKind::Companion as u8, 11);
     }
 
     use super::*;

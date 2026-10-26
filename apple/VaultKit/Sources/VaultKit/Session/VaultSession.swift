@@ -838,7 +838,7 @@ public final class VaultSession {
         return failure
     }
 
-    private func read<T: Sendable>(_ op: @escaping @Sendable (Session) throws -> T) async throws -> T {
+    func read<T: Sendable>(_ op: @escaping @Sendable (Session) throws -> T) async throws -> T {
         guard let session else { throw fail(.passwordRequired) }
         let gen = generation
         noteActivity()

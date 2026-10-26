@@ -313,7 +313,7 @@ final class OnboardingModel {
                 secretKey: secretKey, accountID: accountID,
                 displayName: model.settings.displayName, createdAt: Date())
             let url = folder.appendingPathComponent("Emergency Kit OnePass.pdf")
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             try data.write(to: url, options: [.atomic, .completeFileProtection])
             #else
             try data.write(to: url, options: .atomic)
@@ -346,11 +346,22 @@ final class OnboardingModel {
         default:
             #if os(macOS)
             return "Touch ID"
+            #elseif os(visionOS)
+            return "Optic ID"
             #else
             return "Face ID"
             #endif
         }
     }()
+
+    /// SF Symbol of the biometry named by `biometryName`.
+    static var biometrySymbol: String {
+        switch biometryName {
+        case "Touch ID": "touchid"
+        case "Optic ID": "opticid"
+        default: "faceid"
+        }
+    }
 
     static func railLabel(_ step: OnboardingStep) -> String {
         switch step {
@@ -377,6 +388,13 @@ struct OnboardingFlow: View {
             if let model {
                 #if os(macOS)
                 MacOnboardingLayout(model: model)
+                #elseif os(visionOS)
+                // A floating glass card in the window.
+                PhoneOnboardingLayout(model: model)
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: 640)
+                    .glassBackgroundEffect()
+                    .padding(32)
                 #else
                 PhoneOnboardingLayout(model: model)
                 #endif
@@ -401,7 +419,7 @@ struct OnboardingFlow: View {
 
 // MARK: - iPhone and iPad
 
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 private struct PhoneOnboardingLayout: View {
     @Bindable var model: OnboardingModel
 
@@ -417,7 +435,9 @@ private struct PhoneOnboardingLayout: View {
                     .padding(.vertical, 10)
                     .frame(maxWidth: .infinity)
             }
+            #if os(iOS)
             .scrollDismissesKeyboard(.interactively)
+            #endif
             bottomBar
                 .frame(maxWidth: 520)
                 .padding(.horizontal, 24)

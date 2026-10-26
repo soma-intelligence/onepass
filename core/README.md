@@ -335,3 +335,16 @@ onepass travel off    --upstream amont.db [--accept-unpinned]
 - Les drapeaux d'un vault existant ne se modifient pas.
 - Le Travel Mode utilise un fichier amont de développement, pas la synchro.
 - Le masquage des sorties est une réduction de risque, pas une garantie.
+
+## Module `companion` de `onepass-core` (jalon 6)
+
+`onepass-core/src/companion.rs` : ce qui sort du coffre pour l'Apple Watch et les widgets iOS. Spec : `docs/superpowers/specs/2026-10-26-milestone-6-watch-vision-design.md`, sécurité : section 12 de [`docs/security/README.md`](../docs/security/README.md).
+
+- `build_payload(repo, generation, now, excluded_vaults)` : items `on_watch` vivants (ni corbeille, ni archive, ni `reprompt`, hors vaults exclus), triés par titre, 50 au plus (`MAX_ENTRIES`), champs par liste fermée selon le type, valeur de plus de 1 Kio omise (`MAX_VALUE_BYTES`), carte bancaire réduite à `•••• 1234`. Jamais le mot de passe d'un Login, le CVV, le PIN, le numéro complet ni les notes.
+- `seal_payload(payload, recipient)` et `open_payload(secret, sealed)` : format `"OPC1" || génération (u64 BE) || enveloppe KEM || blob`, enveloppe `wrap_key_labeled` (étiquette `onepass/companion/v1`, contexte `"watch" || SHA-256(clé publique)`), blob `BlobKind::Companion` lié à la génération et au destinataire.
+- `glance_snapshot(repo, now_unix, window_secs, excluded_vaults)` : 8 favoris au plus (`MAX_GLANCE_ITEMS`) et, pour ceux qui ont un TOTP, les codes `(début, code)` de chaque période qui recoupe la fenêtre (plafonnée à 24 h, 2880 codes par item).
+- `crypto/kem.rs` gagne `wrap_key_labeled` et `unwrap_key_labeled` (info HKDF `label || u32_be(len(context)) || context`) ; `wrap_key` et `unwrap_key` produisent les mêmes octets qu'avant.
+
+Côté FFI (`onepass-ffi/src/companion.rs`) : `companion_generate_key()`, `Session::companion_payload`, `Session::glance_snapshot`, objet `CompanionVault` (`open(secret, sealed)`, `generation`, `generated_at`, `entries` sans graine, `totp(item_id, unix)`). L'XCFramework livré gagne les tranches `aarch64-apple-watchos`, `aarch64-apple-watchos-sim`, `aarch64-apple-visionos` et `aarch64-apple-visionos-sim` (cibles rustup de niveau 2) ; les montres `arm64_32` seulement ne sont pas prises en charge.
+
+Tests : unitaires dans `companion.rs` (aller-retour, mauvaise clé, altération de chaque octet, génération authentifiée, liste fermée par type, exclusions, limites, carte à 4 chiffres, codes de l'instantané égaux à `totp::code_at`, plafond de codes) et `onepass-ffi/tests/companion.rs`. Ils tournent avec `make check`.

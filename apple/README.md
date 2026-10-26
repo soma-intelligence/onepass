@@ -1,6 +1,8 @@
-# OnePass pour Apple (iPhone, iPad, Mac)
+# OnePass pour Apple (iPhone, iPad, Mac, Apple Watch, Vision Pro)
 
 Les applications Apple s'appuient sur le coeur Rust (`core/onepass-ffi`, exposé par UniFFI) via le paquet Swift `VaultKit`. Ce dossier est le jalon 2 : création de compte, déverrouillage (mot de passe, Face ID, Touch ID, Apple Watch sur Mac), les 26 types d'items, vaults, recherche, synchronisation CloudKit et verrouillage automatique. Spec : `docs/superpowers/specs/2026-10-25-milestone-2-apps-design.md`. Sécurité : section "Jalon 2 : apps Apple" de [`docs/security/README.md`](../docs/security/README.md).
+
+Le jalon 6 ajoute l'app Apple Watch, l'app Vision Pro, les widgets, les Contrôles et les Raccourcis (voir "Jalon 6" plus bas). Spec : `docs/superpowers/specs/2026-10-26-milestone-6-watch-vision-design.md`. Sécurité : section 12 de [`docs/security/README.md`](../docs/security/README.md).
 
 ## Architecture
 
@@ -8,12 +10,18 @@ Les applications Apple s'appuient sur le coeur Rust (`core/onepass-ffi`, exposé
 apple/
   project.yml               source du projet (XcodeGen)
   OnePass.xcodeproj         généré par `make project`, versionné
-  Makefile                  core, test, project, build-ios, build-mac, uitest, screenshots
+  Makefile                  core, test, project, build-ios, build-mac, build-watch, build-vision,
+                            uitest, screenshots, screenshots-m6
   scripts/build-core.sh     compile onepass-ffi, assemble l'XCFramework, génère les liaisons
   scripts/screenshots.sh    captures iPhone, iPad et Mac (données de démonstration)
+  scripts/screenshots-m6.sh captures Apple Watch et Vision Pro (données fictives)
   VaultKit/                 paquet Swift : liaisons UniFFI et logique Apple
   DesignKit/                paquet Swift : couleurs, icônes de catégorie, composants
-  App/                      cible unique iOS, iPadOS et macOS natif (SwiftUI)
+  CompanionKit/             paquet Swift : widgets (GlanceKit) et lien iPhone-montre (CompanionLink)
+  App/                      cible unique iOS, iPadOS, macOS natif et visionOS (SwiftUI)
+  Watch/                    app watchOS (cible OnePassWatch)
+  WatchWidgets/             complication et Smart Stack (cible OnePassWatchWidgets)
+  Widgets/                  widgets et Contrôles iOS (cible OnePassWidgets)
   AppUITests/               tests XCUITest (Simulateur iPhone)
 ```
 
@@ -37,23 +45,27 @@ Une seule fenêtre au jalon 2 : l'état de navigation et d'édition vit dans `Ap
 
 ## Prérequis
 
-- Xcode 27 (SDK iOS 27, cibles de déploiement iOS 26.0 et macOS 26.0), Swift 6 en concurrence stricte.
+- Xcode 27 (SDK iOS 27, cibles de déploiement iOS 26.0, macOS 26.0, watchOS 26.0 et visionOS 26.0), Swift 6 en concurrence stricte. Pour la montre et le Vision Pro : runtimes Simulateur watchOS 27 et visionOS 27 (`xcodebuild -downloadPlatform visionOS`, environ 8 Go).
 - XcodeGen (`brew install xcodegen`).
-- Toolchain Rust (`rustup`) avec les cibles `aarch64-apple-ios`, `aarch64-apple-ios-sim` et `aarch64-apple-darwin` :
-  `rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin`.
+- Toolchain Rust (`rustup`) avec les cibles `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `aarch64-apple-darwin`, `aarch64-apple-watchos`, `aarch64-apple-watchos-sim`, `aarch64-apple-visionos` et `aarch64-apple-visionos-sim` :
+  `rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin aarch64-apple-watchos aarch64-apple-watchos-sim aarch64-apple-visionos aarch64-apple-visionos-sim`.
 
 ## Commandes
 
 | Commande | Effet |
 | --- | --- |
 | `make -C apple core` | XCFramework livré et liaisons Swift (voir plus bas) |
-| `make -C apple test` | tests Swift de `VaultKit` et `DesignKit` sur macOS, contre l'XCFramework de test |
+| `make -C apple test` | tests Swift de `VaultKit`, `DesignKit` et `CompanionKit` sur macOS, contre l'XCFramework de test |
 | `make -C apple project` | régénère `OnePass.xcodeproj` depuis `project.yml` |
 | `make -C apple build-ios` | build Simulateur non signé sur `OnePass M2 iPhone` |
 | `make -C apple build-mac` | build Mac arm64 signé ad hoc (`CODE_SIGN_IDENTITY=-`), lançable localement |
+| `make -C apple build-watch` | build Simulateur watchOS de l'app montre et de sa complication sur `OnePass M6 Watch`, signé ad hoc |
+| `make -C apple build-vision` | build Simulateur visionOS de l'app sur `OnePass M6 Vision Pro` (destination générique si ce Simulateur n'existe pas), signé ad hoc |
 | `make -C apple uitest` | tests XCUITest sur `OnePass M2 iPhone` (build signé ad hoc) |
 | `make -C apple screenshots OUT=<dossier>` | captures iPhone, iPad et Mac dans `<dossier>` |
+| `make -C apple screenshots-m6 OUT=<dossier>` | captures Apple Watch et Vision Pro dans `<dossier>` |
 | `make -C apple simulators` | crée les deux Simulateurs dédiés s'ils manquent |
+| `make -C apple simulators-m6` | crée `OnePass M6 Watch` et `OnePass M6 Vision Pro` s'ils manquent (le second seulement si le runtime visionOS 27 est installé) |
 | `make -C apple clean` | supprime `build/`, `DerivedData/`, `.build` et les liaisons générées |
 
 ### Construire le coeur
@@ -62,7 +74,7 @@ Une seule fenêtre au jalon 2 : l'état de navigation et d'édition vit dans `Ap
 make -C apple core
 ```
 
-Produit `apple/build/OnePassFFI.xcframework` (tranches `ios-arm64`, `ios-arm64-simulator`, `macos-arm64`, profil `release`, jamais la fonctionnalité `dev-fast-kdf`) et génère les liaisons Swift dans `apple/VaultKit/Sources/OnePassCore/`. La commande est idempotente : rien n'est recompilé tant que les fichiers `.rs`, `Cargo.toml` et `Cargo.lock` sous `core/` n'ont pas changé (empreinte dans `apple/build/.core-stamp`).
+Produit `apple/build/OnePassFFI.xcframework` (tranches `ios-arm64`, `ios-arm64-simulator`, `macos-arm64`, `watchos-arm64`, `watchos-arm64-simulator`, `xros-arm64`, `xros-arm64-simulator`, profil `release`, jamais la fonctionnalité `dev-fast-kdf`) et génère les liaisons Swift dans `apple/VaultKit/Sources/OnePassCore/`. La commande est idempotente : rien n'est recompilé tant que les fichiers `.rs`, `Cargo.toml` et `Cargo.lock` sous `core/` n'ont pas changé (empreinte dans `apple/build/.core-stamp`).
 
 Un clone neuf doit exécuter `make -C apple core` avant tout `swift build` ou ouverture du paquet : le XCFramework et les liaisons Swift générées ne sont pas versionnés.
 
@@ -128,7 +140,7 @@ Compilés seulement en Debug (`#if DEBUG`), absents des builds Release.
 
 ## Simulateurs dédiés
 
-Utiliser uniquement `OnePass M2 iPhone` (iPhone 18 Pro, iOS 27.0) et `OnePass M2 iPad` (iPad mini, iOS 27.0). Ne jamais démarrer, arrêter ou effacer un autre Simulateur : d'autres sessions s'en servent.
+Utiliser uniquement `OnePass M2 iPhone` (iPhone 18 Pro, iOS 27.0), `OnePass M2 iPad` (iPad mini, iOS 27.0), `OnePass M6 Watch` (Apple Watch Series 12 46 mm, watchOS 27.0) et `OnePass M6 Vision Pro` (Apple Vision Pro, visionOS 27.0, ruling W16). Ne jamais démarrer, arrêter ou effacer un autre Simulateur : d'autres sessions s'en servent.
 
 ## Limites du jalon 2
 
@@ -137,7 +149,7 @@ Hors périmètre (spec, section 12) :
 - AutoFill système, passkeys et TOTP dans le champ : jalon 3.
 - Extension de navigateur : jalon 4.
 - Watchtower (onglet présent avec un état vide), pack d'icônes de marques, import, export, sauvegarde, pièces jointes : jalon 5.
-- Apple Watch (app), Vision Pro, widgets, Contrôles, Raccourcis, Spotlight, Handoff : jalon 6.
+- Apple Watch (app), Vision Pro, widgets, Contrôles, Raccourcis, Spotlight, Handoff : jalon 6 (Apple Watch, Vision Pro, widgets, Contrôles et Raccourcis livrés, voir Jalon 6).
 - MCP, agent SSH, génération de clés SSH, Travel Mode : jalon 7.
 - Changement du mot de passe maître, suppression de vault, option Secret Key dans le trousseau iCloud.
 
@@ -162,3 +174,76 @@ Autres limites connues :
 - Mac : pas de scan du QR de l'Emergency Kit, la Secret Key se tape (R19).
 - Une modification locale d'un item supprimé sur un autre appareil le fait revenir (une suppression ne porte pas de date) ; un déplacement local concurrent d'une modification distante peut laisser l'item dans les deux vaults, sans perte.
 - Une réinitialisation de la zone iCloud (zone supprimée) est réparée par le prochain appareil qui synchronise, qui renvoie tout son contenu : un effacement volontaire des données iCloud est donc défait. Un vrai réglage "Effacer les données iCloud" arrive au jalon 5.
+
+## Jalon 6 : Apple Watch, Vision Pro, widgets, Contrôles et Raccourcis
+
+Spec : `docs/superpowers/specs/2026-10-26-milestone-6-watch-vision-design.md` (décisions W1 à W18 en section 14, rulings d'exécution en section 15). Modèle de sécurité : section 12 de [`docs/security/README.md`](../docs/security/README.md).
+
+### Cibles
+
+| Cible | Plateforme | Identifiant | Contenu |
+| --- | --- | --- | --- |
+| `OnePass` | iOS, iPadOS, macOS, visionOS | `me.somalabs.onepass` | l'app ; sur iOS elle embarque la montre et les widgets |
+| `OnePassWatch` | watchOS | `me.somalabs.onepass.watchkitapp` | app montre autonome en lecture (`Watch/`) |
+| `OnePassWatchWidgets` | watchOS | `me.somalabs.onepass.watchkitapp.widgets` | complication (circulaire, coin, rectangulaire) et Smart Stack : symbole et nom, ouvrent l'app, jamais de secret |
+| `OnePassWidgets` | iOS, iPadOS | `me.somalabs.onepass.widgets` | widgets "Codes" et "Favoris", Contrôles "Générer un mot de passe", "Rechercher dans OnePass", "Verrouiller OnePass" |
+
+Les cibles watchOS ne construisent que `arm64` (Simulateur compris, ruling E8) : un Mac Intel ne peut pas construire l'app montre pour le Simulateur. Les montres dont watchOS 26 tourne en `arm64_32` seulement ne sont pas prises en charge (W3).
+
+### Paquet `CompanionKit`
+
+- **`GlanceKit`** (aucune dépendance, utilisé par l'app et l'extension de widgets) : `GlanceSnapshot` (favoris et codes TOTP précalculés, symboles et couleurs de catégorie), `GlanceStore` (fichier `Library/OnePass/glance.json` du conteneur App Group `group.me.somalabs.onepass`, écriture atomique en `completeFileProtection` ; `status(now:)` distingue "verrouillé", fichier présent mais illisible, de "périmé", absent, expiré ou corrompu, ruling E10), `OnePassLink` (`onepass://item?vault=<hex>&item=<hex>`, `onepass://generator`, `onepass://search`, tout le reste est refusé), `LockSignal` (notification Darwin `me.somalabs.onepass.lock-request` et horodatage dans les réglages partagés).
+- **`CompanionLink`** (dépend de `OnePassCore`, les liaisons seules) : messages `CompanionMessage` (`watchKey`, `payload`, `wipe`, `refreshRequest`), protocole `CompanionTransport`, `WatchConnectivityTransport` (iOS et watchOS seulement, E6), `InMemoryTransport` (tests), `PhoneCompanion` (côté iPhone), `WatchVault` (côté montre), `WatchKeyStore` (Keychain système, service `me.somalabs.onepass.watch`, et version en mémoire).
+
+`make -C apple test` lance `swift test` sur `CompanionKit` contre l'XCFramework de test : `GlanceStore` (écriture, lecture, périmé, illisible), `OnePassLink`, `LockSignal`, et `PhoneCompanion` avec `WatchVault` reliés par `InMemoryTransport` avec le vrai core (clé envoyée, envoi après changement, rejeu refusé, effacement, clé remplacée, clé effacée qui revient, montre sans code, montre verrouillée pendant un envoi).
+
+### Apple Watch
+
+- Côté iPhone, `App/Companion/CompanionCoordinator.swift` publie, 2 s après le dernier changement et seulement pendant que le coffre est déverrouillé (déverrouillage, écriture, changement distant, retour au premier plan), l'instantané des widgets puis la charge utile de la montre. Réglages > Apple Watch (iPhone) : "Envoyer à l'Apple Watch" (activé par défaut), état ("Prête", "Aucune Apple Watch appairée", "Installe OnePass sur ton Apple Watch"), "Dernier envoi", limite de 50 éléments (W18), liste des champs envoyés, "Retirer de l'Apple Watch". Sur iPad, la ligne affiche "Non disponible sur cet appareil" (E14). Un élément se marque « Sur l'Apple Watch » dans son éditeur.
+- Côté montre : la clé secrète vit dans le Keychain de la montre, la charge utile scellée dans `Application Support/OnePass/companion.sealed` (protection `Complete`). L'objet Rust `CompanionVault`, seul détenteur des graines TOTP, n'existe que pendant que l'app est au premier plan. Écrans : liste ("Codes" avec compte à rebours, puis "Éléments"), détail (champ masqué révélé d'un toucher, remasqué après 30 s), messages "Active un code sur ton Apple Watch pour utiliser OnePass", "Déverrouille ton Apple Watch pour ouvrir OnePass." (E9) et l'état vide. Codes-barres affichés en texte (W8).
+
+### Widgets, Contrôles et Raccourcis
+
+- Widgets (iPhone et iPad seulement, W5) : "Codes" (petit, moyen, grand, accessoire rectangulaire ; une entrée par 30 s sur 1 h) et "Favoris" (petit, moyen), sur les 8 premiers favoris par titre (W6). Codes calculés pour 12 h par l'app (W4) ; au-delà, "Ouvre OnePass pour actualiser" ; appareil verrouillé, "Déverrouille ton iPhone". Titres et codes en `.privacySensitive()`.
+- Contrôles : "Générer un mot de passe" et "Rechercher dans OnePass" ouvrent l'app par lien profond ; "Verrouiller OnePass" poste `LockSignal` depuis l'extension (W12) : l'app en cours verrouille tout de suite, sinon à son retour au premier plan.
+- App Intents (`App/Intents/`, iPhone, iPad, Mac, Vision Pro) : "Ouvrir un élément", "Copier le code à usage unique" (authentification fraîche, copie par le presse-papiers OnePass, aucun code rendu au raccourci, W13 et E15), "Générer un mot de passe" (8 à 64 caractères, 20 par défaut, symboles ; sans ouvrir l'app, W14), "Verrouiller OnePass". Phrases Siri en français dans `OnePassShortcuts`. Les titres des éléments ne sont jamais donnés à l'index de Siri (E16) : il faut choisir l'élément dans Raccourcis.
+
+### Vision Pro
+
+La cible `OnePass` avec la destination visionOS (W15) : mise en page iPad (`NavigationSplitView` à trois colonnes), fenêtre en verre du système sans fond opaque, cartes de verrouillage et d'onboarding en `.glassBackgroundEffect()`, barres d'outils en ornements, `.hoverEffect()` sur les lignes et boutons, fenêtre par défaut 1280 × 820 points. Optic ID passe par la même clé de la Secure Enclave ; les styles de bouton `.glass` absents de visionOS sont remplacés par des styles bordés (`App/Root/VisionGlass.swift`, E19). Pas de scan du QR de l'Emergency Kit : la Secret Key se tape. Pas de widgets ni de Contrôles, pas de montre (aucune montre appairée à un Vision Pro).
+
+### Arguments de lancement du jalon 6 (Debug seulement)
+
+- Montre : `-OnePassWatchDemo YES` affiche des entrées fictives (Forge Atlas avec un TOTP, Wi-Fi Maison, Carte Bibliothèque, Banque Exemple) depuis une source Swift en mémoire, sans clé. Aucun argument n'ouvre un détail.
+- App (Vision Pro compris) : `-OnePassDemoData YES`, et `-OnePassDemoItem <titre>` pour ouvrir un détail (par exemple `"Forge Atlas"`), comme au jalon 2. Le mode démonstration ne relie jamais la montre (E13).
+
+### Captures du jalon 6
+
+```sh
+make -C apple screenshots-m6 OUT=~/Desktop/onepass-captures-m6
+apple/scripts/screenshots-m6.sh ~/Desktop/onepass-captures-m6   # sans passer par make
+```
+
+Le dossier de sortie est obligatoire et ne peut pas être dans le dépôt. Le script construit l'app montre et l'app visionOS (Debug, signées ad hoc, dans `apple/DerivedData`), démarre seulement `OnePass M6 Watch` et `OnePass M6 Vision Pro` si besoin, installe, lance avec les arguments de démonstration, capture par `simctl io screenshot`, puis rend à chaque Simulateur son apparence et arrête ceux qu'il a démarrés. Fichiers : `watch-list.png` (watchOS n'a qu'une apparence, sombre, et refuse `simctl ui appearance`), `vision-list-light.png`, `vision-list-dark.png`, `vision-detail-light.png`, `vision-detail-dark.png` (visionOS accepte le réglage, mais la fenêtre en verre est identique dans les deux). Attentes réglables par `WATCH_WAIT` et `VISION_WAIT` (secondes).
+
+### Ce qui demande un build signé ou un vrai appareil
+
+Rien de ce qui suit n'a été vérifié au jalon 6 (spec, section 13) :
+
+- WatchConnectivity entre une vraie montre et un iPhone : envoi de la clé, de la charge utile, de l'effacement, et la montre verrouillée pendant un envoi. La logique est couverte par les tests contre `InMemoryTransport`.
+- App Group et protection de données des widgets : un build non signé n'a pas d'App Group, l'app ne publie alors aucun instantané et les widgets restent sur "Ouvre OnePass pour actualiser". La classe `NSFileProtectionComplete` n'a d'effet que sur un vrai appareil.
+- Affichage des widgets et Contrôles sur l'écran d'accueil, l'écran verrouillé, en StandBy et sur le bouton Action ; masquage `.privacySensitive()`.
+- Optic ID (le Simulateur visionOS n'a pas de Secure Enclave) ; l'invite système affiche le texte Face ID (E18).
+- Phrases Siri et "Copier le code à usage unique" dans ses trois états (verrouillé, déverrouillé, sans code de l'appareil) : vérification à l'exécution non faite.
+- Keychain de la montre en `WhenPasscodeSetThisDeviceOnly` et détection du poignet.
+- Vision Pro : vue de confidentialité (opaque, E20) et icône sur l'écran d'accueil.
+- Signature `Release-CloudKit` : sur iOS, le fichier de droits CloudKit porte aussi l'App Group (E11) ; à fusionner avec le jalon 3, qui utilise le même groupe (W17).
+- Signature `Release-CloudKit` de l'app montre et de ses widgets (`OnePassWatch`, `OnePassWatchWidgets`) : signature automatique `Apple Development`, comme `OnePassWidgets`, pour que l'app iPhone signée n'embarque pas une app montre signée ad hoc ; `DEVELOPMENT_TEAM` à renseigner.
+
+### Limites du jalon 6
+
+- Montre : 50 éléments au plus, 1 Kio par valeur (W18) ; jamais le mot de passe d'un Login, le CVV, le PIN, le numéro complet d'une carte ni les notes (W9) ; codes-barres en texte (W8) ; aucun compteur des éléments marqués dans les réglages (E12). Verrouiller l'iPhone n'efface pas la montre. Sans détection du poignet, seul le code de la montre protège ses données.
+- Items "redemander la biométrie" exclus de la montre et des widgets (W7). Coffres masqués exclus des deux.
+- Widgets : seulement les 8 premiers favoris par titre ; un TOTP non favori n'y est pas (W6) ; codes valables 12 h (W4). Un widget peut afficher l'état verrouillé jusqu'à son prochain rafraîchissement après le déverrouillage.
+- Pas de widgets Mac ni visionOS (W5), pas de Spotlight ni de Handoff (W10), pas de Contrôle "Scanner un QR TOTP" (W11), pas de widget "À proximité" (R11).
+- Vision Pro : le titre de la colonne de liste est tronqué ("Tous les él...") quand la fenêtre est à sa taille par défaut.

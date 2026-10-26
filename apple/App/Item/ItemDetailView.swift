@@ -125,7 +125,7 @@ struct ItemDetailView: View {
             ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") ? .systemAction : .discarded
         })
         .navigationTitle(item.title)
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar { toolbar(item) }
@@ -432,7 +432,11 @@ struct ItemDetailView: View {
                 .font(.footnote.weight(.medium))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
+                #if os(visionOS)
+                .glassBackgroundEffect(in: Capsule())
+                #else
                 .glassEffect(.regular, in: Capsule())
+                #endif
                 .padding(.bottom, 18)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .accessibilityAddTraits(.isStaticText)

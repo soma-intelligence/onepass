@@ -3,7 +3,9 @@
 # Swift bindings.
 #
 #   build-core.sh shipped   release, no dev-fast-kdf, ios-arm64 +
-#                           ios-arm64-simulator + macos-arm64
+#                           ios-arm64-simulator + macos-arm64 + watchos-arm64 +
+#                           watchos-arm64-simulator + xros-arm64 +
+#                           xros-arm64-simulator
 #                           -> apple/build/OnePassFFI.xcframework
 #   build-core.sh test      macOS arm64 only, debug profile + dev-fast-kdf
 #                           -> apple/build/test/OnePassFFI.xcframework
@@ -26,6 +28,8 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # objects built for a newer OS (C code in aws-lc and SQLite follows these).
 export MACOSX_DEPLOYMENT_TARGET=26.0
 export IPHONEOS_DEPLOYMENT_TARGET=26.0
+export WATCHOS_DEPLOYMENT_TARGET=26.0
+export XROS_DEPLOYMENT_TARGET=26.0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -36,7 +40,8 @@ SWIFT_OUT="$APPLE_DIR/VaultKit/Sources/OnePassCore"
 
 if [ "$MODE" = shipped ]; then
   OUT_DIR="$APPLE_DIR/build"
-  TARGETS=(aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin)
+  TARGETS=(aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin
+    aarch64-apple-watchos aarch64-apple-watchos-sim aarch64-apple-visionos aarch64-apple-visionos-sim)
   PROFILE_DIR=release
   CARGO_ARGS=(--release)
 else

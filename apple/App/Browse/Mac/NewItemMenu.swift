@@ -65,7 +65,7 @@ struct NewItemSheet: View {
                 }
             }
             .navigationTitle("Nouvel élément")
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {

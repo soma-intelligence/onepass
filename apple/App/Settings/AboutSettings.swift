@@ -34,7 +34,7 @@ struct AboutSettings: View {
         }
         .formStyle(.grouped)
         .navigationTitle("À propos")
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
     }

@@ -35,7 +35,7 @@ struct VisibleVaultsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Coffres visibles")
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
     }

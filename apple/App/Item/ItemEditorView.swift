@@ -33,6 +33,8 @@ struct ItemEditorView: View {
                     VaultPicker(vaultID: $editor.targetVaultID)
                     Toggle("Favori", isOn: $editor.draft.item.favorite)
                         .accessibilityIdentifier("editor.favorite")
+                    Toggle("Sur l'Apple Watch", isOn: $editor.draft.item.onWatch)
+                        .accessibilityIdentifier("editor.onWatch")
                 }
                 Section("Sites web") {
                     UrlListEditor(editor: editor)
@@ -66,7 +68,7 @@ struct ItemEditorView: View {
             }
         }
         .navigationTitle(editor.isNew ? Text("Nouvel élément") : Text("Modification"))
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         #endif

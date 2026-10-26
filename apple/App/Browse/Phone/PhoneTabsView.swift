@@ -76,6 +76,21 @@ struct PhoneTabsView: View {
             model.phoneBrowsedVault = vault
         }
         .onDisappear { model.phoneBrowsedVault = nil }
+        // A deep link (widget, Control): the item in Éléments, or the search tab. Also on appear,
+        // when the link was waiting for the unlock.
+        .onChange(of: model.browseReveal, initial: true) { _, reveal in
+            guard let reveal else { return }
+            model.browseReveal = nil
+            switch reveal {
+            case .item(let ref):
+                paths[.items] = [.item(ref)]
+                tab = .items
+            case .search:
+                paths[.search] = []
+                tab = .search
+                searching = true
+            }
+        }
         #if DEBUG
         .task { applyDemoArguments() }
         #endif
@@ -120,6 +135,8 @@ struct PhoneTabsView: View {
     }
 
     private func follow(selection new: ItemRef?, previous old: ItemRef?) {
+        // A revealed item goes to Éléments (handled by the `browseReveal` observer).
+        if let new, model.browseReveal == .item(new) { return }
         var current = paths[tab] ?? []
         let top = current.last?.itemRef
         guard top != new else { return }
