@@ -33,6 +33,9 @@ struct LockView: View {
                     .frame(maxWidth: 334)
                     .padding(.horizontal, 28)
                     .padding(.vertical, 40)
+                    #if os(visionOS)
+                    .glassBackgroundEffect()
+                    #endif
                     .frame(maxWidth: .infinity, minHeight: geometry.size.height)
                 }
                 .scrollBounceBehavior(.basedOnSize)
@@ -54,6 +57,9 @@ struct LockView: View {
     private var background: some View {
         #if os(iOS)
         Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+        #elseif os(visionOS)
+        // The window carries the system glass: no opaque background.
+        Color.clear
         #else
         Color.clear.background(.background)
         #endif
@@ -95,13 +101,14 @@ struct LockView: View {
                     Button {
                         Task { await unlockWithBiometrics(automatic: false) }
                     } label: {
-                        Image(systemName: OnboardingModel.biometryName == "Touch ID" ? "touchid" : "faceid")
+                        Image(systemName: OnboardingModel.biometrySymbol)
                             .font(.system(size: 24))
                             .foregroundStyle(Theme.accent)
                             .frame(width: 40, height: 40)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .visionHoverEffect()
                     .disabled(unlocking)
                     .accessibilityLabel(Text("Déverrouiller avec \(OnboardingModel.biometryName)"))
                     .accessibilityIdentifier("lock.biometrics")
@@ -114,6 +121,9 @@ struct LockView: View {
                 let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
                 #if os(iOS)
                 shape.fill(Color(uiColor: .secondarySystemGroupedBackground))
+                    .overlay(shape.strokeBorder(message == nil ? Color.primary.opacity(0.12) : .red, lineWidth: 1))
+                #elseif os(visionOS)
+                shape.fill(.fill.tertiary)
                     .overlay(shape.strokeBorder(message == nil ? Color.primary.opacity(0.12) : .red, lineWidth: 1))
                 #else
                 shape.fill(.background)

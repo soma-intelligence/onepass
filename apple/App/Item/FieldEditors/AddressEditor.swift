@@ -55,7 +55,7 @@ enum AddressPart { case line1, line2, city, postalCode, region, country }
 extension View {
     /// AutoFill hint of each address line (iOS).
     func addressContent(_ part: AddressPart) -> some View {
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         let type: UITextContentType =
             switch part {
             case .line1: .streetAddressLine1

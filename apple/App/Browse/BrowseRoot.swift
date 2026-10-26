@@ -1,7 +1,7 @@
 import SwiftUI
 import VaultKit
 
-/// The unlocked app. Mac and iPad in regular width: `SplitBrowseView` (three columns). iPhone and
+/// The unlocked app. Mac, Vision Pro and iPad in regular width: `SplitBrowseView` (three columns). iPhone and
 /// iPad in compact width (Split View, Slide Over): `PhoneTabsView`. Both share the guarded actions:
 /// the ⌘N type picker and "Abandonner les modifications ?" before a lock or a navigation would
 /// drop an edited draft.
@@ -14,7 +14,7 @@ struct BrowseRoot: View {
     var body: some View {
         @Bindable var model = model
         return layout
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             .sheet(isPresented: $model.showSettings) {
                 SettingsView()
             }
@@ -57,7 +57,11 @@ struct BrowseRoot: View {
                         .font(.footnote.weight(.medium))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
+                        #if os(visionOS)
+                        .glassBackgroundEffect(in: Capsule())
+                        #else
                         .glassEffect(.regular, in: Capsule())
+                        #endif
                         .padding(.bottom, 18)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .accessibilityIdentifier("browse.toast")
@@ -68,7 +72,7 @@ struct BrowseRoot: View {
     }
 
     @ViewBuilder private var layout: some View {
-        #if os(macOS)
+        #if os(macOS) || os(visionOS)
         split
         #else
         if usesTabs {

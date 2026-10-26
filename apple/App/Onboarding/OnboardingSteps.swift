@@ -101,10 +101,21 @@ enum Platform {
         isMac ? mac : phone
     }
 
-    /// "iPhone", "iPad" or "Mac", for texts.
+    /// The Secret Key entry text: typed only on Mac and Vision Pro (no camera access for apps).
+    static func secretKeyText(mac: LocalizedStringResource, phone: LocalizedStringResource) -> LocalizedStringResource {
+        #if os(visionOS)
+        mac
+        #else
+        text(mac: mac, phone: phone)
+        #endif
+    }
+
+    /// "iPhone", "iPad", "Apple Vision Pro" or "Mac", for texts.
     @MainActor static var deviceName: String {
         #if os(macOS)
         "Mac"
+        #elseif os(visionOS)
+        "Apple Vision Pro"
         #else
         UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
         #endif
@@ -161,7 +172,7 @@ private struct OnboardingField: View {
             .textFieldStyle(.plain)
             .font(monospaced ? .system(.body, design: .monospaced) : .body)
             .autocorrectionDisabled()
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             .textInputAutocapitalization(secretKey ? .characters : .never)
             .keyboardType(secretKey ? .asciiCapable : .default)
             #endif
@@ -203,6 +214,7 @@ private struct CheckRow: View {
             }
         }
         .buttonStyle(.plain)
+        .visionHoverEffect()
         .accessibilityAddTraits(isOn ? .isSelected : [])
         #endif
     }
@@ -293,6 +305,7 @@ private struct WelcomeStep: View {
             .card()
         }
         .buttonStyle(.plain)
+        .visionHoverEffect()
         .disabled(soon)
         .opacity(soon ? 0.55 : 1)
         .accessibilityIdentifier(identifier)
@@ -342,6 +355,7 @@ private struct DeviceStep: View {
             .card(selected: selected)
         }
         .buttonStyle(.plain)
+        .visionHoverEffect()
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(mode == .personal ? "onboarding.personal" : "onboarding.shared")
     }
@@ -445,7 +459,7 @@ private struct BiometricsStep: View {
                 .fill(.fill.tertiary)
                 .frame(width: Platform.isMac ? 96 : 120, height: Platform.isMac ? 96 : 120)
                 .overlay {
-                    Image(systemName: model.biometryName == "Touch ID" ? "touchid" : "faceid")
+                    Image(systemName: OnboardingModel.biometrySymbol)
                         .font(.system(size: Platform.isMac ? 46 : 60, weight: .light))
                         .foregroundStyle(Theme.accent)
                 }
@@ -505,7 +519,7 @@ private struct RestoreStep: View {
     var body: some View {
         StepTitle(
             title: "Utiliser ton Emergency Kit",
-            subtitle: Platform.text(
+            subtitle: Platform.secretKeyText(
                 mac: "Tape la Secret Key imprimée sur ton kit. Minuscules, espaces et tirets oubliés sont acceptés.",
                 phone: "Scanne le QR code du kit ou tape ta Secret Key. Minuscules, espaces et tirets oubliés sont acceptés."))
         OnboardingField(

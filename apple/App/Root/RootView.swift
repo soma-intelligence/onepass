@@ -7,7 +7,7 @@ import VaultKit
 /// or the unlocked app. On iPhone and iPad it also drives this window scene's privacy shield.
 struct RootView: View {
     @Environment(AppModel.self) private var model
-    #if os(iOS)
+    #if os(iOS) || os(visionOS)
     @Environment(\.scenePhase) private var scenePhase
     @State private var windowScene: UIWindowScene?
     #endif
@@ -35,7 +35,7 @@ struct RootView: View {
                 // Anything but the three `onepass://` links is ignored.
                 if let link = OnePassLink(url: url) { model.open(link) }
             }
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             .background { WindowSceneReader(scene: $windowScene).frame(width: 0, height: 0) }
             .onChange(of: scenePhase, initial: true) { _, phase in
                 updateShield(phase)
@@ -46,7 +46,7 @@ struct RootView: View {
             #endif
     }
 
-    #if os(iOS)
+    #if os(iOS) || os(visionOS)
     /// Above every presentation (sheets, share sheet, alerts): a window of its own (spec 9).
     private func updateShield(_ phase: ScenePhase) {
         guard let windowScene else { return }

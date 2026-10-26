@@ -50,6 +50,7 @@ struct VaultsSettings: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .visionHoverEffect()
                     .accessibilityLabel(Text("Modifier le coffre \(vault.meta.name)"))
                     .accessibilityIdentifier("settings.vaults.\(vault.id)")
                 }
@@ -65,7 +66,7 @@ struct VaultsSettings: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Coffres")
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         #if DEBUG

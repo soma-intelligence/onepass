@@ -9,6 +9,7 @@ options:
     iOS: "26.0"
     macOS: "26.0"
     watchOS: "26.0"
+    visionOS: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
 
@@ -39,7 +40,7 @@ packages:
 targets:
   OnePass:
     type: application
-    supportedDestinations: [iOS, macOS]
+    supportedDestinations: [iOS, macOS, visionOS]
     sources:
       - path: App
         excludes:
@@ -92,7 +93,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass
         PRODUCT_NAME: OnePass
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1,2,7"
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO

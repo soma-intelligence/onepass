@@ -209,7 +209,7 @@ final class AppModel {
             session.scenePhaseChanged(.inactive)
         case .background:
             session.scenePhaseChanged(.background)
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             lockWhileBackgroundTimeLasts()
             #endif
         @unknown default:
@@ -217,7 +217,7 @@ final class AppModel {
         }
     }
 
-    #if os(iOS)
+    #if os(iOS) || os(visionOS)
     @ObservationIgnored private var backgroundLock: Task<Void, Never>?
     @ObservationIgnored private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 

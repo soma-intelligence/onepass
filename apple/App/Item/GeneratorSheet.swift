@@ -101,7 +101,7 @@ struct GeneratorSheet: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Générateur")
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {

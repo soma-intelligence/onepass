@@ -9,7 +9,7 @@ TEST_XCFRAMEWORK := ../build/test/OnePassFFI.xcframework
 # apple/build/test/.core-stamp) and is a no-op when the Rust sources are
 # unchanged; make always delegates to it.
 .PHONY: core core-test test project simulators build-ios build-mac uitest screenshots clean
-.PHONY: simulators-m6 build-watch
+.PHONY: simulators-m6 build-watch build-vision
 
 ## Shipped XCFramework (release, ios + ios-simulator + macOS) and bindings.
 core:
@@ -65,6 +65,17 @@ simulators-m6:
 build-watch: core simulators-m6
 	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePassWatch \
 		-destination '$(WATCH_DESTINATION)' -derivedDataPath DerivedData \
+		CODE_SIGN_IDENTITY=- build
+
+VISION_DESTINATION := platform=visionOS Simulator,name=OnePass M6 Vision Pro
+
+## visionOS Simulator build of the app, signed ad hoc. Falls back to the generic visionOS
+## Simulator destination when the dedicated simulator does not exist (no visionOS 27 runtime).
+build-vision: core simulators-m6
+	@if xcrun simctl list devices | grep -q "OnePass M6 Vision Pro ("; then \
+		dest='$(VISION_DESTINATION)'; else dest='generic/platform=visionOS Simulator'; fi; \
+	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
+		-destination "$$dest" -derivedDataPath DerivedData \
 		CODE_SIGN_IDENTITY=- build
 
 ## Native Mac build (arm64), signed ad hoc so it runs locally.

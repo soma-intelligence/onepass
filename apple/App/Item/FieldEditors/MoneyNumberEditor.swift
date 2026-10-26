@@ -103,7 +103,7 @@ struct MoneyEditor: View {
                 .frame(maxWidth: 64)
                 .multilineTextAlignment(.trailing)
                 .fieldInput(.text)
-                #if os(iOS)
+                #if os(iOS) || os(visionOS)
                 .textInputAutocapitalization(.characters)
                 #endif
                 .accessibilityLabel(Text("Devise"))

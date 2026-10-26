@@ -51,7 +51,7 @@ struct TextFieldEditor: View {
 extension View {
     /// Keyboard, content type and autocorrection for a field kind (iOS; the Mac has none of these).
     func fieldInput(_ kind: FfiFieldType) -> some View {
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         let keyboard: UIKeyboardType =
             switch kind {
             case .url: .URL
@@ -75,7 +75,7 @@ extension View {
     }
 }
 
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 /// No `.password` or `.oneTimeCode`: the editor holds vault secrets, and those content types make
 /// iOS offer to save the value in the system password manager (outside the vault's encryption)
 /// or fill in a code received by SMS.

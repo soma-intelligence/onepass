@@ -54,7 +54,7 @@ struct Sidebar: View {
         .sheet(isPresented: $creatingVault) {
             VaultEditorView(vault: nil) { creatingVault = false }
         }
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         .navigationTitle("OnePass")
         #endif
     }
@@ -100,6 +100,7 @@ struct Sidebar: View {
                     } icon: {
                         CategoryTile(category: category)
                     }
+                    .visionHoverEffect()
                     .badge(counts.byType[category.type] ?? 0)
                     .tag(ItemFilter.category(category.type))
                     .accessibilityIdentifier("sidebar.categories.\(NewItemMenu.key(category.type))")
@@ -174,6 +175,7 @@ struct AccountHeader: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
+        .visionHoverEffect()
         .accessibilityLabel(Text("Compte \(model.settings.displayName)"))
         .accessibilityIdentifier("account.menu")
     }
@@ -243,7 +245,11 @@ struct SyncStatusChip: View {
             .font(.footnote)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
+            #if os(visionOS)
+            .glassBackgroundEffect(in: Capsule())
+            #else
             .glassEffect(.regular, in: Capsule())
+            #endif
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
@@ -292,6 +298,7 @@ struct SettingsRow: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .labelStyle(.titleAndIcon)
+                .visionHoverEffect()
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)

@@ -125,7 +125,7 @@ struct VaultEditorView: View {
             }
             .formStyle(.grouped)
             .navigationTitle(vault == nil ? Text("Nouveau coffre") : Text("Coffre"))
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
@@ -161,6 +161,7 @@ struct VaultEditorView: View {
                     in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
         .buttonStyle(.plain)
+        .visionHoverEffect()
         .accessibilityLabel(Text(VaultStyle.iconLabel(symbol)))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("vault.editor.icon.\(symbol)")
@@ -182,6 +183,7 @@ struct VaultEditorView: View {
                 .frame(width: 44, height: 44)
         }
         .buttonStyle(.plain)
+        .visionHoverEffect()
         .accessibilityLabel(Text(VaultStyle.colorLabel(colorName)))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("vault.editor.color.\(colorName)")

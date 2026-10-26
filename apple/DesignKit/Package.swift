@@ -6,7 +6,7 @@ import PackageDescription
 // `make test` passes the same variable to both packages.
 let package = Package(
     name: "DesignKit",
-    platforms: [.iOS("26.0"), .macOS("26.0")],
+    platforms: [.iOS("26.0"), .macOS("26.0"), .visionOS("26.0")],
     products: [
         .library(name: "DesignKit", targets: ["DesignKit"])
     ],

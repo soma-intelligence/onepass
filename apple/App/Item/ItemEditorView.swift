@@ -68,7 +68,7 @@ struct ItemEditorView: View {
             }
         }
         .navigationTitle(editor.isNew ? Text("Nouvel élément") : Text("Modification"))
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         #endif

@@ -53,7 +53,7 @@ struct SecuritySettings: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Sécurité")
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .sheet(item: $prompt) { current in
@@ -270,7 +270,7 @@ struct PasswordPromptSheet: View {
             }
             .formStyle(.grouped)
             .navigationTitle(title)
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {

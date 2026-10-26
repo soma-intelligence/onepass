@@ -127,6 +127,7 @@ struct ItemListColumn: View {
             ItemListRow(summary: summary, vaultName: showVault ? vaultName(summary.vaultId) : nil)
                 .tag(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
                 .contextMenu { contextMenu(summary) }
+                .visionHoverEffect()
         }
     }
 
