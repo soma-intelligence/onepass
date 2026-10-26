@@ -260,4 +260,28 @@ describe("message validation", () => {
     ).not.toBeNull();
     expect(parseUiToBg({ type: "popup_search", query: "q".repeat(300) })).toBeNull();
   });
+
+  it("validates the menu, overlay and save page messages", () => {
+    const token = "A".repeat(22);
+    expect(parseUiToBg({ type: "menu_signin", token, itemId: "it_01", provider: "google", x: 1 })).toEqual({
+      type: "menu_signin",
+      token,
+      itemId: "it_01",
+      provider: "google",
+    });
+    expect(parseUiToBg({ type: "menu_signin", token, itemId: "it_01", provider: "myspace" })).toBeNull();
+    expect(parseUiToBg({ type: "menu_signin", token, itemId: "it_01" })).toBeNull();
+    expect(parseUiToBg({ type: "overlay_start", token, itemId: "it_01" })).toEqual({ type: "overlay_start", token, itemId: "it_01" });
+    expect(parseUiToBg({ type: "overlay_start", token, itemId: "it_01", provider: "x" })).toEqual({
+      type: "overlay_start",
+      token,
+      itemId: "it_01",
+      provider: "x",
+    });
+    expect(parseUiToBg({ type: "overlay_start", token, itemId: "it_01", provider: 3 })).toBeNull();
+    for (const type of ["menu_unlock", "menu_close", "overlay_state", "overlay_close", "save_reveal", "save_generate", "save_close"]) {
+      expect(parseUiToBg({ type, token, password: "x" })).toEqual({ type, token });
+      expect(parseUiToBg({ type, token: "short" })).toBeNull();
+    }
+  });
 });

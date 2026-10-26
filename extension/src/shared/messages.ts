@@ -101,12 +101,21 @@ export interface SaveEdits {
 export type UiToBg =
   | { type: "menu_init"; token: string }
   | { type: "menu_pick"; token: string; itemId: string }
+  /** "Se connecter avec <fournisseur> (<email>)": starts the chain. */
+  | { type: "menu_signin"; token: string; itemId: string; provider: ProviderId }
   | { type: "menu_generate"; token: string }
+  | { type: "menu_unlock"; token: string }
+  | { type: "menu_close"; token: string }
   | { type: "overlay_init"; token: string }
-  | { type: "overlay_start"; token: string; itemId: string }
+  | { type: "overlay_state"; token: string }
+  | { type: "overlay_start"; token: string; itemId: string; provider?: ProviderId }
   | { type: "overlay_stop"; token: string }
+  | { type: "overlay_close"; token: string }
   | { type: "save_init"; token: string }
+  | { type: "save_reveal"; token: string }
+  | { type: "save_generate"; token: string }
   | { type: "save_decide"; token: string; decision: SaveDecision; edits?: SaveEdits; itemId?: string }
+  | { type: "save_close"; token: string }
   | { type: "popup_status" }
   | { type: "popup_unlock" }
   | { type: "popup_search"; query: string }

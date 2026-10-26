@@ -9,7 +9,7 @@
 // after 10 minutes, on a navigation of their frame, on tab removal, and when
 // a new menu opens in the same frame.
 import type { Summary } from "../bridge/client";
-import type { FormKind } from "../shared/messages";
+import type { FormKind, ProviderId } from "../shared/messages";
 import { newToken } from "../shared/tokens";
 import type { BgExt, StorageArea } from "./ext";
 import type { CsContext, UiContext } from "./frames";
@@ -33,6 +33,8 @@ export interface MenuRecord extends MenuField {
   createdAt: number;
   /** Items shown by `menu_init`, with their kind as reported by the host. */
   offered?: Record<string, Summary["kind"]>;
+  /** Provider methods shown per item ("Se connecter avec ..."). */
+  methods?: Record<string, ProviderId[]>;
 }
 
 export class MenuTokens {
@@ -88,10 +90,15 @@ export class MenuTokens {
   }
 
   /** Remember what the menu showed (the pick must be one of these). */
-  async setOffered(token: string, offered: Record<string, Summary["kind"]>): Promise<void> {
+  async setOffered(
+    token: string,
+    offered: Record<string, Summary["kind"]>,
+    methods: Record<string, ProviderId[]> = {},
+  ): Promise<void> {
     const rec = await this.load(token);
     if (!rec) return;
     rec.offered = offered;
+    rec.methods = methods;
     this.mem.set(token, rec);
     await this.area.set({ [PREFIX + token]: rec });
   }

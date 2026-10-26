@@ -222,13 +222,31 @@ export function parseUiToBg(m: unknown): UiToBg | null {
     switch (o.type) {
       case "menu_init":
       case "menu_generate":
+      case "menu_unlock":
+      case "menu_close":
       case "overlay_init":
+      case "overlay_state":
       case "overlay_stop":
+      case "overlay_close":
       case "save_init":
+      case "save_reveal":
+      case "save_generate":
+      case "save_close":
         return { type: o.type, token: token(o.token) };
       case "menu_pick":
-      case "overlay_start":
         return { type: o.type, token: token(o.token), itemId: itemId(o.itemId) };
+      case "menu_signin":
+        return {
+          type: o.type,
+          token: token(o.token),
+          itemId: itemId(o.itemId),
+          provider: member<ProviderId>(o.provider, PROVIDER_IDS),
+        };
+      case "overlay_start": {
+        const s: UiToBg = { type: o.type, token: token(o.token), itemId: itemId(o.itemId) };
+        if (o.provider !== undefined) s.provider = member<ProviderId>(o.provider, PROVIDER_IDS);
+        return s;
+      }
       case "save_decide": {
         const d: UiToBg = {
           type: "save_decide",

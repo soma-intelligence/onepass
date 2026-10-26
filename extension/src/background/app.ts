@@ -2,14 +2,18 @@
 // the fill pipeline and the router with the handlers of this layer. Later
 // layers (popup, chain, save flow) add entries to `handlers`.
 import { BridgeClient, type FillField, type Summary } from "../bridge/client";
-import type { FormKind } from "../shared/messages";
+import type { FormKind, ProviderId } from "../shared/messages";
+import { type ChainDriver, idleChainDriver } from "./chain/types";
 import type { BgExt } from "./ext";
 import { type FillTarget, Filler } from "./fill";
 import { Frames } from "./frames";
 import { type MenuRecord, MenuTokens } from "./menu";
 import { NATIVE_HOST, nativeTransport } from "./native";
+import { NeverSave } from "./never-save";
+import { Overlays, removeFrame } from "./overlay";
 import { PairingFlow } from "./pairing";
 import { type Handlers, createRouter } from "./router";
+import { SavePrompts } from "./save";
 import { BgError, type BridgeLike, Session } from "./session";
 import { IdbPairingStore, type PairingStore, Store } from "./store";
 
@@ -20,6 +24,8 @@ export interface BackgroundOptions {
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
   browser?: string;
+  /** Sign-in chain (Task 17); none by default. */
+  chain?: ChainDriver;
 }
 
 /** Fields of a login item disclosed for each form kind (least disclosure). */
@@ -50,6 +56,10 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const frames = new Frames(ext.webNavigation);
   const menus = new MenuTokens(store.session, opts.now ?? Date.now);
   const filler = new Filler(ext.tabs, frames, session);
+  const chain = opts.chain ?? idleChainDriver;
+  const neverSave = new NeverSave(ext.storage.local);
+  const overlays = new Overlays({ ext, area: store.session, session, chain, ...(opts.now ? { now: opts.now } : {}) });
+  const saves = new SavePrompts({ ext, session, neverSave, ...(opts.now ? { now: opts.now } : {}) });
 
   const menuRecord = async (token: string, from: Parameters<MenuTokens["resolve"]>[1]): Promise<MenuRecord> => {
     const rec = await menus.resolve(token, from);
@@ -79,8 +89,12 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
           items = (await session.request({ op: "list_for_origin", ctx: "menu", origin: rec.origin })).items;
         }
         const offered: Record<string, Summary["kind"]> = {};
-        for (const it of items) offered[it.item_id] = it.kind;
-        await menus.setOffered(m.token, offered);
+        const methods: Record<string, ProviderId[]> = {};
+        for (const it of items) {
+          offered[it.item_id] = it.kind;
+          methods[it.item_id] = it.methods.map((x) => x.provider);
+        }
+        await menus.setOffered(m.token, offered, methods);
         return { origin: rec.origin, formKind: rec.formKind, items };
       },
       menu_pick: async (m, from) => {
@@ -100,6 +114,35 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         await filler.fillGenerated(targetOf(rec), g.password);
         return {};
       },
+      menu_signin: async (m, from) => {
+        const rec = await menuRecord(m.token, from);
+        const offered = rec.methods && Object.hasOwn(rec.methods, m.itemId) ? rec.methods[m.itemId] : undefined;
+        if (!offered?.includes(m.provider)) throw new BgError("invalid");
+        await chain.start(rec.tabId, m.itemId, m.provider);
+        await menus.revokeFrame(rec.tabId, rec.frameId);
+        await removeFrame(ext.tabs, rec, "menu");
+        return {};
+      },
+      menu_unlock: async (m, from) => {
+        await menuRecord(m.token, from);
+        return session.request({ op: "unlock" });
+      },
+      menu_close: async (m, from) => {
+        const rec = await menuRecord(m.token, from);
+        await menus.revokeFrame(rec.tabId, rec.frameId);
+        await removeFrame(ext.tabs, rec, "menu");
+        return {};
+      },
+      overlay_init: async (m, from) => overlays.init(m.token, from),
+      overlay_state: async (m, from) => overlays.state(m.token, from),
+      overlay_start: async (m, from) => overlays.start(m.token, from, m.itemId, m.provider),
+      overlay_stop: async (m, from) => overlays.stop(m.token, from),
+      overlay_close: async (m, from) => overlays.close(m.token, from),
+      save_init: async (m, from) => saves.init(m.token, from),
+      save_reveal: async (m, from) => saves.reveal(m.token, from),
+      save_generate: async (m, from) => saves.generate(m.token, from),
+      save_decide: async (m, from) => saves.decide(m.token, from, m.decision, m.edits),
+      save_close: async (m, from) => saves.close(m.token, from),
       popup_status: async () => session.request({ op: "status" }),
       popup_unlock: async () => session.request({ op: "unlock" }),
       popup_pair_start: async () => pairing.startPairing(),
@@ -121,11 +164,17 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     frames,
     menus,
     filler,
+    chain,
+    neverSave,
+    overlays,
+    saves,
     handlers,
     /** Register every listener; call synchronously at service worker start. */
     install(): void {
       store.restrictLocal();
       menus.install(ext);
+      overlays.tokens.install(ext);
+      saves.tokens.install(ext);
       ext.runtime.onMessage.addListener(createRouter(ext.runtime, handlers));
     },
   };
