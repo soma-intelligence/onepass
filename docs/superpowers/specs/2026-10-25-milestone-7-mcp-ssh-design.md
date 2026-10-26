@@ -58,7 +58,7 @@ Dépendances : `onepass-mcp` et `onepass-ssh-agent` dépendent de `onepass-core`
 - `Repository::sign_local(domain, msg) -> HybridSignature` et `Repository::verify_local(domain, msg, sig)` : signature hybride ML-DSA-87 + Ed25519 par la clé de signature du compte, avec un domaine préfixé `local:` (jamais confondu avec `manifest`). Sert à authentifier la politique MCP et la tête du journal d'audit.
 - `Repository::adopt_device_state(&DeviceState) -> Result<()>` : fusionne un état d'appareil relu sur le disque dans le dépôt ouvert. Le compte épinglé doit être identique (sinon `IntegrityError::WrongContext`), le plancher KDF garde le maximum, et pour chaque vault le `last_seen` garde le numéro de séquence le plus haut ; même numéro avec un hash différent est une erreur d'intégrité (`IntegrityError::ManifestRollback`, celle que le noyau rend déjà pour une fourche). Sert aux serveurs longs (section 6.1).
 - Travel Mode (section 5) : `Repository::enter_travel`, `Repository::exit_travel`, type `TravelState` scellé.
-- `BlobKind::TravelState = 9`, ajouté en fin d'énumération (codes en ajout seul).
+- `BlobKind::TravelState = 10`, ajouté en fin d'énumération (codes en ajout seul).
 - `SqliteStore::compact()` : `PRAGMA wal_checkpoint(TRUNCATE)` puis `VACUUM`, pour que les lignes effacées par le Travel Mode ne restent pas dans les pages libres du fichier.
 
 Ruling: modules enfants de `repo` plutôt qu'accesseurs publics - aucune clé ni champ privé n'est exposé hors du noyau, et la diff sur les fichiers partagés tient en quelques lignes - coût si faux : conflit de fusion trivial sur `repo.rs`.
