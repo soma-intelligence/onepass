@@ -227,6 +227,7 @@ TOTP : une valeur `otpauth://` est gardée telle quelle si `totp::parse_otpauth`
 | Credential Exchange (CXF) | objet JSON avec `accounts[].items[].credentials` | Login (`basic-auth`, `totp`, `passkey`), Router (`wifi`), SecureNote (`note`), CreditCard (`credit-card`) |
 | URI otpauth | lignes `otpauth://` ou `otpauth-migration://` (Google Authenticator) | Login (identifiant = compte, sinon émetteur) |
 | QR Wi-Fi | lignes `WIFI:S:...;T:...;P:...;H:...;;` | Router |
+| OnePass CSV (`onepass-csv`) | en-tête exact `title,type,vault,url,username,password,otpauth,notes,tags,extra` (export de la section 6) | Login (`vault` vers dossier, lignes `id=valeur` de `extra` en section `imported`, autre `type` gardé en `imported` avec les replis de 4.2) |
 
 Wi-Fi du trousseau Apple : voir 4.5.
 
@@ -403,6 +404,7 @@ KDBX ; Credential Exchange en export ; surveillance des adresses email par clé 
 24. Ruling: les lints `unwrap_used`, `expect_used`, `panic`, `indexing_slicing` refusés dans les nouveaux modules hors tests - "aucune panique" vérifié par l'outil, pas seulement par le fuzzing - code un peu plus verbeux.
 25. Ruling: icônes réduites à `icon::hint` (aucun réseau) - le pack et la récupération relèvent du jalon des apps - aucun.
 26. Ruling: plafonds numériques des sections 3.4, 4.4 et 5.4 - assez larges pour un vrai coffre (100 000 items en pratique), assez bas pour borner mémoire et temps - un export plus gros que 256 Mio est refusé ; à relever si besoin.
+27. Ruling: nouveau `Format::OnePassCsv` (`onepass-csv`), ajouté en fin d'énumération, reconnu par l'en-tête exact de l'export CSV - l'export en clair doit se réimporter (aller-retour de la section 10) et aucun format existant n'a cet en-tête - chaque ligne redevient un Login (un autre type garde son nom et ses champs en section `imported`, puis suit les replis de 4.2) : un item non Login perd son typage à l'aller-retour.
 
 ## Annexe A : catégories 1PUX
 

@@ -63,6 +63,11 @@ pub fn type_name(t: ItemType) -> &'static str {
 /// `extra` lists the remaining non-empty fields as `id=value` lines.
 /// Cells are written verbatim (no spreadsheet-formula escaping), so a value
 /// starting with `=` round-trips unchanged.
+///
+/// Not a full backup: passkey private keys are left out (only
+/// `passkey:<rp_id>` is written) and Location values are dropped. The
+/// `csv` crate keeps internal buffers that are not wiped. The output reads
+/// back with `import::Format::OnePassCsv`.
 pub fn csv_plaintext(vaults: &[ArchivedVault]) -> Result<Zeroizing<Vec<u8>>> {
     const BAD: Error = Error::InvalidFormat("csv write");
     let mut buf: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::new());
