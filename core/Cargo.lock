@@ -1454,6 +1454,9 @@ dependencies = [
  "bcrypt-pbkdf",
  "crypto-bigint",
  "data-encoding",
+ "libc",
+ "onepass-core",
+ "onepass-guard",
  "tempfile",
  "zeroize",
 ]
