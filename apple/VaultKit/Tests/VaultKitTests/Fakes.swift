@@ -8,7 +8,7 @@ final class FakeEnclaveKeyring: EnclaveKeyring {
     private struct State {
         var keys: Set<String> = []
         var invalidated = false
-        var cancelNext = false
+        var nextError: EnclaveError?
     }
     private let state = Mutex(State())
     let available: Bool
@@ -18,7 +18,7 @@ final class FakeEnclaveKeyring: EnclaveKeyring {
     var isAvailable: Bool { available }
 
     func invalidate() { state.withLock { $0.invalidated = true } }
-    func cancelNextDecrypt() { state.withLock { $0.cancelNext = true } }
+    func failNextDecrypt(with error: EnclaveError) { state.withLock { $0.nextError = error } }
     func hasKey(tag: String) -> Bool { state.withLock { $0.keys.contains(tag) } }
 
     func createKey(tag: String, allowWatch: Bool) throws {
@@ -34,12 +34,12 @@ final class FakeEnclaveKeyring: EnclaveKeyring {
     }
 
     func decrypt(_ data: Data, tag: String, prompt: String) async throws -> Data {
-        let (known, invalidated, cancel) = state.withLock { s -> (Bool, Bool, Bool) in
-            let c = s.cancelNext
-            s.cancelNext = false
-            return (s.keys.contains(tag), s.invalidated, c)
+        let (known, invalidated, next) = state.withLock { s -> (Bool, Bool, EnclaveError?) in
+            let e = s.nextError
+            s.nextError = nil
+            return (s.keys.contains(tag), s.invalidated, e)
         }
-        if cancel { throw EnclaveError.cancelled }
+        if let next { throw next }
         guard known, !invalidated else { throw EnclaveError.keyInvalidated }
         return Data(data.dropLast(3).map { $0 ^ 0x5A })
     }
@@ -50,14 +50,28 @@ final class FakeEnclaveKeyring: EnclaveKeyring {
 }
 
 final class FakeClock: BootClock {
-    private let state: Mutex<(boot: Date, now: Date)>
+    private let state: Mutex<(boot: String, now: Date)>
 
-    init(boot: Date = Date(timeIntervalSince1970: 1_000_000), now: Date = Date(timeIntervalSince1970: 2_000_000)) {
+    init(boot: String = "boot-1", now: Date = Date(timeIntervalSince1970: 2_000_000)) {
         state = Mutex((boot, now))
     }
 
-    var bootTime: Date { state.withLock { $0.boot } }
+    var bootSessionID: String { state.withLock { $0.boot } }
     var now: Date { state.withLock { $0.now } }
     func advance(_ seconds: TimeInterval) { state.withLock { $0.now = $0.now.addingTimeInterval(seconds) } }
-    func reboot() { state.withLock { $0.boot = $0.now.addingTimeInterval(-10) } }
+    func reboot() { state.withLock { $0.boot = "boot-" + UUID().uuidString } }
+    func setBoot(_ id: String) { state.withLock { $0.boot = id } }
+}
+
+/// Keychain whose reads can fail (locked keychain).
+final class FailingReadKeychain: KeychainStore {
+    let inner = InMemoryKeychain()
+    private let failing = Mutex(false)
+    func failReads(_ on: Bool) { failing.withLock { $0 = on } }
+    func read(_ key: String) throws -> Data? {
+        if failing.withLock({ $0 }) { throw KeychainError.unexpectedStatus(-25308) }
+        return try inner.read(key)
+    }
+    func write(_ key: String, _ data: Data) throws { try inner.write(key, data) }
+    func delete(_ key: String) throws { try inner.delete(key) }
 }

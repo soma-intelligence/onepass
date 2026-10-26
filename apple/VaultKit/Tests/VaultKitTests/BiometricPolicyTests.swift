@@ -91,7 +91,7 @@ struct BiometricPolicyTests {
     @Test func cancelledKeepsEnrollment() async throws {
         let (unlock, keyring, _, _) = make()
         try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
-        keyring.cancelNextDecrypt()
+        keyring.failNextDecrypt(with: .cancelled)
         await #expect(throws: BiometricError.cancelled) {
             _ = try await unlock.unlock(accountID: account, prompt: "x")
         }
@@ -110,5 +110,80 @@ struct BiometricPolicyTests {
         let (unlock, _, _, _) = make()
         try unlock.enroll(auk: auk, accountID: "a", allowWatch: false)
         #expect(!unlock.isEnrolled(accountID: "b"))
+    }
+
+    @Test(arguments: [EnclaveError.failed(code: -25293), .failed(code: -67712), .keyInvalidated])
+    func anyDecryptFailureFallsBackToPassword(error: EnclaveError) async throws {
+        let (unlock, keyring, _, _) = make()
+        try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        keyring.failNextDecrypt(with: error)
+        await expectPassword(.invalidated, unlock)
+    }
+
+    @Test func userFallbackKeepsEnrollment() async throws {
+        let (unlock, keyring, _, _) = make()
+        try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        keyring.failNextDecrypt(with: .userFallback)
+        await #expect(throws: BiometricError.passwordRequired(reason: .userChosePassword)) {
+            _ = try await unlock.unlock(accountID: account, prompt: "x")
+        }
+        #expect(unlock.isEnrolled(accountID: account))
+        #expect(try await unlock.unlock(accountID: account, prompt: "x") == auk)
+    }
+
+    @Test func biometryNotEnrolledDropsEnrollment() async throws {
+        let (unlock, keyring, _, _) = make()
+        try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        keyring.failNextDecrypt(with: .biometryNotEnrolled)
+        await expectPassword(.invalidated, unlock)
+    }
+
+    @Test func lockoutKeepsEnrollmentAndAsksPassword() async throws {
+        let (unlock, keyring, _, _) = make()
+        try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        keyring.failNextDecrypt(with: .biometryLockout)
+        await #expect(throws: BiometricError.passwordRequired(reason: .lockedOut)) {
+            _ = try await unlock.unlock(accountID: account, prompt: "x")
+        }
+        #expect(unlock.isEnrolled(accountID: account))
+    }
+
+    @Test func unknownBootSessionFailsClosed() async throws {
+        let (unlock, _, _, clock) = make()
+        try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        clock.setBoot("")
+        await expectPassword(.rebooted, unlock)
+    }
+
+    @Test func clockMovedBackRequiresPassword() async throws {
+        let (unlock, _, _, clock) = make()
+        try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        clock.advance(-200)
+        #expect(try await unlock.unlock(accountID: account, prompt: "x") == auk)
+        clock.advance(-200)
+        await expectPassword(.expired, unlock)
+    }
+
+    @Test func keychainReadErrorIsThrownNotNotEnrolled() async throws {
+        let keychain = FailingReadKeychain()
+        let unlock = BiometricUnlock(keyring: FakeEnclaveKeyring(), keychain: keychain, clock: FakeClock(), policy: BiometricPolicy())
+        try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        keychain.failReads(true)
+        await #expect(throws: KeychainError.unexpectedStatus(-25308)) {
+            _ = try await unlock.unlock(accountID: account, prompt: "x")
+        }
+        keychain.failReads(false)
+        #expect(unlock.isEnrolled(accountID: account))
+    }
+
+    @Test func corruptRecordIsDroppedAsNotEnrolled() async throws {
+        let (unlock, keyring, keychain, _) = make()
+        try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        try keychain.write("biometric.enrollment.\(account)", Data("pas du json".utf8))
+        await #expect(throws: BiometricError.passwordRequired(reason: .notEnrolled)) {
+            _ = try await unlock.unlock(accountID: account, prompt: "x")
+        }
+        #expect(try keychain.read("biometric.enrollment.\(account)") == nil)
+        #expect(!keyring.hasKey(tag: "me.somalabs.onepass.auk.\(account)"))
     }
 }

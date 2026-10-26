@@ -13,7 +13,7 @@ public struct SystemKeychain: KeychainStore {
     public let service: String
     public let accessGroup: String?
 
-    public init(service: String = "me.somalabs.onepass", accessGroup: String? = nil) {
+    public init(service: String = "me.somalabs.onepass", accessGroup: String?) {
         self.service = service
         self.accessGroup = accessGroup
     }
@@ -36,13 +36,19 @@ public struct SystemKeychain: KeychainStore {
     public func write(_ key: String, _ data: Data) throws {
         try withFallback { legacy in
             let query = baseQuery(key, legacy: legacy)
-            let update = [kSecValueData as String: data]
+            let update: [String: Any] = [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            ]
             var status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
             if status == errSecItemNotFound {
                 var add = query
-                add[kSecValueData as String] = data
-                add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+                add.merge(update) { _, new in new }
                 status = SecItemAdd(add as CFDictionary, nil)
+                if status == errSecDuplicateItem {
+                    // Lost a race with another writer: the item exists now.
+                    status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+                }
             }
             guard status == errSecSuccess else { throw KeychainError.unexpectedStatus(status) }
         }

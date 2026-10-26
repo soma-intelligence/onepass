@@ -4,6 +4,10 @@ public enum EnclaveError: Error, Equatable, Sendable {
     /// Key gone or invalidated (biometry set changed).
     case keyInvalidated
     case cancelled
+    /// The user chose the password fallback in the system sheet.
+    case userFallback
+    case biometryNotEnrolled
+    case biometryLockout
     case unavailable
     case failed(code: Int32)
 }
@@ -37,13 +41,23 @@ public final class BiometricUnlock: Sendable {
     static func tag(_ accountID: String) -> String { "me.somalabs.onepass.auk.\(accountID)" }
     static func storeKey(_ accountID: String) -> String { "biometric.enrollment.\(accountID)" }
 
-    private func loadEnrollment(_ accountID: String) -> BiometricEnrollment? {
-        guard let data = try? keychain.read(Self.storeKey(accountID)) else { return nil }
-        return try? JSONDecoder().decode(BiometricEnrollment.self, from: data)
+    /// nil when nothing is stored or the record is corrupt (corrupt records are dropped).
+    /// A keychain read error (for example a locked keychain) is thrown, never read as "not enrolled".
+    private func loadEnrollment(_ accountID: String) throws -> BiometricEnrollment? {
+        guard let data = try keychain.read(Self.storeKey(accountID)) else { return nil }
+        guard let enrollment = try? JSONDecoder().decode(BiometricEnrollment.self, from: data) else {
+            disable(accountID: accountID)
+            return nil
+        }
+        return enrollment
+    }
+
+    private func save(_ enrollment: BiometricEnrollment) throws {
+        try keychain.write(Self.storeKey(enrollment.accountID), try JSONEncoder().encode(enrollment))
     }
 
     public func isEnrolled(accountID: String) -> Bool {
-        loadEnrollment(accountID) != nil
+        ((try? loadEnrollment(accountID)) ?? nil) != nil
     }
 
     /// Creates a fresh Secure Enclave key (replacing any previous one) and stores the wrapped AUK.
@@ -52,53 +66,61 @@ public final class BiometricUnlock: Sendable {
         let tag = Self.tag(accountID)
         try? keyring.deleteKey(tag: tag)
         try keyring.createKey(tag: tag, allowWatch: allowWatch)
-        let wrapped: Data
         do {
-            wrapped = try keyring.encrypt(auk, tag: tag)
+            let wrapped = try keyring.encrypt(auk, tag: tag)
+            let now = clock.now
+            try save(BiometricEnrollment(
+                accountID: accountID, wrappedAUK: wrapped, enrolledAt: now,
+                lastPasswordAt: now, bootSessionID: clock.bootSessionID))
         } catch {
             try? keyring.deleteKey(tag: tag)
             throw error
         }
-        let now = clock.now
-        let enrollment = BiometricEnrollment(
-            accountID: accountID, wrappedAUK: wrapped, enrolledAt: now,
-            lastPasswordAt: now, bootTime: clock.bootTime)
-        try keychain.write(Self.storeKey(accountID), try JSONEncoder().encode(enrollment))
     }
 
     /// Call after every successful master password unlock: restarts the 14 day clock.
     public func notePasswordUnlock(accountID: String) throws {
-        guard var enrollment = loadEnrollment(accountID) else { return }
+        guard var enrollment = try loadEnrollment(accountID) else { return }
         enrollment.lastPasswordAt = clock.now
-        enrollment.bootTime = clock.bootTime
-        try keychain.write(Self.storeKey(accountID), try JSONEncoder().encode(enrollment))
+        enrollment.bootSessionID = clock.bootSessionID
+        try save(enrollment)
     }
 
-    /// Returns the AUK (the caller wipes it). Throws `passwordRequired` and drops the
-    /// enrollment when the policy, a reboot or a biometry change forbids biometric unlock.
+    /// Returns the AUK (the caller wipes it). Throws `passwordRequired` when the policy, a reboot,
+    /// a biometry change or any decryption failure forbids biometric unlock; the enrollment is
+    /// dropped except when the user merely chose the password or biometry is locked out.
     public func unlock(accountID: String, prompt: String) async throws -> Data {
-        guard let enrollment = loadEnrollment(accountID) else {
+        guard let enrollment = try loadEnrollment(accountID) else {
             throw BiometricError.passwordRequired(reason: .notEnrolled)
         }
-        if abs(enrollment.bootTime.timeIntervalSince(clock.bootTime)) > policy.bootTolerance {
+        let boot = clock.bootSessionID
+        if boot.isEmpty || boot != enrollment.bootSessionID {
             disable(accountID: accountID)
             throw BiometricError.passwordRequired(reason: .rebooted)
         }
-        if clock.now.timeIntervalSince(enrollment.lastPasswordAt) > policy.passwordEvery {
+        let elapsed = clock.now.timeIntervalSince(enrollment.lastPasswordAt)
+        if elapsed > policy.passwordEvery || elapsed < -policy.clockSkew {
             disable(accountID: accountID)
             throw BiometricError.passwordRequired(reason: .expired)
         }
         do {
             return try await keyring.decrypt(enrollment.wrappedAUK, tag: Self.tag(accountID), prompt: prompt)
-        } catch EnclaveError.keyInvalidated {
+        } catch let error as EnclaveError {
+            switch error {
+            case .cancelled: throw BiometricError.cancelled
+            case .unavailable: throw BiometricError.unavailable
+            case .userFallback: throw BiometricError.passwordRequired(reason: .userChosePassword)
+            case .biometryLockout: throw BiometricError.passwordRequired(reason: .lockedOut)
+            case .biometryNotEnrolled, .keyInvalidated, .failed:
+                disable(accountID: accountID)
+                throw BiometricError.passwordRequired(reason: .invalidated)
+            }
+        } catch is CancellationError {
+            throw BiometricError.cancelled
+        } catch {
+            // Any other decryption failure (errSecAuthFailed, CryptoTokenKit...) after a biometry change.
             disable(accountID: accountID)
             throw BiometricError.passwordRequired(reason: .invalidated)
-        } catch EnclaveError.cancelled {
-            throw BiometricError.cancelled
-        } catch EnclaveError.unavailable {
-            throw BiometricError.unavailable
-        } catch EnclaveError.failed(let code) {
-            throw BiometricError.failed(code: code)
         }
     }
 

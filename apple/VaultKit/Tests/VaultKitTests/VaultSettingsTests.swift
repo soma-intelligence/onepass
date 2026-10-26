@@ -18,6 +18,7 @@ struct VaultSettingsTests {
             #expect(s.autoLockDelay == .fifteenMinutes)
             #expect(s.hiddenVaultIDs.isEmpty)
             #expect(s.siteIconsEnabled)
+            #expect(!s.biometricsWanted)
             #expect(!s.allowWatchUnlock)
             #expect(s.failedUnlocks == 0)
             #expect(s.lockoutUntil == nil)
@@ -63,5 +64,18 @@ struct VaultSettingsTests {
             s.autoLockDelay = .oneHour
             #expect(s.effectiveAutoLockSeconds == 300)
         }
+    }
+
+    @Test func failedUnlockCounterIsAtomic() async {
+        let suite = "onepass.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let s = VaultSettings(defaults: defaults)
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<200 { group.addTask { s.recordFailedUnlock() } }
+        }
+        #expect(s.failedUnlocks == 200)
+        s.resetFailedUnlocks()
+        #expect(s.failedUnlocks == 0)
     }
 }

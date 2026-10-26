@@ -8,12 +8,32 @@ import Security
 public struct SecureEnclaveKeyring: EnclaveKeyring {
     private static let algorithm = SecKeyAlgorithm.eciesEncryptionCofactorVariableIVX963SHA256AESGCM
 
-    public init() {}
+    public let accessGroup: String?
+    /// macOS: availability also accepts an Apple Watch (`allowWatchUnlock` setting).
+    public let allowWatch: Bool
+
+    public init(accessGroup: String?, allowWatch: Bool = false) {
+        self.accessGroup = accessGroup
+        self.allowWatch = allowWatch
+    }
 
     public var isAvailable: Bool {
         guard SecureEnclave.isAvailable else { return false }
         var error: NSError?
+        #if os(macOS)
+        if allowWatch {
+            return LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometricsOrCompanion, error: &error)
+        }
+        #endif
         return LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+    }
+
+    /// Data protection keychain on every query (macOS would otherwise use the file keychain).
+    private func scoped(_ query: [String: Any]) -> [String: Any] {
+        var query = query
+        query[kSecUseDataProtectionKeychain as String] = true
+        if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
+        return query
     }
 
     public func createKey(tag: String, allowWatch: Bool) throws {
@@ -25,16 +45,16 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
         guard let access = SecAccessControlCreateWithFlags(
             nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, flags, &error)
         else { throw Self.map(error?.takeRetainedValue()) }
-        let attributes: [String: Any] = [
+        let attributes = scoped([
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
             kSecAttrKeySizeInBits as String: 256,
             kSecAttrTokenID as String: kSecAttrTokenIDSecureEnclave,
-            kSecPrivateKeyAttrs as String: [
+            kSecPrivateKeyAttrs as String: scoped([
                 kSecAttrIsPermanent as String: true,
                 kSecAttrApplicationTag as String: Data(tag.utf8),
                 kSecAttrAccessControl as String: access,
-            ] as [String: Any],
-        ]
+            ]),
+        ])
         guard SecKeyCreateRandomKey(attributes as CFDictionary, &error) != nil else {
             throw Self.map(error?.takeRetainedValue())
         }
@@ -51,25 +71,30 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
     }
 
     public func decrypt(_ data: Data, tag: String, prompt: String) async throws -> Data {
-        // SecKey decryption blocks while the system biometric sheet is up.
-        try await Task.detached(priority: .userInitiated) {
-            let context = LAContext()
-            context.localizedReason = prompt
-            let key = try loadKey(tag: tag, context: context)
-            var error: Unmanaged<CFError>?
-            guard let out = SecKeyCreateDecryptedData(key, Self.algorithm, data as CFData, &error) else {
-                throw Self.map(error?.takeRetainedValue())
-            }
-            return out as Data
-        }.value
+        let context = ContextBox(LAContext())
+        context.value.localizedReason = prompt
+        // SecKey decryption blocks while the system biometric sheet is up: run it off the
+        // caller's thread, and dismiss the sheet if the calling task is cancelled.
+        return try await withTaskCancellationHandler {
+            try await Task.detached(priority: .userInitiated) {
+                let key = try loadKey(tag: tag, context: context.value)
+                var error: Unmanaged<CFError>?
+                guard let out = SecKeyCreateDecryptedData(key, Self.algorithm, data as CFData, &error) else {
+                    throw Self.map(error?.takeRetainedValue())
+                }
+                return out as Data
+            }.value
+        } onCancel: {
+            context.value.invalidate()
+        }
     }
 
     public func deleteKey(tag: String) throws {
-        let query: [String: Any] = [
+        let query = scoped([
             kSecClass as String: kSecClassKey,
             kSecAttrApplicationTag as String: Data(tag.utf8),
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
-        ]
+        ])
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw EnclaveError.failed(code: status)
@@ -77,12 +102,12 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
     }
 
     private func loadKey(tag: String, context: LAContext?) throws -> SecKey {
-        var query: [String: Any] = [
+        var query = scoped([
             kSecClass as String: kSecClassKey,
             kSecAttrApplicationTag as String: Data(tag.utf8),
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
             kSecReturnRef as String: true,
-        ]
+        ])
         if let context { query[kSecUseAuthenticationContext as String] = context }
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
@@ -96,13 +121,18 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
         }
     }
 
+    /// Maps Security / LocalAuthentication errors. Anything not listed here is reported as
+    /// `.failed`, which `BiometricUnlock` treats as an invalidated key (password fallback).
     private static func map(_ error: CFError?) -> EnclaveError {
         guard let error else { return .failed(code: -1) }
         let ns = error as Error as NSError
         if ns.domain == LAError.errorDomain {
             switch LAError.Code(rawValue: ns.code) {
             case .userCancel, .appCancel, .systemCancel: return .cancelled
-            case .biometryNotAvailable, .biometryNotEnrolled, .biometryLockout: return .unavailable
+            case .userFallback: return .userFallback
+            case .biometryNotEnrolled: return .biometryNotEnrolled
+            case .biometryLockout: return .biometryLockout
+            case .biometryNotAvailable: return .unavailable
             default: break
             }
         }
@@ -115,4 +145,10 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
         }
         return .failed(code: Int32(truncatingIfNeeded: ns.code))
     }
+}
+
+/// LAContext is thread safe; this only carries it into the detached task and the cancel handler.
+private final class ContextBox: @unchecked Sendable {
+    let value: LAContext
+    init(_ value: LAContext) { self.value = value }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 public enum AutoLockDelay: String, Codable, Sendable, CaseIterable {
     case oneMinute, fiveMinutes, fifteenMinutes, oneHour, never
@@ -27,6 +28,7 @@ public enum AutoLockDelay: String, Codable, Sendable, CaseIterable {
 /// Local, non secret settings on an injected `UserDefaults`.
 public final class VaultSettings: @unchecked Sendable {
     private let defaults: UserDefaults
+    private let counterLock = Mutex(())
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -37,6 +39,7 @@ public final class VaultSettings: @unchecked Sendable {
         static let autoLock = "onepass.autoLockDelay"
         static let hidden = "onepass.hiddenVaultIDs"
         static let siteIcons = "onepass.siteIconsEnabled"
+        static let wanted = "onepass.biometricsWanted"
         static let allowWatch = "onepass.allowWatchUnlock"
         static let failed = "onepass.failedUnlocks"
         static let lockout = "onepass.lockoutUntil"
@@ -76,9 +79,31 @@ public final class VaultSettings: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.allowWatch) }
     }
 
+    /// The user asked for biometric unlock (set by the app when enrolling). Independent of `BiometricUnlock`.
+    public var biometricsWanted: Bool {
+        get { defaults.bool(forKey: Key.wanted) }
+        set { defaults.set(newValue, forKey: Key.wanted) }
+    }
+
+    /// Failed master password attempts. The throttle built on it (`lockoutUntil`) is local to
+    /// this device and only slows down casual guessing; the real protection is the KDF.
     public var failedUnlocks: Int {
-        get { defaults.integer(forKey: Key.failed) }
-        set { defaults.set(newValue, forKey: Key.failed) }
+        get { counterLock.withLock { _ in defaults.integer(forKey: Key.failed) } }
+        set { counterLock.withLock { _ in defaults.set(newValue, forKey: Key.failed) } }
+    }
+
+    /// Atomic read-modify-write; returns the new count.
+    @discardableResult
+    public func recordFailedUnlock() -> Int {
+        counterLock.withLock { _ in
+            let next = defaults.integer(forKey: Key.failed) + 1
+            defaults.set(next, forKey: Key.failed)
+            return next
+        }
+    }
+
+    public func resetFailedUnlocks() {
+        counterLock.withLock { _ in defaults.set(0, forKey: Key.failed) }
     }
 
     public var lockoutUntil: Date? {
