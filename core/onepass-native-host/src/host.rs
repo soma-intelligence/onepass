@@ -39,7 +39,8 @@ pub struct Limits {
     pub poll: Duration,
     /// Polling period of the `file` approval mode.
     pub approval_poll: Duration,
-    /// Longest wait for a `file` approval.
+    /// Whole pairing deadline: bounds the steps that wait for a person
+    /// (the `file` approval, then `pair_confirm`).
     pub approval_max: Duration,
 }
 
@@ -196,19 +197,20 @@ impl<W: Write> Conn<'_, W> {
             self.log.line("caller extension is not allowed");
             return self.fail(AppErrorCode::NotAllowed);
         }
-        let mut env = self.parse(&first)?;
-        loop {
-            match env {
-                Envelope::PairHello(h) => {
-                    self.pairing(h)?;
-                    // The extension may open a session on the same port.
-                    env = self.next()?;
-                }
-                Envelope::Hello(h) => return self.session(h, vault),
-                _ => {
-                    self.log.line("unexpected first envelope");
-                    return self.fail(AppErrorCode::BadFrame);
-                }
+        let env = match self.parse(&first)? {
+            Envelope::PairHello(h) => {
+                self.pairing(h)?;
+                // The extension may open a session on the same port; no
+                // second pairing.
+                self.next()?
+            }
+            other => other,
+        };
+        match env {
+            Envelope::Hello(h) => self.session(h, vault),
+            _ => {
+                self.log.line("unexpected envelope");
+                self.fail(AppErrorCode::BadFrame)
             }
         }
     }
@@ -220,6 +222,7 @@ impl<W: Write> Conn<'_, W> {
             Ok(x) => x,
             Err(e) => return self.reject("pairing refused", e),
         };
+        let deadline = Instant::now() + self.limits.approval_max;
         self.log.line("pairing started");
         self.send(&Envelope::PairOffer(offer))?;
 
@@ -235,7 +238,7 @@ impl<W: Write> Conn<'_, W> {
         // The code is derived by the host: not extension input.
         self.log.line(&format!("pairing code: {}", sas.0));
         if self.cfg.approval == Approval::File {
-            self.wait_file_approval(&sas.0, &ext_name, &browser)?;
+            self.wait_file_approval(&sas.0, &ext_name, &browser, deadline)?;
         }
         let done = match hp.approve((self.clock)()) {
             Ok(d) => d,
@@ -243,7 +246,10 @@ impl<W: Write> Conn<'_, W> {
         };
         self.send(&Envelope::PairDone(done))?;
 
-        let Envelope::PairConfirm(confirm) = self.next()? else {
+        // The user compares the codes before the extension confirms: a
+        // human step, bounded by the pairing deadline, not by `step`.
+        let f = self.next_raw(deadline.saturating_duration_since(Instant::now()))?;
+        let Envelope::PairConfirm(confirm) = self.parse(&f)? else {
             self.log.line("expected pair_confirm");
             return self.fail(AppErrorCode::BadFrame);
         };
@@ -271,7 +277,13 @@ impl<W: Write> Conn<'_, W> {
 
     /// `file` mode: publish the code in `pending-pairing.json`, then wait
     /// for `pairing-approved` to hold the same code.
-    fn wait_file_approval(&mut self, sas: &str, ext_name: &str, browser: &str) -> Flow {
+    fn wait_file_approval(
+        &mut self,
+        sas: &str,
+        ext_name: &str,
+        browser: &str,
+        deadline: Instant,
+    ) -> Flow {
         // A stale approval must not approve this pairing.
         self.clear_approval_files();
         let pending = json!({"sas": sas, "ext_name": ext_name, "browser": browser});
@@ -284,7 +296,6 @@ impl<W: Write> Conn<'_, W> {
             return self.fail(AppErrorCode::Internal);
         }
         self.log.line("waiting for pairing approval");
-        let start = Instant::now();
         let result: Result<(), Option<AppErrorCode>> = loop {
             match self.rx.try_recv() {
                 Err(TryRecvError::Empty) => {}
@@ -305,7 +316,7 @@ impl<W: Write> Conn<'_, W> {
                 self.log.line("pairing refused: wrong code");
                 break Err(Some(AppErrorCode::NotAllowed));
             }
-            if start.elapsed() >= self.limits.approval_max {
+            if Instant::now() >= deadline {
                 self.log.line("pairing approval timed out");
                 break Err(None);
             }
@@ -659,6 +670,86 @@ mod tests {
         rig.send(&Envelope::PairHello(hello));
         assert!(matches!(rig.recv(), Envelope::PairOffer(_)));
         rig.assert_closed();
+    }
+
+    /// Pair up to `pair_done`, wait `pause`, then confirm.
+    fn pair_slow_confirm(rig: &Rig, pause: Duration) -> Envelope {
+        let (mut ext, hello) =
+            onepass_bridge::pairing::ExtPairing::start("OnePass", "Chromium", T0).unwrap();
+        rig.send(&Envelope::PairHello(hello));
+        let Envelope::PairOffer(offer) = rig.recv() else {
+            panic!("pair_offer")
+        };
+        let (reveal, _sas) = ext.on_offer(offer).unwrap();
+        rig.send(&Envelope::PairReveal(reveal));
+        assert_eq!(rig.recv(), Envelope::PairSas);
+        let Envelope::PairDone(done) = rig.recv() else {
+            panic!("pair_done")
+        };
+        ext.on_done(done, T0).unwrap();
+        thread::sleep(pause);
+        let (confirm, _) = ext.confirm(T0).unwrap();
+        rig.send(&Envelope::PairConfirm(confirm));
+        rig.recv()
+    }
+
+    #[test]
+    fn pair_confirm_waits_for_the_pairing_deadline_not_one_step() {
+        // step 200 ms, pairing deadline 3 s: a 600 ms human pause passes.
+        let rig = rig(Limits {
+            approval_max: Duration::from_secs(3),
+            ..fast()
+        });
+        assert_eq!(
+            pair_slow_confirm(&rig, Duration::from_millis(600)),
+            Envelope::PairOk
+        );
+        drop(rig.to_host);
+        rig.done.join().unwrap();
+    }
+
+    #[test]
+    fn pair_confirm_after_the_pairing_deadline_closes() {
+        let rig = rig(Limits {
+            approval_max: Duration::from_millis(300),
+            ..fast()
+        });
+        let (mut ext, hello) =
+            onepass_bridge::pairing::ExtPairing::start("OnePass", "Chromium", T0).unwrap();
+        rig.send(&Envelope::PairHello(hello));
+        let Envelope::PairOffer(offer) = rig.recv() else {
+            panic!("pair_offer")
+        };
+        let (reveal, _) = ext.on_offer(offer).unwrap();
+        rig.send(&Envelope::PairReveal(reveal));
+        assert_eq!(rig.recv(), Envelope::PairSas);
+        assert!(matches!(rig.recv(), Envelope::PairDone(_)));
+        // No pair_confirm: closed once the pairing deadline passes.
+        rig.assert_closed();
+    }
+
+    #[test]
+    fn second_pairing_on_the_same_port_is_refused() {
+        let rig = rig(fast());
+        assert_eq!(pair_slow_confirm(&rig, Duration::ZERO), Envelope::PairOk);
+        let (_ext, hello) =
+            onepass_bridge::pairing::ExtPairing::start("OnePass", "Chromium", T0).unwrap();
+        rig.send(&Envelope::PairHello(hello));
+        let Envelope::Error(e) = rig.recv() else {
+            panic!("error")
+        };
+        assert_eq!(e.code, "bad_frame");
+        rig.assert_closed();
+    }
+
+    #[test]
+    fn hello_after_pairing_on_the_same_port_opens_a_session() {
+        let rig = rig(fast());
+        assert_eq!(pair_slow_confirm(&rig, Duration::ZERO), Envelope::PairOk);
+        let mut ch = rig.open();
+        assert!(matches!(rig.status(&mut ch, 1), Envelope::Msg(_)));
+        drop(rig.to_host);
+        rig.done.join().unwrap();
     }
 
     #[test]

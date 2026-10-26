@@ -484,6 +484,7 @@ pub fn load_fixture_cached(path: &Path, cache: &Path) -> Result<FixtureVault, Ho
     vault.set_after_save(Box::new(move |repo| {
         // A failed write only loses the change for later connections.
         let _ = write_cache(&cache, &raw, &key, repo.device_state(), &store);
+        Ok(())
     }));
     Ok(vault)
 }

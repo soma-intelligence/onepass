@@ -3,8 +3,9 @@
 //! `RepoVault` serves both sources: `fixture` (a `MemoryStore` built from a
 //! JSON file, see `fixture.rs`) and `dev` (the data directory of the
 //! development CLI: `device.bin` and `vault.sqlite`). Only the minimal
-//! open logic of the CLI is copied here; `device.bin` is read, never
-//! written (the CLI keeps a staler last seen manifest, which it accepts).
+//! open logic of the CLI is copied here. After each write `device.bin` is
+//! rewritten with the new last seen manifests, so a rollback of
+//! `vault.sqlite` stays detectable, as with the CLI.
 
 use std::collections::HashMap;
 use std::fs;
@@ -18,10 +19,11 @@ use onepass_core::model::Item;
 use onepass_core::repo::{DeviceState, Repository};
 use onepass_core::store::{RecordStore, SqliteStore};
 use onepass_core::{Error, Id};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::config::HostError;
+use crate::pairings::write_atomic;
 
 const DEVICE_FILE: &str = "device.bin";
 const STORE_FILE: &str = "vault.sqlite";
@@ -29,9 +31,10 @@ const LOCK_FILE: &str = "lock";
 
 /// Opens the repository on `unlock` when it is not open yet.
 pub type Opener<S> = Box<dyn FnMut() -> Option<Repository<S>> + Send>;
-/// Called after each successful `save` (the fixture source persists its
-/// store there).
-pub type AfterSave<S> = Box<dyn FnMut(&Repository<S>) + Send>;
+/// Called after each successful `save`, still under the data directory
+/// lock (the dev source rewrites `device.bin`, the fixture source its
+/// cache). An error makes the `save` reply `internal`.
+pub type AfterSave<S> = Box<dyn FnMut(&Repository<S>) -> Result<(), HostError> + Send>;
 
 /// A `VaultAccess` over a repository, with a simulated lock state.
 pub struct RepoVault<S: RecordStore> {
@@ -208,7 +211,7 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
         item.vault_id = vault_id;
         repo.save_item(vault, item).map_err(bridge_error)?;
         if let Some(f) = self.after_save.as_mut() {
-            f(repo);
+            f(repo).map_err(|_| BridgeError::App(AppErrorCode::Internal))?;
         }
         Ok(())
     }
@@ -228,7 +231,39 @@ struct DeviceFile {
     state: DeviceState,
 }
 
-fn lock_file(path: &Path) -> std::io::Result<fs::File> {
+/// `device.bin` as the CLI encodes it (borrowed fields, same layout).
+#[derive(Serialize)]
+struct DeviceRef<'a> {
+    secret_key: &'a str,
+    state: &'a DeviceState,
+}
+
+/// Rewrite `device.bin` with `state`, keeping its Secret Key unchanged, as
+/// the CLI does after each change: atomically, 0600, file and directory
+/// synced, and only when the state changed. The caller holds the data
+/// directory lock.
+pub fn persist_device(dir: &Path, state: &DeviceState) -> Result<(), HostError> {
+    let path = dir.join(DEVICE_FILE);
+    let bytes = Zeroizing::new(
+        fs::read(&path).map_err(|e| HostError::new(format!("device.bin: {}", e.kind())))?,
+    );
+    let file: DeviceFile =
+        postcard::from_bytes(&bytes).map_err(|_| HostError::new("device.bin is unreadable"))?;
+    let new = Zeroizing::new(
+        postcard::to_allocvec(&DeviceRef {
+            secret_key: &file.secret_key,
+            state,
+        })
+        .map_err(|_| HostError::new("cannot encode device.bin"))?,
+    );
+    if *new == *bytes {
+        return Ok(());
+    }
+    write_atomic(&path, &new).map_err(|e| HostError::new(format!("device.bin: {}", e.kind())))
+}
+
+/// Open `path` (0600) and take its exclusive lock, released on drop.
+pub fn lock_file(path: &Path) -> std::io::Result<fs::File> {
     let f = fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -300,6 +335,10 @@ pub fn load_dev(dir: PathBuf, unlocked: bool, log: &crate::log::Log) -> DevVault
     };
     let mut v = RepoVault::new(repo, "onepass-dev");
     v.set_opener(Box::new(try_open));
+    let device_dir = dir.clone();
+    v.set_after_save(Box::new(move |repo| {
+        persist_device(&device_dir, repo.device_state())
+    }));
     v.set_lock_path(dir.join(LOCK_FILE));
     v
 }

@@ -11,6 +11,7 @@ mod log;
 mod pairings;
 mod vault;
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::thread;
@@ -150,7 +151,8 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("onepass-native-host: {e}");
+            // Never `eprintln!`: it panics when stderr is closed.
+            let _ = writeln!(std::io::stderr(), "onepass-native-host: {e}");
             ExitCode::FAILURE
         }
     }

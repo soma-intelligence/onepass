@@ -61,7 +61,8 @@ impl Log {
     /// are ignored: the journal never stops the host.
     pub fn line(&self, msg: &str) {
         let line = format!("{} [{}] {msg}", now(), std::process::id());
-        eprintln!("{line}");
+        // Never `eprintln!`: it panics when stderr is closed.
+        let _ = writeln!(std::io::stderr(), "{line}");
         if let Some(p) = &self.path {
             let _ = append(p, &line);
         }

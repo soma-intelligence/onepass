@@ -601,3 +601,89 @@ fn dev_source_serves_the_cli_vault() {
     assert_eq!(unlock["ok"]["locked"], true, "{unlock}");
     assert!(host.wait().success());
 }
+
+/// `device.bin` as the CLI writes it.
+#[derive(serde::Deserialize)]
+struct DeviceBin {
+    secret_key: String,
+    state: onepass_core::repo::DeviceState,
+}
+
+fn device_bin(dir: &Path) -> DeviceBin {
+    postcard::from_bytes(&fs::read(dir.join("device.bin")).unwrap()).unwrap()
+}
+
+#[test]
+fn dev_writes_persist_device_state_and_detect_rollback() {
+    let env = setup("auto", json!({"source": {"kind": "dev"}}));
+    let password = "correct horse battery staple";
+    make_dev_account(&env.data, password);
+    let rec = pair(&env);
+    let vars = [
+        ("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1"),
+        ("ONEPASS_PASSWORD", password),
+    ];
+    let caller = format!("chrome-extension://{EXT_ID}/");
+    let session_with = |vars: &[(&str, &str)]| {
+        let mut host = Host::spawn_with(&env, &[&caller], vars);
+        let (pending, hello) = session::ext_hello(&rec).unwrap();
+        host.send(&Envelope::Hello(hello));
+        let Envelope::Welcome(welcome) = host.recv() else {
+            panic!("expected welcome")
+        };
+        let (ch, finish) = pending.on_welcome(welcome, now()).unwrap();
+        host.send(&Envelope::Finish(finish));
+        (host, ch)
+    };
+
+    let before = device_bin(&env.data);
+    let seq_before: Vec<u64> = before.state.last_seen.values().map(|m| m.seq).collect();
+    let old_store = fs::read(env.data.join("vault.sqlite")).unwrap();
+
+    let (mut host, mut ch) = session_with(&vars);
+    let vaults = request(&mut host, &mut ch, json!({"id": 1, "op": "vaults"}));
+    let vault_id = vaults["ok"]["vaults"][0]["id"].clone();
+    let saved = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 2, "op": "save_login", "ctx": "save_prompt", "origin": ATLAS,
+               "title": "Atlas Cloud 2", "username": "alex.ops@atlas.dev",
+               "password": "Dev-Pass-0043", "vault_id": vault_id, "rule": "domain",
+               "tags": []}),
+    );
+    assert!(saved["ok"]["item_id"].is_string(), "{saved}");
+    assert!(host.wait().success());
+
+    // device.bin: same Secret Key, last seen manifest advanced, 0600.
+    let after = device_bin(&env.data);
+    assert_eq!(after.secret_key, before.secret_key);
+    let seq_after: Vec<u64> = after.state.last_seen.values().map(|m| m.seq).collect();
+    assert_eq!(seq_after.len(), seq_before.len());
+    assert!(
+        seq_after.iter().zip(&seq_before).any(|(a, b)| a > b),
+        "{seq_before:?} -> {seq_after:?}"
+    );
+    let mode = fs::metadata(env.data.join("device.bin"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+
+    // Roll vault.sqlite back to before the write: refused, vault locked.
+    for suffix in ["-wal", "-shm"] {
+        let _ = fs::remove_file(env.data.join(format!("vault.sqlite{suffix}")));
+    }
+    fs::write(env.data.join("vault.sqlite"), old_store).unwrap();
+    let (mut host, mut ch) = session_with(&vars);
+    let status = request(&mut host, &mut ch, json!({"id": 1, "op": "status"}));
+    let list = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 2, "op": "list_for_origin", "ctx": "menu", "origin": ATLAS}),
+    );
+    assert!(
+        status["ok"]["locked"] == true || list.get("err").is_some(),
+        "rollback went unnoticed: {status} {list}"
+    );
+    assert!(host.wait().success());
+}
