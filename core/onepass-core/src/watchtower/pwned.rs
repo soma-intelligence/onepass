@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
+use std::hint::black_box;
 use std::io::{ErrorKind, Read};
 use std::path::PathBuf;
 
@@ -125,16 +126,27 @@ pub fn parse_range(body: &[u8]) -> Result<Vec<([u8; 35], u64)>> {
 }
 
 /// SHA-1 of a password as 40 upper-case hex characters.
+///
+/// An unsalted SHA-1 of a password is as sensitive as its hex, so the raw
+/// digest is copied into a wiped buffer and aws-lc's `Digest` (no `Zeroize`)
+/// is overwritten in place with the digest of a constant. Best effort: the
+/// type is `Copy`, so copies the compiler makes are outside our control.
 pub(crate) fn sha1_hex(pw: &str) -> Zeroizing<[u8; 40]> {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let d = digest(&SHA1_FOR_LEGACY_USE_ONLY, pw.as_bytes());
+    let mut raw = Zeroizing::new([0u8; 20]);
+    let mut d = digest(&SHA1_FOR_LEGACY_USE_ONLY, pw.as_bytes());
+    for (slot, byte) in raw.iter_mut().zip(d.as_ref()) {
+        *slot = *byte;
+    }
+    d = digest(&SHA1_FOR_LEGACY_USE_ONLY, b"");
+    black_box(&d);
     let mut out = Zeroizing::new([0u8; 40]);
     for (pair, byte) in out
         .as_mut_slice()
         .as_chunks_mut::<2>()
         .0
         .iter_mut()
-        .zip(d.as_ref())
+        .zip(raw.iter())
     {
         for (slot, nibble) in pair.iter_mut().zip([byte >> 4, byte & 0x0F]) {
             *slot = HEX.get(usize::from(nibble)).copied().unwrap_or(b'0');
@@ -256,6 +268,20 @@ mod tests {
     fn sha1_hex_known_vector() {
         let h = sha1_hex("password");
         assert_eq!(&h[..], b"5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8");
+    }
+
+    #[test]
+    fn sha1_hex_fips_180_vectors() {
+        // The empty input is also the constant the raw digest is overwritten
+        // with: the wipe must not leak into the result.
+        assert_eq!(
+            &sha1_hex("")[..],
+            b"DA39A3EE5E6B4B0D3255BFEF95601890AFD80709"
+        );
+        assert_eq!(
+            &sha1_hex("abc")[..],
+            b"A9993E364706816ABA3E25717850C26C9CD0D89D"
+        );
     }
 
     #[test]
