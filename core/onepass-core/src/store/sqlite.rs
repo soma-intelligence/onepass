@@ -73,11 +73,22 @@ impl SqliteStore {
     /// `VACUUM` writes the rebuilt pages to the WAL: a second checkpoint
     /// copies them over the old file and truncates the WAL.
     pub fn compact(&self) -> Result<()> {
-        self.conn
-            .execute_batch(
-                "PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);",
-            )
-            .map_err(store_err)
+        self.checkpoint()?;
+        self.conn.execute_batch("VACUUM;").map_err(store_err)?;
+        self.checkpoint()
+    }
+
+    /// `wal_checkpoint(TRUNCATE)`; a busy result (a reader or writer kept
+    /// the WAL from being folded) is an error, not a silent success.
+    fn checkpoint(&self) -> Result<()> {
+        let busy: i64 = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))
+            .map_err(store_err)?;
+        if busy != 0 {
+            return Err(Error::Store("sqlite: checkpoint busy".into()));
+        }
+        Ok(())
     }
 }
 
@@ -234,6 +245,36 @@ mod tests {
         drop(s);
         let s = SqliteStore::open(&path).unwrap();
         assert_eq!(s.list(RecordKind::Item).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn compact_reports_a_busy_checkpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let mut s = SqliteStore::open(&path).unwrap();
+        s.conn.busy_timeout(std::time::Duration::ZERO).unwrap();
+        let put = |s: &mut SqliteStore, n: u8| {
+            s.put(Record {
+                id: Id::new(),
+                kind: RecordKind::Item,
+                version: 1,
+                data: vec![n],
+            })
+            .unwrap();
+        };
+        put(&mut s, 1);
+        // A reader pinned on an older snapshot keeps the WAL from being
+        // reset while the writer moves on.
+        let reader = SqliteStore::open(&path).unwrap();
+        reader.conn.execute_batch("BEGIN").unwrap();
+        let _: i64 = reader
+            .conn
+            .query_row("SELECT count(*) FROM records", [], |r| r.get(0))
+            .unwrap();
+        put(&mut s, 2);
+        assert!(matches!(s.compact(), Err(Error::Store(_))));
+        reader.conn.execute_batch("COMMIT").unwrap();
+        s.compact().unwrap();
     }
 
     #[test]

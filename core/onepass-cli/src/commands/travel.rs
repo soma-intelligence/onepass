@@ -12,11 +12,12 @@ use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 use onepass_core::Error;
-use onepass_core::repo::travel::SEALED_TRAVEL_STATE_LEN;
+use onepass_core::repo::Repository;
+use onepass_core::repo::travel::{SEALED_TRAVEL_STATE_LEN, TravelState};
 use onepass_core::store::{RecordKind, RecordStore, SqliteStore};
 use zeroize::Zeroizing;
 
-use crate::session::{CliError, Ctx, stored, with_session};
+use crate::session::{CliError, Ctx, stored, with_session, with_session_then};
 
 const TRAVEL_FILE: &str = "travel.bin";
 
@@ -91,11 +92,42 @@ fn open_existing(path: &Path) -> Result<SqliteStore, CliError> {
     Ok(store)
 }
 
+/// Create the upstream file with mode 0600 if absent, before SQLite
+/// creates it with the umask's mode.
+fn create_upstream(path: &Path) -> Result<(), CliError> {
+    fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(path)?;
+    Ok(())
+}
+
+/// The CLI error of a core error on stored data (integrity maps to 3).
+fn store_error(e: Error) -> CliError {
+    match stored::<()>(Err(e)) {
+        Err(e) => e,
+        Ok(()) => unreachable!("an Err stays an Err"),
+    }
+}
+
+/// Read and open the sealed state of `travel.bin`: wrong length, bad
+/// signature or a state that does not open all exit 3.
+fn read_state(ctx: &Ctx, repo: &Repository<SqliteStore>) -> Result<TravelState, CliError> {
+    let bytes = Zeroizing::new(fs::read(travel_path(ctx))?);
+    if bytes.len() != SEALED_TRAVEL_STATE_LEN {
+        return Err(store_error(Error::InvalidFormat("travel state")));
+    }
+    stored(repo.open_travel_state(&bytes))
+}
+
 fn push(ctx: &Ctx, upstream: &Path) -> Result<(), CliError> {
     let count = with_session(ctx, |_repo| {
         // The repository keeps its store private: a second connection to
         // the same file reads the records (WAL allows it).
         let local = stored(SqliteStore::open(&ctx.store_path()))?;
+        create_upstream(upstream)?;
         let mut up = stored(SqliteStore::open(upstream))?;
         harden_upstream(upstream)?;
         let mut n = 0usize;
@@ -145,9 +177,14 @@ fn sync_dir(ctx: &Ctx) -> Result<(), CliError> {
 }
 
 fn on(ctx: &Ctx, upstream: &Path) -> Result<(), CliError> {
-    let hidden = with_session(ctx, |repo| {
+    // (vaults hidden, whether Travel Mode was already on)
+    let (hidden, was_on) = with_session(ctx, |repo| {
         if travel_path(ctx).exists() {
-            return Err(CliError::usage("travel mode is already on"));
+            // Already on: if the state opens, only retry the compaction a
+            // failed run may have skipped.
+            let state = read_state(ctx, repo)?;
+            compact_local(ctx)?;
+            return Ok((state.parked.len(), true));
         }
         let up = open_existing(upstream)?;
         let state = match repo.enter_travel(&up) {
@@ -159,48 +196,83 @@ fn on(ctx: &Ctx, upstream: &Path) -> Result<(), CliError> {
                     "{m}; run `onepass travel push` first, nothing was hidden"
                 )));
             }
-            Err(e) => return Err(stored::<()>(Err(e)).unwrap_err()),
+            Err(e) => return Err(store_error(e)),
         };
-        let sealed = Zeroizing::new(stored(repo.seal_travel_state(&state))?);
-        // The state is on disk before the local copies go: a crash after
-        // this point leaves both, never neither.
-        write_state(ctx, &sealed)?;
+        // The local copies are gone and their pins dropped in memory: the
+        // sealed state must reach the disk, or everything is put back.
+        let written = stored(repo.seal_travel_state(&state))
+            .map(Zeroizing::new)
+            .and_then(|sealed| write_state(ctx, &sealed));
+        if let Err(e) = written {
+            return match repo.exit_travel(&up, &state) {
+                Ok(()) => Err(e),
+                Err(_) => Err(CliError::usage(
+                    "travel.bin could not be written and the hidden vaults could not be \
+                     restored; they are recoverable with `onepass travel off --upstream \
+                     <file> --accept-unpinned`",
+                )),
+            };
+        }
         // `enter_travel` deleted the rows: compact so they do not linger in
         // free pages or the WAL.
-        stored(SqliteStore::open(&ctx.store_path()))?.compact()?;
-        Ok(state.parked.len())
+        compact_local(ctx)?;
+        Ok((state.parked.len(), false))
     })?;
     if ctx.json {
-        crate::out!("{}", serde_json::json!({ "hidden": hidden }));
+        crate::out!(
+            "{}",
+            serde_json::json!({ "hidden": hidden, "already_on": was_on })
+        );
+    } else if was_on {
+        crate::out!("travel mode is already on; local database compacted");
     } else {
         crate::out!("travel mode on: {hidden} vaults hidden");
     }
     Ok(())
 }
 
+/// Compact the local store through a second connection. A failure leaves
+/// Travel Mode on (travel.bin is written) with rows possibly lingering.
+fn compact_local(ctx: &Ctx) -> Result<(), CliError> {
+    let store = stored(SqliteStore::open(&ctx.store_path()))?;
+    stored(store.compact()).map_err(|e| {
+        CliError::usage(format!(
+            "travel mode is on, but compacting the local database failed: {}; \
+             run `onepass travel on` again to retry compaction",
+            e.msg
+        ))
+    })
+}
+
 fn off(ctx: &Ctx, upstream: &Path, accept_unpinned: bool) -> Result<(), CliError> {
-    let restored = with_session(ctx, |repo| {
-        let up = open_existing(upstream)?;
-        let path = travel_path(ctx);
-        let n = if path.exists() {
-            let bytes = Zeroizing::new(fs::read(&path)?);
-            let state = stored(repo.open_travel_state(&bytes))?;
-            stored(repo.exit_travel(&up, &state))?;
-            state.parked.len()
-        } else if accept_unpinned {
-            stored(repo.exit_travel_unpinned(&up))?.len()
-        } else {
-            return Err(CliError::usage(
-                "no travel.bin: the hidden vaults cannot be checked against what this \
-                 device last saw; pass --accept-unpinned to restore them anyway",
-            ));
-        };
-        if path.exists() {
-            fs::remove_file(&path)?;
-            sync_dir(ctx)?;
-        }
-        Ok(n)
-    })?;
+    let path = travel_path(ctx);
+    let restored = with_session_then(
+        ctx,
+        |repo| {
+            let up = open_existing(upstream)?;
+            if path.exists() {
+                let state = read_state(ctx, repo)?;
+                stored(repo.exit_travel(&up, &state))?;
+                Ok(state.parked.len())
+            } else if accept_unpinned {
+                Ok(stored(repo.exit_travel_unpinned(&up))?.len())
+            } else {
+                Err(CliError::usage(
+                    "no travel.bin: the hidden vaults cannot be checked against what this \
+                     device last saw; pass --accept-unpinned to restore them anyway",
+                ))
+            }
+        },
+        // Only once device.bin holds the restored pins: a crash before
+        // this leaves travel.bin and a valid retry, never lost pins.
+        || {
+            if path.exists() {
+                fs::remove_file(&path)?;
+                sync_dir(ctx)?;
+            }
+            Ok(())
+        },
+    )?;
     if ctx.json {
         crate::out!("{}", serde_json::json!({ "restored": restored }));
     } else {
@@ -218,13 +290,7 @@ fn status(ctx: &Ctx) -> Result<(), CliError> {
         }
         return Ok(());
     }
-    let state = with_session(ctx, |repo| {
-        let bytes = Zeroizing::new(fs::read(travel_path(ctx))?);
-        if bytes.len() != SEALED_TRAVEL_STATE_LEN {
-            return Err(stored::<()>(Err(Error::InvalidFormat("travel state"))).unwrap_err());
-        }
-        stored(repo.open_travel_state(&bytes))
-    })?;
+    let state = with_session(ctx, |repo| read_state(ctx, repo))?;
     let since = rfc3339(state.entered_at);
     if ctx.json {
         crate::out!(

@@ -130,10 +130,6 @@ fn travel_roundtrip() {
         status.starts_with("travel mode: on (1 vaults hidden since "),
         "{status}"
     );
-    // A second `on` refuses.
-    let again = run(d, &["travel", "on", "--upstream", &up]);
-    assert_ne!(again.code, 0);
-    assert!(again.stderr.contains("travel mode is already on"));
     ok(d, &["travel", "off", "--upstream", &up]);
     assert!(!d.join("travel.bin").exists());
     assert!(items(d).contains("BankLogin"));
@@ -144,7 +140,7 @@ fn travel_roundtrip() {
 }
 
 #[test]
-fn travel_on_refuses_without_upstream_copy() {
+fn travel_on_refuses_missing_upstream_file() {
     let tmp = fresh();
     let d = tmp.path();
     prep_upstream_dir(&tmp);
@@ -273,4 +269,102 @@ fn hidden_vault_bytes_gone_from_sqlite_file() {
     let after = store_bytes(d);
     let gone = keys.iter().filter(|k| !contains(&after, k)).count();
     assert_eq!(gone, 1, "exactly the hidden vault key is gone");
+}
+
+/// `last_seen` of `device.bin`, decoded like `session.rs` does.
+fn last_seen(
+    dir: &Path,
+) -> std::collections::BTreeMap<onepass_core::Id, onepass_core::manifest::SeenManifest> {
+    #[derive(serde::Deserialize)]
+    struct DeviceFile {
+        #[allow(dead_code)]
+        secret_key: String,
+        state: onepass_core::repo::DeviceState,
+    }
+    let bytes = fs::read(dir.join("device.bin")).unwrap();
+    let file: DeviceFile = postcard::from_bytes(&bytes).unwrap();
+    file.state.last_seen
+}
+
+#[test]
+fn travel_on_refuses_altered_upstream_record() {
+    let tmp = fresh();
+    let d = tmp.path();
+    prep_upstream_dir(&tmp);
+    let up = upstream(&tmp);
+    ok(d, &["travel", "push", "--upstream", &up]);
+    let conn = rusqlite::Connection::open(&up).unwrap();
+    // Kind 5 is Item: alter the last created item (Personnel's).
+    let n = conn
+        .execute(
+            "UPDATE records SET data = CAST(data || x'00' AS BLOB) WHERE kind = 5 AND rowid = (SELECT max(rowid) FROM records WHERE kind = 5)",
+            [],
+        )
+        .unwrap();
+    assert_eq!(n, 1);
+    drop(conn);
+    let before = items(d);
+    let o = run(d, &["travel", "on", "--upstream", &up]);
+    assert_eq!(o.code, 1, "{}", o.stderr);
+    assert_eq!(items(d), before);
+    assert!(!d.join("travel.bin").exists());
+}
+
+#[test]
+fn travel_on_restores_everything_when_travel_bin_cannot_be_written() {
+    let tmp = fresh();
+    let d = tmp.path();
+    prep_upstream_dir(&tmp);
+    let up = upstream(&tmp);
+    ok(d, &["travel", "push", "--upstream", &up]);
+    let pins = last_seen(d);
+    // A directory where the temporary file goes: the write fails.
+    fs::create_dir(d.join("travel.bin.tmp")).unwrap();
+    let o = run(d, &["travel", "on", "--upstream", &up]);
+    assert_ne!(o.code, 0);
+    assert!(items(d).contains("BankLogin"));
+    assert!(!d.join("travel.bin").exists());
+    assert_eq!(last_seen(d), pins, "pins are back in device.bin");
+}
+
+#[test]
+fn travel_on_again_only_compacts() {
+    let tmp = fresh();
+    let d = tmp.path();
+    prep_upstream_dir(&tmp);
+    let up = upstream(&tmp);
+    ok(d, &["travel", "push", "--upstream", &up]);
+    ok(d, &["travel", "on", "--upstream", &up]);
+    let o = ok(d, &["travel", "on", "--upstream", &up]);
+    assert!(o.stdout.contains("already on; local database compacted"));
+    assert!(!items(d).contains("BankLogin"));
+}
+
+#[test]
+fn push_never_deletes_upstream_records() {
+    let tmp = fresh();
+    let d = tmp.path();
+    prep_upstream_dir(&tmp);
+    let up = upstream(&tmp);
+    ok(d, &["travel", "push", "--upstream", &up]);
+    let count = |p: &str| -> i64 {
+        rusqlite::Connection::open(p)
+            .unwrap()
+            .query_row("SELECT count(*) FROM records WHERE kind = 5", [], |r| {
+                r.get(0)
+            })
+            .unwrap()
+    };
+    let before = count(&up);
+    assert_eq!(before, 2);
+    let local = rusqlite::Connection::open(d.join("vault.sqlite")).unwrap();
+    local
+        .execute(
+            "DELETE FROM records WHERE rowid = (SELECT min(rowid) FROM records WHERE kind = 5)",
+            [],
+        )
+        .unwrap();
+    drop(local);
+    ok(d, &["travel", "push", "--upstream", &up]);
+    assert_eq!(count(&up), before);
 }

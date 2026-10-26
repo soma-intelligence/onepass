@@ -349,6 +349,17 @@ pub fn with_session<T>(
     ctx: &Ctx,
     f: impl FnOnce(&mut Repository<SqliteStore>) -> Result<T, CliError>,
 ) -> Result<T, CliError> {
+    with_session_then(ctx, f, || Ok(()))
+}
+
+/// Like [`with_session`], and runs `after` under the same lock once `f`
+/// succeeded and the device state is saved (never when either failed).
+/// For steps that must only follow a durable `device.bin`.
+pub fn with_session_then<T>(
+    ctx: &Ctx,
+    f: impl FnOnce(&mut Repository<SqliteStore>) -> Result<T, CliError>,
+    after: impl FnOnce() -> Result<(), CliError>,
+) -> Result<T, CliError> {
     // Checked before taking the lock, so no lock file lands in a directory
     // that holds no account.
     if !ctx.has_account() {
@@ -358,7 +369,9 @@ pub fn with_session<T>(
     let _lock = lock(ctx)?;
     let mut session = Session::open(ctx, &password)?;
     let result = f(&mut session.repo);
-    save_after(ctx, &session, result)
+    let v = save_after(ctx, &session, result)?;
+    after()?;
+    Ok(v)
 }
 
 /// The tail of a locked request: harden the directory and save the device
