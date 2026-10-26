@@ -15,6 +15,7 @@ export type Role = "username" | "email" | "password" | "new_password" | "otp" | 
   | "address_line1" | "address_line2" | "postal_code" | "city" | "country";
 export type HoneypotStyle = "display_none" | "offscreen" | "opacity" | "one_pixel" | "aria_hidden";
 export type LookalikeKind = "suffix" | "typo" | "hyphen" | "idn";
+export type LoginStyle = "single" | "username_first" | "email_then_password";
 export interface FieldSpec { role: Role; name: string; id: string; label: string; type: string; autocomplete?: string; }
 export interface Honeypot { role: Role; name: string; style: HoneypotStyle; }
 export interface Passkey { credentialId: string /* base64url */; d: string /* hex scalar */; x: string; y: string /* base64url */; }
@@ -23,10 +24,11 @@ export interface Site {
   index: number; seed: string; host: string; brand: string; lang: Lang; labelLang: Lang;
   flow: FlowId; traits: TraitId[];
   fields: FieldSpec[];            // fields of the flow's main form, in order
-  buttons: { submit: string; next?: string; sso?: string };
+  buttons: { submit: string; next?: string; sso?: string; passkey?: string };
   account?: Account;              // login flows, signup (password undefined until created: use "")
   sso?: { provider: ProviderId; email: string };
   passkeyOnly?: boolean;          // login_passkey: passkey button without password
+  loginStyle?: LoginStyle;        // login_totp, login_passkey: shape of the password step
   totpCells?: boolean;            // split_otp
   honeypot?: Honeypot;
   lookalike?: { host: string; kind: LookalikeKind };
