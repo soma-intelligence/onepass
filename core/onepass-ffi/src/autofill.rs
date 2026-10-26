@@ -320,7 +320,8 @@ impl Session {
     /// The Logins matching `service` (a domain or a URL from the system;
     /// empty for none), same host first, then same registrable domain, then
     /// favorites, then most recently updated. `include_all` appends every
-    /// other live Login as `Other` (manual choice), hidden ones included.
+    /// other live Login as `Other` (manual choice). Logins hidden from
+    /// AutoFill are never returned.
     pub fn autofill_candidates(
         &self,
         service: String,
@@ -332,13 +333,10 @@ impl Session {
         self.with(|repo| {
             let mut ranked = Vec::new();
             for item in visible_items(repo, &excluded)? {
-                if !live_login(&item) {
+                if !live_login(&item) || item.hide_from_autofill {
                     continue;
                 }
-                let best = target
-                    .as_ref()
-                    .filter(|_| !item.hide_from_autofill)
-                    .and_then(|t| item_quality(t, &item));
+                let best = target.as_ref().and_then(|t| item_quality(t, &item));
                 let c = match best {
                     Some((q, url)) => candidate(&item, q, Some(url)),
                     None if include_all => candidate(
@@ -362,7 +360,8 @@ impl Session {
 
     /// Create a passkey and store it: in the `passkeys` field of the Login
     /// `item_id` (adding the passkey login method if missing), or in a new
-    /// Login of `vault_id`. `PasskeyExcluded` when a live item already holds
+    /// Login of `vault_id` (`NotFound` for a trashed or archived Login).
+    /// `PasskeyExcluded` when a live item already holds
     /// one of `excluded_credential_ids` for this relying party.
     pub fn create_passkey(
         &self,
@@ -379,7 +378,8 @@ impl Session {
             let mut item = match item_id {
                 Some(id) => {
                     let item = find_item(repo, &vault, id)?;
-                    if item.trashed_at.is_some() {
+                    // A trashed or archived item could not sign later.
+                    if item.trashed_at.is_some() || item.archived {
                         return Err(OnePassError::NotFound);
                     }
                     if item.item_type != ItemType::Login {

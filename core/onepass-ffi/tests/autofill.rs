@@ -394,6 +394,32 @@ fn candidates_rank_and_reject_lookalikes() {
 }
 
 #[test]
+fn candidates_never_offer_hidden_logins() {
+    let fx = fixture();
+    login(&fx, "visible", &["https://example.com"]);
+    let mut hidden = login(&fx, "hidden", &["https://example.com"]);
+    hidden.hide_from_autofill = true;
+    fx.session.save_item(hidden).unwrap();
+    for include_all in [false, true] {
+        for service in ["example.com", ""] {
+            let c = fx
+                .session
+                .autofill_candidates(service.into(), include_all, Vec::new())
+                .unwrap();
+            assert!(c.iter().all(|c| c.title != "hidden"), "{c:?}");
+        }
+    }
+    let c = fx
+        .session
+        .autofill_candidates("example.com".into(), true, Vec::new())
+        .unwrap();
+    assert_eq!(
+        titles(&c),
+        [("visible".to_owned(), FfiMatchQuality::ExactHost)]
+    );
+}
+
+#[test]
 fn candidates_allow_http_on_local_hosts() {
     let fx = fixture();
     login(&fx, "dev", &["http://localhost:8080/login"]);
@@ -563,6 +589,34 @@ fn create_passkey_existing_login() {
             .create_passkey(creation(&fx.vault_id, Some(wallet.id), "example.com", "c"))
             .is_err()
     );
+}
+
+#[test]
+fn create_passkey_refuses_archived_or_trashed_login() {
+    let fx = fixture();
+    let archived = login(&fx, "Archive", &["https://example.com"]);
+    fx.session
+        .archive_item(fx.vault_id.clone(), archived.id.clone())
+        .unwrap();
+    let trashed = login(&fx, "Corbeille", &["https://example.com"]);
+    fx.session
+        .trash_item(fx.vault_id.clone(), trashed.id.clone())
+        .unwrap();
+    for id in [archived.id, trashed.id] {
+        assert_eq!(
+            fx.session
+                .create_passkey(creation(
+                    &fx.vault_id,
+                    Some(id.clone()),
+                    "example.com",
+                    "camille"
+                ))
+                .unwrap_err(),
+            OnePassError::NotFound
+        );
+        let item = fx.session.item(fx.vault_id.clone(), id).unwrap();
+        assert!(passkey_fields(&item).is_empty());
+    }
 }
 
 #[test]
