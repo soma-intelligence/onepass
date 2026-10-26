@@ -5,8 +5,9 @@
 //!   a deletion). Reads see `pending` over `base`.
 //! - `staging`: changes received during a fetch, applied to `base` in one
 //!   transaction by `commit_remote`.
-//! - `ancestor`: for a manifest with a pending local write, the `base` row
-//!   that write was built on, kept when the server replaces `base`.
+//! - `ancestor`: for a manifest or a restore epoch with a pending local
+//!   write, the `base` row that write was built on, kept when the server
+//!   replaces `base`.
 //! - `meta`: device state, change token and other small values.
 
 use std::collections::BTreeSet;
@@ -187,11 +188,18 @@ fn fetch_mode(conn: &Connection) -> Result<Option<u8>> {
     Ok(value.and_then(|v| v.first().copied()))
 }
 
-/// Write a pending data row. A manifest write over a `base` manifest with no
-/// `ancestor` yet first keeps that `base` row as its ancestor.
+/// The kinds whose pending write keeps the `base` row it was built on as
+/// its `ancestor`, to tell when the server moved on.
+fn keeps_ancestor(kind: RecordKind) -> bool {
+    matches!(kind, RecordKind::Manifest | RecordKind::RestoreEpoch)
+}
+
+/// Write a pending data row. A manifest or restore epoch write over a
+/// `base` row with no `ancestor` yet first keeps that `base` row as its
+/// ancestor.
 fn write_pending(tx: &Connection, r: &Record) -> Result<()> {
     let version = to_i64(r.version)?;
-    if r.kind == RecordKind::Manifest {
+    if keeps_ancestor(r.kind) {
         tx.execute(
             "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
              SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
@@ -229,9 +237,26 @@ fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
     rows.map(|id| decode_id(id.map_err(store_err)?)).collect()
 }
 
+/// Whether the pending restore epoch was not built on the current `base`
+/// one: the server took another device's epoch meanwhile. Such an epoch is
+/// never pushed; the rebase drops it (`Error::Conflict`).
+fn held_epoch(conn: &Connection) -> Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM pending p
+             JOIN base b ON b.kind = p.kind AND b.id = p.id
+             LEFT JOIN ancestor a ON a.kind = p.kind AND a.id = p.id
+             WHERE p.kind = ?1 AND p.data IS NOT NULL
+               AND (a.id IS NULL OR a.version != b.version OR a.data != b.data))",
+        params![RecordKind::RestoreEpoch.code()],
+        |r| r.get(0),
+    )
+    .map_err(store_err)
+}
+
 /// `SyncStore::pending_changes` on a consistent view.
 fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
     let held = held_vaults(tx)?;
+    let epoch_held = held_epoch(tx)?;
     let mut stmt = tx
         .prepare("SELECT kind, id, version, data, vault FROM pending ORDER BY kind, id")
         .map_err(store_err)?;
@@ -261,7 +286,9 @@ fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
             },
             _ => None,
         };
-        if vault.is_some_and(|v| held.contains(&v)) {
+        if vault.is_some_and(|v| held.contains(&v))
+            || (kind == RecordKind::RestoreEpoch && epoch_held)
+        {
             continue;
         }
         let change = Change {
@@ -402,7 +429,7 @@ impl SyncStore {
             params![kind.code(), &id.0[..]],
         )
         .map_err(store_err)?;
-        if kind == RecordKind::Manifest {
+        if keeps_ancestor(kind) {
             tx.execute(
                 "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2",
                 params![kind.code(), &id.0[..]],
@@ -474,7 +501,7 @@ impl SyncStore {
     ///   blob next to its manifest would be refused as unexpected). Any other
     ///   such row (the stable id kinds, items of a vault the server lacks)
     ///   becomes a pending row with the same version and data, a manifest
-    ///   keeping its `base` row as ancestor (not held).
+    ///   or the restore epoch keeping its `base` row as ancestor (not held).
     ///
     /// A pending tombstone or edit is never touched. After a plain full fetch,
     /// the kept rows the server has no right to remove (see `commit_remote`)
@@ -532,9 +559,9 @@ impl SyncStore {
                 &format!(
                     "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
                      SELECT b.kind, b.id, b.version, b.data FROM base b
-                     WHERE b.kind = ?1 AND {missing}"
+                     WHERE b.kind IN (?1, ?2) AND {missing}"
                 ),
-                params![RecordKind::Manifest.code()],
+                params![RecordKind::Manifest.code(), RecordKind::RestoreEpoch.code()],
             )
             .map_err(store_err)?;
             tx.execute(
@@ -572,7 +599,8 @@ impl SyncStore {
     ///
     /// Remote deletions the store has no right to make are ignored (no
     /// client deletes them in M2, so they come from a hostile or broken
-    /// server): account params and keysets, and the vault key, vault meta and
+    /// server): account params, keysets and the restore epoch, and the vault
+    /// key, vault meta and
     /// manifest of a vault in the device's `last_seen`. The local rows stay
     /// and the vault stays readable from them: nothing the server sends can
     /// make this device forget its account or a vault it has read (the
@@ -779,6 +807,24 @@ impl SyncStore {
         delete_vault_rows(&tx, vault)?;
         tx.commit()
     }
+
+    /// Whether the pending restore epoch lost the race to another device's
+    /// (see `held_epoch`).
+    pub(crate) fn epoch_held(&self) -> Result<bool> {
+        self.read(held_epoch)
+    }
+
+    /// Remove the pending restore epoch and its ancestor: reads see the
+    /// server's epoch again.
+    pub(crate) fn drop_pending_epoch(&mut self) -> Result<()> {
+        let tx = self.write_tx()?;
+        let code = RecordKind::RestoreEpoch.code();
+        tx.execute("DELETE FROM pending WHERE kind = ?1", params![code])
+            .map_err(store_err)?;
+        tx.execute("DELETE FROM ancestor WHERE kind = ?1", params![code])
+            .map_err(store_err)?;
+        tx.commit()
+    }
 }
 
 /// What `SyncStore::account_state` found.
@@ -905,12 +951,14 @@ fn device_state_in(conn: &Connection) -> Result<DeviceState> {
     }
 }
 
-/// A remote deletion `commit_remote` ignores: account params and keysets
-/// (never deleted by a client in M2), and the vault key, meta or manifest of
-/// a vault the device has seen (no vault deletion in M2, R14).
+/// A remote deletion `commit_remote` ignores: account params, keysets and
+/// the restore epoch (never deleted by a client), and the vault key, meta
+/// or manifest of a vault the device has seen (no vault deletion in M2,
+/// R14). A store that hides the epoch from a device with a fresh copy is
+/// caught by the repository (`EpochRollback`).
 fn protected_from_remote_deletion(kind: RecordKind, id: &[u8], seen: &BTreeSet<Id>) -> bool {
     match kind {
-        RecordKind::AccountParams | RecordKind::Keyset => true,
+        RecordKind::AccountParams | RecordKind::Keyset | RecordKind::RestoreEpoch => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v))
         }

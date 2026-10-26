@@ -19,6 +19,8 @@ pub enum RecordKind {
     VaultMeta,
     Item,
     Manifest,
+    /// The account's signed restore epoch (one record, id = account id).
+    RestoreEpoch,
 }
 
 impl RecordKind {
@@ -30,6 +32,7 @@ impl RecordKind {
             Self::VaultMeta => 4,
             Self::Item => 5,
             Self::Manifest => 6,
+            Self::RestoreEpoch => 7,
         }
     }
 
@@ -41,6 +44,7 @@ impl RecordKind {
             4 => Self::VaultMeta,
             5 => Self::Item,
             6 => Self::Manifest,
+            7 => Self::RestoreEpoch,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -149,9 +153,16 @@ mod tests {
             RecordKind::VaultMeta,
             RecordKind::Item,
             RecordKind::Manifest,
+            RecordKind::RestoreEpoch,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
+        // Frozen codes: the on-disk and CloudKit encoding.
+        assert_eq!(RecordKind::RestoreEpoch.code(), 7);
+        assert_eq!(
+            RecordKind::from_code(8).unwrap_err(),
+            Error::InvalidFormat("record kind")
+        );
         assert_eq!(
             RecordKind::from_code(0).unwrap_err(),
             Error::InvalidFormat("record kind")

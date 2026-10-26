@@ -30,6 +30,14 @@
 //! previous pending writes with their last seen manifest, and the vault
 //! stays held.
 //!
+//! Restore epoch: the stored epoch is checked and applied first
+//! (`Repository::sync_epoch`). A local epoch that lost the race to another
+//! device's (`SyncStore::epoch_held`) is dropped and reported as
+//! `Error::Conflict` once the vaults are rebased: the caller syncs and
+//! issues it again, as the next epoch. When the stored epoch has a head for
+//! a vault newer than its ancestor, the server manifest must chain to that
+//! head instead: a manifest from before the epoch is refused.
+//!
 //! Serialization premise: each vault's plan is read before its batch opens.
 //! Only the session writes pending rows, with one exception: the settlement
 //! of a zone reset (`SyncStore::finish_full_fetch` in reset mode) requeues
@@ -37,6 +45,7 @@
 //! interleave; the apps guarantee it by running the rebase inside the sync
 //! round that owns the fetch (one round at a time).
 
+use crate::epoch::RestoreEpoch;
 use crate::manifest::{
     Manifest, ManifestEntry, SignedManifest, manifest_hash, record_hash, verify_manifest,
 };
@@ -88,12 +97,22 @@ impl Repository<SyncStore> {
     /// then any error of `load`, `save_item` or `delete_item`. A vault in
     /// error keeps its pending writes and stays held; the others stay
     /// rebased.
+    ///
+    /// Before any vault: a local restore epoch that lost the race is
+    /// dropped, then the stored epoch is checked and applied (its errors
+    /// stop the rebase). The lost epoch is `Error::Conflict`, after every
+    /// vault was tried, if nothing else failed.
     pub fn rebase(&mut self) -> Result<Vec<Id>> {
+        let lost_epoch = self.store.epoch_held()?;
+        if lost_epoch {
+            self.store.drop_pending_epoch()?;
+        }
+        let epoch = self.sync_epoch()?;
         let held = self.store.vaults_needing_rebase()?;
         let mut rebased = Vec::new();
         let mut first_error = None;
         for v in held {
-            match self.rebase_vault(v) {
+            match self.rebase_vault(v, epoch.as_ref()) {
                 Ok(()) => rebased.push(v),
                 Err(e) => {
                     first_error.get_or_insert(e);
@@ -103,17 +122,18 @@ impl Repository<SyncStore> {
         let persisted = self.persist_device_state();
         match first_error {
             Some(e) => Err(e),
+            None if lost_epoch => persisted.and(Err(Error::Conflict)),
             None => persisted.map(|()| rebased),
         }
     }
 
-    fn rebase_vault(&mut self, v: Id) -> Result<()> {
+    fn rebase_vault(&mut self, v: Id, epoch: Option<&RestoreEpoch>) -> Result<()> {
         let vault = self.open_vault(v)?;
         let plan = self.plan(&vault)?;
         let last_seen = self.device.last_seen.get(&v).cloned();
         self.store.begin_batch()?;
         let result = self
-            .apply(&vault, plan)
+            .apply(&vault, plan, epoch)
             .and_then(|()| self.persist_device_state())
             .and_then(|()| self.store.commit_batch());
         if let Err(e) = result {
@@ -218,13 +238,19 @@ impl Repository<SyncStore> {
     }
 
     /// Carry out the plan inside the open batch.
-    fn apply(&mut self, vault: &Vault, plan: Plan) -> Result<()> {
+    fn apply(&mut self, vault: &Vault, plan: Plan, epoch: Option<&RestoreEpoch>) -> Result<()> {
         self.store.drop_pending_vault(vault.id)?;
+        let head = epoch.and_then(|e| e.heads.get(&vault.id)).cloned();
         match &plan.ancestor {
             // The server manifest must chain to the ancestor, as if the
-            // local writes had never happened.
+            // local writes had never happened, or to the epoch head if the
+            // epoch came after the ancestor.
             Some(a) => {
-                self.device.last_seen.insert(vault.id, seen(a));
+                let base = match head {
+                    Some(h) if h.seq > a.seq => h,
+                    _ => seen(a),
+                };
+                self.device.last_seen.insert(vault.id, base);
             }
             None => {
                 if self.store.get(RecordKind::Manifest, vault.id)?.as_ref() == Some(&plan.local) {
@@ -236,8 +262,12 @@ impl Repository<SyncStore> {
                     self.load(vault)?;
                     return Ok(());
                 }
-                // First use for this vault: no history to check against.
-                self.device.last_seen.remove(&vault.id);
+                // First use for this vault: no history to check against,
+                // except the epoch head if there is one.
+                match head {
+                    Some(h) => self.device.last_seen.insert(vault.id, h),
+                    None => self.device.last_seen.remove(&vault.id),
+                };
             }
         }
         let loaded = self.load(vault)?;

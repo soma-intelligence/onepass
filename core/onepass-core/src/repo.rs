@@ -9,6 +9,9 @@
 //! - item records (`Item`), id = a fresh blob id per written version,
 //!   version = item version, data = `vault_id (16 bytes) || postcard(ItemRecord)`.
 //!
+//! - restore epoch (`RestoreEpoch`), id = account id, version = epoch,
+//!   data = `postcard(SignedRestoreEpoch)` (see `crate::epoch`).
+//!
 //! Item versions get their own blob ids so that writing a new version never
 //! overwrites the one the current manifest lists. Writes go record first,
 //! manifest second, cleanup last: nothing is deleted before the manifest
@@ -40,6 +43,7 @@ use crate::account::{Account, Auk, NewAccount, PinnedAccount};
 use zeroize::Zeroizing;
 
 use crate::crypto::{Aad, BlobKind, KdfParams, SecretKey, seal};
+use crate::epoch::{EpochReason, RestoreEpoch, SignedRestoreEpoch};
 use crate::manifest::{
     Manifest, ManifestEntry, SeenManifest, SignedManifest, check_records, manifest_hash,
     record_hash, sign_manifest, verify_manifest,
@@ -242,6 +246,32 @@ fn account_records<S: RecordStore>(store: &S) -> Result<(Record, Record)> {
     Ok((params, keyset))
 }
 
+/// Manifests re-signed by epoch `e` start at seq `e * 2^32`, above every
+/// seq written before it (fewer than 2^32 writes per vault and epoch): a
+/// manifest from before the epoch can never pass for a later one, even
+/// across a gap that `verify_manifest` cannot chain.
+const EPOCH_SEQ_STRIDE: u64 = 1 << 32;
+
+fn epoch_floor(epoch: u64) -> Result<u64> {
+    epoch
+        .checked_mul(EPOCH_SEQ_STRIDE)
+        .ok_or(Error::InvalidFormat("restore epoch"))
+}
+
+/// The epoch rules against the epoch this device accepted
+/// (`device_epoch`, 0 for none): whether `stored` is newer and must be
+/// applied. No record while the device accepted one, or an older one, is
+/// `EpochRollback`.
+fn newer_epoch(device_epoch: u64, stored: Option<&RestoreEpoch>) -> Result<bool> {
+    match stored {
+        None if device_epoch == 0 => Ok(false),
+        None => Err(IntegrityError::EpochRollback.into()),
+        Some(e) if e.epoch > device_epoch => Ok(true),
+        Some(e) if e.epoch == device_epoch => Ok(false),
+        Some(_) => Err(IntegrityError::EpochRollback.into()),
+    }
+}
+
 fn personal() -> VaultMeta {
     VaultMeta {
         name: "Personnel".into(),
@@ -388,7 +418,27 @@ impl<S: RecordStore> Repository<S> {
     /// (`DeviceState::last_seen`) whose key record is gone is
     /// `VaultMissing`. The vault list itself is not signed in M1: a store
     /// can still hide a vault from a device that never read it.
+    ///
+    /// The restore epoch is checked first (`sync_epoch`), without being
+    /// applied (this takes `&self`): a newer epoch's heads stand for the
+    /// vaults already read; its errors come before any vault's.
     pub fn vaults(&self) -> Result<Vec<Vault>> {
+        let stored = self.stored_epoch()?;
+        let newer = newer_epoch(self.device.epoch, stored.as_ref())?;
+        let known = match &stored {
+            Some(e) if newer => &e.heads,
+            _ => &self.device.last_seen,
+        };
+        let out = self.open_vaults()?;
+        if known.keys().any(|id| !out.iter().any(|v| v.id == *id)) {
+            return Err(IntegrityError::VaultMissing.into());
+        }
+        Ok(out)
+    }
+
+    /// Every vault whose key, meta and manifest open (see `vaults`), sorted
+    /// by id, without the epoch and `VaultMissing` checks.
+    fn open_vaults(&self) -> Result<Vec<Vault>> {
         let mut out = Vec::new();
         for key in self.store.list(RecordKind::VaultKey)? {
             let meta = self
@@ -399,16 +449,134 @@ impl<S: RecordStore> Repository<S> {
             self.read_manifest(&vault, None)?;
             out.push(vault);
         }
-        if self
-            .device
-            .last_seen
-            .keys()
-            .any(|id| !out.iter().any(|v| v.id == *id))
-        {
-            return Err(IntegrityError::VaultMissing.into());
-        }
         out.sort_by_key(|v| v.id);
         Ok(out)
+    }
+
+    /// The epoch this device accepted last, `None` before any.
+    pub fn restore_epoch(&self) -> Option<u64> {
+        (self.device.epoch > 0).then_some(self.device.epoch)
+    }
+
+    /// The account's restore epoch record, decoded and verified under the
+    /// pinned account's signing key, or `None` if there is none. A record
+    /// whose version is not its epoch is `EpochRollback`.
+    fn stored_epoch(&self) -> Result<Option<RestoreEpoch>> {
+        let id = self.account.params.account_id;
+        let Some(rec) = self.store.get(RecordKind::RestoreEpoch, id)? else {
+            return Ok(None);
+        };
+        let signed = SignedRestoreEpoch::decode(&rec.data)?;
+        let epoch = signed.verify(id, &self.account.params.signing_pub)?;
+        if rec.version != epoch.epoch {
+            return Err(IntegrityError::EpochRollback.into());
+        }
+        Ok(Some(signed.epoch))
+    }
+
+    /// The restore epoch rules, the one place they are applied (before
+    /// `items`, every write and the rebase; `vaults` checks them without
+    /// applying):
+    /// 1. no record and no epoch accepted: nothing changes;
+    /// 2. a valid record newer than the epoch accepted: `last_seen` is
+    ///    replaced by its heads (vaults outside them are forgotten) and its
+    ///    epoch is accepted; the usual checks follow;
+    /// 3. the same epoch: nothing changes;
+    /// 4. an older epoch, or none while one was accepted, is
+    ///    `EpochRollback`; a bad signature `Signature`; another account
+    ///    `EpochRollback`; an undecodable record `InvalidFormat`.
+    ///
+    /// Returns the stored epoch, verified.
+    pub(crate) fn sync_epoch(&mut self) -> Result<Option<RestoreEpoch>> {
+        let stored = self.stored_epoch()?;
+        if newer_epoch(self.device.epoch, stored.as_ref())?
+            && let Some(e) = &stored
+        {
+            self.device.last_seen = e.heads.clone();
+            self.device.epoch = e.epoch;
+        }
+        Ok(stored)
+    }
+
+    /// Mark that the account was deliberately set back (a restore, or a
+    /// choice after an alert), so that the other devices accept its current
+    /// state instead of reporting a rollback.
+    ///
+    /// The epoch is `max(epoch accepted, epoch stored) + 1`. Every vault is
+    /// loaded and checked like `items`, then its manifest is signed again,
+    /// same entries, at `seq = max(seq + 1, epoch * 2^32)`: no manifest
+    /// from before the epoch can follow it. Those manifests are the heads.
+    /// The signed epoch record is written last, conditionally on the stored
+    /// one (`put_if_version`): another device's epoch written meanwhile is
+    /// `Error::Conflict` (sync, then retry). The device then accepts the
+    /// epoch and its heads.
+    ///
+    /// Errors: those of `sync_epoch`, `vaults`, the loads and the writes.
+    /// The manifests already re-signed when a later step fails are valid
+    /// successors and stay.
+    pub fn issue_restore_epoch(&mut self, reason: EpochReason) -> Result<RestoreEpoch> {
+        let stored = self.sync_epoch()?.map(|e| e.epoch);
+        let epoch = self
+            .device
+            .epoch
+            .max(stored.unwrap_or(0))
+            .checked_add(1)
+            .ok_or(Error::InvalidFormat("restore epoch"))?;
+        let floor = epoch_floor(epoch)?;
+        let mut heads = BTreeMap::new();
+        for vault in self.vaults()? {
+            let loaded = self.load(&vault)?;
+            for (_, r) in &loaded.records {
+                vault.open_item(r)?;
+            }
+            let prev = &loaded.manifest;
+            let seq = prev
+                .seq
+                .checked_add(1)
+                .ok_or(Error::InvalidFormat("manifest seq"))?
+                .max(floor);
+            let m = Manifest {
+                vault_id: vault.id,
+                seq,
+                prev_hash: manifest_hash(prev),
+                entries: prev.entries.clone(),
+                merkle_root: prev.merkle_root,
+            };
+            let sm = sign_manifest(&vault, &self.account.keyset().signing, &m)?;
+            let data = postcard::to_allocvec(&sm).map_err(|_| Error::InvalidFormat("manifest"))?;
+            self.store.put_if_version(
+                Record {
+                    id: vault.id,
+                    kind: RecordKind::Manifest,
+                    version: seq,
+                    data,
+                },
+                Some(prev.seq),
+            )?;
+            self.device.last_seen.insert(vault.id, seen(&m));
+            heads.insert(vault.id, seen(&m));
+        }
+        let account_id = self.account.params.account_id;
+        let issued = RestoreEpoch {
+            account_id,
+            epoch,
+            issued_at: OffsetDateTime::now_utc().unix_timestamp(),
+            heads,
+            reason,
+        };
+        let signed = SignedRestoreEpoch::sign(issued.clone(), &self.account.keyset().signing)?;
+        self.store.put_if_version(
+            Record {
+                id: account_id,
+                kind: RecordKind::RestoreEpoch,
+                version: epoch,
+                data: signed.encode(),
+            },
+            stored,
+        )?;
+        self.device.epoch = epoch;
+        self.device.last_seen = issued.heads.clone();
+        Ok(issued)
     }
 
     /// Create a vault with an empty signed manifest (seq 1), so that a
@@ -416,6 +584,7 @@ impl<S: RecordStore> Repository<S> {
     /// is written last: until then the vault is not listed, and the device
     /// remembers its manifest only once it is.
     pub fn create_vault(&mut self, meta: VaultMeta) -> Result<Vault> {
+        self.sync_epoch()?;
         let (vault, envelope, meta_blob) = Vault::create(&self.account, meta)?;
         let seen = self.put_manifest(&vault, None, vec![])?;
         for (kind, data) in [
@@ -439,6 +608,7 @@ impl<S: RecordStore> Repository<S> {
     /// `Error::Conflict`. The write itself is conditional on the version of
     /// the stored `VaultMeta` record, so two racing updates cannot both win.
     pub fn update_vault_meta(&mut self, vault: &Vault, meta: VaultMeta) -> Result<Vault> {
+        self.sync_epoch()?;
         let key = self
             .store
             .get(RecordKind::VaultKey, vault.id)?
@@ -480,6 +650,7 @@ impl<S: RecordStore> Repository<S> {
     /// against the last one seen and the records against the manifest. The
     /// manifest is then remembered as the last one seen.
     pub fn items(&mut self, vault: &Vault) -> Result<Vec<Item>> {
+        self.sync_epoch()?;
         let loaded = self.load(vault)?;
         let items = loaded
             .records
@@ -499,6 +670,7 @@ impl<S: RecordStore> Repository<S> {
     /// write in flight. A lost race (`Conflict`) deletes only the record
     /// this call wrote.
     pub fn save_item(&mut self, vault: &Vault, item: Item) -> Result<()> {
+        self.sync_epoch()?;
         let loaded = self.load(vault)?;
         let rec = vault.seal_item(&item, loaded.next_version(item.id)?)?;
         let old = loaded.listed(item.id).map(|(blob, _)| *blob);
@@ -516,6 +688,7 @@ impl<S: RecordStore> Repository<S> {
     /// Remove an item for good: manifest without it first, then its record
     /// and its ignored leftovers.
     pub fn delete_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
+        self.sync_epoch()?;
         let loaded = self.load(vault)?;
         let (blob, _) = *loaded.listed(item_id).ok_or(Error::NotFound)?;
         let entries = loaded.entries_without(item_id);
@@ -545,6 +718,7 @@ impl<S: RecordStore> Repository<S> {
         if from.id == to.id {
             return Err(Error::InvalidFormat("move to the same vault"));
         }
+        self.sync_epoch()?;
         let src = self.load(from)?;
         let (blob, rec) = src.listed(item_id).ok_or(Error::NotFound)?.clone();
         let dst = self.load(to)?;
@@ -573,6 +747,7 @@ impl<S: RecordStore> Repository<S> {
         item_id: Id,
         change: impl FnOnce(&mut Item, OffsetDateTime),
     ) -> Result<()> {
+        self.sync_epoch()?;
         let loaded = self.load(vault)?;
         let (_, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
         let mut item = vault.open_item(rec)?;

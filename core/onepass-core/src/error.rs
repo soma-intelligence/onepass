@@ -16,6 +16,9 @@ pub enum IntegrityError {
     WrongContext,
     /// A vault this device already read has no key record any more.
     VaultMissing,
+    /// The restore epoch record is older than the one this device accepted,
+    /// missing while this device accepted one, or bound to another account.
+    EpochRollback,
 }
 
 impl fmt::Display for IntegrityError {
@@ -33,6 +36,7 @@ impl fmt::Display for IntegrityError {
             Self::WrongKind => "record has an unexpected kind",
             Self::WrongContext => "record is bound to a different context",
             Self::VaultMissing => "a known vault is missing",
+            Self::EpochRollback => "restore epoch rolled back or hidden",
         };
         f.write_str(s)
     }
@@ -127,6 +131,10 @@ mod tests {
         assert_eq!(
             IntegrityError::VaultMissing.to_string(),
             "a known vault is missing"
+        );
+        assert_eq!(
+            IntegrityError::EpochRollback.to_string(),
+            "restore epoch rolled back or hidden"
         );
     }
 }

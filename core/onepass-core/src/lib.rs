@@ -4,6 +4,7 @@ pub mod account;
 pub mod archive;
 pub mod companion;
 pub mod crypto;
+pub mod epoch;
 pub mod error;
 pub mod export;
 pub mod format;

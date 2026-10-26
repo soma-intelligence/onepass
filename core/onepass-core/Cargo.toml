@@ -61,3 +61,8 @@ tempfile = "3"
 [[test]]
 name = "sync_two_devices"
 required-features = ["dev-fast-kdf"]
+
+# Restore epochs over the two-device harness: needs the dev floor.
+[[test]]
+name = "restore_epoch"
+required-features = ["dev-fast-kdf"]

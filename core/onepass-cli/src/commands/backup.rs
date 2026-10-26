@@ -3,7 +3,8 @@
 //! `create` writes every vault with every item, trashed and archived
 //! included, to a new file (mode 0600, never over an existing one).
 //! `restore` writes back only the items whose id is absent from the
-//! account: nothing is overwritten. `inspect` reads the clear header and
+//! account: nothing is overwritten. It then issues a signed restore epoch
+//! (`Restore`), so the other devices accept the restored state. `inspect` reads the clear header and
 //! needs neither an account nor a password.
 
 #![cfg_attr(
@@ -27,6 +28,7 @@ use onepass_core::Id;
 use onepass_core::archive::{
     self, ArchiveKind, ArchivedVault, HeaderInfo, Unlock, inspect as read_header, restore_plan,
 };
+use onepass_core::epoch::EpochReason;
 use onepass_core::model::validate;
 use serde_json::json;
 use time::OffsetDateTime;
@@ -123,7 +125,7 @@ fn create(ctx: &Ctx, out: &Path, with_passphrase: bool) -> Result<(), CliError> 
 fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
     let bytes = read_capped(file)?;
     let info = read_header(&bytes)?;
-    let (created, restored, skipped) = with_session(ctx, |repo| {
+    let (created, restored, skipped, epoch) = with_session(ctx, |repo| {
         // A running server would write back last seen manifests of what
         // this changes; during Travel Mode, restored vaults would sit beside
         // the hidden ones.
@@ -181,17 +183,25 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
                 .map_err(|e| partial(e, usize::try_from(restored).unwrap_or(usize::MAX), total))?;
             restored += 1;
         }
-        Ok((plan.new_vaults.len(), restored, plan.skipped))
+        // After every write: the epoch's heads are the restored state.
+        let epoch = stored(repo.issue_restore_epoch(EpochReason::Restore))?.epoch;
+        Ok((plan.new_vaults.len(), restored, plan.skipped, epoch))
     })?;
     if ctx.json {
         crate::out!(
             "{}",
-            json!({ "vaults_created": created, "restored": restored, "skipped": skipped })
+            json!({
+                "vaults_created": created,
+                "restored": restored,
+                "skipped": skipped,
+                "epoch": epoch,
+            })
         );
     } else {
         crate::out!("Created {created} vaults");
         crate::out!("Restored {restored} items");
         crate::out!("Skipped {skipped} items (already in the account)");
+        crate::out!("Restore epoch {epoch}");
     }
     Ok(())
 }
