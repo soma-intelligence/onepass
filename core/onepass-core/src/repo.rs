@@ -49,6 +49,8 @@ use crate::store::{Record, RecordKind, RecordStore};
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
+mod local;
+
 /// What a device keeps between sessions: the account pinned at first
 /// unlock, and the last manifest accepted for each vault.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
