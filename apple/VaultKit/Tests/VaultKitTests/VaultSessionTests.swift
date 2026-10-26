@@ -89,11 +89,28 @@ struct VaultSessionTests {
     /// The AutoFill extension must not create the shared store before the app migrated into it.
     @Test func missingStoreIsNoAccountAndIsNotCreated() async throws {
         let h = try SessionHarness()
+        defer { h.cleanUp() }
         let session = h.makeSession()
         #expect(session.state == .noAccount)
         await session.refresh()
         await session.reload()
         #expect(session.state == .noAccount)
+        #expect(!FileManager.default.fileExists(atPath: h.environment.databaseURL.path))
+    }
+
+    /// A store the app could not put in place (split by a failed migration): the session stays failed,
+    /// "Réessayer" never opens or creates a store.
+    @Test func refusedStoreStaysFailed() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        let failure = VaultError.other("Stockage indisponible")
+        session.refuseStore(failure)
+        #expect(session.state == .failed(failure))
+        await session.refresh()
+        await session.reload()
+        #expect(session.state == .failed(failure))
+        await #expect(throws: VaultError.self) { try await session.unlock(password: testPassword) }
         #expect(!FileManager.default.fileExists(atPath: h.environment.databaseURL.path))
     }
 

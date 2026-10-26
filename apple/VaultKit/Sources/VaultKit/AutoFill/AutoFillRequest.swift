@@ -78,8 +78,10 @@ public struct SavePasswordRequest: Sendable, Equatable {
 public enum AutoFillRequest: Sendable, Equatable {
     /// Manual choice (key button): passwords of `services`, and passkeys of `passkey.rpID` if asked.
     case credentialList(services: [String], passkey: PasskeyRequest?)
-    /// A QuickType suggestion: the record `"<vault id>:<item id>"` from the identity store.
-    case credential(recordID: String, kind: FfiAutofillKind, passkey: PasskeyRequest?)
+    /// A QuickType suggestion: the record `"<vault id>:<item id>"` from the identity store, and the
+    /// identity's service (host) for a password or a one-time code: the Login must still match it
+    /// (a stale identity store entry falls back to the list). Nil skips that check.
+    case credential(recordID: String, kind: FfiAutofillKind, passkey: PasskeyRequest?, service: String? = nil)
     case oneTimeCodeList(services: [String])
     case passkeyRegistration(PasskeyRegistrationRequest)
     case savePassword(SavePasswordRequest)

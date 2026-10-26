@@ -112,6 +112,21 @@ public actor IdentityStoreSync {
         }
     }
 
+    /// Replaces the store with `identities` without waiting (a pending debounced refresh is dropped),
+    /// and returns once done. A disabled store is left alone; errors are ignored.
+    public func replaceNow(_ identities: [FfiAutofillIdentity]) async {
+        revision &+= 1
+        pending?.cancel()
+        pending = nil
+        let current = revision
+        let client = client
+        enqueue {
+            guard await self.isCurrent(current), await client.isEnabled() else { return }
+            try? await client.replaceAll(identities)
+        }
+        await chain?.value
+    }
+
     /// Cancels any pending refresh and empties the store (setting turned off, account reset). The store
     /// is emptied even when disabled (errors ignored): nothing must stay behind.
     public func clear() async {

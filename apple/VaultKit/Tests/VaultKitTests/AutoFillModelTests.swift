@@ -30,10 +30,15 @@ private final class Fixture {
     let environment: VaultEnvironment
     private var watchers: [Task<Void, Never>] = []
 
-    init() throws {
+    init(identityStore: (any IdentityStoreClient)? = nil) throws {
         h = try SessionHarness()
         var environment = h.environment
         environment.storeChanges = notifier
+        if let identityStore {
+            environment.identityStore = identityStore
+            // Far beyond the test: only an immediate publication can reach the store.
+            environment.identityDebounce = .seconds(600)
+        }
         self.environment = environment
     }
 
@@ -769,6 +774,191 @@ struct AutoFillModelTests {
         #expect(items.contains { $0.id == login.id })
         #expect(!items.contains { $0.vaultId == hidden.vaultID })
         text.cancel()
+    }
+
+    // MARK: - Final fix wave
+
+    /// Ruling: a Login holding a passkey whose rp id is the requested host is a candidate even
+    /// without a matching URL (the system verified the rp id).
+    @Test func passkeyOfLoginWithoutURLIsFoundByRpID() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, _) = try await f.seed()
+        var draft = try seed.newItem(type: .login, vaultID: seed.allVaults[0].id)
+        draft.title = "Sans URL"
+        fillRequired(&draft)
+        let bare = try await seed.save(draft)
+        let registration = try await seed.createPasskey(FfiPasskeyCreation(
+            vaultId: bare.vaultId, itemId: bare.id, rpId: "passkeys.exemple.org", userName: "dominique",
+            userHandle: Data([7, 7]), clientDataHash: Data(repeating: 9, count: 32), excludedCredentialIds: []))
+        #expect(try await seed.loadItem(vaultID: bare.vaultId, itemID: bare.id).urls.isEmpty)
+        seed.lock()
+        let passkey = PasskeyRequest(
+            rpID: "passkeys.exemple.org", clientDataHash: clientDataHash,
+            allowedCredentialIDs: [registration.credentialId])
+
+        let (direct, session, done) = f.model(
+            .credential(recordID: "\(bare.vaultId):\(bare.id)", kind: .passkey, passkey: passkey))
+        await direct.start()
+        await direct.unlock(password: testPassword)
+        guard case .passkeyAssertion(let signed, let rpID, _) = try #require(done.results.first) else {
+            Issue.record("expected an assertion, got \(done.results)")
+            return
+        }
+        #expect(signed.credentialId == registration.credentialId)
+        #expect(rpID == "passkeys.exemple.org")
+        #expect(session.state == .locked)
+
+        // The manual list offers it among the matches too.
+        let (list, _, _) = f.model(.credentialList(services: [], passkey: passkey))
+        await list.start()
+        await list.unlock(password: testPassword)
+        guard case .list(let matches, _) = list.screen else {
+            Issue.record("expected the list, got \(list.screen)")
+            return
+        }
+        #expect(matches.map(\.itemId) == [bare.id])
+        #expect(matches.first?.passkeys.map(\.credentialId) == [registration.credentialId])
+        list.cancel()
+    }
+
+    /// A write of the extension reaches the system identity store before its session locks, without
+    /// waiting for the debounce (which would then find the session locked).
+    @Test func writesPublishIdentitiesBeforeLocking() async throws {
+        let store = InMemoryIdentityStore()
+        let f = try Fixture(identityStore: store)
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+        await seed.waitForAutofillIdentities()
+        #expect(store.identities.isEmpty)
+
+        let (registration, registrationSession, registrationDone) = f.model(.passkeyRegistration(
+            PasskeyRegistrationRequest(
+                rpID: "example.com", userName: loginUser, userHandle: Data([1, 2, 3, 4]),
+                clientDataHash: clientDataHash, excludedCredentialIDs: [], supportsES256: true)))
+        await registration.start()
+        await registration.unlock(password: testPassword)
+        await registration.registerPasskey(into: login.id, vaultID: login.vaultId)
+        guard case .passkeyRegistration(let created, _, _) = try #require(registrationDone.results.first) else {
+            Issue.record("expected a registration, got \(registrationDone.results)")
+            return
+        }
+        #expect(registrationSession.state == .locked)
+        #expect(store.identities.contains { $0.kind == .passkey && $0.credentialId == created.credentialId })
+
+        let (save, saveSession, saveDone) = f.model(saveRequest(service: "nouveau.exemple.fr", password: "Neuf-123"))
+        await save.start()
+        await save.unlock(password: testPassword)
+        await save.save(title: "", vaultID: login.vaultId, updating: nil)
+        #expect(saveDone.results == [.saved])
+        #expect(saveSession.state == .locked)
+        #expect(store.identities.contains { $0.kind == .password && $0.service == "nouveau.exemple.fr" })
+        #expect(store.identities.contains { $0.kind == .passkey && $0.credentialId == created.credentialId })
+    }
+
+    /// Ruling X3: an item hidden from AutoFill is never offered, text insertion included.
+    @Test func textInsertionSkipsItemsHiddenFromAutofill() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        var hidden = try await addLogin(seed, title: "Cachée", url: "https://cache.exemple.fr", user: "cache")
+        hidden.hideFromAutofill = true
+        hidden = try await seed.save(hidden)
+        var noteDraft = try seed.newItem(type: .secureNote, vaultID: login.vaultId)
+        noteDraft.title = "Note cachée"
+        noteDraft.hideFromAutofill = true
+        fillRequired(&noteDraft)
+        let note = try await seed.save(noteDraft)
+        seed.lock()
+
+        let (model, _, _) = f.model(.textToInsert)
+        await model.start()
+        await model.unlock(password: testPassword)
+        guard case .textItems(let items) = model.screen else {
+            Issue.record("expected the items, got \(model.screen)")
+            return
+        }
+        #expect(items.contains { $0.id == login.id })
+        #expect(!items.contains { $0.id == hidden.id || $0.id == note.id })
+
+        // Not on the list, and refused if asked anyway.
+        var forged = try #require(items.first { $0.id == login.id })
+        forged.id = hidden.id
+        await model.chooseText(item: forged)
+        #expect(model.screen == .textItems(items))
+
+        await model.showTextItems()
+        #expect(model.screen == .textItems(items))
+        model.cancel()
+    }
+
+    /// A QuickType suggestion fills only while the Login still matches the identity's service: a
+    /// stale identity (URL changed since it was published) goes back to the list.
+    @Test func directFillRechecksTheService() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+        let record = "\(login.vaultId):\(login.id)"
+
+        let (current, _, currentDone) = f.model(
+            .credential(recordID: record, kind: .password, passkey: nil, service: "example.com"))
+        await current.start()
+        await current.unlock(password: testPassword)
+        #expect(currentDone.results == [.password(user: loginUser, password: loginPassword)])
+
+        for kind in [FfiAutofillKind.password, .oneTimeCode] {
+            let (stale, _, staleDone) = f.model(
+                .credential(recordID: record, kind: kind, passkey: nil, service: "ancien.exemple.org"))
+            await stale.start()
+            await stale.unlock(password: testPassword)
+            #expect(staleDone.results.isEmpty)
+            guard case .list(let matches, let others) = stale.screen else {
+                Issue.record("expected the list, got \(stale.screen)")
+                continue
+            }
+            #expect(matches.isEmpty)
+            #expect(others.contains { $0.itemId == login.id })
+            stale.cancel()
+        }
+    }
+
+    /// "Mettre à jour" finds the Login whatever the case and surrounding spaces of the username.
+    @Test func saveFindsTheAccountCaseInsensitively() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+
+        let (update, _, _) = f.model(saveRequest(
+            service: "example.com", user: "  Camille@Exemple.FR ", password: "Change-456"))
+        await update.start()
+        await update.unlock(password: testPassword)
+        guard case .save(let existing?) = update.screen else {
+            Issue.record("expected the update sheet, got \(update.screen)")
+            return
+        }
+        #expect(existing.itemId == login.id)
+        update.cancel()
+
+        // Same password with another case of the username: identical, closed after the unlock.
+        let (identical, _, identicalDone) = f.model(saveRequest(
+            service: "example.com", user: "CAMILLE@exemple.fr", password: loginPassword))
+        await identical.start()
+        await identical.unlock(password: testPassword)
+        #expect(identicalDone.results == [.saved])
+    }
+
+    /// Ruling: a conditional passkey registration (automatic upgrade) fails without interface.
+    @Test func conditionalRegistrationFails() {
+        let request = AutoFillRequest.passkeyRegistration(PasskeyRegistrationRequest(
+            rpID: "example.com", userName: loginUser, userHandle: Data([1]), clientDataHash: clientDataHash,
+            excludedCredentialIDs: [], supportsES256: true))
+        #expect(AutoFillModel.resultWithoutUserInteraction(for: request, ownAppIDs: [ownApp]) == .cancelled(.failed))
+        #expect(
+            AutoFillModel.resultWithoutUserInteraction(for: .credentialList(services: [], passkey: nil), ownAppIDs: [])
+                == .cancelled(.userInteractionRequired))
     }
 
     @Test func configurationNeedsNoUnlock() async throws {

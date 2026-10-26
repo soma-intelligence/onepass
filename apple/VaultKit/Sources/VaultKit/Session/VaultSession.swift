@@ -28,6 +28,10 @@ public final class VaultSession {
     public private(set) var hiddenVaultIDs: Set<String>
     /// The store holds an account but this device has no Secret Key for it: use `restore`.
     public private(set) var needsSecretKey = false
+    /// Bumped after the lists were reloaded for a write of another process (the AutoFill extension):
+    /// an open item detail reloads, or warns its editor before a save overwrites the new version,
+    /// exactly as for a remote change set.
+    public private(set) var externalChangeRevision = 0
 
     /// Vaults shown in the sidebar (hidden ones left out).
     public var vaults: [FfiVault] { allVaults.filter { !hiddenVaultIDs.contains($0.id) } }
@@ -52,6 +56,8 @@ public final class VaultSession {
     @ObservationIgnored private let identitySync: IdentityStoreSync
     /// Identity store requests (refresh, clear), forwarded in order.
     @ObservationIgnored private var identityChain: Task<Void, Never>?
+    /// Set by `refuseStore`: every read of the store ends in this failure.
+    @ObservationIgnored private var refusedStore: VaultError?
     /// Observes `StoreChangeNotifier`; cancelled on deinit (the extension makes one session per request).
     @ObservationIgnored private(set) var storeChangeObserver: Task<Void, Never>?
 
@@ -121,6 +127,11 @@ public final class VaultSession {
     /// it: the AutoFill extension must never create the shared store before the app migrated the
     /// milestone 2 one into it (the migration skips an existing store holding an account).
     private func evaluateStoredAccount() {
+        if let refusedStore {
+            state = .failed(refusedStore)
+            lastError = refusedStore
+            return
+        }
         do {
             var found = FfiStoreState.empty
             if FileManager.default.fileExists(atPath: dbPath) { found = try storeState(dbPath: dbPath) }
@@ -145,6 +156,20 @@ public final class VaultSession {
         }
     }
 
+    /// The app could not put its store in a usable place (the shared container migration failed and
+    /// could not be undone): the session stays in `.failed(failure)` for this launch, and "Réessayer"
+    /// never opens or creates a store.
+    public func refuseStore(_ failure: VaultError) {
+        lock()
+        refusedStore = failure
+        evaluateStoredAccount()
+    }
+
+    /// Refused store (`refuseStore`): nothing may open or create it.
+    private func checkStoreUsable() throws {
+        if let refusedStore { throw fail(refusedStore) }
+    }
+
     private func enterAccountMissing() {
         let failure = VaultError.integrity(kind: Self.accountMissingKind)
         needsSecretKey = false
@@ -167,7 +192,9 @@ public final class VaultSession {
     /// unlock pins again), with the sync layer holding the store; the Secret Key and the biometric
     /// enrollment of the vanished account are removed; the account id, name, failure throttle and
     /// biometric wish are cleared. Ends in `.noAccount`: the app then shows the Emergency Kit restore
-    /// (the data comes back from iCloud) or the onboarding. Nothing in iCloud is deleted.
+    /// (the data comes back from iCloud) or the onboarding. Nothing in iCloud is deleted. The system
+    /// identity store is emptied too: the vanished account's suggestions must not stay above the
+    /// keyboard.
     ///
     /// Also allowed on a locked device that definitely lacks the Secret Key of the account in the
     /// store (`needsSecretKey`): "Créer un nouveau coffre" from the Emergency Kit screen, confirmed by
@@ -200,6 +227,7 @@ public final class VaultSession {
         settings.resetFailedUnlocks()
         settings.lockoutUntil = nil
         biometricsRevision += 1
+        clearAutofillIdentities()
         evaluateStoredAccount()
         if state == .noAccount { lastError = nil }
     }
@@ -256,6 +284,7 @@ public final class VaultSession {
     /// Creates the account and its "Personnel" vault, stores the Secret Key in the keychain and
     /// unlocks. Returns the Secret Key in display form, to show once and put in the Emergency Kit.
     public func createAccount(password: String, displayName: String, mode: DeviceMode) async throws -> String {
+        try checkStoreUsable()
         if session != nil || state == .locked { throw fail(.accountExists) }
         let path = dbPath
         let kdf = environment.accountKdf
@@ -321,6 +350,7 @@ public final class VaultSession {
     /// Master password unlock. The password is passed as typed (never trimmed): the core normalizes it.
     public func unlock(password: String) async throws {
         if state == .unlocked { return }
+        try checkStoreUsable()
         try checkLockout()
         let stored = try loadSecretKey()
         try await passwordUnlock(password: password, secretKey: stored.secretKey, storeSecretKey: false)
@@ -330,6 +360,7 @@ public final class VaultSession {
     /// Secret Key typed from the Emergency Kit plus master password.
     public func restore(secretKey: String, password: String) async throws {
         if state == .unlocked { return }
+        try checkStoreUsable()
         try checkLockout()
         let normalized: String
         do {
@@ -425,6 +456,7 @@ public final class VaultSession {
     /// `locked` with `VaultError.passwordRequired`, so the UI shows the password field.
     public func unlockWithBiometrics() async throws {
         if state == .unlocked { return }
+        try checkStoreUsable()
         guard settings.deviceMode.biometricsAllowed, biometrics.isAvailable else {
             throw fail(.biometricsUnavailable)
         }
@@ -797,6 +829,30 @@ public final class VaultSession {
         }
     }
 
+    /// Publishes the AutoFill identities now, without the debounce, and returns once the system store
+    /// was replaced (after every identity request sent before). For the AutoFill extension after a
+    /// write: its session locks right after, and a debounced refresh would then find it locked, leaving
+    /// the new identity out of the store until the next app unlock. Does nothing unless unlocked with
+    /// the "Suggestions au-dessus du clavier" setting on.
+    public func publishAutofillIdentitiesNow() async {
+        guard state == .unlocked, let session, settings.quickTypeSuggestions else { return }
+        let excluded = excludedVaultIDs
+        let settings = settings
+        let sync = identitySync
+        enqueueIdentity {
+            guard settings.quickTypeSuggestions,
+                let list = try? await CoreThread.run({ try session.autofillIdentities(excludedVaultIds: excluded) })
+            else { return }
+            await sync.replaceNow(list)
+        }
+        await identityChain?.value
+    }
+
+    /// Record ids (`"<vault id>:<item id>"`) of the items hidden from AutoFill, every type included.
+    public func autofillHiddenRecordIDs() async throws -> Set<String> {
+        Set(try await read { try $0.autofillHiddenRecordIds() })
+    }
+
     /// "Suggestions au-dessus du clavier": off empties the system store, on publishes again (if unlocked).
     public func setQuickTypeSuggestions(_ on: Bool) {
         settings.quickTypeSuggestions = on
@@ -847,10 +903,19 @@ public final class VaultSession {
 
     private func storeChanged() async {
         if state == .unlocked {
-            await reload()
+            await reloadAfterExternalChange()
             guard state == .unlocked else { return }
         }
         notifySync { await $0.localChangesWritten() }
+    }
+
+    /// Unlocked: reloads the lists for a write another process may have made (store-changed
+    /// notification, or the app coming back to the foreground in case that notification was lost),
+    /// then bumps `externalChangeRevision`. Otherwise does nothing.
+    public func reloadAfterExternalChange() async {
+        guard state == .unlocked else { return }
+        await reload()
+        if state == .unlocked { externalChangeRevision &+= 1 }
     }
 
     // MARK: - Plumbing

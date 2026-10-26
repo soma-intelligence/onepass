@@ -156,6 +156,29 @@ struct AutoFillSessionTests {
         #expect(store.replaceCount == published)
     }
 
+    /// "Restaurer avec mon Emergency Kit" / "Repartir de zéro": the vanished account's identities go.
+    @Test func resetForRecoveryEmptiesStore() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = InMemoryIdentityStore()
+        let session = autofillSession(h, store: store)
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        await session.waitForAutofillIdentities()
+        #expect(store.identities.count == 1)
+        session.lock()
+        await session.waitForReleasedSessions()
+
+        try dropAccountParams(h.environment.databaseURL.path)
+        await session.reload()
+        #expect(session.isAccountMissing)
+        try await session.resetForRecovery()
+        await session.waitForAutofillIdentities()
+        #expect(session.state == .noAccount)
+        #expect(store.identities.isEmpty)
+        #expect(store.removeCount == 1)
+    }
+
     @Test func clearAutofillIdentitiesEmptiesStore() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }
@@ -227,8 +250,11 @@ struct AutoFillSessionTests {
         let created = try await addLogin(second, title: "Depuis l'extension", url: "https://ext.exemple.fr")
         #expect(!first.summaries.contains { $0.id == created.id })
 
+        let revision = first.externalChangeRevision
         notifier.post()
         #expect(await eventually { first.summaries.contains { $0.id == created.id } })
+        // The signal an open item editor waits for (warns before overwriting the new version).
+        #expect(await eventually { first.externalChangeRevision > revision })
         await first.waitForSyncNotifications()
         #expect(h.sync.events.filter { $0 == .written }.count > writesBefore)
         await first.waitForAutofillIdentities()

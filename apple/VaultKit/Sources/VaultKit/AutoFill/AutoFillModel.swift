@@ -58,16 +58,20 @@ public final class AutoFillModel {
 
     /// Answer to a `...WithoutUserInteraction` call (no session: the extension is never unlocked
     /// outside a request). A save coming from OnePass itself, or of a generated password just filled,
-    /// ends as saved without writing; everything else asks for the interface. Never nil today.
+    /// ends as saved without writing; a conditional passkey registration (automatic upgrade by the
+    /// site) fails, since a passkey is never created without an explicit choice (ruling A9); everything
+    /// else asks for the interface. Never nil today.
     nonisolated public static func resultWithoutUserInteraction(
         for request: AutoFillRequest, ownAppIDs: Set<String>
     ) -> AutoFillResult? {
-        if case .savePassword(let save) = request,
-            isOwnApp(save, ownAppIDs) || save.event == .generatedPasswordFilled
-        {
+        switch request {
+        case .savePassword(let save) where isOwnApp(save, ownAppIDs) || save.event == .generatedPasswordFilled:
             return .saved
+        case .passkeyRegistration:
+            return .cancelled(.failed)
+        default:
+            return .cancelled(.userInteractionRequired)
         }
-        return .cancelled(.userInteractionRequired)
     }
 
     /// Default title of a saved Login: the system's suggestion, else the service host.
@@ -150,14 +154,14 @@ public final class AutoFillModel {
                 screen = try await listScreen(services: services, passkey: passkey, oneTimeCode: false)
             case .oneTimeCodeList(let services):
                 screen = try await listScreen(services: services, passkey: nil, oneTimeCode: true)
-            case .credential(let recordID, let kind, let passkey):
-                try await fillDirectly(recordID: recordID, kind: kind, passkey: passkey)
+            case .credential(let recordID, let kind, let passkey, let service):
+                try await fillDirectly(recordID: recordID, kind: kind, passkey: passkey, service: service)
             case .passkeyRegistration(let registration):
                 try await prepareRegistration(registration)
             case .savePassword(let save):
                 try await prepareSave(save)
             case .textToInsert:
-                screen = .textItems(textItems())
+                screen = .textItems(try await textItems())
             case .configuration:
                 screen = .configuration
             }
@@ -222,7 +226,7 @@ public final class AutoFillModel {
     private var passkeyRequest: PasskeyRequest? {
         switch request {
         case .credentialList(_, let passkey): passkey
-        case .credential(_, .passkey, let passkey): passkey
+        case .credential(_, .passkey, let passkey, _): passkey
         default: nil
         }
     }
@@ -232,8 +236,8 @@ public final class AutoFillModel {
         switch request {
         case .credentialList: .password
         case .oneTimeCodeList: .oneTimeCode
-        case .credential(_, .password, _): .password
-        case .credential(_, .oneTimeCode, _): .oneTimeCode
+        case .credential(_, .password, _, _): .password
+        case .credential(_, .oneTimeCode, _, _): .oneTimeCode
         default: nil
         }
     }
@@ -281,21 +285,30 @@ public final class AutoFillModel {
     // MARK: - Direct requests
 
     /// A QuickType suggestion. A record that cannot be filled goes back to the list (passwords,
-    /// codes) or ends as `credentialNotFound` (passkeys).
-    private func fillDirectly(recordID: String, kind: FfiAutofillKind, passkey: PasskeyRequest?) async throws {
-        let item = try await fillableLogin(recordID: recordID)
+    /// codes) or ends as `credentialNotFound` (passkeys). A password or a code is filled only while
+    /// the Login still matches the identity's `service` (a stale identity store entry, for a Login
+    /// whose URL changed since it was published, goes back to the list of that service).
+    private func fillDirectly(
+        recordID: String, kind: FfiAutofillKind, passkey: PasskeyRequest?, service: String?
+    ) async throws {
+        var item = try await fillableLogin(recordID: recordID)
+        let services = [service].compactMap { $0 }.filter { !$0.isEmpty }
+        if kind != .passkey, let found = item, let service = services.first {
+            let matching = try await session.autofillCandidates(service: service, includeAll: false)
+            if !matching.contains(where: { $0.itemId == found.id && $0.vaultId == found.vaultId }) { item = nil }
+        }
         switch kind {
         case .password:
             if let item {
                 finish(passwordResult(item))
             } else {
-                screen = try await listScreen(services: [], passkey: nil, oneTimeCode: false)
+                screen = try await listScreen(services: services, passkey: nil, oneTimeCode: false)
             }
         case .oneTimeCode:
             if let item, let result = try oneTimeCodeResult(item) {
                 finish(result)
             } else {
-                screen = try await listScreen(services: [], passkey: nil, oneTimeCode: true)
+                screen = try await listScreen(services: services, passkey: nil, oneTimeCode: true)
             }
         case .passkey:
             // The controller always passes the identity's credential id: no guess among several.
@@ -392,6 +405,7 @@ public final class AutoFillModel {
                 userHandle: registration.userHandle, clientDataHash: registration.clientDataHash,
                 excludedCredentialIds: registration.excludedCredentialIDs))
             wrote = true
+            await session.publishAutofillIdentitiesNow()
             finish(.passkeyRegistration(created, rpID: registration.rpID, clientDataHash: registration.clientDataHash))
         } catch {
             if VaultError(error) == VaultError(OnePassError.PasskeyExcluded) {
@@ -410,7 +424,8 @@ public final class AutoFillModel {
         // An app identifier is no domain: no site match for it.
         let candidates =
             save.serviceIsApp ? [] : try await session.autofillCandidates(service: save.service, includeAll: false)
-        let sameUser = candidates.filter { $0.user == save.user }
+        let user = Self.normalizedUser(save.user)
+        let sameUser = candidates.filter { Self.normalizedUser($0.user) == user }
         let host = Self.host(of: save.service)
         for candidate in sameUser {
             let item = try await session.loadItem(vaultID: candidate.vaultId, itemID: candidate.itemId)
@@ -453,6 +468,7 @@ public final class AutoFillModel {
                 _ = try await session.save(item)
             }
             wrote = true
+            await session.publishAutofillIdentitiesNow()
             finish(.saved)
         } catch {
             recover(finishing: false)
@@ -461,15 +477,25 @@ public final class AutoFillModel {
 
     // MARK: - Text insertion
 
-    /// Every live item of the visible vaults, by title, without Crypto Wallets (spec 5.4).
-    private func textItems() -> [FfiItemSummary] {
-        session.items(filter: .all, query: "", sort: .title).filter { $0.itemType != .cryptoWallet }
+    /// Every live item of the visible vaults, by title, without Crypto Wallets (spec 5.4) nor the
+    /// items hidden from AutoFill (ruling X3: never offered).
+    private func textItems() async throws -> [FfiItemSummary] {
+        let hidden = try await session.autofillHiddenRecordIDs()
+        return session.items(filter: .all, query: "", sort: .title).filter {
+            $0.itemType != .cryptoWallet && !hidden.contains("\($0.vaultId):\($0.id)")
+        }
     }
 
     /// Back from the fields of an item to the item list.
-    public func showTextItems() {
+    public func showTextItems() async {
         guard !isFinished, session.state == .unlocked, case .textToInsert = request else { return }
-        screen = .textItems(textItems())
+        do {
+            let items = try await textItems()
+            guard !isFinished else { return }
+            screen = .textItems(items)
+        } catch {
+            recover(finishing: false)
+        }
     }
 
     public func chooseText(item: FfiItemSummary) async {
@@ -477,7 +503,9 @@ public final class AutoFillModel {
             item.itemType != .cryptoWallet, !session.hiddenVaultIDs.contains(item.vaultId)
         else { return }
         do {
-            screen = .textFields(try await session.loadItem(vaultID: item.vaultId, itemID: item.id))
+            let loaded = try await session.loadItem(vaultID: item.vaultId, itemID: item.id)
+            guard !isFinished, !loaded.hideFromAutofill else { return }
+            screen = .textFields(loaded)
         } catch {
             recover(finishing: false)
         }
@@ -539,6 +567,11 @@ public final class AutoFillModel {
     }
 
     // MARK: - Helpers
+
+    /// A username as compared to find the Login of a save request: trimmed, case-insensitive.
+    nonisolated static func normalizedUser(_ user: String) -> String {
+        user.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 
     nonisolated private static func isOwnApp(_ save: SavePasswordRequest, _ ownAppIDs: Set<String>) -> Bool {
         save.serviceIsApp && ownAppIDs.contains(save.service)

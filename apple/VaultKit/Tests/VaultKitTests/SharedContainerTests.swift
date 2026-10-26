@@ -162,6 +162,38 @@ struct SharedContainerTests {
         #expect(box.read(box.sidecar(target, "-shm")) == "shm")
     }
 
+    /// The database move fails, then putting back `-wal` fails too: a distinct error, never the plain
+    /// move error that lets the app fall back to a legacy database without its WAL. The next run
+    /// moves the stray sidecars back and completes the move.
+    @Test func failedRollbackIsReportedAsSplitStore() throws {
+        let box = try Sandbox()
+        try box.makeLegacy()
+        let target = box.shared.databaseURL
+        let legacyWal = box.sidecar(box.legacyDatabase, "-wal")
+        #expect(throws: SharedContainerMigrationError.rollbackFailed) {
+            try migrate(
+                box,
+                move: { from, to in
+                    if to.path == target.path { throw CocoaError(.fileWriteNoPermission) }
+                    if to.path == legacyWal.path { throw CocoaError(.fileWriteNoPermission) }
+                    try FileManager.default.moveItem(at: from, to: to)
+                })
+        }
+        // `-shm` went back, `-wal` is stranded in the shared folder, the database stayed behind.
+        #expect(box.read(box.legacyDatabase) == "db")
+        #expect(!box.exists(legacyWal))
+        #expect(box.read(box.sidecar(target, "-wal")) == "wal")
+        #expect(!box.exists(target))
+        #expect(!box.shared.defaults.bool(forKey: SharedContainerMigration.settingsMarker))
+
+        // The next launch brings the stray `-wal` home, then moves the whole store.
+        try migrate(box)
+        #expect(box.read(target) == "db")
+        #expect(box.read(box.sidecar(target, "-wal")) == "wal")
+        #expect(box.read(box.sidecar(target, "-shm")) == "shm")
+        #expect(!box.exists(box.legacyDatabase))
+    }
+
     @Test func orphanSidecarIsNeverDeleted() throws {
         let box = try Sandbox()
         // An old cut-short move left a `-wal` in the shared folder; the legacy store has a newer one.

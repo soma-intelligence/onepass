@@ -1,5 +1,13 @@
 import Foundation
 
+/// The move of the store failed and putting back the files already moved failed too: the store is
+/// split between the legacy folder and the shared container (database on one side, sidecars on the
+/// other). Neither copy may be opened: a database opened without its WAL loses writes. The next
+/// launch's migration moves the stray sidecars back to the legacy database before retrying.
+public enum SharedContainerMigrationError: Error, Equatable {
+    case rollbackFailed
+}
+
 /// One-time move of the milestone 2 store and settings into the shared container (ruling A3).
 /// Run at app launch, before anything opens the database. Safe to call on every launch.
 public enum SharedContainerMigration {
@@ -14,7 +22,8 @@ public enum SharedContainerMigration {
     /// whole (database and WAL together) for the fallback. A shared store holding an account always
     /// wins and the old files are left alone; a shared store without an account (created empty by the
     /// AutoFill extension before this move, for instance) is renamed aside, never deleted, when a
-    /// legacy store exists. Then copies the `onepass.*` settings once.
+    /// legacy store exists. Then copies the `onepass.*` settings once. Throws
+    /// `SharedContainerMigrationError.rollbackFailed` when a failed move could not be undone.
     public static func run(
         from legacyDatabase: URL, legacyDefaults: UserDefaults, to container: SharedContainer,
         fileManager: FileManager = .default
@@ -54,7 +63,8 @@ public enum SharedContainerMigration {
     }
 
     /// Renames the store and its sidecars to `vault.sqlite.<label>-<stamp>` (and `-wal`, `-shm`).
-    /// A failure puts back what was renamed.
+    /// A failure puts back what was renamed. A failed put back is not escalated: only the shared store
+    /// without an account is affected, the legacy store is still whole for the fallback.
     private static func setAside(
         _ database: URL, label: String, stamp: String, fileManager: FileManager, move: (URL, URL) throws -> Void
     ) throws {
@@ -68,7 +78,7 @@ public enum SharedContainerMigration {
                 done.append((from, to))
             }
         } catch {
-            rollBack(done, move: move)
+            _ = rollBack(done, move: move)
             throw error
         }
     }
@@ -109,16 +119,23 @@ public enum SharedContainerMigration {
                 #endif
             }
         } catch {
-            rollBack(done, move: move)
+            guard rollBack(done, move: move) else { throw SharedContainerMigrationError.rollbackFailed }
             throw error
         }
     }
 
-    /// Moves back, last first, the files a failed step already moved.
-    private static func rollBack(_ done: [(from: URL, to: URL)], move: (URL, URL) throws -> Void) {
+    /// Moves back, last first, the files a failed step already moved; every step is tried. False when
+    /// one of them could not be moved back.
+    private static func rollBack(_ done: [(from: URL, to: URL)], move: (URL, URL) throws -> Void) -> Bool {
+        var complete = true
         for step in done.reversed() {
-            try? move(step.to, step.from)
+            do {
+                try move(step.to, step.from)
+            } catch {
+                complete = false
+            }
         }
+        return complete
     }
 
     private static func copySettings(from legacy: UserDefaults, to shared: UserDefaults) {
