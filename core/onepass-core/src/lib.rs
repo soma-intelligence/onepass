@@ -6,6 +6,7 @@ pub mod companion;
 pub mod crypto;
 pub mod error;
 pub mod export;
+pub mod format;
 pub mod generator;
 pub mod icon;
 pub mod id;

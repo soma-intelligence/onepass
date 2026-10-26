@@ -53,25 +53,90 @@ mod local;
 pub mod travel;
 
 /// What a device keeps between sessions: the account pinned at first
-/// unlock, and the last manifest accepted for each vault.
+/// unlock, the last manifest accepted for each vault, and the restore epoch
+/// it last accepted (0 before any).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeviceState {
     pub pinned: Option<PinnedAccount>,
     pub last_seen: BTreeMap<Id, SeenManifest>,
+    pub epoch: u64,
+}
+
+/// Header of the versioned `DeviceState` encoding, followed by the version.
+const DEVICE_STATE_MAGIC: &[u8; 3] = b"ODS";
+
+/// The version 1 layout (headerless postcard), still read and migrated.
+///
+/// Its first byte is the postcard tag of `pinned: Option<_>`, always 0 or 1,
+/// never `b'O'` (0x4F): a version 1 encoding cannot be taken for the header.
+#[derive(Deserialize)]
+struct DeviceStateV1 {
+    pinned: Option<PinnedAccount>,
+    last_seen: BTreeMap<Id, SeenManifest>,
+}
+
+/// The version 2 body, borrowed for encoding.
+#[derive(Serialize)]
+struct DeviceStateV2Ref<'a> {
+    pinned: &'a Option<PinnedAccount>,
+    last_seen: &'a BTreeMap<Id, SeenManifest>,
+    epoch: u64,
+}
+
+#[derive(Deserialize)]
+struct DeviceStateV2 {
+    pinned: Option<PinnedAccount>,
+    last_seen: BTreeMap<Id, SeenManifest>,
+    epoch: u64,
+}
+
+fn decode_whole<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T> {
+    match postcard::take_from_bytes::<T>(bytes) {
+        Ok((value, [])) => Ok(value),
+        _ => Err(Error::InvalidFormat("device state")),
+    }
 }
 
 impl DeviceState {
-    /// Postcard encoding, for the device to persist between sessions.
+    /// Versioned encoding, for the device to persist between sessions:
+    /// `b"ODS" || DEVICE_STATE_VERSION || postcard { pinned, last_seen, epoch }`.
     pub fn encode(&self) -> Vec<u8> {
+        let body = DeviceStateV2Ref {
+            pinned: &self.pinned,
+            last_seen: &self.last_seen,
+            epoch: self.epoch,
+        };
+        let mut out = DEVICE_STATE_MAGIC.to_vec();
+        out.push(crate::format::DEVICE_STATE_VERSION);
         // Plain data (options, maps of ids and hashes): encoding cannot fail.
-        postcard::to_allocvec(self).expect("device state encodes")
+        postcard::to_extend(&body, out).expect("device state encodes")
     }
 
-    /// Decode what `encode` wrote: the whole buffer, trailing bytes refused
-    /// (`InvalidFormat("device state")`).
+    /// Decode what `encode` wrote, or the headerless version 1 encoding
+    /// (migrated with `epoch = 0`): the whole buffer, trailing bytes refused
+    /// (`InvalidFormat("device state")`). A version newer than this build's
+    /// is `InvalidFormat("device state from a newer version")`.
     pub fn decode(bytes: &[u8]) -> Result<DeviceState> {
-        match postcard::take_from_bytes::<DeviceState>(bytes) {
-            Ok((state, [])) => Ok(state),
+        let Some(rest) = bytes.strip_prefix(DEVICE_STATE_MAGIC) else {
+            let v1: DeviceStateV1 = decode_whole(bytes)?;
+            return Ok(DeviceState {
+                pinned: v1.pinned,
+                last_seen: v1.last_seen,
+                epoch: 0,
+            });
+        };
+        match rest.split_first() {
+            Some((&crate::format::DEVICE_STATE_VERSION, body)) => {
+                let v2: DeviceStateV2 = decode_whole(body)?;
+                Ok(DeviceState {
+                    pinned: v2.pinned,
+                    last_seen: v2.last_seen,
+                    epoch: v2.epoch,
+                })
+            }
+            Some((&v, _)) if v > crate::format::DEVICE_STATE_VERSION => {
+                Err(Error::InvalidFormat("device state from a newer version"))
+            }
             _ => Err(Error::InvalidFormat("device state")),
         }
     }
@@ -219,6 +284,7 @@ impl<S: RecordStore> Repository<S> {
         let device = DeviceState {
             pinned: Some(pin(&account)),
             last_seen: BTreeMap::new(),
+            epoch: 0,
         };
         let mut repo = Repository {
             store,
@@ -1535,6 +1601,145 @@ mod tests {
         );
         assert_eq!(
             DeviceState::decode(&[0xFF, 0xFF]),
+            Err(Error::InvalidFormat("device state"))
+        );
+    }
+
+    /// The version 1 layout of `DeviceState` (headerless postcard), copied
+    /// here so the legacy bytes stay pinned whatever the struct becomes.
+    #[derive(Serialize)]
+    struct DeviceStateV1 {
+        pinned: Option<PinnedAccount>,
+        last_seen: BTreeMap<Id, SeenManifest>,
+    }
+
+    fn fixed_last_seen() -> BTreeMap<Id, SeenManifest> {
+        BTreeMap::from([(
+            Id([1; 16]),
+            SeenManifest {
+                seq: 7,
+                hash: [0xab; 32],
+            },
+        )])
+    }
+
+    fn to_hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    fn from_hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// Version 1 bytes of `{ pinned: None, last_seen: { [1; 16]: (7, [0xab; 32]) } }`.
+    const LEGACY_V1_HEX: &str = concat!(
+        "00",
+        "01",
+        "01010101010101010101010101010101",
+        "07",
+        "abababababababababababababababababababababababababababababababab",
+    );
+
+    #[test]
+    fn legacy_device_state_migrates() {
+        let v1 = DeviceStateV1 {
+            pinned: None,
+            last_seen: fixed_last_seen(),
+        };
+        let bytes = postcard::to_allocvec(&v1).unwrap();
+        assert_eq!(to_hex(&bytes), LEGACY_V1_HEX);
+        let migrated = DeviceState::decode(&from_hex(LEGACY_V1_HEX)).unwrap();
+        assert_eq!(
+            migrated,
+            DeviceState {
+                pinned: None,
+                last_seen: fixed_last_seen(),
+                epoch: 0,
+            }
+        );
+        // With a pinned account too.
+        let (mut repo, v) = fresh(MemoryStore::new());
+        repo.items(&v).unwrap();
+        let device = repo.device_state().clone();
+        let v1 = DeviceStateV1 {
+            pinned: device.pinned.clone(),
+            last_seen: device.last_seen.clone(),
+        };
+        let mut bytes = postcard::to_allocvec(&v1).unwrap();
+        let migrated = DeviceState::decode(&bytes).unwrap();
+        assert_eq!(migrated.pinned, device.pinned);
+        assert_eq!(migrated.last_seen, device.last_seen);
+        assert_eq!(migrated.epoch, 0);
+        // Trailing bytes after a legacy encoding stay refused.
+        bytes.push(0);
+        assert_eq!(
+            DeviceState::decode(&bytes),
+            Err(Error::InvalidFormat("device state"))
+        );
+    }
+
+    /// A version 1 encoding starts with the `Option` tag of `pinned`, 0 or
+    /// 1, so it can never be taken for the `b"ODS"` header (0x4F first).
+    #[test]
+    fn legacy_device_state_never_looks_like_header() {
+        let (repo, _) = fresh(MemoryStore::new());
+        for pinned in [None, repo.device_state().pinned.clone()] {
+            let bytes = postcard::to_allocvec(&DeviceStateV1 {
+                pinned,
+                last_seen: fixed_last_seen(),
+            })
+            .unwrap();
+            assert!(bytes[0] == 0 || bytes[0] == 1);
+            assert_ne!(bytes[0], b'O');
+        }
+    }
+
+    #[test]
+    fn device_state_v2_roundtrip() {
+        let (mut repo, v) = fresh(MemoryStore::new());
+        repo.items(&v).unwrap();
+        let mut device = repo.device_state().clone();
+        device.epoch = 5;
+        let mut bytes = device.encode();
+        assert_eq!(&bytes[..4], b"ODS\x02");
+        assert_eq!(&bytes[..3], b"ODS");
+        assert_eq!(bytes[3], crate::format::DEVICE_STATE_VERSION);
+        assert_eq!(DeviceState::decode(&bytes).unwrap(), device);
+        let empty = DeviceState::default();
+        assert_eq!(DeviceState::decode(&empty.encode()).unwrap(), empty);
+        bytes.push(0);
+        assert_eq!(
+            DeviceState::decode(&bytes),
+            Err(Error::InvalidFormat("device state"))
+        );
+    }
+
+    #[test]
+    fn future_device_state_refused() {
+        let body = &DeviceState::default().encode()[4..];
+        for newer in [3u8, 0xFF] {
+            let mut bytes = b"ODS".to_vec();
+            bytes.push(newer);
+            bytes.extend_from_slice(body);
+            assert_eq!(
+                DeviceState::decode(&bytes),
+                Err(Error::InvalidFormat("device state from a newer version"))
+            );
+        }
+        for bad in [0u8, 1] {
+            let mut bytes = b"ODS".to_vec();
+            bytes.push(bad);
+            bytes.extend_from_slice(body);
+            assert_eq!(
+                DeviceState::decode(&bytes),
+                Err(Error::InvalidFormat("device state"))
+            );
+        }
+        assert_eq!(
+            DeviceState::decode(b"ODS"),
             Err(Error::InvalidFormat("device state"))
         );
     }

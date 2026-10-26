@@ -13,7 +13,7 @@ use crate::crypto::{Aad, BlobKind, SymmetricKey, open, seal, unwrap_key, wrap_ke
 use crate::model::{Item, validate};
 use crate::{Error, Id, IntegrityError, Result};
 
-const SCHEMA: u16 = 1;
+const SCHEMA: u16 = crate::format::ITEM_SCHEMA;
 
 /// Display settings of a vault, sealed with the vault key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

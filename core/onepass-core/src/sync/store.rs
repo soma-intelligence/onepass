@@ -20,6 +20,7 @@ use rusqlite::{
 };
 
 use super::{Change, MAX_RECORD_BYTES, RemoteChange};
+use crate::format::STORE_USER_VERSION;
 use crate::repo::{DeviceState, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore};
 use crate::{Error, Id, Result};
@@ -73,8 +74,24 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT NOT NULL PRIMARY KEY,
     value BLOB NOT NULL
 );
-PRAGMA user_version = 1;
 ";
+
+/// Check `PRAGMA user_version`, then create what is missing and stamp the
+/// current version. 0 (a new file, or one from before the check) and the
+/// current version open; nothing is dropped or rewritten. A newer version is
+/// `InvalidFormat("store from a newer version")`, the file left untouched.
+fn init_schema(conn: &Connection) -> Result<()> {
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .map_err(store_err)?;
+    if version > STORE_USER_VERSION {
+        return Err(Error::InvalidFormat("store from a newer version"));
+    }
+    conn.execute_batch(SCHEMA).map_err(store_err)?;
+    conn.execute_batch(&format!("PRAGMA user_version = {STORE_USER_VERSION};"))
+        .map_err(store_err)?;
+    Ok(())
+}
 
 /// A `staging` row: `(kind, id, version, data, server_meta)`.
 type StagedRow = (i64, Vec<u8>, i64, Option<Vec<u8>>, Option<Vec<u8>>);
@@ -281,13 +298,13 @@ impl SyncStore {
         }
         conn.execute_batch("PRAGMA synchronous = FULL;")
             .map_err(store_err)?;
-        conn.execute_batch(SCHEMA).map_err(store_err)?;
+        init_schema(&conn)?;
         Ok(SyncStore { conn })
     }
 
     pub fn open_in_memory() -> Result<SyncStore> {
         let conn = Connection::open_in_memory().map_err(store_err)?;
-        conn.execute_batch(SCHEMA).map_err(store_err)?;
+        init_schema(&conn)?;
         Ok(SyncStore { conn })
     }
 
@@ -1841,6 +1858,47 @@ mod tests {
         );
         let ok = vec![0u8; MAX_RECORD_BYTES];
         s.put(rec(id, RecordKind::Keyset, 1, &ok)).unwrap();
+    }
+
+    #[test]
+    fn store_user_version_newer_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sync.sqlite");
+        // A database from before the version check (user_version 0) opens,
+        // keeps its rows and is stamped with the current version.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE meta (key TEXT NOT NULL PRIMARY KEY, value BLOB NOT NULL);
+                 INSERT INTO meta VALUES ('change_token', x'746f6b');",
+            )
+            .unwrap();
+        }
+        {
+            let s = SyncStore::open(&path).unwrap();
+            assert_eq!(s.meta("change_token").unwrap(), Some(b"tok".to_vec()));
+            let v: i64 = s
+                .conn
+                .query_row("PRAGMA user_version", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(v, crate::format::STORE_USER_VERSION);
+        }
+        // The current version opens again.
+        drop(SyncStore::open(&path).unwrap());
+        // A newer one is refused, and left as it is.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("PRAGMA user_version = 2;").unwrap();
+        }
+        assert!(matches!(
+            SyncStore::open(&path),
+            Err(Error::InvalidFormat("store from a newer version"))
+        ));
+        let conn = Connection::open(&path).unwrap();
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 2);
     }
 
     #[test]
