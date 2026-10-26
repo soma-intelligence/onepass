@@ -19,7 +19,7 @@ impl KeyType for Len32 {
 
 /// A 256-bit symmetric key, wiped from memory on drop.
 #[derive(Zeroize, ZeroizeOnDrop)]
-pub struct SymmetricKey([u8; 32]);
+pub struct SymmetricKey(pub(crate) [u8; 32]);
 
 impl SymmetricKey {
     pub fn generate() -> Result<SymmetricKey> {

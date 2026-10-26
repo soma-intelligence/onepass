@@ -12,3 +12,5 @@ uuid.workspace = true
 aws-lc-rs.workspace = true
 zeroize.workspace = true
 data-encoding.workspace = true
+argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
+unicode-normalization = "0.1.26"
