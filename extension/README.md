@@ -129,6 +129,10 @@ cargo test -p onepass-bridge --features vectors --test vectors   # vecteurs croi
 
 `npm run build:chromium && node scripts/ui-shots.mjs <dossier-de-sortie> [--only nom,nom]` rend les pages de l'extension (popup, menu, overlay, proposition d'enregistrement) hors extension, avec des réponses fictives, en clair et en sombre, et enregistre une capture par état. Outil de développement, rien n'est embarqué dans l'extension.
 
+## Laboratoire d'autofill
+
+`lab/` contient un laboratoire qui génère des sites fictifs à partir d'une graine et mesure ce que l'extension remplit, et ce qu'elle ne doit jamais remplir (fuites vers un autre hôte ou un champ piège). Commandes (`npm run lab:smoke`, `npm run lab`, `npm run lab:repro`, `npm run lab:corpus`), garde-fous du corpus et limites : voir [`lab/README.md`](lab/README.md).
+
 ## Limites et reports
 
 Rulings de la spec (section 14) qui bornent cette version :

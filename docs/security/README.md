@@ -457,6 +457,8 @@ Les tests de bout en bout sont dans `extension/e2e/security.spec.ts` (Chromium, 
 | S16 | Secret dans les résumés | e2e `S16_menu_summaries_hold_no_secret` ; `core/onepass-bridge/tests/service.rs` (`summaries_contain_no_secret`) |
 | S17 | URL fixe d'une ressource de l'extension | e2e `S17_fixed_extension_url_not_reachable` ; `test/manifest.test.ts` (`chromium: service worker and dynamic url`) |
 
+Le laboratoire d'autofill (`extension/lab/`, `npm run lab`) ajoute un oracle de fuite sur des centaines de sites générés : tout secret du coffre fictif reçu par un hôte qui n'en est pas le propriétaire, ou écrit dans un champ piège (honeypot), est un verdict `leak`, compté à part des échecs. Une seule fuite rend le passage rouge (code de sortie 1). Le rapport ne contient aucune valeur secrète.
+
 Lancer : `cd extension && npm run check && npm run e2e`, puis `cd core && cargo test -p onepass-bridge -p onepass-native-host` et `cargo test -p onepass-bridge --features vectors --test vectors`.
 
 ### 12.9 Limites connues de l'extension
