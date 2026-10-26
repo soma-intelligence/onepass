@@ -1,6 +1,6 @@
 // Sanitizer of the corpus extractor: nothing personal or long leaves a page.
 import { describe, expect, it } from "vitest";
-import { sanitizeText, sanitizeToken } from "../../lab/corpus/sanitize.ts";
+import { sanitizeOrigin, sanitizeText, sanitizeToken } from "../../lab/corpus/sanitize.ts";
 
 describe("sanitize", () => {
   it("redacts_email", () => {
@@ -23,6 +23,12 @@ describe("sanitize", () => {
     expect(sanitizeToken("ab-cd-".repeat(9))).toBe("<long>");
     expect(sanitizeToken("user_name")).toBe("user_name");
     expect(sanitizeToken(undefined)).toBeUndefined();
+  });
+  it("origin_redacts_numeric_labels", () => {
+    expect(sanitizeOrigin("https://4721227.fls.doubleclick.net")).toBe("https://<redacted>.fls.doubleclick.net");
+    expect(sanitizeOrigin("https://js.stripe.com")).toBe("https://js.stripe.com");
+    expect(sanitizeOrigin("https://a1.example.com:8443")).toBe("https://a1.example.com"); // 4-digit port is dropped
+    expect(sanitizeOrigin("https://a1.example.com:81")).toBe("https://a1.example.com:81");
   });
   it("token_redacts_digits_email_and_opaque", () => {
     expect(sanitizeToken("field_20251026")).toBe("<redacted>");

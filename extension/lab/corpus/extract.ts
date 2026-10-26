@@ -7,7 +7,7 @@ import type { ProviderId } from "../gen/model.ts";
 import { isAllowed, parseRobots } from "./robots.ts";
 import type { RobotsRules } from "./robots.ts";
 import { classifyRole } from "./roles.ts";
-import { sanitizeText, sanitizeToken } from "./sanitize.ts";
+import { sanitizeOrigin, sanitizeText, sanitizeToken } from "./sanitize.ts";
 import { stableJson } from "./types.ts";
 import type { Category, FormStep, Sample, SampleField, SampleForm } from "./types.ts";
 
@@ -262,7 +262,7 @@ function build(base: Sample, raw: RawPage, calls: ("get" | "create")[]): Sample 
   for (const src of raw.iframes) {
     try {
       const u = new URL(src, base.source_url);
-      if (u.protocol === "http:" || u.protocol === "https:") iframes.push({ origin: u.origin, sameSite: hostSite(u.hostname, base.host) });
+      if (u.protocol === "http:" || u.protocol === "https:") iframes.push({ origin: sanitizeOrigin(u.origin), sameSite: hostSite(u.hostname, base.host) });
     } catch { /* ignore malformed src */ }
   }
   const providers = new Set<ProviderId>();
