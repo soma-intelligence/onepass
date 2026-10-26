@@ -27,6 +27,7 @@ use commands::item::ItemCmd;
 use commands::mcp::McpCmd;
 use commands::ssh_agent::SshAgentArgs;
 use commands::ssh_key::SshKeyCmd;
+use commands::travel::TravelCmd;
 use commands::vault::VaultCmd;
 use commands::watchtower::WatchtowerArgs;
 use session::{CliError, Ctx};
@@ -90,6 +91,11 @@ enum Command {
     /// approval (password on /dev/tty). Prints SSH_AUTH_SOCK on stderr;
     /// SIGINT or SIGTERM stop it and remove the socket.
     SshAgent(SshAgentArgs),
+    /// Travel Mode: hide the vaults without travel-safe while crossing a
+    /// border, bring them back verified. The upstream is a SQLite file
+    /// (development stand-in for the sync).
+    #[command(subcommand)]
+    Travel(TravelCmd),
 }
 
 #[derive(Subcommand)]
@@ -139,6 +145,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Mcp(c) => commands::mcp::run(&ctx, c),
         Command::SshKey(c) => commands::ssh_key::run(&ctx, c),
         Command::SshAgent(a) => commands::ssh_agent::run(&ctx, a),
+        Command::Travel(c) => commands::travel::run(&ctx, c),
         Command::Generate(_) => unreachable!("handled above"),
     }
 }

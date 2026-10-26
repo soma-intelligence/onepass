@@ -11,5 +11,6 @@ pub mod read;
 pub mod ssh_agent;
 pub mod ssh_key;
 pub mod totp;
+pub mod travel;
 pub mod vault;
 pub mod watchtower;
