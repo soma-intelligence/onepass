@@ -42,7 +42,7 @@ const WORDS: [Role, RegExp][] = [
 const NEW_PASSWORD = /confirm|repeat|retype|re ?enter|\bagain\b|\bnew\b|nouveau|nouvelle|neues|neue|wiederhol|bestatig|nueva|nuevo|repetir|nuova|nuovo|\bnovo\b|\bnova\b|bevestig|nieuw/;
 
 function normalize(s: string): string {
-  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  return s.replace(/([a-z0-9])([A-Z])/g, "$1 $2").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
     .replace(/[_\-.\[\]'’]/g, " ").replace(/\s+/g, " ").trim();
 }
 

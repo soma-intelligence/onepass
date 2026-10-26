@@ -112,11 +112,11 @@
     "category": "login"
   },
   {
-    "url": "https://web.de/",
+    "url": "https://registrierung.web.de/",
     "category": "login"
   },
   {
-    "url": "https://www.gmx.net/",
+    "url": "https://registrierung.gmx.net/",
     "category": "login"
   },
   {
@@ -124,7 +124,7 @@
     "category": "login"
   },
   {
-    "url": "https://www.elcorteingles.es/",
+    "url": "https://www.zara.com/es/es/logon",
     "category": "login"
   },
   {
@@ -132,7 +132,7 @@
     "category": "login"
   },
   {
-    "url": "https://www.subito.it/",
+    "url": "https://areariservata.subito.it/login_form",
     "category": "login"
   },
   {
@@ -140,7 +140,7 @@
     "category": "login"
   },
   {
-    "url": "https://www.rakuten.co.jp/",
+    "url": "https://grp01.id.rakuten.co.jp/rms/nid/login",
     "category": "login"
   },
   {
@@ -148,7 +148,7 @@
     "category": "login"
   },
   {
-    "url": "https://www.americanas.com.br/",
+    "url": "https://www.magazineluiza.com.br/login/",
     "category": "login"
   },
   {
@@ -196,7 +196,7 @@
     "category": "signup"
   },
   {
-    "url": "https://checkout.stripe.dev/",
+    "url": "https://stripe-payments-demo.appspot.com/",
     "category": "checkout"
   },
   {

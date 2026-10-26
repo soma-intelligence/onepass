@@ -202,17 +202,18 @@ async function main(): Promise<void> {
         sample = { ...base, status: "skipped: robots" };
       } else {
         const ctx = await browser.newContext({ userAgent: USER_AGENT, serviceWorkers: "block" });
-        const deadline = setTimeout(() => { ctx.close().catch(() => {}); }, 30_000); // covers goto, wait and evaluate
+        const deadline = setTimeout(() => { timedOut = true; ctx.close().catch(() => {}); }, 30_000); // covers goto, wait and evaluate
         let blocked = false;
+        let timedOut = false;
         try {
           const page = await ctx.newPage();
           await page.route("**/*", async (route: any) => {
             const req = route.request();
             if (req.isNavigationRequest() && req.frame() === page.mainFrame() && !(await urlAllowed(new URL(req.url())))) {
               blocked = true;
-              await route.abort();
+              await route.abort().catch(() => {});
             } else {
-              await route.continue();
+              await route.continue().catch(() => {});
             }
           });
           await page.addInitScript(INIT_SCRIPT);
@@ -226,7 +227,9 @@ async function main(): Promise<void> {
             sample = build(base, raw, calls);
           }
         } catch (e) {
-          sample = blocked
+          sample = timedOut
+            ? { ...base, status: "error: timeout" }
+            : blocked
             ? { ...base, status: "skipped: robots" }
             : { ...base, status: `error: ${sanitizeText(e instanceof Error ? e.message.split("\n")[0] : String(e)) ?? "unknown"}` };
         } finally {

@@ -24,6 +24,14 @@ describe("classifyRole", () => {
     expect(classifyRole({ type: "text", label: "Nueva contraseña" })).toBe("new_password");
     expect(classifyRole({ type: "password", label: "Mot de passe" })).toBe("password");
   });
+  it("camel_case_new_password_names", () => {
+    expect(classifyRole({ type: "password", name: "newPassword" })).toBe("new_password");
+    expect(classifyRole({ type: "password", id: "confirmPassword" })).toBe("new_password");
+    expect(classifyRole({ type: "password", name: "password" })).toBe("password");
+  });
+  it("current_password_autocomplete_not_overridden_by_name", () => {
+    expect(classifyRole({ type: "password", autocomplete: "current-password", name: "newPassword" })).toBe("password");
+  });
   it("nom_d_usage_is_family_name", () => {
     expect(classifyRole({ type: "text", label: "Nom d'usage" })).toBe("family_name");
     expect(classifyRole({ type: "text", name: "nom_d_usage" })).toBe("family_name");
