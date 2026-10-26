@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "playwright test -c e2e/playwright.config.ts",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run test && npm run build",
+    "lab:corpus": "node --experimental-strip-types lab/corpus/extract.ts --sites lab/corpus/sites.json --out lab/corpus/samples && node --experimental-strip-types lab/corpus/distill.ts"
   },
   "devDependencies": {
     "@noble/curves": "1.9.7",

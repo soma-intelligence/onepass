@@ -1,0 +1,242 @@
+[
+  {
+    "url": "https://github.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://gitlab.com/users/sign_in",
+    "category": "login"
+  },
+  {
+    "url": "https://www.reddit.com/login/",
+    "category": "login"
+  },
+  {
+    "url": "https://news.ycombinator.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.dropbox.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.linkedin.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.pinterest.com/login/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.etsy.com/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.ebay.com/signin/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.paypal.com/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://login.live.com/",
+    "category": "login"
+  },
+  {
+    "url": "https://accounts.google.com/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://appleid.apple.com/sign-in",
+    "category": "login"
+  },
+  {
+    "url": "https://www.netflix.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.spotify.com/us/login/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.twitch.tv/login",
+    "category": "login"
+  },
+  {
+    "url": "https://en.wikipedia.org/w/index.php?title=Special:UserLogin",
+    "category": "login"
+  },
+  {
+    "url": "https://stackoverflow.com/users/login",
+    "category": "login"
+  },
+  {
+    "url": "https://medium.com/m/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.notion.so/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.amazon.fr/ap/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.fnac.com/Account/Login",
+    "category": "login"
+  },
+  {
+    "url": "https://auth.leboncoin.fr/login/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.ovh.com/auth/",
+    "category": "login"
+  },
+  {
+    "url": "https://subscribe.free.fr/login/",
+    "category": "login"
+  },
+  {
+    "url": "https://login.orange.fr/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.amazon.de/ap/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.ebay.de/signin/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.zalando.de/login/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.otto.de/user/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.web.de/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.gmx.net/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.amazon.es/ap/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.elcorteingles.es/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.amazon.it/ap/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.subito.it/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.amazon.co.jp/ap/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.rakuten.co.jp/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.mercadolivre.com.br/hub/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.americanas.com.br/",
+    "category": "login"
+  },
+  {
+    "url": "https://github.com/signup",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.reddit.com/register/",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.dropbox.com/register",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.etsy.com/register",
+    "category": "signup"
+  },
+  {
+    "url": "https://gitlab.com/users/sign_up",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.spotify.com/us/signup/",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.airbnb.com/signup_login",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.booking.com/",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.wordpress.com/start",
+    "category": "signup"
+  },
+  {
+    "url": "https://account.proton.me/signup",
+    "category": "signup"
+  },
+  {
+    "url": "https://stripe.com/docs/payments/checkout",
+    "category": "checkout"
+  },
+  {
+    "url": "https://checkout.stripe.dev/",
+    "category": "checkout"
+  },
+  {
+    "url": "https://www.paypal.com/checkout",
+    "category": "checkout"
+  },
+  {
+    "url": "https://demo.spreedly.com/",
+    "category": "checkout"
+  },
+  {
+    "url": "https://www.usps.com/",
+    "category": "address"
+  },
+  {
+    "url": "https://www.laposte.fr/",
+    "category": "address"
+  },
+  {
+    "url": "https://www.deutschepost.de/",
+    "category": "address"
+  },
+  {
+    "url": "https://www.correos.es/",
+    "category": "address"
+  },
+  {
+    "url": "https://www.apple.com/shop/account/home",
+    "category": "identity"
+  },
+  {
+    "url": "https://www.nytimes.com/subscription",
+    "category": "identity"
+  }
+]
