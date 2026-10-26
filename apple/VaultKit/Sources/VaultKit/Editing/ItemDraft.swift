@@ -106,7 +106,8 @@ public struct ItemDraft: Equatable, Sendable {
         }.max() ?? 0
     }
 
-    /// Label used when the user leaves it blank.
+    /// Label used when the user leaves it blank. French literals: VaultKit has no string catalog
+    /// (the app's catalog is French only in milestone 2).
     public static func defaultLabel(_ kind: FfiFieldType) -> String {
         switch kind {
         case .concealed: "Champ masqué"
@@ -149,9 +150,16 @@ public struct ItemDraft: Equatable, Sendable {
         item.tags.removeAll { $0 == tag }
     }
 
-    /// The item to hand to `VaultSession.save`: blank URLs dropped, URLs trimmed, one primary URL.
+    /// The item to hand to `VaultSession.save`: blank URLs dropped, URLs trimmed, one primary URL,
+    /// custom fields left without a label get their default one back.
     public func preparedForSave() -> FfiItem {
         var out = item
+        if let s = out.sections.firstIndex(where: { $0.id == Self.customSectionID }) {
+            for f in out.sections[s].fields.indices {
+                let label = out.sections[s].fields[f].label.trimmingCharacters(in: .whitespacesAndNewlines)
+                out.sections[s].fields[f].label = label.isEmpty ? Self.defaultLabel(out.sections[s].fields[f].kind) : label
+            }
+        }
         out.urls = out.urls.compactMap { url in
             var url = url
             url.url = url.url.trimmingCharacters(in: .whitespacesAndNewlines)

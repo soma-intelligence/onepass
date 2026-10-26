@@ -3,6 +3,7 @@ import VaultKit
 
 /// Label above the control, as in the mockup's edit mode; the validation message goes below.
 struct EditorRow<Content: View>: View {
+    /// The field label from the core template (French data, not a UI string).
     let label: String
     var message: String?
     @ViewBuilder var content: Content
@@ -58,6 +59,8 @@ extension View {
             case .phone: .phonePad
             case .number: .numberPad
             case .money: .decimalPad
+            // Coordinates need the minus sign and both separators.
+            case .location: .numbersAndPunctuation
             default: .default
             }
         let plain = kind != .text

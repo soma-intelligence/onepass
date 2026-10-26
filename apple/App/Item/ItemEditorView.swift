@@ -35,7 +35,7 @@ struct ItemEditorView: View {
                         .accessibilityIdentifier("editor.favorite")
                 }
                 Section("Sites web") {
-                    UrlListEditor(draft: $editor.draft)
+                    UrlListEditor(editor: editor)
                 }
                 ForEach(Array(item.sections.enumerated()), id: \.element.id) { _, section in
                     fieldSection(section)
@@ -89,6 +89,13 @@ struct ItemEditorView: View {
         }
         .interactiveDismissDisabled(editor.isDirty)
         .task {
+            #if DEBUG
+            if UserDefaults.standard.bool(forKey: "OnePassDebugAutoSave") {
+                try? await Task.sleep(for: .milliseconds(600))
+                save()
+                return
+            }
+            #endif
             guard editor.isNew else { return }
             try? await Task.sleep(for: .milliseconds(350))
             titleFocused = true
@@ -123,24 +130,25 @@ struct ItemEditorView: View {
     @ViewBuilder private func fieldSection(_ section: FfiSection) -> some View {
         let isCustom = section.id == ItemDraft.customSectionID
         Section {
-            ForEach(section.fields.indices, id: \.self) { index in
-                fieldRow(section: section, index: index, isCustom: isCustom)
-                    .id(ItemEditorModel.anchor(sectionID: section.id, fieldIndex: index))
-                let field = section.fields[index]
-                // Passkeys and files are read only here: nothing to add by hand.
-                if editor.draft.canRepeat(sectionID: section.id, fieldIndex: index),
-                    field.kind != .passkey, field.kind != .file
-                {
-                    Button {
-                        editor.draft.addRepeat(of: field.id, in: section.id)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text("+ ajouter")
-                            Text(field.label).foregroundStyle(.secondary)
+            ForEach(Array(editor.keys(sectionID: section.id).enumerated()), id: \.element) { position, key in
+                if let field = section.fields[safe: position] {
+                    fieldRow(sectionID: section.id, key: key, field: field, isCustom: isCustom)
+                        .id(ItemEditorModel.anchor(sectionID: section.id, fieldIndex: position))
+                    // Passkeys and files are read only here: nothing to add by hand.
+                    if editor.draft.canRepeat(sectionID: section.id, fieldIndex: position),
+                        field.kind != .passkey, field.kind != .file
+                    {
+                        Button {
+                            editor.addRepeat(of: field.id, in: section.id)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("+ ajouter")
+                                Text(field.label).foregroundStyle(.secondary)
+                            }
                         }
+                        .accessibilityLabel(Text("Ajouter \(field.label)"))
+                        .accessibilityIdentifier("editor.repeat.\(field.id)")
                     }
-                    .accessibilityLabel(Text("Ajouter \(field.label)"))
-                    .accessibilityIdentifier("editor.repeat.\(field.id)")
                 }
             }
         } header: {
@@ -148,13 +156,15 @@ struct ItemEditorView: View {
         }
     }
 
-    @ViewBuilder private func fieldRow(section: FfiSection, index: Int, isCustom: Bool) -> some View {
-        let field = section.fields[index]
-        let removable = editor.draft.isRemovable(sectionID: section.id, fieldIndex: index)
+    @ViewBuilder private func fieldRow(sectionID: String, key: UUID, field: FfiField, isCustom: Bool) -> some View {
+        let index = editor.index(of: key, sectionID: sectionID) ?? 0
+        let removable = editor.draft.isRemovable(sectionID: sectionID, fieldIndex: index)
         HStack(alignment: .top, spacing: 10) {
             if removable {
                 Button {
-                    editor.draft.removeField(sectionID: section.id, fieldIndex: index)
+                    if let i = editor.index(of: key, sectionID: sectionID) {
+                        editor.removeField(sectionID: sectionID, fieldIndex: i)
+                    }
                 } label: {
                     Image(systemName: "minus.circle.fill").foregroundStyle(.red)
                 }
@@ -165,18 +175,19 @@ struct ItemEditorView: View {
             }
             if isCustom {
                 VStack(alignment: .leading, spacing: 4) {
-                    TextField("Libellé", text: labelBinding(section.id, index))
+                    TextField("Libellé", text: labelBinding(sectionID, key), prompt: Text(ItemDraft.defaultLabel(field.kind)))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    FieldEditor(field: field, itemType: item.itemType, ownID: item.id, value: valueBinding(section.id, index))
-                    errorText(section.id, index)
+                        .accessibilityIdentifier("editor.label.\(field.id)")
+                    FieldEditor(field: field, itemType: item.itemType, ownID: item.id, value: valueBinding(sectionID, key))
+                    errorText(sectionID, index)
                 }
             } else {
                 EditorRow(
                     label: field.required ? "\(field.label) *" : field.label,
-                    message: editor.message(sectionID: section.id, fieldIndex: index)
+                    message: editor.message(sectionID: sectionID, fieldIndex: index)
                 ) {
-                    FieldEditor(field: field, itemType: item.itemType, ownID: item.id, value: valueBinding(section.id, index))
+                    FieldEditor(field: field, itemType: item.itemType, ownID: item.id, value: valueBinding(sectionID, key))
                 }
             }
         }
@@ -191,48 +202,55 @@ struct ItemEditorView: View {
     private var addFieldMenu: some View {
         Menu {
             ForEach(Self.customKinds, id: \.1) { kind, label in
-                Button(label) { editor.draft.addCustomField(kind: kind, label: ItemDraft.defaultLabel(kind)) }
+                Button(label) { editor.addCustomField(kind: kind) }
             }
         } label: {
-            Label("+ ajouter un champ", systemImage: "plus")
-                .labelStyle(.titleOnly)
+            Text("+ ajouter un champ")
         }
         .accessibilityIdentifier("editor.addField")
     }
 
     static let customKinds: [(FfiFieldType, String)] = [
-        (.text, "Texte"), (.concealed, "Masqué"), (.password, "Mot de passe"), (.date, "Date"),
-        (.url, "URL"), (.email, "Email"), (.phone, "Téléphone"),
+        (.text, String(localized: "Texte")), (.concealed, String(localized: "Masqué")),
+        (.password, String(localized: "Mot de passe")), (.date, String(localized: "Date")),
+        (.url, String(localized: "URL")), (.email, String(localized: "Email")),
+        (.phone, String(localized: "Téléphone")),
     ]
 
     // MARK: - Bindings and actions
 
-    /// Indices can go stale for one render after a removal: out of range reads give `.empty`.
-    private func valueBinding(_ sectionID: String, _ index: Int) -> Binding<FfiFieldValue> {
+    /// Looks the row up by its stable key on every access: after a removal the binding of a row
+    /// that went away reads `.empty` and writes nothing.
+    private func valueBinding(_ sectionID: String, _ key: UUID) -> Binding<FfiFieldValue> {
         Binding(
             get: {
-                guard let section = editor.draft.item.sections.first(where: { $0.id == sectionID }),
-                    section.fields.indices.contains(index)
+                guard let i = editor.index(of: key, sectionID: sectionID),
+                    let field = editor.draft.item.sections.first(where: { $0.id == sectionID })?.fields[safe: i]
                 else { return .empty }
-                return section.fields[index].value
+                return field.value
             },
             set: { value in
-                let id = editor.draft.item.sections.first { $0.id == sectionID }?.fields[safe: index]?.id
-                editor.draft.setValue(value, sectionID: sectionID, fieldIndex: index)
-                if let id { editor.clearError(for: id) }
+                guard let i = editor.index(of: key, sectionID: sectionID),
+                    let id = editor.draft.item.sections.first(where: { $0.id == sectionID })?.fields[safe: i]?.id
+                else { return }
+                editor.draft.setValue(value, sectionID: sectionID, fieldIndex: i)
+                editor.clearError(for: id)
             })
     }
 
-    private func labelBinding(_ sectionID: String, _ index: Int) -> Binding<String> {
+    /// Custom field label; a blank one gets its default back at save (`ItemDraft.preparedForSave`).
+    private func labelBinding(_ sectionID: String, _ key: UUID) -> Binding<String> {
         Binding(
             get: {
-                editor.draft.item.sections.first { $0.id == sectionID }?.fields[safe: index]?.label ?? ""
+                guard let i = editor.index(of: key, sectionID: sectionID) else { return "" }
+                return editor.draft.item.sections.first { $0.id == sectionID }?.fields[safe: i]?.label ?? ""
             },
             set: { label in
-                guard let s = editor.draft.item.sections.firstIndex(where: { $0.id == sectionID }),
-                    editor.draft.item.sections[s].fields.indices.contains(index)
+                guard let i = editor.index(of: key, sectionID: sectionID),
+                    let s = editor.draft.item.sections.firstIndex(where: { $0.id == sectionID }),
+                    editor.draft.item.sections[s].fields.indices.contains(i)
                 else { return }
-                editor.draft.item.sections[s].fields[index].label = label
+                editor.draft.item.sections[s].fields[i].label = label
             })
     }
 

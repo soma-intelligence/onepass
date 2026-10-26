@@ -106,7 +106,7 @@ struct ItemDetailView: View {
             Text("Cette action est irréversible.")
         }
         .overlay(alignment: .bottom) { toastView }
-        .onTapGesture { session.noteActivity() }
+        .simultaneousGesture(TapGesture().onEnded { session.noteActivity() })
     }
 
     @ViewBuilder private func content(_ item: FfiItem) -> some View {
@@ -198,6 +198,10 @@ struct ItemDetailView: View {
                 if askPassword {
                     SecureField("Mot de passe maître", text: $password)
                         .textFieldStyle(.roundedBorder)
+                        .privacySensitive()
+                        #if os(iOS)
+                        .textContentType(.password)
+                        #endif
                         .onSubmit { verifyPassword() }
                         .accessibilityIdentifier("item.reprompt.password")
                     Button("Confirmer") { verifyPassword() }
@@ -300,10 +304,9 @@ struct ItemDetailView: View {
             }
             .accessibilityIdentifier("item.favorite")
             MoveToVaultMenu(currentVaultID: item.vaultId) { vault in
-                run(movedTo: vault.id) {
+                run(movedTo: vault.id, success: String(localized: "Déplacé vers \(vault.meta.name)")) {
                     try await session.move(itemID: item.id, from: item.vaultId, to: vault.id)
                 }
-                showToast(String(localized: "Déplacé vers \(vault.meta.name)"))
             }
             if item.archived {
                 Button("Désarchiver", systemImage: "archivebox") {
@@ -326,12 +329,14 @@ struct ItemDetailView: View {
 
     /// Runs an item operation, then reloads the item (or leaves the detail, or follows a move).
     private func run(
-        clearsSelection: Bool = false, movedTo vaultID: String? = nil, _ op: @escaping () async throws -> Void
+        clearsSelection: Bool = false, movedTo vaultID: String? = nil, success: String? = nil,
+        _ op: @escaping () async throws -> Void
     ) {
         Task {
             do {
                 try await op()
                 actionError = nil
+                if let success { showToast(success) }
                 if clearsSelection {
                     // Leaves the detail; if it stays on screen it shows the new state (or "introuvable").
                     if model.selectedItem == ref { model.selectedItem = nil }

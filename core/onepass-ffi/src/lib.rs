@@ -257,5 +257,25 @@ pub fn validate_item(item: FfiItem) -> Option<OnePassError> {
         Ok(c) => c,
         Err(e) => return Some(e),
     };
-    model::validate(&core).err().map(OnePassError::from)
+    validate_for_save(core).err().map(OnePassError::from)
+}
+
+/// Until attachments exist (milestone 5) the apps cannot fill a `File` field, so a required one
+/// counts as satisfied: the item is returned with its empty `File` fields marked not required
+/// (the core seals only valid items, so this relaxed copy is what gets stored), then validated.
+/// The template itself is unchanged.
+pub(crate) fn relax_file_fields(mut item: model::Item) -> model::Item {
+    for field in item.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if field.kind == model::FieldType::File && field.value == model::FieldValue::Empty {
+            field.required = false;
+        }
+    }
+    item
+}
+
+/// `model::validate` on the relaxed item (see `relax_file_fields`).
+pub(crate) fn validate_for_save(item: model::Item) -> onepass_core::Result<model::Item> {
+    let relaxed = relax_file_fields(item);
+    model::validate(&relaxed)?;
+    Ok(relaxed)
 }

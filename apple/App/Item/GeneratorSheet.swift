@@ -34,7 +34,9 @@ struct GeneratorSheet: View {
     @State private var failed = false
 
     static let separators: [(String, String)] = [
-        ("-", "Tiret"), (".", "Point"), ("_", "Tiret bas"), (" ", "Espace"), (",", "Virgule"),
+        ("-", String(localized: "Tiret")), (".", String(localized: "Point")),
+        ("_", String(localized: "Tiret bas")), (" ", String(localized: "Espace")),
+        (",", String(localized: "Virgule")),
     ]
 
     var recipe: FfiPasswordRecipe {
@@ -116,7 +118,7 @@ struct GeneratorSheet: View {
         #endif
     }
 
-    private func stepperSlider(_ label: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
+    private func stepperSlider(_ label: LocalizedStringKey, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(label)

@@ -603,6 +603,44 @@ fn validation_error_names_field_not_value() {
 }
 
 #[test]
+fn document_without_file_validates_and_saves() {
+    // Attachments come in milestone 5: until then a required file field counts as filled.
+    let fx = fixture();
+    let item = fx
+        .session
+        .new_item(
+            fx.vault_id.clone(),
+            FfiItemType::Document,
+            "Attestation".into(),
+        )
+        .unwrap();
+    assert_eq!(validate_item(item.clone()), None);
+    let saved = fx.session.save_item(item).unwrap();
+    let files = saved
+        .sections
+        .iter()
+        .flat_map(|s| s.fields.iter())
+        .find(|f| f.id == "files")
+        .unwrap();
+    // Stored without a file, marked not required until attachments exist.
+    assert!(!files.required);
+    assert_eq!(files.value, FfiFieldValue::Empty);
+    // The template itself still requires files.
+    assert!(
+        template(FfiItemType::Document)
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .any(|f| f.id == "files" && f.required)
+    );
+    // The title is still checked.
+    let mut untitled = saved.clone();
+    untitled.title = "  ".into();
+    assert!(
+        matches!(validate_item(untitled), Some(OnePassError::Validation { field, .. }) if field == "title")
+    );
+}
+
+#[test]
 fn trash_restore_archive_move_delete() {
     let fx = fixture();
     let other = fx

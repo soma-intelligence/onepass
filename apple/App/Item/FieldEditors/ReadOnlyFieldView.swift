@@ -20,7 +20,7 @@ struct ReadOnlyFieldView: View {
         switch value {
         case .passkey(let p):
             let who = [p.userName, p.rpId].filter { !$0.isEmpty }.joined(separator: " · ")
-            return "\(who) · créée le \(FieldDates.day(p.createdAt))"
+            return String(localized: "\(who) · créée le \(FieldDates.day(p.createdAt))")
         case .file(let f):
             return "\(f.name) · \(ByteCountFormatter.string(fromByteCount: Int64(f.size), countStyle: .file))"
         default:

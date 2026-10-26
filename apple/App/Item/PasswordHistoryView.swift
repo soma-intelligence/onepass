@@ -22,6 +22,7 @@ struct PasswordHistoryView: View {
                         isSecret: true, monospaced: true, copyIdentifier: "history.copy.\(index)",
                         onCopy: { model.session.copy(entry.value, concealed: true) },
                         onReveal: { _ in model.session.noteActivity() })
+                        .privacySensitive()
                 }
             } footer: {
                 Text("Les anciens mots de passe restent chiffrés avec l'élément.")

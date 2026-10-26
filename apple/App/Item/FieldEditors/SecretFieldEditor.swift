@@ -21,6 +21,7 @@ struct SecretFieldEditor: View {
                 input
                     .font(.body.monospaced())
                     .fieldInput(field.kind)
+                    .privacySensitive()
                     .accessibilityIdentifier("editor.field.\(field.id)")
                 Button {
                     revealed.toggle()
@@ -53,6 +54,16 @@ struct SecretFieldEditor: View {
             if !Task.isCancelled { revealed = false }
         }
         .onDisappear { revealed = false }
+        #if DEBUG
+        .task {
+            if field.kind == .password, field.id == "password",
+                UserDefaults.standard.bool(forKey: "OnePassDebugGenerator")
+            {
+                try? await Task.sleep(for: .milliseconds(600))
+                generating = true
+            }
+        }
+        #endif
         .sheet(isPresented: $generating) {
             GeneratorSheet { generated in
                 value = .password(value: generated)
@@ -69,8 +80,9 @@ struct SecretFieldEditor: View {
     }
 }
 
-/// SSH key: the private key is pasted (masked); the public key and the fingerprint are shown when
-/// present. Generation comes later (milestone 7).
+/// SSH key: the private key is pasted (masked as bullets; Révéler shows it in a monospaced
+/// multi-line editor that keeps its line breaks, masked again after 30 s). The public key and the
+/// fingerprint are shown when present. Generation comes later (milestone 7).
 struct SshKeyEditor: View {
     let field: FfiField
     @Binding var value: FfiFieldValue
@@ -84,8 +96,9 @@ struct SshKeyEditor: View {
         Binding(
             get: { key?.privatePem ?? "" },
             set: { pem in
+                guard pem != key?.privatePem else { return }
                 // A different private key: the stored public key and fingerprint no longer match.
-                value = pem.isEmpty
+                value = pem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? .empty
                     : .sshKey(value: FfiSshKey(privatePem: pem, publicOpenssh: "", fingerprintSha256: ""))
             })
@@ -93,16 +106,21 @@ struct SshKeyEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
+            HStack(alignment: .top, spacing: 10) {
                 Group {
                     if revealed {
-                        TextField("Clé privée", text: privateKey, axis: .vertical).lineLimit(3...8)
+                        TextEditor(text: privateKey)
+                            .font(.footnote.monospaced())
+                            .frame(minHeight: 120)
+                            .fieldInput(.concealed)
                     } else {
-                        SecureField("Clé privée (coller)", text: privateKey)
+                        Text(privateKey.wrappedValue.isEmpty ? String(localized: "Aucune clé privée") : FieldRow.mask)
+                            .font(.body.monospaced())
+                            .foregroundStyle(privateKey.wrappedValue.isEmpty ? .secondary : .primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .font(.footnote.monospaced())
-                .fieldInput(.concealed)
+                .privacySensitive()
                 .accessibilityIdentifier("editor.field.\(field.id)")
                 Button {
                     revealed.toggle()
@@ -111,6 +129,16 @@ struct SshKeyEditor: View {
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(revealed ? Text("Masquer") : Text("Révéler"))
+            }
+            HStack {
+                PasteButton(payloadType: String.self) { strings in
+                    if let pasted = strings.first { privateKey.wrappedValue = pasted }
+                }
+                .labelStyle(.titleAndIcon)
+                if key != nil {
+                    Button("Effacer", role: .destructive) { value = .empty }
+                        .buttonStyle(.borderless)
+                }
             }
             if let key, !key.publicOpenssh.isEmpty {
                 LabeledContent("Clé publique") {
@@ -123,6 +151,11 @@ struct SshKeyEditor: View {
                 }
             }
             Text("La génération de clés arrive au jalon 7.").font(.caption).foregroundStyle(.secondary)
+        }
+        .task(id: revealed) {
+            guard revealed else { return }
+            try? await Task.sleep(for: .seconds(30))
+            if !Task.isCancelled { revealed = false }
         }
         .onDisappear { revealed = false }
     }

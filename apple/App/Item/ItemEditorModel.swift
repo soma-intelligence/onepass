@@ -20,10 +20,61 @@ final class ItemEditorModel {
     /// Bumped on each failed save so the view scrolls to the faulty field again.
     private(set) var scrollRequest = 0
 
+    /// Stable identity of each field row and website row, so a row's state (revealed, typed text)
+    /// stays with its value when a neighbor is removed. Kept in step by the methods below, the only
+    /// ones that add or remove rows.
+    private(set) var fieldKeys: [String: [UUID]] = [:]
+    private(set) var urlKeys: [UUID] = []
+
     init(draft: ItemDraft, isNew: Bool) {
         self.draft = draft
         self.isNew = isNew
         targetVaultID = draft.item.vaultId
+        for section in draft.item.sections {
+            fieldKeys[section.id] = section.fields.map { _ in UUID() }
+        }
+        urlKeys = draft.item.urls.map { _ in UUID() }
+    }
+
+    // MARK: - Rows
+
+    func keys(sectionID: String) -> [UUID] { fieldKeys[sectionID] ?? [] }
+
+    func index(of key: UUID, sectionID: String) -> Int? { fieldKeys[sectionID]?.firstIndex(of: key) }
+
+    func urlIndex(of key: UUID) -> Int? { urlKeys.firstIndex(of: key) }
+
+    func addRepeat(of fieldID: String, in sectionID: String) {
+        guard let fields = draft.item.sections.first(where: { $0.id == sectionID })?.fields,
+            let last = fields.lastIndex(where: { $0.id == fieldID })
+        else { return }
+        let before = fields.count
+        draft.addRepeat(of: fieldID, in: sectionID)
+        if draft.item.sections.first(where: { $0.id == sectionID })?.fields.count == before + 1 {
+            fieldKeys[sectionID, default: []].insert(UUID(), at: last + 1)
+        }
+    }
+
+    func removeField(sectionID: String, fieldIndex: Int) {
+        guard draft.isRemovable(sectionID: sectionID, fieldIndex: fieldIndex) else { return }
+        draft.removeField(sectionID: sectionID, fieldIndex: fieldIndex)
+        fieldKeys[sectionID]?.remove(at: fieldIndex)
+    }
+
+    func addCustomField(kind: FfiFieldType) {
+        draft.addCustomField(kind: kind, label: ItemDraft.defaultLabel(kind))
+        fieldKeys[ItemDraft.customSectionID, default: []].append(UUID())
+    }
+
+    func addURL() {
+        draft.addURL()
+        urlKeys.append(UUID())
+    }
+
+    func removeURL(at index: Int) {
+        guard urlKeys.indices.contains(index) else { return }
+        draft.removeURL(at: index)
+        urlKeys.remove(at: index)
     }
 
     var isDirty: Bool { draft.isDirty || targetVaultID != draft.item.vaultId }

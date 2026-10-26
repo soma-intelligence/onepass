@@ -10,6 +10,8 @@ import VaultKit
 /// - `-OnePassDebugNewItem login|card|...`: opens the editor of a new item of that type instead.
 /// - `-OnePassDebugEditorError YES` with `-OnePassDebugNewItem`: fills a title only, so a save
 ///   shows the validation error under the first required field.
+/// - `-OnePassDebugAutoSave YES`: the editor presses Enregistrer once it is shown.
+/// - `-OnePassDebugGenerator YES`: the first password field opens the generator.
 extension AppModel {
     static let debugPassword = "ruisseau-tapis-orage-comete"
 
@@ -26,6 +28,12 @@ extension AppModel {
                     guard let vault = session.vaults.first else { return }
                     var item = try session.newItem(type: type, vaultID: vault.id)
                     if defaults.bool(forKey: "OnePassDebugEditorError") { item.title = "Compte fictif" }
+                    if type == .accessCode {
+                        item.title = "Bureau Atlas"
+                        item.set("place", .location(value: FfiLocation(
+                            label: "Bureau Atlas", address: "12 rue de l'Exemple, Paris", lat: 48.85661,
+                            lon: 2.35222, radiusM: 100, suggestNearby: false)))
+                    }
                     debugNewDraft = ItemDraft(item: item)
                 } else if let wanted, let title = titles[wanted],
                     let summary = session.summaries.first(where: { $0.title == title })
@@ -47,6 +55,7 @@ extension AppModel {
         case "reward": .rewardProgram
         case "server": .server
         case "identity": .identity
+        case "access": .accessCode
         default: nil
         }
     }

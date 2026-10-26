@@ -75,9 +75,14 @@ struct BrowseRoot: View {
         NavigationStack {
             content
                 .toolbar {
-                    ToolbarItem(placement: .navigation) {
-                        Button("Verrouiller", systemImage: "lock") { model.lock() }
-                            .accessibilityIdentifier("app.lock")
+                    // Hidden while an editor is shown: it owns the bar (Annuler, Enregistrer), and a
+                    // lock from here would drop unsaved changes without asking. Rule for Tasks 14/15:
+                    // an explicit lock during edition asks first when the draft is dirty.
+                    if !isEditing {
+                        ToolbarItem(placement: .navigation) {
+                            Button("Verrouiller", systemImage: "lock") { model.lock() }
+                                .accessibilityIdentifier("app.lock")
+                        }
                     }
                 }
         }
@@ -101,6 +106,8 @@ struct BrowseRoot: View {
                 .navigationTitle("OnePass")
         }
     }
+
+    private var isEditing: Bool { model.editing || debugDraft != nil }
 
     private var debugDraft: ItemDraft? {
         #if DEBUG

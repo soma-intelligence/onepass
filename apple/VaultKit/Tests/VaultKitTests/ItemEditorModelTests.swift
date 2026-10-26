@@ -169,3 +169,45 @@ struct PasswordStrengthTests {
         #expect(PasswordStrength.estimatedBits("tj7N-qe4L-wPz9-Kc2m!") >= 100)
     }
 }
+
+@Suite("Item editor model, fix round 1")
+struct ItemEditorFixTests {
+    @Test func documentWithoutFileValidates() {
+        // Attachments come in milestone 5: a required file field does not block the save.
+        let draft = ItemDraft(item: draftItem(.document, title: "Attestation"))
+        #expect(draft.validationError == nil)
+        #expect(ItemDraft(item: draftItem(.document, title: " ")).validationError?.field == "title")
+    }
+
+    @Test func blankCustomLabelGetsItsDefaultBack() {
+        var draft = ItemDraft(item: draftItem(.login))
+        draft.addCustomField(kind: .phone, label: "Standard")
+        let s = draft.item.sections.firstIndex { $0.id == "custom" }!
+        draft.item.sections[s].fields[0].label = "   "
+        let saved = draft.preparedForSave()
+        #expect(saved.sections[s].fields[0].label == "Téléphone")
+        draft.item.sections[s].fields[0].label = " Accueil "
+        #expect(draft.preparedForSave().sections[s].fields[0].label == "Accueil")
+    }
+
+    @Test func numberInputAcceptsCommaDotAndMinus() {
+        #expect(NumberInput.decimal("12,5") == Decimal(string: "12.5"))
+        #expect(NumberInput.decimal("12.5") == Decimal(string: "12.5"))
+        #expect(NumberInput.decimal("-0,75") == Decimal(string: "-0.75"))
+        #expect(NumberInput.decimal("2\u{202F}500,00") == Decimal(2500))
+        #expect(NumberInput.decimal("12,") == Decimal(12))
+        #expect(NumberInput.decimal("1,2,3") == nil)
+        #expect(NumberInput.decimal("abc") == nil)
+        #expect(NumberInput.decimal("-") == nil)
+        #expect(NumberInput.decimal("") == nil)
+        #expect(NumberInput.integer("1 250") == 1250)
+        #expect(NumberInput.integer("-42") == -42)
+        #expect(NumberInput.integer("4,2") == nil)
+        #expect(NumberInput.integer("99999999999999999999") == nil)
+        #expect(NumberInput.double("-33,8688") == -33.8688)
+        #expect(NumberInput.double("151.2093") == 151.2093)
+        #expect(NumberInput.text(Decimal(string: "-12.5")!) == "-12,5")
+        #expect(NumberInput.text(48.856610) == "48,85661")
+        #expect(NumberInput.text(-2.0) == "-2")
+    }
+}

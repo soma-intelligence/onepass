@@ -191,7 +191,7 @@ impl Session {
             }
             let kept = Kept::new(stored.as_ref(), false);
             let core = item_to_core(&item, &kept, OffsetDateTime::now_utc())?;
-            model::validate(&core)?;
+            let core = crate::validate_for_save(core)?;
             repo.save_item(&vault, core.clone())?;
             Ok(item_to_ffi(&core))
         })

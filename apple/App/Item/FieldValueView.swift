@@ -18,6 +18,7 @@ struct FieldValueView: View {
         case .otp(let secret):
             TotpFieldView(field: field) { code in copy(code, concealed: true) }
                 .id(secret)
+                .privacySensitive()
         case .password(let value):
             VStack(alignment: .leading, spacing: 6) {
                 row(value, secret: true, monospaced: true)
@@ -48,6 +49,7 @@ struct FieldValueView: View {
                         label: "\(field.label) (clé privée)", value: key.privatePem, isSecret: true, monospaced: true,
                         copyIdentifier: "field.copy.\(field.id)", allowsLarge: false,
                         onCopy: { copy(key.privatePem, concealed: true) }, onReveal: reveal)
+                        .privacySensitive()
                 }
                 if !key.publicOpenssh.isEmpty {
                     FieldRow(
@@ -85,6 +87,7 @@ struct FieldValueView: View {
             allowsLarge: field.kind == .password,
             onCopy: { copy(value, concealed: secret) },
             onReveal: onReveal)
+            .privacySensitive(secret)
     }
 
     private func reveal(_ shown: Bool) {
