@@ -11,7 +11,9 @@ public enum OnePassLink: Hashable, Sendable {
         guard url.scheme == "onepass",
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
             let host = components.host,
-            components.path.isEmpty || components.path == "/"
+            components.path.isEmpty,
+            components.user == nil, components.password == nil,
+            components.port == nil, components.fragment == nil
         else { return nil }
         let query = components.queryItems ?? []
         switch host {

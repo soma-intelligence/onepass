@@ -82,6 +82,22 @@ private func snapshot(validUntil: Date) -> GlanceSnapshot {
             "onepass://item?vault=\(vaultHex)",
             "onepass://other",
             "https://item?vault=\(vaultHex)&item=\(itemHex)",
+            "onepass://item?vault=\(vaultHex)0&item=\(itemHex)",
+            "onepass://item?vault=\(vaultHex)&item=\(itemHex)&item=\(itemHex)",
+            "onepass://item?vault=\(vaultHex)&vault=\(vaultHex)",
+            "onepass://item?vault=\(vaultHex)&item=\(itemHex)&extra=1",
+            "onepass://item?vault=\(vaultHex)&item=\(itemHex)#frag",
+            "onepass://item/x?vault=\(vaultHex)&item=\(itemHex)",
+            "onepass://item:80?vault=\(vaultHex)&item=\(itemHex)",
+            "onepass://user@item?vault=\(vaultHex)&item=\(itemHex)",
+            "onepass://generator:80",
+            "onepass://user@generator",
+            "onepass://generator#x",
+            "onepass://generator?x=1",
+            "onepass://generator/",
+            "onepass://search?q=a",
+            "onepass://search/x",
+            "onepass://search#x",
         ]
         for s in bad { #expect(OnePassLink(url: URL(string: s)!) == nil, "\(s)") }
     }
@@ -100,30 +116,27 @@ private func snapshot(validUntil: Date) -> GlanceSnapshot {
         #expect(signal.isPending(unlockedAt: t.addingTimeInterval(20)) == false)
     }
 
-    @Test func lockSignalDarwinDelivery() async {
+    @Test func lockSignalDarwinDelivery() async throws {
         let name = "test.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
-        await confirmation { confirmed in
-            let stream = AsyncStream<Void> { continuation in
-                let obs = LockSignal.observe { continuation.yield() }
-                continuation.onTermination = { _ in obs.cancel() }
-            }
-            LockSignal(defaults: defaults).request()
-            let received = await withTaskGroup(of: Bool.self) { group in
-                group.addTask {
-                    for await _ in stream { return true }
-                    return false
-                }
-                group.addTask {
-                    try? await Task.sleep(for: .seconds(2))
-                    return false
-                }
-                let first = await group.next() ?? false
-                group.cancelAll()
-                return first
-            }
-            if received { confirmed() }
+        let counter = Counter()
+        let observation = LockSignal.observe { counter.increment() }
+        defer { observation.cancel() }
+        let before = counter.value
+        LockSignal(defaults: defaults).request()
+        var waited = 0
+        while counter.value <= before && waited < 200 {
+            try await Task.sleep(for: .milliseconds(10))
+            waited += 1
         }
+        #expect(counter.value > before)
     }
+}
+
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var value: Int { lock.lock(); defer { lock.unlock() }; return count }
+    func increment() { lock.lock(); count += 1; lock.unlock() }
 }

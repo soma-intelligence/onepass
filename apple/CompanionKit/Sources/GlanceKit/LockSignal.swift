@@ -37,7 +37,7 @@ public struct LockSignal: @unchecked Sendable {
 
 public final class LockSignalObservation: Sendable {
     private let token: Int32
-    private let state: Mutex
+    private let state: CancelFlag
 
     fileprivate init(handler: @escaping @Sendable () -> Void) {
         var t: Int32 = 0
@@ -45,7 +45,7 @@ public final class LockSignalObservation: Sendable {
             handler()
         }
         token = status == NOTIFY_STATUS_OK ? t : NOTIFY_TOKEN_INVALID
-        state = Mutex()
+        state = CancelFlag()
     }
 
     public func cancel() {
@@ -57,7 +57,7 @@ public final class LockSignalObservation: Sendable {
 }
 
 /// Tracks whether the token was already cancelled.
-private final class Mutex: @unchecked Sendable {
+private final class CancelFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
 
