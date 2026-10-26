@@ -13,17 +13,23 @@ export function loadFixture(name: string): Document {
 
 /**
  * Test-only layout stub: jsdom has no layout engine. Elements are laid out at
- * 200x30 inside a 1024x768 viewport unless `data-test-rect="x,y,w,h"` says
- * otherwise. Production code never reads this attribute.
+ * 200x30 in a 1024 px wide document unless `data-test-rect="x,y,w,h"` (in
+ * document coordinates) says otherwise. The page is scrolled by `scroll`.
+ * Production code never reads this attribute.
  */
-export const testGeometry: Geometry = (el) => {
-  const raw = el.getAttribute("data-test-rect");
-  const [x, y, width, height] = raw ? raw.split(",").map(Number) : [0, 0, 200, 30];
-  return {
-    rect: { left: x ?? 0, top: y ?? 0, width: width ?? 0, height: height ?? 0 },
-    viewport: { width: 1024, height: 768 },
+export function scrolledGeometry(scroll: { x: number; y: number }): Geometry {
+  return (el) => {
+    const raw = el.getAttribute("data-test-rect");
+    const [x, y, width, height] = raw ? raw.split(",").map(Number) : [0, 0, 200, 30];
+    return {
+      rect: { left: (x ?? 0) - scroll.x, top: (y ?? 0) - scroll.y, width: width ?? 0, height: height ?? 0 },
+      scroll,
+      scrollWidth: 1024,
+    };
   };
-};
+}
+
+export const testGeometry: Geometry = scrolledGeometry({ x: 0, y: 0 });
 
 export function byId(id: string): HTMLElement {
   const el = document.getElementById(id);

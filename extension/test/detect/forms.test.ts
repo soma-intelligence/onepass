@@ -143,6 +143,72 @@ describe("analyzeDocument: form kinds", () => {
     expect(a.forms.flatMap((f) => f.fields).some((fi) => idOf(refs, fi.ref) === "q")).toBe(false);
   });
 
+  it("card page with promo, gift and referral codes stays a card form", () => {
+    const { a, refs } = analyze("card-promo.html");
+    expect(a.forms.map((f) => f.kind)).toEqual(["card"]);
+    expect(roles(a.forms[0]!, refs)).toEqual({ num: "cc_number", exp: "cc_exp" });
+  });
+
+  it("identity with a middle initial stays an identity form", () => {
+    const { a, refs } = analyze("identity-initial.html");
+    expect(a.forms.map((f) => f.kind)).toEqual(["identity"]);
+    expect(roles(a.forms[0]!, refs)).toEqual({ fn: "given_name", ln: "family_name", tel: "tel" });
+  });
+
+  it("an OTP field next to identity fields does not make an otp form", () => {
+    document.body.innerHTML =
+      '<form><input autocomplete="given-name"><input autocomplete="family-name"><input autocomplete="one-time-code"></form>';
+    const a = analyzeDocument(document, new RefRegistry(), { url: SITE, geometry: testGeometry });
+    expect(a.forms.map((f) => f.kind)).toEqual(["identity"]);
+  });
+
+  it("an OTP field with an identifier is still an otp form", () => {
+    document.body.innerHTML =
+      '<form><input type="email" name="email" readonly><input autocomplete="username"><input autocomplete="one-time-code"></form>';
+    const a = analyzeDocument(document, new RefRegistry(), { url: SITE, geometry: testGeometry });
+    expect(a.forms.map((f) => f.kind)).toEqual(["otp"]);
+  });
+
+  it("a split OTP in cells wrapped one per div is one field", () => {
+    document.body.innerHTML =
+      "<form>" +
+      [1, 2, 3, 4].map((i) => `<div><input id="k${i}" type="text" maxlength="1"></div>`).join("") +
+      "</form>";
+    const refs = new RefRegistry();
+    const a = analyzeDocument(document, refs, { url: SITE, geometry: testGeometry });
+    expect(a.forms.map((f) => f.kind)).toEqual(["otp"]);
+    expect(a.forms[0]!.fields[0]!.parts?.map((r) => idOf(refs, r))).toEqual(["k1", "k2", "k3", "k4"]);
+  });
+
+  it("a long page: 1200 links and 600 hidden inputs before an identifier + Next form", () => {
+    const links = Array.from({ length: 1200 }, (_, i) => `<a href="/p/${i}">Page ${i}</a>`).join("");
+    const hidden = Array.from({ length: 600 }, (_, i) => `<input type="hidden" name="h${i}">`).join("");
+    document.body.innerHTML =
+      `<nav>${links}</nav><div>${hidden}</div>` +
+      '<form id="step1"><input id="e" type="email" name="email"><button id="next" type="button">Suivant</button></form>' +
+      '<a id="g" href="https://accounts.google.com/o/oauth2/auth">Continue with Google</a>';
+    const refs = new RefRegistry();
+    const a = analyzeDocument(document, refs, { url: SITE, geometry: testGeometry });
+    expect(a.forms.map((f) => [idOf(refs, f.ref), f.kind, idOf(refs, f.submitRef)])).toEqual([["step1", "login", "next"]]);
+    expect(a.providerButtons.map((b) => idOf(refs, b.ref))).toEqual(["g"]);
+  });
+
+  it("a login form far down a long page is found", () => {
+    document.body.innerHTML =
+      '<form id="f"><input name="username" data-test-rect="0,3000,200,30"><input type="password" data-test-rect="0,3040,200,30"></form>';
+    const a = analyzeDocument(document, new RefRegistry(), { url: SITE, geometry: testGeometry });
+    expect(a.forms.map((f) => f.kind)).toEqual(["login"]);
+  });
+
+  it("textarea address fields are analyzed", () => {
+    document.body.innerHTML =
+      '<form><label for="t">Adresse</label><textarea id="t" name="adresse"></textarea><input autocomplete="postal-code"></form>';
+    const refs = new RefRegistry();
+    const a = analyzeDocument(document, refs, { url: SITE, geometry: testGeometry });
+    expect(a.forms.map((f) => f.kind)).toEqual(["address"]);
+    expect(roles(a.forms[0]!, refs)).toMatchObject({ t: "address_line1" });
+  });
+
   it("a plain page has no forms and no signals", () => {
     const { a } = analyze("push-en.html");
     expect(a.forms).toEqual([]);
@@ -200,6 +266,7 @@ describe("analyzeDocument: page signals", () => {
     expect(a.accountChooser.map((e) => [e.email, idOf(refs, e.ref)])).toEqual([
       ["alex.perso@example.com", "acc1-link"],
       ["alex.pro@example.com", "acc2-link"],
+      ["alex@atlas.dev", "acc4-btn"],
     ]);
   });
 

@@ -1,7 +1,7 @@
 /** Default cap on page text read for signal detection (hostile pages). */
 export const MAX_PAGE_TEXT = 20_000;
 
-const SKIPPED_PARENTS = "script, style, noscript, template, [hidden], [aria-hidden=\"true\"]";
+const SKIPPED_PARENTS = "script, style, noscript, template, [hidden], [aria-hidden=\"true\" i]";
 
 /**
  * Visible-ish text of the page body, lowercased, accents stripped, whitespace

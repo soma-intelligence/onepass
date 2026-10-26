@@ -22,6 +22,11 @@
     <fieldset disabled><input id="d-fieldset" name="password12" type="password"></fieldset>
     <input id="d-readonly" name="password13" type="password" readonly>
     <input id="d-hidden" name="password14" type="hidden" value="x">
+    <div aria-hidden="TRUE"><input id="d-aria-upper" name="password15" type="password"></div>
+    <input id="d-clip-path" name="password16" type="password" style="clip-path: inset(100%)">
+    <input id="d-clip-rect" name="password17" type="password" style="position: absolute; clip: rect(0, 0, 0, 0)">
+    <div style="overflow: hidden" data-test-rect="0,0,1,1"><input id="d-overflow" name="password18" type="password"></div>
+    <div style="overflow: hidden" data-test-rect="0,0,200,30"><input id="d-overflow-zero" name="password19" type="password" data-test-rect="0,400,200,30"></div>
     <button id="submit" type="submit">Sign in</button>
   </form>
 </body></html>

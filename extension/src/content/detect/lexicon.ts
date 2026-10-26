@@ -143,6 +143,11 @@ export const TERMS: readonly Term[] = [
     w: { otp: 3 },
   },
   { re: /\bcode\b/, w: { otp: 1.5 } },
+  // Promo, referral and gift codes are not one-time codes (nor card codes).
+  {
+    re: /\b(promo\w*|coupon|voucher|gift|parrain\w*|referral|reduction|cadeau|discount|remise)\b/,
+    w: { otp: -6, cc_csc: -8, cc_number: -6 },
+  },
 
   // Cards.
   {
@@ -232,8 +237,12 @@ export const PASSWORD_TYPE_ROLES: ReadonlySet<ScoredRole> = new Set([
 
 /** Weights from other attributes. */
 export const ATTRIBUTE_WEIGHTS = {
-  /** `maxlength = 1`: one cell of a split code. */
-  maxLengthOne: { otp: 3 },
+  /**
+   * `maxlength = 1`: maybe one cell of a split code, maybe a middle initial.
+   * Kept below the threshold on purpose: a split code is only recognized as a
+   * run of 4 to 8 such cells (forms.ts).
+   */
+  maxLengthOne: { otp: 1 },
   /** `inputmode = numeric` (or `decimal`). */
   numericInputMode: { otp: 1, cc_number: 0.5, postal_code: 0.5, tel: 0.5 },
   /** `maxlength` between 4 and 8 together with a numeric input mode. */

@@ -22,7 +22,7 @@ import {
 } from "./lexicon";
 import { ownText } from "./text";
 
-export type FieldElement = HTMLInputElement | HTMLSelectElement;
+export type FieldElement = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
 
 /** Input types that never hold a value OnePass fills. */
 const NON_FIELD_INPUT_TYPES: ReadonlySet<string> = new Set([
@@ -40,14 +40,23 @@ const NON_FIELD_INPUT_TYPES: ReadonlySet<string> = new Set([
 
 const PASSWORD_ROLES: readonly ScoredRole[] = ["current_password", "new_password", "confirm_password"];
 
-/** True for `<input>` and `<select>` controls that may hold a fillable value. */
+/**
+ * Query for controls that may hold a value. Filters in the selector so that
+ * caps apply to real candidates, not to hidden inputs or buttons.
+ */
+export const FIELD_SELECTOR =
+  "input:not([type=hidden i]):not([type=submit i]):not([type=button i]):not([type=image i]):not([type=reset i]), select, textarea";
+
+/** True for `<input>`, `<select>` and `<textarea>` controls that may hold a fillable value. */
 export function isFieldCandidate(el: Element): el is FieldElement {
-  if (el instanceof HTMLSelectElement) return true;
+  if (el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement) return true;
   return el instanceof HTMLInputElement && !NON_FIELD_INPUT_TYPES.has(el.type);
 }
 
 function controlType(el: FieldElement): string {
-  return el instanceof HTMLSelectElement ? "select" : el.type;
+  if (el instanceof HTMLSelectElement) return "select";
+  if (el instanceof HTMLTextAreaElement) return "textarea";
+  return el.type;
 }
 
 /** Role named by the `autocomplete` attribute, if any. */

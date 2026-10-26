@@ -12,8 +12,11 @@ const MAX_CANDIDATES = 2000;
 /** Most account chooser entries reported. */
 const MAX_ACCOUNTS = 50;
 
+/** Buttons and links that do not leave for another site (relative or no href). */
 const BUTTON_SELECTOR =
-  'button, a, [role="button"], [role="link"], input[type="submit"], input[type="button"]';
+  'button, [role="button"], [role="link"], input[type="submit" i], input[type="button" i], a:not([href*="//"])';
+/** Absolute links, queried and capped separately: a page may hold thousands. */
+const ABSOLUTE_LINK_SELECTOR = 'a[href*="//"]';
 
 /** Wording that makes a link to an official host a sign-in link. */
 const SIGN_IN_WORDS = /\b(sign in|sign up|log in|login|connect|connexion|se connecter|continue|continuer|inscription)\b/;
@@ -65,7 +68,11 @@ export function detectProviderButtons(
 ): { provider: ProviderId; ref: string }[] {
   const matched: Element[] = [];
   const out: { provider: ProviderId; ref: string }[] = [];
-  for (const el of Array.from(doc.querySelectorAll(BUTTON_SELECTOR)).slice(0, MAX_CANDIDATES)) {
+  const candidates = [
+    ...Array.from(doc.querySelectorAll(BUTTON_SELECTOR)).slice(0, MAX_CANDIDATES),
+    ...Array.from(doc.querySelectorAll(ABSOLUTE_LINK_SELECTOR)).slice(0, MAX_CANDIDATES),
+  ].sort((a, b) => (a === b ? 0 : a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  for (const el of candidates) {
     if (matched.some((m) => m.contains(el))) continue;
     const provider = providerOfButton(el);
     if (provider === null || isDisabled(el) || !isRendered(el, geometry)) continue;

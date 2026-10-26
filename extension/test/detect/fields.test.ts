@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { classifyField, scoreField } from "../../src/content/detect/fields";
 import { byId, loadFixture } from "./helpers";
 
-type Fieldish = HTMLInputElement | HTMLSelectElement;
+type Fieldish = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
 const role = (id: string) => classifyField(byId(id) as Fieldish).role;
 
 describe("classifyField: autocomplete is decisive", () => {
@@ -128,5 +128,30 @@ describe("classifyField: weighted scoring", () => {
     document.body.innerHTML = `<input id="f" type="text">`;
     byId("f").setAttribute("placeholder", big);
     expect(() => classifyField(byId("f") as HTMLInputElement)).not.toThrow();
+  });
+
+  it.each([
+    ["Code promo", "promo"],
+    ["Promo code", "promo_code"],
+    ["Code parrainage", "parrain"],
+    ["Coupon", "coupon"],
+    ["Gift card code", "gift"],
+    ["Code de réduction", "reduc"],
+  ])("%s is not an OTP", (label, name) => {
+    document.body.innerHTML = `<label for="f">${label}</label><input id="f" name="${name}" type="text" inputmode="numeric" maxlength="8">`;
+    expect(role("f")).not.toBe("otp");
+    expect(role("f")).not.toBe("cc_csc");
+  });
+
+  it("a lone maxlength=1 field is not an OTP", () => {
+    document.body.innerHTML = '<input id="f" name="mi" type="text" maxlength="1">';
+    expect(role("f")).toBe("unknown");
+  });
+
+  it("classifies a textarea street address", () => {
+    document.body.innerHTML = '<label for="f">Adresse</label><textarea id="f" name="adresse"></textarea>';
+    expect(role("f")).toBe("address_line1");
+    document.body.innerHTML = '<textarea id="g" autocomplete="street-address"></textarea>';
+    expect(role("g")).toBe("address_line1");
   });
 });

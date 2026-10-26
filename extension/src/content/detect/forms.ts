@@ -3,7 +3,7 @@
 import type { FieldInfo, FieldRole, FormInfo, FormKind, PageAnalysis } from "../../shared/messages";
 import { providerForHost } from "../../shared/providers";
 import { detectCaptcha, detectPush } from "./captcha";
-import { classifyField, type FieldElement, isFieldCandidate } from "./fields";
+import { classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate } from "./fields";
 import { AUTOCOMPLETE_SCORE, normalizeText } from "./lexicon";
 import { buttonLabel, detectAccountChooser, detectProviderButtons, providerOfButton } from "./provider";
 import type { RefRegistry } from "./refs";
@@ -23,8 +23,14 @@ const MAX_NEXT_LABEL = 40;
 const NEXT_TEXT =
   /\b(next|continue|continuer|suivant|sign in|log in|login|se connecter|connexion|valider|verify|verifier)\b/;
 
+/**
+ * Controls that may submit a group. Links that navigate are excluded in the
+ * selector itself so that the cap applies to real candidates (a page may hold
+ * thousands of navigation links).
+ */
 const BUTTON_SELECTOR =
-  'button, input[type="submit"], input[type="image"], input[type="button"], [role="button"], a';
+  'button, input[type="submit" i], input[type="image" i], input[type="button" i], [role="button"], ' +
+  'a:not([href]), a[href^="#"], a[href^="javascript:" i]';
 
 const IDENTIFIERS: ReadonlySet<FieldRole> = new Set(["username", "email"]);
 const CARD: ReadonlySet<FieldRole> = new Set([
@@ -65,6 +71,8 @@ interface Classified {
   role: FieldRole;
   /** Role decided by `autocomplete`, not by scoring. */
   direct: boolean;
+  /** One cell of a split OTP (a run of 4 to 8 one-character inputs). */
+  cell: boolean;
 }
 
 interface Group {
@@ -172,11 +180,45 @@ function groupOrphans(orphans: Classified[], buttons: Element[]): Group[] {
   return groups;
 }
 
+const CELL_TYPES: ReadonlySet<string> = new Set(["text", "tel", "number", "password"]);
+
+function isOneCharInput(el: FieldElement): el is HTMLInputElement {
+  return el instanceof HTMLInputElement && el.maxLength === 1 && CELL_TYPES.has(el.type);
+}
+
+/** Same form, or (outside forms) same grandparent: cells are often wrapped one per element. */
+function sameCellGroup(a: HTMLInputElement, b: HTMLInputElement): boolean {
+  if (a.form !== b.form) return false;
+  if (a.form !== null) return true;
+  return a.parentElement === b.parentElement || a.parentElement?.parentElement === b.parentElement?.parentElement;
+}
+
+/**
+ * Inputs that belong to a split OTP: runs of 4 to 8 consecutive visible
+ * one-character inputs of the same group. A lone one-character input (middle
+ * initial) is not one.
+ */
+function splitOtpCells(fields: FieldElement[]): Set<FieldElement> {
+  const out = new Set<FieldElement>();
+  for (let i = 0; i < fields.length; ) {
+    const first = fields[i] as FieldElement;
+    if (!isOneCharInput(first)) {
+      i++;
+      continue;
+    }
+    let j = i + 1;
+    for (let next = fields[j]; next !== undefined && isOneCharInput(next) && sameCellGroup(first, next); next = fields[++j]);
+    const run = j - i;
+    if (run >= SPLIT_OTP_MIN && run <= SPLIT_OTP_MAX) for (const el of fields.slice(i, j)) out.add(el);
+    i = j;
+  }
+  return out;
+}
+
 /** Merges runs of 4 to 8 consecutive one-character OTP cells into one logical field. */
 function mergeSplitOtp(fields: Classified[], refs: RefRegistry): FieldInfo[] {
   const out: FieldInfo[] = [];
-  const isCell = (f: Classified | undefined) =>
-    f !== undefined && f.role === "otp" && f.el instanceof HTMLInputElement && f.el.maxLength === 1;
+  const isCell = (f: Classified | undefined) => f?.cell === true;
   for (let i = 0; i < fields.length; ) {
     let j = i;
     while (isCell(fields[j])) j++;
@@ -235,7 +277,9 @@ export function formKind(roles: FieldRole[], nextButton: boolean): FormKind | nu
   if (has("current_password") && fresh) return "change_password";
   if (fresh) return ident ? "signup" : "change_password";
   if (has("current_password")) return "login";
-  if (has("otp")) return "otp";
+  // A one-time code makes an otp form only alone or with the account identifier;
+  // next to card or identity fields it is something else (promo code...).
+  if (has("otp") && roles.every((r) => r === "otp" || IDENTIFIERS.has(r) || r === "remember_me")) return "otp";
   const others = roles.filter((r) => !IDENTIFIERS.has(r) && r !== "remember_me");
   if (count(roles, IDENTIFIERS) === 1 && others.length === 0 && nextButton) return "login";
   if (count(roles, CARD) >= 2) return "card";
@@ -251,11 +295,19 @@ function documentOrder(a: Element, b: Element): number {
 
 /** Classified forms and field groups of the document, in document order. */
 export function detectForms(doc: Document, refs: RefRegistry, geometry: Geometry = domGeometry): FormInfo[] {
+  const visible: FieldElement[] = [];
+  for (const el of Array.from(doc.querySelectorAll(FIELD_SELECTOR)).slice(0, MAX_FIELDS)) {
+    if (isFieldCandidate(el) && isVisible(el, geometry)) visible.push(el);
+  }
+  const cells = splitOtpCells(visible);
   const classified: Classified[] = [];
-  for (const el of Array.from(doc.querySelectorAll("input, select")).slice(0, MAX_FIELDS)) {
-    if (!isFieldCandidate(el) || !isVisible(el, geometry)) continue;
+  for (const el of visible) {
+    if (cells.has(el)) {
+      classified.push({ el, role: "otp", direct: false, cell: true });
+      continue;
+    }
     const { role, score } = classifyField(el);
-    if (role !== "unknown") classified.push({ el, role, direct: score === AUTOCOMPLETE_SCORE });
+    if (role !== "unknown") classified.push({ el, role, direct: score === AUTOCOMPLETE_SCORE, cell: false });
   }
 
   const byForm = new Map<HTMLFormElement, Classified[]>();
@@ -310,7 +362,7 @@ export function analyzeDocument(doc: Document, refs: RefRegistry, opts: AnalyzeO
   return {
     url,
     forms: detectForms(doc, refs, geometry),
-    captcha: detectCaptcha(doc),
+    captcha: detectCaptcha(doc, geometry),
     push: detectPush(doc),
     providerButtons: detectProviderButtons(doc, refs, geometry),
     accountChooser: onProvider ? detectAccountChooser(doc, refs, geometry) : [],
