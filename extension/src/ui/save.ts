@@ -146,7 +146,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       "div",
       { class: "save-head" },
       mark("m"),
-      h("h2", null, title),
+      h("h1", null, title),
       withMore
         ? iconBtn("Options", "more", () => {
             more = !more;
@@ -375,7 +375,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           "div",
           { class: "save-head" },
           mark("m"),
-          h("h2", null, "Enregistrer l'élément"),
+          h("h1", null, "Enregistrer l'élément"),
           iconBtn("Fermer", "close", () => (fresh ? void decide("dismiss", errLine(), () => undefined) : renderPrompt())),
         ),
       ),

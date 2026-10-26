@@ -248,7 +248,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     }
     mount(
       side,
-      h("div", { class: "pp-side-title" }, icon("star", 14), title),
+      h("h1", { class: "pp-side-title" }, icon("star", 14), title),
       list,
       empty ? h("p", { class: "pp-empty" }, empty) : null,
       domain && !results
@@ -371,7 +371,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       h(
         "div",
         { class: "pp-detail" },
-        h("div", { class: "pp-title" }, tile(s.icon_letter, s.icon_color, "l"), h("span", null, s.title)),
+        h("h2", { class: "pp-title" }, tile(s.icon_letter, s.icon_color, "l"), h("span", null, s.title)),
         card,
         website
           ? h("div", { class: "website" }, h("span", { class: "cell-label" }, "site web"), h("span", { class: "field-value" }, website))

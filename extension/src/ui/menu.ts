@@ -47,7 +47,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   const now = deps.now ?? (() => performance.now());
   const guard = new ClickGuard({ now, ...(deps.trusted ? { trusted: deps.trusted } : {}) });
   const token = tokenFromHash(deps.hash);
-  const container = h("div", { class: "menu", attrs: { role: "listbox", "aria-label": "Suggestions OnePass" } });
+  const container = h("div", { class: "menu" });
   mount(root, container);
 
   const send = (m: UiToBg) => deps.send(m);
@@ -82,7 +82,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   document.addEventListener("keydown", keydown);
 
   const header = (origin: string | null) =>
-    h("div", { class: "menu-head" }, mark("s"), origin ? `OnePass · ${hostOf(origin)}` : "OnePass");
+    h("h1", { class: "menu-head" }, mark("s"), origin ? `OnePass · ${hostOf(origin)}` : "OnePass");
 
   const showError = (line: HTMLElement | null, code: string) => {
     if (code === "locked" || code === "unpaired" || code === "host_missing") {
@@ -179,10 +179,10 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         }
       }
     }
-    if (init.items.length === 0) list.append(h("p", { class: "message-detail empty" }, emptyText(init)));
+    const empty = init.items.length === 0 ? h("p", { class: "message-detail empty" }, emptyText(init)) : null;
     const extras: HTMLElement[] = [];
     if (NEW_PASSWORD_FORMS.has(init.formKind)) {
-      extras.push(h("div", { class: "sep" }));
+      extras.push(h("div", { class: "sep", attrs: { "aria-hidden": "true" } }));
       extras.push(
         option("Générer un mot de passe", null, icon("key", 16), "", async () => {
           if (!token) return;
@@ -193,7 +193,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     }
     if (LOGIN_FORMS.has(init.formKind)) {
       // Spec 8.3; the save prompt opens in its edit view (nothing typed is read from the page).
-      if (extras.length === 0) extras.push(h("div", { class: "sep" }));
+      if (extras.length === 0) extras.push(h("div", { class: "sep", attrs: { "aria-hidden": "true" } }));
       extras.push(
         option("Enregistrer un nouveau login", null, icon("plus", 12), "", async () => {
           if (!token) return;
@@ -202,7 +202,12 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         }),
       );
     }
-    mount(container, header(init.origin), list, ...extras, errLine);
+    // Only options (and decorative separators) inside the listbox.
+    const listbox =
+      list.childElementCount + extras.length > 0
+        ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": "Suggestions OnePass" } }, list, ...extras)
+        : null;
+    mount(container, header(init.origin), empty, listbox, errLine);
     guard.reset();
   }
 
