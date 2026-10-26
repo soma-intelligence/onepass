@@ -435,7 +435,21 @@
     "L'effacement n'a pas pu être envoyé : la montre garde peut-être ses données.": {},
     "Désactivé": {},
     "Seuls les éléments marqués « Sur l'Apple Watch » sont envoyés. Au-delà de 50 éléments marqués, les derniers par ordre alphabétique ne sont pas copiés.": {},
-    "La montre reçoit les codes à usage unique, l'identifiant d'un Login, les Wi-Fi avec leur mot de passe, les cartes de membre, la carte bancaire réduite aux 4 derniers chiffres, les codes d'accès et les pièces d'identité. Jamais le mot de passe d'un Login, le CVV, le code PIN, le numéro complet d'une carte ni les notes. Les coffres masqués sont exclus.": {}
+    "La montre reçoit les codes à usage unique, l'identifiant d'un Login, les Wi-Fi avec leur mot de passe, les cartes de membre, la carte bancaire réduite aux 4 derniers chiffres, les codes d'accès et les pièces d'identité. Jamais le mot de passe d'un Login, le CVV, le code PIN, le numéro complet d'une carte ni les notes. Les coffres masqués sont exclus.": {},
+    "Copier le code à usage unique": {},
+    "Cet élément n'a pas de code à usage unique": {},
+    "Code copié": {},
+    "Le mot de passe maître est demandé pour copier le code à usage unique.": {},
+    "OnePass n'a pas pu s'ouvrir": {},
+    "Déverrouille OnePass pour choisir un élément": {},
+    "Le mot de passe n'a pas pu être généré": {},
+    "Ouvrir un élément": {},
+    "Ouvre un élément dans OnePass.": {},
+    "Copie le code à usage unique d'un élément après authentification. Le code n'est jamais transmis au raccourci.": {},
+    "Générer un mot de passe": {},
+    "Génère un mot de passe aléatoire, sans l'enregistrer.": {},
+    "Verrouille OnePass sur cet appareil.": {},
+    "OnePass est verrouillé": {}
   },
   "version": "1.0"
 }

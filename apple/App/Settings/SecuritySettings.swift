@@ -231,7 +231,18 @@ struct SecuritySettings: View {
 struct PasswordPromptSheet: View {
     @Environment(\.dismiss) private var dismiss
     let title: LocalizedStringKey
+    let footer: LocalizedStringKey
     let submit: (String) async throws -> Void
+
+    init(
+        title: LocalizedStringKey,
+        footer: LocalizedStringKey = "Le mot de passe maître est demandé pour changer ce réglage.",
+        submit: @escaping (String) async throws -> Void
+    ) {
+        self.title = title
+        self.footer = footer
+        self.submit = submit
+    }
 
     @State private var password = ""
     @State private var busy = false
@@ -249,7 +260,7 @@ struct PasswordPromptSheet: View {
                         .privacySensitive()
                         .accessibilityIdentifier("settings.prompt.password")
                 } footer: {
-                    Text("Le mot de passe maître est demandé pour changer ce réglage.")
+                    Text(footer)
                 }
                 if let errorMessage {
                     Section {

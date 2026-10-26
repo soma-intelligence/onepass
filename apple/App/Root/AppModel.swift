@@ -69,6 +69,9 @@ final class AppModel {
     private(set) var pendingRoute: AppRoute?
     /// The standalone password generator ("Générer un mot de passe" Control).
     var showGenerator = false
+    /// "Copier le code à usage unique" without biometrics: the item whose code waits for the
+    /// master password.
+    var totpPasswordRequest: ItemRef?
     /// When the session last became unlocked (lock requests from a Control older than this are spent).
     @ObservationIgnored private(set) var lastUnlockAt: Date?
     /// What the browse screens should bring forward (iPhone: the tab to select). Cleared by the
@@ -152,6 +155,7 @@ final class AppModel {
     func start() {
         guard !started else { return }
         started = true
+        IntentBridge.model = self
         #if DEBUG
         if DemoData.requested {
             seedDemoData()
@@ -447,10 +451,34 @@ final class AppModel {
         }
     }
 
-    /// "Copier le code à usage unique" (App Intent). Implemented in Task 9; until then nothing
-    /// is copied.
+    /// "Copier le code à usage unique" (App Intent, ruling W13): an unlock made for this request
+    /// is enough; otherwise Face ID, Touch ID or the device passcode, else the master password.
     func copyTotp(_ ref: ItemRef, freshUnlock: Bool) async {
-        showToast(String(localized: "Bientôt disponible"))
+        if !freshUnlock {
+            guard await session.confirmUserPresence(prompt: String(localized: "Copier le code à usage unique"))
+            else {
+                showSettings = false
+                showGenerator = false
+                totpPasswordRequest = ref
+                return
+            }
+        }
+        await copyTotpCode(ref)
+    }
+
+    /// Copies the item's current one-time code with the OnePass clipboard (90 s, local only).
+    func copyTotpCode(_ ref: ItemRef) async {
+        guard session.state == .unlocked else { return }
+        let noCode = String(localized: "Cet élément n'a pas de code à usage unique")
+        guard let item = try? await session.loadItem(vaultID: ref.vaultID, itemID: ref.itemID),
+            item.trashedAt == nil, let secret = firstOtpValue(of: item),
+            let totp = try? totpNow(secretOrUri: secret, unixSeconds: UInt64(Date.now.timeIntervalSince1970))
+        else {
+            showToast(noCode)
+            return
+        }
+        session.copy(totp.code, concealed: true)
+        showToast(String(localized: "Code copié"))
     }
 
     /// Drops every item-bearing navigation state (the new item's draft holds typed values).
@@ -465,6 +493,7 @@ final class AppModel {
         showSettings = false
         showGenerator = false
         browseReveal = nil
+        totpPasswordRequest = nil
     }
 
     /// Changes a local setting and restarts the auto-lock clock (a new delay applies from now).

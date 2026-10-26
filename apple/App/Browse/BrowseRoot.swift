@@ -28,6 +28,16 @@ struct BrowseRoot: View {
                     },
                     purpose: .copy)
             }
+            // "Copier le code à usage unique" when the device cannot confirm the user itself.
+            .sheet(item: $model.totpPasswordRequest) { ref in
+                PasswordPromptSheet(
+                    title: "Copier le code à usage unique",
+                    footer: "Le mot de passe maître est demandé pour copier le code à usage unique."
+                ) { password in
+                    try await model.session.verifyMasterPassword(password)
+                    await model.copyTotpCode(ref)
+                }
+            }
             // The split view shows a revealed item through the selection, and searches through
             // `searchFocusRequest`; the iPhone tabs handle the reveal themselves.
             .onChange(of: model.browseReveal, initial: true) { _, reveal in
