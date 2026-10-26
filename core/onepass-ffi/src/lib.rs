@@ -6,6 +6,7 @@ mod autofill;
 mod companion;
 mod convert;
 mod error;
+mod rules;
 mod session;
 mod types;
 
@@ -25,6 +26,7 @@ pub use companion::*;
 use convert::{sections_to_ffi, type_label};
 pub use error::OnePassError;
 use error::invalid;
+pub use rules::password_from_rules;
 pub use session::{Session, SyncStoreHandle};
 pub use types::*;
 
