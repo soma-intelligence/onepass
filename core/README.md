@@ -88,6 +88,10 @@ onepass totp "Exemple"
 onepass generate --words 5
 ```
 
+Références `onepass://` (commande `read`) : sans section, un nom de champ qui désigne plusieurs champs de l'item est refusé (`ambiguous field, add the section`) plutôt que de livrer le premier à un script ; `totp` désigne l'unique champ OTP rempli de l'item (`onepass totp` choisit le même) ; un secret OTP nu est décodé en base32 tel quel, jamais recopié dans une URI.
+
+Si la sortie standard est fermée par son lecteur (`onepass read ... | head -c1`), la commande s'arrête sans message avec le code 0, sans panique.
+
 Options globales : `--data-dir <dossier>` (défaut `~/.onepass-dev`) et `--json`. Codes de sortie : 0 succès, 1 erreur d'usage, 2 mauvais mot de passe, 3 échec d'intégrité (données stockées altérées), 4 introuvable, 5 écriture concurrente (`concurrent write, retry` : rien n'a été enregistré, relancez la commande).
 
 Chaque commande qui ouvre le dossier de données prend un verrou exclusif sur `<data-dir>/lock` (droits `0600`) pendant toute son exécution, lectures comprises : deux commandes lancées en parallèle s'exécutent l'une après l'autre. Le code 5 ne sort donc que si un autre programme écrit dans la base sans ce verrou ; le noyau refuse alors l'écriture perdante au lieu de perdre un item en silence.

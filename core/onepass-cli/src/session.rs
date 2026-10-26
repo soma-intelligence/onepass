@@ -101,10 +101,42 @@ impl From<Error> for CliError {
     }
 }
 
+impl CliError {
+    /// Stdout was closed by its reader (`onepass read ... | head -c1`):
+    /// nothing is wrong, the command stops quietly with exit code 0.
+    pub fn quiet() -> CliError {
+        CliError {
+            code: 0,
+            msg: String::new(),
+        }
+    }
+}
+
 impl From<std::io::Error> for CliError {
     fn from(e: std::io::Error) -> CliError {
+        if e.kind() == std::io::ErrorKind::BrokenPipe {
+            return CliError::quiet();
+        }
         CliError::usage(format!("i/o error: {}", e.kind()))
     }
+}
+
+/// Write one line to stdout. Unlike `println!`, a closed stdout is an
+/// error (`CliError::quiet`), not a panic: the release profile aborts on
+/// panic.
+pub fn emit(line: std::fmt::Arguments<'_>) -> Result<(), CliError> {
+    let mut out = std::io::stdout().lock();
+    out.write_fmt(format_args!("{line}\n"))?;
+    out.flush()?;
+    Ok(())
+}
+
+/// `println!` through `emit`, returning early on error.
+#[macro_export]
+macro_rules! out {
+    ($($arg:tt)*) => {
+        $crate::session::emit(format_args!($($arg)*))?
+    };
 }
 
 #[cfg(test)]
@@ -249,7 +281,8 @@ impl Session {
         })
     }
 
-    /// Write `device.bin` (0600, atomically) if the device state changed.
+    /// Write `device.bin` (0600, atomically, file and directory synced) if
+    /// the device state changed.
     pub fn persist(&self) -> Result<(), CliError> {
         let bytes = encode(&self.secret_key, self.repo.device_state())?;
         if self.on_disk.as_deref() == Some(&*bytes) {
@@ -265,6 +298,13 @@ impl Session {
         f.write_all(&bytes)?;
         f.sync_all()?;
         fs::rename(&tmp, &self.device_path)?;
+        // The rename lives in the directory: sync it too, or a power loss
+        // can bring back the old device.bin (and an older last seen state).
+        let dir = match self.device_path.parent() {
+            Some(d) if !d.as_os_str().is_empty() => d,
+            _ => Path::new("."),
+        };
+        fs::File::open(dir)?.sync_all()?;
         Ok(())
     }
 }

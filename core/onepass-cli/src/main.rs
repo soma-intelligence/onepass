@@ -112,6 +112,8 @@ fn main() -> ExitCode {
     };
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
+        // Stdout closed by its reader: stop without a word.
+        Err(e) if e.code == 0 => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {}", e.msg);
             ExitCode::from(u8::try_from(e.code).unwrap_or(1))

@@ -1,7 +1,8 @@
 # Word list sources and licenses
 
-All lists hold one word per line, lowercase, NFC, without dice numbers, and
-are checked by a unit test for 7776 unique entries.
+All lists hold one word per line, lowercase, NFC, without dice numbers.
+Unit tests check 7776 unique entries per list, and that every word is
+lowercase and NFC.
 
 ## eff_large_wordlist.txt
 

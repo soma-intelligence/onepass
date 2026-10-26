@@ -409,9 +409,22 @@ fn downgrade_kdf() {
     };
     let params = postcard::to_allocvec(&forged).unwrap();
     assert_eq!(
-        integrity(unlock(Attack::DowngradeKdf { params }, f.device.clone()).map(drop)),
+        integrity(
+            unlock(
+                Attack::DowngradeKdf {
+                    params: params.clone()
+                },
+                f.device.clone()
+            )
+            .map(drop)
+        ),
         IntegrityError::ParamsUnsigned
     );
+    // Control: the forged signature itself is valid. A device that pinned
+    // nothing gets past every params check and only fails on the keyset,
+    // sealed under the real parameters. So the refusal above is the pin.
+    let unpinned = unlock(Attack::DowngradeKdf { params }, DeviceState::default());
+    assert_eq!(unpinned.map(drop), Err(Error::WrongPassword));
 }
 
 #[test]

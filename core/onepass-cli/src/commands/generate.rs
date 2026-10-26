@@ -40,9 +40,9 @@ pub fn run(ctx: &Ctx, a: GenerateArgs) -> Result<(), CliError> {
     };
     let value = generate(&recipe)?;
     if ctx.json {
-        println!("{}", serde_json::json!({ "value": *value }));
+        crate::out!("{}", serde_json::json!({ "value": *value }));
     } else {
-        println!("{}", *value);
+        crate::out!("{}", *value);
     }
     Ok(())
 }

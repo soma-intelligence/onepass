@@ -206,11 +206,11 @@ fn list(
             .into_iter()
             .map(|(id, t, v, title)| json!({ "id": id, "type": t, "vault": v, "title": title }))
             .collect();
-        println!("{}", Value::Array(rows));
+        crate::out!("{}", Value::Array(rows));
     } else {
         let width = rows.iter().map(|r| r.1.chars().count()).max().unwrap_or(0);
         for (id, t, v, title) in rows {
-            println!("{id}  {t:<width$}  {v}  {title}");
+            crate::out!("{id}  {t:<width$}  {v}  {title}");
         }
     }
     Ok(())
@@ -315,7 +315,7 @@ fn get(
             }
         }
         let urls: Vec<&str> = item.urls.iter().map(|u| u.url.as_str()).collect();
-        println!(
+        crate::out!(
             "{}",
             json!({
                 "id": item.id.to_string(),
@@ -329,12 +329,12 @@ fn get(
         );
         return Ok(());
     }
-    println!("{}", item.title);
-    println!("  id:    {}", item.id);
-    println!("  vault: {vault_name}");
-    println!("  type:  {}", type_name(item.item_type));
+    crate::out!("{}", item.title);
+    crate::out!("  id:    {}", item.id);
+    crate::out!("  vault: {vault_name}");
+    crate::out!("  type:  {}", type_name(item.item_type));
     for u in &item.urls {
-        println!("  url:   {}", u.url);
+        crate::out!("  url:   {}", u.url);
     }
     for section in &item.sections {
         let shown: Vec<_> = section
@@ -345,13 +345,13 @@ fn get(
         if shown.is_empty() {
             continue;
         }
-        println!("{}", section.label);
+        crate::out!("{}", section.label);
         for (f, v) in shown {
-            println!("  {} [{}]: {}", f.label, f.id, *v);
+            crate::out!("  {} [{}]: {}", f.label, f.id, *v);
         }
     }
     if !notes.is_empty() {
-        println!("Notes: {notes}");
+        crate::out!("Notes: {notes}");
     }
     Ok(())
 }
@@ -377,9 +377,9 @@ fn create(
     let id = item.id;
     stored(repo.save_item(&vaults[vi], item))?;
     if ctx.json {
-        println!("{}", json!({ "id": id.to_string() }));
+        crate::out!("{}", json!({ "id": id.to_string() }));
     } else {
-        println!("created {id}");
+        crate::out!("created {id}");
     }
     Ok(())
 }

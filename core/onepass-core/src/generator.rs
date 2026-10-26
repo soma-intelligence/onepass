@@ -333,6 +333,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn wordlists_are_lowercase_and_nfc() {
+        use unicode_normalization::UnicodeNormalization;
+        for list in [Wordlist::EffEnglish, Wordlist::FrenchDiceware] {
+            for &w in words_of(list).iter() {
+                assert_eq!(w, w.to_lowercase(), "{list:?}: {w:?}");
+                assert_eq!(w, w.nfc().collect::<String>(), "{list:?}: {w:?}");
+            }
+        }
+    }
+
     fn passphrase(words: u8, capitalize: bool, include_digit: bool, list: Wordlist) -> Recipe {
         Recipe::Passphrase(PassphraseOptions {
             words,

@@ -5,18 +5,24 @@
 //!   invalid escapes are refused. `+` is a plus, not a space.
 //! - Vault and item segments match by name (case-insensitive) or by id. An
 //!   id match wins over name matches. Several names matching is refused
-//!   with "ambiguous reference, use the item id" (the same message for
-//!   vaults). Trashed items are not resolvable; archived ones are.
+//!   with "ambiguous reference, use the item id" (or "use the vault id").
+//!   Trashed items are not resolvable; archived ones are.
 //! - Section and field segments match by id first, then by label
-//!   (case-insensitive). The first match in template order wins.
+//!   (case-insensitive). Without a section, several fields matching at the
+//!   same step is refused with "ambiguous field, add the section": a
+//!   reference injects a secret into a script, so it must never pick one
+//!   silently. Within a named section, the first match in template order
+//!   wins (repeatable fields share an id).
 //! - Values: text-like kinds give their text, a number its decimal form, a
 //!   date `YYYY-MM-DD`, a month and year `YYYY-MM`, an SSH key its private
 //!   PEM (a reference is meant for injecting secrets). An OTP field gives
-//!   the current code, from an `otpauth://` URI or a bare base32 secret.
+//!   the current code, from an `otpauth://` URI or a bare base32 secret,
+//!   decoded as base32 on its own (never pasted into a URI).
 //!   Money, address, location, file, passkey and item link fields are not
 //!   text and are refused. An empty field is refused too.
-//! - Without a section, the field `totp` is the code of the first OTP field
-//!   of the item, wherever it sits.
+//! - Without a section, the field `totp` is the code of the item's one
+//!   filled OTP field, wherever it sits (`otp_field_of`). None is not
+//!   found; several are "ambiguous one-time password, add the section".
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -25,7 +31,7 @@ use zeroize::Zeroizing;
 use crate::model::{Field, FieldValue, Item, Section};
 use crate::repo::Repository;
 use crate::store::RecordStore;
-use crate::totp::{code_at, parse_otpauth};
+use crate::totp::{code_at, parse_otpauth, totp_from_secret};
 use crate::vault::Vault;
 use crate::{Error, Result, ValidationError};
 
@@ -108,10 +114,12 @@ pub fn parse_ref(s: &str) -> Result<SecretRef> {
 }
 
 /// The one entry whose id string equals `seg`, else the only one whose name
-/// equals it ignoring case. Several names are ambiguous, none is not found.
+/// equals it ignoring case. Several names are ambiguous (`ambiguous`, the
+/// reason given), none is not found.
 fn pick<'a, T>(
     entries: &'a [T],
     seg: &str,
+    ambiguous: &'static str,
     id: impl Fn(&T) -> String,
     name: impl Fn(&T) -> &str,
 ) -> Result<&'a T> {
@@ -123,7 +131,7 @@ fn pick<'a, T>(
         .filter(|e| name(e).to_lowercase() == seg.to_lowercase());
     match (named.next(), named.next()) {
         (Some(e), None) => Ok(e),
-        (Some(_), Some(_)) => Err(invalid("ambiguous reference, use the item id")),
+        (Some(_), Some(_)) => Err(invalid(ambiguous)),
         _ => Err(Error::NotFound),
     }
 }
@@ -132,7 +140,7 @@ fn label_is(label: &str, seg: &str) -> bool {
     label.to_lowercase() == seg.to_lowercase()
 }
 
-/// Field by id, then by label, among `sections` in order.
+/// Field by id, then by label, among `sections` in order: the first match.
 fn find_field<'a>(sections: &[&'a Section], seg: &str) -> Option<&'a Field> {
     let all = || sections.iter().flat_map(|s| s.fields.iter());
     all()
@@ -140,15 +148,44 @@ fn find_field<'a>(sections: &[&'a Section], seg: &str) -> Option<&'a Field> {
         .or_else(|| all().find(|f| label_is(&f.label, seg)))
 }
 
+/// Field of the whole item by id, then by label: the only match at the
+/// first step that has one. Several are ambiguous.
+fn find_unique_field<'a>(item: &'a Item, seg: &str) -> Result<Option<&'a Field>> {
+    let all = || item.sections.iter().flat_map(|s| s.fields.iter());
+    let by_id: Vec<&Field> = all().filter(|f| f.id == seg).collect();
+    let hits = if by_id.is_empty() {
+        all().filter(|f| label_is(&f.label, seg)).collect()
+    } else {
+        by_id
+    };
+    match hits.as_slice() {
+        [] => Ok(None),
+        [f] => Ok(Some(f)),
+        _ => Err(invalid("ambiguous field, add the section")),
+    }
+}
+
+/// The item's one OTP field with a value (blank values do not count),
+/// wherever it sits: what `totp` resolves to. None is `NotFound`, several
+/// are ambiguous.
+pub fn otp_field_of(item: &Item) -> Result<&Field> {
+    let mut filled = item
+        .sections
+        .iter()
+        .flat_map(|s| s.fields.iter())
+        .filter(|f| matches!(&f.value, FieldValue::Otp(v) if !v.trim().is_empty()));
+    match (filled.next(), filled.next()) {
+        (Some(f), None) => Ok(f),
+        (Some(_), Some(_)) => Err(invalid("ambiguous one-time password, add the section")),
+        (None, _) => Err(Error::NotFound),
+    }
+}
+
 fn locate<'a>(item: &'a Item, r: &SecretRef) -> Result<&'a Field> {
     let all: Vec<&Section> = item.sections.iter().collect();
     let found = match &r.section {
-        None if r.field.eq_ignore_ascii_case("totp") => item
-            .sections
-            .iter()
-            .flat_map(|s| s.fields.iter())
-            .find(|f| matches!(f.value, FieldValue::Otp(_))),
-        None => find_field(&all, &r.field),
+        None if r.field.eq_ignore_ascii_case("totp") => Some(otp_field_of(item)?),
+        None => find_unique_field(item, &r.field)?,
         Some(sec) => {
             let by_id: Vec<&Section> = all.iter().copied().filter(|s| s.id == *sec).collect();
             let chosen = if by_id.is_empty() {
@@ -165,22 +202,20 @@ fn locate<'a>(item: &'a Item, r: &SecretRef) -> Result<&'a Field> {
     found.ok_or(Error::NotFound)
 }
 
+/// An `otpauth://` URI is parsed as one; anything else is a bare base32
+/// secret, decoded on its own so that no text in it can act as a URI
+/// parameter.
 fn otp_code(value: &str, now: u64) -> Result<Zeroizing<String>> {
-    let value = value.trim();
     const OTPAUTH: &str = "otpauth://";
-    const BARE: &str = "otpauth://totp/x?secret=";
-    // One allocation of the final size, so no unwiped copy is left behind.
-    let mut uri = Zeroizing::new(String::with_capacity(BARE.len() + value.len()));
-    if value
+    let value = value.trim();
+    let cfg = if value
         .get(..OTPAUTH.len())
         .is_some_and(|h| h.eq_ignore_ascii_case(OTPAUTH))
     {
-        uri.push_str(value);
+        parse_otpauth(value)?
     } else {
-        uri.push_str(BARE);
-        uri.push_str(value);
-    }
-    let cfg = parse_otpauth(&uri)?;
+        totp_from_secret(value)?
+    };
     Ok(Zeroizing::new(code_at(&cfg, now)?))
 }
 
@@ -232,13 +267,25 @@ impl<S: RecordStore> Repository<S> {
 
     fn resolve_at(&mut self, r: &SecretRef, now: u64) -> Result<Zeroizing<String>> {
         let vaults = self.vaults()?;
-        let vault: &Vault = pick(&vaults, &r.vault, |v| v.id.to_string(), |v| &v.meta.name)?;
+        let vault: &Vault = pick(
+            &vaults,
+            &r.vault,
+            "ambiguous reference, use the vault id",
+            |v| v.id.to_string(),
+            |v| &v.meta.name,
+        )?;
         let items: Vec<Item> = self
             .items(vault)?
             .into_iter()
             .filter(|i| i.trashed_at.is_none())
             .collect();
-        let item = pick(&items, &r.item, |i| i.id.to_string(), |i| &i.title)?;
+        let item = pick(
+            &items,
+            &r.item,
+            "ambiguous reference, use the item id",
+            |i| i.id.to_string(),
+            |i| &i.title,
+        )?;
         render(locate(item, r)?, now)
     }
 }
@@ -479,6 +526,161 @@ mod tests {
         assert_eq!(
             repo.resolve(&r("onepass://Perso/GitHub/totp")).unwrap_err(),
             Error::NotFound
+        );
+    }
+
+    fn otp_field(id: &str, value: &str) -> Field {
+        Field {
+            id: id.into(),
+            label: id.into(),
+            kind: crate::model::FieldType::Otp,
+            value: FieldValue::Otp(Zeroizing::new(value.into())),
+            required: false,
+            repeatable: false,
+            autofill: false,
+        }
+    }
+
+    fn reason<T: std::fmt::Debug>(r: Result<T>) -> &'static str {
+        match r {
+            Err(Error::Validation(e)) => e.reason,
+            other => panic!("expected a validation error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn several_sectionless_matches_are_ambiguous() {
+        let (mut repo, v) = fixture();
+        let mut it = github(&v);
+        it.sections.push(Section {
+            id: "work".into(),
+            label: "Travail".into(),
+            fields: vec![Field {
+                id: "password".into(),
+                label: "Autre".into(),
+                kind: crate::model::FieldType::Password,
+                value: FieldValue::Password(Zeroizing::new("other".into())),
+                required: false,
+                repeatable: false,
+                autofill: false,
+            }],
+        });
+        repo.save_item(&v, it).unwrap();
+        assert_eq!(
+            reason(repo.resolve(&r("onepass://Perso/GitHub/password"))),
+            "ambiguous field, add the section"
+        );
+        // The section settles it.
+        assert_eq!(
+            &**repo
+                .resolve(&r("onepass://Perso/GitHub/work/password"))
+                .unwrap(),
+            "other"
+        );
+        assert_eq!(
+            &**repo
+                .resolve(&r("onepass://Perso/GitHub/main/password"))
+                .unwrap(),
+            "hunter2"
+        );
+    }
+
+    #[test]
+    fn ambiguous_vault_names_the_vault_id() {
+        let (mut repo, v) = fixture();
+        repo.save_item(&v, github(&v)).unwrap();
+        repo.create_vault(VaultMeta {
+            name: "perso".into(),
+            icon: "key".into(),
+            color: "blue".into(),
+            travel_safe: false,
+            mcp_access: false,
+        })
+        .unwrap();
+        assert_eq!(
+            reason(repo.resolve(&r("onepass://Perso/GitHub/password"))),
+            "ambiguous reference, use the vault id"
+        );
+    }
+
+    #[test]
+    fn bare_otp_secret_is_decoded_not_interpolated() {
+        let (mut repo, v) = fixture();
+        let mut it = github(&v);
+        // Appended to a URI, this would turn into an 8-digit SHA-256 code.
+        set(
+            &mut it,
+            "totp",
+            FieldValue::Otp(Zeroizing::new(
+                "JBSWY3DPEHPK3PXP&digits=8&algorithm=SHA256".into(),
+            )),
+        );
+        repo.save_item(&v, it).unwrap();
+        assert_eq!(
+            repo.resolve(&r("onepass://Perso/GitHub/totp")).unwrap_err(),
+            Error::InvalidFormat("otp secret")
+        );
+        // Spaces, dashes and lower case are fine in a bare secret.
+        let (mut repo, v) = fixture();
+        let mut it = github(&v);
+        set(
+            &mut it,
+            "totp",
+            FieldValue::Otp(Zeroizing::new("jbsw y3dp-ehpk 3pxp".into())),
+        );
+        repo.save_item(&v, it).unwrap();
+        let cfg = parse_otpauth("otpauth://totp/x?secret=JBSWY3DPEHPK3PXP").unwrap();
+        assert_eq!(
+            &**repo
+                .resolve_at(&r("onepass://Perso/GitHub/totp"), 59)
+                .unwrap(),
+            code_at(&cfg, 59).unwrap().as_str()
+        );
+    }
+
+    #[test]
+    fn totp_picks_the_one_filled_otp_field() {
+        let (mut repo, v) = fixture();
+        let mut it = github(&v);
+        // The template's totp field holds only spaces; the filled one sits
+        // in another section.
+        set(
+            &mut it,
+            "totp",
+            FieldValue::Otp(Zeroizing::new("  ".into())),
+        );
+        it.sections.push(Section {
+            id: "extra".into(),
+            label: "Extra".into(),
+            fields: vec![otp_field("code", "JBSWY3DPEHPK3PXP")],
+        });
+        repo.save_item(&v, it.clone()).unwrap();
+        let cfg = parse_otpauth("otpauth://totp/x?secret=JBSWY3DPEHPK3PXP").unwrap();
+        assert_eq!(
+            &**repo
+                .resolve_at(&r("onepass://Perso/GitHub/totp"), 59)
+                .unwrap(),
+            code_at(&cfg, 59).unwrap().as_str()
+        );
+        assert_eq!(otp_field_of(&it).unwrap().id, "code");
+
+        // Two filled OTP fields: which code is meant is not clear.
+        let (mut repo, v) = fixture();
+        let mut it = github(&v);
+        set(
+            &mut it,
+            "totp",
+            FieldValue::Otp(Zeroizing::new("JBSWY3DPEHPK3PXP".into())),
+        );
+        it.sections.push(Section {
+            id: "extra".into(),
+            label: "Extra".into(),
+            fields: vec![otp_field("code", "GEZDGNBVGY3TQOJQ")],
+        });
+        repo.save_item(&v, it).unwrap();
+        assert_eq!(
+            reason(repo.resolve(&r("onepass://Perso/GitHub/totp"))),
+            "ambiguous one-time password, add the section"
         );
     }
 

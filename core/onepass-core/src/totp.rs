@@ -164,6 +164,22 @@ fn clean(s: &str) -> Option<String> {
     (!t.is_empty()).then(|| t.to_owned())
 }
 
+/// A bare base32 secret (spaces, dashes and lower case allowed, trailing
+/// `=` padding dropped) with the defaults: SHA1, 6 digits, 30 s. Nothing
+/// in it is read as a parameter: a bad character is
+/// `InvalidFormat("otp secret")`.
+pub fn totp_from_secret(secret: &str) -> Result<TotpConfig> {
+    Ok(TotpConfig {
+        secret: decode_base32_secret(secret)?,
+        algorithm: TotpAlgorithm::Sha1,
+        digits: 6,
+        period: 30,
+        issuer: None,
+        account: None,
+        steam: false,
+    })
+}
+
 /// Parses `otpauth://totp/Label?secret=...`. Defaults: SHA1, 6 digits, 30 s.
 pub fn parse_otpauth(uri: &str) -> Result<TotpConfig> {
     const BAD: Error = Error::InvalidFormat("otpauth uri");

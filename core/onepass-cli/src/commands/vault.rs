@@ -22,10 +22,10 @@ pub fn run(ctx: &Ctx, cmd: VaultCmd) -> Result<(), CliError> {
                     .iter()
                     .map(|v| serde_json::json!({ "id": v.id.to_string(), "name": v.meta.name }))
                     .collect();
-                println!("{}", serde_json::Value::Array(rows));
+                crate::out!("{}", serde_json::Value::Array(rows));
             } else {
                 for v in &vaults {
-                    println!("{}  {}", v.id, v.meta.name);
+                    crate::out!("{}  {}", v.id, v.meta.name);
                 }
             }
             Ok(())
@@ -42,9 +42,9 @@ pub fn run(ctx: &Ctx, cmd: VaultCmd) -> Result<(), CliError> {
                 mcp_access: false,
             }))?;
             if ctx.json {
-                println!("{}", serde_json::json!({ "id": vault.id.to_string() }));
+                crate::out!("{}", serde_json::json!({ "id": vault.id.to_string() }));
             } else {
-                println!("created {}", vault.id);
+                crate::out!("created {}", vault.id);
             }
             Ok(())
         }),

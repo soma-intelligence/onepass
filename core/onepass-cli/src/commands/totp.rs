@@ -1,22 +1,21 @@
-use onepass_core::model::FieldValue;
-use onepass_core::reference::SecretRef;
+use onepass_core::Error;
+use onepass_core::reference::{SecretRef, otp_field_of};
 
 use super::item::find_item;
 use crate::session::{CliError, Ctx, stored, with_session};
 
-/// `onepass totp <id|name>`: the current code of the item's one-time
-/// password field.
+/// `onepass totp <id|name>`: the current code of the item's one filled
+/// one-time password field, chosen as `onepass://.../totp` chooses it.
 pub fn run(ctx: &Ctx, key: &str, vault: Option<&str>) -> Result<(), CliError> {
     let code = with_session(ctx, |repo| {
         let vaults = super::vault::all(repo)?;
         let (vi, item) = find_item(repo, &vaults, vault, key)?;
-        let has_otp = item
-            .sections
-            .iter()
-            .flat_map(|s| s.fields.iter())
-            .any(|f| matches!(&f.value, FieldValue::Otp(v) if !v.trim().is_empty()));
-        if !has_otp {
-            return Err(CliError::not_found("this item has no one-time password"));
+        match otp_field_of(&item) {
+            Ok(_) => {}
+            Err(Error::NotFound) => {
+                return Err(CliError::not_found("this item has no one-time password"));
+            }
+            Err(e) => return Err(CliError::from(e)),
         }
         // Ids, not names: they cannot be ambiguous.
         let r = SecretRef {
@@ -28,9 +27,9 @@ pub fn run(ctx: &Ctx, key: &str, vault: Option<&str>) -> Result<(), CliError> {
         stored(repo.resolve(&r))
     })?;
     if ctx.json {
-        println!("{}", serde_json::json!({ "code": *code }));
+        crate::out!("{}", serde_json::json!({ "code": *code }));
     } else {
-        println!("{}", *code);
+        crate::out!("{}", *code);
     }
     Ok(())
 }

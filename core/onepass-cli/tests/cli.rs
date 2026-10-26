@@ -520,3 +520,46 @@ fn parallel_writers_lose_nothing() {
     assert_eq!(rows.as_array().unwrap().len(), 7, "{}", list.stdout);
     assert!(dir.join("lock").exists());
 }
+
+/// Run `args` with stdout a pipe whose reading end is closed before the
+/// command writes anything, as `onepass ... | head -c1` ends up doing.
+fn run_closed_stdout(dir: &Path, args: &[&str]) -> Out {
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("onepass"))
+        .env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
+        .env("ONEPASS_PASSWORD", PASSWORD)
+        .env("ONEPASS_DEV_FAST_KDF", "1")
+        .arg("--data-dir")
+        .arg(dir)
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    // Unlocking takes far longer than this: the command writes into a pipe
+    // nobody reads any more.
+    drop(child.stdout.take());
+    let o = child.wait_with_output().unwrap();
+    Out {
+        code: o.status.code().unwrap_or(-1),
+        stdout: String::new(),
+        stderr: String::from_utf8(o.stderr).unwrap(),
+    }
+}
+
+#[test]
+fn closed_stdout_exits_quietly() {
+    let tmp = fresh();
+    let dir = tmp.path();
+    for args in [
+        &["read", "onepass://Personnel/GitHub/password"][..],
+        &["item", "list"][..],
+        &["item", "get", "GitHub"][..],
+    ] {
+        let out = run_closed_stdout(dir, args);
+        assert_eq!(out.code, 0, "{args:?}: {}", out.stderr);
+        assert!(!out.stderr.contains("panicked"), "{}", out.stderr);
+        assert!(!out.stderr.contains("error"), "{}", out.stderr);
+    }
+    // The device state was still saved: later commands work.
+    assert_eq!(run(dir, &["item", "list"]).code, 0);
+}

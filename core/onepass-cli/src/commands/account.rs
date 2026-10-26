@@ -45,9 +45,9 @@ pub fn create(ctx: &Ctx) -> Result<(), CliError> {
     }
     let key = result?;
     if ctx.json {
-        println!("{}", serde_json::json!({ "secret_key": *key }));
+        crate::out!("{}", serde_json::json!({ "secret_key": *key }));
     } else {
-        println!("Secret Key: {}", *key);
+        crate::out!("Secret Key: {}", *key);
         eprintln!("Write the Secret Key down now: it is shown only once.");
     }
     Ok(())

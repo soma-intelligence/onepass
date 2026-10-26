@@ -9,7 +9,7 @@ pub fn run(ctx: &Ctx, reference: &str) -> Result<(), CliError> {
     let r = parse_ref(reference)?;
     let value = with_session(ctx, |repo| stored(repo.resolve(&r)))?;
     if ctx.json {
-        println!("{}", serde_json::json!({ "value": *value }));
+        crate::out!("{}", serde_json::json!({ "value": *value }));
         return Ok(());
     }
     let mut out = std::io::stdout().lock();
