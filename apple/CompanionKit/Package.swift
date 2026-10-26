@@ -25,6 +25,10 @@ let package = Package(
             name: "GlanceKitTests",
             dependencies: ["GlanceKit"]
         ),
+        .testTarget(
+            name: "CompanionLinkTests",
+            dependencies: ["CompanionLink", .product(name: "OnePassCore", package: "VaultKit")]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -27,7 +27,7 @@ private func snapshot(validUntil: Date) -> GlanceSnapshot {
         ])
 }
 
-@Suite struct GlanceKitTests {
+@Suite(.serialized) struct GlanceKitTests {
     @Test func storeRoundTrip() throws {
         let dir = tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
