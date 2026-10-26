@@ -652,6 +652,36 @@ impl SyncStore {
         self.set_meta(DEVICE_STATE_KEY, &s.encode())
     }
 
+    /// Merge `mem` with the stored device state, in one transaction (a
+    /// savepoint inside an open batch), and store and return the result.
+    /// Two processes (the app and an extension) each keep their own state
+    /// over one file: per vault the entry with the larger `seq` wins (a tie
+    /// keeps the memory one), so neither process rewinds `last_seen`. The
+    /// pin is the memory one.
+    pub(crate) fn merge_device_state(&mut self, mem: &DeviceState) -> Result<DeviceState> {
+        let tx = self.write_tx()?;
+        let stored = device_state_in(&tx)?;
+        let mut merged = DeviceState {
+            pinned: mem.pinned.clone(),
+            last_seen: mem.last_seen.clone(),
+        };
+        for (v, theirs) in stored.last_seen {
+            match merged.last_seen.get(&v) {
+                Some(ours) if ours.seq >= theirs.seq => {}
+                _ => {
+                    merged.last_seen.insert(v, theirs);
+                }
+            }
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+            params![DEVICE_STATE_KEY, merged.encode()],
+        )
+        .map_err(store_err)?;
+        tx.commit()?;
+        Ok(merged)
+    }
+
     /// Whether an account params record is visible (pending or base).
     pub fn has_account(&self) -> Result<bool> {
         Ok(!self.list(RecordKind::AccountParams)?.is_empty())

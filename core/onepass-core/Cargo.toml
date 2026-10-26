@@ -61,3 +61,8 @@ tempfile = "3"
 [[test]]
 name = "sync_two_devices"
 required-features = ["dev-fast-kdf"]
+
+# Two processes over one store file: needs the dev floor.
+[[test]]
+name = "sync_two_processes"
+required-features = ["dev-fast-kdf"]

@@ -72,9 +72,15 @@ impl Plan {
 }
 
 impl Repository<SyncStore> {
-    /// Save the device state in the store (`SyncStore::set_device_state`).
+    /// Save the device state in the store, merged with what the store
+    /// already holds: another process on the same file (the AutoFill
+    /// extension) may have seen newer manifests, and this one must not
+    /// rewind them. Per vault the larger `seq` wins; the pin is this
+    /// process's. The merged state replaces `self.device`. Read, merge and
+    /// write run in one transaction (a savepoint inside a rebase batch).
     pub fn persist_device_state(&mut self) -> Result<()> {
-        self.store.set_device_state(&self.device)
+        self.device = self.store.merge_device_state(&self.device)?;
+        Ok(())
     }
 
     /// Rebase every held vault (see the module doc) and return their ids.
