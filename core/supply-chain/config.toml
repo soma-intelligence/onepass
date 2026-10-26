@@ -186,6 +186,10 @@ criteria = "safe-to-deploy"
 version = "1.0.5"
 criteria = "safe-to-deploy"
 
+[[exemptions.const-oid]]
+version = "0.10.2"
+criteria = "safe-to-run"
+
 [[exemptions.core-models]]
 version = "0.0.7"
 criteria = "safe-to-deploy"
@@ -233,6 +237,10 @@ criteria = "safe-to-deploy"
 [[exemptions.data-encoding]]
 version = "2.11.1"
 criteria = "safe-to-deploy"
+
+[[exemptions.der]]
+version = "0.8.3"
+criteria = "safe-to-run"
 
 [[exemptions.deranged]]
 version = "0.5.9"
@@ -342,6 +350,10 @@ criteria = "safe-to-deploy"
 version = "0.4.2"
 criteria = "safe-to-deploy"
 
+[[exemptions.hmac]]
+version = "0.13.0"
+criteria = "safe-to-run"
+
 [[exemptions.hybrid-array]]
 version = "0.2.3"
 criteria = "safe-to-deploy"
@@ -417,6 +429,10 @@ criteria = "safe-to-deploy"
 [[exemptions.js-sys]]
 version = "0.3.106"
 criteria = "safe-to-deploy"
+
+[[exemptions.keccak]]
+version = "0.2.2"
+criteria = "safe-to-run"
 
 [[exemptions.lazy_static]]
 version = "1.5.1"
@@ -521,6 +537,10 @@ criteria = "safe-to-deploy"
 [[exemptions.pin-project-lite]]
 version = "0.2.17"
 criteria = "safe-to-deploy"
+
+[[exemptions.pkcs8]]
+version = "0.11.0"
+criteria = "safe-to-run"
 
 [[exemptions.plain]]
 version = "0.2.3"
@@ -670,9 +690,17 @@ criteria = "safe-to-deploy"
 version = "0.10.9"
 criteria = "safe-to-deploy"
 
+[[exemptions.sha3]]
+version = "0.11.0"
+criteria = "safe-to-run"
+
 [[exemptions.signature]]
 version = "2.3.0-pre.4"
 criteria = "safe-to-deploy"
+
+[[exemptions.signature]]
+version = "3.0.0"
+criteria = "safe-to-run"
 
 [[exemptions.simd-adler32]]
 version = "0.3.10"
@@ -690,6 +718,10 @@ criteria = "safe-to-deploy"
 version = "0.1.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.slh-dsa]]
+version = "0.2.0-rc.5"
+criteria = "safe-to-run"
+
 [[exemptions.smallvec]]
 version = "1.16.4"
 criteria = "safe-to-deploy"
@@ -697,6 +729,10 @@ criteria = "safe-to-deploy"
 [[exemptions.smawk]]
 version = "0.3.3"
 criteria = "safe-to-deploy"
+
+[[exemptions.spki]]
+version = "0.8.1"
+criteria = "safe-to-run"
 
 [[exemptions.sqlite-wasm-rs]]
 version = "0.6.2"
@@ -862,9 +898,17 @@ criteria = "safe-to-deploy"
 version = "0.7.35"
 criteria = "safe-to-deploy"
 
+[[exemptions.zerocopy]]
+version = "0.8.63"
+criteria = "safe-to-run"
+
 [[exemptions.zerocopy-derive]]
 version = "0.7.35"
 criteria = "safe-to-deploy"
+
+[[exemptions.zerocopy-derive]]
+version = "0.8.63"
+criteria = "safe-to-run"
 
 [[exemptions.zerofrom]]
 version = "0.1.8"
