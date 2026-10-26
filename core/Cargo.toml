@@ -13,7 +13,7 @@ rust-version = "1.99"
 serde = { version = "1", features = ["derive"] }
 uuid = { version = "1", features = ["v7"] }
 aws-lc-rs = "1.18"
-zeroize = { version = "1.9", features = ["derive"] }
+zeroize = { version = "1.9", features = ["derive", "serde"] }
 data-encoding = "2.11"
 
 [profile.release]
