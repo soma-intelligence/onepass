@@ -122,16 +122,14 @@ fn firefox_apply(d: &mut Draft, _: ItemType, col: &str, val: &str) -> bool {
                 d.title(&host);
             }
         }
-        "timecreated" => {
-            if let Some(t) = unix_time(val, 1000) {
-                d.created(t);
-            }
-        }
-        "timepasswordchanged" => {
-            if let Some(t) = unix_time(val, 1000) {
-                d.updated(t);
-            }
-        }
+        "timecreated" => match unix_time(val, 1000) {
+            Some(t) => d.created(t),
+            None => d.bad_value(col, val),
+        },
+        "timepasswordchanged" => match unix_time(val, 1000) {
+            Some(t) => d.updated(t),
+            None => d.bad_value(col, val),
+        },
         "httprealm" | "formactionorigin" | "guid" | "timelastused" => {}
         _ => return common(d, col, val).is_some(),
     }
@@ -185,16 +183,14 @@ fn protonpass_apply(d: &mut Draft, kind: ItemType, col: &str, val: &str) -> bool
         "password" => d.set("password", val),
         "note" => note(d, kind, val),
         "totp" => d.set("totp", val),
-        "createtime" => {
-            if let Some(t) = unix_time(val, 1) {
-                d.created(t);
-            }
-        }
-        "modifytime" => {
-            if let Some(t) = unix_time(val, 1) {
-                d.updated(t);
-            }
-        }
+        "createtime" => match unix_time(val, 1) {
+            Some(t) => d.created(t),
+            None => d.bad_value(col, val),
+        },
+        "modifytime" => match unix_time(val, 1) {
+            Some(t) => d.updated(t),
+            None => d.bad_value(col, val),
+        },
         "vault" => d.folder(val),
         _ => return false,
     }
@@ -467,6 +463,19 @@ mod tests {
         assert_eq!(imp.items.len(), 1);
         assert_eq!(imp.skipped, 1);
         assert_eq!(imp.items[0].item.title, "A");
+    }
+
+    #[test]
+    fn unparsable_timestamp_is_kept_with_warning() {
+        let imp = parse_firefox(
+            b"url,username,password,httpRealm,formActionOrigin,guid,timeCreated,timeLastUsed,timePasswordChanged\n\
+              https://example.com,u,p,,,,soon,,\n",
+        )
+        .unwrap();
+        assert_eq!(imp.items.len(), 1);
+        assert_eq!(imp.warnings.len(), 1);
+        assert_eq!(imp.warnings[0].code, "bad_date");
+        assert_eq!(imported_labels(&imp.items[0].item), vec!["timecreated"]);
     }
 
     fn header(b: &[u8]) -> Vec<String> {

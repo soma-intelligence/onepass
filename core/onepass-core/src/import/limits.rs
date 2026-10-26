@@ -167,6 +167,26 @@ mod tests {
     }
 
     #[test]
+    fn zip_entry_count_cap() {
+        let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let build = |n: usize| {
+            let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+            for i in 0..n {
+                w.start_file(format!("e{i}"), opts).unwrap();
+            }
+            w.finish().unwrap().into_inner()
+        };
+        assert_eq!(
+            zip_entries(&build(ZIP_MAX_ENTRIES)).unwrap().len(),
+            ZIP_MAX_ENTRIES
+        );
+        assert_eq!(
+            zip_entries(&build(ZIP_MAX_ENTRIES + 1)),
+            Err(Error::InvalidFormat("too many zip entries"))
+        );
+    }
+
+    #[test]
     fn zip_skips_directories_and_keeps_stored() {
         let mut w = ZipWriter::new(Cursor::new(Vec::new()));
         let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);

@@ -38,7 +38,12 @@ const SECRET_HINTS: [&str; 7] = ["pass", "secret", "pin", "code", "key", "cvv", 
 #[derive(Clone)]
 enum Pending {
     Value(FieldValue),
-    Base32(Zeroizing<String>),
+    /// Normalized secret, and the source text kept for `imported` should
+    /// the URI be refused.
+    Base32 {
+        secret: Zeroizing<String>,
+        raw: Zeroizing<String>,
+    },
 }
 
 /// An item under construction. Holds secrets: no `Debug`.
@@ -189,6 +194,17 @@ impl Draft {
         }
     }
 
+    /// A source date or timestamp that does not parse: kept as text in
+    /// `imported` under `label`, with a `bad_date` warning. Blank is ignored.
+    pub(crate) fn bad_value(&mut self, label: &str, raw: &str) {
+        if raw.trim().is_empty() {
+            return;
+        }
+        self.extras
+            .push((label.to_owned(), FieldValue::Text(raw.to_owned())));
+        self.codes.push("bad_date");
+    }
+
     /// Custom field for the `imported` section, masked when `secret` or
     /// when the label looks like a secret. A blank value is ignored.
     pub(crate) fn extra(&mut self, label: &str, raw: &str, secret: bool) {
@@ -272,7 +288,7 @@ impl Draft {
         for (id, pending) in values {
             let value = match pending {
                 Pending::Value(v) => v,
-                Pending::Base32(secret) => {
+                Pending::Base32 { secret, raw } => {
                     let uri = Zeroizing::new(otpauth_from_parts(
                         &secret,
                         None,
@@ -283,7 +299,7 @@ impl Draft {
                     ));
                     if parse_otpauth(&uri).is_err() {
                         codes.push("totp_moved");
-                        push_imported(&mut item, "TOTP".to_owned(), FieldValue::Concealed(secret));
+                        push_imported(&mut item, "TOTP".to_owned(), FieldValue::Concealed(raw));
                         continue;
                     }
                     FieldValue::Otp(uri)
@@ -358,7 +374,7 @@ fn convert(k: FieldType, raw: &str) -> Option<Pending> {
             FieldValue::MonthYear { year, month }
         }
         FieldType::Number => FieldValue::Number(t.parse().ok()?),
-        FieldType::Otp => return totp(t),
+        FieldType::Otp => return totp(raw),
         _ => return None,
     };
     Some(Pending::Value(v))
@@ -366,7 +382,8 @@ fn convert(k: FieldType, raw: &str) -> Option<Pending> {
 
 /// An `otpauth://` URI that parses is kept; a bare base32 secret waits for
 /// the title (spaces and dashes dropped, upper case, padding removed).
-fn totp(t: &str) -> Option<Pending> {
+fn totp(raw: &str) -> Option<Pending> {
+    let t = raw.trim();
     if t.get(..10)
         .is_some_and(|p| p.eq_ignore_ascii_case("otpauth://"))
     {
@@ -383,7 +400,10 @@ fn totp(t: &str) -> Option<Pending> {
             .filter(|c| !c.is_whitespace() && *c != '-' && *c != '=')
             .map(|c| c.to_ascii_uppercase()),
     );
-    Some(Pending::Base32(s))
+    Some(Pending::Base32 {
+        secret: s,
+        raw: Zeroizing::new(raw.to_owned()),
+    })
 }
 
 /// All-digit text of `len` characters (any length when `len` is empty).
@@ -393,17 +413,21 @@ fn digits<T: std::str::FromStr>(s: &str, len: std::ops::RangeInclusive<usize>) -
         .flatten()
 }
 
-/// `YYYY-MM-DD`, `DD/MM/YYYY`, or Unix seconds.
+/// `YYYY-MM-DD`, `DD/MM/YYYY`, `YYYYMMDD`, or Unix seconds (9 to 12
+/// digits). Any other digit string is refused rather than guessed.
 fn parse_date(s: &str) -> Option<Date> {
-    if let Some(secs) = digits::<i64>(s, 1..=12) {
-        return OffsetDateTime::from_unix_timestamp(secs)
-            .ok()
-            .map(|t| t.date());
-    }
     let ymd = |y: &str, m: &str, d: &str| -> Option<Date> {
         let month = Month::try_from(digits::<u8>(m, 1..=2)?).ok()?;
         Date::from_calendar_date(digits(y, 4..=4)?, month, digits(d, 1..=2)?).ok()
     };
+    if s.len() == 8 && s.bytes().all(|b| b.is_ascii_digit()) {
+        return ymd(s.get(..4)?, s.get(4..6)?, s.get(6..)?);
+    }
+    if let Some(secs) = digits::<i64>(s, 9..=12) {
+        return OffsetDateTime::from_unix_timestamp(secs)
+            .ok()
+            .map(|t| t.date());
+    }
     let parts: Vec<&str> = s.split('-').collect();
     if let [y, m, d] = parts.as_slice() {
         return ymd(y, m, d);
@@ -433,21 +457,38 @@ fn parse_month_year(s: &str) -> Option<(u16, u8)> {
     ((1..=12).contains(&month) && year >= 1000).then_some((year, month))
 }
 
-/// Percent-encodes everything except RFC 3986 unreserved characters.
-fn encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
+fn unreserved(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~')
+}
+
+/// Length of `s` once percent-encoded.
+fn encoded_len(s: &str) -> usize {
+    s.bytes().map(|b| if unreserved(b) { 1 } else { 3 }).sum()
+}
+
+/// Percent-encodes `s` into `out`, keeping RFC 3986 unreserved characters.
+/// Writes in place: no temporary copy of the input.
+fn encode_into(out: &mut String, s: &str) {
     for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+        if unreserved(b) {
             out.push(char::from(b));
         } else {
-            out.push_str(&format!("%{b:02X}"));
+            let hex = |n: u8| {
+                char::from_digit(u32::from(n), 16)
+                    .unwrap_or('0')
+                    .to_ascii_uppercase()
+            };
+            out.push('%');
+            out.push(hex(b >> 4));
+            out.push(hex(b & 0x0f));
         }
     }
-    out
 }
 
 /// `otpauth://totp/<issuer>:<account>?secret=...&issuer=...&algorithm=...
 /// &digits=...&period=...`. Blank issuer or account parts are left out.
+/// The URI is written into one buffer sized up front, so the secret is
+/// never left behind in a reallocated or temporary string.
 pub(crate) fn otpauth_from_parts(
     secret_b32: &str,
     issuer: Option<&str>,
@@ -456,23 +497,42 @@ pub(crate) fn otpauth_from_parts(
     digits: u8,
     period: u32,
 ) -> String {
+    use std::fmt::Write;
+
     let issuer = issuer.map(str::trim).filter(|s| !s.is_empty());
     let account = account.map(str::trim).filter(|s| !s.is_empty());
-    let label = match (issuer, account) {
-        (Some(i), Some(a)) => format!("{}:{}", encode(i), encode(a)),
-        (Some(x), None) | (None, Some(x)) => encode(x),
-        (None, None) => String::new(),
-    };
-    let mut uri = format!("otpauth://totp/{label}?secret={}", encode(secret_b32));
+    let issuer_len = issuer.map_or(0, encoded_len);
+    // Fixed text, the variable parts, and room for the two numbers.
+    let capacity = "otpauth://totp/:?secret=&issuer=&algorithm=&digits=&period=".len()
+        + 2 * issuer_len
+        + account.map_or(0, encoded_len)
+        + encoded_len(secret_b32)
+        + encoded_len(algorithm)
+        + 3
+        + 10;
+    let mut uri = Zeroizing::new(String::with_capacity(capacity));
+    uri.push_str("otpauth://totp/");
+    if let Some(i) = issuer {
+        encode_into(&mut uri, i);
+        if account.is_some() {
+            uri.push(':');
+        }
+    }
+    if let Some(a) = account {
+        encode_into(&mut uri, a);
+    }
+    uri.push_str("?secret=");
+    encode_into(&mut uri, secret_b32);
     if let Some(i) = issuer {
         uri.push_str("&issuer=");
-        uri.push_str(&encode(i));
+        encode_into(&mut uri, i);
     }
-    uri.push_str(&format!(
-        "&algorithm={}&digits={digits}&period={period}",
-        encode(algorithm)
-    ));
-    uri
+    uri.push_str("&algorithm=");
+    encode_into(&mut uri, algorithm);
+    // Integers are formatted on the stack, straight into the buffer.
+    let _ = write!(uri, "&digits={digits}&period={period}");
+    // Moves the allocation out; the emptied wrapper has nothing to wipe.
+    std::mem::take(&mut *uri)
 }
 
 /// Lower-cased host of a URL, without scheme, credentials or port. A
@@ -584,29 +644,76 @@ fn place(item: &mut Item, id: &str, value: FieldValue) {
     }
 }
 
-/// Moves the first filled occurrence of template field `id` to `imported`:
-/// the template field is emptied, a repeatable copy is removed. False when
-/// no occurrence holds a value.
-fn move_field(item: &mut Item, id: &str) -> bool {
-    let mut found = None;
-    'search: for (si, s) in item.sections.iter().enumerate() {
+/// Positions (section, field) of the filled occurrences of template
+/// field `id`, outside `imported`.
+fn filled_occurrences(item: &Item, id: &str) -> Vec<(usize, usize)> {
+    let mut found = Vec::new();
+    for (si, s) in item.sections.iter().enumerate() {
         if s.id == IMPORTED_ID {
             continue;
         }
         for (fi, f) in s.fields.iter().enumerate() {
             if f.id == id && is_filled(&f.value) {
-                let is_copy = s.fields.iter().take(fi).any(|g| g.id == id);
-                found = Some((si, fi, is_copy));
-                break 'search;
+                found.push((si, fi));
             }
         }
     }
-    let Some((si, fi, is_copy)) = found else {
+    found
+}
+
+/// Whether the occurrence at `at` alone makes `validate` fail on `id` with
+/// `reason`: probed on a copy where it is the only occurrence of `id`,
+/// moved into the template slot.
+fn occurrence_fails(item: &Item, id: &str, reason: &str, at: (usize, usize)) -> bool {
+    let Some(value) = item
+        .sections
+        .get(at.0)
+        .and_then(|s| s.fields.get(at.1))
+        .map(|f| f.value.clone())
+    else {
         return false;
     };
+    let mut probe = item.clone();
+    let mut first = true;
+    for s in probe.sections.iter_mut().filter(|s| s.id != IMPORTED_ID) {
+        s.fields.retain_mut(|f| {
+            if f.id != id {
+                return true;
+            }
+            if first {
+                first = false;
+                f.value = value.clone();
+                return true;
+            }
+            false
+        });
+    }
+    matches!(
+        validate(&probe),
+        Err(Error::Validation(ValidationError { field, reason: r })) if field == id && r == reason
+    )
+}
+
+/// Moves the occurrence of template field `id` that fails validation with
+/// `reason` to `imported` (the first filled one when none can be singled
+/// out): the template field is emptied, a repeatable copy is removed.
+/// False when no occurrence holds a value.
+fn move_field(item: &mut Item, id: &str, reason: &str) -> bool {
+    let filled = filled_occurrences(item, id);
+    let target = match filled.as_slice() {
+        [] => return false,
+        [only] => *only,
+        [first, ..] => filled
+            .iter()
+            .copied()
+            .find(|at| occurrence_fails(item, id, reason, *at))
+            .unwrap_or(*first),
+    };
+    let (si, fi) = target;
     let Some(section) = item.sections.get_mut(si) else {
         return false;
     };
+    let is_copy = section.fields.iter().take(fi).any(|g| g.id == id);
     let field = if is_copy {
         if fi >= section.fields.len() {
             return false;
@@ -687,10 +794,10 @@ fn settle(item: &mut Item, codes: &mut Vec<&'static str>) {
     for _ in 0..rounds {
         let failing = match validate(item) {
             Ok(()) => return,
-            Err(Error::Validation(ValidationError { field, .. })) => Some(field),
+            Err(Error::Validation(ValidationError { field, reason })) => Some((field, reason)),
             Err(_) => None,
         };
-        if failing.is_some_and(|f| move_field(item, &f)) {
+        if failing.is_some_and(|(f, r)| move_field(item, &f, r)) {
             codes.push("field_moved");
             continue;
         }
@@ -996,6 +1103,106 @@ mod tests {
         assert_eq!(item.field("issued_on").unwrap().value, FieldValue::Empty);
         assert_eq!(imported(&item).len(), 1);
         assert_eq!(codes, vec!["bad_date"]);
+    }
+
+    #[test]
+    fn ambiguous_digit_dates() {
+        let cases = [
+            ("20300131", Some(date!(2030 - 01 - 31))),
+            ("1700000000", Some(date!(2023 - 11 - 14))),
+            ("2030", None),
+            ("123", None),
+            ("1234567890123", None),
+            ("20301331", None),
+        ];
+        for (raw, want) in cases {
+            let mut d = card();
+            d.set("expiry", "01/2031");
+            d.set("issued_on", raw);
+            let (item, codes) = one(d);
+            match want {
+                Some(day) => {
+                    assert_eq!(
+                        item.field("issued_on").unwrap().value,
+                        FieldValue::Date(day),
+                        "{raw}"
+                    );
+                    assert!(codes.is_empty(), "{raw}");
+                }
+                None => {
+                    assert_eq!(item.field("issued_on").unwrap().value, FieldValue::Empty);
+                    let extra = imported(&item);
+                    assert_eq!(extra.len(), 1, "{raw}");
+                    assert_eq!(extra[0].value, FieldValue::Text(raw.into()), "{raw}");
+                    assert_eq!(codes, vec!["bad_date"], "{raw}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bad_value_keeps_text_and_warns() {
+        let mut d = Draft::new(ItemType::Login);
+        d.title("t");
+        d.set("username", "alice");
+        d.bad_value("timeCreated", "yesterday");
+        d.bad_value("timeCreated", " ");
+        let (item, codes) = one(d);
+        let extra = imported(&item);
+        assert_eq!(extra.len(), 1);
+        assert_eq!(extra[0].label, "timeCreated");
+        assert_eq!(extra[0].value, FieldValue::Text("yesterday".into()));
+        assert_eq!(codes, vec!["bad_date"]);
+    }
+
+    #[test]
+    fn move_field_takes_the_failing_occurrence() {
+        let mut item = crate::model::new_item(ItemType::CreditCard, Id([0; 16]), "Card");
+        item.field_mut("cardholder").unwrap().value = FieldValue::Text("Q Caron".into());
+        item.field_mut("expiry").unwrap().value = FieldValue::MonthYear {
+            year: 2031,
+            month: 1,
+        };
+        let number = item.field_mut("number").unwrap();
+        number.value = FieldValue::Concealed(secret("4111111111111111"));
+        number.repeatable = true;
+        let mut copy = number.clone();
+        copy.value = FieldValue::Concealed(secret("1234"));
+        let at = item.sections[0]
+            .fields
+            .iter()
+            .position(|f| f.id == "number")
+            .unwrap();
+        item.sections[0].fields.insert(at + 1, copy);
+        let mut codes = Vec::new();
+        settle(&mut item, &mut codes);
+        assert_eq!(codes, vec!["field_moved"]);
+        assert_eq!(item.item_type, ItemType::CreditCard);
+        assert_eq!(
+            item.field("number").unwrap().value,
+            FieldValue::Concealed(secret("4111111111111111"))
+        );
+        let extra = imported(&item);
+        assert_eq!(extra.len(), 1);
+        assert_eq!(extra[0].value, FieldValue::Concealed(secret("1234")));
+    }
+
+    #[test]
+    fn otpauth_buffer_is_not_reallocated() {
+        let uri = otpauth_from_parts(
+            "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+            Some("Exämple & Co"),
+            Some("alice@example.com"),
+            "SHA1",
+            6,
+            30,
+        );
+        // Sized up front: only the slack reserved for the two numbers is
+        // left, a reallocation would at least double the capacity.
+        assert!(uri.capacity() >= uri.len());
+        assert!(uri.capacity() - uri.len() <= 13, "{}", uri.capacity());
+        let cfg = parse_otpauth(&uri).unwrap();
+        assert_eq!(cfg.issuer.as_deref(), Some("Exämple & Co"));
     }
 
     #[test]
