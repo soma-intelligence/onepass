@@ -20,6 +20,13 @@ struct ItemOtpTests {
                 ]))
         #expect(firstOtpValue(of: login) == "JBSWY3DPEHPK3PXP")
 
+        // Whitespace only counts as empty.
+        login.sections[main].fields[totp].value = .otp(value: "  ")
+        #expect(firstOtpValue(of: login) == "JBSWY3DPEHPK3PXP")
+        // Both filled: the first in section order wins.
+        login.sections[main].fields[totp].value = .otp(value: "otpauth://totp/Forge?secret=GEZDGNBV")
+        #expect(firstOtpValue(of: login) == "otpauth://totp/Forge?secret=GEZDGNBV")
+
         #expect(firstOtpValue(of: draftItem(.login)) == nil)
         #expect(firstOtpValue(of: draftItem(.secureNote)) == nil)
     }

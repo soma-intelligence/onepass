@@ -37,6 +37,7 @@ struct BrowseRoot: View {
                     try await model.session.verifyMasterPassword(password)
                     await model.copyTotpCode(ref)
                 }
+                .onAppear { model.totpPromptShown = true }
             }
             // The split view shows a revealed item through the selection, and searches through
             // `searchFocusRequest`; the iPhone tabs handle the reveal themselves.
@@ -139,4 +140,9 @@ private struct DiscardConfirmation: ViewModifier {
             get: { active && model.pendingDiscard != nil },
             set: { if !$0 { model.pendingDiscard = nil } })
     }
+}
+
+/// The master password sheet of "Copier le code à usage unique" is presented for an item.
+extension ItemRef: Identifiable {
+    var id: Self { self }
 }

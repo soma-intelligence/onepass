@@ -72,6 +72,12 @@ final class AppModel {
     /// "Copier le code à usage unique" without biometrics: the item whose code waits for the
     /// master password.
     var totpPasswordRequest: ItemRef?
+    /// The master password sheet of `totpPasswordRequest` actually appeared.
+    @ObservationIgnored var totpPromptShown = false
+    /// The waiting route was queued while locked, so the coming unlock is made for it (ruling W13).
+    @ObservationIgnored private var pendingRouteFresh = false
+    /// When the waiting route was queued (an abandoned copy request expires).
+    @ObservationIgnored private var pendingRouteAt = Date.distantPast
     /// When the session last became unlocked (lock requests from a Control older than this are spent).
     @ObservationIgnored private(set) var lastUnlockAt: Date?
     /// What the browse screens should bring forward (iPhone: the tab to select). Cleared by the
@@ -418,6 +424,9 @@ final class AppModel {
     func handle(_ route: AppRoute) {
         guard session.state == .unlocked, !onboardingInProgress else {
             pendingRoute = route
+            pendingRouteFresh = IntentAuthentication.isFreshUnlockRequest(
+                state: session.state, onboarding: onboardingInProgress)
+            pendingRouteAt = .now
             return
         }
         run(route, freshUnlock: false)
@@ -427,14 +436,18 @@ final class AppModel {
     func consumePendingRoute() {
         guard session.state == .unlocked, !onboardingInProgress, let route = pendingRoute else { return }
         pendingRoute = nil
-        run(route, freshUnlock: true)
+        // A copy request left waiting more than 2 minutes was abandoned: no code copied later.
+        if case .copyTotp = route, Date.now.timeIntervalSince(pendingRouteAt) > 120 { return }
+        run(route, freshUnlock: pendingRouteFresh)
     }
 
     private func run(_ route: AppRoute, freshUnlock: Bool) {
         switch route {
         case .link(.item(let vaultID, let itemID)):
             let ref = ItemRef(vaultID: vaultID, itemID: itemID)
-            guard session.summaries.contains(where: { $0.id == itemID && $0.vaultId == vaultID }) else {
+            guard session.summaries.contains(where: { $0.id == itemID && $0.vaultId == vaultID }),
+                !session.hiddenVaultIDs.contains(vaultID)
+            else {
                 showToast(String(localized: "Élément introuvable"))
                 return
             }
@@ -457,23 +470,61 @@ final class AppModel {
         if !freshUnlock {
             guard await session.confirmUserPresence(prompt: String(localized: "Copier le code à usage unique"))
             else {
-                showSettings = false
-                showGenerator = false
-                totpPasswordRequest = ref
+                await requestTotpPassword(ref)
                 return
             }
         }
         await copyTotpCode(ref)
     }
 
+    /// Shows the master password sheet: the sheets the model owns close first, and the prompt comes
+    /// once their dismissal is over. A sheet it cannot close (an item being created, a vault
+    /// editor) keeps it from appearing: a message says so instead.
+    private func requestTotpPassword(_ ref: ItemRef) async {
+        let covered = showSettings || showGenerator || showNewItemPicker
+        showSettings = false
+        showGenerator = false
+        showNewItemPicker = false
+        if covered {
+            try? await Task.sleep(for: .milliseconds(700))
+        } else {
+            await Task.yield()
+        }
+        guard session.state == .unlocked else { return }
+        totpPromptShown = false
+        totpPasswordRequest = ref
+        try? await Task.sleep(for: .seconds(1))
+        if totpPasswordRequest == ref, !totpPromptShown {
+            totpPasswordRequest = nil
+            showToast(String(localized: "Ouvre OnePass pour copier le code"))
+        }
+    }
+
     /// Copies the item's current one-time code with the OnePass clipboard (90 s, local only).
     func copyTotpCode(_ ref: ItemRef) async {
         guard session.state == .unlocked else { return }
         let noCode = String(localized: "Cet élément n'a pas de code à usage unique")
-        guard let item = try? await session.loadItem(vaultID: ref.vaultID, itemID: ref.itemID),
-            item.trashedAt == nil, let secret = firstOtpValue(of: item),
-            let totp = try? totpNow(secretOrUri: secret, unixSeconds: UInt64(Date.now.timeIntervalSince1970))
-        else {
+        guard !session.hiddenVaultIDs.contains(ref.vaultID) else {
+            showToast(noCode)
+            return
+        }
+        let item: FfiItem
+        do {
+            item = try await session.loadItem(vaultID: ref.vaultID, itemID: ref.itemID)
+        } catch {
+            Self.log.error("one-time code: item not loaded")
+            showToast(noCode)
+            return
+        }
+        guard item.trashedAt == nil, let secret = firstOtpValue(of: item) else {
+            showToast(noCode)
+            return
+        }
+        let totp: FfiTotpCode
+        do {
+            totp = try totpNow(secretOrUri: secret, unixSeconds: UInt64(Date.now.timeIntervalSince1970))
+        } catch {
+            Self.log.error("one-time code: secret refused by the core")
             showToast(noCode)
             return
         }

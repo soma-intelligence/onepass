@@ -449,7 +449,8 @@
     "Générer un mot de passe": {},
     "Génère un mot de passe aléatoire, sans l'enregistrer.": {},
     "Verrouille OnePass sur cet appareil.": {},
-    "OnePass est verrouillé": {}
+    "OnePass est verrouillé": {},
+    "Ouvre OnePass pour copier le code": {}
   },
   "version": "1.0"
 }

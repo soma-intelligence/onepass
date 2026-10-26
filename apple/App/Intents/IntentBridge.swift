@@ -61,8 +61,3 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
         }
     }
 }
-
-/// The master password sheet of "Copier le code à usage unique" is presented for an item.
-extension ItemRef: Identifiable {
-    var id: Self { self }
-}
