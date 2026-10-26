@@ -1,12 +1,14 @@
 //! Browser extension bridge protocol of OnePass: native messaging framing,
-//! hybrid KEM, transcript and key derivation,
-//! envelopes and pairing.
+//! hybrid KEM, transcript and key derivation, envelopes, pairing, session
+//! handshake and encrypted channel.
 
+pub mod channel;
 pub mod error;
 pub mod framing;
 pub mod kdf;
 pub mod kem;
 pub mod pairing;
+pub mod session;
 pub mod transcript;
 pub mod wire;
 
