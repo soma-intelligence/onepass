@@ -10,8 +10,13 @@ public struct SecretKeyVault: Sendable {
 
     static func key(for accountID: String) -> String { "secretkey.\(accountID)" }
 
+    /// Writes, then checks that a lookup finds it: a key the next unlock could not read is not
+    /// stored (`KeychainError.notReadBack`), so the caller undoes the creation or the restore.
     public func store(_ secretKey: String, accountID: String) throws {
         try keychain.write(Self.key(for: accountID), Data(secretKey.utf8))
+        guard try keychain.read(Self.key(for: accountID)) == Data(secretKey.utf8) else {
+            throw KeychainError.notReadBack
+        }
     }
 
     public func load(accountID: String) throws -> String? {

@@ -574,6 +574,34 @@ struct VaultSessionHardeningTests {
         #expect(h.makeSession().state == .noAccount)
     }
 
+    /// A Secret Key that cannot be read back is not stored: the creation is undone, never an
+    /// account that asks for the Emergency Kit at the first lock.
+    @Test func createAccountFailsWhenSecretKeyCannotBeReadBack() async throws {
+        let h = try SessionHarness(keychain: WriteOnlyKeychain())
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        await #expect(throws: VaultError.other(VaultSession.secretKeyNotStoredOnCreate)) {
+            _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        }
+        #expect(session.state == .noAccount)
+        #expect(h.settings.accountID == nil)
+        #expect(try !hasAccount(dbPath: h.environment.databaseURL.path))
+    }
+
+    @Test func lockWithSecretKeyPresentAsksOnlyThePassword() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        session.lock()
+        #expect(session.state == .locked)
+        #expect(!session.needsSecretKey)
+        await session.waitForReleasedSessions()
+        let relaunched = h.makeSession()
+        #expect(relaunched.state == .locked)
+        #expect(!relaunched.needsSecretKey)
+    }
+
     /// I2: the undone creation empties the store in place; a sync handle opened before (the app's
     /// coordinator) keeps working on the same file and sees the next, successful creation.
     @Test func undoneCreationResetsTheStoreUnderAnOpenHandle() async throws {

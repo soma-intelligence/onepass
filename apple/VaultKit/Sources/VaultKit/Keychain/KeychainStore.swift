@@ -17,11 +17,15 @@ extension KeychainStore {
 
 public enum KeychainError: Error, Equatable, Sendable {
     case unexpectedStatus(Int32)
+    /// The write reported success but a lookup right after does not find the item.
+    case notReadBack
 
     public var message: String {
         switch self {
         case .unexpectedStatus(let status):
             return "Erreur du trousseau (code \(status))."
+        case .notReadBack:
+            return "Le trousseau n'a pas conservé la donnée."
         }
     }
 }
