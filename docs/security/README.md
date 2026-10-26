@@ -362,3 +362,65 @@ L'adversaire est un agent IA, ou un contenu qu'il lit (injection de prompt), qui
 ### 11.5 Fuzzing
 
 Deux cibles s'ajoutent : `mcp_line` (une ligne JSON-RPC arbitraire sur un hôte factice) et `ssh_agent_frame` (messages de l'agent et blobs de signature arbitraires).
+
+## 12. Jalon 6 : Apple Watch, widgets, Raccourcis, Vision Pro
+
+Cette section décrit ce qui sort de l'app au jalon 6 : une charge utile chiffrée vers la montre, un instantané lisible par les widgets, des App Intents et un signal de verrouillage. Spec : `docs/superpowers/specs/2026-10-26-milestone-6-watch-vision-design.md`. La règle de frontière tient : seul le Rust manipule les clés et les graines TOTP. La montre garde ses graines dans un objet Rust (`CompanionVault`) qui ne rend que des codes ; les widgets ne reçoivent que des codes déjà calculés.
+
+### 12.1 Charge utile de la montre
+
+- **Construction** (`onepass-core/src/companion.rs`, `build_payload`, dans le Rust de l'iPhone) : items marqués `on_watch`, ni à la corbeille, ni archivés, ni `reprompt`, hors vaults masqués de l'appareil, triés par titre, 50 au plus ; une valeur de plus de 1 Kio est omise ; un item sans champ autorisé ni TOTP n'est pas envoyé. Champs par liste fermée (spec, table 3.2) : identifiant d'un Login, Wi-Fi (`ssid`, mot de passe, réseau invité), adhésion et fidélité, carte bancaire réduite à `•••• 1234` (calculé, jamais le numéro), codes d'accès, pièces d'identité. Jamais : mot de passe d'un Login, CVV, PIN, numéro complet de carte, notes. Le premier TOTP rempli voyage dans un champ à part, jamais dans la liste des champs.
+- **Format** : `"OPC1" || génération (u64 big-endian) || enveloppe KEM || blob`. Une clé de charge utile aléatoire de 32 octets est enveloppée par `wrap_key_labeled` (ML-KEM-1024 + X25519, combineur HKDF-SHA256 de la section 3.3) avec l'étiquette `onepass/companion/v1` et le contexte `"watch" || SHA-256(clé publique de la montre)`, préfixé par sa longueur dans l'info HKDF. Le blob scelle le postcard sous cette clé (`BlobKind::Companion = 11`, AES-256-GCM de la section 3.2) avec un `blob_id` égal aux 16 premiers octets de `SHA-256("OPC1" || génération || empreinte du destinataire)` : la génération en clair est authentifiée. Le texte clair est écrit dans un tampon effacé à la libération (`Zeroizing`).
+- **Ouverture** (`open_payload`, `CompanionVault::open`) : refus d'un format inconnu, d'une mauvaise clé, de toute altération, d'une génération qui ne correspond pas au blob et de plus de 50 entrées. Erreurs du core sans contenu.
+- **Aucune signature de l'iPhone** (ruling W2) : seule l'app iPhone associée peut écrire dans la session WatchConnectivity appairée. Une app iPhone compromise pourrait pousser de fausses entrées, mais elle aurait déjà tout le coffre.
+- **Transport** : la charge utile par `updateApplicationContext` (seul le dernier état compte) ; la clé publique de la montre et `refreshRequest` par `transferUserInfo` (file d'attente) ; l'effacement par les deux. WatchConnectivity ajoute son propre chiffrement, non compté dans le modèle de menace.
+
+### 12.2 Clés, Keychain et fichiers
+
+| Où | Élément | Protection |
+| --- | --- | --- |
+| Montre | clé secrète hybride, clé publique, plancher de génération (Keychain, service `me.somalabs.onepass.watch`) | `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, keychain à protection de données |
+| Montre | `Application Support/OnePass/companion.sealed` (charge utile scellée) | `NSFileProtectionComplete` |
+| iPhone | clé publique de la montre, génération, date du dernier envoi, empreinte de la clé effacée (`UserDefaults`) | aucun secret |
+| iPhone | `Library/OnePass/glance.json` du conteneur App Group `group.me.somalabs.onepass` | `NSFileProtectionComplete`, écriture atomique |
+
+Sans code sur la montre, la clé ne peut pas être enregistrée : aucune clé n'est créée et l'app affiche "Active un code sur ton Apple Watch pour utiliser OnePass". `ThisDeviceOnly` : ni sauvegarde ni trousseau iCloud. L'objet `CompanionVault` n'existe que pendant que l'app montre est au premier plan ; il est relâché à la sortie, et la réouverture relit le Keychain et le fichier, ce qui exige une montre déverrouillée. Avec la détection du poignet, retirer la montre la verrouille ; sans elle, seul le code de la montre protège les données (dit dans les réglages iPhone).
+
+### 12.3 Rejeu, clé changée, effacement
+
+- La montre refuse une génération inférieure ou égale à son plancher (rangé dans le Keychain avec la clé). Le plancher est relevé avant l'écriture du fichier : un échec d'écriture ne laisse jamais revenir une charge utile plus ancienne. Un plancher illisible refuse tout.
+- Charge utile illisible (clé changée, altération, rejeu) : ignorée, la montre garde la précédente et envoie une seule `refreshRequest` jusqu'à la prochaine charge utile acceptée (pas de va-et-vient avec un iPhone bloqué sur une mauvaise clé). Une charge utile reçue montre verrouillée (Keychain illisible) est notée par un marqueur sans secret, et un nouvel envoi est demandé au retour au premier plan.
+- L'iPhone prend comme génération le plus grand de "génération + 1" et de l'heure en millisecondes depuis 1970 (un iPhone qui a perdu son compteur repasse au-dessus du plancher de la montre), et ne l'enregistre qu'après un envoi réussi ; une clé publique qui change (montre réinitialisée) remplace l'ancienne et déclenche un envoi.
+- "Retirer de l'Apple Watch" envoie `wipe` par les deux canaux. La montre efface le fichier puis les clés et le plancher, et recrée une clé ; si l'effacement des clés échoue, elle ne redémarre pas sur l'ancienne clé. L'iPhone oublie la clé et garde son empreinte SHA-256 : une copie ancienne de cette clé qui arrive plus tard est ignorée, seule une nouvelle clé reprend les envois. Un échec d'envoi de l'effacement est affiché ("la montre garde peut-être ses données").
+- Journaux `os.Logger` sans titre ni valeur, des deux côtés.
+
+### 12.4 Widgets
+
+- L'app écrit l'instantané (8 favoris au plus, mêmes exclusions que la montre) au déverrouillage, à chaque changement pendant la session et au retour au premier plan déverrouillé, jamais coffre verrouillé. L'extension `OnePassWidgets` ne lie pas le core et n'a que le droit App Group et la protection de données `NSFileProtectionComplete`.
+- **Exposition** (ruling W4) : pour chaque favori à TOTP, les codes de chaque période qui recoupe les 12 prochaines heures (fenêtre plafonnée à 24 h et 2880 codes par item dans le core). Ces codes valent la graine pendant 12 h pour qui lit le fichier, appareil déverrouillé ; jamais de graine. Au-delà de la fenêtre, ou pour une date sans code, le widget dit "Ouvre OnePass pour actualiser".
+- Appareil verrouillé : le fichier est illisible, le widget affiche "Déverrouille ton iPhone" sans titre ni code ; titres et codes portent en plus `.privacySensitive()` (masqués en écran verrouillé et en StandBy). Un instantané absent, périmé ou corrompu donne un état neutre, jamais des données partielles.
+- Pas de widgets sur Mac ni sur Vision Pro (W5) : macOS n'a pas de protection de fichiers ni d'état "appareil verrouillé" pour un widget.
+
+### 12.5 Contrôles et signal de verrouillage
+
+Le Contrôle "Verrouiller OnePass" s'exécute dans l'extension, qui n'a aucune clé : il écrit un horodatage dans les réglages partagés et poste la notification Darwin `me.somalabs.onepass.lock-request` (ruling W12). L'app en cours verrouille à réception ; à chaque retour au premier plan, elle verrouille aussi si une demande est plus récente que son dernier déverrouillage et que son lancement. Une demande antérieure au lancement est périmée (une app qui ne tournait pas n'avait aucune clé), pour qu'un vieux signal ne défasse jamais le premier déverrouillage après un relancement. Une app suspendue ne verrouille qu'à son réveil, comme pour le délai de verrouillage (10.3). Les Contrôles "Générer un mot de passe" et "Rechercher dans OnePass" ne font qu'ouvrir l'app par lien profond (`OnePassLink` refuse tout autre lien).
+
+### 12.6 App Intents et Raccourcis
+
+- Aucun intent ne rend un secret du coffre. "Générer un mot de passe" rend un mot de passe neuf, qui n'est pas dans le coffre (W14).
+- "Copier le code à usage unique" ouvre l'app, exige une authentification fraîche et copie par le presse-papiers OnePass (local, 90 s) ; le code n'est jamais rendu au raccourci (W13). Si l'app était verrouillée, le déverrouillage fait pour cette demande suffit ; si elle était déjà déverrouillée, la clé biométrique de la Secure Enclave est redemandée, et sans biométrie enrôlée le mot de passe maître (ruling E15, plus strict que le code de l'appareil prévu par la spec). Une demande en file n'hérite jamais du déverrouillage fait pour une autre.
+- `ItemEntity` : depuis la session déverrouillée ; verrouillée, depuis les favoris de l'instantané (titres seulement, iOS), sinon vide avec "Déverrouille OnePass pour choisir un élément". Les titres ne sont jamais donnés à l'index de Siri (`updateAppShortcutParameters()` n'est pas appelé, E16).
+
+### 12.7 Vision Pro
+
+- Optic ID utilise la même clé P-256 de la Secure Enclave et la même politique que Face ID (10.1). La clé `NSFaceIDUsageDescription` sert aussi à Optic ID : l'invite système dit "Face ID" (E18).
+- Pas d'accès à la caméra pour les apps : pas de scan du QR de l'Emergency Kit, la Secret Key se tape.
+- La vue de confidentialité reste opaque (E20). Pas de widgets, pas de Contrôles, pas de lien montre.
+
+### 12.8 Limites du jalon 6
+
+- Rien n'a été vérifié sur vrai matériel ni en build signé : WatchConnectivity réel, App Group et protection de données des widgets, Optic ID, widgets et Contrôles sur l'écran verrouillé, phrases Siri (spec, section 13). La logique d'appairage, de scellement, de rejeu et d'effacement est couverte par les tests Rust et `CompanionKit` sans montre.
+- Codes de 12 h dans le fichier des widgets (W4) ; un widget peut afficher l'état verrouillé jusqu'à son prochain rafraîchissement.
+- La montre garde en mémoire, pendant l'affichage, les valeurs des champs autorisés (R5 : Swift ne garantit pas l'effacement des `String`).
+- Montres `arm64_32` seulement non prises en charge (W3).
+- Aucun audit externe.

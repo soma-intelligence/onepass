@@ -9,7 +9,7 @@ TEST_XCFRAMEWORK := ../build/test/OnePassFFI.xcframework
 # apple/build/test/.core-stamp) and is a no-op when the Rust sources are
 # unchanged; make always delegates to it.
 .PHONY: core core-test test project simulators build-ios build-mac uitest screenshots clean
-.PHONY: simulators-m6 build-watch build-vision
+.PHONY: simulators-m6 build-watch build-vision screenshots-m6
 
 ## Shipped XCFramework (release, ios + ios-simulator + macOS) and bindings.
 core:
@@ -97,6 +97,12 @@ uitest: core simulators
 screenshots: core simulators
 	@if [ -z "$(OUT)" ]; then echo "usage: make -C apple screenshots OUT=<folder>" >&2; exit 64; fi
 	"$(APPLE_DIR)/scripts/screenshots.sh" "$(OUT)"
+
+## Milestone 6 screenshots (Apple Watch list, Vision Pro list and detail, light and dark) with
+## fictional data: `make screenshots-m6 OUT=<folder>`, a folder outside the repository.
+screenshots-m6: core simulators-m6
+	@if [ -z "$(OUT)" ]; then echo "usage: make -C apple screenshots-m6 OUT=<folder>" >&2; exit 64; fi
+	"$(APPLE_DIR)/scripts/screenshots-m6.sh" "$(OUT)"
 
 clean:
 	rm -rf "$(APPLE_DIR)/build" "$(APPLE_DIR)/DerivedData" "$(APPLE_DIR)/VaultKit/.build" "$(APPLE_DIR)/CompanionKit/.build" \
