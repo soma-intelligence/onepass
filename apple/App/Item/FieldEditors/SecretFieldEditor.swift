@@ -8,8 +8,11 @@ import VaultKit
 struct SecretFieldEditor: View {
     let field: FfiField
     @Binding var value: FfiFieldValue
+    @Environment(\.requestGenerator) private var requestGenerator
     @State private var revealed = false
     @State private var generating = false
+    /// The value the generator just put in, with its recipe bits (the meter shows those for it).
+    @State private var generated: GeneratedValue?
 
     private var text: Binding<String> {
         Binding(get: { value.text }, set: { value = .fromText($0, kind: field.kind) })
@@ -32,7 +35,7 @@ struct SecretFieldEditor: View {
                 .accessibilityLabel(revealed ? Text("Masquer") : Text("Révéler"))
                 if field.kind == .password {
                     Button {
-                        generating = true
+                        openGenerator()
                     } label: {
                         Image(systemName: "wand.and.stars")
                     }
@@ -42,7 +45,7 @@ struct SecretFieldEditor: View {
                 }
             }
             if field.kind == .password, !value.text.isEmpty {
-                StrengthMeter(bits: PasswordStrength.estimatedBits(value.text))
+                StrengthMeter(bits: meterBits)
             }
             if field.kind == .otp, !value.text.isEmpty {
                 TotpCodeView(secret: value.text, compact: true)
@@ -60,15 +63,36 @@ struct SecretFieldEditor: View {
                 UserDefaults.standard.bool(forKey: "OnePassDebugGenerator")
             {
                 try? await Task.sleep(for: .milliseconds(600))
-                generating = true
+                openGenerator()
             }
         }
         #endif
         .sheet(isPresented: $generating) {
-            GeneratorSheet { generated in
-                value = .password(value: generated)
-            }
+            GeneratorSheet(onUse: { _ in }, onUseWithBits: apply)
         }
+    }
+
+    /// Same measure as the generator: its recipe bits for the value it just generated, the shared
+    /// estimate (which gives a generated value the same bits) for anything else.
+    private var meterBits: Double {
+        if let generated, generated.text == value.text { return generated.bits }
+        return PasswordStrength.estimatedBits(value.text)
+    }
+
+    /// The editor presents the generator from its form (one click opens it: a sheet attached to a
+    /// form row can be dropped while the row redraws as its field loses the focus); a local sheet
+    /// elsewhere.
+    private func openGenerator() {
+        if let requestGenerator {
+            requestGenerator(GeneratorRequest(apply: apply))
+        } else {
+            generating = true
+        }
+    }
+
+    private func apply(_ text: String, _ bits: Double) {
+        value = .password(value: text)
+        generated = GeneratedValue(text: text, bits: bits)
     }
 
     @ViewBuilder private var input: some View {
@@ -79,6 +103,23 @@ struct SecretFieldEditor: View {
         }
     }
 }
+
+private struct GeneratedValue: Equatable {
+    let text: String
+    let bits: Double
+}
+
+/// A field asks its editor for the generator; `apply` receives the value and its recipe bits.
+struct GeneratorRequest: Identifiable {
+    let id = UUID()
+    let apply: @MainActor (String, Double) -> Void
+}
+
+extension EnvironmentValues {
+    /// Set by the item editor: presents the generator sheet from the form itself.
+    @Entry var requestGenerator: (@MainActor (GeneratorRequest) -> Void)? = nil
+}
+
 
 /// SSH key: the private key is pasted (masked as bullets; Révéler shows it in a monospaced
 /// multi-line editor that keeps its line breaks, masked again after 30 s). The public key and the

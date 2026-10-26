@@ -11,7 +11,12 @@ struct EditorRow<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).font(.footnote).foregroundStyle(.secondary)
+            // The label is shown once, above: the control's own label is hidden (a grouped Form
+            // would repeat it on the left on Mac) and its text starts on the left.
             content
+                .labelsHidden()
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if let message {
                 Label(message, systemImage: "exclamationmark.circle.fill")
                     .font(.footnote)
