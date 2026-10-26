@@ -21,6 +21,7 @@ signature = "=2.3.0-pre.4"
 serde_bytes = "0.11.17"
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 time = { version = "0.3", default-features = false, features = ["serde", "std"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 
 [dev-dependencies]
 time = { version = "0.3", features = ["macros"] }
@@ -28,3 +29,4 @@ proptest = "1.12"
 serde_json = "1"
 libcrux-ml-kem = "0.0.11"
 libcrux-ml-dsa = "0.0.11"
+tempfile = "3"

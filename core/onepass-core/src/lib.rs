@@ -6,6 +6,8 @@ pub mod error;
 pub mod id;
 pub mod manifest;
 pub mod model;
+pub mod repo;
+pub mod store;
 pub mod vault;
 
 pub use error::{Error, IntegrityError, Result, ValidationError};

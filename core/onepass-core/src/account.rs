@@ -74,7 +74,7 @@ pub struct NewAccount {
 }
 
 /// What the device remembered about the account at first sign-in.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PinnedAccount {
     pub account_id: Id,
     pub identity_pub: IdentityVerifyingKey,
