@@ -5,10 +5,11 @@
 //! approval (secret tools only), then the action. A vault or item out of
 //! reach answers exactly like a missing one (`not found`), so the server
 //! is no oracle of existence. Every call, refused or not, writes one audit
-//! entry with ids only.
+//! entry per target with ids only.
 
 mod meta;
 pub(crate) mod schema;
+mod secrets;
 
 use crate::policy::{Narrowing, Policy, Scope, effective};
 use crate::port::{PortError, VaultInfo, VaultPort};
@@ -18,7 +19,7 @@ use onepass_core::model::Item;
 use onepass_core::reference::{SecretRef, parse_ref};
 use onepass_guard::{Approver, AuditEntry, AuditSink, Surface};
 use serde_json::{Map, Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -58,7 +59,6 @@ pub(crate) enum Refusal {
     /// The vault is visible but does not grant this scope.
     Scope(Scope),
     /// The user refused (approval-gated tools).
-    #[allow(dead_code)]
     Denied,
     /// A rejected request, with a message free of vault data and values.
     Invalid(String),
@@ -112,12 +112,16 @@ impl From<PortError> for Failure {
 
 pub(crate) type CallResult = Result<Value, Failure>;
 
-/// What a call touched, for its audit entry. Ids only.
+/// What a call touched, for its audit entries. Ids only.
 pub(crate) struct Call {
     pub(crate) vault_id: Option<Id>,
     pub(crate) item_id: Option<Id>,
     pub(crate) field: Option<String>,
-    /// Approval decision label: `"policy"` when no one was asked.
+    /// Further targets of a call that touches several items: one audit
+    /// entry each, after the one of the fields above.
+    pub(crate) more: Vec<(Id, Id, Option<String>)>,
+    /// Approval decision label: `"denied"`, `"once"`, `"session"`,
+    /// `"remembered"`, or `"policy"` when no one was asked.
     pub(crate) decision: &'static str,
 }
 
@@ -127,8 +131,34 @@ impl Default for Call {
             vault_id: None,
             item_id: None,
             field: None,
+            more: Vec::new(),
             decision: "policy",
         }
+    }
+}
+
+impl Call {
+    /// Adds a target: the first one fills the main fields, the next ones
+    /// go to `more`.
+    pub(crate) fn target(&mut self, vault_id: Id, item_id: Id, field: Option<String>) {
+        if self.item_id.is_none() {
+            self.vault_id = Some(vault_id);
+            self.item_id = Some(item_id);
+            self.field = field;
+        } else {
+            self.more.push((vault_id, item_id, field));
+        }
+    }
+
+    /// The `(vault, item, field)` of every audit entry this call writes.
+    fn entries(&self) -> Vec<(Option<Id>, Option<Id>, Option<String>)> {
+        let mut out = vec![(self.vault_id, self.item_id, self.field.clone())];
+        out.extend(
+            self.more
+                .iter()
+                .map(|(v, i, f)| (Some(*v), Some(*i), f.clone())),
+        );
+        out
     }
 }
 
@@ -158,16 +188,21 @@ pub(crate) fn pick<'a, T>(
 }
 
 /// The OnePass tool host: the vault port, the policy and its narrowing,
-/// the approver and the audit sink.
+/// the approver and the audit sink, plus the state of the session: the
+/// requests the user allowed for the session, and the vaults whose stored
+/// data failed verification (refused until the server restarts).
 pub struct McpTools<P: VaultPort> {
     port: P,
     policy: Policy,
     narrowing: Narrowing,
-    // Asked by the secret tools (use, write, totp, reveal) only.
-    #[allow(dead_code)]
+    /// Asked by the secret tools (use, write, totp, reveal) only.
     approver: Arc<dyn Approver>,
     audit: Box<dyn AuditSink>,
     forbidden_dir: Option<PathBuf>,
+    /// Canonical keys of the requests allowed for the session.
+    grants: HashSet<String>,
+    /// Vaults quarantined after an integrity failure (spec section 8).
+    quarantined: BTreeSet<Id>,
 }
 
 impl<P: VaultPort> McpTools<P> {
@@ -188,6 +223,8 @@ impl<P: VaultPort> McpTools<P> {
             approver,
             audit,
             forbidden_dir,
+            grants: HashSet::new(),
+            quarantined: BTreeSet::new(),
         }
     }
 
@@ -243,21 +280,53 @@ impl<P: VaultPort> McpTools<P> {
         .cloned()
     }
 
+    /// Runs `f` on the port for `vault_id`, unless that vault is
+    /// quarantined. An integrity failure quarantines it: every later
+    /// request touching it is refused without reaching the port.
+    fn on_vault<T>(
+        &mut self,
+        vault_id: Id,
+        f: impl FnOnce(&mut P) -> Result<T, PortError>,
+    ) -> Result<T, Refusal> {
+        if self.quarantined.contains(&vault_id) {
+            return Err(Refusal::Integrity);
+        }
+        f(&mut self.port).map_err(|e| {
+            if e == PortError::Integrity {
+                self.quarantined.insert(vault_id);
+            }
+            Refusal::from(e)
+        })
+    }
+
     /// The items of a visible vault, trashed ones left out.
     pub(crate) fn live_items(&mut self, vault_id: Id) -> Result<Vec<Item>, Refusal> {
         Ok(self
-            .port
-            .items(vault_id)?
+            .on_vault(vault_id, |p| p.items(vault_id))?
             .into_iter()
             .filter(|i| i.trashed_at.is_none())
             .collect())
+    }
+
+    /// The value of a reference [`Self::locate_restricted`] returned (it
+    /// names `vault` by id). Only once scope and approval have passed.
+    pub(crate) fn read_value(
+        &mut self,
+        vault: &VaultInfo,
+        r: &SecretRef,
+    ) -> Result<Zeroizing<String>, Refusal> {
+        self.on_vault(vault.id, |p| p.resolve(r))
+    }
+
+    /// Stores `item` in a visible vault.
+    pub(crate) fn store_item(&mut self, vault: &VaultInfo, item: Item) -> Result<(), Refusal> {
+        self.on_vault(vault.id, |p| p.save_item(vault.id, item))
     }
 
     /// Finds what `reference` designates within reach, without reading the
     /// value: the vault among visible ones, the item outside the trash.
     /// The returned reference names both by id, so the core resolves
     /// exactly that vault and item. Scope and approval are the caller's.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn locate_restricted(
         &mut self,
         reference: &str,
@@ -278,40 +347,54 @@ impl<P: VaultPort> McpTools<P> {
         Ok((vault, item, r))
     }
 
-    /// [`Self::locate_restricted`], then the value through the port. Call
-    /// it only once scope and approval have passed (or split the two steps
-    /// to check them in between).
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// [`Self::locate_restricted`], then the value. The secret tools split
+    /// the two steps to check scope and approval in between.
+    #[cfg(test)]
     pub(crate) fn resolve_restricted(
         &mut self,
         reference: &str,
     ) -> Result<(VaultInfo, Item, Zeroizing<String>), Refusal> {
         let (vault, item, r) = self.locate_restricted(reference)?;
-        let value = self.port.resolve(&r)?;
+        let value = self.read_value(&vault, &r)?;
         Ok((vault, item, value))
     }
 
-    fn dispatch(&mut self, name: &str, args: &Map<String, Value>, call: &mut Call) -> CallResult {
+    fn dispatch(
+        &mut self,
+        client: &ClientInfo,
+        name: &str,
+        args: &Map<String, Value>,
+        call: &mut Call,
+    ) -> CallResult {
         match name {
             "list_vaults" => self.list_vaults(),
             "list_items" => self.list_items(args, call),
             "search_items" => self.search_items(args, call),
             "get_item" => self.get_item(args, call),
+            "run_with_secrets" => self.run_with_secrets(client, args, call),
+            "fill_template" => self.fill_template(client, args, call),
+            "create_login" => self.create_login(client, args, call),
+            "generate_password" => self.generate_password(args),
+            "totp_code" => self.totp_code(client, args, call),
+            "reveal_secret" => self.reveal_secret(client, args, call),
             _ => Err(Failure::Params("unknown tool".into())),
         }
     }
 
+    /// One audit entry per target of `call` (one entry when it has none).
     fn record(&mut self, client: &ClientInfo, action: &str, call: &Call, outcome: &str) {
-        self.audit.record(&AuditEntry {
-            surface: Surface::Mcp,
-            client: client.name.clone(),
-            action: action.to_owned(),
-            vault_id: call.vault_id.map(|id| id.to_string()),
-            item_id: call.item_id.map(|id| id.to_string()),
-            field: call.field.clone(),
-            decision: call.decision.to_owned(),
-            outcome: outcome.to_owned(),
-        });
+        for (vault_id, item_id, field) in call.entries() {
+            self.audit.record(&AuditEntry {
+                surface: Surface::Mcp,
+                client: client.name.clone(),
+                action: action.to_owned(),
+                vault_id: vault_id.map(|id| id.to_string()),
+                item_id: item_id.map(|id| id.to_string()),
+                field,
+                decision: call.decision.to_owned(),
+                outcome: outcome.to_owned(),
+            });
+        }
     }
 }
 
@@ -324,7 +407,7 @@ impl<P: VaultPort> ToolHost for McpTools<P> {
         let known = schema::all().iter().any(|t| t.name == name);
         let mut call = Call::default();
         let result = match schema::validate_args(name, args) {
-            Ok(()) => self.dispatch(name, args, &mut call),
+            Ok(()) => self.dispatch(client, name, args, &mut call),
             Err(m) => Err(Failure::Params(m)),
         };
         // Audit outcome labels: "ok", "refused" (business refusal) and
@@ -524,6 +607,45 @@ mod tests {
             f.tools.require(&f.work, Scope::Use),
             Err(Refusal::Scope(Scope::Use))
         );
+    }
+
+    #[test]
+    fn values_are_read_only_after_approval() {
+        let mut f = fixture();
+        f.tools
+            .policy
+            .vaults
+            .insert(f.work.id.to_string(), Scope::ALL.into_iter().collect());
+        let client = ClientInfo {
+            name: "c".into(),
+            version: "1".into(),
+        };
+        let args = |v: Value| v.as_object().unwrap().clone();
+        // The scripted approver has no answer left: it denies.
+        for (tool, a) in [
+            (
+                "reveal_secret",
+                json!({"reference": "onepass://Work/API/key"}),
+            ),
+            (
+                "run_with_secrets",
+                json!({"command": ["true"], "env": {"A": "onepass://Work/API/key"}}),
+            ),
+        ] {
+            let out = f.tools.call(&client, tool, &args(a));
+            match out {
+                ToolOutcome::Refused(m) => assert_eq!(m, "denied by the user"),
+                _ => panic!("{tool} not refused"),
+            }
+        }
+        assert!(f.tools.port.resolved.is_empty());
+        // A field the item does not have is refused before asking too.
+        let out = f.tools.call(
+            &client,
+            "reveal_secret",
+            &args(json!({"reference": "onepass://Work/API/nope"})),
+        );
+        assert!(matches!(out, ToolOutcome::Refused(m) if m == "not found"));
     }
 
     #[test]

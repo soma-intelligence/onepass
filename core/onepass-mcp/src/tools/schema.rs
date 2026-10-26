@@ -17,6 +17,41 @@ use serde_json::{Map, Value, json};
 pub(crate) const MAX_NAME: u64 = 256;
 /// Longest `search_items` query.
 pub(crate) const MAX_QUERY: u64 = 200;
+/// Longest `onepass://` reference accepted as an argument.
+pub(crate) const MAX_REF: u64 = 1024;
+/// Longest path, command element, URL or username accepted.
+pub(crate) const MAX_PATH: u64 = 4096;
+/// Most variables (and, separately, files) of one `run_with_secrets`.
+pub(crate) const MAX_NAMES: u64 = 64;
+/// Pattern of an environment variable or file name (documentation: the
+/// check is [`env_name_ok`]).
+pub(crate) const NAME_PATTERN: &str = "^[A-Z_][A-Z0-9_]{0,63}$";
+
+fn ref_arg(what: &str) -> Value {
+    json!({"type": "string", "minLength": 1, "maxLength": MAX_REF, "description": what})
+}
+
+fn names_arg(what: &str) -> Value {
+    json!({
+        "type": "object",
+        "description": what,
+        "propertyNames": {"pattern": NAME_PATTERN},
+        "additionalProperties": ref_arg("onepass:// reference."),
+        "maxProperties": MAX_NAMES,
+    })
+}
+
+/// `NAME` of `run_with_secrets`: `^[A-Z_][A-Z0-9_]{0,63}$`, and not in the
+/// server's own `ONEPASS_` namespace.
+pub(crate) fn env_name_ok(name: &str) -> bool {
+    let b = name.as_bytes();
+    !b.is_empty()
+        && b.len() <= 64
+        && (b[0].is_ascii_uppercase() || b[0] == b'_')
+        && b.iter()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || *c == b'_')
+        && !name.starts_with("ONEPASS_")
+}
 
 fn name_arg(what: &str) -> Value {
     json!({"type": "string", "minLength": 1, "maxLength": MAX_NAME, "description": what})
@@ -81,6 +116,81 @@ pub(crate) fn all() -> Vec<ToolSpec> {
                 &["item"],
             ),
         },
+        ToolSpec {
+            name: "run_with_secrets",
+            description: "Run a command (argv, no implicit shell) with secrets injected as environment variables (env) or as paths to private temporary files (files). Needs the use scope and the user's approval. Secret values and their base64 and hex forms are masked in the output, which is cut at 64 KiB per stream.",
+            input_schema: object(
+                json!({
+                    "command": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 1, "maxLength": MAX_PATH},
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "description": "Program and arguments.",
+                    },
+                    "env": names_arg("Variable name to onepass:// reference: the variable gets the value."),
+                    "files": names_arg("Variable name to onepass:// reference: the value goes to a 0600 file, the variable gets its path."),
+                    "cwd": {"type": "string", "minLength": 1, "maxLength": MAX_PATH, "description": "Working directory."},
+                    "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 600, "description": "Seconds before the command is killed (default 60)."},
+                }),
+                &["command"],
+            ),
+        },
+        ToolSpec {
+            name: "fill_template",
+            description: "Write template_path to output_path (mode 0600) with each {{ onepass://... }} replaced by its value. Needs the use scope and the user's approval. Returns the number of replacements, never the content.",
+            input_schema: object(
+                json!({
+                    "template_path": {"type": "string", "minLength": 1, "maxLength": MAX_PATH, "description": "Absolute path of the template."},
+                    "output_path": {"type": "string", "minLength": 1, "maxLength": MAX_PATH, "description": "Absolute path of the file to write."},
+                    "overwrite": {"type": "boolean", "description": "Replace output_path if it exists."},
+                }),
+                &["template_path", "output_path"],
+            ),
+        },
+        ToolSpec {
+            name: "create_login",
+            description: "Create a Login item with a random password (24 characters by default). Needs the write scope and the user's approval. Returns the item id and the reference of its password, never the value.",
+            input_schema: object(
+                json!({
+                    "vault": name_arg("Vault id or name."),
+                    "title": {"type": "string", "minLength": 1, "maxLength": 200, "description": "Item title."},
+                    "url": {"type": "string", "minLength": 1, "maxLength": MAX_PATH, "description": "Website URL."},
+                    "username": {"type": "string", "minLength": 1, "maxLength": MAX_NAME, "description": "Username (required by the Login template)."},
+                    "length": {"type": "integer", "minimum": 12, "maximum": 100, "description": "Password length (default 24)."},
+                }),
+                &["vault", "title"],
+            ),
+        },
+        ToolSpec {
+            name: "generate_password",
+            description: "Generate a password that is stored nowhere: random characters (length, default 24), a passphrase (words) or a PIN (pin_digits), at most one of the three.",
+            input_schema: object(
+                json!({
+                    "length": {"type": "integer", "minimum": 8, "maximum": 100, "description": "Random password length."},
+                    "symbols": {"type": "boolean", "description": "Include symbols in a random password (default true)."},
+                    "words": {"type": "integer", "minimum": 3, "maximum": 12, "description": "Passphrase word count."},
+                    "pin_digits": {"type": "integer", "minimum": 4, "maximum": 12, "description": "PIN digit count."},
+                }),
+                &[],
+            ),
+        },
+        ToolSpec {
+            name: "totp_code",
+            description: "Current one-time code of a one-time password field (for example onepass://vault/item/totp). Needs the totp scope and the user's approval on every call.",
+            input_schema: object(
+                json!({"reference": ref_arg("onepass:// reference of a one-time password field.")}),
+                &["reference"],
+            ),
+        },
+        ToolSpec {
+            name: "reveal_secret",
+            description: "The value a reference points at. Needs the reveal scope and the user's approval on every call. Prefer run_with_secrets, which never shows the value.",
+            input_schema: object(
+                json!({"reference": ref_arg("onepass:// reference.")}),
+                &["reference"],
+            ),
+        },
     ]
 }
 
@@ -90,7 +200,56 @@ pub(crate) fn validate_args(tool: &str, args: &Map<String, Value>) -> Result<(),
         .into_iter()
         .find(|t| t.name == tool)
         .ok_or_else(|| "unknown tool".to_owned())?;
-    check_object(&spec.input_schema, args, "arguments")
+    check_object(&spec.input_schema, args, "arguments")?;
+    check_rules(tool, args)
+}
+
+/// Rules the schema subset cannot express. Messages never echo a value.
+fn check_rules(tool: &str, args: &Map<String, Value>) -> Result<(), String> {
+    match tool {
+        "run_with_secrets" => {
+            let mut seen = std::collections::BTreeSet::new();
+            for key in ["env", "files"] {
+                let Some(names) = args.get(key).and_then(Value::as_object) else {
+                    continue;
+                };
+                for name in names.keys() {
+                    if !env_name_ok(name) {
+                        return Err(format!(
+                            "names in '{key}' must match {NAME_PATTERN} and not start with ONEPASS_"
+                        ));
+                    }
+                    if !seen.insert(name.as_str()) {
+                        return Err("a name is used twice across 'env' and 'files'".into());
+                    }
+                }
+            }
+            if seen.is_empty() {
+                return Err("give at least one reference in 'env' or 'files'".into());
+            }
+            Ok(())
+        }
+        "fill_template" => {
+            for key in ["template_path", "output_path"] {
+                let path = args.get(key).and_then(Value::as_str).unwrap_or_default();
+                if !std::path::Path::new(path).is_absolute() {
+                    return Err(format!("argument '{key}' must be an absolute path"));
+                }
+            }
+            Ok(())
+        }
+        "generate_password" => {
+            let kinds = ["length", "words", "pin_digits"]
+                .iter()
+                .filter(|k| args.contains_key(**k))
+                .count();
+            if kinds > 1 {
+                return Err("give at most one of 'length', 'words' and 'pin_digits'".into());
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 fn check_object(schema: &Value, obj: &Map<String, Value>, path: &str) -> Result<(), String> {
@@ -248,6 +407,48 @@ mod tests {
         assert!(!e.contains("secret-value"), "{e}");
         let e = validate_args("list_items", &args(json!({"hunter2": 1}))).unwrap_err();
         assert!(!e.contains("hunter2"), "{e}");
+    }
+
+    #[test]
+    fn env_names() {
+        for ok in ["A", "_", "TOKEN_2", "A_B_C", &"X".repeat(64)] {
+            assert!(env_name_ok(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "a",
+            "1A",
+            "A-B",
+            "A B",
+            "ONEPASS_X",
+            "É",
+            &"X".repeat(65),
+        ] {
+            assert!(!env_name_ok(bad), "{bad}");
+        }
+        // The namespace itself without the separator is an ordinary name.
+        assert!(env_name_ok("ONEPASS"));
+    }
+
+    #[test]
+    fn rules_beyond_the_schema() {
+        let r = "onepass://V/I/f";
+        let run = |v: Value| validate_args("run_with_secrets", &args(v));
+        assert!(run(json!({"command": ["ls"], "env": {"A": r}, "files": {"B": r}})).is_ok());
+        assert!(run(json!({"command": ["ls"], "env": {"A": r}, "files": {"A": r}})).is_err());
+        let e = run(json!({"command": ["ls"], "env": {"lower-secret": r}})).unwrap_err();
+        assert!(!e.contains("lower-secret"), "{e}");
+        assert!(run(json!({"command": ["ls"], "files": {"ONEPASS_PASSWORD": r}})).is_err());
+        assert!(run(json!({"command": ["ls"]})).is_err());
+        assert!(run(json!({"command": ["ls"], "env": {}})).is_err());
+        let fill = |v: Value| validate_args("fill_template", &args(v));
+        assert!(fill(json!({"template_path": "/a", "output_path": "/b"})).is_ok());
+        assert!(fill(json!({"template_path": "a", "output_path": "/b"})).is_err());
+        assert!(fill(json!({"template_path": "/a", "output_path": "./b"})).is_err());
+        let generate = |v: Value| validate_args("generate_password", &args(v));
+        assert!(generate(json!({"words": 4})).is_ok());
+        assert!(generate(json!({"words": 4, "pin_digits": 6})).is_err());
+        assert!(generate(json!({"length": 7})).is_err());
     }
 
     #[test]

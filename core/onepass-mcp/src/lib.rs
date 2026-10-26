@@ -1,11 +1,15 @@
 //! OnePass MCP server: JSON-RPC 2.0 over stdio. The protocol layer lives in
 //! [`protocol`]; tools plug in behind the [`ToolHost`] trait. [`tools`]
 //! holds the OnePass tools, which reach the vaults only through a
-//! [`VaultPort`] and under a signed [`Policy`].
+//! [`VaultPort`] and under a signed [`Policy`]. [`runner`], [`mask`] and
+//! [`template`] serve the secret tools.
 
+pub mod mask;
 pub mod policy;
 pub mod port;
 pub mod protocol;
+pub mod runner;
+pub mod template;
 pub mod tools;
 
 pub use policy::{Narrowing, Policy, PolicyError, Scope, effective, load_policy, save_policy};
