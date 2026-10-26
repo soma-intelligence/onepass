@@ -29,7 +29,7 @@ use time::Date;
 use crate::model::Item;
 
 pub use checks::{Check, Detail, Finding, Severity};
-pub use pwned::RangeSource;
+pub use pwned::{DirRangeSource, RangeSource, parse_range};
 pub use score::VaultScore;
 pub use sites::{BreachCatalog, SiteDirectory};
 
@@ -103,13 +103,21 @@ pub struct Report {
 
 /// Runs every check on `items` (spec 3.2) and scores the result (spec 3.5).
 pub fn analyze(items: &[Item], opts: &Options, sources: Sources<'_>) -> Report {
-    // Tasks 11 and 12 wire the external sources.
-    let _ = sources;
+    // Task 12 wires the site and breach catalogs.
+    let Sources { pwned, .. } = sources;
     let analyzed: Vec<&Item> = items
         .iter()
         .filter(|i| i.trashed_at.is_none() && !i.archived)
         .collect();
     let mut findings = checks::local_findings(&analyzed, opts);
+    let pwned_status = match pwned {
+        Some(source) => {
+            let (found, status) = pwned::pwned_findings(&analyzed, source);
+            findings.extend(found);
+            status
+        }
+        None => PwnedStatus::Disabled,
+    };
     findings.sort_by(|a, b| {
         (a.vault_id, a.item_id, a.check, &a.field_id).cmp(&(
             b.vault_id,
@@ -128,7 +136,7 @@ pub fn analyze(items: &[Item], opts: &Options, sources: Sources<'_>) -> Report {
         vaults,
         findings,
         counts,
-        pwned: PwnedStatus::Disabled,
+        pwned: pwned_status,
         sites_checked: false,
         breaches_checked: false,
     }
