@@ -59,21 +59,24 @@ public struct VaultEnvironment: Sendable {
     /// Suffix of the shared keychain access group `$(AppIdentifierPrefix)me.somalabs.onepass.shared`.
     public static let sharedGroupSuffix = "me.somalabs.onepass.shared"
 
-    /// The app's environment: store in `Application Support/OnePass/vault.sqlite`, system keychain in
-    /// the shared access group, Secure Enclave biometrics, system pasteboard, no sync (Task 8 plugs it).
+    /// The app's environment: store and settings in the shared container (App Group, or the milestone 2
+    /// locations without one), system keychain in the shared access group, Secure Enclave biometrics,
+    /// system pasteboard, no sync (Task 8 plugs it).
     ///
     /// UI tests and screenshots (Debug builds of the app) pass their own store, settings and keychain
-    /// service so they never touch the user's: `databaseURL`, `settings`, `keychainService`.
+    /// service so they never touch the user's: `databaseURL`, `settings`, `keychainService` (each one
+    /// replaces what `container` would give).
     public static func live(
-        sync: any SyncTrigger = NoSync(), databaseURL: URL? = nil, settings: VaultSettings = VaultSettings(),
-        keychainService: String = SystemKeychain.defaultService
+        sync: any SyncTrigger = NoSync(), container: SharedContainer = .resolve(), databaseURL: URL? = nil,
+        settings: VaultSettings? = nil, keychainService: String = SystemKeychain.defaultService
     ) -> VaultEnvironment {
+        let settings = settings ?? VaultSettings(defaults: container.defaults)
         let clock = SystemClock()
         let group = sharedAccessGroup()
         let keychain = SystemKeychain(service: keychainService, accessGroup: group)
         let keyring = SecureEnclaveKeyring(accessGroup: group, allowWatch: settings.allowWatchUnlock)
         return VaultEnvironment(
-            databaseURL: databaseURL ?? defaultDatabaseURL(),
+            databaseURL: databaseURL ?? container.databaseURL,
             keychain: keychain,
             biometrics: BiometricUnlock(keyring: keyring, keychain: keychain, clock: clock),
             settings: settings,
@@ -82,22 +85,11 @@ public struct VaultEnvironment: Sendable {
             pasteboard: SystemPasteboard())
     }
 
-    /// `Application Support/OnePass/vault.sqlite`. The folder is created on first use; on iOS it is
+    /// The store path of `SharedContainer.resolve()`. The folder is created on first use; on iOS it is
     /// `NSFileProtectionCompleteUntilFirstUserAuthentication` so sync can run while the device is locked
     /// (the store content is already encrypted by the core).
     public static func defaultDatabaseURL() -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let folder = base.appendingPathComponent("OnePass", isDirectory: true)
-        var attributes: [FileAttributeKey: Any] = [:]
-        #if os(iOS) || os(visionOS)
-        attributes[.protectionKey] = FileProtectionType.completeUntilFirstUserAuthentication
-        #endif
-        try? FileManager.default.createDirectory(
-            at: folder, withIntermediateDirectories: true, attributes: attributes)
-        #if os(iOS) || os(visionOS)
-        try? FileManager.default.setAttributes(attributes, ofItemAtPath: folder.path)
-        #endif
-        return folder.appendingPathComponent("vault.sqlite")
+        SharedContainer.resolve().databaseURL
     }
 
     /// `<prefix>me.somalabs.onepass.shared`, or nil when the prefix is unknown (unsigned build).

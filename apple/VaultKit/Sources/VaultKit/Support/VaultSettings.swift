@@ -45,6 +45,8 @@ public final class VaultSettings: @unchecked Sendable {
         static let lockout = "onepass.lockoutUntil"
         static let accountID = "onepass.accountID"
         static let displayName = "onepass.displayName"
+        static let quickType = "onepass.quickTypeSuggestions"
+        static let autofillTip = "onepass.autofillTipDismissed"
     }
 
     public var deviceMode: DeviceMode {
@@ -123,5 +125,17 @@ public final class VaultSettings: @unchecked Sendable {
     public var displayName: String {
         get { defaults.string(forKey: Key.displayName) ?? "" }
         set { defaults.set(newValue, forKey: Key.displayName) }
+    }
+
+    /// Offer logins as QuickType suggestions in the keyboard bar (default on).
+    public var quickTypeSuggestions: Bool {
+        get { defaults.object(forKey: Key.quickType) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.quickType) }
+    }
+
+    /// The user closed the "turn on AutoFill" tip (default false).
+    public var autofillTipDismissed: Bool {
+        get { defaults.bool(forKey: Key.autofillTip) }
+        set { defaults.set(newValue, forKey: Key.autofillTip) }
     }
 }
