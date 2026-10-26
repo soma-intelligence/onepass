@@ -407,6 +407,14 @@ private struct PasswordStep: View {
 
 private struct SecretKeyStep: View {
     @Bindable var model: OnboardingModel
+    @State private var saveWarning = false
+    #if os(iOS) || os(visionOS)
+    @State private var sharedFile: SharedKitFile?
+    #endif
+    #if os(macOS)
+    @State private var cloudDestination: URL?
+    @State private var cloudWarning = false
+    #endif
 
     var body: some View {
         StepTitle(
@@ -428,25 +436,91 @@ private struct SecretKeyStep: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .secretKeyCaptureGuard()
         .card()
 
-        if let url = model.kitURL {
-            ShareLink(item: url) {
-                Text("Enregistrer l'Emergency Kit (PDF)")
+        Label {
+            Text("Ce kit plus ton mot de passe maître donnent un accès complet à ton coffre. Imprime-le et range la feuille hors ligne ; ne le photographie pas.")
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "exclamationmark.shield")
+        }
+        .font(.subheadline)
+        .accessibilityIdentifier("onboarding.kitWarning")
+        #if os(macOS)
+        .alert(
+            "Cet emplacement est dans iCloud Drive",
+            isPresented: $cloudWarning
+        ) {
+            Button("Enregistrer quand même", role: .destructive) {
+                if let url = cloudDestination { model.saveKit(to: url) }
+                cloudDestination = nil
+            }
+            Button("Annuler", role: .cancel) { cloudDestination = nil }
+        } message: {
+            Text("Le fichier sera copié sur les serveurs d'iCloud et sur tes autres appareils. Avec ton mot de passe maître, il donne un accès complet à ton coffre.")
+        }
+        #endif
+
+        if model.kitData != nil {
+            Button {
+                model.printKit()
+            } label: {
+                Label("Imprimer le kit", systemImage: "printer")
                     .font(.system(size: 16, weight: .semibold))
                     .frame(maxWidth: Platform.isMac ? nil : .infinity)
                     .frame(height: Platform.isMac ? 28 : 40)
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.glassProminent)
             .controlSize(Platform.isMac ? .large : .regular)
-            .accessibilityIdentifier("onboarding.saveKit")
+            .accessibilityIdentifier("onboarding.printKit")
+
+            Button("Enregistrer un fichier…") { saveWarning = true }
+                .buttonStyle(.borderless)
+                .font(.subheadline)
+                .accessibilityIdentifier("onboarding.saveKit")
         }
         CheckRow(title: "Je l'ai rangée hors ligne", isOn: $model.kitStoredOffline)
             .accessibilityIdentifier("onboarding.kitStored")
             .onAppear { model.prepareKit() }
             .onDisappear { model.deleteKit() }
+            .alert("Enregistrer l'Emergency Kit dans un fichier ?", isPresented: $saveWarning) {
+                Button("Continuer") { saveFile() }
+                Button("Annuler", role: .cancel) {}
+            } message: {
+                Text("Un fichier peut quitter cet appareil sans que tu le voies : iCloud Drive, Photos, les messageries et les captures d'écran synchronisent la Secret Key ailleurs. Préfère l'impression, ou enregistre sur une clé USB que tu ranges hors ligne.")
+            }
+            #if os(iOS) || os(visionOS)
+            .sheet(item: $sharedFile, onDismiss: { model.sharingFinished() }) { file in
+                KitShareController(url: file.url) { sharedFile = nil }
+                    .ignoresSafeArea()
+            }
+            #endif
+    }
+
+    private func saveFile() {
+        #if os(macOS)
+        Task {
+            guard let url = await KitSavePanel.chooseDestination() else { return }
+            if KitDestination.isCloudSynced(url) {
+                cloudDestination = url
+                cloudWarning = true
+            } else {
+                model.saveKit(to: url)
+            }
+        }
+        #else
+        if let url = model.kitFileForSharing() { sharedFile = SharedKitFile(url: url) }
+        #endif
     }
 }
+
+#if os(iOS) || os(visionOS)
+private struct SharedKitFile: Identifiable {
+    let url: URL
+    var id: URL { url }
+}
+#endif
 
 // MARK: - Biométrie
 
@@ -525,6 +599,7 @@ private struct RestoreStep: View {
         OnboardingField(
             label: "Secret Key", prompt: "XXXX-XXXX-XXXX-...", text: $model.restoreKey,
             monospaced: true, secretKey: true, identifier: "onboarding.restoreKey")
+            .secretKeyCaptureGuard()
         #if os(iOS)
         if SecretKeyScanner.isSupported {
             Button {

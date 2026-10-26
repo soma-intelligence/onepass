@@ -298,38 +298,66 @@ final class OnboardingModel {
 
     // MARK: - Emergency Kit
 
-    /// The PDF in a fresh temporary folder (`NSFileProtectionComplete` on iOS), deleted by
-    /// `deleteKit()` when the step disappears.
-    @ObservationIgnored private var kitFolder: URL?
+    /// The PDF bytes, built when the step appears and printed from memory (spec 4). A file is
+    /// written only when the user goes past the save warning: on iOS and visionOS a temporary
+    /// copy for the share sheet (`EmergencyKitFile`: excluded from backups, complete protection),
+    /// on Mac the destination chosen in the save panel. `deleteKit()` drops both.
+    private(set) var kitData: Data?
     private(set) var kitURL: URL?
 
     func prepareKit() {
-        guard kitURL == nil, let secretKey, let accountID = model.settings.accountID else { return }
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("kit-\(UUID().uuidString)", isDirectory: true)
+        guard kitData == nil, let secretKey, let accountID = model.settings.accountID else { return }
         do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let data = try EmergencyKit.pdf(
+            kitData = try EmergencyKit.pdf(
                 secretKey: secretKey, accountID: accountID,
                 displayName: model.settings.displayName, createdAt: Date())
-            let url = folder.appendingPathComponent("Emergency Kit OnePass.pdf")
-            #if os(iOS) || os(visionOS)
-            try data.write(to: url, options: [.atomic, .completeFileProtection])
-            #else
-            try data.write(to: url, options: .atomic)
-            #endif
-            kitFolder = folder
-            kitURL = url
         } catch {
-            try? FileManager.default.removeItem(at: folder)
             errorMessage = String(localized: "L'Emergency Kit n'a pas pu être préparé.")
         }
     }
 
-    func deleteKit() {
-        if let kitFolder { try? FileManager.default.removeItem(at: kitFolder) }
-        kitFolder = nil
+    /// "Imprimer le kit": the system print panel, from memory.
+    func printKit() {
+        prepareKit()
+        guard let kitData else { return }
+        if !KitPrinter.print(kitData) {
+            errorMessage = String(localized: "Aucune imprimante n'est disponible sur cet appareil.")
+        }
+    }
+
+    /// The temporary kit file for the share sheet, written on first use.
+    func kitFileForSharing() -> URL? {
+        if let kitURL { return kitURL }
+        prepareKit()
+        guard let kitData else { return nil }
+        do {
+            kitURL = try EmergencyKitFile.write(kitData, under: FileManager.default.temporaryDirectory)
+        } catch {
+            errorMessage = String(localized: "L'Emergency Kit n'a pas pu être préparé.")
+        }
+        return kitURL
+    }
+
+    /// The share sheet closed: the temporary copy goes away (the PDF stays in memory for printing).
+    func sharingFinished() {
+        if let kitURL { EmergencyKitFile.remove(kitURL) }
         kitURL = nil
+    }
+
+    /// Mac: writes the kit to the destination the user chose in the save panel.
+    func saveKit(to url: URL) {
+        prepareKit()
+        guard let kitData else { return }
+        do {
+            try kitData.write(to: url, options: .atomic)
+        } catch {
+            errorMessage = String(localized: "L'Emergency Kit n'a pas pu être enregistré.")
+        }
+    }
+
+    func deleteKit() {
+        sharingFinished()
+        kitData = nil
     }
 
     // MARK: - Texts

@@ -281,11 +281,7 @@ final class AppModel {
 
     /// Emergency Kit PDFs left in the temporary folder by a previous run (killed during the step).
     private static func sweepEmergencyKits() {
-        let tmp = FileManager.default.temporaryDirectory
-        let entries = (try? FileManager.default.contentsOfDirectory(atPath: tmp.path)) ?? []
-        for name in entries where name.hasPrefix("kit-") {
-            try? FileManager.default.removeItem(at: tmp.appendingPathComponent(name, isDirectory: true))
-        }
+        EmergencyKitFile.sweep(in: FileManager.default.temporaryDirectory)
     }
 
     /// Spec 7: the creation is refused when this iCloud already holds an account (ruling R13).
