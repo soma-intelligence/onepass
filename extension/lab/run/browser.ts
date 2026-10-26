@@ -76,6 +76,7 @@ export interface Lab {
  * each batch test asserts it stays empty (like e2e/fixtures.ts).
  */
 const violations: string[] = [];
+// (Also every request to a host outside the world, as "<method> <host>".)
 export function networkViolations(): readonly string[] {
   return violations;
 }
@@ -92,16 +93,47 @@ async function closeAfter(close: () => Promise<void>, e: unknown): Promise<Error
   return new Error(`${msg.startsWith("lab:") ? msg : `lab: ${msg}`}${closed}`);
 }
 
-/** The three nets of e2e/fixtures.ts on a context; returns the pending loopback checks. */
-function guard(ctx: BrowserContext, world: World): { remote: string[]; pending: Promise<void>[] } {
+/** Fields of a request body as the lab server would read them (form-urlencoded or JSON; anything else whole). */
+export function requestFields(contentType: string, body: string | null): Record<string, string> {
+  if (!body) return {};
+  const type = contentType.toLowerCase();
+  if (type.startsWith("application/x-www-form-urlencoded")) return Object.fromEntries(new URLSearchParams(body));
+  if (type.startsWith("application/json")) {
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed)) if (typeof v === "string") out[k] = v;
+        return out;
+      }
+    } catch {
+      // not JSON after all: checked whole below
+    }
+  }
+  return { body };
+}
+
+/**
+ * The three nets of e2e/fixtures.ts on a context; returns the pending
+ * loopback checks. A request to a host outside the world is aborted, but
+ * first recorded as a violation and shown to the leak ledger (query and
+ * body), so a secret sent to an unplanned host is a leak, not a silence.
+ */
+async function guard(ctx: BrowserContext, world: World, server: LabServer): Promise<{ remote: string[]; pending: Promise<void>[] }> {
   const allowed = new Set(world.hosts);
   const remote: string[] = [];
   const pending: Promise<void>[] = [];
-  void ctx.route("**/*", (route) => {
-    const u = new URL(route.request().url());
-    const ok = u.protocol === "chrome-extension:" || u.protocol === "data:" ||
-      ((u.protocol === "https:" || u.protocol === "http:") && allowed.has(u.hostname));
-    return ok ? route.continue() : route.abort("blockedbyclient");
+  await ctx.route("**/*", (route) => {
+    const req = route.request();
+    const u = new URL(req.url());
+    const web = u.protocol === "https:" || u.protocol === "http:";
+    if (u.protocol === "chrome-extension:" || u.protocol === "data:" || (web && allowed.has(u.hostname))) return route.continue();
+    if (web) {
+      violations.push(`${req.method()} ${u.hostname}`);
+      const fields = { ...Object.fromEntries(u.searchParams), ...requestFields(req.headers()["content-type"] ?? "", req.postData()) };
+      server.ledger.record(u.hostname, u.pathname, fields);
+    }
+    return route.abort("blockedbyclient");
   });
   ctx.on("response", (r) => {
     pending.push(r.serverAddr().then((a) => {
@@ -134,6 +166,39 @@ async function canary(page: Page, server: LabServer): Promise<void> {
   }
 }
 
+/** A field's box and fill state through the page hook of a shadow form (render-forms.ts), or null. */
+export async function shadowField(scope: Frame, selector: string): Promise<{ x: number; y: number; width: number; height: number; filled: boolean } | null> {
+  return scope.evaluate((sel) => {
+    const hook = (window as unknown as { __labField?: (s: string) => { x: number; y: number; width: number; height: number; filled: boolean } | null }).__labField;
+    return hook ? hook(sel) : null;
+  }, selector).catch(() => null);
+}
+
+/**
+ * Focuses `selector` in `scope` as a user would: by locator when it can reach
+ * the field, else (closed shadow root) with a mouse click in the middle of
+ * the box the page hook reports. Throws after `timeout` ms.
+ */
+async function focusField(p: Page, scope: Frame, selector: string, timeout: number): Promise<void> {
+  const end = Date.now() + timeout;
+  const field = scope.locator(selector).first();
+  for (;;) {
+    if ((await field.count().catch(() => 0)) > 0) {
+      await field.focus({ timeout: Math.max(1, end - Date.now()) });
+      return;
+    }
+    const box = await shadowField(scope, selector);
+    if (box && box.width > 0 && box.height > 0) {
+      // The hook's box is relative to the frame's viewport: add the frame's own offset.
+      const frameBox = scope === p.mainFrame() ? { x: 0, y: 0 } : await (await scope.frameElement()).boundingBox();
+      await p.mouse.click((frameBox?.x ?? 0) + box.x + box.width / 2, (frameBox?.y ?? 0) + box.y + box.height / 2);
+      return;
+    }
+    if (Date.now() >= end) throw new Error(`no field ${selector} within ${timeout} ms`);
+    await sleep(200);
+  }
+}
+
 export async function launchLab(state: LabState, world: World, server: LabServer): Promise<Lab> {
   const dir = mkdtempSync(join(tmpdir(), "onepass-lab-profile-"));
   const profile = join(dir, "profile");
@@ -152,7 +217,7 @@ export async function launchLab(state: LabState, world: World, server: LabServer
     throw new Error(`lab: browser launch failed: ${(e as Error).message}`);
   }
   const context = ctx;
-  const nets = guard(context, world);
+  let nets: Awaited<ReturnType<typeof guard>> = { remote: [], pending: [] };
   const close = async () => {
     try {
       await context.close();
@@ -163,6 +228,7 @@ export async function launchLab(state: LabState, world: World, server: LabServer
     assertLoopback(nets.remote);
   };
   try {
+    nets = await guard(context, world, server);
     const worker = async (): Promise<Worker> => {
       const live = context.serviceWorkers().find((w) => w.url().startsWith("chrome-extension://"));
       return live ?? (await context.waitForEvent("serviceworker", { timeout: 15_000 }));
@@ -216,7 +282,7 @@ export async function launchLab(state: LabState, world: World, server: LabServer
       findExtFrame,
       waitExtFrame,
       async openMenu(p, scope, selector, timeout = 10_000) {
-        await scope.locator(selector).first().focus({ timeout });
+        await focusField(p, scope, selector, timeout);
         await p.keyboard.press("ArrowDown");
         return waitExtFrame(p, "menu", timeout);
       },
@@ -261,7 +327,7 @@ export interface PlainBrowser {
 export async function launchPlain(state: LabState, world: World, server: LabServer): Promise<PlainBrowser> {
   const browser = await chromium.launch({ channel: "chromium", headless: true, args: args(state, server) });
   const context = await browser.newContext({ viewport: { width: 1280, height: 860 }, locale: "fr-FR" });
-  const nets = guard(context, world);
+  let nets: Awaited<ReturnType<typeof guard>> = { remote: [], pending: [] };
   const close = async () => {
     await context.close();
     await browser.close();
@@ -269,6 +335,7 @@ export async function launchPlain(state: LabState, world: World, server: LabServ
     assertLoopback(nets.remote);
   };
   try {
+    nets = await guard(context, world, server);
     await canary(await context.newPage(), server);
   } catch (e) {
     throw await closeAfter(close, e);

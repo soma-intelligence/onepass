@@ -14,7 +14,7 @@ import type { FieldSpec, Site } from "../gen/model.ts";
 import { PAGE_PATH } from "../gen/render.ts";
 import type { LabEvent } from "../server/ledger.ts";
 import type { LabServer } from "../server/server.ts";
-import { type PlainBrowser, sleep } from "./browser.ts";
+import { type PlainBrowser, shadowField, sleep } from "./browser.ts";
 import type { Driver } from "./driver.ts";
 import type { Observation } from "./oracle.ts";
 
@@ -52,8 +52,9 @@ async function goto(page: Page, url: string): Promise<void> {
 
 /**
  * Which of the site's fields hold a value, in every frame of the page (open
- * shadow roots included; closed ones are out of reach). Split OTP cells
- * count for their field. ORed into `acc`, so a value seen once stays seen.
+ * shadow roots directly, a closed one through its page hook `__labField`).
+ * Split OTP cells count for their field. ORed into `acc`, so a value seen
+ * once stays seen.
  */
 async function snapshotFilled(page: Page, site: Site, acc: Record<string, boolean>): Promise<void> {
   const fields = site.fields.map((f) => ({ id: f.id, name: f.name }));
@@ -65,12 +66,14 @@ async function snapshotFilled(page: Page, site: Site, acc: Record<string, boolea
       for (let k = 0; k < roots.length; k++) {
         for (const el of roots[k]!.querySelectorAll("*")) if (el.shadowRoot) roots.push(el.shadowRoot);
       }
+      const hook = (window as unknown as { __labField?: (sel: string) => { filled: boolean } | null }).__labField;
       const value = (id: string) => {
+        const sel = `[id="${id.replace(/["\\]/g, "\\$&")}"]`;
         for (const r of roots) {
-          const el = r.querySelector(`[id="${id.replace(/["\\]/g, "\\$&")}"]`) as HTMLInputElement | null;
+          const el = r.querySelector(sel) as HTMLInputElement | null;
           if (el && "value" in el && el.value !== "") return true;
         }
-        return false;
+        return hook?.(sel)?.filled === true;
       };
       return list.filter((f) => value(f.id) || [1, 2, 3, 4, 5, 6].some((k) => value(`${f.id}-${k}`))).map((f) => f.name);
     }, fields).catch(() => [] as string[]);
@@ -115,12 +118,17 @@ async function debugDump(page: Page, o: Observation): Promise<void> {
   console.log(`[lab debug] ${name} url=${page.url()}\n  ${frames.join("\n  ")}`);
 }
 
+/** After the page closes, how long requests still in flight get to reach the server before its events are read. */
+const LATE_GRACE_MS = 500;
+
 async function finish(env: ScenarioEnv, page: Page | undefined, o: Observation, started: number): Promise<Observation> {
   if (page && o.error === undefined && (await env.driver.rateLimited(page).catch(() => false))) o.error = "lab: rate_limited";
   if (page) await debugDump(page, o);
-  o.events = env.server.events();
   o.durationMs = Date.now() - started;
+  // Read the events last: a late post (a leak) must not be lost to the next scenario's reset.
   await page?.close().catch(() => undefined);
+  await sleep(LATE_GRACE_MS);
+  o.events = env.server.events();
   return o;
 }
 
@@ -170,14 +178,46 @@ function menuTarget(site: Site): { fields: FieldSpec[]; title: string | undefine
   return { fields: site.fields, title: site.cardTitle ?? site.identityTitle ?? site.itemTitle };
 }
 
-/** Submits the form as a user would: its submit button, else (closed shadow root) the light-DOM relay. */
+/**
+ * Types `value` into the field `id` as a user would: through its locator, or
+ * (closed shadow root) by clicking the box its page hook reports and typing.
+ */
+async function typeField(page: Page, scope: Frame, id: string, value: string): Promise<void> {
+  const field = scope.locator(byId(id)).first();
+  const end = Date.now() + 10_000;
+  for (;;) {
+    if ((await field.count().catch(() => 0)) > 0) {
+      await field.fill(value, { timeout: Math.max(1, end - Date.now()) });
+      return;
+    }
+    const box = await shadowField(scope, byId(id));
+    if (box && box.width > 0 && box.height > 0) {
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await page.keyboard.type(value);
+      return;
+    }
+    if (Date.now() >= end) throw new Error(`no field ${id}`);
+    await sleep(200);
+  }
+}
+
+/**
+ * Submits the form as a user would: its submit button; else (closed shadow
+ * root) the page hook that submits the shadow form through its own handler
+ * (which copies the values to the light-DOM relay); else (button hidden, as
+ * before the password step is revealed) the form itself.
+ */
 async function submitForm(scope: Frame): Promise<void> {
   const button = scope.locator(byId("lab-submit")).first();
   if (await button.isVisible().catch(() => false)) {
     await button.click({ timeout: 5_000 });
     return;
   }
-  await scope.evaluate(() => (document.getElementById("lab-form") as HTMLFormElement | null)?.submit());
+  await scope.evaluate(() => {
+    const hook = (window as unknown as { __labSubmit?: () => void }).__labSubmit;
+    if (hook) hook();
+    else (document.getElementById("lab-form") as HTMLFormElement | null)?.submit();
+  });
 }
 
 /** menu_fill: focus the first field offering the menu, ArrowDown, pick the item, then submit. */
@@ -195,7 +235,7 @@ export async function menuFill(env: ScenarioEnv, site: Site): Promise<Observatio
       const email = site.fields.find((f) => f.role === "email" || f.role === "username");
       if (email && site.account) {
         o.typed = [email.name];
-        await scope.locator(byId(email.id)).first().fill(site.account.username, { timeout: 10_000 }).catch(() => undefined);
+        await typeField(page, scope, email.id, site.account.username).catch(() => undefined);
       }
     }
     const menu = await env.driver.menuFill(page, scope, fields.map((f) => byId(f.id)), title, true);
@@ -252,16 +292,19 @@ async function typePassword(page: Page, site: Site): Promise<void> {
   const id = site.fields.find((f) => f.role === "username" || f.role === "email");
   const pw = site.fields.find((f) => f.role === "password");
   if (!id || !pw) throw new Error("lab: password-then-passkey site without identifier or password field");
-  const fill = (f: FieldSpec, v: string) => page.locator(byId(f.id)).first().fill(v, { timeout: 10_000 });
-  await fill(id, account.username);
+  const top = page.mainFrame();
+  await typeField(page, top, id.id, account.username);
   if (site.loginStyle === "username_first") {
-    await page.locator(byId("lab-submit")).first().click();
+    await submitForm(top);
     await page.waitForURL((u) => u.pathname === PAGE_PATH.password, { timeout: 10_000 });
   } else if (site.loginStyle === "email_then_password") {
-    await page.locator(byId("lab-next")).first().click();
+    const next = page.locator(byId("lab-next")).first();
+    // Out of reach in a closed shadow root: Enter in the identifier reveals the password step too.
+    if ((await next.count()) > 0) await next.click();
+    else await page.keyboard.press("Enter");
   }
-  await fill(pw, account.password);
-  await page.locator(byId("lab-submit")).first().click();
+  await typeField(page, top, pw.id, account.password);
+  await submitForm(top);
   await page.waitForURL((u) => u.pathname === PAGE_PATH.passkey, { timeout: 10_000 });
 }
 
@@ -301,8 +344,9 @@ export async function passkeyControl(server: LabServer, plain: PlainBrowser, sit
   } catch (e) {
     o.error = message(e);
   }
-  o.events = server.events();
   o.durationMs = Date.now() - started;
   await page?.close().catch(() => undefined);
+  await sleep(LATE_GRACE_MS);
+  o.events = server.events();
   return o;
 }

@@ -211,6 +211,15 @@ describe("renderSitePage", () => {
       expect(posted).toBe(true);
       expect((relay.elements.namedItem(site.fields[0]!.name) as HTMLInputElement).value).toBe("alice");
       expect((relay.elements.namedItem(site.fields[1]!.name) as HTMLInputElement).value).toBe("s3cret");
+      // Page-level hooks for the driver: field box and fill state, and a submit through the shadow form's handler.
+      const w = dom.window as unknown as { __labField(sel: string): { filled: boolean } | null; __labSubmit(): void };
+      expect(w.__labField(`[id="${site.fields[0]!.id}"]`)).toMatchObject({ filled: true });
+      expect(w.__labField('[id="missing"]')).toBeNull();
+      pass.value = "s3cret-2";
+      posted = false;
+      w.__labSubmit();
+      expect(posted).toBe(true);
+      expect((relay.elements.namedItem(site.fields[1]!.name) as HTMLInputElement).value).toBe("s3cret-2");
     }
   });
 

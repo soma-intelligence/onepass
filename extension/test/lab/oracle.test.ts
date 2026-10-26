@@ -91,6 +91,20 @@ describe("judge", () => {
     expect(judge(scenario(login, "pass"), login, o)).toEqual({ verdict: "lab_error", cause: "bridge: rate_limited" });
     expect(judge(scenario(login, "pass"), login, obs({ error: "lab: host never started" })).verdict).toBe("lab_error");
   });
+  it("driver_error_fails_even_on_nofill", () => {
+    const closed = "Target page, context or browser has been closed\nCall log:\n  - waiting for locator";
+    // A crash must not read as "nothing was filled" on a cross-site frame or a lookalike.
+    expect(judge(scenario(framed, "nofill"), framed, obs({ overlayShown: false, itemOffered: false, error: closed })))
+      .toEqual({ verdict: "fail", cause: "driver_error:Target page, context or browser has been closed" });
+    expect(judge(scenario(login, "nofill", "lookalike"), login, obs({ driver: "lookalike", itemOffered: false, error: closed })).verdict)
+      .toBe("fail");
+    // The cause stays short.
+    const long = judge(scenario(login, "pass"), login, obs({ error: "x".repeat(300) }));
+    expect(long.verdict).toBe("fail");
+    expect(long.cause!.length).toBeLessThanOrEqual("driver_error:".length + 80);
+    // A leak still wins over a driver error.
+    expect(judge(scenario(framed, "nofill"), framed, obs({ events: [leak], error: closed })).verdict).toBe("leak");
+  });
   it("handoff_reason_in_cause", () => {
     const o = obs({ chain: { status: "handoff", reason: "captcha" }, events: [submit(login.host, false, "wrong_password")] });
     // The RP's refusal reason is kept next to the handoff reason.

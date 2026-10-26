@@ -142,7 +142,8 @@ export interface RuntimeConfig {
 }
 
 // Form behaviours. Listeners are delegated on the root (document or shadow
-// root) so they survive the spa_rerender clone.
+// root) so they survive the spa_rerender clone. Shadow pages also expose the
+// two page-level test hooks the lab driver uses (no randomness, no clock).
 const RUNTIME_JS = `(function () {
   var cfg = __CFG__;
   function wire(root) {
@@ -211,6 +212,22 @@ const RUNTIME_JS = `(function () {
         var digits = e.clipboardData.getData("text").replace(/\\D/g, "");
         if (digits.length > 1) { e.preventDefault(); spread(t, digits); }
       });
+    }
+    if (cfg.shadow) {
+      // Lab driver hooks: a closed shadow root is out of reach of locators, not of a
+      // user. __labField gives a field's box (to click it) and whether it holds a
+      // value; __labSubmit sends the form as its submit button would.
+      window.__labField = function (sel) {
+        var el = root.querySelector(sel);
+        if (!el) return null;
+        var r = el.getBoundingClientRect();
+        return { x: r.left, y: r.top, width: r.width, height: r.height, filled: "value" in el && el.value !== "" };
+      };
+      window.__labSubmit = function () {
+        reveal();
+        var form = q("#lab-form");
+        if (form) form.requestSubmit();
+      };
     }
     if (cfg.spa) {
       root.addEventListener("input", function () {

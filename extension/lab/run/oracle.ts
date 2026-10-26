@@ -1,7 +1,9 @@
 // Oracle of the autofill lab (spec 7.5): turns what a scenario driver observed
 // (server events, chain state, which fields ended up non-empty) into one
 // verdict. Order: a leak beats everything; a bench error (`lab:` prefix,
-// native host rate limit) is lab_error; "nofill" scenarios pass only when
+// native host rate limit) is lab_error; any other driver exception fails
+// (driver_error, so a crash never reads as "nothing was filled"); "nofill"
+// scenarios pass only when
 // nothing was filled or signed in; expected failures become xpass when the
 // goal is met; a missed goal fails with its first explaining cause.
 // Results carry field names, hosts and verdicts, never a value.
@@ -81,12 +83,19 @@ function failCause(site: Site, o: Observation): string {
   return "timeout";
 }
 
+/** First line of a driver exception, cut short (Playwright messages carry call logs). */
+function shortError(msg: string): string {
+  const line = (msg.split("\n")[0] ?? "").trim();
+  return line.length > 80 ? `${line.slice(0, 77)}...` : line || "unknown";
+}
+
 export function judge(s: Scenario, site: Site, o: Observation): Judgement {
   const leak = o.events.find((e): e is Extract<LabEvent, { kind: "leak" }> => e.kind === "leak");
   if (leak) return { verdict: "leak", cause: `leak:${leak.secret}:${leak.field}@${leak.host}` };
   if (o.error !== undefined && (o.error.startsWith("lab:") || o.error.includes("rate_limited"))) {
     return { verdict: "lab_error", cause: o.error };
   }
+  if (o.error !== undefined) return { verdict: "fail", cause: `driver_error:${shortError(o.error)}` };
   if (s.expect === "nofill") {
     const typed = new Set(o.typed ?? []);
     const filled = Object.entries(o.filled).some(([name, v]) => v && !typed.has(name)) || o.events.some((e) => e.kind === "signin");
