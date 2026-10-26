@@ -815,7 +815,7 @@ fn sync_handle_sees_pending_after_save() {
 }
 
 #[test]
-fn requeue_all_makes_pushed_records_pending_again() {
+fn zone_reset_requeues_missing_records_after_a_fetch() {
     let fx = fixture();
     let handle = open_sync_store(fx.path.clone()).unwrap();
     saved_login(&fx, "pw-requeue");
@@ -825,19 +825,21 @@ fn requeue_all_makes_pushed_records_pending_again() {
             .mark_pushed(c.kind, c.id.clone(), c.version, Some(vec![5]))
             .unwrap();
     }
+    handle.set_meta("remote.token".into(), vec![1]).unwrap();
     assert!(handle.pending_changes().unwrap().is_empty());
     let some = &first[0];
-    assert_eq!(
-        handle.server_meta(some.kind, some.id.clone()).unwrap(),
-        Some(vec![5])
-    );
-    handle.requeue_all().unwrap();
-    let again = handle.pending_changes().unwrap();
-    assert_eq!(again.len(), first.len());
+
+    handle.begin_zone_reset("remote.token".into()).unwrap();
+    assert_eq!(handle.meta("remote.token".into()).unwrap(), None);
     assert_eq!(
         handle.server_meta(some.kind, some.id.clone()).unwrap(),
         None
     );
+    assert!(handle.pending_changes().unwrap().is_empty());
+
+    assert!(handle.requeue_missing().unwrap());
+    assert_eq!(handle.pending_changes().unwrap().len(), first.len());
+    assert!(!handle.requeue_missing().unwrap());
 }
 
 #[test]

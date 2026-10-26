@@ -99,7 +99,8 @@ public actor SyncCoordinator: SyncTrigger {
     }
 
     /// Fetches into the store, then tells whether an account exists (account creation refuses a second
-    /// account in the same iCloud, spec 7). No remote: false. Network errors are thrown.
+    /// account in the same iCloud, spec 7). No remote: false. Network errors are thrown. A lost zone is
+    /// handled by the fetch (one reset); a second one in the same call is thrown as `zoneReset`.
     public func remoteHasAccount() async throws -> Bool {
         guard let remote else { return false }
         await acquire()
@@ -191,7 +192,10 @@ public actor SyncCoordinator: SyncTrigger {
                     if try await sendPending(remote) { break }
                     if turn >= Self.maxTurns { throw RoundError.unsettled }
                 } catch RemoteStoreError.zoneReset {
-                    // The server lost its data: upload everything again, from a fresh fetch.
+                    // The server lost its data: forget its tags and our token, then fetch from scratch;
+                    // the records it does not hold are queued after that fetch (`fetchAll`).
+                    // At most two resets are handled per round (a third gives up as unsettled), each
+                    // restarting the turn count, so a round makes at most 3 turns per reset plus the first.
                     resets += 1
                     if resets > 2 { throw RoundError.unsettled }
                     try await resetForLostZone()
@@ -280,18 +284,22 @@ public actor SyncCoordinator: SyncTrigger {
             if let next { token = next }
             if !batch.moreComing { break }
         }
-        let vaults = try await CoreThread.run { try store.commitRemote() }
+        let vaults = try await CoreThread.run {
+            let vaults = try store.commitRemote()
+            // After a zone reset: queue what the new zone did not give back (no-op otherwise).
+            _ = try store.requeueMissing()
+            return vaults
+        }
         if changed > 0 || !vaults.isEmpty { emitRemoteChange() }
     }
 
-    /// The remote lost everything: every stored record is queued again (server tags forgotten), then the
-    /// change token is cleared. In that order, so an interruption in between still resends everything.
+    /// The remote lost everything. Step 1, atomic in the core: server tags, staged pages and the change
+    /// token are dropped and a persisted flag is set. Nothing is queued yet, so a stale local record
+    /// never overwrites a newer version another device uploads to the new zone; step 2 runs after the
+    /// next complete fetch (`fetchAll`), also after a restart.
     private func resetForLostZone() async throws {
         let store = store
-        try await CoreThread.run {
-            try store.requeueAll()
-            try store.setMeta(key: Self.tokenKey, value: Data())
-        }
+        try await CoreThread.run { try store.beginZoneReset(tokenKey: Self.tokenKey) }
     }
 
     /// A record the core can stage: known kind (1 to 6), canonical id, version that fits SQLite.

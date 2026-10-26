@@ -290,6 +290,57 @@ struct SyncCoordinatorTests {
         #expect(await b.coordinator.status.isIdle)
     }
 
+    @Test func staleDeviceResetKeepsNewerServerVersions() async throws {
+        let remote = InMemoryRemote()
+        let (a, b, atlas) = try await twoSyncedDevices(remote: remote)
+        defer { a.cleanUp(); b.cleanUp() }
+        await b.sync()
+
+        // The zone is lost; A uploads again, then renames the vault and the item. B has not seen any of it.
+        await remote.simulateReset()
+        await a.sync()
+        let vault = try #require(a.session.allVaults.first { $0.id == atlas.vaultId })
+        var meta = vault.meta
+        meta.name = "Renommé par A"
+        try await a.session.updateVault(id: vault.id, meta: meta)
+        try await rename(a.session, itemID: atlas.id, vaultID: atlas.vaultId, to: "Atlas renommé par A")
+        await a.sync()
+        #expect(try await a.pendingChanges().isEmpty)
+        let serverBefore = await remote.tags()
+
+        // B goes through its own reset path: it must not overwrite A's newer versions.
+        await remote.failNext(with: .zoneReset)
+        await b.sync()
+        #expect(await b.coordinator.status.isIdle)
+        #expect(await remote.tags() == serverBefore)
+        #expect(try await b.pendingChanges().isEmpty)
+        await b.session.reload()
+        await a.sync()
+        await a.session.reload()
+        #expect(b.titles == a.titles)
+        #expect(b.titles.contains("Atlas renommé par A"))
+        #expect(b.session.allVaults.contains { $0.meta.name == "Renommé par A" })
+        #expect(a.session.allVaults.contains { $0.meta.name == "Renommé par A" })
+    }
+
+    @Test func pendingDeletionSurvivesAZoneReset() async throws {
+        let remote = InMemoryRemote()
+        let (a, b, atlas) = try await twoSyncedDevices(remote: remote)
+        defer { a.cleanUp(); b.cleanUp() }
+        try await a.session.deletePermanently(itemID: atlas.id, vaultID: atlas.vaultId)
+        #expect(try await a.pendingChanges().contains { $0.data == nil })
+
+        await remote.simulateReset()
+        await a.sync()
+        #expect(await a.coordinator.status.isIdle)
+        #expect(try await a.pendingChanges().isEmpty)
+        #expect(await remote.record(RecordName(kind: 5, id: atlas.id)) == nil)
+        await b.sync()
+        await b.session.reload()
+        #expect(!b.titles.contains("Projet Atlas"))
+        #expect(b.titles == a.titles)
+    }
+
     @Test func conflictOnSendIsRestagedAndResent() async throws {
         let remote = InMemoryRemote()
         let a = try SyncDevice(remote: remote, name: "A")

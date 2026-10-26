@@ -403,8 +403,15 @@ impl SyncStoreHandle {
         Ok(self.guard().has_account()?)
     }
 
-    /// The server lost its data: queue every stored record again and forget the server tags.
-    pub fn requeue_all(&self) -> Result<(), OnePassError> {
-        Ok(self.guard().requeue_all()?)
+    /// Step 1 of a server data loss: forget server tags and staged pages, clear the change token stored
+    /// under `token_key` and flag the requeue. Nothing is queued yet.
+    pub fn begin_zone_reset(&self, token_key: String) -> Result<(), OnePassError> {
+        Ok(self.guard().begin_zone_reset(&handle_key(&token_key))?)
+    }
+
+    /// Step 2, after the commit of a complete fetch from scratch: queue the stored records the server
+    /// does not hold. A no-op (false) unless `begin_zone_reset` ran before.
+    pub fn requeue_missing(&self) -> Result<bool, OnePassError> {
+        Ok(self.guard().requeue_missing()?)
     }
 }
