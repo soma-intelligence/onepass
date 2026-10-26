@@ -190,9 +190,10 @@ public final class VaultSession {
     private enum Presence { case present, missing, unknown }
 
     /// Presence only, nothing loaded. `unknown` when the keychain cannot answer (device locked at a
-    /// background launch, for example): that is not a missing Secret Key.
+    /// background launch, for example) or the account cannot be named: that is not a missing
+    /// Secret Key.
     private func secretKeyPresence() -> Presence {
-        guard let accountID = settings.accountID else { return .missing }
+        guard let accountID = knownAccountID() else { return .unknown }
         do {
             return try secretKeys.contains(accountID: accountID) ? .present : .missing
         } catch {
@@ -200,10 +201,20 @@ public final class VaultSession {
         }
     }
 
+    /// The account of this device: from the settings, else (settings wiped, store kept) the account
+    /// the store shows, adopted into the settings once this device's keychain holds its Secret Key.
+    /// Nil when it cannot be told.
+    private func knownAccountID() -> String? {
+        if let accountID = settings.accountID { return accountID }
+        guard let stored = try? openSyncStore(dbPath: dbPath).accountId() else { return nil }
+        if (try? secretKeys.contains(accountID: stored)) == true { settings.accountID = stored }
+        return stored
+    }
+
     /// The stored Secret Key for an unlock. Missing: `needsSecretKey`. Keychain error: thrown as is.
     private func loadSecretKey() throws -> (accountID: String, secretKey: String) {
-        let missing = VaultError.other("La Secret Key de ce compte n'est pas sur cet appareil : utilisez votre Emergency Kit.")
-        guard let accountID = settings.accountID else {
+        let missing = VaultError.other("La Secret Key de ce compte n'est pas sur cet appareil : utilise ton Emergency Kit.")
+        guard let accountID = knownAccountID() else {
             needsSecretKey = true
             throw fail(missing)
         }

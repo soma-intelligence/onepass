@@ -648,6 +648,27 @@ struct VaultSessionHardeningTests {
         #expect(restored.state == .locked)
     }
 
+    /// Review I3: the app's defaults were wiped but the store and the keychain still hold the
+    /// account: the account id is read from the store, the lock screen asks the password only.
+    @Test func wipedDefaultsWithKeyPresentAskOnlyThePassword() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "Camille", mode: .personal)
+        let accountID = try #require(h.settings.accountID)
+        session.lock()
+        await session.waitForReleasedSessions()
+
+        UserDefaults(suiteName: h.suite)?.removePersistentDomain(forName: h.suite)
+        #expect(h.settings.accountID == nil)
+        let relaunched = h.makeSession()
+        #expect(relaunched.state == .locked)
+        #expect(!relaunched.needsSecretKey)
+        try await relaunched.unlock(password: testPassword)
+        #expect(relaunched.state == .unlocked)
+        #expect(h.settings.accountID == accountID)
+    }
+
     /// Bug 2: a device without the Secret Key can start over (after the typed confirmation).
     @Test func resetIsAllowedWhenTheSecretKeyIsMissing() async throws {
         let h = try SessionHarness()
