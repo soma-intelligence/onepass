@@ -8,6 +8,9 @@ pub fn fill_random(buf: &mut [u8]) -> Result<()> {
 }
 
 /// Return `N` cryptographically secure random bytes.
+///
+/// The returned array is a plain copy that is not wiped. For secret material,
+/// use `fill_random` into a zeroizing buffer instead.
 pub fn random_array<const N: usize>() -> Result<[u8; N]> {
     let mut out = [0u8; N];
     fill_random(&mut out)?;

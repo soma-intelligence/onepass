@@ -5,7 +5,7 @@ use std::fmt;
 use aws_lc_rs::hkdf::{HKDF_SHA256, KeyType, Salt};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use super::random::random_array;
+use super::random::fill_random;
 use crate::{Error, Result};
 
 /// HKDF output length marker: 32 bytes.
@@ -23,7 +23,9 @@ pub struct SymmetricKey([u8; 32]);
 
 impl SymmetricKey {
     pub fn generate() -> Result<SymmetricKey> {
-        Ok(SymmetricKey(random_array::<32>()?))
+        let mut k = SymmetricKey([0u8; 32]);
+        fill_random(&mut k.0)?;
+        Ok(k)
     }
 
     pub fn from_bytes(b: [u8; 32]) -> SymmetricKey {
@@ -44,9 +46,9 @@ impl SymmetricKey {
         let prk = Salt::new(HKDF_SHA256, &[]).extract(&self.0);
         let info = [info];
         let okm = prk.expand(&info, Len32).map_err(|_| Error::Crypto)?;
-        let mut out = [0u8; 32];
-        okm.fill(&mut out).map_err(|_| Error::Crypto)?;
-        Ok(SymmetricKey(out))
+        let mut key = SymmetricKey([0u8; 32]);
+        okm.fill(&mut key.0).map_err(|_| Error::Crypto)?;
+        Ok(key)
     }
 }
 
