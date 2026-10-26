@@ -11,11 +11,13 @@
 // identical reports within 2 s are dropped.
 //
 // A `submit` event is trusted even when a page script called
-// `requestSubmit()` or `button.click()`: it is reported only under real user
-// activation (`navigator.userActivation.isActive`; where the browser lacks
-// it, a trusted click or keydown inside that form within the last second).
-// Otherwise a page could make OnePass report credentials of its choosing at
-// will (save prompt spoofing, probing for stored credentials).
+// `requestSubmit()` or `button.click()`: it is reported only after a trusted
+// click or keydown inside that same form within the last 5 s, and, where the
+// browser has it, under user activation (`navigator.userActivation.isActive`).
+// User activation alone is page-wide: after any click elsewhere, a page could
+// submit a credential form filled with values of its choosing. Otherwise a
+// page could make OnePass report credentials of its choosing at will (save
+// prompt spoofing, probing for stored credentials).
 import type { CsToBg, FormInfo, FormKind, PageAnalysis } from "../shared/messages";
 import type { RefRegistry } from "./detect/refs";
 import { type Geometry, isRendered } from "./detect/visibility";
@@ -24,8 +26,8 @@ import { nativeValue } from "./filler";
 export const DEDUPE_MS = 2000;
 export const SPA_WINDOW_MS = 2000;
 const SPA_POLL_MS = 250;
-/** Fallback activation window: a trusted gesture in the form this recent. */
-export const GESTURE_MS = 1000;
+/** A `submit` event counts only after a trusted gesture in that form this recent. */
+export const GESTURE_MS = 5000;
 
 const CREDENTIAL_KINDS: ReadonlySet<FormKind> = new Set<FormKind>(["login", "signup", "change_password"]);
 const BUTTONS =
@@ -161,11 +163,11 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     timers.add(t);
   };
 
-  /** Real user activation for a submission of `f`. */
+  /** A recent trusted gesture in `f` itself, plus user activation where the browser has it. */
   const activated = (f: FormInfo): boolean => {
+    if (gesture === null || gesture.formRef !== f.ref || Date.now() - gesture.at > GESTURE_MS) return false;
     const ua = (view?.navigator as (Navigator & { userActivation?: { isActive: boolean } }) | undefined)?.userActivation;
-    if (ua && typeof ua.isActive === "boolean") return ua.isActive;
-    return gesture !== null && gesture.formRef === f.ref && Date.now() - gesture.at <= GESTURE_MS;
+    return !(ua && typeof ua.isActive === "boolean") || ua.isActive;
   };
 
   /** Remembers a trusted click or keydown inside a credential form. */

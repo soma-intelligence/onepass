@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FormInfo, PageAnalysis } from "../../src/shared/messages";
+import { GESTURE_MS } from "../../src/content/submit";
 import {
   EXT_BASE,
   flush,
@@ -389,9 +390,14 @@ describe("submission watcher", () => {
     expect(creds(s)).toHaveLength(0);
     // A user gesture that is too old does not count either.
     userClick(input("p"));
-    vi.advanceTimersByTime(1500);
+    vi.advanceTimersByTime(GESTURE_MS + 1);
     form.requestSubmit();
     expect(creds(s)).toHaveLength(0);
+    // A gesture in the form within the window does.
+    userClick(input("p"));
+    vi.advanceTimersByTime(GESTURE_MS - 1000);
+    form.requestSubmit();
+    expect(creds(s)).toEqual([["alex@atlas.dev", "chosen-by-page", false]]);
     // A gesture in another form does not count.
     s.cs.stop();
     setPage(`${LOGIN}<form id="other"><input id="q" autocomplete="username"><input id="r" type="password" autocomplete="current-password"></form>`);
@@ -415,6 +421,14 @@ describe("submission watcher", () => {
       input("p").value = "s3cret";
       const form = document.getElementById("login") as HTMLFormElement;
       form.addEventListener("submit", (e) => e.preventDefault());
+      // Active page-wide after a click elsewhere: a script-only submit is not reported.
+      document.body.insertAdjacentHTML("beforeend", `<button id="elsewhere" type="button">Menu</button>`);
+      userClick(document.getElementById("elsewhere")!);
+      ua.isActive = true;
+      form.requestSubmit();
+      expect(creds(s)).toHaveLength(0);
+      // A gesture in the form, but no activation: nothing either.
+      ua.isActive = false;
       userClick(input("p"));
       form.requestSubmit();
       expect(creds(s)).toHaveLength(0);
