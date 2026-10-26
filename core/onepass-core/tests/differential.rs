@@ -14,6 +14,7 @@ use libcrux_ml_kem::mlkem1024 as lx_kem;
 
 const MLKEM_VECTORS: &str = include_str!("vectors/mlkem1024.json");
 const MLDSA_VECTORS: &str = include_str!("vectors/mldsa87.json");
+const MLDSA_SIGGEN_VECTORS: &str = include_str!("vectors/mldsa87_siggen.json");
 const SLHDSA_VECTORS: &str = include_str!("vectors/slhdsa_sha2_256s.json");
 
 fn groups(json: &str) -> Vec<Value> {
@@ -118,6 +119,34 @@ fn mldsa87_acvp_verification_vectors() {
         }
     }
     assert_eq!((aws_cases, libcrux_cases), (1, 15));
+}
+
+#[test]
+fn mldsa87_acvp_signature_generation_vectors_verify() {
+    // ACVP sigGen output (pure, empty context): every expected signature must
+    // verify under its public key, on aws-lc and on libcrux.
+    let mut cases = 0;
+    for g in groups(MLDSA_SIGGEN_VECTORS) {
+        for t in g["tests"].as_array().unwrap() {
+            let (pk, msg, sig) = (hex(t, "pk"), hex(t, "message"), hex(t, "signature"));
+            let id = t["tcId"].as_u64().unwrap();
+            assert!(
+                UnparsedPublicKey::new(&ML_DSA_87, &pk)
+                    .verify(&msg, &sig)
+                    .is_ok(),
+                "aws-lc tcId {id}"
+            );
+            let lx_pk =
+                lx_dsa::MLDSA87VerificationKey::new(<[u8; 2592]>::try_from(&pk[..]).unwrap());
+            let lx_sig = lx_dsa::MLDSA87Signature::new(<[u8; 4627]>::try_from(&sig[..]).unwrap());
+            assert!(
+                lx_dsa::verify(&lx_pk, &msg, &[], &lx_sig).is_ok(),
+                "libcrux tcId {id}"
+            );
+            cases += 1;
+        }
+    }
+    assert_eq!(cases, 3);
 }
 
 #[test]

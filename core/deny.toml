@@ -1,5 +1,8 @@
 [advisories]
 version = 2
+# RUSTSEC-2026-0173: proc-macro-error2 is unmaintained. It is reached only
+# through the libcrux dev-dependencies (hax-lib-macros), not a vulnerability.
+ignore = ["RUSTSEC-2026-0173"]
 
 [licenses]
 # Allowlist is wider than current deps on purpose (future crypto crates).

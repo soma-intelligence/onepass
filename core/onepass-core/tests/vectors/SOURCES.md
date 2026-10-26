@@ -19,3 +19,11 @@ are dropped). Hex strings are unchanged (upper case).
 Dropped on purpose: other parameter sets, ML-KEM key-check groups
 (`decapsulationKeyCheck`, `encapsulationKeyCheck`), ML-DSA pre-hash,
 external-mu and internal groups, SLH-DSA pre-hash groups.
+
+## ML-DSA-87 signature generation
+
+`mldsa87_siggen.json`: `internalProjection.json` of `ML-DSA-sigGen-FIPS204` at
+the same commit, ML-DSA-87, external interface, pure, no external mu, only the
+cases with an empty context (tgId 5 deterministic: 2 cases, tgId 17 hedged:
+1 case). Kept fields: `tcId`, `pk`, `message`, `signature` (`sk`, `rnd` and the
+rest dropped). Used to check that the expected signatures verify.
