@@ -40,6 +40,11 @@ dev-fast-kdf = []
 name = "malicious_store"
 required-features = ["dev-fast-kdf"]
 
+# Accounts and archives at the dev KDF floor.
+[[test]]
+name = "archive"
+required-features = ["dev-fast-kdf"]
+
 [dev-dependencies]
 time = { version = "0.3", features = ["macros"] }
 proptest = "1.12"
