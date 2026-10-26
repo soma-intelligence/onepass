@@ -241,6 +241,9 @@ impl<P: VaultPort> McpTools<P> {
 
     /// Asks the user, unless `key` names a request already allowed for the
     /// session (only when `remember_allowed`). Sets the decision label.
+    ///
+    /// First of all the audit log must be appendable: a secret action is
+    /// never performed when it could not be logged (fail closed).
     #[allow(clippy::too_many_arguments)]
     fn approve(
         &mut self,
@@ -252,6 +255,9 @@ impl<P: VaultPort> McpTools<P> {
         key: Option<String>,
         call: &mut Call,
     ) -> Result<(), Refusal> {
+        if self.audit.ready().is_err() {
+            return Err(Refusal::AuditUnusable);
+        }
         let key = key.filter(|_| remember_allowed);
         if key.as_ref().is_some_and(|k| self.grants.contains(k)) {
             call.decision = "remembered";

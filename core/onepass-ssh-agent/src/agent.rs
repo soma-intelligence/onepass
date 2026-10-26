@@ -283,7 +283,9 @@ impl<K: KeySource> Agent<K> {
 
     /// Handles one request from a peer on a connection.
     pub fn handle(&mut self, conn: &mut ConnState, peer: &PeerInfo, req: Request) -> Reply {
-        if peer.uid.is_some_and(|uid| uid != effective_uid()) {
+        // A peer of another uid, or whose uid the system cannot tell, is
+        // refused and disconnected.
+        if peer.uid != Some(effective_uid()) {
             return Reply {
                 response: Response::Failure,
                 close: true,
@@ -433,6 +435,11 @@ impl<K: KeySource> Agent<K> {
         // process" would share one grant between every unidentified peer.
         let rememberable = !key.confirm_each_use && !forwarded && peer.exe.is_some();
         let grant_key = (key.fingerprint.clone(), exe.clone());
+        // Fail closed: no signature unless it can be logged.
+        if self.audit.ready().is_err() {
+            self.record_sign(&exe, Some(&key), "policy", "audit_unusable");
+            return Reply::failure();
+        }
         let now = Instant::now();
         self.grants.retain(|_, until| *until > now);
         let decision = if rememberable && self.grants.contains_key(&grant_key) {
@@ -549,8 +556,11 @@ impl<K: KeySource> Agent<K> {
         out
     }
 
+    /// Records a sign attempt. A failed write cannot undo a signature
+    /// already returned: it goes to stderr. Signing itself checked the log
+    /// with [`AuditSink::ready`] first.
     fn record_sign(&mut self, exe: &str, key: Option<&KeyInfo>, decision: &str, outcome: &str) {
-        self.audit.record(&AuditEntry {
+        let written = self.audit.record(&AuditEntry {
             surface: Surface::Ssh,
             client: exe.to_owned(),
             action: ACTION_SIGN.to_owned(),
@@ -560,6 +570,7 @@ impl<K: KeySource> Agent<K> {
             decision: decision.to_owned(),
             outcome: outcome.to_owned(),
         });
+        report_audit_failure(written);
     }
 
     fn record_bind(&mut self, peer: &PeerInfo, outcome: &str) {
@@ -567,7 +578,7 @@ impl<K: KeySource> Agent<K> {
             .exe
             .clone()
             .unwrap_or_else(|| UNKNOWN_PROCESS.to_owned());
-        self.audit.record(&AuditEntry {
+        let written = self.audit.record(&AuditEntry {
             surface: Surface::Ssh,
             client: exe,
             action: ACTION_SIGN.to_owned(),
@@ -577,6 +588,13 @@ impl<K: KeySource> Agent<K> {
             decision: "policy".to_owned(),
             outcome: outcome.to_owned(),
         });
+        report_audit_failure(written);
+    }
+}
+
+fn report_audit_failure(written: Result<(), onepass_guard::GuardError>) {
+    if let Err(err) = written {
+        eprintln!("onepass: audit log write failed: {err}");
     }
 }
 

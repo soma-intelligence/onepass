@@ -11,8 +11,8 @@ mod display;
 mod signed;
 
 pub use approval::{
-    ApprovalRequest, Approver, Decision, DevAutoApprover, Surface, Target, TtyApprover,
-    dev_auto_approver_from_env, parse_answer, render_prompt, testing,
+    ApprovalRequest, Approver, CHALLENGE_ALPHABET, Decision, DevAutoApprover, Surface, Target,
+    TtyApprover, challenge_code, dev_auto_approver_from_env, parse_answer, render_prompt, testing,
 };
 pub use audit::{
     AuditEntry, AuditLog, AuditRecord, AuditSink, AuditVerification, SignedAuditSink, head_path,

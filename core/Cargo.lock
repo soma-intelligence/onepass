@@ -1431,6 +1431,7 @@ version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
+ "libc",
  "serde",
  "serde_json",
  "tempfile",

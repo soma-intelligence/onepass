@@ -597,14 +597,56 @@ fn other_uid_is_refused() {
         );
     }
     assert_eq!(f.asked(), 0);
-    // An unknown uid is not refused (the socket mode protects it).
+    // An unknown uid is refused like another uid.
     let unknown = PeerInfo {
         uid: None,
         ..peer("/usr/bin/ssh")
     };
-    let r = f.handle(
+    for req in [Request::RequestIdentities, sign_req(KeyType::Ed25519, b"d")] {
+        let r = f.handle(&mut ConnState::default(), &unknown, req);
+        assert_eq!(
+            r,
+            Reply {
+                response: Response::Failure,
+                close: true
+            }
+        );
+    }
+    assert_eq!(f.asked(), 0);
+}
+
+/// An audit log that cannot be appended to.
+struct BrokenAudit;
+
+impl onepass_guard::AuditSink for BrokenAudit {
+    fn record(&mut self, _e: &onepass_guard::AuditEntry) -> Result<(), onepass_guard::GuardError> {
+        Err(onepass_guard::GuardError::Tampered("test"))
+    }
+    fn ready(&mut self) -> Result<(), onepass_guard::GuardError> {
+        Err(onepass_guard::GuardError::Tampered("test"))
+    }
+}
+
+#[test]
+fn sign_fails_closed_when_the_audit_log_is_unusable() {
+    let approver = Arc::new(ScriptedApprover::new(vec![Decision::AllowForSession; 4]));
+    let mut agent = Agent::new(
+        FakeSource::all(),
+        approver.clone(),
+        Box::new(BrokenAudit),
+        AgentConfig::default(),
+    );
+    let r = agent.handle(
         &mut ConnState::default(),
-        &unknown,
+        &peer("/usr/bin/ssh"),
+        sign_req(KeyType::Ed25519, b"d"),
+    );
+    assert_eq!(r.response, Response::Failure);
+    assert!(approver.calls().is_empty());
+    // Listing keys (no secret involved) still works.
+    let r = agent.handle(
+        &mut ConnState::default(),
+        &peer("/usr/bin/ssh"),
         Request::RequestIdentities,
     );
     assert!(matches!(r.response, Response::Identities(_)));

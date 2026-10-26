@@ -64,6 +64,8 @@ pub(crate) enum Refusal {
     Invalid(String),
     /// Stored data failed verification.
     Integrity,
+    /// The audit log cannot be appended to: secret tools fail closed.
+    AuditUnusable,
 }
 
 impl Refusal {
@@ -75,6 +77,7 @@ impl Refusal {
             Refusal::Denied => "denied by the user".into(),
             Refusal::Invalid(m) => m.clone(),
             Refusal::Integrity => "stored data failed verification".into(),
+            Refusal::AuditUnusable => "audit log unusable; run onepass mcp audit --rotate".into(),
         }
     }
 }
@@ -382,9 +385,14 @@ impl<P: VaultPort> McpTools<P> {
     }
 
     /// One audit entry per target of `call` (one entry when it has none).
+    ///
+    /// A failed write cannot undo the call: the result is still returned and
+    /// the failure goes to stderr. Secret tools checked the log was usable
+    /// before asking the user ([`AuditSink::ready`]); metadata tools do not,
+    /// they fail open since no secret is involved.
     fn record(&mut self, client: &ClientInfo, action: &str, call: &Call, outcome: &str) {
         for (vault_id, item_id, field) in call.entries() {
-            self.audit.record(&AuditEntry {
+            let written = self.audit.record(&AuditEntry {
                 surface: Surface::Mcp,
                 client: client.name.clone(),
                 action: action.to_owned(),
@@ -394,6 +402,9 @@ impl<P: VaultPort> McpTools<P> {
                 decision: call.decision.to_owned(),
                 outcome: outcome.to_owned(),
             });
+            if let Err(err) = written {
+                eprintln!("onepass: audit log write failed: {err}");
+            }
         }
     }
 }
@@ -661,8 +672,9 @@ mod tests {
         let audit = std::rc::Rc::new(std::cell::RefCell::new(Vec::<AuditEntry>::new()));
         struct Sink(std::rc::Rc<std::cell::RefCell<Vec<AuditEntry>>>);
         impl AuditSink for Sink {
-            fn record(&mut self, e: &AuditEntry) {
+            fn record(&mut self, e: &AuditEntry) -> Result<(), onepass_guard::GuardError> {
                 self.0.borrow_mut().push(e.clone());
+                Ok(())
             }
         }
         let mut f = fixture();
@@ -677,5 +689,60 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].action, "unknown");
         assert_eq!(entries[0].outcome, "invalid");
+    }
+
+    /// An audit log that cannot be appended to.
+    struct BrokenSink;
+    impl AuditSink for BrokenSink {
+        fn record(&mut self, _e: &AuditEntry) -> Result<(), onepass_guard::GuardError> {
+            Err(onepass_guard::GuardError::Tampered("test"))
+        }
+        fn ready(&mut self) -> Result<(), onepass_guard::GuardError> {
+            Err(onepass_guard::GuardError::Tampered("test"))
+        }
+    }
+
+    #[test]
+    fn secret_tools_fail_closed_when_the_audit_log_is_unusable() {
+        let mut f = fixture();
+        f.tools
+            .policy
+            .vaults
+            .insert(f.work.id.to_string(), Scope::ALL.into_iter().collect());
+        let approver = Arc::new(ScriptedApprover::new(vec![
+            onepass_guard::Decision::AllowForSession;
+            8
+        ]));
+        f.tools.approver = approver.clone();
+        f.tools.audit = Box::new(BrokenSink);
+        let client = ClientInfo {
+            name: "c".into(),
+            version: "1".into(),
+        };
+        let args = |v: Value| v.as_object().unwrap().clone();
+        for (tool, a) in [
+            (
+                "reveal_secret",
+                json!({"reference": "onepass://Work/API/key"}),
+            ),
+            (
+                "run_with_secrets",
+                json!({"command": ["true"], "env": {"A": "onepass://Work/API/key"}}),
+            ),
+        ] {
+            match f.tools.call(&client, tool, &args(a)) {
+                ToolOutcome::Refused(m) => {
+                    assert_eq!(m, "audit log unusable; run onepass mcp audit --rotate")
+                }
+                _ => panic!("{tool} not refused"),
+            }
+        }
+        assert!(approver.calls().is_empty());
+        assert!(f.tools.port.resolved.is_empty());
+        // Metadata tools stay available (fail open, no secret involved).
+        assert!(matches!(
+            f.tools.call(&client, "list_vaults", &Map::new()),
+            ToolOutcome::Ok(_)
+        ));
     }
 }

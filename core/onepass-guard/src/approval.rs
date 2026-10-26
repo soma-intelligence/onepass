@@ -3,10 +3,11 @@
 use crate::display::sanitize_for_display;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::fs::OpenOptions;
-use std::io::{BufRead, BufReader, Write};
-use std::sync::{Mutex, mpsc};
-use std::time::Duration;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
+use std::os::fd::AsRawFd;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 /// Which front end asks.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,9 +74,32 @@ pub trait Approver: Send + Sync {
     fn approve(&self, req: &ApprovalRequest) -> Decision;
 }
 
-/// Renders a request as terminal text. Every dynamic part is sanitized, so a
-/// hostile title or client name cannot rewrite the prompt.
-pub fn render_prompt(req: &ApprovalRequest) -> String {
+/// Characters of the approval challenge: lowercase letters without `i`, `l`
+/// and `o`, which are easy to misread.
+pub const CHALLENGE_ALPHABET: &str = "abcdefghjkmnpqrstuvwxyz";
+
+/// Draws a fresh 2-character challenge from [`CHALLENGE_ALPHABET`] with the
+/// system random generator. `None` if the generator fails (the caller denies).
+pub fn challenge_code() -> Option<String> {
+    let alphabet = CHALLENGE_ALPHABET.as_bytes();
+    let n = alphabet.len();
+    // Rejection sampling keeps the draw uniform.
+    let limit = (256 / n * n) as u8;
+    let mut out = String::new();
+    while out.len() < 2 {
+        let mut b = [0u8; 1];
+        aws_lc_rs::rand::fill(&mut b).ok()?;
+        if b[0] < limit {
+            out.push(alphabet[b[0] as usize % n] as char);
+        }
+    }
+    Some(out)
+}
+
+/// Renders a request as terminal text, ending with the instruction to type
+/// `code`. Every dynamic part is sanitized, so a hostile title or client name
+/// cannot rewrite the prompt.
+pub fn render_prompt(req: &ApprovalRequest, code: &str) -> String {
     let s = sanitize_for_display;
     let mut out = String::new();
     out.push_str(&format!(
@@ -101,29 +125,105 @@ pub fn render_prompt(req: &ApprovalRequest) -> String {
             None => out.push_str(&format!("  target: {} / {}\n", s(&t.vault), s(&t.item))),
         }
     }
+    let code = s(code);
+    if req.remember_allowed {
+        out.push_str(&format!(
+            "type {code} to allow once, \"{code} s\" to allow for this session, anything else denies: "
+        ));
+    } else {
+        out.push_str(&format!(
+            "type {code} to allow once, anything else denies: "
+        ));
+    }
     out
 }
 
-/// Interprets one line typed at the prompt: `y` allows once, `s` allows for
-/// the session (only when `remember_allowed`), anything else denies.
-pub fn parse_answer(line: &str, remember_allowed: bool) -> Decision {
-    match line.trim() {
-        "y" | "Y" => Decision::AllowOnce,
-        "s" | "S" if remember_allowed => Decision::AllowForSession,
-        _ => Decision::Deny,
+/// Interprets one line typed at the prompt against the challenge `code`:
+/// the code alone allows once, the code followed by ` s` allows for the
+/// session (only when `remember_allowed`), anything else denies.
+pub fn parse_answer(line: &str, code: &str, remember_allowed: bool) -> Decision {
+    let answer = line.trim();
+    if code.is_empty() {
+        return Decision::Deny;
+    }
+    if answer == code {
+        return Decision::AllowOnce;
+    }
+    if remember_allowed && answer.strip_suffix(" s") == Some(code) {
+        return Decision::AllowForSession;
+    }
+    Decision::Deny
+}
+
+/// Longest answer line read from the terminal; a longer one denies.
+const MAX_ANSWER: usize = 256;
+
+/// Discards input queued on the terminal `f` (typeahead, or text injected
+/// before the prompt was shown). Fails on a non-terminal.
+fn flush_input(f: &File) -> std::io::Result<()> {
+    // SAFETY: tcflush only reads the descriptor number, which `f` keeps open.
+    if unsafe { libc::tcflush(f.as_raw_fd(), libc::TCIFLUSH) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+/// Reads one line from `f`, waiting at most `timeout` in total. `None` on
+/// timeout, end of input before a newline, an error or an over-long line.
+fn read_line_with_timeout(f: &File, timeout: Duration) -> Option<String> {
+    let deadline = Instant::now() + timeout;
+    let mut line: Vec<u8> = Vec::new();
+    let mut reader = f;
+    loop {
+        let left = deadline.checked_duration_since(Instant::now())?;
+        let mut pfd = libc::pollfd {
+            fd: f.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let ms = left.as_millis().clamp(1, i32::MAX as u128) as libc::c_int;
+        // SAFETY: `pfd` is a valid pollfd for the duration of the call.
+        let r = unsafe { libc::poll(&mut pfd, 1, ms) };
+        if r < 0 {
+            if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return None;
+        }
+        if r == 0 {
+            if Instant::now() >= deadline {
+                return None;
+            }
+            continue;
+        }
+        let mut buf = [0u8; 64];
+        let n = match reader.read(&mut buf) {
+            Ok(0) | Err(_) => return None,
+            Ok(n) => n,
+        };
+        for &b in &buf[..n] {
+            if b == b'\n' {
+                return String::from_utf8(line).ok();
+            }
+            line.push(b);
+            if line.len() > MAX_ANSWER {
+                return None;
+            }
+        }
     }
 }
 
 /// Approver that talks to the user on `/dev/tty`.
 ///
-/// One long-lived reader thread per approver (started on first use) forwards
-/// typed lines on a channel. Before each prompt, stale queued lines (typeahead
-/// or an answer to a timed-out prompt) are drained, so they are never taken as
-/// an answer.
+/// The terminal is opened only for the duration of one prompt: pending input
+/// is flushed, the prompt (with a fresh 2-character challenge) is written, one
+/// line is read with a timeout, and the terminal is closed. No reader is left
+/// behind, so between prompts every keystroke goes to the program that shares
+/// the terminal (for example the MCP client). Any error denies.
 pub struct TtyApprover {
     /// How long to wait for an answer before denying.
     pub timeout: Duration,
-    reader: Mutex<Option<mpsc::Receiver<String>>>,
+    serial: Mutex<()>,
 }
 
 impl TtyApprover {
@@ -131,7 +231,7 @@ impl TtyApprover {
     pub fn new() -> Self {
         TtyApprover {
             timeout: Duration::from_secs(60),
-            reader: Mutex::new(None),
+            serial: Mutex::new(()),
         }
     }
 }
@@ -144,56 +244,29 @@ impl Default for TtyApprover {
 
 impl Approver for TtyApprover {
     fn approve(&self, req: &ApprovalRequest) -> Decision {
-        // Holding the lock also serializes concurrent prompts.
-        let mut slot = self.reader.lock().unwrap_or_else(|e| e.into_inner());
+        // Holding the lock serializes concurrent prompts.
+        let _guard = self.serial.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(code) = challenge_code() else {
+            return Decision::Deny;
+        };
         let Ok(mut tty) = OpenOptions::new().read(true).write(true).open("/dev/tty") else {
             return Decision::Deny;
         };
-        if slot.is_none() {
-            let Ok(reader) = tty.try_clone() else {
-                return Decision::Deny;
-            };
-            let (tx, rx) = mpsc::channel();
-            std::thread::spawn(move || {
-                let mut r = BufReader::new(reader);
-                loop {
-                    let mut line = String::new();
-                    match r.read_line(&mut line) {
-                        Ok(0) | Err(_) => break,
-                        Ok(_) => {
-                            if tx.send(line).is_err() {
-                                break;
-                            }
-                        }
-                    }
-                }
-            });
-            *slot = Some(rx);
+        if flush_input(&tty).is_err() {
+            return Decision::Deny;
         }
-        let rx = slot.as_ref().expect("reader started above");
-        while rx.try_recv().is_ok() {}
-
-        let choices = if req.remember_allowed {
-            "[y] once, [s] session, anything else denies: "
-        } else {
-            "[y] once, anything else denies: "
-        };
-        let text = format!("{}{}", render_prompt(req), choices);
+        let text = render_prompt(req, &code);
         if tty.write_all(text.as_bytes()).is_err() || tty.flush().is_err() {
             return Decision::Deny;
         }
-        match rx.recv_timeout(self.timeout) {
-            Ok(line) => parse_answer(&line, req.remember_allowed),
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                let _ = tty.write_all(b"\ntimed out, denied\n");
-                Decision::Deny
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                // The terminal closed: start a new reader next time.
-                *slot = None;
+        match read_line_with_timeout(&tty, self.timeout) {
+            Some(line) => parse_answer(&line, &code, req.remember_allowed),
+            None => {
+                let _ = tty.write_all(b"\nno valid answer, denied\n");
                 Decision::Deny
             }
         }
+        // The terminal is closed when `tty` is dropped.
     }
 }
 
@@ -292,7 +365,7 @@ mod tests {
 
     #[test]
     fn render_prompt_lists_everything_sanitized() {
-        let text = render_prompt(&req(true));
+        let text = render_prompt(&req(true), "ab");
         assert!(text.contains("run_with_secrets?]0;x?"));
         assert!(text.contains("evil?[2Jclient?"));
         assert!(text.contains("command"));
@@ -304,14 +377,93 @@ mod tests {
     }
 
     #[test]
+    fn render_prompt_shows_the_challenge() {
+        let text = render_prompt(&req(true), "kq");
+        assert!(text.contains("type kq to allow once"));
+        assert!(text.contains("kq s"));
+        let text = render_prompt(&req(false), "kq");
+        assert!(text.contains("type kq to allow once"));
+        assert!(!text.contains("kq s"));
+    }
+
+    #[test]
     fn parse_answer_cases() {
-        assert_eq!(parse_answer("y", true), Decision::AllowOnce);
-        assert_eq!(parse_answer("Y\n", false), Decision::AllowOnce);
-        assert_eq!(parse_answer("s", true), Decision::AllowForSession);
-        assert_eq!(parse_answer("s", false), Decision::Deny);
-        assert_eq!(parse_answer("", true), Decision::Deny);
-        assert_eq!(parse_answer("yes please", true), Decision::Deny);
-        assert_eq!(parse_answer("n", true), Decision::Deny);
+        assert_eq!(parse_answer("kq", "kq", true), Decision::AllowOnce);
+        assert_eq!(parse_answer(" kq \n", "kq", false), Decision::AllowOnce);
+        assert_eq!(parse_answer("kq s", "kq", true), Decision::AllowForSession);
+        assert_eq!(parse_answer("kq s\n", "kq", false), Decision::Deny);
+        // The old fixed answers and a wrong code all deny.
+        assert_eq!(parse_answer("y", "kq", true), Decision::Deny);
+        assert_eq!(parse_answer("s", "kq", true), Decision::Deny);
+        assert_eq!(parse_answer("ab", "kq", true), Decision::Deny);
+        assert_eq!(parse_answer("ab s", "kq", true), Decision::Deny);
+        assert_eq!(parse_answer("KQ", "kq", true), Decision::Deny);
+        assert_eq!(parse_answer("", "kq", true), Decision::Deny);
+        assert_eq!(parse_answer("kqs", "kq", true), Decision::Deny);
+        assert_eq!(parse_answer("kq  s", "kq", true), Decision::Deny);
+        // An empty expected code never matches.
+        assert_eq!(parse_answer("", "", true), Decision::Deny);
+    }
+
+    #[test]
+    fn challenge_codes_use_the_alphabet_and_vary() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..200 {
+            let c = challenge_code().expect("random source");
+            assert_eq!(c.chars().count(), 2);
+            assert!(c.chars().all(|ch| CHALLENGE_ALPHABET.contains(ch)));
+            seen.insert(c);
+        }
+        assert!(seen.len() > 50);
+        assert!(!CHALLENGE_ALPHABET.contains(['i', 'l', 'o']));
+    }
+
+    #[test]
+    fn read_line_with_timeout_reads_one_line() {
+        use std::os::unix::net::UnixStream;
+        let (mut w, r) = UnixStream::pair().unwrap();
+        w.write_all(b"kq s\nnext\n").unwrap();
+        let file = File::from(std::os::fd::OwnedFd::from(r));
+        assert_eq!(
+            read_line_with_timeout(&file, Duration::from_secs(5)).as_deref(),
+            Some("kq s")
+        );
+    }
+
+    #[test]
+    fn read_line_with_timeout_times_out_and_bounds_length() {
+        use std::os::unix::net::UnixStream;
+        let (_w, r) = UnixStream::pair().unwrap();
+        let file = File::from(std::os::fd::OwnedFd::from(r));
+        let start = std::time::Instant::now();
+        assert_eq!(
+            read_line_with_timeout(&file, Duration::from_millis(200)),
+            None
+        );
+        assert!(start.elapsed() >= Duration::from_millis(150));
+
+        let (mut w, r) = UnixStream::pair().unwrap();
+        w.write_all(&[b'a'; 4096]).unwrap();
+        let file = File::from(std::os::fd::OwnedFd::from(r));
+        assert_eq!(read_line_with_timeout(&file, Duration::from_secs(5)), None);
+
+        // End of input without a newline denies.
+        let (mut w, r) = UnixStream::pair().unwrap();
+        w.write_all(b"kq").unwrap();
+        drop(w);
+        let file = File::from(std::os::fd::OwnedFd::from(r));
+        assert_eq!(read_line_with_timeout(&file, Duration::from_secs(5)), None);
+    }
+
+    #[test]
+    fn pending_input_is_flushed_before_reading() {
+        // On a terminal, typeahead (or TIOCSTI injection before the prompt)
+        // is discarded by tcflush; on a non-terminal the flush fails and the
+        // approver must deny (fail closed).
+        use std::os::unix::net::UnixStream;
+        let (_w, r) = UnixStream::pair().unwrap();
+        let file = File::from(std::os::fd::OwnedFd::from(r));
+        assert!(flush_input(&file).is_err());
     }
 
     #[test]

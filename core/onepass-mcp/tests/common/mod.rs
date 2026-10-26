@@ -56,8 +56,9 @@ pub type Tools = McpTools<RepoPort<'static, MemoryStore>>;
 pub struct SharedAudit(pub Rc<RefCell<Vec<AuditEntry>>>);
 
 impl AuditSink for SharedAudit {
-    fn record(&mut self, e: &AuditEntry) {
+    fn record(&mut self, e: &AuditEntry) -> Result<(), onepass_guard::GuardError> {
         self.0.borrow_mut().push(e.clone());
+        Ok(())
     }
 }
 

@@ -25,7 +25,7 @@ use data_encoding::HEXLOWER;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{FileExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -206,12 +206,22 @@ impl AuditLog {
         })
     }
 
+    /// Checks, without writing anything, that the log can be appended to:
+    /// under the exclusive lock it reads the last line and the head and
+    /// verifies they agree (an unsealed trailing line left by a crash is
+    /// accepted, as in [`AuditLog::append`]).
+    pub fn ready(&self, signer: &dyn LocalSigner) -> Result<(), GuardError> {
+        let f = OpenOptions::new().read(true).open(&self.path)?;
+        f.lock()?;
+        load_state(&f, &self.path, signer).map(|_| ())
+    }
+
     /// Appends `e` and rewrites the signed head atomically.
     ///
-    /// Under an exclusive lock it reads the last line and the head, verifies
-    /// the head signature and refuses with [`GuardError::Tampered`] (writing
-    /// nothing) if they disagree, except for one unsealed trailing line left
-    /// by a crash, which is resealed first.
+    /// Under an exclusive lock it reads the last line (only the tail of the
+    /// file) and the head, verifies the head signature and refuses with
+    /// [`GuardError::Tampered`] (writing nothing) if they disagree, except for
+    /// one unsealed trailing line left by a crash, which is resealed first.
     pub fn append(&mut self, signer: &dyn LocalSigner, e: &AuditEntry) -> Result<(), GuardError> {
         let mut f = OpenOptions::new()
             .read(true)
@@ -219,25 +229,7 @@ impl AuditLog {
             .mode(0o600)
             .open(&self.path)?;
         f.lock()?;
-        let mut text = String::new();
-        f.read_to_string(&mut text)
-            .map_err(|_| GuardError::Format("audit log"))?;
-
-        let head = read_head(&self.path, signer)?;
-        let last_raw = text.lines().rfind(|l| !l.is_empty());
-        let parsed = match last_raw {
-            None => None,
-            Some(raw) => Some((
-                serde_json::from_str::<Line>(raw).map_err(|_| GuardError::Format("audit line"))?,
-                hash_line(raw),
-            )),
-        };
-        let count = text.lines().filter(|l| !l.is_empty()).count();
-        let state = reconcile(
-            head.as_ref(),
-            parsed.as_ref().map(|(l, h)| (l, h.clone())),
-            count,
-        )?;
+        let state = load_state(&f, &self.path, signer)?;
 
         // Never leave two lines beyond the head: reseal the tail first.
         if state.unsealed {
@@ -272,6 +264,68 @@ impl AuditLog {
     }
 }
 
+/// Size of one backward read when looking for the last line.
+const TAIL_CHUNK: u64 = 4096;
+/// Longest last line accepted (a longer one is treated as a format error).
+const MAX_TAIL: usize = 1 << 20;
+
+/// Reads the last non-empty line of `f` by reading backwards from the end.
+/// Returns the line and whether it is the only content of the file.
+fn read_last_line(f: &File) -> Result<Option<(String, bool)>, GuardError> {
+    let len = f.metadata()?.len();
+    let mut pos = len;
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        let end = buf.len() - buf.iter().rev().take_while(|&&b| b == b'\n').count();
+        if let Some(i) = buf[..end].iter().rposition(|&b| b == b'\n') {
+            let line = String::from_utf8(buf[i + 1..end].to_vec())
+                .map_err(|_| GuardError::Format("audit line"))?;
+            return Ok(Some((line, false)));
+        }
+        if pos == 0 {
+            if end == 0 {
+                return Ok(None);
+            }
+            let line = String::from_utf8(buf[..end].to_vec())
+                .map_err(|_| GuardError::Format("audit line"))?;
+            return Ok(Some((line, true)));
+        }
+        if buf.len() > MAX_TAIL {
+            return Err(GuardError::Format("audit line too long"));
+        }
+        let n = TAIL_CHUNK.min(pos);
+        pos -= n;
+        let mut chunk = vec![0u8; n as usize];
+        f.read_exact_at(&mut chunk, pos)?;
+        chunk.extend_from_slice(&buf);
+        buf = chunk;
+    }
+}
+
+/// Derives the chain state from the tail of the locked log `f` and its head.
+fn load_state(f: &File, path: &Path, signer: &dyn LocalSigner) -> Result<State, GuardError> {
+    let head = read_head(path, signer)?;
+    let parsed = match read_last_line(f)? {
+        None => None,
+        Some((raw, only)) => Some((
+            serde_json::from_str::<Line>(&raw).map_err(|_| GuardError::Format("audit line"))?,
+            hash_line(&raw),
+            only,
+        )),
+    };
+    // `reconcile` only needs the line count to tell a lone first line apart.
+    let count = match &parsed {
+        None => 0,
+        Some((_, _, true)) => 1,
+        Some(_) => 2,
+    };
+    reconcile(
+        head.as_ref(),
+        parsed.as_ref().map(|(l, h, _)| (l, h.clone())),
+        count,
+    )
+}
+
 /// Writes `data` to `path` through a temporary file, a rename and an fsync of
 /// the parent directory.
 fn write_atomic(path: &Path, data: &[u8]) -> Result<(), GuardError> {
@@ -304,8 +358,15 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), GuardError> {
 /// truncated or extended tail no longer matches the head; a head signed with
 /// another key gives [`GuardError::Signature`]. One trailing line that links
 /// to the head hash is accepted and reported through `unsealed_tail`.
+///
+/// The log is read and the head checked under a shared lock on the log, so a
+/// concurrent append (which holds the exclusive lock while it writes the line
+/// and the head) is never seen half done.
 pub fn verify_log(path: &Path, signer: &dyn LocalSigner) -> Result<AuditVerification, GuardError> {
-    let text = fs::read_to_string(path)?;
+    let mut f = File::open(path)?;
+    f.lock_shared()?;
+    let mut text = String::new();
+    f.read_to_string(&mut text)?;
     let mut records = Vec::new();
     let mut prev = ZERO_HASH.to_owned();
     let mut last: Option<Line> = None;
@@ -349,13 +410,22 @@ pub fn verify_log(path: &Path, signer: &dyn LocalSigner) -> Result<AuditVerifica
 
 /// Receives audit entries from the front ends.
 pub trait AuditSink {
-    /// Records `e`. Must not panic; failures are reported, not propagated.
-    fn record(&mut self, e: &AuditEntry);
+    /// Records `e`. Must not panic. An error means the entry was not written;
+    /// the caller decides whether that blocks anything.
+    fn record(&mut self, e: &AuditEntry) -> Result<(), GuardError>;
+
+    /// Checks, writing nothing, that an entry can be recorded now. Front ends
+    /// call it before a secret action and refuse the action on error, so the
+    /// log fails closed for secrets.
+    fn ready(&mut self) -> Result<(), GuardError> {
+        Ok(())
+    }
 }
 
 impl AuditSink for Vec<AuditEntry> {
-    fn record(&mut self, e: &AuditEntry) {
+    fn record(&mut self, e: &AuditEntry) -> Result<(), GuardError> {
         self.push(e.clone());
+        Ok(())
     }
 }
 
@@ -368,10 +438,12 @@ pub struct SignedAuditSink<G: LocalSigner> {
 }
 
 impl<G: LocalSigner> AuditSink for SignedAuditSink<G> {
-    fn record(&mut self, e: &AuditEntry) {
-        if let Err(err) = self.log.append(&self.signer, e) {
-            eprintln!("onepass: audit log write failed: {err}");
-        }
+    fn record(&mut self, e: &AuditEntry) -> Result<(), GuardError> {
+        self.log.append(&self.signer, e)
+    }
+
+    fn ready(&mut self) -> Result<(), GuardError> {
+        self.log.ready(&self.signer)
     }
 }
 
@@ -559,13 +631,13 @@ mod tests {
             log: AuditLog::open(&path).unwrap(),
             signer: TestSigner::new(),
         };
-        sink.record(&entry(1));
+        sink.record(&entry(1)).unwrap();
         assert_eq!(
             verify_log(&path, &TestSigner::new()).unwrap().records.len(),
             1
         );
         let mut v: Vec<AuditEntry> = Vec::new();
-        v.record(&entry(2));
+        v.record(&entry(2)).unwrap();
         assert_eq!(v, vec![entry(2)]);
     }
 
@@ -653,6 +725,105 @@ mod tests {
         ));
         fs::remove_file(&path).unwrap();
         assert!(verify_log(&path, &signer).is_err());
+    }
+
+    #[test]
+    fn signed_sink_ready_and_record_report_tampering() {
+        let dir = tempfile::tempdir().unwrap();
+        let (path, signer) = make(dir.path(), 3);
+        let mut sink = SignedAuditSink {
+            log: AuditLog::open(&path).unwrap(),
+            signer,
+        };
+        assert_eq!(sink.ready(), Ok(()));
+        let mut l = lines(&path);
+        l[2] = l[2].replace("client3", "client9");
+        write_lines(&path, &l);
+        let before = fs::read(&path).unwrap();
+        assert!(matches!(sink.ready(), Err(GuardError::Tampered(_))));
+        assert!(matches!(
+            sink.record(&entry(4)),
+            Err(GuardError::Tampered(_))
+        ));
+        assert_eq!(fs::read(&path).unwrap(), before);
+        let mut v: Vec<AuditEntry> = Vec::new();
+        assert_eq!(v.ready(), Ok(()));
+    }
+
+    #[test]
+    fn audit_ready_writes_nothing_and_accepts_fresh_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.log");
+        let signer = TestSigner::new();
+        let log = AuditLog::open(&path).unwrap();
+        log.ready(&signer).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"");
+        assert!(!head_path(&path).exists());
+        let (path, signer) = make(dir.path(), 2);
+        let before = fs::read(&path).unwrap();
+        let head_before = fs::read(head_path(&path)).unwrap();
+        AuditLog::open(&path).unwrap().ready(&signer).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(fs::read(head_path(&path)).unwrap(), head_before);
+    }
+
+    #[test]
+    fn audit_torn_trailing_line_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (path, signer) = make(dir.path(), 2);
+        let mut f = OpenOptions::new().append(true).open(&path).unwrap();
+        f.write_all(b"{\"seq\":3,\"ts").unwrap();
+        let log = AuditLog::open(&path).unwrap();
+        assert!(log.ready(&signer).is_err());
+    }
+
+    #[test]
+    fn audit_append_reads_only_the_tail() {
+        // A corrupted early line is not looked at by append (only verify_log
+        // reads everything), which proves append reads the tail only.
+        let dir = tempfile::tempdir().unwrap();
+        let (path, signer) = make(dir.path(), 3);
+        let mut l = lines(&path);
+        l[0] = "garbage that is not json".into();
+        write_lines(&path, &l);
+        let mut log = AuditLog::open(&path).unwrap();
+        log.ready(&signer).unwrap();
+        log.append(&signer, &entry(4)).unwrap();
+        assert!(verify_log(&path, &signer).is_err());
+        // A long log keeps working: the tail spans more than one read chunk.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.log");
+        let mut log = AuditLog::open(&path).unwrap();
+        let mut big = entry(1);
+        big.client = "c".repeat(10_000);
+        for _ in 0..3 {
+            log.append(&signer, &big).unwrap();
+        }
+        let v = verify_log(&path, &signer).unwrap();
+        assert_eq!(v.records.len(), 3);
+    }
+
+    #[test]
+    fn verify_log_never_fails_during_concurrent_appends() {
+        let dir = tempfile::tempdir().unwrap();
+        let (path, signer) = make(dir.path(), 1);
+        let p2 = path.clone();
+        let writer = std::thread::spawn(move || {
+            let signer = TestSigner::new();
+            let mut log = AuditLog::open(&p2).unwrap();
+            for i in 0..200 {
+                log.append(&signer, &entry(i)).unwrap();
+            }
+        });
+        let mut checks = 0;
+        while !writer.is_finished() {
+            let v = verify_log(&path, &signer).expect("no spurious failure");
+            assert!(!v.unsealed_tail);
+            checks += 1;
+        }
+        writer.join().unwrap();
+        assert!(checks > 0);
+        assert_eq!(verify_log(&path, &signer).unwrap().records.len(), 201);
     }
 
     #[test]

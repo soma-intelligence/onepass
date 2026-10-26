@@ -130,8 +130,9 @@ impl KeySource for FakeSource {
 pub struct SharedAudit(pub Arc<Mutex<Vec<AuditEntry>>>);
 
 impl AuditSink for SharedAudit {
-    fn record(&mut self, e: &AuditEntry) {
+    fn record(&mut self, e: &AuditEntry) -> Result<(), onepass_guard::GuardError> {
         self.0.lock().unwrap().push(e.clone());
+        Ok(())
     }
 }
 

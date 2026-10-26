@@ -235,7 +235,7 @@ struct Rendering(Mutex<Vec<String>>);
 
 impl Approver for Rendering {
     fn approve(&self, req: &ApprovalRequest) -> Decision {
-        self.0.lock().unwrap().push(render_prompt(req));
+        self.0.lock().unwrap().push(render_prompt(req, "ab"));
         Decision::AllowOnce
     }
 }
