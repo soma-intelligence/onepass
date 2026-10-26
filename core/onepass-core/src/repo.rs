@@ -238,6 +238,11 @@ impl<S: RecordStore> Repository<S> {
         &self.device
     }
 
+    /// The unlocked account keys, to sign and wrap backups.
+    pub fn account(&self) -> &Account {
+        &self.account
+    }
+
     /// Every vault of the account, sorted by id. A vault is returned only
     /// when its key envelope opens, its meta opens under that key, and its
     /// signed manifest verifies under the account signing key and opens
@@ -679,6 +684,16 @@ mod tests {
             Err(Error::Integrity(e)) => e,
             other => panic!("expected an integrity error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn account_accessor_returns_unlocked_account() {
+        let (repo, _sk) =
+            Repository::create_account(MemoryStore::new(), "pass word", kdf()).unwrap();
+        assert_eq!(
+            repo.account().params.account_id,
+            repo.device_state().pinned.clone().unwrap().account_id
+        );
     }
 
     #[test]

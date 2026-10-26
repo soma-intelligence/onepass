@@ -30,6 +30,8 @@ pub enum BlobKind {
     /// Reserved: no producer in M1 (`device.bin` of the dev CLI is plain
     /// postcard). The number stays taken.
     DeviceState = 8,
+    /// Encrypted OnePass archive: export and backup (milestone 5).
+    Archive = 9,
 }
 
 /// Context a blob is bound to. Opening under any other context fails.
@@ -257,6 +259,11 @@ fn unpad(mut buf: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn blob_kind_archive_code() {
+        assert_eq!(BlobKind::Archive as u8, 9);
+    }
+
     use super::*;
 
     fn ctx() -> Aad {
