@@ -37,7 +37,8 @@ function setup(linked?: string, accounts = [acct("g_perso", "alex.perso@example.
     neverSave: { has: async () => false },
     now: () => clock.t,
   });
-  const cs = (origin: string, frameId = 0): CsContext => ({ tabId: 7, frameId, origin, documentId: "doc-9" });
+  const cs = (origin: string, frameId = 0, documentId: string | null = "doc-9"): CsContext =>
+    documentId === null ? { tabId: 7, frameId, origin } : { tabId: 7, frameId, origin, documentId };
   return { flows, clock, area, requests, opened, cs };
 }
 
@@ -64,11 +65,21 @@ describe("provider flow", () => {
         username: "alex.pro@example.com",
         password: "",
         provider: { id: "google", accountItemId: "g_pro", email: "alex.pro@example.com" },
+        topOrigin: SITE,
       },
     ]);
     // Once.
     await t.flows.onAnalysis(empty(), t.cs(SITE));
     expect(t.opened).toHaveLength(1);
+  });
+
+  it("without a documentId (Firefox) the prompt is pinned to the top origin", async () => {
+    const t = setup();
+    await goRoundTrip(t);
+    await t.flows.onAnalysis(empty(), t.cs(SITE, 0, null));
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]?.documentId).toBeUndefined();
+    expect(t.opened[0]?.topOrigin).toBe(SITE);
   });
 
   it("tracking survives a worker restart (storage.session)", async () => {

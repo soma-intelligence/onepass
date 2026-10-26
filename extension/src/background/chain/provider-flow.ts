@@ -167,6 +167,8 @@ export class ProviderFlows {
       username: email,
       password: "",
       provider: { id: f.provider, accountItemId: account.item_id, email },
+      // Origin pin of the top document when no documentId is known (Firefox).
+      topOrigin: cs.origin,
     };
     try {
       await this.deps.saves.open(cs.documentId !== undefined ? { ...pending, documentId: cs.documentId } : pending);
