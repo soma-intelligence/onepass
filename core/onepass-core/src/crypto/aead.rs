@@ -34,7 +34,7 @@ pub enum BlobKind {
     Archive = 9,
     /// The sealed Travel Mode state (`repo::travel`, milestone 7).
     TravelState = 10,
-    /// Watch companion payload (milestone 6). 10 belongs to milestone 7.
+    /// Watch companion payload (milestone 6).
     Companion = 11,
 }
 

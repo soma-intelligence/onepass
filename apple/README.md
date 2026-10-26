@@ -149,7 +149,7 @@ Hors périmètre (spec, section 12) :
 - AutoFill système, passkeys et TOTP dans le champ : jalon 3.
 - Extension de navigateur : jalon 4.
 - Watchtower (onglet présent avec un état vide), pack d'icônes de marques, import, export, sauvegarde, pièces jointes : jalon 5.
-- Apple Watch (app), Vision Pro, widgets, Contrôles, Raccourcis, Spotlight, Handoff : jalon 6.
+- Apple Watch (app), Vision Pro, widgets, Contrôles, Raccourcis, Spotlight, Handoff : jalon 6 (Apple Watch, Vision Pro, widgets, Contrôles et Raccourcis livrés, voir Jalon 6).
 - MCP, agent SSH, génération de clés SSH, Travel Mode : jalon 7.
 - Changement du mot de passe maître, suppression de vault, option Secret Key dans le trousseau iCloud.
 
@@ -238,6 +238,7 @@ Rien de ce qui suit n'a été vérifié au jalon 6 (spec, section 13) :
 - Keychain de la montre en `WhenPasscodeSetThisDeviceOnly` et détection du poignet.
 - Vision Pro : vue de confidentialité (opaque, E20) et icône sur l'écran d'accueil.
 - Signature `Release-CloudKit` : sur iOS, le fichier de droits CloudKit porte aussi l'App Group (E11) ; à fusionner avec le jalon 3, qui utilise le même groupe (W17).
+- Signature `Release-CloudKit` de l'app montre et de ses widgets (`OnePassWatch`, `OnePassWatchWidgets`) : signature automatique `Apple Development`, comme `OnePassWidgets`, pour que l'app iPhone signée n'embarque pas une app montre signée ad hoc ; `DEVELOPMENT_TEAM` à renseigner.
 
 ### Limites du jalon 6
 
