@@ -118,7 +118,7 @@ pub(crate) fn all() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "run_with_secrets",
-            description: "Run a command (argv, no implicit shell) with secrets injected as environment variables (env) or as paths to private temporary files (files). Needs the use scope and the user's approval. Secret values and their base64 and hex forms are masked in the output, which is cut at 64 KiB per stream.",
+            description: "Run a command (argv, no implicit shell) with secrets injected as environment variables (env) or as paths to private temporary files (files). Needs the use scope and the user's approval; an approval for the session covers the exact same request only, and is reused even if a script on disk that the command runs has changed. Secret values and their base64 and hex forms are masked in the output, which is cut at 64 KiB per stream.",
             input_schema: object(
                 json!({
                     "command": {
@@ -138,7 +138,7 @@ pub(crate) fn all() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "fill_template",
-            description: "Write template_path to output_path (mode 0600) with each {{ onepass://... }} replaced by its value. Needs the use scope and the user's approval. Returns the number of replacements, never the content.",
+            description: "Write template_path to output_path (mode 0600) with each {{ onepass://... }} replaced by its value. Needs the use scope and the user's approval; an approval for the session covers the same paths and placeholders only. Returns the number of replacements, never the content.",
             input_schema: object(
                 json!({
                     "template_path": {"type": "string", "minLength": 1, "maxLength": MAX_PATH, "description": "Absolute path of the template."},
@@ -156,10 +156,10 @@ pub(crate) fn all() -> Vec<ToolSpec> {
                     "vault": name_arg("Vault id or name."),
                     "title": {"type": "string", "minLength": 1, "maxLength": 200, "description": "Item title."},
                     "url": {"type": "string", "minLength": 1, "maxLength": MAX_PATH, "description": "Website URL."},
-                    "username": {"type": "string", "minLength": 1, "maxLength": MAX_NAME, "description": "Username (required by the Login template)."},
+                    "username": {"type": "string", "minLength": 1, "maxLength": MAX_NAME, "description": "Username."},
                     "length": {"type": "integer", "minimum": 12, "maximum": 100, "description": "Password length (default 24)."},
                 }),
-                &["vault", "title"],
+                &["vault", "title", "username"],
             ),
         },
         ToolSpec {
@@ -245,6 +245,11 @@ fn check_rules(tool: &str, args: &Map<String, Value>) -> Result<(), String> {
                 .count();
             if kinds > 1 {
                 return Err("give at most one of 'length', 'words' and 'pin_digits'".into());
+            }
+            if args.contains_key("symbols")
+                && (args.contains_key("words") || args.contains_key("pin_digits"))
+            {
+                return Err("'symbols' applies to random passwords only".into());
             }
             Ok(())
         }
@@ -449,6 +454,9 @@ mod tests {
         assert!(generate(json!({"words": 4})).is_ok());
         assert!(generate(json!({"words": 4, "pin_digits": 6})).is_err());
         assert!(generate(json!({"length": 7})).is_err());
+        assert!(generate(json!({"length": 20, "symbols": false})).is_ok());
+        assert!(generate(json!({"words": 4, "symbols": true})).is_err());
+        assert!(generate(json!({"pin_digits": 6, "symbols": false})).is_err());
     }
 
     #[test]

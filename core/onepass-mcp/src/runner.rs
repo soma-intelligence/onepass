@@ -6,13 +6,17 @@
 //! directory (`0700`, files `0600`) removed when the run ends. There is no
 //! standard input. stdout and stderr are read by two threads that keep at
 //! most [`MAX_OUTPUT`] bytes each (the rest is read and dropped, so the
-//! child never blocks on a full pipe). Past the timeout the child is
-//! killed (`SIGKILL`).
+//! child never blocks on a full pipe). The child leads its own process
+//! group: past the timeout the whole group is killed (`SIGKILL`), and so
+//! is whatever the command left running once it exits, so no background
+//! job outlives the run with the injected secrets.
 
 use std::ffi::OsString;
+use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -41,21 +45,51 @@ pub struct RunRequest {
     pub timeout: Duration,
 }
 
-/// What a run produced. Output is converted to UTF-8 with replacement.
-#[derive(Debug)]
+/// What a run produced. Output is converted to UTF-8 with replacement and
+/// may contain secrets until masked: it is zeroized on drop and its
+/// `Debug` shows lengths only.
 pub struct RunOutput {
     /// Exit code, `None` when killed by a signal.
     pub code: Option<i32>,
-    pub stdout: String,
-    pub stderr: String,
+    pub stdout: Zeroizing<String>,
+    pub stderr: Zeroizing<String>,
     /// The child was killed at the timeout.
     pub timed_out: bool,
     /// One of the streams went over [`MAX_OUTPUT`].
     pub truncated: bool,
 }
 
+impl fmt::Debug for RunOutput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RunOutput")
+            .field("code", &self.code)
+            .field("stdout_len", &self.stdout.len())
+            .field("stderr_len", &self.stderr.len())
+            .field("timed_out", &self.timed_out)
+            .field("truncated", &self.truncated)
+            .finish()
+    }
+}
+
 /// One stream as read so far: the bytes kept and whether some were dropped.
-type Captured = Arc<Mutex<(Vec<u8>, bool)>>;
+type Captured = Arc<Mutex<(Zeroizing<Vec<u8>>, bool)>>;
+
+/// Sends `SIGKILL` to the process group `pgid` (the child's pid, as it was
+/// spawned with `process_group(0)`). Errors are ignored: the group may be
+/// gone already.
+fn kill_group(pgid: u32) {
+    let kill = if std::path::Path::new("/bin/kill").exists() {
+        "/bin/kill"
+    } else {
+        "kill"
+    };
+    let _ = Command::new(kill)
+        .args(["-s", "KILL", "--", &format!("-{pgid}")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
 
 /// Runs `req` and waits for it, at most `req.timeout`.
 pub fn run(req: &RunRequest) -> io::Result<RunOutput> {
@@ -74,6 +108,7 @@ fn run_with_parent_env(
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "empty command"))?;
     let mut cmd = Command::new(program);
     cmd.args(args)
+        .process_group(0)
         .env_clear()
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -103,17 +138,28 @@ fn run_with_parent_env(
 
     let start = Instant::now();
     let mut child = cmd.spawn()?;
+    let pgid = child.id();
     let (done_tx, done_rx) = mpsc::channel();
     let stdout = capture(child.stdout.take(), done_tx.clone());
     let stderr = capture(child.stderr.take(), done_tx);
 
     let mut timed_out = false;
     let status = loop {
-        if let Some(status) = child.try_wait()? {
+        let polled = match child.try_wait() {
+            Ok(p) => p,
+            Err(e) => {
+                kill_group(pgid);
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(e);
+            }
+        };
+        if let Some(status) = polled {
             break status;
         }
         if start.elapsed() >= req.timeout {
             timed_out = true;
+            kill_group(pgid);
             // Already exited between the two calls is fine.
             let _ = child.kill();
             break child.wait()?;
@@ -121,27 +167,27 @@ fn run_with_parent_env(
         thread::sleep(POLL);
     };
 
-    // Readers end at end of file. A grandchild that kept the pipes open
-    // (a background job) can delay that: wait until the timeout, then a
-    // short grace, and take what was read so far.
-    let deadline = if timed_out {
-        Instant::now() + READER_GRACE
-    } else {
-        (start + req.timeout).max(Instant::now() + READER_GRACE)
-    };
-    for _ in 0..2 {
+    // Readers end at end of file. A background job that kept the pipes
+    // open can delay that: wait a short grace, then kill the group (which
+    // closes the pipes) and take what was read.
+    let deadline = Instant::now() + READER_GRACE;
+    let mut finished = 0;
+    while finished < 2 {
         let left = deadline.saturating_duration_since(Instant::now());
         if done_rx.recv_timeout(left).is_err() {
             break;
         }
+        finished += 1;
     }
+    // Whatever the command left behind goes too, pipes held or not.
+    kill_group(pgid);
     let (out, out_cut) = take(&stdout);
     let (err, err_cut) = take(&stderr);
     drop(dir);
     Ok(RunOutput {
         code: status.code(),
-        stdout: String::from_utf8_lossy(&out).into_owned(),
-        stderr: String::from_utf8_lossy(&err).into_owned(),
+        stdout: Zeroizing::new(String::from_utf8_lossy(&out).into_owned()),
+        stderr: Zeroizing::new(String::from_utf8_lossy(&err).into_owned()),
         timed_out,
         truncated: out_cut || err_cut,
     })
@@ -168,13 +214,17 @@ fn secret_dir(files: &[(String, Zeroizing<String>)]) -> io::Result<tempfile::Tem
 /// Reads `pipe` to its end on a thread, keeping at most [`MAX_OUTPUT`]
 /// bytes; signals `done` at the end.
 fn capture<R: Read + Send + 'static>(pipe: Option<R>, done: mpsc::Sender<()>) -> Captured {
-    let captured: Captured = Arc::new(Mutex::new((Vec::new(), false)));
+    // Allocated once at full size, so no reallocation leaves a copy behind.
+    let captured: Captured = Arc::new(Mutex::new((
+        Zeroizing::new(Vec::with_capacity(MAX_OUTPUT)),
+        false,
+    )));
     let shared = captured.clone();
     thread::spawn(move || {
         if let Some(mut pipe) = pipe {
-            let mut buf = [0u8; 8192];
+            let mut buf = Zeroizing::new([0u8; 8192]);
             loop {
-                match pipe.read(&mut buf) {
+                match pipe.read(&mut buf[..]) {
                     Ok(0) => break,
                     Ok(n) => {
                         let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
@@ -195,7 +245,7 @@ fn capture<R: Read + Send + 'static>(pipe: Option<R>, done: mpsc::Sender<()>) ->
     captured
 }
 
-fn take(c: &Captured) -> (Vec<u8>, bool) {
+fn take(c: &Captured) -> (Zeroizing<Vec<u8>>, bool) {
     let mut c = c.lock().unwrap_or_else(|e| e.into_inner());
     (std::mem::take(&mut c.0), c.1)
 }
@@ -218,8 +268,8 @@ mod tests {
     fn run_captures_exit_code_and_output() {
         let out = run(&req(&["/bin/sh", "-c", "echo hi; echo err >&2; exit 3"])).unwrap();
         assert_eq!(out.code, Some(3));
-        assert_eq!(out.stdout, "hi\n");
-        assert_eq!(out.stderr, "err\n");
+        assert_eq!(*out.stdout, "hi\n");
+        assert_eq!(*out.stderr, "err\n");
         assert!(!out.timed_out && !out.truncated);
     }
 
@@ -234,15 +284,48 @@ mod tests {
         assert!(start.elapsed() < Duration::from_secs(4));
     }
 
+    /// Whether the process group `pgid` still has a member.
+    fn group_alive(pgid: &str) -> bool {
+        Command::new("/bin/kill")
+            .args(["-s", "0", "--", &format!("-{pgid}")])
+            .stderr(Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    }
+
     #[test]
-    fn run_does_not_wait_for_a_background_job_past_the_timeout() {
-        let mut r = req(&["/bin/sh", "-c", "sleep 30 & echo started"]);
+    fn run_kills_the_whole_group_at_the_timeout() {
+        let mut r = req(&["/bin/sh", "-c", "echo $$; sleep 30 & sleep 30"]);
         r.timeout = Duration::from_secs(1);
         let start = Instant::now();
         let out = run(&r).unwrap();
-        assert_eq!(out.code, Some(0));
-        assert_eq!(out.stdout, "started\n");
+        assert!(out.timed_out);
         assert!(start.elapsed() < Duration::from_secs(5));
+        let pgid = out.stdout.trim();
+        assert!(!pgid.is_empty());
+        assert!(!group_alive(pgid), "group {pgid} survived");
+    }
+
+    #[test]
+    fn run_ends_background_jobs_after_a_short_grace() {
+        let r = req(&["/bin/sh", "-c", "echo $$; sleep 30 & echo started"]);
+        let start = Instant::now();
+        let out = run(&r).unwrap();
+        assert_eq!(out.code, Some(0));
+        let mut lines = out.stdout.lines();
+        let pgid = lines.next().unwrap().to_owned();
+        assert_eq!(lines.next(), Some("started"));
+        assert!(start.elapsed() < Duration::from_secs(3));
+        assert!(!group_alive(&pgid), "group {pgid} survived");
+    }
+
+    #[test]
+    fn run_output_debug_shows_lengths_only() {
+        let out = run(&req(&["/bin/echo", "very-secret-output"])).unwrap();
+        let debug = format!("{out:?}");
+        assert!(!debug.contains("very-secret"), "{debug}");
+        assert!(debug.contains("stdout_len: 19"), "{debug}");
     }
 
     #[test]
@@ -263,8 +346,8 @@ mod tests {
         r.files = vec![("KEY".into(), Zeroizing::new("file-secret".into()))];
         let out = run(&r).unwrap();
         let lines: Vec<&str> = out.stdout.lines().collect();
-        assert_eq!(lines[0], "drwx------", "{}", out.stdout);
-        assert_eq!(lines[1], "-rw-------", "{}", out.stdout);
+        assert_eq!(lines[0], "drwx------", "{}", out.stdout.as_str());
+        assert_eq!(lines[1], "-rw-------", "{}", out.stdout.as_str());
         assert_eq!(lines[2], "file-secret");
         let path = std::path::Path::new(lines[3]);
         assert!(path.ends_with("KEY"));
@@ -286,7 +369,7 @@ mod tests {
             (OsString::from("PATH"), OsString::from("/usr/bin:/bin")),
         ];
         let out = run_with_parent_env(&r, parent).unwrap();
-        assert!(!out.stdout.contains("ONEPASS_"), "{}", out.stdout);
+        assert!(!out.stdout.contains("ONEPASS_"), "{}", out.stdout.as_str());
         assert!(!out.stdout.contains("leak-me"));
         assert!(out.stdout.contains("KEEP_ME=kept"));
         assert!(out.stdout.contains("ADDED=added-value"));

@@ -340,12 +340,13 @@ fn secret_never_in_audit() {
     assert!(!text.contains("onepass://"), "{text}");
 }
 
-/// Port that fails with an integrity error on one vault while `broken`,
-/// and counts the calls that reach that vault.
+/// Port that fails with `error` on one vault while `broken`, and counts
+/// the calls that reach that vault.
 struct Flaky {
     inner: RepoPort<'static, MemoryStore>,
     vault: Option<Id>,
     broken: bool,
+    error: PortError,
     hits: Arc<Mutex<usize>>,
 }
 
@@ -354,11 +355,46 @@ impl Flaky {
         if Some(vault_id) == self.vault {
             *self.hits.lock().unwrap() += 1;
             if self.broken {
-                return Err(PortError::Integrity);
+                return Err(self.error.clone());
             }
         }
         Ok(())
     }
+}
+
+/// Tools over a fresh fixture whose port fails with `error` on `Dev`.
+fn flaky_tools(
+    error: PortError,
+    approver: Arc<ScriptedApprover>,
+) -> (McpTools<Flaky>, SharedAudit, Arc<Mutex<usize>>, Id) {
+    let repo = repo();
+    let dev = vault(repo, "Dev").id;
+    let hits = Arc::new(Mutex::new(0));
+    let port = Flaky {
+        inner: RepoPort(repo),
+        vault: Some(dev),
+        broken: true,
+        error,
+        hits: hits.clone(),
+    };
+    let audit = SharedAudit::default();
+    let t = McpTools::new(
+        port,
+        default_policy(),
+        Narrowing::default(),
+        approver,
+        Box::new(audit.clone()),
+        None,
+    );
+    (t, audit, hits, dev)
+}
+
+fn flaky_call(t: &mut McpTools<Flaky>, name: &str, args: Value) -> onepass_mcp::ToolOutcome {
+    let client = ClientInfo {
+        name: "test-agent".into(),
+        version: "1".into(),
+    };
+    t.call(&client, name, args.as_object().unwrap())
 }
 
 impl VaultPort for Flaky {
@@ -382,32 +418,9 @@ impl VaultPort for Flaky {
 
 #[test]
 fn integrity_failure_quarantines_the_vault() {
-    let repo = repo();
-    let dev = vault(repo, "Dev").id;
-    let hits = Arc::new(Mutex::new(0));
-    let port = Flaky {
-        inner: RepoPort(repo),
-        vault: Some(dev),
-        broken: true,
-        hits: hits.clone(),
-    };
     let a = approver(vec![Decision::AllowOnce; 4]);
-    let audit = SharedAudit::default();
-    let mut t = McpTools::new(
-        port,
-        default_policy(),
-        Narrowing::default(),
-        a.clone(),
-        Box::new(audit.clone()),
-        None,
-    );
-    let client = ClientInfo {
-        name: "test-agent".into(),
-        version: "1".into(),
-    };
-    let call = |t: &mut McpTools<Flaky>, name: &str, args: Value| {
-        t.call(&client, name, args.as_object().unwrap())
-    };
+    let (mut t, audit, hits, dev) = flaky_tools(PortError::Integrity, a.clone());
+    let call = flaky_call;
     let failed = "stored data failed verification";
     assert_eq!(
         refused(call(&mut t, "list_items", json!({"vault": "Dev"}))),
@@ -442,4 +455,43 @@ fn integrity_failure_quarantines_the_vault() {
     assert!(e[..4].iter().all(|x| x.outcome == "refused"));
     let dev = dev.to_string();
     assert_eq!(e[1].vault_id.as_deref(), Some(dev.as_str()));
+}
+
+#[test]
+fn store_failure_does_not_quarantine() {
+    let a = approver(vec![]);
+    let store = PortError::from(onepass_core::Error::Store("busy".into()));
+    let (mut t, _, hits, _) = flaky_tools(store, a);
+    let m = refused(flaky_call(&mut t, "list_items", json!({"vault": "Dev"})));
+    assert_eq!(m, "stored item could not be read");
+    t.port_mut().broken = false;
+    ok(flaky_call(&mut t, "list_items", json!({"vault": "Dev"})));
+    assert_eq!(*hits.lock().unwrap(), 2);
+}
+
+#[test]
+fn unsupported_otp_is_refused_before_asking_and_does_not_quarantine() {
+    let a = approver(vec![Decision::AllowOnce; 2]);
+    let (mut t, _) = tools_with_policy(
+        |r| policy_with(r, &[("Dev", &[Scope::Metadata, Scope::Totp])]),
+        a.clone(),
+    );
+    let dev = vault_id(&mut t, "Dev");
+    for (title, value) in [
+        ("Hotp", "otpauth://hotp/x?secret=JBSWY3DPEHPK3PXP&counter=1"),
+        ("BadBase32", "not base32 at all!"),
+    ] {
+        let mut item = new_item(ItemType::Login, dev, title);
+        item.field_mut("username").unwrap().value = FieldValue::Text("u".into());
+        item.field_mut("totp").unwrap().value = FieldValue::Otp(Zeroizing::new(value.into()));
+        add_item(&mut t, "Dev", item);
+        let m = refused(call(
+            &mut t,
+            "totp_code",
+            json!({"reference": format!("onepass://Dev/{title}/totp")}),
+        ));
+        assert_eq!(m, "unsupported one-time password");
+    }
+    assert!(a.calls().is_empty());
+    ok(call(&mut t, "list_items", json!({"vault": "Dev"})));
 }

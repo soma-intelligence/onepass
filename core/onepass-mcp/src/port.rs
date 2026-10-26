@@ -23,7 +23,8 @@ pub struct VaultInfo {
 pub enum PortError {
     /// Nothing matches.
     NotFound,
-    /// Stored data failed verification (or could not be read).
+    /// Stored data failed verification (authentication or decryption):
+    /// the vault is quarantined for the session.
     Integrity,
     /// A rejected input: field and reason, never the value.
     Invalid(String),
@@ -35,8 +36,12 @@ impl From<Error> for PortError {
     fn from(e: Error) -> Self {
         match e {
             Error::NotFound => PortError::NotFound,
-            Error::Integrity(_) | Error::InvalidFormat(_) | Error::Crypto | Error::Store(_) => {
-                PortError::Integrity
+            Error::Integrity(_) | Error::Crypto => PortError::Integrity,
+            // A value the core cannot interpret (an HOTP URI in an OTP field,
+            // the clock) or a transient store failure (busy database): not a
+            // verification failure, so no quarantine. No detail is kept.
+            Error::InvalidFormat(_) | Error::Store(_) => {
+                PortError::Other("stored item could not be read".into())
             }
             // `ValidationError` names the field and a static reason only.
             Error::Validation(v) => PortError::Invalid(v.to_string()),
@@ -109,13 +114,17 @@ mod tests {
     #[test]
     fn core_errors_map_without_data() {
         assert_eq!(PortError::from(Error::NotFound), PortError::NotFound);
+        for e in [Error::Integrity(IntegrityError::Aead), Error::Crypto] {
+            assert_eq!(PortError::from(e), PortError::Integrity);
+        }
         for e in [
-            Error::Integrity(IntegrityError::Aead),
-            Error::InvalidFormat("item"),
-            Error::Crypto,
+            Error::InvalidFormat("hotp unsupported"),
             Error::Store("disk detail".into()),
         ] {
-            assert_eq!(PortError::from(e), PortError::Integrity);
+            assert_eq!(
+                PortError::from(e),
+                PortError::Other("stored item could not be read".into())
+            );
         }
         let v = Error::Validation(ValidationError {
             field: "reference".into(),

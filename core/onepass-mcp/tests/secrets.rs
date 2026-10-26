@@ -61,6 +61,8 @@ fn run_with_secrets_injects_and_masks() {
     assert_eq!(req.targets[0].field.as_deref(), Some("password"));
     let command = req.details.iter().find(|(l, _)| l == "command").unwrap();
     assert!(command.1.starts_with("/bin/sh -c printf"), "{}", command.1);
+    let env = req.details.iter().find(|(l, _)| l == "env").unwrap();
+    assert_eq!(env.1, "TOKEN = Dev / GitHub / password");
 
     let e = audit.entries();
     assert_eq!(e.len(), 1);
@@ -323,6 +325,14 @@ fn create_login_returns_reference_only() {
     assert!(calls.iter().all(|c| !c.remember_allowed));
     assert!(audit.entries().iter().all(|e| e.decision == "once"));
 
+    // The Login template requires a username: so does the schema.
+    invalid(call(
+        &mut t,
+        "create_login",
+        json!({"vault": "Dev", "title": "No user"}),
+    ));
+    assert_eq!(a.calls().len(), 2);
+
     // Without the write scope (default policy on Shared).
     let m = refused(call(
         &mut t,
@@ -359,6 +369,11 @@ fn generate_password_respects_policy() {
         json!({"length": 20, "words": 4}),
     );
     invalid(out);
+    invalid(call(
+        &mut t,
+        "generate_password",
+        json!({"words": 4, "symbols": false}),
+    ));
     assert!(a.calls().is_empty());
     assert!(audit.entries().iter().all(|e| e.decision == "policy"));
 
@@ -424,4 +439,88 @@ fn reveal_secret_with_scope_and_approval() {
     let e = audit.entries();
     assert_eq!(e.len(), 2);
     assert!(e.iter().all(|x| x.decision == "once" && x.outcome == "ok"));
+}
+
+#[test]
+fn fill_template_session_grant_follows_the_placeholders() {
+    let dir = tempfile::tempdir().unwrap();
+    let template = dir.path().join("t.tpl");
+    let output = dir.path().join("out.env");
+    fs::write(&template, "A={{ onepass://Dev/GitHub/username }}").unwrap();
+    let a = approver(vec![Decision::AllowForSession, Decision::Deny]);
+    let (mut t, audit) = tools_with_audit(default_policy(), a.clone());
+    let args = json!({"template_path": template, "output_path": output, "overwrite": true});
+    ok(call(&mut t, "fill_template", args.clone()));
+    ok(call(&mut t, "fill_template", args.clone()));
+    assert_eq!(a.calls().len(), 1);
+    // Same paths, edited template: asked again.
+    fs::write(&template, "A={{ onepass://Dev/GitHub/password }}").unwrap();
+    let m = refused(call(&mut t, "fill_template", args));
+    assert_eq!(m, "denied by the user");
+    assert_eq!(a.calls().len(), 2);
+    assert_eq!(
+        fs::read_to_string(&output).unwrap(),
+        format!("A={GITHUB_USER}")
+    );
+    let decisions: Vec<String> = audit.entries().into_iter().map(|e| e.decision).collect();
+    assert_eq!(decisions, ["session", "remembered", "denied"]);
+}
+
+#[test]
+fn fill_template_reprompt_item_is_never_remembered() {
+    let dir = tempfile::tempdir().unwrap();
+    let template = dir.path().join("t.tpl");
+    fs::write(&template, "{{ onepass://Dev/Mail/password }}").unwrap();
+    let a = approver(vec![Decision::AllowForSession, Decision::AllowForSession]);
+    let mut t = tools(default_policy(), a.clone());
+    add_mail(&mut t, true);
+    let args =
+        json!({"template_path": template, "output_path": dir.path().join("o"), "overwrite": true});
+    ok(call(&mut t, "fill_template", args.clone()));
+    ok(call(&mut t, "fill_template", args));
+    let calls = a.calls();
+    assert_eq!(calls.len(), 2);
+    assert!(calls.iter().all(|c| !c.remember_allowed));
+}
+
+#[test]
+fn fill_template_guards_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    fs::create_dir(&data).unwrap();
+    let inside = data.join("vault.tpl");
+    fs::write(&inside, "{{ onepass://Dev/GitHub/password }}").unwrap();
+    let template = dir.path().join("t.tpl");
+    fs::write(&template, "{{ onepass://Dev/GitHub/password }}").unwrap();
+    let a = approver(vec![Decision::AllowOnce]);
+    let (mut t, _) = tools_full(
+        |_| default_policy(),
+        |_| Narrowing::default(),
+        a.clone(),
+        Some(data.clone()),
+    );
+    // A template in the data directory reads like a missing one.
+    let out = dir.path().join("o1");
+    let hidden = refused(call(
+        &mut t,
+        "fill_template",
+        json!({"template_path": inside, "output_path": out}),
+    ));
+    let missing = refused(call(
+        &mut t,
+        "fill_template",
+        json!({"template_path": dir.path().join("none.tpl"), "output_path": out}),
+    ));
+    assert_eq!(hidden, missing);
+    // An output with another hard link is not overwritten.
+    let linked = dir.path().join("linked");
+    fs::write(&linked, "x").unwrap();
+    fs::hard_link(&linked, dir.path().join("other-name")).unwrap();
+    let m = refused(call(
+        &mut t,
+        "fill_template",
+        json!({"template_path": template, "output_path": linked, "overwrite": true}),
+    ));
+    assert_eq!(m, "output file has other hard links");
+    assert!(a.calls().is_empty());
 }

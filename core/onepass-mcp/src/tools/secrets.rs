@@ -22,12 +22,12 @@ use onepass_core::model::{
     Field, FieldType, FieldValue, Item, ItemType, ItemUrl, MatchRule, new_item, validate,
 };
 use onepass_core::reference::{SecretRef, otp_field_of};
-use onepass_core::totp::{parse_otpauth, seconds_remaining, totp_from_secret};
+use onepass_core::totp::{TotpConfig, parse_otpauth, seconds_remaining, totp_from_secret};
 use onepass_guard::{ApprovalRequest, Decision, Surface, Target, sanitize_for_display};
 use serde_json::{Map, Value, json};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use zeroize::Zeroizing;
@@ -63,6 +63,23 @@ impl Located {
             item: self.item.title.clone(),
             field: Some(self.field_id.clone()),
         }
+    }
+
+    /// What a session grant is bound to: the resolved vault, item and field.
+    fn key_material(&self) -> Value {
+        json!([
+            self.vault.id.to_string(),
+            self.item.id.to_string(),
+            self.field_id
+        ])
+    }
+
+    /// One approval detail line: `vault / item / field`.
+    fn shown(&self) -> String {
+        format!(
+            "{} / {} / {}",
+            self.vault.name, self.item.title, self.field_id
+        )
     }
 
     /// The located field (it exists: `locate` found it).
@@ -177,10 +194,13 @@ fn now() -> u64 {
         .unwrap_or(0)
 }
 
-/// Seconds before the code of an OTP field value changes, 0 if unknown.
-fn otp_seconds_left(value: &FieldValue) -> u32 {
+/// The TOTP configuration of an OTP field value, by the core's rules: an
+/// `otpauth://` URI is parsed as one, anything else is a bare base32
+/// secret. `None` for anything the core could not turn into a code (an
+/// HOTP URI, bad base32, an empty value).
+fn otp_config(value: &FieldValue) -> Option<TotpConfig> {
     let FieldValue::Otp(s) = value else {
-        return 0;
+        return None;
     };
     let s = s.trim();
     let cfg = if s
@@ -191,7 +211,7 @@ fn otp_seconds_left(value: &FieldValue) -> u32 {
     } else {
         totp_from_secret(s)
     };
-    cfg.map(|c| seconds_remaining(&c, now())).unwrap_or(0)
+    cfg.ok()
 }
 
 fn io_refusal(what: &str, e: &io::Error) -> Refusal {
@@ -317,18 +337,26 @@ impl<P: VaultPort> McpTools<P> {
             "cwd",
             cwd.unwrap_or("(the server's working directory)"),
         );
-        let mut injected: Vec<String> = env.iter().map(|(n, _)| n.clone()).collect();
-        injected.extend(files.iter().map(|(n, _)| format!("{n} (file)")));
-        push_detail(&mut details, "variables", &injected.join(", "));
+        // `located` follows `env` then `files`, in the same order.
+        let named = env
+            .iter()
+            .map(|(n, _)| ("env", n))
+            .chain(files.iter().map(|(n, _)| ("file", n)));
+        for ((kind, name), l) in named.zip(&located) {
+            push_detail(&mut details, kind, &format!("{name} = {}", l.shown()));
+        }
         let remember = !located.iter().any(|l| l.item.reprompt);
         // Session grants cover exactly this request: argv, both maps (keys
-        // sorted by serde_json) and the working directory.
+        // sorted by serde_json), the working directory, and what each
+        // reference resolved to.
+        let resolved: Vec<Value> = located.iter().map(Located::key_material).collect();
         let key = json!([
             "run_with_secrets",
             argv,
             args.get("env"),
             args.get("files"),
-            cwd
+            cwd,
+            resolved
         ]);
         self.approve(
             client,
@@ -395,6 +423,8 @@ impl<P: VaultPort> McpTools<P> {
             Ok(m) if m.file_type().is_symlink() => Err(invalid("output path is a symbolic link")),
             Ok(_) if !overwrite => Err(invalid("output file exists, set overwrite to replace it")),
             Ok(m) if !m.is_file() => Err(invalid("output path is not a regular file")),
+            // A hard link would carry the secrets to another name.
+            Ok(m) if m.nlink() > 1 => Err(invalid("output file has other hard links")),
             Ok(_) => Ok(target),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(target),
             Err(e) => Err(io_refusal("output path is not usable", &e)),
@@ -414,8 +444,8 @@ impl<P: VaultPort> McpTools<P> {
             .get("overwrite")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        let target = self.output_target(output_path, overwrite)?;
-        let template = read_template(Path::new(template_path))?;
+        self.output_target(output_path, overwrite)?;
+        let template = read_template(Path::new(template_path), self.forbidden_dir())?;
         let refs = template_refs(&template);
         if refs.is_empty() {
             return Err(invalid("template has no {{ onepass://... }} placeholder").into());
@@ -434,15 +464,20 @@ impl<P: VaultPort> McpTools<P> {
             "overwrite",
             if overwrite { "yes" } else { "no" },
         );
+        for l in &located {
+            push_detail(&mut details, "reference", &l.shown());
+        }
         let remember = !located.iter().any(|l| l.item.reprompt);
         // The references are part of the key: an edited template asks again.
         let placeholders: Vec<&str> = refs.iter().map(|(_, r)| r.as_str()).collect();
+        let resolved: Vec<Value> = located.iter().map(Located::key_material).collect();
         let key = json!([
             "fill_template",
             template_path,
             output_path,
             overwrite,
-            placeholders
+            placeholders,
+            resolved
         ]);
         self.approve(
             client,
@@ -459,6 +494,8 @@ impl<P: VaultPort> McpTools<P> {
             values.push(self.read_value(&l.vault, &l.r)?);
         }
         let rendered = render_template(&template, &values);
+        // Checked again: the path may have changed while the user decided.
+        let target = self.output_target(output_path, overwrite)?;
         write_private(&target, rendered.as_bytes(), overwrite)?;
         Ok(json!({"replaced": refs.len(), "output_path": output_path}))
     }
@@ -594,10 +631,13 @@ impl<P: VaultPort> McpTools<P> {
         if field.kind != FieldType::Otp {
             return Err(invalid("reference is not a one-time password field").into());
         }
-        let left_value = field.value.clone();
-        if !matches!(&left_value, FieldValue::Otp(s) if !s.trim().is_empty()) {
+        if !matches!(&field.value, FieldValue::Otp(s) if !s.trim().is_empty()) {
             return Err(invalid("invalid reference: field is empty").into());
         }
+        // Parsed before asking: a value the core cannot use (HOTP, bad
+        // base32) is refused here, never after the user said yes.
+        let cfg =
+            otp_config(&field.value).ok_or_else(|| invalid("unsupported one-time password"))?;
         self.approve(
             client,
             "totp_code",
@@ -610,7 +650,7 @@ impl<P: VaultPort> McpTools<P> {
         let code = self.read_value(&l.vault, &l.r)?;
         Ok(json!({
             "code": code.as_str(),
-            "seconds_remaining": otp_seconds_left(&left_value),
+            "seconds_remaining": seconds_remaining(&cfg, now()),
         }))
     }
 
@@ -639,9 +679,18 @@ impl<P: VaultPort> McpTools<P> {
 }
 
 /// The template at `path`: a regular file of at most [`MAX_TEMPLATE`]
-/// bytes, in UTF-8.
-fn read_template(path: &Path) -> Result<Zeroizing<String>, Failure> {
-    let file = fs::File::open(path).map_err(|e| io_refusal("template could not be read", &e))?;
+/// bytes, in UTF-8, outside `forbidden` (the data directory), which
+/// answers exactly like a missing file.
+fn read_template(path: &Path, forbidden: Option<&Path>) -> Result<Zeroizing<String>, Failure> {
+    let unreadable = |e: &io::Error| io_refusal("template could not be read", e);
+    let real = path.canonicalize().map_err(|e| unreadable(&e))?;
+    if let Some(dir) = forbidden {
+        let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+        if real.starts_with(&dir) {
+            return Err(unreadable(&io::Error::from(io::ErrorKind::NotFound)).into());
+        }
+    }
+    let file = fs::File::open(&real).map_err(|e| unreadable(&e))?;
     let meta = file
         .metadata()
         .map_err(|e| io_refusal("template could not be read", &e))?;
