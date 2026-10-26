@@ -169,7 +169,8 @@ impl From<GuardError> for PolicyError {
         match e {
             GuardError::Signature | GuardError::Tampered(_) => PolicyError::Tampered,
             GuardError::Io(kind) => PolicyError::Io(kind),
-            GuardError::Format(_) => PolicyError::Format,
+            // `Config` is not produced by the policy path.
+            GuardError::Format(_) | GuardError::Config(_) => PolicyError::Format,
         }
     }
 }

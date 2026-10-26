@@ -78,13 +78,13 @@ Registre signé `<data-dir>/clients.json` (`SignedConfig`, domaine `clients`), p
 - `onepass clients list | pair | unpair <id> | scopes <id> --vault <v> --scopes <liste> | keys <id> --key <empreinte>...`.
 - Les serveurs relisent et vérifient le registre à chaque requête : un désappairage prend effet tout de suite.
 - L'écriture du registre se fait sous verrou exclusif (`clients.json.lock`, attente bornée à 2 s) ; la nouvelle génération dépasse à la fois celle du disque, celle du registre en mémoire et la plus haute vue : deux écrivains ne produisent jamais deux registres de même génération.
-- Après un désappairage (et tout changement du registre), la commande pousse la nouvelle génération à chaque serveur en marche par le canal de contrôle signé (section 4.6) et affiche combien de serveurs elle a atteints et lesquels n'ont pas répondu.
+- Après un désappairage (et tout changement du registre), la commande pousse le désappairage (client, date) et la nouvelle génération à chaque serveur en marche par le canal de contrôle signé (section 4.6) et affiche les serveurs atteints et ceux qui n'ont pas répondu.
 
 Ruling: aucun client servi sans appairage - c'est la seule défense contre A3 qui tienne pour le même uid - coût si faux : une étape de plus au premier usage.
 
 Ruling: appairage interactif réservé aux clients signés, non signés par commande explicite - une invite « appairer ce binaire ad hoc ? » ne donne aucune information vérifiable à l'utilisateur - coût si faux : un outil local demande une commande de plus.
 
-Ruling: registre signé avec un compteur `generation`, le plus haut vu étant gardé en mémoire par chaque serveur et relevé par le canal de contrôle à chaque changement - un registre plus ancien rejoué pendant que le serveur tourne est refusé, même si le serveur n'a jamais lu la version plus récente - coût si faux : au redémarrage, un ancien registre authentique peut être rejoué (documenté, comme la politique MCP).
+Ruling: registre signé avec un compteur `generation`, le plus haut vu étant gardé en mémoire par chaque serveur et relevé par le canal de contrôle à chaque changement, qui porte aussi les désappairages - un registre plus ancien rejoué, ou blanchi à une génération plus haute, ne ramène pas un client désappairé pendant que le serveur tourne - coût si faux : au redémarrage, un ancien registre authentique peut être rejoué (documenté, comme la politique MCP).
 
 ## 4. Approbations
 
@@ -105,13 +105,15 @@ Les « accords de session » en mémoire du jalon 7 deviennent des autorisations
 - Durée par défaut 5 minutes, au plus 60 minutes, choisie à l'invite (`s` = 5 min ; `s15`, `s60`).
 - Liée au client appairé (identifiant de code) : un autre processus ne la réutilise pas.
 - Vérifiée à chaque usage : signature du fichier, `expires_at` dans le futur (horloge murale et horloge monotone du serveur), client identique, requête identique (`key`).
-- `onepass grants list` et `onepass grants revoke <id> | --all | --client <id>` ; la révocation réécrit le fichier signé avec une génération plus haute, puis la pousse à chaque serveur en marche par le canal de contrôle (section 4.6) ; la commande affiche combien de serveurs elle a atteints et lesquels n'ont pas répondu.
+- `onepass grants list` et `onepass grants revoke <id> | --all | --client <id>` ; la révocation réécrit le fichier signé avec une génération plus haute, puis pousse les autorisations révoquées et la nouvelle génération à chaque serveur en marche par le canal de contrôle (section 4.6), qui les garde en mémoire jusqu'à leur expiration ; la commande affiche les serveurs atteints et ceux qui n'ont pas répondu.
 - Lecture et écriture sous verrou (`grants.json.lock`, partagé en lecture, exclusif en écriture, attente bornée à 2 s : au-delà, aucune autorisation n'est accordée et l'écriture échoue).
 - Une autorisation émise par le serveur est périmée dès que son échéance monotone est passée, même si l'horloge murale recule ; une autorisation émise par un autre processus ne dépend que de l'horloge murale (et de `created_at` passé).
 - Une autorisation expirée ou révoquée est refusée et l'utilisateur est de nouveau sollicité ; le refus est journalisé (`grant_expired`, `grant_revoked`).
 - `reveal`, `totp` et les clés SSH `confirm_each_use` ne donnent jamais d'autorisation.
 
 Ruling: autorisations dans un fichier signé relu à chaque requête plutôt qu'en mémoire - la révocation depuis un autre terminal doit agir sur un serveur en marche - coût si faux : une lecture et une vérification de signature par requête.
+
+Ruling: durée par défaut 5 min, plafond 60 min - assez pour une tâche, trop court pour une session d'agent oubliée - coût si faux : plus d'invites.
 
 ### 4.3 Limites de débit et fatigue
 
@@ -142,16 +144,17 @@ Inchangé et confirmé : seules `reveal_secret` (scope `reveal`, absent par déf
 
 ### 4.6 Canal de contrôle signé
 
-Le fichier restauré tel qu'il était avant une révocation (ou un désappairage) porte une génération que le serveur a pu voir lui-même : sans aide, il l'accepterait et la révocation serait annulée. La commande qui révoque ou désappaire prévient donc chaque serveur en marche.
+Un fichier authentique plus ancien peut être restauré, puis blanchi : un processus neuf le relit et le réécrit à une génération plus haute, l'autorisation révoquée toujours vivante. La génération seule ne suffit donc pas : la commande qui révoque ou désappaire envoie la révocation elle-même à chaque serveur en marche, qui la garde en mémoire.
 
-- Chaque serveur écoute sur `<data-dir>/run/<pid>.sock` (répertoire `0700`, socket `0600`, jamais à la place d'un socket vivant ; un socket mort est remplacé).
-- Notification : une ligne JSON `{ "kind": "grants"|"clients", "generation", "nonce", "sig" }`, signée par la clé locale du compte sous le domaine `control-notify` (sur `kind|generation|nonce`, nonce aléatoire de 16 octets). Le serveur vérifie la signature, relève sa génération plancher pour ce fichier, puis répond `{ "nonce", "pid", "generation", "sig" }` signé sous le domaine `control-ack`. Un message invalide ferme la connexion sans réponse.
-- La commande contacte chaque `*.sock` du répertoire, vérifie chaque réponse (signature, même nonce, même génération), supprime les sockets morts (connexion refusée) et affiche le nombre de serveurs atteints et la liste de ceux qui n'ont pas répondu correctement.
-- Échec fermé : un serveur vérifie à chaque requête, et chaque seconde par un fil de surveillance, que son chemin de socket désigne toujours le socket qu'il a créé (même inode) ; sinon il ne peut plus être prévenu et il s'arrête.
+- Chaque serveur écoute sur `<data-dir>/run/<pid>.sock` (répertoire `0700` réglé par son descripteur, ouvert sans suivre de lien symbolique ; socket `0600` une fois prouvé qu'il atteint le serveur ; jamais à la place d'un socket vivant, un socket mort est remplacé). Un chemin plus long que `sun_path` (104 octets sur macOS) donne l'erreur « data directory path too long for a control socket ».
+- Notification : une ligne JSON signée par la clé locale du compte sous le domaine `control-notify`, sur le JSON canonique de tous ses champs sauf `sig` : `{ "account_id", "kind": "grants", "generation", "nonce", "revoked": [{ "id", "expires_at" }] }` ou `{ "account_id", "kind": "clients", "generation", "nonce", "unpaired": [{ "client_id", "at" }] }`. Le compte doit être celui du serveur. Le serveur relève sa génération plancher et garde en mémoire chaque autorisation révoquée (jusqu'à son expiration, quel que soit le fichier) et chaque désappairage (un enregistrement de ce client n'est plus accepté que si son `paired_at` est postérieur au désappairage, c'est-à-dire un nouvel appairage). Il répond ensuite `{ "nonce", "pid", "generation", "sig" }` signé sous le domaine `control-ack`. Un message invalide ferme la connexion sans réponse. Au plus 8 connexions de contrôle à la fois (les suivantes sont fermées aussitôt), chacune en 2 s au total.
+- La commande contacte tous les sockets `*.sock` du répertoire en même temps (64 au plus, au-delà erreur), dans un délai global (3 s par défaut) qui couvre connexion, envoi et lecture complète de la réponse ; un serveur ne compte comme atteint que si sa réponse est signée, porte le même nonce, la même génération et le pid du nom de son socket. Elle ne supprime aucun socket (chaque serveur supprime le sien en s'arrêtant) et affiche les pid atteints et les sockets qui n'ont pas répondu correctement.
+- Échec fermé : toutes les secondes, un fil de surveillance du serveur se connecte à son propre chemin de socket et envoie un nonce frais signé (domaine `control-ping`) ; le serveur se considère vivant seulement si sa boucle d'acceptation a reçu ce nonce depuis moins de 2 s. Il le vérifie à chaque requête ; sinon (socket supprimé ou remplacé) il ne peut plus être prévenu et il s'arrête. Un premier ping réussi est exigé au démarrage.
+- Limite connue : un attaquant qui renomme le socket et relaie depuis le chemin d'origine peut laisser passer les pings et retenir les notifications ; la commande voit alors ce serveur en échec (pas de réponse signée), ce qu'elle affiche.
 
-Ruling: révocations et désappairages poussés aux serveurs par un canal de contrôle signé, serveurs qui s'arrêtent s'ils deviennent injoignables - seul le serveur en marche sait quelle génération il accepte, et un attaquant du même uid peut restaurer un fichier authentique plus ancien avant la requête suivante - coût si faux : un socket par serveur, une connexion par serveur à chaque révocation, un serveur s'arrête si son socket est supprimé.
+Ruling: révocations et désappairages poussés aux serveurs par un canal de contrôle signé qui porte la révocation elle-même, gardée en mémoire par le serveur - seul le serveur en marche sait ce qu'on lui a dit, et un fichier restauré ou blanchi peut porter n'importe quelle génération - coût si faux : un socket par serveur, une connexion par serveur à chaque révocation, un peu de mémoire jusqu'à l'expiration des autorisations révoquées.
 
-Ruling: durée par défaut 5 min, plafond 60 min - assez pour une tâche, trop court pour une session d'agent oubliée - coût si faux : plus d'invites.
+Ruling: serveurs en échec fermé par un ping signé vers leur propre socket chaque seconde - un serveur que la commande ne peut plus joindre ne doit plus servir - coût si faux : un serveur s'arrête si son socket est supprimé ou si ses connexions de contrôle sont saturées plus de 2 s.
 
 ## 5. Journal d'audit
 
@@ -212,4 +215,5 @@ Avant la revue finale, une équipe rouge (modèle le plus puissant) attaque MCP 
 14. Commande `onepass audit` de premier niveau.
 15. Marque-pages `hosts` bloquants.
 16. Exception `git` pour les signatures de commits.
-17. Canal de contrôle signé pour pousser révocations et désappairages, serveurs en échec fermé s'ils deviennent injoignables.
+17. Canal de contrôle signé qui pousse les révocations et désappairages eux-mêmes, gardés en mémoire par les serveurs.
+18. Serveurs en échec fermé par un ping signé vers leur propre socket.

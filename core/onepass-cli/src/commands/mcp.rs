@@ -246,7 +246,11 @@ fn audit(ctx: &Ctx, verify_only: bool) -> Result<(), CliError> {
         let verification = if path.exists() {
             verify_log(&path, &RepoSigner(&*repo)).map_err(|e| match e {
                 GuardError::Io(kind) => CliError::usage(format!("cannot read audit log: {kind}")),
-                GuardError::Format(_) | GuardError::Signature | GuardError::Tampered(_) => failed(),
+                // `Config` is not produced by `verify_log`; fail closed anyway.
+                GuardError::Format(_)
+                | GuardError::Signature
+                | GuardError::Tampered(_)
+                | GuardError::Config(_) => failed(),
             })?
         } else if head_path(&path).exists() {
             // A head without its log: the log was removed.

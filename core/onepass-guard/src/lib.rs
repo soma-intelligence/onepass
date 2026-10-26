@@ -23,17 +23,18 @@ pub use audit::{
     verify_log,
 };
 pub use clients::{
-    CLIENTS_DOMAIN, ClientRecord, ClientRegistry, ClientRegistryLoader, load_clients, save_clients,
+    CLIENTS_DOMAIN, ClientRecord, ClientRegistry, ClientRegistryLoader, Unpaired, load_clients,
+    save_clients,
 };
 pub use clock::{Clock, SystemClock};
 pub use control::{
-    ACK_DOMAIN, ControlKind, ControlServer, LostFn, NOTIFY_DOMAIN, NotifyFn, NotifyOutcome,
-    SharedSigner, notify_servers,
+    ACK_DOMAIN, ControlChange, ControlServer, DEFAULT_NOTIFY_DEADLINE, LostFn, MAX_CONTROL_SOCKETS,
+    NOTIFY_DOMAIN, NotifyFn, NotifyOutcome, PING_DOMAIN, SharedSigner, notify_servers,
 };
 pub use display::sanitize_for_display;
 pub use grants::{
     DEFAULT_GRANT_TTL, GRANTS_DOMAIN, Grant, GrantCheck, GrantRequest, GrantStore, MAX_GRANT_TTL,
-    Revoke,
+    Revoke, RevokeOutcome, RevokedGrant,
 };
 pub use signed::{open_config, seal_config};
 
@@ -69,6 +70,8 @@ pub enum GuardError {
     Signature,
     /// The audit log was edited, truncated or is inconsistent with its head.
     Tampered(&'static str),
+    /// A local setup problem, described by a fixed message.
+    Config(&'static str),
 }
 
 impl fmt::Display for GuardError {
@@ -78,6 +81,7 @@ impl fmt::Display for GuardError {
             GuardError::Format(what) => write!(f, "invalid format: {what}"),
             GuardError::Signature => write!(f, "signature verification failed"),
             GuardError::Tampered(what) => write!(f, "tampering detected: {what}"),
+            GuardError::Config(what) => f.write_str(what),
         }
     }
 }

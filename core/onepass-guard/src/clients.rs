@@ -10,7 +10,7 @@ use crate::approval::Surface;
 use crate::signed::{lock_sibling, write_private_atomic};
 use crate::{GuardError, LocalSigner, open_config, seal_config};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
@@ -41,6 +41,17 @@ pub struct ClientRecord {
     pub ssh_keys: Option<BTreeSet<String>>,
 }
 
+/// An unpairing pushed to running servers: records of `client_id` paired at
+/// or before `at` are ignored by a server that was told.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
+pub struct Unpaired {
+    /// Code identity of the unpaired client.
+    pub client_id: String,
+    /// Unpairing time, seconds since the Unix epoch.
+    pub at: i64,
+}
+
 /// The registry of paired clients of one account.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -61,6 +72,17 @@ impl ClientRegistry {
             generation: 0,
             clients: Vec::new(),
         }
+    }
+
+    /// Removes every record of `id` (all surfaces); `Some` if there was one,
+    /// with what to push to running servers.
+    pub fn unpair(&mut self, id: &str, at: i64) -> Option<Unpaired> {
+        let before = self.clients.len();
+        self.clients.retain(|c| c.id != id);
+        (self.clients.len() != before).then(|| Unpaired {
+            client_id: id.to_owned(),
+            at,
+        })
     }
 
     /// The client paired for `surface` with code identity `id`.
@@ -142,6 +164,9 @@ fn save_above(
 pub struct ClientRegistryLoader {
     /// Highest generation accepted so far.
     pub generation_seen: u64,
+    /// Unpairings pushed by control notifications: client id to the latest
+    /// unpairing time.
+    unpaired: HashMap<String, i64>,
 }
 
 impl ClientRegistryLoader {
@@ -164,6 +189,11 @@ impl ClientRegistryLoader {
             ));
         }
         self.generation_seen = reg.generation;
+        let mut reg = reg;
+        reg.clients.retain(|c| match self.unpaired.get(&c.id) {
+            Some(at) => c.paired_at > *at,
+            None => true,
+        });
         Ok(reg)
     }
 
@@ -184,6 +214,18 @@ impl ClientRegistryLoader {
     /// a signed control notification announces a newer registry.
     pub fn raise_floor(&mut self, generation: u64) {
         self.generation_seen = self.generation_seen.max(generation);
+    }
+
+    /// Applies a verified control notification: raises the floor and
+    /// remembers each unpairing, so a restored or laundered registry cannot
+    /// bring the client back; only a record paired later than the unpairing
+    /// (a genuine re-pairing) is accepted again.
+    pub fn apply_unpairs(&mut self, generation: u64, unpaired: &[Unpaired]) {
+        self.raise_floor(generation);
+        for u in unpaired {
+            let e = self.unpaired.entry(u.client_id.clone()).or_insert(u.at);
+            *e = (*e).max(u.at);
+        }
     }
 }
 
@@ -369,5 +411,58 @@ mod tests {
         l3.save(&path, &s, &mut stale).unwrap();
         assert_eq!(stale.generation, 11);
         assert_eq!(l3.load(&path, &s, "acc").unwrap().generation, 11);
+    }
+
+    #[test]
+    fn pushed_unpair_holds_against_laundering_and_allows_repair() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clients.json");
+        let s = TestSigner::new();
+        let mut reg = ClientRegistry::empty("acc");
+        let mut rec = record("platform:a", Surface::Mcp);
+        rec.paired_at = 1_000;
+        reg.clients.push(rec.clone());
+        save_clients(&path, &s, &mut reg).unwrap();
+        let paired = fs::read(&path).unwrap();
+        let mut server = ClientRegistryLoader::new();
+        assert!(
+            server
+                .load(&path, &s, "acc")
+                .unwrap()
+                .find(Surface::Mcp, "platform:a")
+                .is_some()
+        );
+
+        let u = reg.unpair("platform:a", 2_000).unwrap();
+        assert!(reg.unpair("platform:a", 2_000).is_none());
+        save_clients(&path, &s, &mut reg).unwrap();
+        server.apply_unpairs(reg.generation, std::slice::from_ref(&u));
+
+        // Restored, then laundered by a fresh save at the same generation.
+        fs::write(&path, &paired).unwrap();
+        let mut laundered = load_clients(&path, &s, "acc").unwrap();
+        save_clients(&path, &s, &mut laundered).unwrap();
+        assert_eq!(laundered.generation, reg.generation);
+        assert!(
+            server
+                .load(&path, &s, "acc")
+                .unwrap()
+                .find(Surface::Mcp, "platform:a")
+                .is_none()
+        );
+
+        // A genuine re-pairing, later than the unpairing, is accepted.
+        let mut again = load_clients(&path, &s, "acc").unwrap();
+        again.clients.clear();
+        rec.paired_at = 2_001;
+        again.clients.push(rec);
+        save_clients(&path, &s, &mut again).unwrap();
+        assert!(
+            server
+                .load(&path, &s, "acc")
+                .unwrap()
+                .find(Surface::Mcp, "platform:a")
+                .is_some()
+        );
     }
 }

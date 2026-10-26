@@ -101,12 +101,27 @@ pub enum Revoke {
     All,
 }
 
-/// A revoked grant id, kept until the grant would have expired.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+/// A revoked grant id, kept until the grant would have expired: in the file
+/// (`revoked`), in control notifications, and in the memory of servers.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(deny_unknown_fields)]
-struct Tombstone {
-    id: String,
-    expires_at: i64,
+pub struct RevokedGrant {
+    /// The grant id.
+    pub id: String,
+    /// When the grant would have expired (seconds since the Unix epoch).
+    pub expires_at: i64,
+}
+
+/// Result of [`GrantStore::revoke`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RevokeOutcome {
+    /// Grants revoked by this call (not revoked before).
+    pub newly: usize,
+    /// Every unexpired grant matching the request, revoked before or now:
+    /// what the command pushes to running servers.
+    pub revoked: Vec<RevokedGrant>,
+    /// The generation of the file after the call.
+    pub generation: u64,
 }
 
 /// The signed payload of `grants.json`.
@@ -116,7 +131,7 @@ struct GrantsFile {
     account_id: String,
     generation: u64,
     grants: Vec<Grant>,
-    revoked: Vec<Tombstone>,
+    revoked: Vec<RevokedGrant>,
 }
 
 impl GrantsFile {
@@ -156,6 +171,9 @@ pub struct GrantStore {
     generation_seen: u64,
     /// Grant id to monotonic deadline, for grants issued by this process.
     issued: HashMap<String, Instant>,
+    /// Revocations pushed by control notifications: grant id to expiry. They
+    /// hold whatever the file says, until the grant would have expired.
+    pushed_revoked: HashMap<String, i64>,
 }
 
 impl GrantStore {
@@ -167,6 +185,7 @@ impl GrantStore {
             account_id: account_id.to_owned(),
             generation_seen: 0,
             issued: HashMap::new(),
+            pushed_revoked: HashMap::new(),
         }
     }
 
@@ -180,6 +199,35 @@ impl GrantStore {
     /// another process, so restoring an older file afterwards is refused.
     pub fn raise_floor(&mut self, generation: u64) {
         self.generation_seen = self.generation_seen.max(generation);
+    }
+
+    /// Applies a verified control notification: raises the floor and
+    /// remembers each revoked grant until its expiry, so a restored or
+    /// laundered file (even one at a higher generation) cannot revive it in
+    /// this process.
+    pub fn apply_revocations(&mut self, generation: u64, revoked: &[RevokedGrant]) {
+        self.raise_floor(generation);
+        for r in revoked {
+            let e = self
+                .pushed_revoked
+                .entry(r.id.clone())
+                .or_insert(r.expires_at);
+            *e = (*e).max(r.expires_at);
+        }
+    }
+
+    /// Ids of the revocations pushed to this store and still remembered.
+    pub fn pushed_revocations(&self) -> Vec<RevokedGrant> {
+        let mut v: Vec<RevokedGrant> = self
+            .pushed_revoked
+            .iter()
+            .map(|(id, e)| RevokedGrant {
+                id: id.clone(),
+                expires_at: *e,
+            })
+            .collect();
+        v.sort();
+        v
     }
 
     /// Records a grant for `req` valid for `ttl` (clamped to
@@ -238,6 +286,8 @@ impl GrantStore {
             Err(_) => return GrantCheck::None,
         };
         self.generation_seen = self.generation_seen.max(file.generation);
+        let now = clock.now_unix();
+        self.pushed_revoked.retain(|_, e| *e > now);
         let revoked = file.revoked_ids();
         let mut result = GrantCheck::None;
         for g in file.grants.iter().filter(|g| {
@@ -256,19 +306,21 @@ impl GrantStore {
         result
     }
 
-    /// Revokes the matching live grants and returns how many were revoked.
-    /// The file is rewritten (higher generation) only if at least one was.
+    /// Revokes the matching live grants. The file is rewritten (higher
+    /// generation) only if at least one grant was newly revoked (or a
+    /// replayed file had to be replaced). The outcome lists every unexpired
+    /// matching grant, newly or already revoked, for the control push.
     pub fn revoke(
         &mut self,
         signer: &dyn LocalSigner,
         clock: &dyn Clock,
         which: Revoke,
-    ) -> Result<usize, GuardError> {
+    ) -> Result<RevokeOutcome, GuardError> {
         let _lock = self.lock(true)?;
         let (mut file, healed) = self.load_for_write(signer)?;
         let now = clock.now_unix();
         let already: HashSet<String> = file.revoked.iter().map(|t| t.id.clone()).collect();
-        let newly: Vec<Tombstone> = file
+        let mut matching: Vec<RevokedGrant> = file
             .grants
             .iter()
             .filter(|g| match &which {
@@ -276,11 +328,17 @@ impl GrantStore {
                 Revoke::Client(c) => &g.client_id == c,
                 Revoke::All => true,
             })
-            .filter(|g| g.expires_at > now && !already.contains(&g.id))
-            .map(|g| Tombstone {
+            .filter(|g| g.expires_at > now)
+            .map(|g| RevokedGrant {
                 id: g.id.clone(),
                 expires_at: g.expires_at,
             })
+            .collect();
+        matching.sort();
+        let newly: Vec<RevokedGrant> = matching
+            .iter()
+            .filter(|r| !already.contains(&r.id))
+            .cloned()
             .collect();
         let count = newly.len();
         if count > 0 || healed {
@@ -288,7 +346,11 @@ impl GrantStore {
             file.prune(now);
             self.write(signer, file)?;
         }
-        Ok(count)
+        Ok(RevokeOutcome {
+            newly: count,
+            revoked: matching,
+            generation: self.generation_seen,
+        })
     }
 
     /// The live (unexpired, unrevoked) grants.
@@ -302,6 +364,8 @@ impl GrantStore {
             self.read_checked(signer)?
         };
         self.generation_seen = self.generation_seen.max(file.generation);
+        let now = clock.now_unix();
+        self.pushed_revoked.retain(|_, e| *e > now);
         let revoked = file.revoked_ids();
         Ok(file
             .grants
@@ -312,7 +376,7 @@ impl GrantStore {
     }
 
     fn state(&self, g: &Grant, revoked: &HashSet<&str>, clock: &dyn Clock) -> State {
-        if revoked.contains(g.id.as_str()) {
+        if revoked.contains(g.id.as_str()) || self.pushed_revoked.contains_key(&g.id) {
             return State::Revoked;
         }
         let now = clock.now_unix();
@@ -377,6 +441,18 @@ impl GrantStore {
 
     /// Writes `file` signed with a generation above everything seen.
     fn write(&mut self, signer: &dyn LocalSigner, mut file: GrantsFile) -> Result<(), GuardError> {
+        // Pushed revocations go back into the file, so a laundered file is
+        // repaired by the next write of this process.
+        let present: HashSet<String> = file.grants.iter().map(|g| g.id.clone()).collect();
+        let listed: HashSet<String> = file.revoked.iter().map(|t| t.id.clone()).collect();
+        for (id, e) in &self.pushed_revoked {
+            if present.contains(id) && !listed.contains(id) {
+                file.revoked.push(RevokedGrant {
+                    id: id.clone(),
+                    expires_at: *e,
+                });
+            }
+        }
         file.generation = file
             .generation
             .max(self.generation_seen)
@@ -569,7 +645,16 @@ mod tests {
             .unwrap();
         // Revoked from another terminal (another store).
         let mut cli = GrantStore::open(&path, "acc");
-        assert_eq!(cli.revoke(&s, &c, Revoke::Id(g.id.clone())).unwrap(), 1);
+        let out = cli.revoke(&s, &c, Revoke::Id(g.id.clone())).unwrap();
+        assert_eq!(out.newly, 1);
+        assert_eq!(
+            out.revoked,
+            vec![RevokedGrant {
+                id: g.id.clone(),
+                expires_at: g.expires_at
+            }]
+        );
+        assert_eq!(out.generation, cli.generation_seen());
         assert_eq!(
             check(&mut st, &s, &c, "platform:a", "k1"),
             GrantCheck::Revoked
@@ -580,7 +665,10 @@ mod tests {
         ));
         // Revoking it again changes nothing and does not rewrite the file.
         let gen_before = payload(&path, &s)["generation"].as_u64().unwrap();
-        assert_eq!(cli.revoke(&s, &c, Revoke::Id(g.id.clone())).unwrap(), 0);
+        let again = cli.revoke(&s, &c, Revoke::Id(g.id.clone())).unwrap();
+        assert_eq!(again.newly, 0);
+        // Still listed for the push, so a command can re-push it.
+        assert_eq!(again.revoked.len(), 1);
         assert_eq!(
             payload(&path, &s)["generation"].as_u64().unwrap(),
             gen_before
@@ -609,7 +697,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             st.revoke(&s, &c, Revoke::Client("platform:a".into()))
-                .unwrap(),
+                .unwrap()
+                .newly,
             2
         );
         assert_eq!(
@@ -620,7 +709,9 @@ mod tests {
             check(&mut st, &s, &c, "platform:b", "k1"),
             GrantCheck::Valid(_)
         ));
-        assert_eq!(st.revoke(&s, &c, Revoke::All).unwrap(), 2);
+        let all = st.revoke(&s, &c, Revoke::All).unwrap();
+        assert_eq!(all.newly, 2);
+        assert_eq!(all.revoked.len(), 4);
         assert_eq!(
             check(&mut st, &s, &c, "platform:b", "k1"),
             GrantCheck::Revoked
@@ -636,7 +727,7 @@ mod tests {
             .add(&s, &c, req("platform:a", "k1"), DEFAULT_GRANT_TTL)
             .unwrap();
         let saved = fs::read(&path).unwrap();
-        assert_eq!(st.revoke(&s, &c, Revoke::Id(g.id)).unwrap(), 1);
+        assert_eq!(st.revoke(&s, &c, Revoke::Id(g.id)).unwrap().newly, 1);
         fs::write(&path, &saved).unwrap();
         assert!(!matches!(
             check(&mut st, &s, &c, "platform:a", "k1"),
@@ -854,7 +945,7 @@ mod tests {
                 }
                 // Revoke every third grant of this client.
                 for id in ids.iter().step_by(3) {
-                    assert_eq!(st.revoke(&s, &c, Revoke::Id(id.clone())).unwrap(), 1);
+                    assert_eq!(st.revoke(&s, &c, Revoke::Id(id.clone())).unwrap().newly, 1);
                 }
                 ids
             })
@@ -881,5 +972,45 @@ mod tests {
             let expected = !(i % N).is_multiple_of(3);
             assert_eq!(live.iter().any(|g| &g.id == id), expected);
         }
+    }
+
+    #[test]
+    fn pushed_revocation_holds_against_a_laundered_file() {
+        let (_d, path, s, c) = setup();
+        let mut server = GrantStore::open(&path, "acc");
+        let g = server
+            .add(&s, &c, req("platform:a", "k1"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        let before = fs::read(&path).unwrap();
+        let mut cli = GrantStore::open(&path, "acc");
+        let out = cli.revoke(&s, &c, Revoke::Id(g.id.clone())).unwrap();
+        server.apply_revocations(out.generation, &out.revoked);
+        // Restore, then a fresh process writes N + 1 with G live.
+        fs::write(&path, &before).unwrap();
+        GrantStore::open(&path, "acc")
+            .add(&s, &c, req("platform:z", "kz"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        assert_eq!(
+            payload(&path, &s)["generation"].as_u64().unwrap(),
+            out.generation
+        );
+        assert_eq!(
+            check(&mut server, &s, &c, "platform:a", "k1"),
+            GrantCheck::Revoked
+        );
+        assert!(server.list(&s, &c).unwrap().iter().all(|x| x.id != g.id));
+        // The next write of the server puts the revocation back in the file.
+        server
+            .add(&s, &c, req("platform:y", "ky"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        let mut fresh = GrantStore::open(&path, "acc");
+        assert_eq!(
+            check(&mut fresh, &s, &c, "platform:a", "k1"),
+            GrantCheck::Revoked
+        );
+        // Forgotten once the grant would have expired.
+        c.advance(DEFAULT_GRANT_TTL);
+        let _ = check(&mut server, &s, &c, "platform:a", "k1");
+        assert!(server.pushed_revocations().is_empty());
     }
 }
