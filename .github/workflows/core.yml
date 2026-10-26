@@ -77,6 +77,8 @@ jobs:
           - archive_open
           - hibp_range
           - site_directory
+          - mcp_line
+          - ssh_agent_frame
     defaults:
       run:
         working-directory: core

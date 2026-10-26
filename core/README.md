@@ -10,6 +10,9 @@ Workspace Cargo (`core/Cargo.toml`) :
 
 - `onepass-core` : bibliothèque (crypto, comptes, vaults, items, manifestes signés, dépôt, stockage SQLite et mémoire, TOTP, générateur, références `onepass://`).
 - `onepass-cli` : binaire `onepass`, CLI de développement au-dessus de `onepass-core`.
+- `onepass-guard` : approbation, journal d'audit chaîné, configuration signée, nettoyage d'affichage.
+- `onepass-mcp` : serveur MCP (JSON-RPC sur stdio, outils, politique, exécution masquée).
+- `onepass-ssh-agent` : agent SSH (protocole, clés, socket Unix, marque-pages).
 - `fuzz` : cibles `cargo-fuzz`, crate à part, hors du workspace.
 
 ## Prérequis
@@ -55,7 +58,7 @@ La signature SLH-DSA est lente (environ 15 s en optimisé, plus en debug). Le pr
 
 ## Fuzzing
 
-Seize cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'un stockage hostile, un fichier d'import ou d'archive hostile, ou un serveur de réponses hostile atteint avant toute authentification :
+Dix-huit cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'un stockage hostile, un fichier d'import ou d'archive hostile, un serveur de réponses hostile, un client MCP ou un client de l'agent SSH hostile atteint avant toute authentification :
 
 | Cible | Entrée |
 | --- | --- |
@@ -75,6 +78,8 @@ Seize cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'u
 | `archive_open` | octets arbitraires, puis mutation d'une sauvegarde valide : `archive::inspect`, `open` par phrase de passe et `open` par compte (compte fixe créé une fois, paramètres Argon2id du plancher dev) |
 | `hibp_range` | `watchtower::parse_range` sur une réponse de plage HIBP |
 | `site_directory` | le premier octet choisit 2fa.directory, passkeys ou le catalogue HIBP des fuites |
+| `mcp_line` | ligne JSON-RPC passée à `onepass_mcp::handle_line` avec un hôte factice sans coffre, sur une session neuve puis sur une session initialisée |
+| `ssh_agent_frame` | message de l'agent SSH passé à `decode_request`, puis l'entrée découpée en clé publique, message et signature pour `verify_signature` |
 
 ```sh
 cd core
@@ -148,6 +153,7 @@ Au jalon 1 la CLI fonctionne en **mode développement autonome**. C'est un écar
 - La Secret Key est écrite **en clair** dans `<data-dir>/device.bin` (droits `0600`, dossier en `0700`). Quiconque lit ce fichier et connaît le mot de passe maître déverrouille le compte, et la Secret Key ne protège plus contre une fuite du mot de passe.
 - Chaque commande qui touche au dossier de données affiche la bannière `DEV MODE` sur stderr.
 - Le mot de passe est lu sur le terminal, masqué. Il n'existe pas de mode non interactif réel. Pour les tests seulement, `ONEPASS_DEV_ALLOW_ENV_PASSWORD=1` autorise `ONEPASS_PASSWORD`, et `ONEPASS_DEV_FAST_KDF=1` abaisse le coût d'Argon2id (refusé dans un build release).
+- Variables de développement du jalon 7, acceptées seulement dans un build avec assertions de debug : `ONEPASS_DEV_AUTO_APPROVE=once|session|deny` (approbateur à réponse fixe, pour les tests de bout en bout ; refusé dans un build release), `ONEPASS_DEV_NO_TTY=1` (se comporte comme s'il n'y avait pas de terminal), `ONEPASS_DEV_SSH_PASSPHRASE` (phrase de passe d'une clé importée par `ssh-key import`, lue seulement avec `ONEPASS_DEV_ALLOW_ENV_PASSWORD=1`).
 - Pas de verrouillage automatique, pas de biométrie, pas de synchronisation, pas de `mlock` des pages secrètes.
 - Ne mettez pas de vrais secrets dans un compte de développement.
 
@@ -198,3 +204,109 @@ Opérations :
 Tests : `onepass-core/tests/sync_two_devices.rs`, deux appareils et un faux serveur sans réseau (écritures dans les deux sens, items différents ou identiques modifiés en même temps, suppression contre modification, vault retenu qui n'envoie rien, rejeu d'un vieux manifeste, item retenu par le serveur, coupures entre l'envoi et la confirmation, appareil longtemps hors ligne, déplacement contre modification, suppressions forgées du compte et d'un vault déjà lu, zone vide ou vault caché lors d'une récupération depuis zéro), plus les tests unitaires de `sync/store.rs` et `sync/rebase.rs`. Ils tournent avec `cargo test --workspace`.
 
 Les règles de sécurité de la sync (ce que voit le serveur, rebase, réinitialisation de zone) sont dans la section 7 de [`docs/security/README.md`](../docs/security/README.md).
+
+## Serveur MCP
+
+`onepass mcp` lance un serveur MCP local (JSON-RPC 2.0 sur stdio, un message JSON par ligne) qui laisse un agent IA utiliser des vaults sans voir les secrets. Versions du protocole acceptées : `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`. Une ligne de plus de 1 MiB est ignorée (`-32700`).
+
+```sh
+onepass vault create "Agents" --mcp-access      # seuls les vaults créés ainsi existent pour le serveur
+onepass mcp                                     # serveur, mot de passe demandé sur /dev/tty
+onepass mcp --vault Agents --scopes metadata,use
+onepass mcp policy show
+onepass mcp policy set --vault Agents --scopes metadata,use,totp --allow-generate true
+onepass mcp audit [--verify]
+```
+
+### Outils et scopes
+
+| Scope | Outils | Approbation |
+| --- | --- | --- |
+| `metadata` | `list_vaults`, `list_items`, `search_items` (50 résultats au plus), `get_item` | aucune : jamais de valeur, de notes ni de sous-titre |
+| `use` | `run_with_secrets`, `fill_template` | à chaque requête ; `s` mémorise la même requête exacte pour la session |
+| `write` | `create_login` | à chaque requête |
+| `totp` | `totp_code` | à chaque appel, jamais mémorisée |
+| `reveal` | `reveal_secret` | à chaque appel, jamais mémorisée |
+| `allow_generate` (global) | `generate_password` | aucune : la valeur n'existe pas dans le coffre |
+
+Un item avec `reprompt` exige une approbation à chaque usage. Les items à la corbeille n'existent pas pour le serveur.
+
+### Politique
+
+- Trois couches, un accès doit passer les trois : le vault (`mcp_access`), la politique signée `<data-dir>/mcp-policy.json`, puis les options de lancement `--vault` et `--scopes`, qui ne peuvent que restreindre.
+- Sans fichier, la politique par défaut vaut pour chaque vault MCP : `metadata` et `use`, `allow_generate` vrai.
+- La politique est signée par la clé du compte. Un fichier altéré ou d'un autre compte empêche le serveur de démarrer (code 3). `policy set` demande le mot de passe maître et re-signe. Un serveur en cours garde sa politique : les changements s'appliquent au démarrage suivant.
+- `--vault` rend les autres vaults invisibles : ni listés, ni résolus, et un vault ou un item hors d'atteinte répond exactement comme un introuvable (pas d'oracle d'existence).
+- Ordre des contrôles : arguments, visibilité (vault MCP, hors corbeille), scope, approbation, action. L'approbateur n'est jamais appelé pour une requête que la politique refuse.
+- Les drapeaux `--mcp-access` et `--travel-safe` se fixent à la création du vault (`onepass vault create`) et ne se modifient pas au jalon 7. Pour exposer un vault existant, créez un vault MCP et déplacez-y les items.
+- Un échec d'intégrité du noyau met le vault en quarantaine pour la session : réponse générique (`stored data failed verification`), journalisée, et les requêtes suivantes sur ce vault restent refusées.
+
+### Exécution masquée
+
+`run_with_secrets` lance `argv` directement (pas de shell implicite), sans entrée standard, avec l'environnement du serveur moins les variables `ONEPASS_*`, délai de 60 s par défaut (600 s au plus). Stdout et stderr sont tronqués à 64 KiB et chaque valeur secrète de 4 caractères ou plus est remplacée par `<concealed:NOM>`, ainsi que ses formes base64 (standard et URL) et hexadécimale.
+
+**Le masquage réduit un risque, il ne garantit rien** : une commande approuvée peut transformer ou exfiltrer un secret (`rev`, envoi réseau). La vraie barrière est l'approbation, qui affiche la commande exacte. Toute donnée du coffre revient sous la clé `untrusted_vault_data`, avec la mention que c'est une donnée et non une instruction.
+
+### Déverrouillage et inscription dans un client
+
+Le protocole occupe stdin et stdout : le mot de passe est lu sur `/dev/tty`. Un client MCP de bureau qui lance le serveur sans terminal ne peut donc pas le déverrouiller en mode développement ; l'app Mac (jalon 2) lèvera cette limite. OnePass n'inscrit jamais le serveur dans la configuration d'un client. Exemple à adapter vous-même (non appliqué, le chemin et le dossier de données sont à remplacer) :
+
+```json
+{
+  "mcpServers": {
+    "onepass": {
+      "command": "/chemin/vers/onepass",
+      "args": ["--data-dir", "/chemin/vers/dossier", "mcp", "--vault", "Agents"]
+    }
+  }
+}
+```
+
+### Journal d'audit
+
+`<data-dir>/audit.log` (JSON lignes, `0600`) et sa tête signée `audit.log.head` sont partagés par le serveur MCP et l'agent SSH. Pas de titre ni de valeur, seulement des ids opaques. `onepass mcp audit` vérifie toujours la chaîne et la tête (`--verify` n'affiche que le verdict) puis traduit les ids après déverrouillage. Une entrée modifiée, insérée, supprimée ou une troncature sont détectées. Limites : une seule dernière ligne non scellée est tolérée (reste d'un plantage), donc un attaquant qui peut écrire le fichier peut ajouter une entrée finale forgée qui ressemble à ce reste ; et remettre un ancien journal avec son ancienne tête authentique n'est pas détecté.
+
+## Agent SSH
+
+```sh
+onepass ssh-key generate --title "Github" --type ed25519 --host github.com --agent
+onepass ssh-key import ~/cle_de_test --title "Serveur" --agent --confirm-each-use
+onepass ssh-key public Github
+onepass ssh-key bookmark add Github "*.example.com"
+onepass ssh-key config --out ~/.onepass-ssh
+onepass ssh-agent [--socket <chemin>] [--allow-forwarded] [--known-hosts <fichier>]
+```
+
+- `ssh-agent` tourne au premier plan, demande le mot de passe sur `/dev/tty`, parle le protocole ssh-agent sur un socket Unix (défaut `<data-dir>/ssh-agent.sock`, dossier `0700`, socket `0600`) et affiche `SSH_AUTH_SOCK=<chemin>` sur stderr. `SIGINT` et `SIGTERM` retirent le socket. Pour l'utiliser : `export SSH_AUTH_SOCK=<chemin>`.
+- Il sert les items SSH Key dont `use_in_agent` vaut oui, hors corbeille et hors archives, relus à chaque demande. Types : `ed25519`, `ecdsa-p256`, `ecdsa-p384`, `ecdsa-p521`, `rsa-3072`, `rsa-4096` (génération). Signatures RSA : `rsa-sha2-256` et `rsa-sha2-512` seulement, SHA-1 (`ssh-rsa`) refusé. RSA 2048 est refusé à la génération (3072 minimum) mais accepté à l'import.
+- Import : OpenSSH (non chiffré, ou chiffré par AES en CTR, CBC ou GCM avec bcrypt-pbkdf) et PEM PKCS#8, PKCS#1 ou SEC1 non chiffrés. La phrase de passe est demandée sur le terminal et jamais conservée ; la clé est stockée non chiffrée dans le vault (le vault la chiffre). Non pris en charge : clés OpenSSH chiffrées en `chacha20-poly1305@openssh.com`, PEM chiffré.
+- Chaque signature passe par une approbation affichant le titre et l'empreinte SHA-256 de la clé, le processus demandeur (pid et exécutable), la destination si la connexion est liée, le transfert oui/non, et l'espace de noms pour une signature `SSHSIG` (`git`, `file`...). `s` mémorise l'accord pour le couple (clé, exécutable) pendant 1 h au plus, ou jusqu'à `LOCK` ou l'arrêt ; `--confirm-each-use` l'interdit pour la clé. Un pair d'un autre utilisateur est refusé.
+- Le transfert d'agent est refusé par défaut ; `--allow-forwarded` l'autorise avec une approbation à chaque signature.
+- L'extension `session-bind@openssh.com` est vérifiée (signature de l'hôte sur l'identifiant de session) ; une signature fausse ferme la connexion. `ADD_IDENTITY`, `REMOVE_IDENTITY` et variantes répondent `FAILURE` : les clés viennent du coffre. `LOCK`/`UNLOCK` verrouillent l'agent. Messages de 256 KiB au plus ; toute erreur de décodage ferme la connexion.
+- Marque-pages : le champ `hosts` de l'item (un nom d'hôte ou un motif `Host` d'OpenSSH). `ssh-key config --out <dossier>` écrit `<dossier>/config` (`Host`, `IdentityFile`, `IdentitiesOnly yes`, `IdentityAgent`) et les clés publiques, puis affiche la ligne `Include` à ajouter. **La commande ne touche jamais à `~/.ssh/config`** : vous ajoutez la ligne vous-même. Dans l'approbation, un hôte lié qui correspond à un marque-page (via `known_hosts`, y compris hachés, lu en lecture seule) est signalé, et une destination hors marque-pages donne un avertissement. Les marque-pages guident, ils ne bloquent pas.
+
+## Travel Mode
+
+Les vaults sans `travel_safe` quittent l'appareil et reviennent vérifiés. Le dépôt amont est un fichier SQLite explicite qui tient lieu de CloudKit (jalon 2).
+
+```sh
+onepass vault create "Voyage" --travel-safe
+onepass travel push   --upstream amont.db   # copie tous les enregistrements, ne supprime rien en amont
+onepass travel on     --upstream amont.db   # exige que l'amont contienne octet pour octet les vaults à cacher
+onepass travel status                       # mode actif ou non, nombre de vaults cachés
+onepass travel off    --upstream amont.db [--accept-unpinned]
+```
+
+- `on` vérifie chaque vault, contrôle l'amont avant toute suppression (la seule copie n'est jamais effacée), efface les enregistrements locaux, écrit l'état scellé dans `<data-dir>/travel.bin` (`0600`, taille fixe de 64 KiB) puis compacte la base (`VACUUM`) pour que les lignes effacées ne restent pas dans les pages libres. Si la compaction échoue, `on` indique de le relancer pour la rejouer.
+- `off` recopie les vaults depuis l'amont et les charge avec la vérification normale : un amont qui rejoue un ancien manifeste ou retire un item est refusé (code 3), l'état local est restauré et `travel.bin` reste valable. `travel.bin` n'est supprimé qu'une fois les épinglages réécrits dans `device.bin`.
+- Limites : la présence de `travel.bin` révèle que le mode est actif (sa taille fixe cache le nombre de vaults). Supprimer `travel.bin` fait perdre la protection anti-rejeu à la sortie : `off` refuse alors, sauf `--accept-unpinned`, qui accepte les vaults comme jamais vus (un ancien manifeste authentique passerait). Un vault local périmé planté à la place d'un vault caché fait refuser `off` : il faut le retirer. Les instantanés du système de fichiers et Time Machine peuvent garder d'anciennes copies de la base : hors de portée d'un logiciel.
+
+## Limites connues du jalon 7
+
+- Pas de Touch ID ni de déverrouillage sans terminal : l'approbation et le mot de passe passent par `/dev/tty` (jalon 2 pour l'app Mac).
+- Pas de clés OpenSSH `chacha20-poly1305@openssh.com`, pas de PEM chiffré, pas de certificats SSH, pas de clés FIDO (`sk-*`), pas de `restrict-destination`.
+- MCP : outils seulement (ni ressources ni prompts), stdio seulement.
+- La branche Linux de lecture du pair (`SO_PEERCRED`) n'est pas compilée dans les tests locaux (macOS).
+- Les drapeaux d'un vault existant ne se modifient pas.
+- Le Travel Mode utilise un fichier amont de développement, pas la synchro.
+- Le masquage des sorties est une réduction de risque, pas une garantie.

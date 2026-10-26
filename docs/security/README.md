@@ -313,3 +313,47 @@ Le serveur apprend donc ce que décrit la section 1 (nombre d'items par vault, v
 - iOS peut afficher sa feuille "Enregistrer le mot de passe ?" (vers les mots de passe du système) après l'enregistrement d'un Login. Accepter ferait sortir la valeur du chiffrement de OnePass. Les champs de l'éditeur ne sont plus marqués `.password` ni `.oneTimeCode`, et les invites du mot de passe maître non plus (iOS ne doit jamais proposer d'enregistrer le mot de passe maître), mais l'heuristique du système se déclenche encore sur un champ sécurisé. Limite du jalon 2, corrigée au jalon 3 quand OnePass devient le fournisseur de remplissage automatique.
 - Mode partagé : des vaults masqués ne sont qu'une règle d'affichage locale, pas une frontière cryptographique (le keyset ouvre tous les vaults).
 - Aucun audit externe des apps.
+
+## 11. Jalon 7 : MCP, agent SSH, Travel Mode
+
+Ajouts du jalon 7 (`onepass-guard`, `onepass-mcp`, `onepass-ssh-agent`, `core/onepass-core/src/repo/travel.rs`). Ils ne changent aucun format du noyau (un type de blob, `TravelState = 10`, est ajouté en fin d'énumération). Le détail d'usage est dans `core/README.md`.
+
+### 11.1 Modèle de menace MCP
+
+L'adversaire est un agent IA, ou un contenu qu'il lit (injection de prompt), qui tente d'obtenir un secret, d'étendre ses droits ou de faire approuver une action trompeuse. Un programme local qui écrit dans le dossier de données est aussi considéré.
+
+- **Contrôles, dans cet ordre** : arguments, visibilité (seuls les vaults `mcp_access` existent, hors corbeille), scope, approbation, action. Un accès hors d'atteinte répond comme un introuvable, et l'approbateur n'est pas appelé pour une requête refusée par la politique.
+- **Politique signée** par la clé du compte (domaine `local:mcp-policy`) : un fichier altéré ou d'un autre compte empêche le démarrage. Les options `--vault` et `--scopes` ne font que restreindre. Par défaut : `metadata` et `use`.
+- **Données du coffre** renvoyées sous `untrusted_vault_data` avec une mention explicite ; tout texte affiché sur le terminal est nettoyé (caractères de contrôle remplacés par `?`, 200 caractères au plus), donc un titre ou un nom de client piégé ne réécrit pas l'invite.
+- **Masquage** : valeurs exactes de 4 caractères ou plus, plus formes base64 et hexadécimale. C'est une réduction de risque : une commande approuvée peut transformer un secret. La barrière est l'approbation, qui montre la commande exacte.
+- **Intégrité** : un échec de vérification met le vault en quarantaine pour la session, avec une erreur générique.
+- **Audit** : chaîne de hachages SHA-256, tête `audit.log.head` signée (domaine `local:audit-head`), pas de titre ni de valeur. Modification, insertion, suppression et troncature sont détectées. Limites : une dernière ligne non scellée est tolérée (reste d'un plantage), ce qui permet à qui écrit le fichier d'ajouter une entrée finale forgée ; un ancien journal remis avec sa tête authentique n'est pas détecté.
+- **Flags de vault** (`mcp_access`, `travel_safe`) fixés à la création : le meta de vault n'est pas versionné, le rendre modifiable permettrait à un stockage hostile de rejouer un ancien meta.
+- **Déverrouillage** : mot de passe sur `/dev/tty` ; en mode développement, la Secret Key reste en clair dans `device.bin` (voir `core/README.md`).
+
+### 11.2 Modèle de menace agent SSH
+
+- La clé privée est relue dans le coffre à chaque signature, utilisée, puis effacée (`zeroize`) ; elle ne quitte jamais le processus.
+- Une approbation à chaque signature, avec le processus demandeur identifié par le noyau du système (`LOCAL_PEERPID` sur macOS, `SO_PEERCRED` sur Linux). La mémorisation est bornée à (clé, exécutable) et 1 h, et annulée par `LOCK`. Un pair d'un autre uid est refusé.
+- Transfert d'agent refusé par défaut ; `session-bind@openssh.com` est vérifié et une fausse signature d'hôte ferme la connexion. RSA en SHA-1 refusé, RSA 3072 minimum à la génération.
+- Messages bornés à 256 KiB, décodage strict, erreur de décodage = connexion fermée. La crate `rsa` (RUSTSEC-2023-0071) n'est pas utilisée : `aws-lc-rs` signe et génère.
+- Limites : l'approbation affiche l'exécutable déclaré par le système, pas ce qu'il va faire de la signature ; le nom d'hôte n'est connu qu'indirectement par `known_hosts`, donc les marque-pages guident sans bloquer.
+
+### 11.3 Construction du TravelState
+
+- Entrée : chaque vault sans `travel_safe` est chargé par le chemin vérifié, l'amont doit contenir chacun de ses enregistrements octet pour octet (clé, meta, manifeste, items) avant toute suppression. Puis les enregistrements locaux sont effacés et le `last_seen` du vault passe dans le `TravelState`.
+- `TravelState` : clé symétrique fraîche, enveloppée pour la paire KEM hybride du compte (contexte `travel:` + id du compte), état chiffré en AES-256-GCM-SIV (`BlobKind::TravelState`), le tout signé par la clé du compte (domaine `local:travel-state`), rempli à 65536 octets fixes (`travel.bin`). Ni lisible ni falsifiable sans le compte déverrouillé.
+- Sortie : les enregistrements sont recopiés depuis l'amont, qui n'est pas de confiance, le `last_seen` est remis dans l'état d'appareil, puis `vaults()` et `items()` s'exécutent comme en usage normal. Un manifeste de séquence inférieure, une fourche ou un item retiré sont refusés ; en cas d'échec, les copies sont retirées et l'état d'appareil restauré à l'identique.
+- Le mode ne touche ni au compte ni aux vaults `travel_safe`.
+
+### 11.4 Limites du Travel Mode
+
+- La présence de `travel.bin` révèle que le mode est actif ; sa taille fixe cache le nombre de vaults.
+- Supprimer `travel.bin` fait perdre les `last_seen` mis de côté : `off` exige alors `--accept-unpinned`, et un ancien manifeste authentique serait accepté (la signature du compte reste exigée).
+- Un vault local périmé planté à la place d'un vault caché fait refuser `off` ; il doit être retiré.
+- L'espace libre de la base est compacté (`VACUUM`), mais les instantanés du système de fichiers et Time Machine peuvent garder d'anciennes copies : hors de portée.
+- L'amont est un fichier SQLite de développement ; la synchro réelle vient au jalon 2.
+
+### 11.5 Fuzzing
+
+Deux cibles s'ajoutent : `mcp_line` (une ligne JSON-RPC arbitraire sur un hôte factice) et `ssh_agent_frame` (messages de l'agent et blobs de signature arbitraires).

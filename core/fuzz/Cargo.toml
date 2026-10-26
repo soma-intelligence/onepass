@@ -12,6 +12,9 @@ libfuzzer-sys = "0.4"
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 serde_bytes = "0.11"
 onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }
+onepass-mcp = { path = "../onepass-mcp" }
+onepass-ssh-agent = { path = "../onepass-ssh-agent" }
+serde_json = "1"
 
 [workspace]
 
@@ -123,6 +126,20 @@ bench = false
 [[bin]]
 name = "site_directory"
 path = "fuzz_targets/site_directory.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mcp_line"
+path = "fuzz_targets/mcp_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ssh_agent_frame"
+path = "fuzz_targets/ssh_agent_frame.rs"
 test = false
 doc = false
 bench = false
