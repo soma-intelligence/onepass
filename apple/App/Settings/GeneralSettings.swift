@@ -1,9 +1,10 @@
 import SwiftUI
 import VaultKit
 
-/// Général: automatic lock delay and site icons.
+/// Général: automatic lock delay, site icons, and the import of other password managers' exports.
 struct GeneralSettings: View {
     @Environment(AppModel.self) private var model
+    @State private var importing = false
 
     private var settings: VaultSettings { model.settings }
     private var shared: Bool { settings.deviceMode == .shared }
@@ -44,6 +45,20 @@ struct GeneralSettings: View {
             } footer: {
                 Text("Récupérées directement sur le site de l'élément, sans cookies et sans service tiers. Désactivées, aucune requête n'est envoyée.")
             }
+            Section {
+                Button("Importer depuis un autre gestionnaire…", systemImage: "square.and.arrow.down") {
+                    importing = true
+                }
+                .accessibilityIdentifier("settings.import")
+            } header: {
+                Text("Import")
+            } footer: {
+                Text("Mots de passe d'Apple, 1Password, Bitwarden, NordPass, Dashlane, LastPass, Proton Pass, Keeper, Enpass, RoboForm, KeePass et les navigateurs.")
+            }
+        }
+        // Over the settings themselves (the Mac `Settings` window has no browse sheet).
+        .sheet(isPresented: $importing) {
+            ImportSheet()
         }
         .formStyle(.grouped)
         .navigationTitle("Général")

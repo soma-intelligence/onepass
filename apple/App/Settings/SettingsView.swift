@@ -154,36 +154,62 @@ struct SettingsView: View {
 #endif
 
 #if os(macOS)
-/// The Mac `Settings` window (⌘,): one tab per page. Nothing is shown while the vault is locked.
+/// The Mac `Settings` window (⌘,): pages in a sidebar of colored tiles, the page on the right.
+/// Nothing is shown while the vault is locked.
 struct MacSettingsView: View {
     @Environment(AppModel.self) private var model
+    @State private var page: SettingsPage? = .general
 
     var body: some View {
         Group {
             if model.session.state == .unlocked {
-                TabView {
-                    ForEach(SettingsPage.allCases) { page in
-                        Tab {
-                            // A stack per tab, so pushed pages ("Coffres visibles") work.
-                            NavigationStack { page.content }
-                        } label: {
-                            Label {
-                                Text(page.title)
-                            } icon: {
-                                Image(systemName: page.symbol)
-                            }
+                NavigationSplitView {
+                    List(selection: $page) {
+                        Section {
+                            ForEach([SettingsPage.general, .security, .autofill, .sync], id: \.self) { row($0) }
                         }
-                        .accessibilityIdentifier("settings.\(page.rawValue)")
+                        Section {
+                            row(.vaults)
+                            row(.about)
+                        }
                     }
+                    .listStyle(.sidebar)
+                    .navigationSplitViewColumnWidth(min: 250, ideal: 260, max: 300)
+                    .toolbar(removing: .sidebarToggle)
+                } detail: {
+                    // A stack per page, so pushed pages ("Coffres visibles") work.
+                    NavigationStack {
+                        (page ?? .general).content
+                            .scrollContentBackground(.hidden)
+                    }
+                    .id(page)
                 }
+                .navigationTitle(page.map { Text($0.title) } ?? Text("Réglages"))
             } else {
                 ContentUnavailableView(
                     "Réglages verrouillés", systemImage: "lock",
                     description: Text("Déverrouille OnePass pour ouvrir les réglages."))
             }
         }
-        .frame(width: 560, height: 520)
+        .frame(minWidth: 760, idealWidth: 820, minHeight: 540, idealHeight: 600)
+        .containerBackground(.thinMaterial, for: .window)
         .simultaneousGesture(TapGesture().onEnded { model.session.noteActivity() })
+    }
+
+    /// A sidebar row: the page's colored tile and its name.
+    private func row(_ page: SettingsPage) -> some View {
+        Label {
+            Text(page.title)
+        } icon: {
+            Image(systemName: page.symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(page.tint.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .padding(.vertical, 3)
+        .tag(page)
+        .accessibilityIdentifier("settings.\(page.rawValue)")
     }
 }
 #endif
