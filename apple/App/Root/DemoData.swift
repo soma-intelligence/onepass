@@ -1,6 +1,9 @@
 #if DEBUG
+import CryptoKit
 import Foundation
+import LocalAuthentication
 import VaultKit
+import os
 #if os(iOS)
 import UIKit
 #endif
@@ -19,6 +22,10 @@ import UIKit
 /// - `-OnePassDemoLandscape YES` (iPad): asks the window scene for landscape (refused by the
 ///   system in the iPadOS 26 windowing modes; kept for full-screen setups).
 /// - `-OnePassDemoSidebar YES` (iPad): shows the sidebar once the split view is on screen.
+/// - Biometric unlock is enrolled with a simulated Secure Enclave (`DemoEnclaveKeyring`, memory only):
+///   the lock screen shows its button even in an unsigned build. `-OnePassDemoBiometrics NO` leaves
+///   it off; `-OnePassDemoNoAutoBiometrics YES` skips the automatic attempt of the lock screen
+///   (captures); `-OnePassDemoBiometricOffer YES` stays unlocked and shows the first-unlock offer.
 /// - `-OnePassSnapshot <folder>` (Mac): implies the demo data, renders the window into PNGs, quits.
 enum DemoData {
     static let password = "demo-onepass-2026"
@@ -74,8 +81,9 @@ enum DemoData {
         try? manager.createDirectory(at: folder, withIntermediateDirectories: true)
 
         let defaults = Self.defaults
-        // Fictional sites: no network request for their icons.
-        defaults.set(false, forKey: "onepass.siteIconsEnabled")
+        // Site icons on, as in a fresh install: the items with a real public site (Forge Atlas on
+        // github.com) show its icon, the fictional `exemple.fr` ones keep their letter tile.
+        defaults.set(true, forKey: "onepass.siteIconsEnabled")
         // `-OnePassDemoAccountMissing YES`: the settings name an account the empty store lacks, which
         // is how "Le compte a disparu du stockage" shows (no seeding then).
         if UserDefaults.standard.bool(forKey: "OnePassDemoAccountMissing") {
@@ -87,14 +95,72 @@ enum DemoData {
         return VaultEnvironment(
             databaseURL: folder.appendingPathComponent("vault.sqlite"),
             keychain: keychain,
-            biometrics: BiometricUnlock(keyring: SecureEnclaveKeyring(accessGroup: nil), keychain: keychain, clock: clock),
+            biometrics: BiometricUnlock(keyring: DemoEnclaveKeyring(), keychain: keychain, clock: clock),
             settings: VaultSettings(defaults: defaults),
             sync: NoSync(),
             clock: clock,
             pasteboard: SystemPasteboard(),
+            presence: DemoPresenceChecker(),
             // Never the system identity store: the demo's fictional Logins stay out of QuickType.
             // Off at launch, so the AutoFill tip card shows; "Activer" turns it on in memory.
             identityStore: InMemoryIdentityStore(enabled: false))
+    }
+}
+
+/// Demo stand-in for the Secure Enclave: an AES key per tag, in memory only, gone at quit. Opening
+/// asks the real Touch ID or Face ID when the device has one (the system sheet shows), otherwise
+/// it succeeds after a short pause (Simulator, Mac without Touch ID). Never used outside the demo.
+final class DemoEnclaveKeyring: EnclaveKeyring {
+    private let keys = OSAllocatedUnfairLock<[String: SymmetricKey]>(initialState: [:])
+
+    var isAvailable: Bool { true }
+
+    func createKey(tag: String, allowWatch: Bool) throws {
+        keys.withLock { $0[tag] = SymmetricKey(size: .bits256) }
+    }
+
+    func encrypt(_ data: Data, tag: String) throws -> Data {
+        guard let key = keys.withLock({ $0[tag] }) else { throw EnclaveError.keyInvalidated }
+        guard let sealed = try AES.GCM.seal(data, using: key).combined else { throw EnclaveError.failed(code: -1) }
+        return sealed
+    }
+
+    func decrypt(_ data: Data, tag: String, prompt: String) async throws -> Data {
+        guard let key = keys.withLock({ $0[tag] }) else { throw EnclaveError.keyInvalidated }
+        try await DemoBiometry.confirm(prompt: prompt)
+        return try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key)
+    }
+
+    func deleteKey(tag: String) throws {
+        _ = keys.withLock { $0.removeValue(forKey: tag) }
+    }
+}
+
+/// Reprompt of the demo items: the same real-or-simulated biometric check.
+struct DemoPresenceChecker: PresenceChecker {
+    func confirm(prompt: String) async -> Bool {
+        (try? await DemoBiometry.confirm(prompt: prompt)) != nil
+    }
+}
+
+enum DemoBiometry {
+    /// The real biometric sheet when there is one; a short pause standing for it otherwise.
+    static func confirm(prompt: String) async throws {
+        let context = LAContext()
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) else {
+            try await Task.sleep(for: .milliseconds(600))
+            return
+        }
+        do {
+            _ = try await context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: prompt)
+        } catch let error as LAError {
+            switch error.code {
+            case .userCancel, .appCancel, .systemCancel: throw EnclaveError.cancelled
+            case .userFallback: throw EnclaveError.userFallback
+            case .biometryLockout: throw EnclaveError.biometryLockout
+            default: throw EnclaveError.failed(code: Int32(error.errorCode))
+            }
+        }
     }
 }
 
@@ -133,6 +199,15 @@ extension AppModel {
                     selectedItem = ItemRef(vaultID: summary.vaultId, itemID: summary.id)
                     editing = defaults.bool(forKey: "OnePassDebugEdit")
                 }
+                // Simulated Secure Enclave (memory only): the lock screen offers biometric unlock.
+                if defaults.bool(forKey: "OnePassDemoBiometricOffer") {
+                    offerBiometrics(password: DemoData.password)
+                } else if defaults.object(forKey: "OnePassDemoBiometrics") == nil
+                    || defaults.bool(forKey: "OnePassDemoBiometrics")
+                {
+                    try? await session.enrollBiometrics(password: DemoData.password)
+                    DemoTrace.log("demo: biometrics %@", session.canUseBiometrics ? "on" : "off")
+                }
                 if defaults.bool(forKey: "OnePassDemoLocked") { lock() }
                 // `-OnePassDemoAccountChanged YES`: the "Le compte iCloud a changé" banner.
                 if defaults.bool(forKey: "OnePassDemoAccountChanged") { debugSetSyncStatus(.accountChanged) }
@@ -160,7 +235,8 @@ extension AppModel {
     }
 }
 
-/// Writes the fictional items. Every value is made up (`exemple.fr`, Camille Durand, Projet Atlas).
+/// Writes the fictional items. Every value is made up (`exemple.fr`, Camille Durand, Projet Atlas);
+/// only a site URL points at a real public site where one is natural (the code forge on GitHub).
 @MainActor
 private struct DemoSeeder {
     let session: VaultSession
@@ -179,8 +255,17 @@ private struct DemoSeeder {
             "username": .text(value: "camille.durand@exemple.fr"),
             "password": .password(value: "tj7N-qe4L-wPz9-Kc2m"),
             "totp": .otp(value: "JBSWY3DPEHPK3PXP"),
-        ], urls: ["https://forge.exemple.fr"], tags: ["Travail"], favorite: true,
+        ], urls: ["https://github.com"], tags: ["Travail"], favorite: true,
             notes: "Compte **principal** du projet.")
+        // A fictional Google account, and a site that signs in with it ("Se connecte avec Google").
+        let google = try await add(.login, "Compte Google", personal, [
+            "username": .text(value: "camille.durand.exemple@gmail.com"),
+            "password": .password(value: "Colline-Ardoise-Pluie-73"),
+        ], urls: ["https://accounts.google.com"])
+        try await add(.login, "Agenda Exemple", personal, [
+            "username": .text(value: "camille.durand.exemple@gmail.com"),
+        ], urls: ["https://agenda.exemple.fr"],
+            loginMethods: [.provider(provider: "google", accountItemId: google.id, relayEmail: nil)])
         try await add(.password, "Coffre du bureau Atlas", atlas, [
             "password": .password(value: "Orage-Comete-Tapis-58"),
             "context": .text(value: "Armoire forte, 2e étage"),
@@ -304,12 +389,15 @@ private struct DemoSeeder {
             "model": .text(value: "Citadine"),
             "year": .number(value: 2022),
         ], tags: ["Famille"])
+        // Its place is also the item's own (`locations`): it shows in "À proximité" near the building.
+        let building = FfiLocation(
+            label: "Immeuble", address: "12 rue de l'Exemple, 75004 Paris", lat: 48.85661, lon: 2.35222,
+            radiusM: 100, suggestNearby: true)
         try await add(.accessCode, "Digicode immeuble", family, [
             "code": .concealed(value: "4821B"),
-            "place": .location(value: FfiLocation(
-                label: "Immeuble", address: "12 rue de l'Exemple, Paris", lat: 48.85661, lon: 2.35222,
-                radiusM: 100, suggestNearby: false)),
-        ])
+            // Required by the core's Access Code template: without it the whole seeding fails.
+            "place": .location(value: building),
+        ], locations: [building])
 
         // Others.
         try await add(.secureNote, "Codes du portail", family, [
@@ -345,7 +433,8 @@ private struct DemoSeeder {
     @discardableResult
     private func add(
         _ type: FfiItemType, _ title: String, _ vaultID: String, _ values: [String: FfiFieldValue],
-        urls: [String] = [], tags: [String] = [], favorite: Bool = false, notes: String = ""
+        urls: [String] = [], tags: [String] = [], favorite: Bool = false, notes: String = "",
+        locations: [FfiLocation] = [], loginMethods: [FfiLoginMethod] = []
     ) async throws -> FfiItem {
         var item = try session.newItem(type: type, vaultID: vaultID)
         item.title = title
@@ -354,6 +443,8 @@ private struct DemoSeeder {
         item.tags = tags
         item.favorite = favorite
         item.notes = notes
+        item.locations = locations
+        item.loginMethods = loginMethods
         return try await session.save(ItemDraft(item: item).preparedForSave())
     }
 }

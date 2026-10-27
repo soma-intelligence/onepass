@@ -20,6 +20,8 @@ struct OnePassApp: App {
         Window("OnePass", id: "main") {
             root
                 .frame(minWidth: 820, minHeight: 600)
+                // The desktop shows through, blurred: columns and cards stay see-through.
+                .containerBackground(.thinMaterial, for: .window)
         }
         .defaultSize(width: 1280, height: 820)
         .windowToolbarStyle(.unified)
@@ -29,6 +31,11 @@ struct OnePassApp: App {
         .commands {
             BrowseCommands(model: model)
         }
+        // "Ouvrir dans une nouvelle fenêtre" of the item menu: one read-only detail per item.
+        WindowGroup(id: ItemWindow.id, for: String.self) { $key in
+            ItemWindowRoot(key: key).environment(model).tint(Theme.accent)
+        }
+        .defaultSize(width: 720, height: 780)
         Settings {
             MacSettingsView()
                 .environment(model)

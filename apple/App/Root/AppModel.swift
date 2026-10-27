@@ -1,5 +1,6 @@
 import Foundation
 import GlanceKit
+import LocalAuthentication
 import Observation
 import Security
 import SwiftUI
@@ -38,11 +39,22 @@ final class AppModel {
     var onboardingInProgress = false
 
     // Navigation (filled by the browse screens).
-    var selection: ItemFilter = .all
+    var selection: ItemFilter = .all {
+        // Another filter ends a Watchtower list ("Voir les éléments").
+        didSet { if selection != oldValue { watchtowerFilter = nil } }
+    }
+    /// "Voir les éléments" of a Watchtower card: the list shows only these items (within
+    /// `selection`, set to `.all`). Cleared by any other filter, a reveal or a lock.
+    var watchtowerFilter: WatchtowerListFilter?
+    /// Watchtower report, computed off the main actor and kept until the data changes.
+    let watchtower = WatchtowerModel()
     var selectedItem: ItemRef?
     var editing = false
     /// A new item's editor, shown in place of the detail until saved or cancelled.
     var newItemDraft: ItemDraft?
+    /// What the main window shows right of the sidebar: the item list and detail, or a full page
+    /// (Watchtower, Développeur). Choosing an item filter in the sidebar goes back to `.items`.
+    var page: BrowsePage = .items
     /// Reported by the editor on screen: its draft has unsaved changes.
     var editorDirty = false
     /// An action that would drop a dirty draft, waiting for "Abandonner les modifications ?".
@@ -54,15 +66,20 @@ final class AppModel {
     private(set) var settingsRevision = 0
     /// ⌘N: the type picker of a new item.
     var showNewItemPicker = false
+    /// ⌘⇧I (Fichier > Importer…): the import sheet.
+    var showImport = false
     // Menu commands handled by the views on screen (bumped, observed with `onChange`).
     var editRequest = 0
     var saveRequest = 0
-    var searchFocusRequest = 0
+    var searchFocusRequest = 0 {
+        // ⌘F searches the items: a full page gives way to the list.
+        didSet { page = .items }
+    }
     /// Bumped after each remote change set is applied: an open item detail reloads (or warns its
     /// editor) on it.
     private(set) var remoteRevision = 0
     /// Short confirmation shown at the bottom of the browse screens ("Mis à la corbeille").
-    private(set) var toast: String?
+    private(set) var toast: Toast?
     /// OnePass is the system AutoFill provider; nil until the first read. Read again on every return
     /// to the foreground and after an activation request.
     private(set) var autofillEnabled: Bool?
@@ -105,6 +122,8 @@ final class AppModel {
     @ObservationIgnored private var started = false
     /// One automatic biometric attempt per app activation, whatever the number of windows.
     @ObservationIgnored private var autoBiometricsPending = true
+    /// "Utiliser Touch ID pour déverrouiller ?" after a password unlock (once per account and device).
+    var biometricOffer: BiometricOffer?
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "app")
 
@@ -242,8 +261,8 @@ final class AppModel {
     }
 
     /// Shown on "Données refusées" when the store is split between the two folders.
-    static let storeSplitMessage =
-        "Le déplacement du stockage vers le dossier partagé avec l'extension AutoFill a échoué et n'a pas pu être annulé. Aucune donnée n'est ouverte pour éviter toute perte. Quitte puis relance OnePass : le déplacement reprend au lancement suivant."
+    static var storeSplitMessage: String { String(localized:
+        "Le déplacement du stockage vers le dossier partagé avec l'extension AutoFill a échoué et n'a pas pu être annulé. Aucune donnée n'est ouverte pour éviter toute perte. Quitte puis relance OnePass : le déplacement reprend au lancement suivant.") }
 
     /// Starts listening to the sync layer and runs a first round. Called once by the root view.
     func start() {
@@ -256,6 +275,12 @@ final class AppModel {
         } else {
             seedAccountIfRequested()
             openDebugItemIfRequested()
+        }
+        // Captures (`-OnePassDemoPage watchtower|developer`): opens that page at launch.
+        switch UserDefaults.standard.string(forKey: "OnePassDemoPage") {
+        case "watchtower": page = .watchtower
+        case "developer": page = .developer
+        default: break
         }
         #endif
         #if os(iOS)
@@ -366,7 +391,82 @@ final class AppModel {
     /// biometric unlock automatically.
     func takeAutomaticBiometricAttempt() -> Bool {
         defer { autoBiometricsPending = false }
+        #if DEBUG
+        // Captures of the demo lock screen: no system biometric sheet over it.
+        if UserDefaults.standard.bool(forKey: "OnePassDemoNoAutoBiometrics") { return false }
+        #endif
         return autoBiometricsPending
+    }
+
+    // MARK: - Biometric unlock
+
+    /// Turns biometric unlock on: checks the master password and wraps the key with the Secure
+    /// Enclave (`enrollBiometrics`), then asks for Touch ID, Face ID or the Watch once, so the
+    /// user knows it works. A refused or cancelled check turns it back off.
+    func enableBiometrics(password: String) async throws {
+        try await session.enrollBiometrics(password: password)
+        guard await confirmBiometry() else {
+            session.disableBiometrics()
+            settingsChanged()
+            throw VaultError.other(String(localized: "\(OnboardingModel.biometryName) n'a pas été confirmé : rien n'a été activé."))
+        }
+        settingsChanged()
+    }
+
+    /// One biometric check (no key involved). The demo answers like its simulated Secure Enclave.
+    private func confirmBiometry() async -> Bool {
+        let reason = String(localized: "Activer le déverrouillage avec \(OnboardingModel.biometryName)")
+        #if DEBUG
+        if DemoData.requested { return await DemoPresenceChecker().confirm(prompt: reason) }
+        #endif
+        let context = LAContext()
+        var policy = LAPolicy.deviceOwnerAuthenticationWithBiometrics
+        #if os(macOS)
+        if settings.allowWatchUnlock { policy = .deviceOwnerAuthenticationWithBiometricsOrCompanion }
+        #endif
+        guard context.canEvaluatePolicy(policy, error: nil) else { return false }
+        return (try? await context.evaluatePolicy(policy, localizedReason: reason)) ?? false
+    }
+
+    /// The first-unlock offer applies: personal device, biometrics possible here but not on, and
+    /// the offer never answered for this account on this device.
+    var biometricOfferDue: Bool {
+        guard let accountID = settings.accountID, settings.deviceMode.biometricsAllowed,
+            session.environment.biometrics.isAvailable, !settings.biometricsWanted, !session.canUseBiometrics
+        else { return false }
+        return !Self.browseDefaults.bool(forKey: Self.biometricOfferKey(accountID))
+    }
+
+    /// Right after a password unlock: keeps the typed password until the offer is answered (the
+    /// onboarding keeps it the same way until its biometric step).
+    func offerBiometrics(password: String) {
+        biometricOffer = BiometricOffer(password: password)
+    }
+
+    /// "Activer" or "Plus tard": either way the offer is not made again on this device.
+    func answerBiometricOffer(accept: Bool) {
+        guard let offer = biometricOffer else { return }
+        biometricOffer = nil
+        markBiometricOfferAnswered()
+        guard accept else { return }
+        Task {
+            do {
+                try await enableBiometrics(password: offer.password)
+                showToast(String(localized: "\(OnboardingModel.biometryName) activé"))
+            } catch {
+                showToast(VaultError(error).localizedMessage, kind: .error)
+            }
+        }
+    }
+
+    /// The onboarding's biometric step counts as the offer.
+    func markBiometricOfferAnswered() {
+        guard let accountID = settings.accountID else { return }
+        Self.browseDefaults.set(true, forKey: Self.biometricOfferKey(accountID))
+    }
+
+    private static func biometricOfferKey(_ accountID: String) -> String {
+        "onepass.biometricOfferAnswered.\(accountID)"
     }
 
     /// CloudKit build: whether an iCloud account is signed in. Unsigned build: true (local only).
@@ -543,7 +643,7 @@ final class AppModel {
         pendingRoute = nil
         // A copy request left waiting more than 2 minutes was abandoned: no code copied later.
         if case .copyTotp = route, Date.now.timeIntervalSince(pendingRouteAt) > 120 {
-            showToast(String(localized: "Demande de copie expirée"))
+            showToast(String(localized: "Demande de copie expirée"), kind: .error)
             return
         }
         run(route, freshUnlock: pendingRouteFresh)
@@ -556,7 +656,7 @@ final class AppModel {
             guard session.summaries.contains(where: { $0.id == itemID && $0.vaultId == vaultID }),
                 !session.hiddenVaultIDs.contains(vaultID)
             else {
-                showToast(String(localized: "Élément introuvable"))
+                showToast(String(localized: "Élément introuvable"), kind: .error)
                 return
             }
             perform(.reveal(ref))
@@ -565,6 +665,7 @@ final class AppModel {
             showGenerator = true
         case .link(.search):
             showSettings = false
+            page = .items
             browseReveal = .search
             searchFocusRequest &+= 1
         case .copyTotp(let ref):
@@ -606,7 +707,7 @@ final class AppModel {
         try? await Task.sleep(for: .seconds(1))
         if totpPasswordRequest == ref, !totpPromptShown {
             totpPasswordRequest = nil
-            showToast(String(localized: "Ouvre OnePass pour copier le code"))
+            showToast(String(localized: "Ouvre OnePass pour copier le code"), kind: .error)
         }
     }
 
@@ -615,7 +716,7 @@ final class AppModel {
         guard session.state == .unlocked else { return }
         let noCode = String(localized: "Cet élément n'a pas de code à usage unique")
         guard !session.hiddenVaultIDs.contains(ref.vaultID) else {
-            showToast(noCode)
+            showToast(noCode, kind: .error)
             return
         }
         let item: FfiItem
@@ -623,11 +724,11 @@ final class AppModel {
             item = try await session.loadItem(vaultID: ref.vaultID, itemID: ref.itemID)
         } catch {
             Self.log.error("one-time code: item not loaded")
-            showToast(noCode)
+            showToast(noCode, kind: .error)
             return
         }
         guard item.trashedAt == nil, let secret = firstOtpValue(of: item) else {
-            showToast(noCode)
+            showToast(noCode, kind: .error)
             return
         }
         let totp: FfiTotpCode
@@ -635,7 +736,7 @@ final class AppModel {
             totp = try totpNow(secretOrUri: secret, unixSeconds: UInt64(Date.now.timeIntervalSince1970))
         } catch {
             Self.log.error("one-time code: secret refused by the core")
-            showToast(noCode)
+            showToast(noCode, kind: .error)
             return
         }
         session.copy(totp.code, concealed: true)
@@ -646,11 +747,16 @@ final class AppModel {
     /// Also run when the session leaves `unlocked` on its own (auto-lock, background, failure).
     func resetNavigation() {
         selectedItem = nil
+        watchtowerFilter = nil
+        watchtower.clear()
         editing = false
         newItemDraft = nil
         editorDirty = false
         pendingDiscard = nil
         showNewItemPicker = false
+        showImport = false
+        // The offer holds the typed password: never kept past a lock.
+        biometricOffer = nil
         showSettings = false
         showGenerator = false
         browseReveal = nil
@@ -765,9 +871,34 @@ final class AppModel {
             if let summary, !selection.matches(summary) {
                 selection = summary.trashedAt != nil ? .trash : summary.archived ? .archive : .all
             }
+            page = .items
+            watchtowerFilter = nil
             browseReveal = .item(ref)
             selectedItem = ref
         }
+    }
+
+    /// The items of a sidebar filter, list and detail on screen (sidebar rows, Développeur's
+    /// "Voir mes clés SSH").
+    func showItems(_ filter: ItemFilter) {
+        selection = filter
+        watchtowerFilter = nil
+        page = .items
+    }
+
+    /// "Voir les éléments" of a Watchtower card: every item of the visible vaults that the check
+    /// flagged, in the full list.
+    func showWatchtowerItems(title: String, itemIDs: Set<String>) {
+        selection = .all
+        watchtowerFilter = WatchtowerListFilter(title: title, itemIDs: itemIDs)
+        page = .items
+        if let ref = selectedItem, !itemIDs.contains(ref.itemID) { perform(.select(nil)) }
+    }
+
+    /// The list's rows, narrowed to the Watchtower items when a card asked for them.
+    func applyWatchtowerFilter(_ items: [FfiItemSummary]) -> [FfiItemSummary] {
+        guard let filter = watchtowerFilter else { return items }
+        return items.filter { filter.itemIDs.contains($0.id) }
     }
 
     /// iPhone (tabs): the vault whose list is open in the visible tab, set by `PhoneTabsView`.
@@ -783,6 +914,7 @@ final class AppModel {
 
     private func startNewItem(_ type: FfiItemType) {
         guard let vaultID = vaultForNewItem else { return }
+        page = .items
         do {
             let item = try session.newItem(type: type, vaultID: vaultID)
             editing = false
@@ -820,16 +952,19 @@ final class AppModel {
                 if selectedItem == ref, !isEditing { selectedItem = nil }
                 showToast(String(localized: "« \(title) » mis à la corbeille"))
             } catch {
-                showToast(VaultError(error).localizedMessage)
+                showToast(VaultError(error).localizedMessage, kind: .error)
             }
         }
     }
 
-    func showToast(_ text: String) {
-        toast = text
+    /// Short notification at the bottom of the window: green check for a success, red for a
+    /// failure (shown longer, it has to be read), neutral for information.
+    func showToast(_ text: String, kind: ToastKind = .success) {
+        let shown = Toast(text: text, kind: kind)
+        toast = shown
         Task {
-            try? await Task.sleep(for: .seconds(2))
-            if toast == text { toast = nil }
+            try? await Task.sleep(for: .seconds(kind == .error ? 4 : 2))
+            if toast == shown { toast = nil }
         }
     }
 
@@ -922,3 +1057,20 @@ enum DebugReset {
     }
 }
 #endif
+
+/// The first-unlock biometric offer, with the password just typed (needed to wrap the key).
+struct BiometricOffer: Identifiable {
+    let id = UUID()
+    let password: String
+}
+
+/// The full pages of the main window besides the items (sidebar rows above the vaults).
+enum BrowsePage: Hashable {
+    case items, watchtower, developer
+}
+
+/// The items a Watchtower card shows in the list, under the card's title.
+struct WatchtowerListFilter: Equatable {
+    var title: String
+    var itemIDs: Set<String>
+}
