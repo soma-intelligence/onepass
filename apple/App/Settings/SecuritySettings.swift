@@ -27,7 +27,8 @@ struct SecuritySettings: View {
     private var session: VaultSession { model.session }
     private var settings: VaultSettings { model.settings }
     private var biometry: String { OnboardingModel.biometryName }
-    private var hardwareAvailable: Bool { session.environment.biometrics.isAvailable }
+    private var availability: BiometricAvailability { session.environment.biometrics.availability }
+    private var hardwareAvailable: Bool { availability == .available }
 
     var body: some View {
         // Read so the page redraws when a setting changes.
@@ -57,7 +58,7 @@ struct SecuritySettings: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .sheet(item: $prompt) { current in
-            PasswordPromptSheet(title: promptTitle(current)) { password in
+            PasswordPromptSheet(title: promptTitle(current), footer: promptFooter(current)) { password in
                 try await confirm(current, password: password)
             }
         }
@@ -81,9 +82,10 @@ struct SecuritySettings: View {
     @ViewBuilder private var unlockSection: some View {
         let personal = settings.deviceMode.biometricsAllowed
         Section {
-            if personal, hardwareAvailable {
-                Toggle(biometry, isOn: Binding(
-                    get: { session.canUseBiometrics },
+            if personal {
+                // Shown even when it cannot work here: disabled, the footer says why.
+                Toggle(isOn: Binding(
+                    get: { hardwareAvailable && session.canUseBiometrics },
                     set: { on in
                         errorMessage = nil
                         if on { prompt = .enableBiometrics } else {
@@ -91,8 +93,13 @@ struct SecuritySettings: View {
                             model.settingsChanged()
                         }
                     }
-                ))
+                )) {
+                    Label("Déverrouiller avec \(biometry)", systemImage: OnboardingModel.biometrySymbol)
+                }
+                .disabled(!hardwareAvailable)
                 .accessibilityIdentifier("settings.biometrics")
+            }
+            if personal, hardwareAvailable {
                 #if os(macOS)
                 Toggle("Apple Watch", isOn: Binding(
                     get: { settings.allowWatchUnlock },
@@ -123,8 +130,12 @@ struct SecuritySettings: View {
     @ViewBuilder private func unlockFooter(personal: Bool) -> some View {
         if !personal {
             Text("\(biometry) n'est pas proposé sur un appareil partagé : le mot de passe maître est demandé à chaque déverrouillage.")
-        } else if !hardwareAvailable {
+        } else if availability == .keychainRefused {
+            Text("Cet appareil a \(biometry), mais cette version de OnePass n'est pas signée : le trousseau refuse sa clé de la Secure Enclave (erreur -34018). Le mot de passe maître déverrouille OnePass. \(biometry) marche dans un build signé.")
+                .accessibilityIdentifier("settings.biometrics.unavailable")
+        } else if availability == .noBiometry {
             Text("\(biometry) n'est pas disponible sur cet appareil (pas de Secure Enclave ou biométrie non configurée). Le mot de passe maître déverrouille OnePass.")
+                .accessibilityIdentifier("settings.biometrics.unavailable")
         } else {
             Text("Le mot de passe maître est aussi redemandé après un redémarrage et quand les empreintes ou le visage enregistrés changent.")
         }
@@ -137,10 +148,18 @@ struct SecuritySettings: View {
         }
     }
 
+    private func promptFooter(_ prompt: Prompt) -> LocalizedStringKey {
+        switch prompt {
+        case .enableBiometrics: "Saisis ton mot de passe maître, puis confirme avec \(biometry)."
+        case .watch: "Le mot de passe maître est demandé pour changer ce réglage."
+        }
+    }
+
     private func confirm(_ prompt: Prompt, password: String) async throws {
         switch prompt {
         case .enableBiometrics:
-            try await session.enrollBiometrics(password: password)
+            // Master password, then one Touch ID or Face ID check.
+            try await model.enableBiometrics(password: password)
         case .watch(let on):
             let previous = settings.allowWatchUnlock
             model.updateSettings { $0.allowWatchUnlock = on }

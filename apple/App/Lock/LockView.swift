@@ -2,26 +2,38 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Lock screen (mockup `PhoneLock`): the app glyph straddling a separator line (horizontal on iPhone
-/// and iPad, the sidebar edge on Mac), the account badge, ONE master password field (show or hide
-/// button, then the biometric button behind a thin divider) and "Déverrouiller" once something is
-/// typed. Return unlocks. The Secret Key is never asked here: it stays in this device's keychain.
-/// Biometric unlock is tried once automatically when the screen shows up in an active scene.
+/// Lock screen: one centered column (on the window's glass on Mac): the app glyph, "Déverrouille
+/// OnePass", the account (badge and name), ONE master password field (show or hide button, accent
+/// focus ring, shakes on a wrong password) and below it the main action: "Déverrouiller avec
+/// Touch ID" (Face ID, Optic ID) while the field is empty and biometric unlock is on, otherwise
+/// "Déverrouiller". Return unlocks. The Secret Key is never asked here: it stays in this device's
+/// keychain. Biometric unlock is tried once automatically when the screen shows up in an active scene.
 struct LockView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var password = ""
     @State private var revealed = false
     @State private var message: String?
     @State private var lockoutRefresh = 0
+    /// Bumped on each refused password: the field shakes.
+    @State private var refusals = 0
     @FocusState private var fieldFocused: Bool
 
     private var session: VaultSession { model.session }
     private var unlocking: Bool { session.state == .unlocking }
+    private var biometrics: Bool { session.canUseBiometrics }
 
-    static let glyphSize: CGFloat = 104
     #if os(macOS)
-    static let sidebarWidth: CGFloat = 236
+    private static let glyphSize: CGFloat = 72
+    private static let fieldHeight: CGFloat = 40
+    private static let buttonHeight: CGFloat = 30
+    private static let columnWidth: CGFloat = 300
+    #else
+    private static let glyphSize: CGFloat = 84
+    private static let fieldHeight: CGFloat = 50
+    private static let buttonHeight: CGFloat = 36
+    private static let columnWidth: CGFloat = 340
     #endif
 
     var body: some View {
@@ -48,159 +60,213 @@ struct LockView: View {
         }
     }
 
-    #if os(macOS)
-    /// Mac: a sidebar-wide panel on the left; the glyph sits on its edge, the form is centered in
-    /// the rest of the window.
-    private var layout: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .topLeading) {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.035))
-                    .frame(width: Self.sidebarWidth)
-                    .frame(maxHeight: .infinity)
-                    .ignoresSafeArea()
-                Rectangle()
-                    .fill(Color.primary.opacity(0.1))
-                    .frame(width: 1)
-                    .frame(maxHeight: .infinity)
-                    .offset(x: Self.sidebarWidth)
-                    .ignoresSafeArea()
-                AppGlyph(size: Self.glyphSize)
-                    .position(x: Self.sidebarWidth + 0.5, y: geometry.size.height / 2)
-                form
-                    .frame(maxWidth: 334)
-                    .padding(.horizontal, 28)
-                    .frame(
-                        width: max(0, geometry.size.width - Self.sidebarWidth - Self.glyphSize / 2),
-                        height: geometry.size.height)
-                    .offset(x: Self.sidebarWidth + Self.glyphSize / 2)
-            }
-        }
-    }
-    #else
-    /// iPhone, iPad and Vision Pro: the glyph on a full-width line, the form below, all centered.
+    /// Every platform: the column centered in the window, scrolling only when it does not fit
+    /// (iPhone in landscape, large text).
     private var layout: some View {
         GeometryReader { geometry in
             ScrollView {
-                VStack(spacing: 16) {
-                    AppGlyph(size: Self.glyphSize)
-                        .background {
-                            Rectangle()
-                                .fill(Color.primary.opacity(0.12))
-                                .frame(width: max(geometry.size.width, 1) * 2, height: 1)
-                                .accessibilityHidden(true)
-                        }
-                    form
-                }
-                .frame(maxWidth: 334)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 40)
-                #if os(visionOS)
-                .glassBackgroundEffect()
-                #endif
-                .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+                column
+                    .frame(maxWidth: Self.columnWidth)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 40)
+                    #if os(visionOS)
+                    .glassBackgroundEffect()
+                    #endif
+                    // A little above the middle, where the eye lands first.
+                    .padding(.bottom, geometry.size.height > 560 ? 48 : 0)
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .clipped()
+            .scrollIndicators(.hidden)
         }
     }
-    #endif
 
-    private var form: some View {
-        VStack(spacing: 16) {
-            badge
+    private var column: some View {
+        VStack(spacing: 0) {
+            AppGlyph(size: Self.glyphSize)
+            Text("Déverrouille OnePass")
+                .font(.system(size: Platform.isMac ? 22 : 26, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .padding(.top, 20)
+                .accessibilityAddTraits(.isHeader)
+            account
                 .padding(.top, 10)
             passwordField
-                .padding(.top, 4)
-            if !password.isEmpty || unlocking {
-                unlockButton
-                    .transition(.opacity)
-            }
+                .padding(.top, 26)
+            status
+            actions
+                .padding(.top, 14)
             footer
+                .padding(.top, 18)
         }
         .animation(.smooth(duration: 0.2), value: password.isEmpty)
+        .animation(.smooth(duration: 0.2), value: message)
     }
 
     private var background: some View {
         #if os(iOS)
         Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
-        #elseif os(visionOS)
-        // The window carries the system glass: no opaque background.
-        Color.clear
         #else
-        Color.clear.background(.background)
+        // Mac: the window's translucent glass (`containerBackground`); Vision Pro: the system glass.
+        Color.clear
         #endif
     }
 
-    @ViewBuilder private var badge: some View {
-        let initials = model.initials
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(Theme.accent)
-            .frame(width: 58, height: 58)
-            .overlay {
-                if initials.isEmpty {
-                    Image(systemName: "person.fill").font(.system(size: 24)).foregroundStyle(.white)
-                } else {
-                    Text(verbatim: initials)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(
-                model.settings.displayName.isEmpty ? Text("Compte OnePass") : Text(verbatim: model.settings.displayName))
-    }
+    // MARK: - Account
 
-    private var passwordField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                Group {
-                    if revealed {
-                        TextField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
-                            .autocorrectionDisabled()
-                            #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            #endif
+    @ViewBuilder private var account: some View {
+        let initials = model.initials
+        let name = model.settings.displayName
+        HStack(spacing: 8) {
+            Circle()
+                .fill(Theme.accent)
+                .frame(width: 24, height: 24)
+                .overlay {
+                    if initials.isEmpty {
+                        Image(systemName: "person.fill").font(.system(size: 11)).foregroundStyle(.white)
                     } else {
-                        SecureField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                        Text(verbatim: initials)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.white)
                     }
                 }
-                .labelsHidden()
-                .textFieldStyle(.plain)
-                .font(.system(size: 17))
-                .focused($fieldFocused)
-                .submitLabel(.go)
-                .onSubmit { Task { await unlockWithPassword() } }
-                .disabled(unlocking || lockedOut)
-                .privacySensitive()
-                .accessibilityIdentifier("lock.password")
-                Button {
-                    revealed.toggle()
-                    fieldFocused = true
-                } label: {
-                    Image(systemName: revealed ? "eye.slash" : "eye")
-                        .font(.system(size: 17))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 32, height: 40)
-                        .contentShape(Rectangle())
+            Group {
+                if name.isEmpty {
+                    Text("Compte OnePass")
+                } else {
+                    Text(verbatim: name)
                 }
-                .buttonStyle(.plain)
-                .visionHoverEffect()
-                .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
-                .accessibilityIdentifier("lock.reveal")
-                if session.canUseBiometrics {
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.15))
-                        .frame(width: 1, height: 24)
-                        .padding(.horizontal, 4)
-                        .accessibilityHidden(true)
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 12)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(name.isEmpty ? Text("Compte OnePass") : Text(verbatim: name))
+        .accessibilityIdentifier("lock.account")
+    }
+
+    // MARK: - Password
+
+    private var passwordField: some View {
+        let shape = RoundedRectangle(cornerRadius: Platform.isMac ? 10 : 14, style: .continuous)
+        let ring: Color = message != nil ? .red : (fieldFocused ? Theme.accent : .clear)
+        return HStack(spacing: 4) {
+            Group {
+                if revealed {
+                    TextField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                } else {
+                    SecureField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                }
+            }
+            .labelsHidden()
+            .textFieldStyle(.plain)
+            .font(.system(size: Platform.isMac ? 15 : 17))
+            .focused($fieldFocused)
+            #if os(macOS)
+            // The accent ring below replaces the system focus ring.
+            .focusEffectDisabled()
+            #endif
+            .submitLabel(.go)
+            .onSubmit { Task { await unlockWithPassword() } }
+            .disabled(unlocking || lockedOut)
+            .privacySensitive()
+            .accessibilityIdentifier("lock.password")
+            Button {
+                revealed.toggle()
+                fieldFocused = true
+            } label: {
+                Image(systemName: revealed ? "eye.slash" : "eye")
+                    .font(.system(size: Platform.isMac ? 14 : 17))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: Self.fieldHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .visionHoverEffect()
+            .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
+            .accessibilityIdentifier("lock.reveal")
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .frame(height: Self.fieldHeight)
+        .background {
+            #if os(iOS)
+            shape.fill(Color(uiColor: .secondarySystemGroupedBackground))
+            #elseif os(visionOS)
+            shape.fill(.fill.tertiary)
+            #else
+            shape.fill(.background.opacity(0.8))
+            #endif
+        }
+        .overlay {
+            shape.strokeBorder(Color.primary.opacity(ring == .clear ? 0.14 : 0), lineWidth: 1)
+        }
+        .overlay {
+            // Focus (accent) or error (red) ring, drawn just outside the field.
+            RoundedRectangle(cornerRadius: (Platform.isMac ? 10 : 14) + 3, style: .continuous)
+                .strokeBorder(ring.opacity(0.35), lineWidth: 3.5)
+                .padding(-3.5)
+                .allowsHitTesting(false)
+        }
+        .overlay {
+            shape.strokeBorder(ring, lineWidth: ring == .clear ? 0 : 1)
+                .allowsHitTesting(false)
+        }
+        .modifier(Shake(amount: reduceMotion ? 0 : 7, animatableData: CGFloat(refusals)))
+        .animation(.smooth(duration: 0.15), value: fieldFocused)
+    }
+
+    @ViewBuilder private var status: some View {
+        if let message {
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.red)
+                .multilineTextAlignment(.center)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityIdentifier("lock.error")
+        }
+        if let until = lockoutUntil {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let remaining = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
+                Text(remaining > 0
+                     ? String(localized: "Trop d'essais. Nouvel essai possible dans \(Self.duration(remaining)).")
+                     : String(localized: "Tu peux réessayer."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.top, 8)
+        }
+    }
+
+    // MARK: - Actions
+
+    /// Empty field with biometrics on: the biometric button leads. Something typed: "Déverrouiller"
+    /// leads and biometrics stay one click away.
+    @ViewBuilder private var actions: some View {
+        VStack(spacing: 10) {
+            if biometrics, password.isEmpty {
+                biometricButton
+            } else {
+                unlockButton
+                if biometrics {
                     Button {
                         Task { await unlockWithBiometrics(automatic: false) }
                     } label: {
-                        Image(systemName: OnboardingModel.biometrySymbol)
-                            .font(.system(size: 24))
+                        Label("Utiliser \(OnboardingModel.biometryName)", systemImage: OnboardingModel.biometrySymbol)
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(Theme.accent)
-                            .frame(width: 40, height: 40)
+                            .padding(.vertical, 4)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -210,39 +276,30 @@ struct LockView: View {
                     .accessibilityIdentifier("lock.biometrics")
                 }
             }
-            .padding(.leading, 16)
-            .padding(.trailing, 8)
-            .frame(height: 50)
-            .background {
-                let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-                #if os(iOS)
-                shape.fill(Color(uiColor: .secondarySystemGroupedBackground))
-                    .overlay(shape.strokeBorder(message == nil ? Color.primary.opacity(0.12) : .red, lineWidth: 1))
-                #elseif os(visionOS)
-                shape.fill(.fill.tertiary)
-                    .overlay(shape.strokeBorder(message == nil ? Color.primary.opacity(0.12) : .red, lineWidth: 1))
-                #else
-                shape.fill(.background)
-                    .overlay(shape.strokeBorder(message == nil ? Color.primary.opacity(0.15) : .red, lineWidth: 1))
-                #endif
-            }
-            if let message {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("lock.error")
-            }
-            if let until = lockoutUntil {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let remaining = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
-                    Text(remaining > 0
-                         ? String(localized: "Trop d'essais. Nouvel essai possible dans \(Self.duration(remaining)).")
-                         : String(localized: "Tu peux réessayer."))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+        }
+    }
+
+    private var biometricButton: some View {
+        Button {
+            Task { await unlockWithBiometrics(automatic: false) }
+        } label: {
+            Group {
+                if unlocking {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("Déverrouiller avec \(OnboardingModel.biometryName)", systemImage: OnboardingModel.biometrySymbol)
                 }
             }
+            .font(.system(size: Platform.isMac ? 14 : 17, weight: .semibold))
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.buttonHeight)
         }
+        .buttonStyle(.glassProminent)
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .disabled(unlocking)
+        .accessibilityLabel(Text("Déverrouiller avec \(OnboardingModel.biometryName)"))
+        .accessibilityIdentifier("lock.biometrics")
     }
 
     private var unlockButton: some View {
@@ -251,14 +308,14 @@ struct LockView: View {
         } label: {
             Group {
                 if unlocking {
-                    ProgressView()
+                    ProgressView().controlSize(.small)
                 } else {
                     Text("Déverrouiller")
                 }
             }
-            .font(.system(size: 17, weight: .semibold))
+            .font(.system(size: Platform.isMac ? 14 : 17, weight: .semibold))
             .frame(maxWidth: .infinity)
-            .frame(height: Platform.isMac ? 30 : 36)
+            .frame(height: Self.buttonHeight)
         }
         .buttonStyle(.glassProminent)
         .buttonBorderShape(.capsule)
@@ -276,7 +333,8 @@ struct LockView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 8)
+                .accessibilityIdentifier("lock.passwordDue")
         }
     }
 
@@ -303,15 +361,19 @@ struct LockView: View {
         seconds < 60 ? "\(seconds) s" : "\(seconds / 60) min \(String(format: "%02d", seconds % 60)) s"
     }
 
-    // MARK: - Actions
+    // MARK: - Unlock
 
-    /// The password is passed as typed, never trimmed (the core normalizes it).
+    /// The password is passed as typed, never trimmed (the core normalizes it). After the first
+    /// password unlock where biometrics could be on, the app offers them once (`AppModel`).
     private func unlockWithPassword() async {
         guard !password.isEmpty, !unlocking, !lockedOut else { return }
         message = nil
+        let typed = password
+        let offer = model.biometricOfferDue
         do {
-            try await session.unlock(password: password)
+            try await session.unlock(password: typed)
             password = ""
+            if offer { model.offerBiometrics(password: typed) }
         } catch {
             let failure = VaultError(error)
             switch failure {
@@ -320,6 +382,7 @@ struct LockView: View {
                 message = count > 1
                     ? String(localized: "Mot de passe incorrect (\(count) essais).")
                     : String(localized: "Mot de passe incorrect.")
+                withAnimation(.linear(duration: 0.42)) { refusals += 1 }
             case .lockedOut:
                 message = nil
             default:
@@ -342,5 +405,15 @@ struct LockView: View {
         } catch {
             fieldFocused = true
         }
+    }
+}
+
+/// Horizontal shake, three swings per refusal.
+private struct Shake: GeometryEffect {
+    var amount: CGFloat
+    var animatableData: CGFloat
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        ProjectionTransform(CGAffineTransform(translationX: amount * sin(animatableData * .pi * 6), y: 0))
     }
 }

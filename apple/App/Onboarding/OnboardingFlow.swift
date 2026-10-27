@@ -186,7 +186,11 @@ final class OnboardingModel {
         }
     }
 
-    func skip() { advance() }
+    /// "Plus tard" on the biometric step: the first-unlock offer is not made again either.
+    func skip() {
+        if step == .biometrics { model.markBiometricOfferAnswered() }
+        advance()
+    }
 
     // MARK: - Actions
 
@@ -230,7 +234,9 @@ final class OnboardingModel {
         defer { busyMessage = nil }
         model.settings.allowWatchUnlock = allowWatch
         do {
-            try await session.enrollBiometrics(password: password)
+            // Master password check, Secure Enclave key, then one Touch ID or Face ID check.
+            try await model.enableBiometrics(password: password)
+            model.markBiometricOfferAnswered()
             biometricsEnabled = true
             advance()
         } catch {
