@@ -416,8 +416,10 @@ impl<W: Write> Conn<'_, W> {
                     return Err(Close);
                 }
             };
-            self.send(&env)?;
+            // Touch before the reply leaves: once the extension holds it, the
+            // idle clock no longer moves under it.
             ch.touch((self.clock)());
+            self.send(&env)?;
         }
     }
 }

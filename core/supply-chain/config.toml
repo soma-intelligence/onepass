@@ -190,6 +190,10 @@ criteria = "safe-to-deploy"
 version = "0.10.2"
 criteria = "safe-to-run"
 
+[[exemptions.core-foundation]]
+version = "0.10.1"
+criteria = "safe-to-deploy"
+
 [[exemptions.core-models]]
 version = "0.0.7"
 criteria = "safe-to-deploy"
@@ -514,6 +518,10 @@ criteria = "safe-to-deploy"
 version = "0.1.47"
 criteria = "safe-to-deploy"
 
+[[exemptions.objc2-local-authentication]]
+version = "0.3.2"
+criteria = "safe-to-deploy"
+
 [[exemptions.once_cell]]
 version = "1.21.4"
 criteria = "safe-to-deploy"
@@ -652,6 +660,14 @@ criteria = "safe-to-deploy"
 
 [[exemptions.scroll_derive]]
 version = "0.12.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.security-framework]]
+version = "3.7.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.security-framework-sys]]
+version = "2.17.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.serde]]
