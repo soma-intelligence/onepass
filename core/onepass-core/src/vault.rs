@@ -225,8 +225,10 @@ impl Vault {
         item.vault_id = to.id;
         item.record(
             time::OffsetDateTime::now_utc(),
+            // The source vault's name stays out: members of the target vault
+            // read this item, and "Santé" or "Perso" is not theirs to see.
             EventKind::Moved {
-                from: self.meta.name.clone(),
+                from: String::new(),
                 to: to.meta.name.clone(),
             },
         );
@@ -333,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn move_records_the_vault_names() {
+    fn move_records_only_the_target_vault_name() {
         let (a, _, _) = vault("Perso");
         let (b, _, _) = vault("Projet Atlas");
         let rec = a.seal_item(&login(&a), 1).unwrap();
@@ -341,7 +343,7 @@ mod tests {
         assert_eq!(
             moved.events.last().unwrap().kind,
             EventKind::Moved {
-                from: "Perso".into(),
+                from: String::new(),
                 to: "Projet Atlas".into()
             }
         );
