@@ -13,37 +13,46 @@ struct TextItemsView: View {
 
     var body: some View {
         AutoFillScaffold(title: Text("Choisis un élément"), model: model) {
-            List {
-                SessionErrorText(session: session)
-                if shown.isEmpty {
-                    Text(query.isEmpty ? "Aucun élément." : "Aucun résultat.").foregroundStyle(.secondary)
-                }
-                ForEach(shown, id: \.id) { item in
-                    Button {
-                        choose(item)
-                    } label: {
-                        HStack(spacing: 12) {
-                            ItemIcon(type: item.itemType, title: item.title, siteIcon: nil, size: 32)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: item.title).foregroundStyle(.primary).lineLimit(1)
-                                if !item.subtitle.isEmpty {
-                                    Text(verbatim: item.subtitle)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    SessionErrorText(session: session)
+                        .padding(.horizontal, 6)
+                    AutoFillLabel(query.isEmpty ? "tous les éléments" : "résultats")
+                    if shown.isEmpty {
+                        Text(query.isEmpty ? "Aucun élément." : "Aucun résultat.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .autofillCard()
+                    } else {
+                        AutoFillCardRows {
+                            ForEach(shown, id: \.id) { item in
+                                Button {
+                                    choose(item)
+                                } label: {
+                                    AutoFillRow(
+                                        type: item.itemType, title: item.title,
+                                        detail: item.subtitle.isEmpty ? ItemCategory.of(item.itemType).singular : item.subtitle,
+                                        url: item.primaryUrl
+                                    ) {
+                                        Image(systemName: "chevron.forward")
+                                            .font(.footnote.weight(.semibold))
+                                            .foregroundStyle(.tertiary)
+                                            .accessibilityHidden(true)
+                                    }
                                 }
+                                .buttonStyle(AutoFillRowStyle())
+                                .accessibilityIdentifier(autofillIdentifier("item", item.title))
                             }
-                            Spacer(minLength: 0)
-                            Image(systemName: "chevron.forward")
-                                .font(.footnote)
-                                .foregroundStyle(.tertiary)
-                                .accessibilityHidden(true)
                         }
-                        .contentShape(Rectangle())
                     }
-                    .accessibilityIdentifier(autofillIdentifier("item", item.title))
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+                .padding(.bottom, 24)
             }
+            .scrollDismissesKeyboard(.immediately)
             .searchable(text: $query, prompt: Text("Rechercher dans OnePass"))
             .disabled(busy)
         }
@@ -77,32 +86,53 @@ struct TextFieldsView: View {
 
     var body: some View {
         AutoFillScaffold(title: Text("Choisis un champ"), model: model, back: { Task { await model.showTextItems() } }) {
-            List {
-                Section {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    AutoFillHeader(
+                        type: item.itemType, iconTitle: item.title,
+                        url: (item.urls.first(where: \.primary) ?? item.urls.first)?.url,
+                        title: Text(verbatim: item.title), subtitle: ItemCategory.of(item.itemType).singular)
+                        .padding(.bottom, 14)
                     SessionErrorText(session: session)
+                        .padding(.horizontal, 6)
+                    AutoFillLabel("champ à insérer")
                     let fields = model.insertableFields(of: item)
                     if fields.isEmpty {
-                        Text("Aucun champ à insérer dans cet élément.").foregroundStyle(.secondary)
-                    }
-                    ForEach(fields, id: \.id) { field in
-                        Button {
-                            insert(field)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: field.displayLabel).font(.footnote).foregroundStyle(.secondary)
-                                Text(verbatim: Self.preview(field))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                    .accessibilityValue(Self.isSecret(field) ? Text("masqué") : Text(verbatim: Self.preview(field)))
-                            }
+                        Text("Aucun champ à insérer dans cet élément.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(14)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
+                            .autofillCard()
+                    } else {
+                        AutoFillCardRows {
+                            ForEach(fields, id: \.id) { field in
+                                Button {
+                                    insert(field)
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        AutoFillFieldRow(label: Text(verbatim: Self.labelCase(field.displayLabel))) {
+                                            Text(verbatim: Self.preview(field))
+                                                .foregroundStyle(.primary)
+                                                .lineLimit(1)
+                                        }
+                                        .accessibilityValue(Self.isSecret(field) ? Text("masqué") : Text(verbatim: Self.preview(field)))
+                                        Image(systemName: "text.insert")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundStyle(Theme.readableAccent)
+                                            .padding(.trailing, 16)
+                                            .accessibilityHidden(true)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(AutoFillRowStyle())
+                                .accessibilityIdentifier(autofillIdentifier("field", field.label))
+                            }
                         }
-                        .accessibilityIdentifier(autofillIdentifier("field", field.label))
                     }
-                } header: {
-                    Text(verbatim: item.title)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
             .disabled(busy)
         }
@@ -116,6 +146,12 @@ struct TextFieldsView: View {
             await model.insert(field: field)
             busy = false
         }
+    }
+
+    /// "Mot de passe" gives "mot de passe", as the app's labels; an acronym ("PIN") stays.
+    private static func labelCase(_ label: String) -> String {
+        guard let first = label.first, !(label.dropFirst().first?.isUppercase ?? false) else { return label }
+        return first.lowercased() + label.dropFirst()
     }
 
     private static func isSecret(_ field: FfiField) -> Bool {

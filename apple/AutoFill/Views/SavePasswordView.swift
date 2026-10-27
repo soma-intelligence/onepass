@@ -30,59 +30,86 @@ struct SavePasswordView: View {
     private var updating: FfiAutofillCandidate? { asNewItem ? nil : existing }
 
     var body: some View {
-        AutoFillScaffold(title: heading, model: model) {
-            Form {
-                if let updating {
-                    Section {
-                        HStack(spacing: 12) {
-                            ItemIcon(type: .login, title: updating.title, siteIcon: nil, size: 32)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: updating.title)
-                                Text(verbatim: updating.user).font(.subheadline).foregroundStyle(.secondary)
+        AutoFillScaffold(title: Text("OnePass"), model: model) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    AutoFillHeader(
+                        type: .login, iconTitle: updating?.title ?? title, url: serviceURL, title: heading,
+                        subtitle: request.service)
+                        .padding(.bottom, 14)
+                    if let updating {
+                        AutoFillLabel("élément mis à jour")
+                        AutoFillCardRows {
+                            AutoFillRow(type: .login, title: updating.title, detail: updating.user, url: updating.url) {
+                                EmptyView()
                             }
                         }
-                    } footer: {
                         Text("Le nouveau mot de passe remplace l'ancien, qui reste dans l'historique de l'élément.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.bottom, 10)
+                    } else {
+                        AutoFillLabel("nouvel élément")
+                        AutoFillCardRows {
+                            AutoFillFieldRow(label: Text("titre")) {
+                                TextField("Titre", text: $title, prompt: Text(verbatim: AutoFillModel.defaultTitle(for: request)))
+                                    .textFieldStyle(.plain)
+                                    .accessibilityIdentifier("autofill.title")
+                            }
+                            VaultPicker(vaults: session.vaults, selection: $vaultID)
+                        }
+                        .padding(.bottom, 10)
                     }
-                } else {
-                    Section {
-                        TextField("Titre", text: $title, prompt: Text(verbatim: AutoFillModel.defaultTitle(for: request)))
-                            .accessibilityIdentifier("autofill.title")
-                        VaultPicker(vaults: session.vaults, selection: $vaultID)
+                    AutoFillLabel("connexion")
+                    AutoFillCardRows {
+                        AutoFillFieldRow(label: request.serviceIsApp ? Text("app") : Text("site")) {
+                            Text(verbatim: request.service).lineLimit(1).truncationMode(.middle)
+                        }
+                        AutoFillFieldRow(label: Text("identifiant")) {
+                            Text(verbatim: request.user.isEmpty ? String(localized: "Aucun") : request.user)
+                                .foregroundStyle(request.user.isEmpty ? .secondary : .primary)
+                        }
+                        AutoFillFieldRow(label: Text("mot de passe")) {
+                            Text(verbatim: FieldRow.mask).accessibilityLabel(Text("masqué"))
+                        }
                     }
-                }
-                Section {
-                    LabeledContent(request.serviceIsApp ? "App" : "Site") {
-                        Text(verbatim: request.service).lineLimit(1)
-                    }
-                    LabeledContent("Identifiant") {
-                        Text(verbatim: request.user.isEmpty ? String(localized: "Aucun") : request.user)
-                    }
-                    LabeledContent("Mot de passe") {
-                        Text(verbatim: FieldRow.mask).accessibilityLabel(Text("masqué"))
-                    }
-                }
-                Section {
                     SessionErrorText(session: session)
-                    Button {
+                        .padding(.horizontal, 6)
+                    AutoFillPrimaryButton {
                         save()
                     } label: {
-                        Text(updating == nil ? "Enregistrer" : "Mettre à jour").frame(maxWidth: .infinity)
+                        if busy {
+                            ProgressView()
+                        } else {
+                            Text(updating == nil ? "Enregistrer" : "Mettre à jour")
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
                     .disabled(busy || !canSave)
+                    .padding(.top, 14)
                     .accessibilityIdentifier("autofill.save")
                     if existing != nil {
                         Button(asNewItem ? "Mettre à jour l'élément existant" : "Enregistrer comme nouvel élément") {
-                            asNewItem.toggle()
+                            withAnimation(.snappy) { asNewItem.toggle() }
                         }
+                        .font(.subheadline.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 6)
                         .disabled(busy)
                         .accessibilityIdentifier("autofill.save.toggle")
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .formStyle(.grouped)
+            .scrollDismissesKeyboard(.interactively)
         }
+    }
+
+    /// The site's address for its icon (an app identifier has none).
+    private var serviceURL: String? {
+        guard !request.serviceIsApp else { return nil }
+        return request.service.contains("://") ? request.service : "https://\(request.service)"
     }
 
     private var heading: Text {
