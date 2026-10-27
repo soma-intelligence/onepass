@@ -16,11 +16,12 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::thread;
 
+use onepass_bridge::host::{Conn, Limits, spawn_reader};
 use onepass_bridge::service::VaultAccess;
 
 use crate::config::{Approval, Config, HostError, Reprompt, Source, extension_id};
-use crate::host::{APPROVED_FILE, Conn, Limits, spawn_reader};
-use crate::log::{Log, ensure_dir, now};
+use crate::host::{APPROVED_FILE, DevApprover};
+use crate::log::{FileAudit, Log, ensure_dir, now};
 use crate::pairings::{Pairings, write_atomic};
 
 const FIXTURE_CACHE: &str = "fixture-cache.bin";
@@ -86,6 +87,7 @@ where
         loading
             .join()
             .unwrap_or_else(|_| Err(HostError::new("vault loading failed")))
+            .map_err(|e| e.to_string())
     });
 }
 
@@ -110,17 +112,20 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
     check_build(cfg, !cfg!(debug_assertions))?;
     let log = Log::open(&cfg.data_dir);
     log.line("DEV MODE: OnePass development native messaging host, not for real secrets");
-    let pairings = Pairings::load(&cfg.data_dir)?;
+    let mut pairings = Pairings::load(&cfg.data_dir)?;
+    let mut approver = DevApprover::new(cfg.approval, &cfg.data_dir, log.clone());
     let extension_id = extension_id(positional);
     let allowed = extension_id.as_deref().is_some_and(|id| cfg.is_allowed(id));
     let clock = now;
     let mut conn = Conn {
-        cfg,
-        extension_id,
-        log: &log,
+        allowed,
+        extension_id: extension_id.unwrap_or_default(),
+        journal: &log,
         clock: &clock,
         limits: Limits::default(),
-        pairings,
+        pairings: &mut pairings,
+        approver: &mut approver,
+        audit: Some(Box::new(FileAudit::new(&cfg.data_dir))),
         rx: spawn_reader(std::io::stdin()),
         out: std::io::stdout(),
     };
@@ -128,7 +133,7 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
     let allow_reprompt = cfg.reprompt == Reprompt::Allow;
     match (&cfg.source, allowed) {
         // A caller that is refused never gets the vault loaded.
-        (_, false) => conn.serve(|| Err::<fixture::FixtureVault, _>(HostError::new("refused"))),
+        (_, false) => conn.serve(|| Err::<fixture::FixtureVault, _>("refused".to_owned())),
         (Source::Fixture { path }, true) => {
             let path = path.clone();
             let cache = cfg.data_dir.join(FIXTURE_CACHE);
