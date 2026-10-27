@@ -4,7 +4,7 @@ import type { ProviderId } from "../gen/model.ts";
 import type { FieldFeatures, PageFeatures } from "../../src/content/detect/features.ts";
 import { classifyRole } from "./roles.ts";
 import { sanitizeNeighbour, sanitizeOrigin, sanitizeText, sanitizeToken } from "./sanitize.ts";
-import type { FormStep, Sample, SampleField, SampleForm } from "./types.ts";
+import type { FormStep, Sample, SampleField, SampleForm, SampleSource } from "./types.ts";
 
 export interface PageExtra { lang?: string; providerTexts: string[]; }
 
@@ -45,7 +45,7 @@ export function fieldOf(x: FieldFeatures): SampleField {
   return out;
 }
 
-export function build(base: Sample, page: PageFeatures, extra: PageExtra, calls: ("get" | "create")[]): Sample {
+export function build(base: Sample, page: PageFeatures, extra: PageExtra, calls: ("get" | "create")[], source?: SampleSource): Sample {
   const forms: SampleForm[] = page.forms.map((f) => {
     const fields = f.fields.map(fieldOf);
     return { step: stepOf(fields), fields, buttons: f.buttons.map((b) => sanitizeText(b)).filter((b): b is string => !!b) };
@@ -61,7 +61,7 @@ export function build(base: Sample, page: PageFeatures, extra: PageExtra, calls:
   for (const t of extra.providerTexts) for (const p of ["google", "apple", "microsoft"] as ProviderId[]) if (t.toLowerCase().includes(p)) providers.add(p);
   const lang = extra.lang?.toLowerCase().split("-")[0];
   return {
-    ...base, lang: lang || "und", forms, framework: page.framework, iframes, shadowFields: page.shadowFields,
+    ...base, ...(source ? { source } : {}), lang: lang || "und", forms, framework: page.framework, iframes, shadowFields: page.shadowFields,
     webauthnCalls: [...new Set(calls)], providerButtons: [...providers].sort(),
   };
 }
