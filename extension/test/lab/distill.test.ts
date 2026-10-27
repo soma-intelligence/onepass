@@ -1,6 +1,6 @@
 // Distiller of the corpus: merge of baseline and samples, stable output.
 import { describe, expect, it } from "vitest";
-import { distill } from "../../lab/corpus/distill.ts";
+import { distill, sampleFiles } from "../../lab/corpus/distill.ts";
 import seed from "../../lab/corpus/seed-lexicon.json";
 import type { Patterns, Sample } from "../../lab/corpus/types.ts";
 
@@ -72,5 +72,11 @@ describe("distill", () => {
     expect(sum).toBeCloseTo(1, 6);
     const none = distill([], baseline);
     expect(none.langs.reduce((a, [, w]) => a + w, 0)).toBeCloseTo(1, 6);
+  });
+});
+
+describe("sampleFiles", () => {
+  it("skips the crawler's done markers and non-json files", () => {
+    expect(sampleFiles(["b.example.0.json", "b.example.done.json", "a.example.1.json", "notes.txt"])).toEqual(["a.example.1.json", "b.example.0.json"]);
   });
 });
