@@ -14,7 +14,7 @@ import type { BgExt } from "./ext";
 import { type FillTarget, Filler } from "./fill";
 import { Frames } from "./frames";
 import { type MenuRecord, MenuTokens } from "./menu";
-import { NATIVE_HOST, nativeTransport } from "./native";
+import { openTransport } from "./native";
 import { NeverSave } from "./never-save";
 import { Overlays, removeFrame } from "./overlay";
 import { PairingFlow } from "./pairing";
@@ -43,7 +43,7 @@ function targetOf(rec: MenuRecord): FillTarget {
 
 export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const store = new Store(ext, opts.pairings ?? new IdbPairingStore());
-  const newClient = opts.newClient ?? (() => new BridgeClient(nativeTransport(NATIVE_HOST, ext.runtime)));
+  const newClient = opts.newClient ?? (() => new BridgeClient(openTransport(ext.runtime)));
   const session = new Session({ store, newClient, ...(opts.sleep ? { sleep: opts.sleep } : {}) });
   const pairing = new PairingFlow({ store, session, newClient, ...(opts.browser ? { browser: opts.browser } : {}) });
   const frames = new Frames(ext.webNavigation);
