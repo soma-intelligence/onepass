@@ -174,6 +174,21 @@ macro_rules! out {
 mod tests {
     use super::*;
 
+    #[test]
+    fn env_password_switch_is_debug_only() {
+        assert!(env_secrets_allowed_with(true, Some("1")).unwrap());
+        assert!(!env_secrets_allowed_with(true, None).unwrap());
+        assert!(!env_secrets_allowed_with(true, Some("0")).unwrap());
+        assert!(!env_secrets_allowed_with(false, None).unwrap());
+        assert!(!env_secrets_allowed_with(false, Some("yes")).unwrap());
+        let e = env_secrets_allowed_with(false, Some("1")).unwrap_err();
+        assert_eq!(e.code, 1);
+        assert_eq!(
+            e.msg,
+            "ONEPASS_DEV_ALLOW_ENV_PASSWORD is refused in a release build"
+        );
+    }
+
     /// A `device.bin` written before the versioned state: Secret Key "sk",
     /// then the version 1 state inline,
     /// `{ pinned: None, last_seen: { [1; 16]: (7, [0xab; 32]) } }`.
@@ -520,7 +535,7 @@ fn save_after<T>(ctx: &Ctx, session: &Session, result: Result<T, CliError>) -> R
 /// The password: `ONEPASS_PASSWORD` only when `ONEPASS_DEV_ALLOW_ENV_PASSWORD`
 /// is `1` (tests), otherwise a masked prompt on the terminal.
 pub fn read_password(prompt: &str) -> Result<Zeroizing<String>, CliError> {
-    if std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").as_deref() == Ok("1")
+    if env_secrets_allowed()?
         && let Ok(p) = std::env::var("ONEPASS_PASSWORD")
     {
         return Ok(Zeroizing::new(p));
@@ -532,17 +547,36 @@ pub fn read_password(prompt: &str) -> Result<Zeroizing<String>, CliError> {
     Ok(Zeroizing::new(p))
 }
 
+/// The test switch letting secrets come from the environment.
+pub const ENV_PASSWORD_SWITCH: &str = "ONEPASS_DEV_ALLOW_ENV_PASSWORD";
+
 /// Whether secrets may come from the environment (tests only):
-/// `ONEPASS_DEV_ALLOW_ENV_PASSWORD` is `1`.
-pub fn env_secrets_allowed() -> bool {
-    std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").as_deref() == Ok("1")
+/// `ONEPASS_DEV_ALLOW_ENV_PASSWORD` is `1` in a debug build. A release
+/// build refuses the switch instead of ignoring it, so a misconfigured
+/// launcher fails loudly rather than reading secrets from the environment.
+pub fn env_secrets_allowed() -> Result<bool, CliError> {
+    env_secrets_allowed_with(
+        cfg!(debug_assertions),
+        std::env::var(ENV_PASSWORD_SWITCH).ok().as_deref(),
+    )
+}
+
+/// [`env_secrets_allowed`] with the build kind and the switch value given.
+pub fn env_secrets_allowed_with(debug: bool, var: Option<&str>) -> Result<bool, CliError> {
+    match var {
+        Some("1") if debug => Ok(true),
+        Some("1") => Err(CliError::usage(
+            "ONEPASS_DEV_ALLOW_ENV_PASSWORD is refused in a release build",
+        )),
+        _ => Ok(false),
+    }
 }
 
 /// A secret other than the account password: `env_var` only when
 /// `ONEPASS_DEV_ALLOW_ENV_PASSWORD` is `1` (tests), otherwise a masked
 /// prompt on the terminal.
 pub fn read_secret(prompt: &str, env_var: &str) -> Result<Zeroizing<String>, CliError> {
-    if env_secrets_allowed()
+    if env_secrets_allowed()?
         && let Ok(p) = std::env::var(env_var)
     {
         return Ok(Zeroizing::new(p));
@@ -575,7 +609,7 @@ pub fn kdf_params() -> Result<KdfParams, CliError> {
 /// `ONEPASS_PASSWORD` under the same test switch as [`read_password`],
 /// otherwise a masked prompt on `/dev/tty`, never on stdin.
 pub fn read_password_tty(prompt: &str) -> Result<Zeroizing<String>, CliError> {
-    if std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").as_deref() == Ok("1")
+    if env_secrets_allowed()?
         && let Ok(p) = std::env::var("ONEPASS_PASSWORD")
     {
         return Ok(Zeroizing::new(p));

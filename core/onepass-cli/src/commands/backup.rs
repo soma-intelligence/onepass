@@ -274,7 +274,7 @@ fn created_text(unix: i64) -> String {
 /// The backup passphrase: asked twice on a terminal, once from the
 /// environment (tests).
 fn passphrase_twice() -> Result<Zeroizing<String>, CliError> {
-    let from_env = env_secrets_allowed() && std::env::var_os(ARCHIVE_PASSPHRASE_ENV).is_some();
+    let from_env = env_secrets_allowed()? && std::env::var_os(ARCHIVE_PASSPHRASE_ENV).is_some();
     let p = read_secret("Backup passphrase: ", ARCHIVE_PASSPHRASE_ENV)?;
     if !from_env {
         let again = read_secret("Repeat the backup passphrase: ", ARCHIVE_PASSPHRASE_ENV)?;

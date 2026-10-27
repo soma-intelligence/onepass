@@ -37,7 +37,7 @@ pub fn create(ctx: &Ctx) -> Result<(), CliError> {
     if password.is_empty() {
         return Err(CliError::usage("the password must not be empty"));
     }
-    if std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").as_deref() != Ok("1") {
+    if !session::env_secrets_allowed()? {
         let again = session::read_password("Repeat the password: ")?;
         if *again != *password {
             return Err(CliError::usage("the passwords differ"));

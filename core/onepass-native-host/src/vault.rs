@@ -303,12 +303,24 @@ pub fn lock_file(path: &Path) -> std::io::Result<fs::File> {
 }
 
 /// The password of the dev source: `ONEPASS_PASSWORD`, only when
-/// `ONEPASS_DEV_ALLOW_ENV_PASSWORD` is `1`, as the CLI does.
+/// `ONEPASS_DEV_ALLOW_ENV_PASSWORD` is `1` in a debug build, as the CLI
+/// does. A release build never reads it.
 pub fn env_password() -> Option<Zeroizing<String>> {
-    if std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").as_deref() != Ok("1") {
+    let switch = std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").ok();
+    if env_password_allowed(cfg!(debug_assertions), switch.as_deref()) != Ok(true) {
         return None;
     }
     std::env::var("ONEPASS_PASSWORD").ok().map(Zeroizing::new)
+}
+
+/// Whether the environment password switch is on: `Ok(true)` for `1` in a
+/// debug build, `Err` for `1` in a release build (refused), else `Ok(false)`.
+pub fn env_password_allowed(debug: bool, var: Option<&str>) -> Result<bool, &'static str> {
+    match var {
+        Some("1") if debug => Ok(true),
+        Some("1") => Err("ONEPASS_DEV_ALLOW_ENV_PASSWORD is refused in a release build"),
+        _ => Ok(false),
+    }
 }
 
 /// Unlock the CLI account of `dir` with `password`, holding its lock.
@@ -352,7 +364,11 @@ pub fn load_dev(dir: PathBuf, unlocked: bool, log: &crate::log::Log) -> DevVault
                 }
             },
             None => {
-                log.line("dev vault stays locked: no environment password");
+                let switch = std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").ok();
+                match env_password_allowed(cfg!(debug_assertions), switch.as_deref()) {
+                    Err(refused) => log.line(&format!("dev vault stays locked: {refused}")),
+                    Ok(_) => log.line("dev vault stays locked: no environment password"),
+                }
                 None
             }
         }
@@ -372,6 +388,18 @@ pub fn load_dev(dir: PathBuf, unlocked: bool, log: &crate::log::Log) -> DevVault
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn env_password_switch_is_debug_only() {
+        assert_eq!(env_password_allowed(true, Some("1")), Ok(true));
+        assert_eq!(env_password_allowed(true, None), Ok(false));
+        assert_eq!(env_password_allowed(false, None), Ok(false));
+        assert_eq!(env_password_allowed(false, Some("0")), Ok(false));
+        assert_eq!(
+            env_password_allowed(false, Some("1")),
+            Err("ONEPASS_DEV_ALLOW_ENV_PASSWORD is refused in a release build")
+        );
+    }
 
     /// A `device.bin` written before the versioned state: Secret Key "sk",
     /// then the version 1 state inline,
