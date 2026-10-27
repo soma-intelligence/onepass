@@ -34,41 +34,46 @@ struct UrlListEditor: View {
     var body: some View {
         let many = editor.urlKeys.count > 1
         ForEach(Array(editor.urlKeys.enumerated()), id: \.element) { position, key in
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Button {
-                        if let i = editor.urlIndex(of: key) { editor.removeURL(at: i) }
-                    } label: {
-                        Image(systemName: "minus.circle.fill").foregroundStyle(.red)
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel(Text("Retirer ce site web"))
+            if position > 0 { CardDivider() }
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    EditorLabel(many && (url(key)?.primary ?? false) ? String(localized: "site web principal") : String(localized: "site web"))
                     TextField("site web", text: binding(key, \.url, default: ""), prompt: Text("https://"))
+                        .labelsHidden()
                         .fieldInput(.url)
                         .accessibilityIdentifier("editor.url.\(position)")
                 }
-                HStack {
+                Menu {
                     Picker("Correspondance", selection: binding(key, \.rule, default: .domain)) {
                         ForEach(Self.rules, id: \.self) { Text(Self.ruleLabel($0)).tag($0) }
                     }
-                    .pickerStyle(.menu)
-                    .font(.footnote)
-                    Spacer()
+                    .pickerStyle(.inline)
                     if many {
-                        let primary = url(key)?.primary ?? false
-                        Button {
+                        Button("Site principal", systemImage: "star") {
                             if let i = editor.urlIndex(of: key) { editor.draft.setPrimaryURL(at: i) }
-                        } label: {
-                            Label("Principale", systemImage: primary ? "star.fill" : "star")
                         }
-                        .buttonStyle(.borderless)
-                        .font(.footnote)
-                        .accessibilityValue(primary ? Text("oui") : Text("non"))
                     }
+                } label: {
+                    Image(systemName: "slider.horizontal.3").font(.title3).foregroundStyle(.secondary)
                 }
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Correspondance pour le remplissage")
+                .accessibilityLabel(Text("Correspondance"))
+                RemoveRowButton {
+                    if let i = editor.urlIndex(of: key) { editor.removeURL(at: i) }
+                }
+                .accessibilityLabel(Text("Retirer ce site web"))
             }
+            .editorRowPadding()
         }
-        Button("+ ajouter un site web") { editor.addURL() }
-            .accessibilityIdentifier("editor.addURL")
+        if !editor.urlKeys.isEmpty { CardDivider() }
+        AddRowButton(
+            title: editor.urlKeys.isEmpty ? String(localized: "ajouter un site web") : String(localized: "ajouter un autre site web")) {
+            editor.addURL()
+        }
+        .accessibilityIdentifier("editor.addURL")
     }
 }

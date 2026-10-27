@@ -1,7 +1,8 @@
+import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Label above the control, as in the mockup's edit mode; the validation message goes below.
+/// Label above the control, in the accent color as in edit mode; the validation message goes below.
 struct EditorRow<Content: View>: View {
     /// The field label from the core template (French data, not a UI string).
     let label: String
@@ -9,10 +10,10 @@ struct EditorRow<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.footnote).foregroundStyle(.secondary)
-            // The label is shown once, above: the control's own label is hidden (a grouped Form
-            // would repeat it on the left on Mac) and its text starts on the left.
+        VStack(alignment: .leading, spacing: 2) {
+            EditorLabel(label)
+            // The label is shown once, above: the control's own label is hidden and its text
+            // starts on the left.
             content
                 .labelsHidden()
                 .multilineTextAlignment(.leading)
@@ -24,7 +25,72 @@ struct EditorRow<Content: View>: View {
                     .accessibilityIdentifier("editor.error")
             }
         }
-        .padding(.vertical, 2)
+    }
+}
+
+/// A field or block label of the editor: small, in the accent color.
+struct EditorLabel: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        // Lightened accent: 4.5:1 or better on the dark glass, still reads as "editable".
+        Text(text).font(.subheadline.weight(.medium)).foregroundStyle(Theme.accent.mix(with: .white, by: 0.45))
+    }
+}
+
+/// A rounded block of rows (the editor's cards): rows are separated by `CardDivider`.
+struct EditorCard<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) { content }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // See-through over the window material, with a hairline to hold the edge.
+            .background(.fill.quaternary, in: .rect(cornerRadius: 14))
+            .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.07)) }
+    }
+}
+
+struct CardDivider: View {
+    var body: some View { Divider().padding(.leading, 16) }
+}
+
+/// "+ ajouter ..." inside a card.
+struct AddRowButton: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: "plus")
+                .font(.body.weight(.medium))
+                .foregroundStyle(Theme.accent)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .editorRowPadding()
+    }
+}
+
+/// The red "−" at the end of a removable row.
+struct RemoveRowButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "minus.circle").font(.title3).foregroundStyle(.red)
+        }
+        .buttonStyle(.borderless)
+    }
+}
+
+extension View {
+    /// Inner padding of a card row.
+    func editorRowPadding() -> some View {
+        padding(.horizontal, 16).padding(.vertical, 10)
     }
 }
 
@@ -38,17 +104,18 @@ struct TextFieldEditor: View {
     }
 
     var body: some View {
-        TextField(field.label, text: text, prompt: Text(placeholder))
+        TextField(field.displayLabel, text: text, prompt: Text(placeholder))
             .fieldInput(field.kind)
             .accessibilityIdentifier("editor.field.\(field.id)")
     }
 
     private var placeholder: String {
         switch field.kind {
+        // What to type, never an example value: a prompt that looks like data reads as a filled field.
         case .url: "https://"
-        case .email: "nom@exemple.fr"
-        case .phone: "+33 6 12 34 56 78"
-        default: field.label
+        case .email: String(localized: "adresse email")
+        case .phone: String(localized: "numéro de téléphone")
+        default: field.id == "username" ? String(localized: "nom d'utilisateur ou email") : ""
         }
     }
 }

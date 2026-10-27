@@ -26,7 +26,7 @@ struct BarcodeEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField(field.label, text: text, prompt: Text("Valeur du code"))
+            TextField(field.displayLabel, text: text, prompt: Text("Valeur du code"))
                 .font(.body.monospaced())
                 .fieldInput(.text)
                 .accessibilityIdentifier("editor.field.\(field.id)")

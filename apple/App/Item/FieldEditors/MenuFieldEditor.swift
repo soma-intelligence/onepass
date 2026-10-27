@@ -17,12 +17,13 @@ struct MenuFieldEditor: View {
     var body: some View {
         let options = options
         if options.isEmpty {
-            TextField(field.label, text: selection)
+            TextField(field.displayLabel(itemType: itemType), text: selection)
                 .accessibilityIdentifier("editor.field.\(field.id)")
         } else {
-            Picker(field.label, selection: selection) {
+            Picker(field.displayLabel(itemType: itemType), selection: selection) {
                 Text("Aucun").tag("")
-                ForEach(options, id: \.self) { Text($0).tag($0) }
+                // Stored values stay the core's (French); only the shown text is localized.
+                ForEach(options, id: \.self) { Text(CoreLabels.menuOption($0)).tag($0) }
                 if !value.text.isEmpty, !options.contains(value.text) {
                     Text(value.text).tag(value.text)
                 }

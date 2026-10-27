@@ -50,7 +50,7 @@ const STYLE = `
   box-sizing: border-box;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: 6px;
   background: ${ACCENT};
   color: #FFFFFF;
   display: flex;
@@ -58,10 +58,13 @@ const STYLE = `
   justify-content: center;
   cursor: pointer;
   pointer-events: auto;
-  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+  box-shadow: 0 1px 2px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.22);
+  transition: transform .12s ease, background-color .12s ease;
 }
+.icon:hover { background: #6765E2; transform: scale(1.08); }
+.icon:active { transform: scale(.94); }
 .icon[hidden] { display: none; }
-.icon svg { display: block; width: 11px; height: 11px; }
+.icon svg { display: block; width: 12px; height: 12px; }
 .ring {
   all: initial;
   position: fixed;
@@ -76,11 +79,11 @@ iframe {
   position: fixed;
   box-sizing: border-box;
   border: 0;
-  border-radius: 12px;
+  border-radius: 14px;
   background: transparent;
   color-scheme: normal;
   pointer-events: auto;
-  box-shadow: 0 14px 36px rgba(0,0,0,.24);
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 16px 40px rgba(0,0,0,.28);
 }
 `;
 

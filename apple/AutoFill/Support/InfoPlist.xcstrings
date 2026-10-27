@@ -1,0 +1,37 @@
+{
+  "sourceLanguage" : "fr",
+  "strings" : {
+    "CFBundleDisplayName" : {
+      "comment" : "Bundle display name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OnePass"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "NSFaceIDUsageDescription" : {
+      "comment" : "",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass uses Face ID to fill your passwords without retyping your master password."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OnePass utilise Face ID pour remplir tes mots de passe sans retaper ton mot de passe maître."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

@@ -10,7 +10,9 @@ enum FieldDates {
         return calendar
     }()
 
-    static let french = Locale(identifier: "fr_FR")
+    /// The app's language (French or English), not the system region alone: dates read like the
+    /// rest of the interface.
+    static let french = Locale(identifier: Bundle.main.preferredLocalizations.first ?? "fr")
 
     static func date(_ value: FfiDate) -> Date? {
         calendar.date(from: DateComponents(year: Int(value.year), month: Int(value.month), day: Int(value.day)))
@@ -70,7 +72,7 @@ struct DateFieldEditor: View {
     var body: some View {
         if case .date = value {
             HStack {
-                DatePicker(field.label, selection: date, displayedComponents: .date)
+                DatePicker(field.displayLabel, selection: date, displayedComponents: .date)
                     .labelsHidden()
                     .environment(\.locale, FieldDates.french)
                     .environment(\.calendar, FieldDates.calendar)
@@ -83,8 +85,13 @@ struct DateFieldEditor: View {
                     .foregroundStyle(.secondary)
             }
         } else {
-            Button("Ajouter une date") { value = .date(value: FieldDates.ffiDate(Date())) }
-                .accessibilityIdentifier("editor.field.\(field.id)")
+            Button {
+                value = .date(value: FieldDates.ffiDate(Date()))
+            } label: {
+                Label("Ajouter une date", systemImage: "calendar.badge.plus")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("editor.field.\(field.id)")
         }
     }
 }

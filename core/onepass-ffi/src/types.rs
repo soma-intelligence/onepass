@@ -335,6 +335,11 @@ pub struct FfiItemSummary {
     pub trashed_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Provider of the first "sign in with" method, encoded like
+    /// `FfiLoginMethod::Provider.provider` ("google", "github",
+    /// "oidc:<domain>"...). `None` when the item has none.
+    #[uniffi(default = None)]
+    pub sign_in_provider: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]

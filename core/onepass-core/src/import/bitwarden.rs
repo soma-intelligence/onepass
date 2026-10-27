@@ -22,7 +22,9 @@ use super::limits::{MAX_INPUT, MAX_RECORDS};
 use super::{Import, Warning};
 
 /// A JSON string, number or boolean as text; anything else is absent.
-fn lenient<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Option<String>, D::Error> {
+pub(crate) fn lenient<'de, D: Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Option<String>, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Any {
@@ -42,7 +44,7 @@ fn lenient<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Option<String
 }
 
 /// Same, moved into `Zeroizing` right away.
-fn lenient_secret<'de, D: Deserializer<'de>>(
+pub(crate) fn lenient_secret<'de, D: Deserializer<'de>>(
     d: D,
 ) -> std::result::Result<Option<Zeroizing<String>>, D::Error> {
     Ok(lenient(d)?.map(Zeroizing::new))

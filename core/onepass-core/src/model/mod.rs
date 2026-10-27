@@ -1,12 +1,14 @@
 //! Plaintext data model of vault items. No cryptography lives here.
 
 pub mod checks;
+pub mod events;
 pub mod field;
 pub mod item;
 pub mod menus;
 pub mod templates;
 pub mod validate;
 
+pub use events::{EventKind, ItemEvent, ItemTrailer};
 pub use field::{
     Address, AttachmentRef, BarcodeFormat, Field, FieldType, FieldValue, PasskeyCredential,
     PasswordHistoryEntry, Section, SshKeyValue,

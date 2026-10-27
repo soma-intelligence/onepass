@@ -3,23 +3,30 @@ import SwiftUI
 import VaultKit
 
 /// Mac window and iPad in regular width (spec 6.1, 6.3, mockup `Main`): sidebar, item list, detail.
-/// Edition happens in place in the detail column.
+/// Edition happens in place in the detail column. A full page (Watchtower, Développeur) takes the
+/// whole width right of the sidebar: two columns instead of three.
 struct SplitBrowseView: View {
+    @Environment(AppModel.self) private var model
     @State private var visibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $visibility) {
-            Sidebar()
-                #if os(macOS)
-                .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 320)
-                #else
-                .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
-                #endif
-        } content: {
-            ItemListColumn()
-                .navigationSplitViewColumnWidth(min: 280, ideal: 330, max: 440)
-        } detail: {
-            DetailColumn()
+        Group {
+            if model.page == .items {
+                NavigationSplitView(columnVisibility: $visibility) {
+                    sidebar
+                } content: {
+                    ItemListColumn()
+                        .navigationSplitViewColumnWidth(min: 280, ideal: 330, max: 440)
+                } detail: {
+                    DetailColumn()
+                }
+            } else {
+                NavigationSplitView(columnVisibility: $visibility) {
+                    sidebar
+                } detail: {
+                    PageColumn(page: model.page)
+                }
+            }
         }
         #if DEBUG && os(iOS)
         .task {
@@ -31,6 +38,30 @@ struct SplitBrowseView: View {
             visibility = .all
         }
         #endif
+    }
+
+    private var sidebar: some View {
+        Sidebar()
+            #if os(macOS)
+            .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 320)
+            #else
+            .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
+            #endif
+    }
+}
+
+/// Right of the sidebar when a full page is chosen.
+struct PageColumn: View {
+    let page: BrowsePage
+
+    var body: some View {
+        NavigationStack {
+            switch page {
+            case .watchtower: WatchtowerPage()
+            case .developer: DeveloperPage()
+            case .items: EmptyView()
+            }
+        }
     }
 }
 

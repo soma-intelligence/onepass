@@ -12,10 +12,15 @@ final class FakeEnclaveKeyring: EnclaveKeyring {
     }
     private let state = Mutex(State())
     let available: Bool
+    let storesKeys: Bool
 
-    init(available: Bool = true) { self.available = available }
+    init(available: Bool = true, storesKeys: Bool = true) {
+        self.available = available
+        self.storesKeys = storesKeys
+    }
 
     var isAvailable: Bool { available }
+    var canStoreKeys: Bool { storesKeys }
 
     func invalidate() { state.withLock { $0.invalidated = true } }
     func failNextDecrypt(with error: EnclaveError) { state.withLock { $0.nextError = error } }

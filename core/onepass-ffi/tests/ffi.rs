@@ -380,6 +380,37 @@ fn login_methods_and_ids_roundtrip() {
 }
 
 #[test]
+fn provider_login_saves_without_username_and_shows_provider() {
+    let fx = fixture();
+    let account = saved_login(&fx, "pw-fournisseur-2");
+    let mut item = login(&fx, "Atlas via GitHub");
+    assert!(matches!(
+        fx.session.save_item(item.clone()).unwrap_err(),
+        OnePassError::Validation { field, .. } if field == "username"
+    ));
+    item.login_methods = vec![
+        FfiLoginMethod::Passkey,
+        FfiLoginMethod::Provider {
+            provider: "github".into(),
+            account_item_id: account.id.clone(),
+            relay_email: None,
+        },
+        FfiLoginMethod::Provider {
+            provider: "oidc:sso.exemple.fr".into(),
+            account_item_id: account.id.clone(),
+            relay_email: None,
+        },
+    ];
+    let saved = fx.session.save_item(item).unwrap();
+    let summaries = fx.session.item_summaries().unwrap();
+    let row = summaries.iter().find(|s| s.id == saved.id).unwrap();
+    assert_eq!(row.subtitle, "");
+    assert_eq!(row.sign_in_provider.as_deref(), Some("github"));
+    let plain = summaries.iter().find(|s| s.id == account.id).unwrap();
+    assert_eq!(plain.sign_in_provider, None);
+}
+
+#[test]
 fn repeatable_fields_keep_order() {
     let fx = fixture();
     let mut item = login(&fx, "Codes");
@@ -1837,4 +1868,49 @@ fn keep_needed_and_reset_sync_health() {
     fx.session.lock();
     assert_eq!(fx.session.keep_needed(), Err(OnePassError::Locked));
     assert_eq!(fx.session.reset_sync_health(), Err(OnePassError::Locked));
+}
+
+#[test]
+fn import_items_into_vault_with_new_ids_and_folder_tags() {
+    let fx = fixture();
+    let csv = b"folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n\
+        Personal,1,login,Mail,,,0,https://mail.example.com,alice,Pw-Invented-1,\n\
+        ,0,note,Memo,Invented body,,0,,,,\n"
+        .to_vec();
+    let format = detect_import_format("export.csv".into(), csv.clone()).unwrap();
+    assert_eq!(format, "bitwarden-csv");
+    let preview = preview_import(format.clone(), csv.clone()).unwrap();
+    assert_eq!(preview.items, 2);
+
+    let done = fx
+        .session
+        .import_items(format.clone(), csv.clone(), fx.vault_id.clone())
+        .unwrap();
+    assert_eq!(done.items, 2);
+    let again = fx
+        .session
+        .import_items(format, csv, fx.vault_id.clone())
+        .unwrap();
+    assert_eq!(again.items, 2);
+
+    let all = fx.session.item_summaries().unwrap();
+    assert_eq!(all.len(), 4, "a second import adds, never overwrites");
+    let mail: Vec<_> = all.iter().filter(|s| s.title == "Mail").collect();
+    assert_eq!(mail.len(), 2);
+    assert_ne!(mail[0].id, mail[1].id);
+    assert!(mail.iter().all(|s| s.vault_id == fx.vault_id));
+    assert_eq!(mail[0].tags, vec!["Personal".to_owned()]);
+    assert!(mail[0].favorite);
+}
+
+#[test]
+fn import_into_unknown_vault_writes_nothing() {
+    let fx = fixture();
+    let csv = b"name,url,username,password\nA,https://a.example.com,u,p\n".to_vec();
+    let other = "0".repeat(32);
+    assert_eq!(
+        fx.session.import_items("chrome-csv".into(), csv, other),
+        Err(OnePassError::NotFound)
+    );
+    assert!(fx.session.item_summaries().unwrap().is_empty());
 }

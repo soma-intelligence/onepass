@@ -6,6 +6,9 @@ import Testing
 
 @Suite("CloudKit mapping")
 struct CloudKitMappingTests {
+    /// Messages are compared in French, the source language, whatever the machine's language.
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     static let name = RecordName(kind: 5, id: "00112233445566778899aabbccddeeff")
     static let zone = CKRecordZone.ID(zoneName: CloudKitMapping.zoneName, ownerName: CKCurrentUserDefaultName)
 

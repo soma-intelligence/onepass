@@ -31,6 +31,13 @@ struct ItemListColumn: View {
     @FocusState private var searchFocused: Bool
     /// Not secret: the list order only.
     @AppStorage("onepass.browse.sortByDate", store: AppModel.browseDefaults) private var sortByDate = false
+    /// "À proximité": rows come from the position and the session's location index.
+    @State private var nearby = NearbyLoader()
+    /// "Toutes les catégories" dropdown: one item type within the sidebar filter (nil: every type).
+    @State private var categoryFilter: FfiItemType?
+    @State private var choosingCategory = false
+    /// Mac: the search field under the header, shown or hidden by its icon (⌘F always shows it).
+    @AppStorage("onepass.browse.searchShown", store: AppModel.browseDefaults) private var searchShown = true
 
     private var session: VaultSession { model.session }
     private var sort: ItemSort { sortByDate ? .updated : .title }
@@ -41,10 +48,46 @@ struct ItemListColumn: View {
             set: { model.perform(.select($0)) })
     }
 
+    private var isNearby: Bool { model.selection == .nearby }
+
+    /// The rows: the filter's items, or "À proximité" closest first (searchable, never by month),
+    /// then the type chosen in the dropdown.
+    private var listedItems: [FfiItemSummary] {
+        // A Watchtower card ("Voir les éléments") narrows the list to its flagged items.
+        let items = model.applyWatchtowerFilter(
+            isNearby ? ItemSearch.filter(nearby.summaries, query: query)
+                : session.items(filter: model.selection, query: query, sort: sort))
+        guard let type = categoryFilter, !isCategorySelection else { return items }
+        return items.filter { $0.itemType == type }
+    }
+
+    /// The sidebar (or a command) chose a type itself: the dropdown shows it.
+    private var isCategorySelection: Bool {
+        if case .category = model.selection { return true }
+        return false
+    }
+
+    /// The type the dropdown shows: the sidebar's own type filter, else the dropdown's choice.
+    private var shownCategory: FfiItemType? {
+        if case .category(let type) = model.selection { return type }
+        return categoryFilter
+    }
+
+    /// Types present in the sidebar filter, with their counts (search ignored), for the dropdown.
+    private var presentTypes: [(type: FfiItemType, count: Int)] {
+        let filter: ItemFilter = isCategorySelection ? .all : model.selection
+        let base = isNearby ? nearby.summaries : session.items(filter: filter, query: "", sort: .title)
+        var counts: [FfiItemType: Int] = [:]
+        for item in base { counts[item.itemType, default: 0] += 1 }
+        return ItemCategory.all.compactMap { category in
+            counts[category.type].map { (category.type, $0) }
+        }
+    }
+
     var body: some View {
-        let items = session.items(filter: model.selection, query: query, sort: sort)
+        let items = listedItems
         List(selection: rowSelection) {
-            if sortByDate {
+            if sortByDate, !isNearby {
                 ForEach(Self.months(items)) { month in
                     Section {
                         rows(month.items)
@@ -55,7 +98,20 @@ struct ItemListColumn: View {
             } else {
                 rows(items)
             }
+            if !items.isEmpty {
+                // The count at the end of the list, centered (not a selectable row).
+                Text(Self.countLabel(items.count))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 10)
+                    .selectionDisabled()
+                    .listRowSeparator(.hidden)
+                    .accessibilityIdentifier("list.count")
+            }
         }
+        // A new sidebar filter starts on every type again.
+        .onChange(of: model.selection) { categoryFilter = nil }
         .focusedValue(\.itemListFocused, true)
         #if os(macOS)
         // Delete key on the focused list (Edit > Supprimer): same as ⌘⌫, never from a text field.
@@ -64,48 +120,79 @@ struct ItemListColumn: View {
         .overlay {
             if items.isEmpty { emptyState }
         }
+        // Asked when "À proximité" opens (the permission prompt comes from here, never at launch),
+        // then again whenever the items change.
+        .task(id: NearbyRequest(active: isNearby, revision: session.summariesRevision)) {
+            guard isNearby else { return }
+            await nearby.load(session)
+        }
         // Filter, search or remote reload: a selection no longer listed goes away (M2, M3).
         .onChange(of: items.map(\.id), initial: true) { _, ids in
             model.keepSelection(in: Set(ids))
         }
-        .navigationTitle(title)
+        .navigationTitle(model.watchtowerFilter?.title ?? title)
         #if os(macOS)
         // Mockup `Main`: the list names its filter above the rows; the toolbar keeps search and actions.
         .toolbar(removing: .title)
+        // Search on top of its list (the detail column keeps its own actions on the right), then
+        // the filter's name. On a bar material: rows scrolling up pass under it, never through it
+        // (the list has no background of its own any more).
         .safeAreaInset(edge: .top, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(title).font(.headline).lineLimit(1)
-                Text(Self.countLabel(items.count)).font(.subheadline).foregroundStyle(.secondary)
-                Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) {
+                    categoryPill
+                    Spacer(minLength: 4)
+                    Button {
+                        withAnimation(.snappy) { searchShown.toggle() }
+                        if searchShown { searchFocused = true } else { query = "" }
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .frame(width: 26, height: 26)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(searchShown ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
+                    .help("Rechercher (⌘F)")
+                    .accessibilityIdentifier("items.searchToggle")
+                    sortMenu
+                }
+                if searchShown { searchField }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("list.title")
+            .padding(.horizontal, 14)
+            .padding(.top, 6)
+            .padding(.bottom, 8)
+            .background(.bar)
+            .overlay(alignment: .bottom) { Divider().opacity(0.5) }
         }
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .scrollContentBackground(.hidden)
+        // Rows inserted after the first layout (sync, seeding) kept the table's short default
+        // height and came out clipped: every row is two lines, so the table gets that height.
+        .environment(\.defaultMinListRowHeight, 52)
+        #if os(macOS)
+        .onChange(of: model.searchFocusRequest) {
+            searchShown = true
+            searchFocused = true
+        }
+        #else
         .searchable(text: $query, prompt: Text("Rechercher"))
         .searchFocused($searchFocused)
-        .onChange(of: model.searchFocusRequest) {
-            searchFocused = true
-            #if os(macOS)
-            // `searchFocused` only works the first time once the focus left the field (macOS 26):
-            // the toolbar search field is focused directly.
-            SearchFieldFocus.focus()
-            #endif
-        }
+        .onChange(of: model.searchFocusRequest) { searchFocused = true }
+        #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    NewItemMenu { model.perform(.newItem($0)) }
+                // The add sheet (common types first, search, every category, import), like ⌘N.
+                Button {
+                    model.showNewItemPicker = true
                 } label: {
                     Label("Nouvel élément", systemImage: "plus")
                 }
                 .help("Nouvel élément (⌘N)")
                 .accessibilityIdentifier("items.new")
             }
+            #if !os(macOS)
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Picker("Trier par", selection: $sortByDate) {
@@ -118,8 +205,101 @@ struct ItemListColumn: View {
                 }
                 .accessibilityIdentifier("items.sort")
             }
+            #endif
         }
     }
+
+    #if os(macOS)
+    /// "Toutes les catégories ⌄": a pill with the current type's tile, filled with the accent once a
+    /// type is chosen. Opens the types present in the filter, common ones first.
+    private var categoryPill: some View {
+        let current = shownCategory.map(ItemCategory.of)
+        return Button {
+            choosingCategory.toggle()
+        } label: {
+            HStack(spacing: 7) {
+                if let current {
+                    CategoryTile(category: current, size: 18)
+                } else {
+                    Image(systemName: "square.grid.2x2").font(.system(size: 12, weight: .semibold))
+                }
+                Text(current?.plural ?? String(localized: "Toutes les catégories"))
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+            }
+            .foregroundStyle(current == nil ? AnyShapeStyle(.primary) : AnyShapeStyle(.white))
+            .padding(.leading, current == nil ? 10 : 5)
+            .padding(.trailing, 10)
+            .padding(.vertical, 5)
+            .background(current == nil ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(Theme.accent.opacity(0.9)),
+                in: Capsule())
+            .overlay { Capsule().strokeBorder(.white.opacity(0.08)) }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(current?.plural ?? String(localized: "Toutes les catégories")))
+        .accessibilityIdentifier("list.title")
+        .popover(isPresented: $choosingCategory, arrowEdge: .bottom) {
+            CategoryFilterPopover(types: presentTypes, current: shownCategory) { type in
+                choosingCategory = false
+                if isCategorySelection {
+                    model.selection = .all
+                    model.page = .items
+                }
+                // After the selection change resets it.
+                DispatchQueue.main.async { categoryFilter = type }
+            }
+        }
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            Picker("Trier par", selection: $sortByDate) {
+                Text("Titre").tag(false)
+                Text("Date de modification").tag(true)
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+        }
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(.secondary)
+        .help("Trier")
+        .accessibilityIdentifier("items.sort")
+    }
+
+    /// The list's own search field (⌘F), above the rows. Escape clears it.
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Rechercher", text: $query, prompt: Text("Rechercher"))
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .onExitCommand { query = ""; searchFocused = false }
+                .accessibilityIdentifier("items.search")
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Effacer la recherche"))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.fill.quaternary, in: .rect(cornerRadius: 9))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9)
+                .strokeBorder(searchFocused ? AnyShapeStyle(Theme.accent.opacity(0.8)) : AnyShapeStyle(.white.opacity(0.06)))
+        }
+    }
+    #endif
 
     @ViewBuilder private func rows(_ items: [FfiItemSummary]) -> some View {
         let showVault = showsVaultName
@@ -165,6 +345,7 @@ struct ItemListColumn: View {
         switch model.selection {
         case .all: String(localized: "Tous les éléments")
         case .favorites: String(localized: "Favoris")
+        case .nearby: String(localized: "À proximité")
         case .vault(let id): vaultName(id) ?? String(localized: "Coffre")
         case .category(let type): ItemCategory.of(type).plural
         case .tag(let tag): String(localized: "Tag : \(tag)")
@@ -177,9 +358,13 @@ struct ItemListColumn: View {
         count == 1 ? String(localized: "1 élément") : String(localized: "\(count) éléments")
     }
 
-    private var emptyState: some View {
-        ItemListEmptyState(reason: EmptyListReason(filter: model.selection, query: query)) {
-            model.showNewItemPicker = true
+    @ViewBuilder private var emptyState: some View {
+        if isNearby, query.isEmpty {
+            NearbyStatusView(phase: nearby.phase) { Task { await nearby.load(session) } }
+        } else {
+            ItemListEmptyState(reason: EmptyListReason(filter: model.selection, query: query)) {
+                model.showNewItemPicker = true
+            }
         }
     }
 
@@ -239,6 +424,10 @@ struct ItemListEmptyState: View {
             EmptyState(
                 title: String(localized: "Aucun élément avec ce tag"), systemImage: "tag",
                 message: String(localized: "Ajoute ce tag à un élément pour le retrouver ici."))
+        case .noNearby:
+            EmptyState(
+                title: String(localized: "Rien à proximité"), systemImage: "mappin.slash",
+                message: String(localized: "Ajoute un lieu à un élément pour le retrouver ici quand tu es à moins de 2 km."))
         case .noFavorites:
             EmptyState(
                 title: String(localized: "Aucun favori"), systemImage: "star",
@@ -254,3 +443,89 @@ struct ItemListEmptyState: View {
         }
     }
 }
+
+/// Identity of the "À proximité" request: reloads when the filter opens and when the items change.
+struct NearbyRequest: Equatable {
+    var active: Bool
+    var revision: Int
+}
+
+#if os(macOS)
+/// The dropdown of "Toutes les catégories": every type, then the common types present, a divider,
+/// the other types present. A check marks the current one.
+private struct CategoryFilterPopover: View {
+    let types: [(type: FfiItemType, count: Int)]
+    let current: FfiItemType?
+    let pick: (FfiItemType?) -> Void
+
+    var body: some View {
+        let common = types.filter { NewItemSheet.featured.contains($0.type) }
+        let others = types.filter { !NewItemSheet.featured.contains($0.type) }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 1) {
+                CategoryFilterRow(category: nil, count: types.reduce(0) { $0 + $1.count }, checked: current == nil) {
+                    pick(nil)
+                }
+                .accessibilityIdentifier("list.category.all")
+                if !common.isEmpty {
+                    Divider().padding(.vertical, 4).padding(.horizontal, 6)
+                    ForEach(common, id: \.type) { entry in row(entry) }
+                }
+                if !others.isEmpty {
+                    Divider().padding(.vertical, 4).padding(.horizontal, 6)
+                    ForEach(others, id: \.type) { entry in row(entry) }
+                }
+            }
+            .padding(6)
+        }
+        .frame(width: 260)
+        .frame(maxHeight: 460)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func row(_ entry: (type: FfiItemType, count: Int)) -> some View {
+        CategoryFilterRow(category: ItemCategory.of(entry.type), count: entry.count, checked: current == entry.type) {
+            pick(entry.type)
+        }
+        .accessibilityIdentifier("list.category.\(NewItemMenu.key(entry.type))")
+    }
+}
+
+private struct CategoryFilterRow: View {
+    let category: ItemCategory?
+    let count: Int
+    let checked: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(width: 12)
+                    .opacity(checked ? 1 : 0)
+                if let category {
+                    CategoryTile(category: category, size: 20)
+                } else {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 20, height: 20)
+                }
+                Text(category?.plural ?? String(localized: "Toutes les catégories")).lineLimit(1)
+                Spacer(minLength: 8)
+                Text("\(count)")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(hovering ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.tertiary))
+            }
+            .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.85)) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 7))
+            .contentShape(.rect(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+#endif

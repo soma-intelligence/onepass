@@ -3,6 +3,7 @@
 // asks it to fill; it never sees a secret.
 import { ext } from "../shared/browser";
 import type { ProviderId, UiToBg } from "../shared/messages";
+import { tr } from "../shared/i18n";
 import type { MenuInit, Summary } from "../shared/ui";
 import {
   ClickGuard,
@@ -12,12 +13,12 @@ import {
   h,
   hostOf,
   icon,
+  itemArt,
   mark,
   messageBlock,
   mount,
   observeVisibility,
   providerLabel,
-  tile,
   tokenFromHash,
 } from "./components";
 import { parseEmpty, parseLocked, parseMenuInit } from "./parse";
@@ -31,15 +32,15 @@ const LOGIN_FORMS = new Set(["login", "signup", "change_password", "otp"]);
 const NEW_PASSWORD_FORMS = new Set(["signup", "change_password"]);
 
 function emptyText(init: MenuInit): string {
-  if (init.formKind === "card") return "Aucune carte dans OnePass";
-  if (init.formKind === "identity" || init.formKind === "address") return "Aucune identité dans OnePass";
-  return `Aucun login pour ${hostOf(init.origin)}`;
+  if (init.formKind === "card") return tr("Aucune carte dans OnePass", "No card in OnePass");
+  if (init.formKind === "identity" || init.formKind === "address") return tr("Aucune identité dans OnePass", "No identity in OnePass");
+  return tr(`Aucun login pour ${hostOf(init.origin)}`, `No login for ${hostOf(init.origin)}`);
 }
 
 function hintFor(it: Summary): string {
   if (it.kind !== "login") return "";
-  if (it.has_totp) return "mot de passe + code";
-  if (it.match === "exact_host") return "ce site exact";
+  if (it.has_totp) return tr("mot de passe + code", "password + code");
+  if (it.match === "exact_host") return tr("ce site exact", "this exact site");
   return "";
 }
 
@@ -83,6 +84,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
 
   const header = (origin: string | null) =>
     h("h1", { class: "menu-head" }, mark("s"), origin ? `OnePass · ${hostOf(origin)}` : "OnePass");
+  const glyphTile = (name: "key" | "plus", size: number) => h("span", { class: "glyph-wrap", attrs: { "aria-hidden": "true" } }, icon(name, size));
 
   const showError = (line: HTMLElement | null, code: string) => {
     if (code === "locked" || code === "unpaired" || code === "host_missing") {
@@ -129,13 +131,16 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
             }),
           },
         },
-        "Déverrouiller dans OnePass",
+        tr("Déverrouiller dans OnePass", "Unlock in OnePass"),
       );
-      body = messageBlock("OnePass est verrouillé", undefined, btn);
+      body = messageBlock(tr("OnePass est verrouillé", "OnePass is locked"), undefined, btn);
     } else if (code === "unpaired") {
-      body = messageBlock("Appairer OnePass depuis la barre d'outils");
+      body = messageBlock(tr("Appairer OnePass depuis la barre d'outils", "Pair OnePass from the toolbar"));
     } else if (code === "host_missing") {
-      body = messageBlock("App OnePass introuvable", "Ouvre l'app OnePass sur cet ordinateur, puis réessaie.");
+      body = messageBlock(
+        tr("App OnePass introuvable", "OnePass app not found"),
+        tr("Ouvre l'app OnePass sur cet ordinateur, puis réessaie.", "Open the OnePass app on this computer, then try again."),
+      );
     } else {
       body = messageBlock(errorText(code));
     }
@@ -162,17 +167,17 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     for (const it of items) {
       const providerOnly = it.kind === "login" && !it.has_password && it.methods.length > 0;
       if (!providerOnly) {
-        const hint = linked?.itemId === it.item_id ? `Utilisé pour ${linked.site}` : hintFor(it);
-        list.append(option(it.title, it.subtitle, tile(it.icon_letter, it.icon_color, "s"), hint, pick(it.item_id)));
+        const hint = linked?.itemId === it.item_id ? tr(`Utilisé pour ${linked.site}`, `Used for ${linked.site}`) : hintFor(it);
+        list.append(option(it.title, it.subtitle, itemArt(it, "s"), hint, pick(it.item_id)));
       }
       if (it.kind === "login" && LOGIN_FORMS.has(init.formKind)) {
         for (const m of it.methods) {
           list.append(
             option(
-              `Se connecter avec ${providerLabel(m.provider)} (${m.account_email})`,
+              tr(`Se connecter avec ${providerLabel(m.provider)} (${m.account_email})`, `Sign in with ${providerLabel(m.provider)} (${m.account_email})`),
               it.title,
-              tile(it.icon_letter, it.icon_color, "s"),
-              "compte lié",
+              itemArt(it, "s"),
+              tr("compte lié", "linked account"),
               signin(it.item_id, m.provider),
             ),
           );
@@ -184,7 +189,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     if (NEW_PASSWORD_FORMS.has(init.formKind)) {
       extras.push(h("div", { class: "sep", attrs: { "aria-hidden": "true" } }));
       extras.push(
-        option("Générer un mot de passe", null, icon("key", 16), "", async () => {
+        option(tr("Générer un mot de passe", "Generate a password"), null, glyphTile("key", 16), "", async () => {
           if (!token) return;
           const r = await call(deps.send, { type: "menu_generate", token }, parseEmpty);
           if (!r.ok) showError(errLine, r.code);
@@ -195,7 +200,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       // Spec 8.3; the save prompt opens in its edit view (nothing typed is read from the page).
       if (extras.length === 0) extras.push(h("div", { class: "sep", attrs: { "aria-hidden": "true" } }));
       extras.push(
-        option("Enregistrer un nouveau login", null, icon("plus", 12), "", async () => {
+        option(tr("Enregistrer un nouveau login", "Save a new login"), null, glyphTile("plus", 12), "", async () => {
           if (!token) return;
           const r = await call(deps.send, { type: "menu_new_login", token }, parseEmpty);
           if (!r.ok) showError(errLine, r.code);
@@ -205,7 +210,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     // Only options (and decorative separators) inside the listbox.
     const listbox =
       list.childElementCount + extras.length > 0
-        ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": "Suggestions OnePass" } }, list, ...extras)
+        ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": tr("Suggestions OnePass", "OnePass suggestions") } }, list, ...extras)
         : null;
     mount(container, header(init.origin), empty, listbox, errLine);
     guard.reset();

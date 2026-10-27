@@ -172,6 +172,9 @@ struct PasswordStrengthTests {
 
 @Suite("Item editor model, fix round 1")
 struct ItemEditorFixTests {
+    /// Default labels are compared in French, the source language, whatever the machine's language.
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     @Test func documentWithoutFileValidates() {
         // Attachments come in milestone 5: a required file field does not block the save.
         let draft = ItemDraft(item: draftItem(.document, title: "Attestation"))

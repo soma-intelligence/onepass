@@ -4,11 +4,11 @@
 
 use time::OffsetDateTime;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::model::ItemType;
 
 use super::build::{Draft, host_of};
-use super::limits::csv_records;
+use super::limits::{csv_records, zip_entries};
 use super::{Format, Import, Warning};
 
 /// Column handler of one format: fills `d` from column `col` (lower-case
@@ -271,9 +271,27 @@ pub(crate) fn parse_chrome(b: &[u8]) -> Result<Import> {
     login_rows(b, None, chrome_apply)
 }
 
-/// Safari and Apple Passwords.
+/// Safari and Apple Passwords. Also the zip of Safari's "Export Browsing
+/// Data", whose `Passwords.csv` entry is read (the other entries, such as
+/// bookmarks and history, are not passwords and are left out).
 pub(crate) fn parse_safari(b: &[u8]) -> Result<Import> {
+    if b.starts_with(b"PK\x03\x04") {
+        let entries = zip_entries(b)?;
+        let (_, csv) = entries
+            .iter()
+            .find(|(name, _)| is_safari_passwords_entry(name))
+            .ok_or(Error::InvalidFormat("no Passwords.csv in zip"))?;
+        return login_rows(csv, None, safari_apply);
+    }
     login_rows(b, None, safari_apply)
+}
+
+/// Whether a zip entry is the `Passwords.csv` of a Safari export (base
+/// name, any case).
+pub(crate) fn is_safari_passwords_entry(name: &str) -> bool {
+    name.rsplit(['/', '\\'])
+        .next()
+        .is_some_and(|base| base.eq_ignore_ascii_case("passwords.csv"))
 }
 
 /// Firefox: the title is the host of the URL.

@@ -16,8 +16,14 @@ struct ItemListRow: View {
         self.vaultName = vaultName
     }
 
+    /// A login with no username that signs in with a provider: "Se connecte avec GitHub".
+    private var signInLine: String? {
+        guard summary.subtitle.isEmpty, let provider = summary.signInProvider else { return nil }
+        return String(localized: "Se connecte avec \(LoginProvider.displayName(provider))")
+    }
+
     private var secondLine: String {
-        let parts = [summary.subtitle, vaultName ?? ""].filter { !$0.isEmpty }
+        let parts = [signInLine ?? summary.subtitle, vaultName ?? ""].filter { !$0.isEmpty }
         return parts.isEmpty ? ItemCategory.of(summary.itemType).singular : parts.joined(separator: " · ")
     }
 

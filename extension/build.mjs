@@ -70,6 +70,7 @@ async function buildBrowser(browser, dev, e2e = false) {
     cpSync(join(root, `src/ui/${page}.html`), join(out, `${page}.html`));
   }
   cpSync(join(root, "src/ui/theme.css"), join(out, "theme.css"));
+  cpSync(join(root, "src/_locales"), join(out, "_locales"), { recursive: true });
   writeFileSync(
     join(out, "manifest.json"),
     JSON.stringify(mergeManifest(browser), null, 2) + "\n",

@@ -2,7 +2,8 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Top of the detail (mockups `Main` and `PhoneItem`): icon, title, subtitle, vault badge.
+/// Top of the detail, straight on the window glass: big icon, title, then one secondary line with
+/// the category (and the list subtitle) and the vault badge.
 struct ItemHeader: View {
     @Environment(AppModel.self) private var model
     let item: FfiItem
@@ -21,34 +22,43 @@ struct ItemHeader: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon, size: 56)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-                    .font(.title2.weight(.semibold))
-                    .lineLimit(2)
-                    .accessibilityIdentifier("item.title")
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                if let vault {
-                    HStack(spacing: 6) {
-                        VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 18)
-                        Text(vault.meta.name).font(.footnote).foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: 16) {
+            ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon, size: 64)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(item.title)
+                        .font(.title.weight(.bold))
+                        .lineLimit(2)
+                        .accessibilityIdentifier("item.title")
+                    if item.favorite {
+                        Image(systemName: "star.fill")
+                            .font(.callout)
+                            .foregroundStyle(.yellow)
+                            .accessibilityLabel(Text("Favori"))
                     }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(Text("Coffre \(vault.meta.name)"))
                 }
+                HStack(spacing: 8) {
+                    Text(subtitle)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let vault {
+                        HStack(spacing: 5) {
+                            VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 16)
+                            Text(vault.meta.name).lineLimit(1)
+                        }
+                        .padding(.leading, 3)
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 2)
+                        .background(.fill.quaternary, in: Capsule())
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(Text("Coffre \(vault.meta.name)"))
+                    }
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            if item.favorite {
-                Image(systemName: "star.fill")
-                    .foregroundStyle(.yellow)
-                    .accessibilityLabel(Text("Favori"))
-            }
         }
-        .padding(.vertical, 4)
         .task(id: primaryURL) {
             guard let url = primaryURL else {
                 siteIcon = nil

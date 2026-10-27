@@ -5,6 +5,9 @@ import VaultKit
 @testable import DesignKit
 
 @Suite struct ItemCategoryTests {
+    /// Labels are compared in French, the source language, whatever the machine's language.
+    init() { DesignKitStrings.pinSourceLanguage() }
+
     @Test func everyTypeHasACategory() {
         #expect(ItemCategory.all.count == 26)
         #expect(Set(ItemCategory.all.map(\.plural)).count == 26)

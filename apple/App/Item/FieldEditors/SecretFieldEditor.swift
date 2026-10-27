@@ -33,6 +33,10 @@ struct SecretFieldEditor: View {
                     .fieldInput(field.kind)
                     .privacySensitive()
                     .accessibilityIdentifier("editor.field.\(field.id)")
+                // Strength as a word and a ring on the field's line, like the read view.
+                if field.kind == .password, !value.text.isEmpty {
+                    StrengthBadge(bits: meterBits)
+                }
                 Button {
                     revealed.toggle()
                 } label: {
@@ -50,9 +54,6 @@ struct SecretFieldEditor: View {
                     .accessibilityLabel(Text("Générer"))
                     .accessibilityIdentifier("editor.generate.\(field.id)")
                 }
-            }
-            if field.kind == .password, !value.text.isEmpty {
-                StrengthMeter(bits: meterBits)
             }
             if field.kind == .otp, !value.text.isEmpty {
                 if captured {
@@ -111,10 +112,11 @@ struct SecretFieldEditor: View {
     }
 
     @ViewBuilder private var input: some View {
+        // The label is above the row: no placeholder repeating it inside the field.
         if revealed && !captured {
-            TextField(field.label, text: text, axis: field.kind == .mnemonic ? .vertical : .horizontal)
+            TextField(field.displayLabel, text: text, prompt: Text(""), axis: field.kind == .mnemonic ? .vertical : .horizontal)
         } else {
-            SecureField(field.label, text: text)
+            SecureField(field.displayLabel, text: text, prompt: Text(""))
         }
     }
 }

@@ -15,16 +15,20 @@ pub(crate) mod build;
 pub(crate) mod csv_logins;
 pub(crate) mod cxf;
 pub(crate) mod dashlane;
+pub(crate) mod enpass;
 pub(crate) mod json;
 pub(crate) mod keepass;
+pub(crate) mod keeper;
 pub(crate) mod lastpass;
 pub(crate) mod limits;
+pub(crate) mod nordpass;
 pub(crate) mod onepux;
+pub(crate) mod roboform;
 pub mod text;
 
 use std::io::Cursor;
 
-use serde::de::{IgnoredAny, MapAccess, Visitor};
+use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer as _, Serialize};
 
 use crate::error::{Error, Result};
@@ -53,11 +57,16 @@ pub enum Format {
     OnePassArchive,
     /// OnePass plaintext CSV export (`export::csv_plaintext`).
     OnePassCsv,
+    NordPassCsv,
+    /// Header-less: detected only when it starts with a header row.
+    KeeperCsv,
+    EnpassJson,
+    RoboFormCsv,
 }
 
 impl Format {
     /// Every format, in declaration order.
-    pub const ALL: [Format; 17] = [
+    pub const ALL: [Format; 21] = [
         Format::OnePasswordPux,
         Format::OnePasswordCsv,
         Format::BitwardenJson,
@@ -75,6 +84,10 @@ impl Format {
         Format::WifiQr,
         Format::OnePassArchive,
         Format::OnePassCsv,
+        Format::NordPassCsv,
+        Format::KeeperCsv,
+        Format::EnpassJson,
+        Format::RoboFormCsv,
     ];
 
     /// Stable kebab-case name (CLI flag value).
@@ -97,6 +110,10 @@ impl Format {
             Format::WifiQr => "wifi-qr",
             Format::OnePassArchive => "onepass",
             Format::OnePassCsv => "onepass-csv",
+            Format::NordPassCsv => "nordpass-csv",
+            Format::KeeperCsv => "keeper-csv",
+            Format::EnpassJson => "enpass-json",
+            Format::RoboFormCsv => "roboform-csv",
         }
     }
 
@@ -174,15 +191,20 @@ pub fn detect(_file_name: &str, bytes: &[u8]) -> Option<Format> {
 
 fn detect_zip(bytes: &[u8]) -> Option<Format> {
     let archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
-    let mut dashlane = false;
+    let (mut dashlane, mut safari) = (false, false);
     for name in archive.file_names() {
         let Ok(name) = name else { continue };
         if name.as_ref() == "export.data" {
             return Some(Format::OnePasswordPux);
         }
         dashlane |= dashlane::is_dashlane_entry(&name);
+        safari |= csv_logins::is_safari_passwords_entry(&name);
     }
-    dashlane.then_some(Format::DashlaneZip)
+    if dashlane {
+        Some(Format::DashlaneZip)
+    } else {
+        safari.then_some(Format::SafariCsv)
+    }
 }
 
 /// Top-level JSON keys that matter for detection.
@@ -205,6 +227,81 @@ struct Keys {
     encrypted: bool,
     data: bool,
     accounts: bool,
+    /// The first element of `items` has Enpass keys.
+    enpass: bool,
+}
+
+/// Keys of an item that only Enpass writes.
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ItemKey {
+    TemplateType,
+    Category,
+    Fields,
+    #[serde(other)]
+    Other,
+}
+
+/// Seed for the `items` value: looks at the keys of its first element
+/// only, skips the rest. A value that is not an array of objects fails
+/// detection, as it fits no known format.
+struct FirstItem<'a>(&'a mut bool);
+
+impl<'de> DeserializeSeed<'de> for FirstItem<'_> {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> std::result::Result<(), D::Error> {
+        d.deserialize_seq(self)
+    }
+}
+
+impl<'de> Visitor<'de> for FirstItem<'_> {
+    type Value = ();
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("an array")
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> std::result::Result<(), A::Error> {
+        seq.next_element_seed(EnpassItem(self.0))?;
+        while seq.next_element::<IgnoredAny>()?.is_some() {}
+        Ok(())
+    }
+}
+
+/// Sets the flag when an object has `template_type`, or both `category`
+/// and `fields` (Enpass); never keeps a value.
+struct EnpassItem<'a>(&'a mut bool);
+
+impl<'de> DeserializeSeed<'de> for EnpassItem<'_> {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> std::result::Result<(), D::Error> {
+        d.deserialize_map(self)
+    }
+}
+
+impl<'de> Visitor<'de> for EnpassItem<'_> {
+    type Value = ();
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a JSON object")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<(), A::Error> {
+        let (mut template, mut category, mut fields) = (false, false, false);
+        while let Some(key) = map.next_key::<ItemKey>()? {
+            match key {
+                ItemKey::TemplateType => template = true,
+                ItemKey::Category => category = true,
+                ItemKey::Fields => fields = true,
+                ItemKey::Other => {}
+            }
+            map.next_value::<IgnoredAny>()?;
+        }
+        *self.0 = template || (category && fields);
+        Ok(())
+    }
 }
 
 impl<'de> Visitor<'de> for &mut Keys {
@@ -217,7 +314,11 @@ impl<'de> Visitor<'de> for &mut Keys {
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<(), A::Error> {
         while let Some(key) = map.next_key::<Key>()? {
             match key {
-                Key::Items => self.items = true,
+                Key::Items => {
+                    self.items = true;
+                    map.next_value_seed(FirstItem(&mut self.enpass))?;
+                    continue;
+                }
                 Key::Encrypted => self.encrypted = true,
                 Key::Data => self.data = true,
                 Key::Accounts => self.accounts = true,
@@ -238,6 +339,8 @@ fn detect_json(body: &[u8]) -> Option<Format> {
     // Bitwarden, so that `parse` reports the explicit encrypted-export error.
     if keys.encrypted && (keys.items || keys.data) {
         Some(Format::BitwardenJson)
+    } else if keys.items && keys.enpass {
+        Some(Format::EnpassJson)
     } else if keys.accounts {
         Some(Format::CredentialExchange)
     } else {
@@ -261,6 +364,15 @@ fn detect_csv(bytes: &[u8]) -> Option<Format> {
         .collect();
     if let Some(f) = csv_logins::sniff(&header) {
         return Some(f);
+    }
+    if nordpass::is_nordpass_header(&header) {
+        return Some(Format::NordPassCsv);
+    }
+    if roboform::is_roboform_header(&header) {
+        return Some(Format::RoboFormCsv);
+    }
+    if keeper::is_keeper_header(&header) {
+        return Some(Format::KeeperCsv);
     }
     if lastpass::is_lastpass_header(&header) {
         return Some(Format::LastPassCsv);
@@ -292,6 +404,10 @@ pub fn parse(format: Format, bytes: &[u8]) -> Result<Import> {
         Format::WifiQr => text::parse_wifi_qr_lines(bytes),
         Format::OnePassArchive => Err(Error::InvalidFormat("OnePass archive: use archive::open")),
         Format::OnePassCsv => csv_logins::parse_onepass_csv(bytes),
+        Format::NordPassCsv => nordpass::parse_nordpass_csv(bytes),
+        Format::KeeperCsv => keeper::parse_keeper_csv(bytes),
+        Format::EnpassJson => enpass::parse_enpass_json(bytes),
+        Format::RoboFormCsv => roboform::parse_roboform_csv(bytes),
     }?;
     if import.items.len() > limits::MAX_RECORDS {
         return Err(Error::InvalidFormat("too many items"));
@@ -305,7 +421,7 @@ mod tests {
 
     #[test]
     fn format_names_roundtrip() {
-        assert_eq!(Format::ALL.len(), 17);
+        assert_eq!(Format::ALL.len(), 21);
         for f in Format::ALL {
             assert_eq!(Format::from_name(f.name()), Some(f));
         }

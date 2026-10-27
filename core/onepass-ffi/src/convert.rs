@@ -613,6 +613,10 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
         trashed_at: i.trashed_at.map(ts),
         created_at: ts(i.created_at),
         updated_at: ts(i.updated_at),
+        sign_in_provider: i.login_methods.iter().find_map(|m| match m {
+            LoginMethod::Provider { provider, .. } => Some(provider_to_string(provider)),
+            _ => None,
+        }),
     }
 }
 
@@ -684,6 +688,7 @@ pub(crate) fn item_to_core(
         password_history: stored
             .map(|s| s.password_history.clone())
             .unwrap_or_default(),
+        events: stored.map(|s| s.events.clone()).unwrap_or_default(),
     };
     if let Some(old) = stored.and_then(password_of)
         && !old.is_empty()

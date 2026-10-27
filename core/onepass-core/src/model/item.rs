@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 
 use crate::id::Id;
+use crate::model::events::ItemEvent;
 use crate::model::field::{AttachmentRef, Field, FieldValue, PasswordHistoryEntry, Section};
 use crate::model::templates::ItemType;
 
@@ -90,6 +91,10 @@ pub struct Item {
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub password_history: Vec<PasswordHistoryEntry>,
+    /// Timeline (see `model::events`). Not part of the serde form of the
+    /// item: sealed as a trailer after it, so older records still decode.
+    #[serde(skip)]
+    pub events: Vec<ItemEvent>,
 }
 
 impl Item {
@@ -212,6 +217,7 @@ mod tests {
                 value: Zeroizing::new("old-secret".into()),
                 replaced_at: datetime!(2026-10-01 08:00 UTC),
             }],
+            events: vec![],
         }
     }
 

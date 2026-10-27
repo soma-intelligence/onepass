@@ -129,6 +129,14 @@ cargo test -p onepass-bridge --features vectors --test vectors   # vecteurs croi
 
 `npm run build:chromium && node scripts/ui-shots.mjs <dossier-de-sortie> [--only nom,nom]` rend les pages de l'extension (popup, menu, overlay, proposition d'enregistrement) hors extension, avec des réponses fictives, en clair et en sombre, et enregistre une capture par état. Outil de développement, rien n'est embarqué dans l'extension.
 
+## Langue et apparence
+
+L'interface suit la langue du navigateur (`chrome.i18n.getUILanguage()`) : français (tutoiement) si elle commence par `fr`, anglais sinon, français sans runtime (tests unitaires). Les textes sont écrits en paires `tr("…", "…")` (`src/shared/i18n.ts`) ; la description du manifeste vient de `_locales/fr` et `_locales/en` (`default_locale: fr`). Les tests de bout en bout et le laboratoire lancent Chromium avec `--lang=fr-FR`.
+
+Apparence alignée sur l'app Mac : sombre d'abord avec un mode clair, surfaces translucides (flou, filets de 1 px, coins de 12 à 14 px), accent indigo `#5856D6`, cartes de lignes avec étiquettes en minuscules teintées d'accent, icônes de catégorie illustrées (`src/ui/art.ts`, dessins originaux), toasts avec coche verte ou triangle rouge. L'app n'envoie pas d'icône de site par le pont : pas de favicon, et aucun service d'icônes tiers.
+
+Captures sur la vraie extension et le vrai hôte (hors suite) : `ONEPASS_E2E_SHOTS=<dossier> npx playwright test -c e2e/playwright.config.ts shots`. Le harnais visuel accepte `--lang en`.
+
 ## Laboratoire d'autofill
 
 `lab/` contient un laboratoire qui génère des sites fictifs à partir d'une graine et mesure ce que l'extension remplit, et ce qu'elle ne doit jamais remplir (fuites vers un autre hôte ou un champ piège). Commandes (`npm run lab:smoke`, `npm run lab`, `npm run lab:repro`, `npm run lab:corpus`), garde-fous du corpus et limites : voir [`lab/README.md`](lab/README.md).

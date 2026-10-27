@@ -35,6 +35,23 @@ struct RootView: View {
                 // Anything but the three `onepass://` links is ignored.
                 if let link = OnePassLink(url: url) { model.open(link) }
             }
+            // After the first password unlock where biometrics could be on (`AppModel.biometricOffer`).
+            // Only the buttons answer: the setter must not race "Activer" with a refusal.
+            .alert(
+                Text("Utiliser \(OnboardingModel.biometryName) pour déverrouiller ?"),
+                isPresented: Binding(
+                    get: { model.biometricOffer != nil && model.session.state == .unlocked },
+                    set: { _ in }),
+                presenting: model.biometricOffer
+            ) { _ in
+                Button("Activer") { model.answerBiometricOffer(accept: true) }
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("biometricOffer.enable")
+                Button("Plus tard", role: .cancel) { model.answerBiometricOffer(accept: false) }
+                    .accessibilityIdentifier("biometricOffer.later")
+            } message: { _ in
+                Text("La prochaine fois, \(OnboardingModel.biometryName) suffit pour ouvrir OnePass. Le mot de passe maître reste demandé tous les 14 jours et après un redémarrage.")
+            }
             #if os(iOS) || os(visionOS)
             .background { WindowSceneReader(scene: $windowScene).frame(width: 0, height: 0) }
             .onChange(of: scenePhase, initial: true) { _, phase in
