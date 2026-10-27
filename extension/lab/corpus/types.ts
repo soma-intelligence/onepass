@@ -1,9 +1,12 @@
 // Shapes of the pattern corpus: raw page samples, distilled patterns, and a
 // stable JSON writer shared by the CLIs.
 import type { Lang, ProviderId, Role } from "../gen/model.ts";
+import type { Framework, Visibility } from "../../src/content/detect/features.ts";
+
+// Single-sourced in the shared extractor, which must stay free of lab imports.
+export type { Framework, Visibility };
 
 export type Category = "login" | "signup" | "checkout" | "address" | "identity";
-export type Visibility = "visible" | "display_none" | "offscreen" | "opacity" | "zero_size";
 export type FormStep = "identifier" | "password" | "both" | "code" | "other";
 
 export type SampleSource = "rendered" | "commoncrawl" | "recorded";
@@ -22,7 +25,7 @@ export interface Sample {
   source_url: string; host: string; category: Category; captured_at: string; extractor: 1 | 2;
   source?: SampleSource;                                     // absent = "rendered"
   status: "ok" | "skipped: robots" | "skipped: duplicate host" | `error: ${string}`;
-  lang?: Lang; forms?: SampleForm[]; steps?: SampleForm[][]; framework?: "react" | "vue" | "angular" | "other"; iframes?: { origin: string; sameSite: boolean }[];
+  lang?: Lang; forms?: SampleForm[]; steps?: SampleForm[][]; framework?: Framework; iframes?: { origin: string; sameSite: boolean }[];
   shadowFields?: number; webauthnCalls?: ("get" | "create")[]; providerButtons?: ProviderId[];
 }
 

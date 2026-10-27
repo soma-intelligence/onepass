@@ -3,13 +3,14 @@
 // clicks, no submission). Respects robots.txt, one page per host, paced.
 // Usage: node --experimental-strip-types lab/corpus/extract.ts --sites <json> --out <dir> [--only <host>] [--delay-ms 5000]
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import type { ProviderId } from "../gen/model.ts";
 import { isAllowed, robotsEntry } from "./robots.ts";
 import type { RobotsEntry } from "./robots.ts";
-import { classifyRole } from "./roles.ts";
-import { sanitizeOrigin, sanitizeText, sanitizeToken } from "./sanitize.ts";
+import { build, type PageExtra } from "./build.ts";
+import { sanitizeText } from "./sanitize.ts";
+import { extractFeatures } from "../../src/content/detect/features.ts";
+import type { PageFeatures } from "../../src/content/detect/features.ts";
 import { stableJson } from "./types.ts";
-import type { Category, FormStep, Sample, SampleField, SampleForm } from "./types.ts";
+import type { Category, Sample } from "./types.ts";
 
 const USER_AGENT = "Mozilla/5.0 (compatible; OnePassLabCorpus/1; structure-only research crawler)";
 const ROBOTS_AGENT = "OnePassLabCorpus";
@@ -21,15 +22,6 @@ Captures the DOM structure (never values) of the public pages listed in the site
   --only      restrict the run to one host
   --delay-ms  minimum pause between two page requests (default 5000)
   --help      print this text`;
-
-interface RawField {
-  tag: string; type?: string; name?: string; id?: string; autocomplete?: string; inputmode?: string;
-  maxlength?: number; hasPattern: boolean; required: boolean; label?: string; visibility: SampleField["visibility"];
-}
-interface RawPage {
-  lang?: string; forms: { fields: RawField[]; buttons: string[] }[];
-  iframes: string[]; shadowFields: number; providerTexts: string[];
-}
 
 // Passive init script: records calls to navigator.credentials, never alters them.
 const INIT_SCRIPT = `(() => {
@@ -43,96 +35,15 @@ const INIT_SCRIPT = `(() => {
   }
 })();`;
 
-/** Runs inside the page: structure only, never reads a field value. */
-function pageExtract(): RawPage {
-  const textOf = (el: Element | null) => (el?.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
-  function visibility(el: Element): RawField["visibility"] {
-    const cs = getComputedStyle(el);
-    if (cs.display === "none" || cs.visibility === "hidden") return "display_none";
-    if (parseFloat(cs.opacity) === 0) return "opacity";
-    const r = el.getBoundingClientRect();
-    if (r.width <= 1 || r.height <= 1) return "zero_size";
-    if (r.right < 0 || r.bottom < 0 || r.left > innerWidth + 2000 || r.top > document.documentElement.scrollHeight + 2000) return "offscreen";
-    return "visible";
-  }
-  function labelOf(el: HTMLInputElement): string | undefined {
-    const aria = el.getAttribute("aria-label");
-    if (aria) return aria;
-    const by = el.getAttribute("aria-labelledby");
-    if (by) {
-      const t = by.split(/\s+/).map((i) => textOf(document.getElementById(i))).join(" ").trim();
-      if (t) return t;
-    }
-    if (el.id) {
-      const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-      if (l && textOf(l)) return textOf(l);
-    }
-    const wrap = el.closest("label");
-    if (wrap && textOf(wrap)) return textOf(wrap);
-    if (el.placeholder) return el.placeholder;
-    const prev = el.previousElementSibling;
-    if (prev && textOf(prev)) return textOf(prev);
-    return undefined;
-  }
-  function fieldOf(el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): RawField | null {
-    const type = el instanceof HTMLInputElement ? el.type : undefined;
-    if (type && ["hidden", "submit", "button", "image", "reset", "checkbox", "radio", "file"].includes(type)) return null;
-    const inp = el as HTMLInputElement;
-    const ml = inp.maxLength;
-    return {
-      tag: el.tagName.toLowerCase(), type, name: el.getAttribute("name") ?? undefined, id: el.id || undefined,
-      autocomplete: el.getAttribute("autocomplete") ?? undefined, inputmode: el.getAttribute("inputmode") ?? undefined,
-      maxlength: ml > 0 ? ml : undefined, hasPattern: el.hasAttribute("pattern"), required: el.required,
-      label: labelOf(inp), visibility: visibility(el),
-    };
-  }
-  const SEL = "input, select, textarea";
-  function buttonsIn(root: ParentNode): string[] {
-    const out: string[] = [];
-    root.querySelectorAll("button, input[type=submit], input[type=button], [role=button]").forEach((b) => {
-      const t = b instanceof HTMLInputElement ? b.getAttribute("value") ?? "" : textOf(b);
-      if (t) out.push(t);
-    });
-    return out;
-  }
-  const forms: RawPage["forms"] = [];
-  const inForm = new Set<Element>();
-  document.querySelectorAll("form").forEach((f) => {
-    const fields = Array.from(f.querySelectorAll<HTMLInputElement>(SEL)).map((e) => { inForm.add(e); return fieldOf(e); }).filter((x): x is RawField => !!x);
-    if (fields.length) forms.push({ fields, buttons: buttonsIn(f) });
-  });
-  const orphans = Array.from(document.querySelectorAll<HTMLInputElement>(SEL)).filter((e) => !inForm.has(e)).map(fieldOf).filter((x): x is RawField => !!x);
-  if (orphans.length) forms.push({ fields: orphans, buttons: buttonsIn(document) });
-
-  const iframes: string[] = [];
-  document.querySelectorAll("iframe[src]").forEach((i) => iframes.push(i.getAttribute("src") ?? ""));
-  let shadowFields = 0;
-  document.querySelectorAll("*").forEach((el) => {
-    if (el.shadowRoot) shadowFields += el.shadowRoot.querySelectorAll("input, select, textarea").length;
-  });
+/** Runs inside the page: document language and the text of sign-in provider buttons. */
+function pageExtra(): PageExtra {
+  const textOf = (el: Element) => (el.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
   const providerTexts: string[] = [];
   document.querySelectorAll("button, a, [role=button]").forEach((b) => {
     const t = textOf(b);
     if (/google|apple|microsoft/i.test(t) && t.length < 80) providerTexts.push(t);
   });
-  return { lang: document.documentElement.lang || undefined, forms, iframes, shadowFields, providerTexts };
-}
-
-function stepOf(fields: SampleField[]): FormStep {
-  const vis = fields.filter((f) => f.visibility === "visible");
-  const has = (r: SampleField["role"][]) => vis.some((f) => r.includes(f.role));
-  const pw = has(["password", "new_password"]);
-  const id = has(["username", "email"]);
-  if (pw && id) return "both";
-  if (pw) return "password";
-  if (has(["otp"])) return "code";
-  if (id) return "identifier";
-  return "other";
-}
-
-function hostSite(a: string, b: string): boolean {
-  const base = (h: string) => h.split(".").slice(-2).join(".");
-  return base(a) === base(b);
+  return { lang: document.documentElement.lang || undefined, providerTexts };
 }
 
 const robotsCache = new Map<string, RobotsEntry>();
@@ -186,7 +97,7 @@ async function main(): Promise<void> {
     for (const site of sites) {
       const url = new URL(site.url);
       if (typeof args.only === "string" && url.hostname !== args.only) continue;
-      const base: Sample = { source_url: site.url, host: url.hostname, category: site.category, captured_at: new Date().toISOString(), extractor: 1, status: "ok" };
+      const base: Sample = { source_url: site.url, host: url.hostname, category: site.category, captured_at: new Date().toISOString(), extractor: 2, source: "rendered", status: "ok" };
       if (seen.has(url.hostname)) { // one page per host and pass: say so instead of dropping silently
         const n = ++dupes;
         writeFileSync(`${args.out}/${url.hostname}.dup${n}.json`, stableJson({ ...base, status: "skipped: duplicate host" }));
@@ -221,9 +132,11 @@ async function main(): Promise<void> {
           if (blocked || !(await urlAllowed(new URL(page.url())))) {
             sample = { ...base, status: "skipped: robots" };
           } else {
-            const raw: RawPage = await page.evaluate(pageExtract);
+            // The shared extractor is self-contained: it runs in the page from its own source.
+            const features: PageFeatures = await page.evaluate(`(${extractFeatures.toString()})(document)`);
+            const extra: PageExtra = await page.evaluate(pageExtra);
             const calls: ("get" | "create")[] = await page.evaluate(() => (window as any).__lab_webauthn ?? []);
-            sample = build(base, raw, calls);
+            sample = build(base, features, extra, calls);
           }
         } catch (e) {
           sample = timedOut
@@ -242,35 +155,6 @@ async function main(): Promise<void> {
   } finally {
     await browser.close();
   }
-}
-
-function build(base: Sample, raw: RawPage, calls: ("get" | "create")[]): Sample {
-  const forms: SampleForm[] = raw.forms.map((f) => {
-    const fields: SampleField[] = f.fields.map((x) => {
-      const out: SampleField = {
-        tag: x.tag, type: x.type, name: sanitizeToken(x.name), id: sanitizeToken(x.id), autocomplete: sanitizeToken(x.autocomplete),
-        inputmode: sanitizeToken(x.inputmode), maxlength: x.maxlength, hasPattern: x.hasPattern, required: x.required,
-        label: sanitizeText(x.label), visibility: x.visibility, role: "unknown",
-      };
-      out.role = classifyRole(out);
-      return out;
-    });
-    return { step: stepOf(fields), fields, buttons: f.buttons.map((b) => sanitizeText(b)).filter((b): b is string => !!b) };
-  });
-  const iframes: { origin: string; sameSite: boolean }[] = [];
-  for (const src of raw.iframes) {
-    try {
-      const u = new URL(src, base.source_url);
-      if (u.protocol === "http:" || u.protocol === "https:") iframes.push({ origin: sanitizeOrigin(u.origin), sameSite: hostSite(u.hostname, base.host) });
-    } catch { /* ignore malformed src */ }
-  }
-  const providers = new Set<ProviderId>();
-  for (const t of raw.providerTexts) for (const p of ["google", "apple", "microsoft"] as ProviderId[]) if (t.toLowerCase().includes(p)) providers.add(p);
-  const lang = raw.lang?.toLowerCase().split("-")[0];
-  return {
-    ...base, lang: lang || "und", forms, iframes, shadowFields: raw.shadowFields,
-    webauthnCalls: [...new Set(calls)], providerButtons: [...providers].sort(),
-  };
 }
 
 main().catch((e) => { console.error(e instanceof Error ? e.message : e); process.exitCode = 1; });
