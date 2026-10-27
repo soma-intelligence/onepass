@@ -116,6 +116,8 @@ struct Shared {
     account: Mutex<String>,
     excluded: Mutex<HashSet<Id>>,
     pairings: Mutex<Vec<FfiBridgePairing>>,
+    // Read by the socket admission, which exists on macOS only.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     allowed_extensions: Vec<String>,
     answers: Mutex<HashMap<u64, Option<bool>>>,
     next_request: AtomicU64,
