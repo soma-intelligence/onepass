@@ -34,7 +34,7 @@
 //! another hash (a race loser stopped before deleting its record). Served
 //! instead of the current record, both stay errors.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
 use aws_lc_rs::digest::{SHA256, digest};
@@ -51,7 +51,7 @@ use crate::manifest::{
     record_hash, sign_manifest, verify_manifest,
 };
 use crate::model::Item;
-use crate::store::{Record, RecordKind, RecordStore};
+use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -163,6 +163,30 @@ pub struct Repository<S: RecordStore> {
 struct StoredEpoch {
     epoch: RestoreEpoch,
     hash: [u8; 32],
+}
+
+/// What a vault is loaded for (`Repository::served`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Use {
+    Read,
+    /// A write follows: the copy served must also be the visible one.
+    Write,
+    /// The owner keeps this device's copy (`KeepThisDevice`), even over a
+    /// server manifest that forks from it.
+    Keep,
+}
+
+/// A vault's verified copy rebuilt from the visible rows and the rows the
+/// store kept (`RecordStore::kept_rows`).
+pub(crate) struct LocalCopy {
+    /// The manifest record.
+    record: Record,
+    loaded: Loaded,
+    /// Listed records that only the kept rows still hold.
+    restore: Vec<Record>,
+    /// Visible item records of the vault the manifest does not list (each
+    /// opens under the vault key).
+    unlisted: Vec<Id>,
 }
 
 /// The verified content of a vault.
@@ -452,7 +476,7 @@ impl<S: RecordStore> Repository<S> {
 
     /// Every vault whose key, meta and manifest open (see `vaults`), sorted
     /// by id, without the epoch and `VaultMissing` checks.
-    fn open_vaults(&self) -> Result<Vec<Vault>> {
+    pub(crate) fn open_vaults(&self) -> Result<Vec<Vault>> {
         let mut out = Vec::new();
         for key in self.store.list(RecordKind::VaultKey)? {
             let meta = self
@@ -578,6 +602,27 @@ impl<S: RecordStore> Repository<S> {
     /// successors and stay.
     pub fn issue_restore_epoch(&mut self, reason: EpochReason) -> Result<RestoreEpoch> {
         let stored = self.sync_epoch()?.map(|e| e.epoch);
+        let vaults = self.vaults()?;
+        self.issue_epoch(reason, stored, vaults, false)
+    }
+
+    /// The epoch number stored, its signature verified, without the epoch
+    /// rules (`sync_epoch`): for the owner's explicit choice of the
+    /// server's state (`issue_restore_epoch_take_server`).
+    pub(crate) fn stored_epoch_number(&self) -> Result<Option<u64>> {
+        Ok(self.stored_epoch()?.map(|s| s.epoch.epoch))
+    }
+
+    /// `issue_restore_epoch` over `vaults`, `stored` being the epoch the
+    /// record holds now. `local`: each head is the copy this device serves
+    /// (`served` with `Use::Keep`) instead of the strictly loaded one.
+    pub(crate) fn issue_epoch(
+        &mut self,
+        reason: EpochReason,
+        stored: Option<u64>,
+        vaults: Vec<Vault>,
+        local: bool,
+    ) -> Result<RestoreEpoch> {
         let epoch = self
             .device
             .epoch
@@ -586,8 +631,12 @@ impl<S: RecordStore> Repository<S> {
             .ok_or(Error::InvalidFormat("restore epoch"))?;
         let floor = epoch_floor(epoch)?;
         let mut heads = BTreeMap::new();
-        for vault in self.vaults()? {
-            let loaded = self.load(&vault)?;
+        for vault in vaults {
+            let loaded = if local {
+                self.served(&vault, Use::Keep)?
+            } else {
+                self.load(&vault)?
+            };
             for (_, r) in &loaded.records {
                 vault.open_item(r)?;
             }
@@ -697,7 +746,7 @@ impl<S: RecordStore> Repository<S> {
     /// manifest is then remembered as the last one seen.
     pub fn items(&mut self, vault: &Vault) -> Result<Vec<Item>> {
         self.sync_epoch()?;
-        let loaded = self.load(vault)?;
+        let loaded = self.served(vault, Use::Read)?;
         let items = loaded
             .records
             .iter()
@@ -717,7 +766,7 @@ impl<S: RecordStore> Repository<S> {
     /// this call wrote.
     pub fn save_item(&mut self, vault: &Vault, item: Item) -> Result<()> {
         self.sync_epoch()?;
-        let loaded = self.load(vault)?;
+        let loaded = self.served(vault, Use::Write)?;
         let rec = vault.seal_item(&item, loaded.next_version(item.id)?)?;
         let old = loaded.listed(item.id).map(|(blob, _)| *blob);
         let written = self.put_item(vault.id, &rec)?;
@@ -735,7 +784,7 @@ impl<S: RecordStore> Repository<S> {
     /// and its ignored leftovers.
     pub fn delete_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
         self.sync_epoch()?;
-        let loaded = self.load(vault)?;
+        let loaded = self.served(vault, Use::Write)?;
         let (blob, _) = *loaded.listed(item_id).ok_or(Error::NotFound)?;
         let entries = loaded.entries_without(item_id);
         self.commit_manifest(vault, &loaded.manifest, entries, None)?;
@@ -765,9 +814,9 @@ impl<S: RecordStore> Repository<S> {
             return Err(Error::InvalidFormat("move to the same vault"));
         }
         self.sync_epoch()?;
-        let src = self.load(from)?;
+        let src = self.served(from, Use::Write)?;
         let (blob, rec) = src.listed(item_id).ok_or(Error::NotFound)?.clone();
-        let dst = self.load(to)?;
+        let dst = self.served(to, Use::Write)?;
         let moved = from.move_item(to, &rec, dst.next_version(item_id)?)?;
         let replaced = dst.listed(item_id).map(|(b, _)| *b);
         let written = self.put_item(to.id, &moved)?;
@@ -794,13 +843,207 @@ impl<S: RecordStore> Repository<S> {
         change: impl FnOnce(&mut Item, OffsetDateTime),
     ) -> Result<()> {
         self.sync_epoch()?;
-        let loaded = self.load(vault)?;
+        let loaded = self.served(vault, Use::Write)?;
         let (_, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
         let mut item = vault.open_item(rec)?;
         let now = OffsetDateTime::now_utc();
         change(&mut item, now);
         item.updated_at = now;
         self.save_item(vault, item)
+    }
+
+    /// The vault as this device serves it (`items` and the writes).
+    ///
+    /// The visible state (`load`) first. If it fails a check and the store
+    /// keeps the device's copy (`RecordStore::kept_rows`), the copy last
+    /// verified is served instead, when it still verifies against the last
+    /// manifest seen (`verify_manifest`) and every record it lists is
+    /// there: the server went back to an older state or serves an
+    /// incomplete one (`VaultEvent::Behind`, see
+    /// `crate::sync::VaultSyncHealth`). The store then makes that copy the
+    /// visible one again for a write, or when the server is behind it (so
+    /// that the next push restores the server's copy).
+    ///
+    /// A visible manifest that forks from the copy (same seq, other hash,
+    /// or the next seq not built on it) is an alert: the copy is still
+    /// served for reading (the owner can export it), never written over the
+    /// fork (`ManifestRollback`), except to keep it (`Use::Keep`). No
+    /// verified copy (a vault this device never read, or a copy that fails
+    /// too) is an alert and the visible state's error.
+    pub(crate) fn served(&mut self, vault: &Vault, use_: Use) -> Result<Loaded> {
+        let cause = match self.load(vault) {
+            Ok(loaded) => {
+                self.store.vault_event(vault.id, VaultEvent::Clean)?;
+                return Ok(loaded);
+            }
+            Err(Error::Integrity(e)) => e,
+            Err(e) => return Err(e),
+        };
+        let Some(kept) = self.store.kept_rows(vault.id)? else {
+            return Err(cause.into());
+        };
+        let copy = match self.local_copy(vault, &kept) {
+            Ok(copy) => copy,
+            Err(Error::Integrity(_)) => {
+                let alert = VaultEvent::Alert { seq: 0, cause };
+                self.store.vault_event(vault.id, alert)?;
+                return Err(cause.into());
+            }
+            Err(e) => return Err(e),
+        };
+        let seq = copy.loaded.manifest.seq;
+        if self.forks_from(vault, &copy)? {
+            let cause = IntegrityError::ManifestRollback;
+            self.store
+                .vault_event(vault.id, VaultEvent::Alert { seq, cause })?;
+            match use_ {
+                Use::Read => return Ok(copy.loaded),
+                Use::Write => return Err(cause.into()),
+                Use::Keep => {}
+            }
+        } else {
+            self.store
+                .vault_event(vault.id, VaultEvent::Behind { seq, cause })?;
+        }
+        self.store.keep_local_copy(
+            vault.id,
+            &copy.record,
+            &copy.restore,
+            &copy.unlisted,
+            use_ != Use::Read,
+        )?;
+        Ok(copy.loaded)
+    }
+
+    /// The device's verified copy of the vault: the newest manifest among
+    /// the visible one and the kept one that verifies against the last
+    /// manifest seen and finds every record it lists (visible rows first,
+    /// then kept ones). Another visible record of the vault must open under
+    /// the vault key (`ManifestUnexpectedItem` otherwise). No last manifest
+    /// seen: no copy (`ManifestRollback`).
+    pub(crate) fn local_copy(&self, vault: &Vault, kept: &[Record]) -> Result<LocalCopy> {
+        let last = self
+            .device
+            .last_seen
+            .get(&vault.id)
+            .ok_or(IntegrityError::ManifestRollback)?;
+        let of_vault = |r: &Record| {
+            split_item_record(&r.data)
+                .ok()
+                .filter(|(prefix, _)| *prefix == vault.id)
+                .map(|(_, body)| ItemRecord::decode(body).ok())
+        };
+        let mut visible = Vec::new();
+        for r in self.store.list(RecordKind::Item)? {
+            if let Some(item) = of_vault(&r) {
+                visible.push((r, item));
+            }
+        }
+        let held: Vec<(Record, ItemRecord)> = kept
+            .iter()
+            .filter(|r| r.kind == RecordKind::Item && !visible.iter().any(|(v, _)| v.id == r.id))
+            .filter_map(|r| Some((r.clone(), of_vault(r)??)))
+            .collect();
+        let mut candidates: Vec<Record> = Vec::new();
+        let manifests = self
+            .store
+            .get(RecordKind::Manifest, vault.id)?
+            .into_iter()
+            .chain(
+                kept.iter()
+                    .filter(|r| r.kind == RecordKind::Manifest && r.id == vault.id)
+                    .cloned(),
+            );
+        for r in manifests {
+            if !candidates.contains(&r) {
+                candidates.push(r);
+            }
+        }
+        candidates.sort_by_key(|r| std::cmp::Reverse(r.version));
+        let mut first = None;
+        for record in candidates {
+            match self.copy_from(vault, record, last, &visible, &held) {
+                Ok(copy) => return Ok(copy),
+                Err(Error::Integrity(e)) => {
+                    first.get_or_insert(e);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(first.unwrap_or(IntegrityError::ManifestMissingItem).into())
+    }
+
+    fn copy_from(
+        &self,
+        vault: &Vault,
+        record: Record,
+        last: &SeenManifest,
+        visible: &[(Record, Option<ItemRecord>)],
+        held: &[(Record, ItemRecord)],
+    ) -> Result<LocalCopy> {
+        let sm = SignedManifest::decode(&record.data)?;
+        let manifest = verify_manifest(vault, &self.account.params.signing_pub, &sm, Some(last))?;
+        let exact = |e: &ManifestEntry, i: &ItemRecord| {
+            i.item_id == e.item_id && i.version == e.version && record_hash(i) == e.record_hash
+        };
+        let mut records = Vec::new();
+        let mut restore = Vec::new();
+        let mut used = BTreeSet::new();
+        for e in &manifest.entries {
+            let found = visible
+                .iter()
+                .find(|(r, i)| !used.contains(&r.id) && i.as_ref().is_some_and(|i| exact(e, i)));
+            if let Some((r, Some(i))) = found {
+                used.insert(r.id);
+                records.push((r.id, i.clone()));
+            } else if let Some((r, i)) = held.iter().find(|(_, i)| exact(e, i)) {
+                restore.push(r.clone());
+                records.push((r.id, i.clone()));
+            } else {
+                return Err(IntegrityError::ManifestMissingItem.into());
+            }
+        }
+        let mut unlisted = Vec::new();
+        for (r, i) in visible.iter().filter(|(r, _)| !used.contains(&r.id)) {
+            let opens = i.as_ref().is_some_and(|i| vault.open_item(i).is_ok());
+            if !opens {
+                return Err(IntegrityError::ManifestUnexpectedItem.into());
+            }
+            unlisted.push(r.id);
+        }
+        records.sort_by_key(|(_, r)| r.item_id);
+        Ok(LocalCopy {
+            record,
+            loaded: Loaded {
+                manifest,
+                records,
+                ignored: Vec::new(),
+            },
+            restore,
+            unlisted,
+        })
+    }
+
+    /// Whether the visible manifest forks from the copy: the same seq with
+    /// another hash, or the next seq not built on it. An older one is the
+    /// server behind, a later one cannot be told apart (no chain).
+    fn forks_from(&self, vault: &Vault, copy: &LocalCopy) -> Result<bool> {
+        let Some(visible) = self.store.get(RecordKind::Manifest, vault.id)? else {
+            return Ok(false);
+        };
+        if visible.data == copy.record.data {
+            return Ok(false);
+        }
+        let Ok(sm) = SignedManifest::decode(&visible.data) else {
+            return Ok(false);
+        };
+        let Ok(m) = verify_manifest(vault, &self.account.params.signing_pub, &sm, None) else {
+            return Ok(false);
+        };
+        let ours = &copy.loaded.manifest;
+        let hash = manifest_hash(ours);
+        Ok((m.seq == ours.seq && manifest_hash(&m) != hash)
+            || (Some(m.seq) == ours.seq.checked_add(1) && m.prev_hash != hash))
     }
 
     /// Load and verify the manifest and item records of a vault.

@@ -1,8 +1,10 @@
 //! Signed restore epochs over the two-device harness: a restore from an old
 //! backup (a vault recreated under a new id, a vault written again from an
 //! old copy) is accepted by the other devices without an alert, while a
-//! store that replays the old state, hides the epoch, serves an older one or
-//! forges one is refused.
+//! store that replays the old state (never read, the device keeps its
+//! copy), hides the epoch, serves an older one or forges one is refused.
+//! The safe exits after an alert ("keep this device", "take the server's
+//! version") go through an epoch too.
 
 mod common;
 
@@ -10,25 +12,8 @@ use common::*;
 use onepass_core::epoch::{EpochReason, SignedRestoreEpoch};
 use onepass_core::repo::DeviceState;
 
-/// Change token key of the harness devices (any name the store does not use).
-const TOKEN_KEY: &str = "sync.token";
-
 fn account_id(dev: &mut Device) -> Id {
     dev.repo().account().params.account_id
-}
-
-/// The zone was deleted and recreated empty: the device settles a reset
-/// fetch that returned nothing, so all its rows go up again.
-fn zone_reset(server: &Server, dev: &mut Device) {
-    let (changes, cursor) = server.changes_since(0);
-    let mut store = dev.store();
-    store.begin_zone_reset(TOKEN_KEY).unwrap();
-    for c in changes.into_iter().filter(|c| c.data.is_some()) {
-        store.stage_remote(c).unwrap();
-    }
-    store.commit_remote().unwrap();
-    store.finish_full_fetch().unwrap();
-    dev.cursor = cursor;
 }
 
 /// Read every vault, as a session does.
@@ -226,18 +211,15 @@ fn replayed_old_state_after_epoch_refused() {
     }
     w.server.replay(old_manifest);
     pull(&w.server, &mut w.b);
+    // B never reads the abandoned history: it keeps the epoch's state and
+    // reports the server behind (spec 3.1).
     let p = w.b.vault_named("Personnel");
-    assert_eq!(
-        integrity(w.b.repo().items(&p)),
-        IntegrityError::ManifestRollback
-    );
+    assert_eq!(users(&w.b.repo().items(&p).unwrap()), vec!["restored", "x"]);
+    assert!(is_behind(health(&mut w.b, w.personal)));
     w.b.lock();
     w.b.unlock(&w.sk);
     let p = w.b.vault_named("Personnel");
-    assert_eq!(
-        integrity(w.b.repo().items(&p)),
-        IntegrityError::ManifestRollback
-    );
+    assert_eq!(users(&w.b.repo().items(&p).unwrap()), vec!["restored", "x"]);
 }
 
 #[test]
@@ -453,10 +435,11 @@ fn fresh_device_trusts_stored_epoch() {
     assert_eq!(state.epoch, 1);
     assert_eq!(state.last_seen[&v], epoch.heads[&v]);
 
-    // From then on it refuses the history before the epoch.
+    // From then on it never reads the history before the epoch.
     server.replay(before);
     pull(&server, &mut c);
-    assert_eq!(integrity(c.try_items()), IntegrityError::ManifestRollback);
+    assert_eq!(c.try_items().unwrap(), a.items());
+    assert!(is_behind(health(&mut c, v)));
 }
 
 #[test]
@@ -542,13 +525,11 @@ fn concurrent_epochs_loser_adopts_winner_heads() {
     assert_eq!(read_all(&mut a).unwrap(), read_all(&mut b).unwrap());
 
     // The winner's history is checked on B, though B never read that vault
-    // before the epoch.
+    // before the epoch: its seq 2 is behind the head, never read.
     server.replay(wa_seq2);
     pull(&server, &mut b);
-    assert_eq!(
-        integrity(b.repo().items(&wa)),
-        IntegrityError::ManifestRollback
-    );
+    assert_eq!(users(&b.repo().items(&wa).unwrap()), vec!["a"]);
+    assert!(is_behind(health(&mut b, wa.id)));
 
     // A second, different epoch with the accepted number is a fork, on
     // both devices, even after a reload.
@@ -562,42 +543,199 @@ fn concurrent_epochs_loser_adopts_winner_heads() {
     assert_eq!(integrity(read_all(&mut b)), IntegrityError::EpochRollback);
 }
 
-#[test]
-fn keep_this_device_after_server_rollback_heals_both_devices() {
-    let mut server = Server::default();
-    let (mut a, mut b, _sk, _) = setup(&mut server, &[("x", T0)]);
+/// A and B read Personnel at seq 3 (`x`, `y`). Device C read seq 2 and
+/// wrote `c1`, `c2` offline: its records (its own seq 3 and 4) come back,
+/// a history that forks from the server's.
+fn fork_world(server: &mut Server) -> (Device, Device, SecretKey, Id, Vec<Record>) {
+    let (mut a, sk) = Device::create();
     let p = personal_vault_of(&mut a);
-    let seq2 = server.get(RecordKind::Manifest, p).unwrap();
-    a.save(&login(p, "y", T0 + 1));
-    sync(&mut server, &mut a).unwrap();
-    sync(&mut server, &mut b).unwrap();
+    a.save(&login(p, "x", T0));
+    round(server, &mut a, T0).unwrap();
+    let mut c = Device::empty();
+    pull(server, &mut c);
+    c.unlock(&sk);
+    c.save(&login(p, "c1", T0 + 1));
+    c.save(&login(p, "c2", T0 + 2));
+    let forked = outbox(&c).iter().map(|(ch, _)| as_record(ch)).collect();
+    a.save(&login(p, "y", T0 + 3));
+    round(server, &mut a, T0).unwrap();
+    let mut b = Device::empty();
+    pull(server, &mut b);
+    b.unlock(&sk);
     assert_eq!(users(&b.items()), vec!["x", "y"]);
-    // B writes offline; the server goes back to seq 2.
-    b.save(&login(p, "z", T0 + 2));
-    server.replay(seq2);
+    (a, b, sk, p, forked)
+}
 
-    // Both devices refuse the old state; B's write is stuck.
-    sync(&mut server, &mut a).unwrap();
-    assert_eq!(integrity(a.try_items()), IntegrityError::ManifestRollback);
-    assert_eq!(
-        sync(&mut server, &mut b),
-        Err(Error::Integrity(IntegrityError::ManifestRollback))
-    );
+/// Every device reads `expected` in Personnel, at `epoch`, `Ok`, with
+/// nothing left to send.
+fn settled(devs: &mut [&mut Device], p: Id, expected: &[&str], epoch: u64) {
+    for dev in devs.iter_mut() {
+        assert_eq!(users(&dev.items()), expected);
+        assert_eq!(dev.repo().restore_epoch(), Some(epoch));
+        assert_eq!(health(dev, p), VaultSyncHealth::Ok);
+        assert_eq!(outbox(dev), vec![]);
+    }
+}
+
+#[test]
+fn keep_this_device_after_fork_heals_both_devices() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, p, forked) = fork_world(&mut server);
+    // B writes offline; the store serves C's fork.
+    b.save(&login(p, "z", T0 + 4));
+    for r in forked {
+        server.replay(r);
+    }
+    assert!(round(&mut server, &mut b, T0 + 30).is_err());
+    round(&mut server, &mut a, T0 + 30).unwrap();
+    for dev in [&mut a, &mut b] {
+        assert_eq!(
+            health(dev, p),
+            VaultSyncHealth::Alert(IntegrityError::ManifestRollback)
+        );
+    }
 
     // The owner keeps B's copy: it is re-signed past the epoch floor and
-    // overwrites the server's.
+    // overwrites the fork.
     let epoch = b
         .repo()
         .issue_restore_epoch_from_local(EpochReason::KeepThisDevice)
         .unwrap();
     assert_eq!(epoch.epoch, 1);
     assert_eq!(epoch.reason, EpochReason::KeepThisDevice);
-    sync(&mut server, &mut b).unwrap();
-    sync(&mut server, &mut a).unwrap();
+    round(&mut server, &mut b, T0 + 60).unwrap();
+    round(&mut server, &mut a, T0 + 60).unwrap();
+    round(&mut server, &mut b, T0 + 90).unwrap();
+    settled(&mut [&mut a, &mut b], p, &["x", "y", "z"], 1);
+}
+
+#[test]
+fn keep_this_device_without_local_writes_heals() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let p = items[0].vault_id;
+    let seq2 = server.get(RecordKind::Manifest, p).unwrap();
+    a.save(&login(p, "y", T0 + 1));
+    round(&mut server, &mut a, T0).unwrap();
+    round(&mut server, &mut b, T0).unwrap();
+    // The server goes back to seq 2; B has no local write.
+    server.replay(seq2);
+    round(&mut server, &mut b, T0 + 30).unwrap();
+    assert!(is_behind(health(&mut b, p)));
+
+    // Only "keep this device" goes through this path.
+    assert_eq!(
+        b.repo()
+            .issue_restore_epoch_from_local(EpochReason::TakeServer)
+            .map(|e| e.epoch),
+        Err(Error::InvalidFormat("restore epoch reason"))
+    );
+    let epoch = b
+        .repo()
+        .issue_restore_epoch_from_local(EpochReason::KeepThisDevice)
+        .unwrap();
+    assert_eq!(epoch.epoch, 1);
+    round(&mut server, &mut b, T0 + 60).unwrap();
+    round(&mut server, &mut a, T0 + 60).unwrap();
+    round(&mut server, &mut b, T0 + 90).unwrap();
+    settled(&mut [&mut a, &mut b], p, &["x", "y"], 1);
+}
+
+#[test]
+fn take_server_after_alert_converges() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, p, forked) = fork_world(&mut server);
+    b.save(&login(p, "z", T0 + 4));
+    for r in forked {
+        server.replay(r);
+    }
+    assert!(round(&mut server, &mut b, T0 + 30).is_err());
+    assert_eq!(
+        health(&mut b, p),
+        VaultSyncHealth::Alert(IntegrityError::ManifestRollback)
+    );
+    // The app exports what B has first: still readable.
+    assert_eq!(users(&b.items()), vec!["x", "y", "z"]);
+
+    // The owner takes the server's version: B's unpushed write is dropped.
+    let epoch = b.repo().issue_restore_epoch_take_server().unwrap();
+    assert_eq!(epoch.epoch, 1);
+    assert_eq!(epoch.reason, EpochReason::TakeServer);
+    assert_eq!(users(&b.items()), vec!["c1", "c2", "x"]);
+    round(&mut server, &mut b, T0 + 60).unwrap();
+    // A, which alerted on the fork without a write of its own, takes the
+    // epoch's heads.
+    round(&mut server, &mut a, T0 + 60).unwrap();
+    round(&mut server, &mut b, T0 + 90).unwrap();
+    settled(&mut [&mut a, &mut b], p, &["c1", "c2", "x"], 1);
+}
+
+#[test]
+fn concurrent_edit_not_overwritten_by_keep_this_device() {
+    let mut server = Server::default();
+    let (mut a, mut b, sk, p, forked) = fork_world(&mut server);
+    let q = a.repo().create_vault(meta("Projet Atlas")).unwrap();
+    let qx = login(q.id, "qx", T0);
+    a.repo().save_item(&q, qx.clone()).unwrap();
+    round(&mut server, &mut a, T0).unwrap();
+    round(&mut server, &mut b, T0).unwrap();
+    let bq = b.vault_named("Projet Atlas");
+    assert_eq!(users(&b.repo().items(&bq).unwrap()), vec!["qx"]);
+
+    // B writes both vaults offline. Meanwhile A edits Projet Atlas, and the
+    // store serves C's fork of Personnel.
+    b.save(&login(p, "z", T0 + 4));
+    b.repo().save_item(&bq, login(q.id, "q.b", T0 + 5)).unwrap();
+    let aq = a.vault_named("Projet Atlas");
+    a.repo()
+        .save_item(&aq, edited(&qx, "qx.a", T0 + 6))
+        .unwrap();
+    round(&mut server, &mut a, T0 + 10).unwrap();
+    for r in forked {
+        server.replay(r);
+    }
+    // B fetches both: Projet Atlas is held for a rebase, Personnel forks.
+    let _ = push(&mut server, &b);
+    pull(&server, &mut b);
+    let mut both = vec![p, q.id];
+    both.sort();
+    assert_eq!(b.store().vaults_needing_rebase().unwrap(), both);
+
+    // Keeping B's copy keeps A's edit of Projet Atlas: only Personnel goes
+    // over the server's.
+    b.repo()
+        .issue_restore_epoch_from_local(EpochReason::KeepThisDevice)
+        .unwrap();
+    round(&mut server, &mut b, T0 + 60).unwrap();
+    round(&mut server, &mut a, T0 + 60).unwrap();
+    round(&mut server, &mut b, T0 + 90).unwrap();
     for dev in [&mut a, &mut b] {
         assert_eq!(users(&dev.items()), vec!["x", "y", "z"]);
+        let vq = dev.vault_named("Projet Atlas");
+        assert_eq!(users(&dev.repo().items(&vq).unwrap()), vec!["q.b", "qx.a"]);
         assert_eq!(dev.repo().restore_epoch(), Some(1));
+        assert_eq!(outbox(dev), vec![]);
     }
-    assert_eq!(outbox(&a), vec![]);
-    assert_eq!(outbox(&b), vec![]);
+    b.lock();
+    b.unlock(&sk);
+    assert_eq!(health(&mut b, q.id), VaultSyncHealth::Ok);
+}
+
+#[test]
+fn rebase_report_lists_vaults_rebased_before_a_conflict() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let p = items[0].vault_id;
+    // B moves Personnel on; A issues an epoch without having pulled it.
+    b.save(&edited(&items[0], "x.b", T0 + 10));
+    sync(&mut server, &mut b).unwrap();
+    a.repo().issue_restore_epoch(EpochReason::Restore).unwrap();
+    assert!(push(&mut server, &a).is_err());
+    pull(&server, &mut a);
+    // The epoch cannot ship (`Conflict`), yet Personnel was rebased: the
+    // app refreshes it.
+    let report = a.repo().rebase_report().unwrap();
+    assert_eq!(report.rebased, vec![p]);
+    assert_eq!(report.error, Some(Error::Conflict));
+    assert_eq!(users(&a.items()), vec!["x.b"]);
 }

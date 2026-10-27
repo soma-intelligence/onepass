@@ -8,7 +8,13 @@
 //! - `ancestor`: for a manifest or a restore epoch with a pending local
 //!   write, the `base` row that write was built on, kept when the server
 //!   replaces `base`.
-//! - `meta`: device state, change token and other small values.
+//! - `kept`: the `base` rows of manifests and items the server replaced or
+//!   removed since their vault last loaded cleanly (the first such row per
+//!   key), so the device still holds its own verified copy when the server
+//!   goes back to an older state or serves an incomplete one. See
+//!   `RecordStore::kept_rows` and `crate::sync::VaultSyncHealth`.
+//! - `meta`: device state, change token, sync health and other small
+//!   values.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -20,11 +26,13 @@ use rusqlite::{
     Connection, OptionalExtension, Savepoint, Transaction, TransactionBehavior, params,
 };
 
-use super::{Change, MAX_RECORD_BYTES, RemoteChange};
+use std::collections::BTreeMap;
+
+use super::{Change, MAX_RECORD_BYTES, RemoteChange, STALE_ALERT_ROUNDS, STALE_ALERT_SECONDS};
 use crate::format::STORE_USER_VERSION;
 use crate::repo::{DeviceState, split_item_record};
-use crate::store::{Record, RecordKind, RecordStore};
-use crate::{Error, Id, Result};
+use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
+use crate::{Error, Id, IntegrityError, Result};
 
 const DEVICE_STATE_KEY: &str = "device_state";
 /// The restore epoch mark (`RecordStore::restore_epoch_mark`): epoch
@@ -37,6 +45,12 @@ const IGNORED_LOG_VERSION: u8 = 1;
 const IGNORED_ENTRY_BYTES: usize = 1 + 16 + 8;
 /// Most entries kept in the log of ignored deletions; the oldest go first.
 pub const MAX_IGNORED_DELETIONS: usize = 100;
+/// The sync health of the vaults not `Ok` (see `HealthEntry`), outside the
+/// `sync.` namespace of the FFI handle: only the core writes it.
+const HEALTH_KEY: &str = "sync_health";
+const HEALTH_VERSION: u8 = 1;
+/// `vault (16) | seq (8) | cause (1) | flags (1) | since (8) | rounds (4)`.
+const HEALTH_ENTRY_BYTES: usize = 16 + 8 + 1 + 1 + 8 + 4;
 const FETCH_MODE_KEY: &str = "zone.full_fetch";
 const FETCH_PLAIN: u8 = 1;
 const FETCH_RESET: u8 = 2;
@@ -68,6 +82,13 @@ CREATE TABLE IF NOT EXISTS staging (
     PRIMARY KEY (kind, id)
 );
 CREATE TABLE IF NOT EXISTS ancestor (
+    kind INTEGER NOT NULL,
+    id BLOB NOT NULL,
+    version INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (kind, id)
+);
+CREATE TABLE IF NOT EXISTS kept (
     kind INTEGER NOT NULL,
     id BLOB NOT NULL,
     version INTEGER NOT NULL,
@@ -220,8 +241,10 @@ fn write_pending(tx: &Connection, r: &Record) -> Result<()> {
 
 /// Vaults whose pending manifest was not built on the current `base`
 /// manifest: the ancestor it captured (the `base` row it was built on) is
-/// gone or older than `base`, so the server moved on and the local manifest
-/// must be rebased before any push.
+/// gone, older than `base`, or another manifest with the same seq, so the
+/// server moved on and the local manifest must be rebased before any push.
+/// A `base` older than the ancestor is a server that went back: the local
+/// manifest is not held, its push restores the server's copy.
 fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
     let mut stmt = conn
         .prepare(
@@ -229,7 +252,8 @@ fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
              JOIN base b ON b.kind = p.kind AND b.id = p.id
              LEFT JOIN ancestor a ON a.kind = p.kind AND a.id = p.id
              WHERE p.kind = ?1 AND p.data IS NOT NULL
-               AND (a.id IS NULL OR a.version != b.version)",
+               AND (a.id IS NULL OR b.version > a.version
+                    OR (b.version = a.version AND b.data != a.data))",
         )
         .map_err(store_err)?;
     let rows = stmt
@@ -441,6 +465,13 @@ impl SyncStore {
             )
             .map_err(store_err)?;
         }
+        if kind == RecordKind::Manifest {
+            // The server took this device's copy back: only a fetch that
+            // serves it (or newer) shows that it kept it.
+            update_health(&tx, |map| {
+                map.get_mut(&id).map(|e| e.awaiting = true).is_some()
+            })?;
+        }
         tx.commit()
     }
 
@@ -548,7 +579,19 @@ impl SyncStore {
             append_ignored(&tx, &ignored)?;
         }
         // Both modes: an item the server did not return, in a vault whose
-        // manifest it did return, is gone from that vault.
+        // manifest it did return, is gone from that vault. Kept first: it
+        // may belong to this device's copy of a vault the server is behind on.
+        tx.execute(
+            &format!(
+                "INSERT OR IGNORE INTO kept (kind, id, version, data)
+                 SELECT b.kind, b.id, b.version, b.data FROM base AS b
+                 WHERE b.kind = ?1 AND {missing}
+                 AND EXISTS (SELECT 1 FROM base m WHERE m.kind = ?2
+                     AND m.id = substr(b.data, 1, 16) AND m.server_meta IS NOT NULL)"
+            ),
+            params![RecordKind::Item.code(), RecordKind::Manifest.code()],
+        )
+        .map_err(store_err)?;
         let deleted = tx
             .execute(
                 &format!(
@@ -629,6 +672,7 @@ impl SyncStore {
         };
         let mut vaults = BTreeSet::new();
         let mut ignored = Vec::new();
+        let mut manifests = Vec::new();
         for (kind, id, version, data, server_meta) in staged {
             let kind_code = kind;
             let kind = decode_kind(kind)?;
@@ -638,8 +682,23 @@ impl SyncStore {
                 }
                 continue;
             }
+            if matches!(kind, RecordKind::Manifest | RecordKind::Item) {
+                // The first row replaced or removed since the vault last
+                // loaded cleanly stays as part of the device's copy.
+                tx.execute(
+                    "INSERT OR IGNORE INTO kept (kind, id, version, data)
+                     SELECT kind, id, version, data FROM base
+                     WHERE kind = ?1 AND id = ?2 AND (?3 IS NULL OR data != ?3)",
+                    params![kind_code, &id, &data],
+                )
+                .map_err(store_err)?;
+            }
             if kind == RecordKind::Manifest {
-                vaults.insert(decode_id(id.clone())?);
+                let v = decode_id(id.clone())?;
+                vaults.insert(v);
+                if data.is_some() {
+                    manifests.push((v, version));
+                }
             }
             match data {
                 Some(data) => tx.execute(
@@ -656,6 +715,18 @@ impl SyncStore {
         }
         tx.execute("DELETE FROM staging", []).map_err(store_err)?;
         append_ignored(&tx, &ignored)?;
+        // A vault the server was behind on: served again at least as new as
+        // the device's copy, or still older.
+        update_health(&tx, |map| {
+            let mut changed = false;
+            for (v, version) in &manifests {
+                if let Some(e) = map.get_mut(v) {
+                    e.awaiting = u64::try_from(*version).map_or(true, |n| n < e.seq);
+                    changed = true;
+                }
+            }
+            changed
+        })?;
         tx.commit()?;
         Ok(vaults.into_iter().collect())
     }
@@ -726,7 +797,7 @@ impl SyncStore {
     /// stays in place, so other open connections keep working on it.
     pub fn reset(&mut self) -> Result<()> {
         let tx = self.write_tx()?;
-        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
         }
@@ -752,7 +823,7 @@ impl SyncStore {
         if visible {
             return Err(Error::InvalidFormat("store holds an account"));
         }
-        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
         }
@@ -835,23 +906,100 @@ impl SyncStore {
         })
     }
 
-    /// Make every pending manifest and restore epoch built on the current
-    /// `base` row: its ancestor becomes that row, so it is no longer held
-    /// and its push overwrites what the server holds now. For an owner's
-    /// explicit choice of the local copy (`issue_restore_epoch_from_local`).
-    pub(crate) fn rebuild_ancestors_on_base(&mut self) -> Result<()> {
+    /// Make the pending manifests of `vaults` built on the current `base`
+    /// row: its ancestor becomes that row, so it is no longer held and its
+    /// push overwrites what the server holds now. For an owner's explicit
+    /// choice of the local copy (`issue_restore_epoch_from_local`), on the
+    /// vaults the server is behind on or forked from only.
+    pub(crate) fn rebuild_ancestors_on_base(&mut self, vaults: &[Id]) -> Result<()> {
         let tx = self.write_tx()?;
-        let codes = params![RecordKind::Manifest.code(), RecordKind::RestoreEpoch.code()];
-        tx.execute("DELETE FROM ancestor WHERE kind IN (?1, ?2)", codes)
+        let code = RecordKind::Manifest.code();
+        for v in vaults {
+            tx.execute(
+                "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2",
+                params![code, &v.0[..]],
+            )
             .map_err(store_err)?;
+            tx.execute(
+                "INSERT INTO ancestor (kind, id, version, data)
+                 SELECT b.kind, b.id, b.version, b.data FROM base b
+                 WHERE b.kind = ?1 AND b.id = ?2 AND EXISTS (SELECT 1 FROM pending p
+                     WHERE p.kind = b.kind AND p.id = b.id AND p.data IS NOT NULL)",
+                params![code, &v.0[..]],
+            )
+            .map_err(store_err)?;
+        }
+        tx.commit()
+    }
+
+    /// Drop every local write of vault rows (keys, metas, manifests, items)
+    /// and of the restore epoch, their ancestors, the kept rows and the
+    /// sync health: reads see the server's state only. For an owner's
+    /// explicit choice of the server's copy
+    /// (`issue_restore_epoch_take_server`), after the local one was
+    /// exported. Account params and keysets stay. One transaction.
+    pub(crate) fn discard_local_changes(&mut self) -> Result<()> {
+        let tx = self.write_tx()?;
         tx.execute(
-            "INSERT INTO ancestor (kind, id, version, data)
-             SELECT b.kind, b.id, b.version, b.data FROM base b
-             WHERE b.kind IN (?1, ?2) AND EXISTS (SELECT 1 FROM pending p
-                 WHERE p.kind = b.kind AND p.id = b.id AND p.data IS NOT NULL)",
-            codes,
+            "DELETE FROM pending WHERE kind IN (?1, ?2, ?3, ?4, ?5)",
+            params![
+                RecordKind::VaultKey.code(),
+                RecordKind::VaultMeta.code(),
+                RecordKind::Item.code(),
+                RecordKind::Manifest.code(),
+                RecordKind::RestoreEpoch.code()
+            ],
         )
         .map_err(store_err)?;
+        for table in ["ancestor", "kept"] {
+            tx.execute(&format!("DELETE FROM {table}"), [])
+                .map_err(store_err)?;
+        }
+        tx.execute("DELETE FROM meta WHERE key = ?1", params![HEALTH_KEY])
+            .map_err(store_err)?;
+        tx.commit()
+    }
+
+    /// The vaults whose sync health is not `Ok`, with their entry.
+    pub(crate) fn health(&self) -> Result<BTreeMap<Id, HealthEntry>> {
+        self.read(|c| Ok(health_in(c)))
+    }
+
+    /// Replace the entries of `vaults` by fresh ones for the copy at
+    /// `seq`: behind, not counted yet, no alert. After the owner chose this
+    /// device's copy.
+    pub(crate) fn restart_health(&mut self, vaults: &BTreeMap<Id, u64>) -> Result<()> {
+        let tx = self.write_tx()?;
+        update_health(&tx, |map| {
+            for (v, seq) in vaults {
+                let cause = map
+                    .get(v)
+                    .map_or(IntegrityError::ManifestRollback, |e| e.cause);
+                map.insert(*v, HealthEntry::new(*seq, cause));
+            }
+            !vaults.is_empty()
+        })?;
+        tx.commit()
+    }
+
+    /// The end of a sync round at `now` (Unix seconds): every vault still
+    /// behind counts one more round, from `now` if it was not counted yet,
+    /// and becomes an alert once it reached `STALE_ALERT_ROUNDS` rounds and
+    /// `STALE_ALERT_SECONDS` seconds.
+    pub(crate) fn count_round(&mut self, now: i64) -> Result<()> {
+        let tx = self.write_tx()?;
+        update_health(&tx, |map| {
+            for e in map.values_mut().filter(|e| !e.alert) {
+                let since = *e.since.get_or_insert(now);
+                e.rounds = e.rounds.saturating_add(1);
+                if e.rounds >= STALE_ALERT_ROUNDS
+                    && now.saturating_sub(since) >= STALE_ALERT_SECONDS
+                {
+                    e.alert = true;
+                }
+            }
+            !map.is_empty()
+        })?;
         tx.commit()
     }
 
@@ -992,6 +1140,228 @@ fn device_state_in(conn: &Connection) -> Result<DeviceState> {
     }
 }
 
+/// The sync state of a vault that is not `Ok`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HealthEntry {
+    /// Seq of the device's copy the server is behind on.
+    pub seq: u64,
+    /// The check the server's state failed.
+    pub cause: IntegrityError,
+    /// Unix seconds of the first round that counted it.
+    pub since: Option<i64>,
+    pub rounds: u32,
+    /// The server took this device's copy back (`mark_pushed`) and no fetch
+    /// served it yet: until one does, the server is not trusted to have
+    /// kept it.
+    pub awaiting: bool,
+    pub alert: bool,
+}
+
+impl HealthEntry {
+    fn new(seq: u64, cause: IntegrityError) -> HealthEntry {
+        HealthEntry {
+            seq,
+            cause,
+            since: None,
+            rounds: 0,
+            awaiting: false,
+            alert: false,
+        }
+    }
+}
+
+/// Every `IntegrityError`, its index the code persisted in the health map.
+const CAUSES: [IntegrityError; 13] = [
+    IntegrityError::Commitment,
+    IntegrityError::Aead,
+    IntegrityError::Signature,
+    IntegrityError::ManifestRollback,
+    IntegrityError::ManifestMissingItem,
+    IntegrityError::ManifestUnexpectedItem,
+    IntegrityError::ManifestItemMismatch,
+    IntegrityError::ParamsUnsigned,
+    IntegrityError::ParamsDowngrade,
+    IntegrityError::WrongKind,
+    IntegrityError::WrongContext,
+    IntegrityError::VaultMissing,
+    IntegrityError::EpochRollback,
+];
+
+const HEALTH_SINCE: u8 = 1;
+const HEALTH_AWAITING: u8 = 2;
+const HEALTH_ALERT: u8 = 4;
+
+fn encode_health(map: &BTreeMap<Id, HealthEntry>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(1 + map.len() * HEALTH_ENTRY_BYTES);
+    out.push(HEALTH_VERSION);
+    for (v, e) in map {
+        let cause = CAUSES.iter().position(|c| *c == e.cause).unwrap_or(0);
+        let flags = if e.since.is_some() { HEALTH_SINCE } else { 0 }
+            | if e.awaiting { HEALTH_AWAITING } else { 0 }
+            | if e.alert { HEALTH_ALERT } else { 0 };
+        out.extend_from_slice(&v.0);
+        out.extend_from_slice(&e.seq.to_be_bytes());
+        out.push(u8::try_from(cause).unwrap_or(0));
+        out.push(flags);
+        out.extend_from_slice(&e.since.unwrap_or(0).to_be_bytes());
+        out.extend_from_slice(&e.rounds.to_be_bytes());
+    }
+    out
+}
+
+fn decode_health(bytes: &[u8]) -> Option<BTreeMap<Id, HealthEntry>> {
+    let (&version, rest) = bytes.split_first()?;
+    if version != HEALTH_VERSION {
+        return None;
+    }
+    let (entries, tail) = rest.as_chunks::<HEALTH_ENTRY_BYTES>();
+    if !tail.is_empty() {
+        return None;
+    }
+    let mut map = BTreeMap::new();
+    for c in entries {
+        let v = Id(c[0..16].try_into().ok()?);
+        let flags = c[25];
+        let since = i64::from_be_bytes(c[26..34].try_into().ok()?);
+        map.insert(
+            v,
+            HealthEntry {
+                seq: u64::from_be_bytes(c[16..24].try_into().ok()?),
+                cause: *CAUSES.get(usize::from(c[24]))?,
+                since: (flags & HEALTH_SINCE != 0).then_some(since),
+                rounds: u32::from_be_bytes(c[34..38].try_into().ok()?),
+                awaiting: flags & HEALTH_AWAITING != 0,
+                alert: flags & HEALTH_ALERT != 0,
+            },
+        );
+    }
+    Some(map)
+}
+
+/// The health map in `meta`. An unreadable one (edited file) reads as
+/// empty: the next round finds the vaults behind again.
+fn health_in(conn: &Connection) -> BTreeMap<Id, HealthEntry> {
+    conn.query_row(
+        "SELECT value FROM meta WHERE key = ?1",
+        params![HEALTH_KEY],
+        |r| r.get::<_, Vec<u8>>(0),
+    )
+    .ok()
+    .and_then(|b| decode_health(&b))
+    .unwrap_or_default()
+}
+
+/// Apply `f` to the health map and save it if `f` says it changed.
+fn update_health(
+    conn: &Connection,
+    f: impl FnOnce(&mut BTreeMap<Id, HealthEntry>) -> bool,
+) -> Result<()> {
+    let mut map = health_in(conn);
+    if !f(&mut map) {
+        return Ok(());
+    }
+    if map.is_empty() {
+        conn.execute("DELETE FROM meta WHERE key = ?1", params![HEALTH_KEY])
+    } else {
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+            params![HEALTH_KEY, encode_health(&map)],
+        )
+    }
+    .map_err(store_err)?;
+    Ok(())
+}
+
+/// The kept rows of one vault, `?3`: its manifest (kind `?1`) and its item
+/// records by vault prefix (kind `?2`).
+const KEPT_ROWS: &str = "(kind = ?1 AND id = ?3) OR (kind = ?2 AND substr(data, 1, 16) = ?3)";
+
+fn delete_kept(tx: &Connection, vault: Id) -> Result<()> {
+    tx.execute(
+        &format!("DELETE FROM kept WHERE {KEPT_ROWS}"),
+        params![
+            RecordKind::Manifest.code(),
+            RecordKind::Item.code(),
+            &vault.0[..]
+        ],
+    )
+    .map_err(store_err)?;
+    Ok(())
+}
+
+/// The `base` manifest row of a vault: `(version, data)`.
+fn base_manifest(conn: &Connection, vault: Id) -> Result<Option<(u64, Vec<u8>)>> {
+    conn.query_row(
+        "SELECT version, data FROM base WHERE kind = ?1 AND id = ?2",
+        params![RecordKind::Manifest.code(), &vault.0[..]],
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
+    )
+    .optional()
+    .map_err(store_err)?
+    .map(|(v, d)| {
+        u64::try_from(v)
+            .map(|v| (v, d))
+            .map_err(|_| Error::InvalidFormat("record version"))
+    })
+    .transpose()
+}
+
+fn has_pending_manifest(conn: &Connection, vault: Id) -> Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM pending WHERE kind = ?1 AND id = ?2 AND data IS NOT NULL)",
+        params![RecordKind::Manifest.code(), &vault.0[..]],
+        |r| r.get(0),
+    )
+    .map_err(store_err)
+}
+
+/// `RecordStore::delete` inside a transaction: a row known to the server
+/// becomes a tombstone carrying its version, a local-only row vanishes.
+fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
+    let base_row: Option<(i64, Option<Vec<u8>>)> = tx
+        .query_row(
+            "SELECT version, substr(data, 1, 16) FROM base WHERE kind = ?1 AND id = ?2",
+            params![kind.code(), &id.0[..]],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(store_err)?;
+    match base_row {
+        // Known to the server: a tombstone carrying the deleted version.
+        Some((version, prefix)) => {
+            // An item tombstone keeps its vault, for holding and dropping.
+            let vault = if kind == RecordKind::Item {
+                prefix
+            } else {
+                None
+            };
+            if kind == RecordKind::Manifest {
+                tx.execute(
+                    "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
+                     SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
+                    params![kind.code(), &id.0[..]],
+                )
+                .map_err(store_err)?;
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO pending (kind, id, version, data, vault)
+                 VALUES (?1, ?2, ?3, NULL, ?4)",
+                params![kind.code(), &id.0[..], version, vault],
+            )
+            .map_err(store_err)?;
+        }
+        // Local only: it vanishes.
+        None => {
+            tx.execute(
+                "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+                params![kind.code(), &id.0[..]],
+            )
+            .map_err(store_err)?;
+        }
+    }
+    Ok(())
+}
+
 /// A remote deletion `commit_remote` ignores: account params, keysets and
 /// the restore epoch (never deleted by a client), and the vault key, meta
 /// or manifest of a vault the device has seen (no vault deletion in M2,
@@ -1122,46 +1492,145 @@ impl RecordStore for SyncStore {
 
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
         let tx = self.write_tx()?;
-        let base_row: Option<(i64, Option<Vec<u8>>)> = tx
-            .query_row(
-                "SELECT version, substr(data, 1, 16) FROM base WHERE kind = ?1 AND id = ?2",
-                params![kind.code(), &id.0[..]],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+        delete_in(&tx, kind, id)?;
+        tx.commit()
+    }
+
+    fn kept_rows(&self, vault: Id) -> Result<Option<Vec<Record>>> {
+        self.read(|c| {
+            let mut stmt = c
+                .prepare(&format!(
+                    "SELECT kind, id, version, data FROM kept WHERE {KEPT_ROWS}"
+                ))
+                .map_err(store_err)?;
+            let rows = stmt
+                .query_map(
+                    params![
+                        RecordKind::Manifest.code(),
+                        RecordKind::Item.code(),
+                        &vault.0[..]
+                    ],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+                .map_err(store_err)?;
+            rows.map(|row| {
+                let (k, id, v, d) = row.map_err(store_err)?;
+                decode_row(k, id, v, d)
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(Some)
+        })
+    }
+
+    /// Materialize the device's copy (see the trait). The pending
+    /// manifest's ancestor decides what the push does: a `base` older than
+    /// the copy (the server went back) becomes the ancestor, so the push
+    /// restores the server's copy; a newer `base` (the server moved on, its
+    /// state incomplete) leaves the copy itself as the ancestor, so the
+    /// vault is held until the rebase merges onto the server's state.
+    fn keep_local_copy(
+        &mut self,
+        vault: Id,
+        manifest: &Record,
+        restore: &[Record],
+        unlisted: &[Id],
+        write: bool,
+    ) -> Result<()> {
+        let tx = self.write_tx()?;
+        let base = base_manifest(&tx, vault)?;
+        let behind = base.as_ref().is_none_or(|(v, _)| *v < manifest.version);
+        if !(write || behind) {
+            return Ok(());
+        }
+        if effective_get(&tx, RecordKind::Manifest, vault)?.as_ref() != Some(manifest) {
+            let version = to_i64(manifest.version)?;
+            let code = RecordKind::Manifest.code();
+            tx.execute(
+                "INSERT OR REPLACE INTO pending (kind, id, version, data) VALUES (?1, ?2, ?3, ?4)",
+                params![code, &vault.0[..], version, manifest.data],
             )
-            .optional()
             .map_err(store_err)?;
-        match base_row {
-            // Known to the server: a tombstone carrying the deleted version.
-            Some((version, prefix)) => {
-                // An item tombstone keeps its vault, for holding and dropping.
-                let vault = if kind == RecordKind::Item {
-                    prefix
+            tx.execute(
+                "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2",
+                params![code, &vault.0[..]],
+            )
+            .map_err(store_err)?;
+            if base.is_some() {
+                let (v, data) = if behind {
+                    base.ok_or(Error::NotFound)?
                 } else {
-                    None
+                    (manifest.version, manifest.data.clone())
                 };
-                if kind == RecordKind::Manifest {
-                    tx.execute(
-                        "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
-                         SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
-                        params![kind.code(), &id.0[..]],
+                tx.execute(
+                    "INSERT INTO ancestor (kind, id, version, data) VALUES (?1, ?2, ?3, ?4)",
+                    params![code, &vault.0[..], to_i64(v)?, data],
+                )
+                .map_err(store_err)?;
+            }
+        }
+        for r in restore {
+            check_size(&r.data)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO pending (kind, id, version, data) VALUES (?1, ?2, ?3, ?4)",
+                params![r.kind.code(), &r.id.0[..], to_i64(r.version)?, r.data],
+            )
+            .map_err(store_err)?;
+        }
+        for id in unlisted {
+            delete_in(&tx, RecordKind::Item, *id)?;
+        }
+        tx.commit()
+    }
+
+    fn vault_event(&mut self, vault: Id, event: VaultEvent) -> Result<()> {
+        // A clean load with nothing to settle writes nothing.
+        if event == VaultEvent::Clean {
+            let idle = self.read(|c| {
+                let kept: bool = c
+                    .query_row(
+                        &format!("SELECT EXISTS (SELECT 1 FROM kept WHERE {KEPT_ROWS})"),
+                        params![
+                            RecordKind::Manifest.code(),
+                            RecordKind::Item.code(),
+                            &vault.0[..]
+                        ],
+                        |r| r.get(0),
                     )
                     .map_err(store_err)?;
-                }
-                tx.execute(
-                    "INSERT OR REPLACE INTO pending (kind, id, version, data, vault)
-                     VALUES (?1, ?2, ?3, NULL, ?4)",
-                    params![kind.code(), &id.0[..], version, vault],
-                )
-                .map_err(store_err)?;
+                Ok(!kept && !health_in(c).contains_key(&vault))
+            })?;
+            if idle {
+                return Ok(());
             }
-            // Local only: it vanishes.
-            None => {
-                tx.execute(
-                    "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
-                    params![kind.code(), &id.0[..]],
-                )
-                .map_err(store_err)?;
+        }
+        let tx = self.write_tx()?;
+        match event {
+            VaultEvent::Clean => {
+                delete_kept(&tx, vault)?;
+                // Settled once the server serves the copy back by itself.
+                let pending = has_pending_manifest(&tx, vault)?;
+                update_health(&tx, |map| {
+                    let settled = map.get(&vault).is_some_and(|e| !e.awaiting && !pending);
+                    settled && map.remove(&vault).is_some()
+                })?;
             }
+            VaultEvent::Behind { seq, cause } => update_health(&tx, |map| {
+                let e = map.entry(vault).or_insert(HealthEntry::new(seq, cause));
+                e.seq = e.seq.max(seq);
+                e.cause = cause;
+                true
+            })?,
+            VaultEvent::CaughtUp => {
+                delete_kept(&tx, vault)?;
+                update_health(&tx, |map| map.remove(&vault).is_some())?;
+            }
+            VaultEvent::Alert { seq, cause } => update_health(&tx, |map| {
+                let e = map.entry(vault).or_insert(HealthEntry::new(seq, cause));
+                e.seq = e.seq.max(seq);
+                e.cause = cause;
+                e.alert = true;
+                true
+            })?,
         }
         tx.commit()
     }
@@ -1758,7 +2227,7 @@ mod tests {
         s.reset_for_recovery().unwrap();
         assert_eq!(s.account_state().unwrap(), AccountState::Empty);
         assert_eq!(s.device_state().unwrap(), DeviceState::default());
-        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
             assert_eq!(count(&s, table), 0, "{table}");
         }
     }
@@ -1803,7 +2272,7 @@ mod tests {
         s.set_meta("sync.tok", &[1]).unwrap();
         s.set_device_state(&DeviceState::default()).unwrap();
         other.reset().unwrap();
-        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
             assert_eq!(count(&s, table), 0, "{table}");
         }
         // Both connections keep working on the same file.
@@ -2098,6 +2567,82 @@ mod tests {
         assert_eq!(s.pending_changes().unwrap(), vec![]);
         s.drop_pending_vault(vault).unwrap();
         assert_eq!(count(&s, "pending"), 0);
+    }
+
+    #[test]
+    fn server_going_back_leaves_the_vault_unheld_and_its_rows_kept() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (vault, item, other) = (Id::new(), Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::Manifest, vault, 3, b"m3".to_vec());
+        seed_base(&mut s, RecordKind::Item, item, 1, item_data(vault, b"i"));
+        seed_base(
+            &mut s,
+            RecordKind::Item,
+            other,
+            1,
+            item_data(Id::new(), b"o"),
+        );
+        s.put(rec(vault, RecordKind::Manifest, 4, b"l4")).unwrap();
+        // The server goes back to seq 2 and drops the item: older than the
+        // ancestor, so not held; both rows it replaced are kept.
+        s.stage_remote(remote(RecordKind::Manifest, vault, 2, Some(b"m2".to_vec())))
+            .unwrap();
+        s.stage_remote(remote(RecordKind::Item, item, 1, None))
+            .unwrap();
+        s.commit_remote().unwrap();
+        assert_eq!(s.vaults_needing_rebase().unwrap(), vec![]);
+        let mut kept = s.kept_rows(vault).unwrap().unwrap();
+        kept.sort_by_key(|r| r.kind);
+        assert_eq!(
+            kept,
+            vec![
+                rec(item, RecordKind::Item, 1, &item_data(vault, b"i")),
+                rec(vault, RecordKind::Manifest, 3, b"m3"),
+            ]
+        );
+        // The same seq with other content is a fork: held.
+        seed_base(&mut s, RecordKind::Manifest, vault, 3, b"fork".to_vec());
+        assert_eq!(s.vaults_needing_rebase().unwrap(), vec![vault]);
+        // A clean load drops the kept rows.
+        s.vault_event(vault, VaultEvent::Clean).unwrap();
+        assert_eq!(s.kept_rows(vault).unwrap(), Some(vec![]));
+    }
+
+    #[test]
+    fn health_counts_rounds_and_settles_only_on_a_fetch() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let cause = IntegrityError::ManifestRollback;
+        seed_base(&mut s, RecordKind::Manifest, vault, 2, b"m2".to_vec());
+        s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        for i in 1..=STALE_ALERT_ROUNDS {
+            s.count_round(100 * i64::from(i)).unwrap();
+        }
+        let e = s.health().unwrap()[&vault];
+        assert_eq!((e.since, e.rounds, e.alert), (Some(100), 5, false));
+        // The copy pushed back: not settled until a fetch serves it.
+        s.put(rec(vault, RecordKind::Manifest, 3, b"m3")).unwrap();
+        s.mark_pushed(RecordKind::Manifest, vault, 3, None).unwrap();
+        s.vault_event(vault, VaultEvent::Clean).unwrap();
+        assert!(s.health().unwrap()[&vault].awaiting);
+        // Served older again: still behind; time passes: an alert.
+        seed_base(&mut s, RecordKind::Manifest, vault, 2, b"m2".to_vec());
+        s.count_round(100 + STALE_ALERT_SECONDS).unwrap();
+        let e = s.health().unwrap()[&vault];
+        assert!(e.alert && e.awaiting);
+        // Persisted as is.
+        assert_eq!(
+            decode_health(&encode_health(&s.health().unwrap())),
+            Some(s.health().unwrap())
+        );
+        // Served back, loaded cleanly: settled.
+        seed_base(&mut s, RecordKind::Manifest, vault, 3, b"m3".to_vec());
+        s.vault_event(vault, VaultEvent::Clean).unwrap();
+        assert!(s.health().unwrap().is_empty());
+        // An unreadable map reads as empty.
+        s.set_meta(HEALTH_KEY, &[HEALTH_VERSION, 1, 2]).unwrap();
+        assert!(s.health().unwrap().is_empty());
     }
 
     #[test]

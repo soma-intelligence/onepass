@@ -7,7 +7,7 @@ mod sqlite;
 pub use memory::MemoryStore;
 pub use sqlite::SqliteStore;
 
-use crate::{Error, Id, Result};
+use crate::{Error, Id, IntegrityError, Result};
 
 /// What a record holds. The numeric codes are the on-disk encoding: append
 /// only, never renumber.
@@ -83,6 +83,56 @@ pub trait RecordStore {
     fn set_restore_epoch_mark(&mut self, _epoch: u64, _hash: [u8; 32]) -> Result<()> {
         Ok(())
     }
+
+    /// The rows of `vault` (its manifest, its item records) that the
+    /// server replaced or removed since the vault last loaded cleanly, for
+    /// a store that keeps the device's own copy when the server falls
+    /// behind (`crate::sync::SyncStore`). `None` (the default): the store
+    /// keeps no such copy, and a vault that fails its checks is an error.
+    fn kept_rows(&self, _vault: Id) -> Result<Option<Vec<Record>>> {
+        Ok(None)
+    }
+
+    /// Make the device's verified copy of `vault` the visible one again,
+    /// as pending writes: `manifest` (if it is not already the visible
+    /// one), the item records `restore` it lists that only the kept rows
+    /// still hold, and deletions of the vault's visible item records it
+    /// does not list (`unlisted`). Done for a `write`, or when the server
+    /// went back to an older manifest (so that the next push restores the
+    /// server's copy); otherwise nothing is written. Only called when
+    /// `kept_rows` is `Some`. The default refuses.
+    fn keep_local_copy(
+        &mut self,
+        _vault: Id,
+        _manifest: &Record,
+        _restore: &[Record],
+        _unlisted: &[Id],
+        _write: bool,
+    ) -> Result<()> {
+        Err(Error::Store("no local copy".into()))
+    }
+
+    /// What the repository learned about a vault's server state, for the
+    /// sync health (`crate::sync::VaultSyncHealth`). The default ignores it.
+    fn vault_event(&mut self, _vault: Id, _event: VaultEvent) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// What the repository reports to the store about one vault
+/// (`RecordStore::vault_event`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VaultEvent {
+    /// The visible copy loaded and passed every check.
+    Clean,
+    /// The server's state failed the checks (`cause`); the device serves
+    /// its own verified copy, manifest seq `seq`, instead.
+    Behind { seq: u64, cause: IntegrityError },
+    /// The rebase verified and adopted the server's newer state.
+    CaughtUp,
+    /// Nothing safe to serve or merge: no verified local copy, or a server
+    /// manifest that forks from it (`seq`: the local copy's, 0 for none).
+    Alert { seq: u64, cause: IntegrityError },
 }
 
 /// Shared behavior checks, run against every store.

@@ -195,7 +195,7 @@ fn held_vault_sends_nothing_until_rebased() {
 }
 
 #[test]
-fn server_replaying_old_manifest_is_rollback() {
+fn server_replaying_old_manifest_is_never_accepted() {
     let mut server = Server::default();
     let (mut a, sk) = Device::create();
     let v = personal_vault_of(&mut a);
@@ -212,17 +212,24 @@ fn server_replaying_old_manifest_is_rollback() {
     assert_eq!(b.items().len(), 2);
     assert_eq!(b.repo().device_state().last_seen[&v].seq, 3);
 
+    // B keeps serving its own copy, the server is behind, and B's copy
+    // goes up again (spec 3.1); seq 2 is never what B reads.
     server.replay(seq2);
     pull(&server, &mut b);
-    assert_eq!(integrity(b.try_items()), IntegrityError::ManifestRollback);
-    // A device state saved and reloaded keeps refusing it.
+    assert_eq!(b.try_items().unwrap().len(), 2);
+    assert!(is_behind(health(&mut b, v)));
+    // A device state saved and reloaded keeps it.
     b.lock();
     b.unlock(&sk);
-    assert_eq!(integrity(b.try_items()), IntegrityError::ManifestRollback);
+    assert_eq!(b.try_items().unwrap().len(), 2);
+    sync(&mut server, &mut b).unwrap();
+    assert_eq!(server.get(RecordKind::Manifest, v).unwrap().version, 3);
+    b.repo().note_sync_round(T0).unwrap();
+    assert_eq!(health(&mut b, v), VaultSyncHealth::Ok);
 }
 
 #[test]
-fn rebase_onto_a_manifest_older_than_the_ancestor_is_rollback_and_keeps_local_writes() {
+fn local_write_over_a_server_gone_back_is_pushed_over_it() {
     let mut server = Server::default();
     let (mut a, sk) = Device::create();
     let v = personal_vault_of(&mut a);
@@ -232,7 +239,6 @@ fn rebase_onto_a_manifest_older_than_the_ancestor_is_rollback_and_keeps_local_wr
     let seq2 = server.get(RecordKind::Manifest, v).unwrap();
     a.save(&login(v, "y", T0));
     sync(&mut server, &mut a).unwrap();
-    let seq3 = server.get(RecordKind::Manifest, v).unwrap();
 
     let mut b = Device::empty();
     pull(&server, &mut b);
@@ -240,26 +246,12 @@ fn rebase_onto_a_manifest_older_than_the_ancestor_is_rollback_and_keeps_local_wr
     assert_eq!(b.items().len(), 2);
     b.save(&edited(&x, "x.b", T0 + 10));
 
-    // The server goes back to seq 2: B's vault is held, and the rebase
-    // refuses the old manifest without losing B's edit.
+    // The server goes back to seq 2, older than B's ancestor: B's vault is
+    // not held, its write (built on seq 3) goes over the old state.
     server.replay(seq2);
     pull(&server, &mut b);
-    assert_eq!(b.store().vaults_needing_rebase().unwrap(), vec![v]);
-    assert_eq!(
-        integrity(b.repo().rebase()),
-        IntegrityError::ManifestRollback
-    );
-    assert_eq!(b.store().vaults_needing_rebase().unwrap(), vec![v]);
-    assert_eq!(users(&b.items()), vec!["x.b", "y"]);
-    b.lock();
-    b.unlock(&sk);
-    assert_eq!(users(&b.items()), vec!["x.b", "y"]);
-
-    // The server serves seq 3 again: once B fetches it, the vault is no
-    // longer held (the ancestor is current) and B's edit goes through.
-    server.replay(seq3);
-    pull(&server, &mut b);
     assert!(b.store().vaults_needing_rebase().unwrap().is_empty());
+    assert_eq!(users(&b.items()), vec!["x.b", "y"]);
     sync(&mut server, &mut b).unwrap();
     sync(&mut server, &mut a).unwrap();
     assert_eq!(users(&a.items()), vec!["x.b", "y"]);
@@ -267,20 +259,29 @@ fn rebase_onto_a_manifest_older_than_the_ancestor_is_rollback_and_keeps_local_wr
 }
 
 #[test]
-fn server_withholding_item_is_detected() {
+fn server_withholding_item_alerts_after_threshold() {
     let mut server = Server::default();
     let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
     let x = &items[0];
+    let p = x.vault_id;
     a.save(&edited(x, "x.a", T0 + 10));
     sync(&mut server, &mut a).unwrap();
     // The server keeps the new manifest but never serves the new record.
     let blob = server.item_blob(x.id, 2);
     server.withhold(RecordKind::Item, blob);
-    pull(&server, &mut b);
+    // B serves the copy it verified, never a half state, until the
+    // threshold.
+    for i in 0..STALE_ALERT_ROUNDS - 1 {
+        round(&mut server, &mut b, T0 + 150 * i64::from(i)).unwrap();
+        assert!(is_behind(health(&mut b, p)));
+        assert_eq!(users(&b.items()), vec!["x"]);
+    }
+    round(&mut server, &mut b, T0 + STALE_ALERT_SECONDS).unwrap();
     assert_eq!(
-        integrity(b.try_items()),
-        IntegrityError::ManifestMissingItem
+        health(&mut b, p),
+        VaultSyncHealth::Alert(IntegrityError::ManifestMissingItem)
     );
+    assert_eq!(users(&b.items()), vec!["x"]);
 }
 
 #[test]
@@ -468,7 +469,15 @@ fn failing_vault_does_not_block_other_vaults() {
     a.repo().save_item(&bad, bx.clone()).unwrap();
     a.repo().save_item(&good, gx.clone()).unwrap();
     sync(&mut server, &mut a).unwrap();
-    let bad_seq2 = server.get(RecordKind::Manifest, bad.id).unwrap();
+    // C reads the bad vault at seq 2 and writes it twice offline: a
+    // history that forks from what comes next.
+    let mut c = Device::empty();
+    pull(&server, &mut c);
+    c.unlock(&sk);
+    let cb = c.vault_named(&bad.meta.name);
+    c.repo().save_item(&cb, login(bad.id, "c1", T0)).unwrap();
+    c.repo().save_item(&cb, login(bad.id, "c2", T0)).unwrap();
+    let forked: Vec<Record> = outbox(&c).iter().map(|(ch, _)| as_record(ch)).collect();
     for v in [&bad, &good] {
         a.repo().save_item(v, login(v.id, "second", T0)).unwrap();
     }
@@ -490,13 +499,15 @@ fn failing_vault_does_not_block_other_vaults() {
         .save_item(&bg, edited(&gx, "good.b", T0 + 10))
         .unwrap();
 
-    // A advances the good vault; the server rolls the bad one back.
+    // A advances the good vault; the server serves C's fork of the bad one.
     let ag = a.vault_named(&good.meta.name);
     a.repo()
         .save_item(&ag, login(good.id, "good.a", T0 + 11))
         .unwrap();
     sync(&mut server, &mut a).unwrap();
-    server.replay(bad_seq2);
+    for r in forked {
+        server.replay(r);
+    }
     pull(&server, &mut b);
     let mut both = vec![bad.id, good.id];
     both.sort();
@@ -592,4 +603,347 @@ fn full_fetch_hiding_a_seen_vault_keeps_it_readable() {
     full_fetch(&server, &mut b);
     b.unlock(&sk);
     assert_eq!(b.items(), before);
+}
+
+// ------------------------------------------- server behind (spec 3.1, 3.2)
+
+/// A and B both read Personnel at seq 3 (`x` then `y`); returns the seq 2
+/// manifest record, for the server to go back to.
+fn both_at_seq3(server: &mut Server) -> (Device, Device, SecretKey, Id, Record) {
+    let (mut a, mut b, sk, items) = setup(server, &[("x", T0)]);
+    let p = items[0].vault_id;
+    let seq2 = server.get(RecordKind::Manifest, p).unwrap();
+    b.save(&login(p, "y", T0 + 1));
+    round(server, &mut b, T0).unwrap();
+    round(server, &mut a, T0).unwrap();
+    assert_eq!(users(&a.items()), vec!["x", "y"]);
+    (a, b, sk, p, seq2)
+}
+
+/// Every device reads `expected`, sees the vault `Ok` and has nothing left
+/// to send.
+fn converged(devs: &mut [&mut Device], p: Id, expected: &[&str]) {
+    for dev in devs.iter_mut() {
+        let v = dev.repo().vaults().unwrap();
+        let v = v.iter().find(|v| v.id == p).unwrap();
+        assert_eq!(users(&dev.repo().items(v).unwrap()), expected);
+        assert_eq!(health(dev, p), VaultSyncHealth::Ok);
+        assert_eq!(outbox(dev), vec![]);
+    }
+}
+
+#[test]
+fn propagation_delay_no_alert() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, p, seq2) = both_at_seq3(&mut server);
+
+    // A lagging replica serves seq 2 again to A, which read seq 3.
+    server.replay(seq2);
+    round(&mut server, &mut a, T0 + 30).unwrap();
+    assert!(is_behind(health(&mut a, p)));
+    assert_eq!(users(&a.items()), vec!["x", "y"]);
+    a.save(&login(p, "z", T0 + 31));
+
+    // The next round sends A's copy again: both devices converge.
+    round(&mut server, &mut a, T0 + 60).unwrap();
+    round(&mut server, &mut b, T0 + 60).unwrap();
+    converged(&mut [&mut a, &mut b], p, &["x", "y", "z"]);
+}
+
+#[test]
+fn persistent_rollback_alerts_after_threshold() {
+    let mut server = Server::default();
+    let (mut a, _b, sk, p, seq2) = both_at_seq3(&mut server);
+
+    // The store takes A's copy back each round, then serves seq 2 again.
+    let rewound_round = |server: &mut Server, a: &mut Device, now: i64| {
+        push(server, a).unwrap();
+        server.replay(seq2.clone());
+        pull(server, a);
+        a.repo().note_sync_round(now).unwrap();
+    };
+    for i in 1..=6u32 {
+        rewound_round(&mut server, &mut a, T0 + 60 * i64::from(i - 1));
+        // More rounds than the threshold, in less time: still only behind.
+        assert_eq!(
+            health(&mut a, p),
+            VaultSyncHealth::ServerBehind {
+                since: T0,
+                rounds: i
+            }
+        );
+        assert_eq!(users(&a.items()), vec!["x", "y"]);
+    }
+    rewound_round(&mut server, &mut a, T0 + STALE_ALERT_SECONDS);
+    assert_eq!(
+        health(&mut a, p),
+        VaultSyncHealth::Alert(IntegrityError::ManifestRollback)
+    );
+    // The device never takes the old state: it still serves its own copy.
+    assert_eq!(users(&a.items()), vec!["x", "y"]);
+    a.lock();
+    a.unlock(&sk);
+    assert_eq!(
+        health(&mut a, p),
+        VaultSyncHealth::Alert(IntegrityError::ManifestRollback)
+    );
+    assert_eq!(users(&a.items()), vec!["x", "y"]);
+}
+
+#[test]
+fn swallowed_copy_stays_behind_until_served() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, p, seq2) = both_at_seq3(&mut server);
+    server.replay(seq2);
+    round(&mut server, &mut a, T0).unwrap();
+    assert!(is_behind(health(&mut a, p)));
+
+    // The store acknowledges A's copy but keeps serving seq 2 and never
+    // logs the write: the acknowledgment alone does not settle the vault.
+    let kept = server.clone();
+    push(&mut server, &a).unwrap();
+    server = kept;
+    for i in 1..STALE_ALERT_ROUNDS {
+        round(&mut server, &mut a, T0 + 100 * i64::from(i)).unwrap();
+        assert!(is_behind(health(&mut a, p)), "round {i}");
+    }
+    assert_eq!(
+        health(&mut a, p),
+        VaultSyncHealth::ServerBehind {
+            since: T0,
+            rounds: STALE_ALERT_ROUNDS
+        }
+    );
+    round(&mut server, &mut a, T0 + STALE_ALERT_SECONDS).unwrap();
+    assert_eq!(
+        health(&mut a, p),
+        VaultSyncHealth::Alert(IntegrityError::ManifestRollback)
+    );
+    // Neither device ever reads the old state.
+    round(&mut server, &mut b, T0 + STALE_ALERT_SECONDS).unwrap();
+    assert_eq!(users(&a.items()), vec!["x", "y"]);
+    assert_eq!(users(&b.items()), vec!["x", "y"]);
+}
+
+/// A edits X twice and adds N: its batch is X's record two versions on,
+/// N's record, the manifest, then X's old record deleted. Returns the item
+/// records and the rest, the two halves of a split batch.
+fn a_writes_split_batch(a: &mut Device, x: &Item) -> Vec<(Change, Option<u64>)> {
+    a.save(&edited(x, "x.a1", T0 + 10));
+    a.save(&edited(x, "x.a2", T0 + 11));
+    a.save(&login(x.vault_id, "n", T0 + 12));
+    let batch = outbox(a);
+    let (records, rest): (Vec<_>, Vec<_>) = batch
+        .into_iter()
+        .partition(|(c, _)| c.kind == RecordKind::Item && c.data.is_some());
+    assert_eq!(records.len(), 2);
+    assert_eq!(rest.len(), 2);
+    records
+}
+
+#[test]
+fn partial_send_retry_no_alert() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0), ("y", T0)]);
+    let (x, y) = (&items[0], &items[1]);
+    let p = x.vault_id;
+    // The first request of A's batch goes through, the second fails: A
+    // retries at its next round.
+    let records = a_writes_split_batch(&mut a, x);
+    send(&mut server, &a, records, true).unwrap();
+
+    // B fetches in between: records its manifest does not list.
+    round(&mut server, &mut b, T0 + 20).unwrap();
+    assert!(is_behind(health(&mut b, p)));
+    assert_eq!(users(&b.items()), vec!["x", "y"]);
+    // B writes, and its push lands before A's retry.
+    b.save(&edited(y, "y.b", T0 + 21));
+    round(&mut server, &mut b, T0 + 30).unwrap();
+    round(&mut server, &mut a, T0 + 30).unwrap();
+    round(&mut server, &mut b, T0 + 60).unwrap();
+    round(&mut server, &mut a, T0 + 60).unwrap();
+    converged(&mut [&mut a, &mut b], p, &["n", "x.a2", "y.b"]);
+}
+
+#[test]
+fn split_batch_seen_midway_no_alert() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0), ("y", T0)]);
+    let x = &items[0];
+    let p = x.vault_id;
+    // A batch over CloudKit's limits goes in two: the records, then the
+    // manifest and the deletions.
+    let records = a_writes_split_batch(&mut a, x);
+    send(&mut server, &a, records, true).unwrap();
+
+    // B fetches between the two.
+    round(&mut server, &mut b, T0 + 20).unwrap();
+    assert!(is_behind(health(&mut b, p)));
+    assert_eq!(users(&b.items()), vec!["x", "y"]);
+
+    // The second half lands; the next round converges.
+    round(&mut server, &mut a, T0 + 30).unwrap();
+    round(&mut server, &mut b, T0 + 30).unwrap();
+    converged(&mut [&mut a, &mut b], p, &["n", "x.a2", "y"]);
+}
+
+#[test]
+fn partial_fetch_no_alert() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0), ("y", T0)]);
+    let (x, y) = (&items[0], &items[1]);
+    let p = x.vault_id;
+    b.save(&edited(y, "y.b", T0 + 10));
+    b.save(&login(p, "n", T0 + 11));
+    round(&mut server, &mut b, T0 + 10).unwrap();
+
+    // A's fetch stops after its first page (`moreComing`, no token): the
+    // manifest and Y's deletion, not the new records. The round ends there.
+    let (changes, _) = server.changes_since(a.cursor);
+    let mut store = a.store();
+    for c in changes
+        .into_iter()
+        .filter(|c| c.kind != RecordKind::Item || c.data.is_none())
+    {
+        store.stage_remote(c).unwrap();
+    }
+    store.commit_remote().unwrap();
+    a.repo().note_sync_round(T0 + 20).unwrap();
+    assert!(is_behind(health(&mut a, p)));
+    assert_eq!(users(&a.items()), vec!["x", "y"]);
+    a.save(&edited(x, "x.a", T0 + 21));
+
+    // The next round fetches the rest and merges A's write.
+    round(&mut server, &mut a, T0 + 30).unwrap();
+    round(&mut server, &mut a, T0 + 60).unwrap();
+    round(&mut server, &mut b, T0 + 60).unwrap();
+    converged(&mut [&mut a, &mut b], p, &["n", "x.a", "y.b"]);
+}
+
+#[test]
+fn expired_token_full_fetch_no_alert() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let p = items[0].vault_id;
+    let seq2 = server.get(RecordKind::Manifest, p).unwrap();
+    let n = login(p, "n", T0 + 1);
+    b.save(&n);
+    round(&mut server, &mut b, T0).unwrap();
+    round(&mut server, &mut a, T0).unwrap();
+    assert_eq!(users(&a.items()), vec!["n", "x"]);
+
+    // A's token expired; its fetch from scratch hits the server while it
+    // still serves seq 2 and lacks N's record.
+    server.replay(seq2);
+    let blob = server.item_blob(n.id, 1);
+    server.withhold(RecordKind::Item, blob);
+    full_fetch(&server, &mut a);
+    a.repo().note_sync_round(T0 + 30).unwrap();
+    assert!(is_behind(health(&mut a, p)));
+    assert_eq!(users(&a.items()), vec!["n", "x"]);
+    a.save(&login(p, "z", T0 + 31));
+
+    round(&mut server, &mut a, T0 + 60).unwrap();
+    round(&mut server, &mut b, T0 + 60).unwrap();
+    converged(&mut [&mut a, &mut b], p, &["n", "x", "z"]);
+}
+
+#[test]
+fn zone_deleted_recreated_no_alert() {
+    let mut server = Server::default();
+    let (mut a, sk) = Device::create();
+    let p = personal_vault_of(&mut a);
+    a.save(&login(p, "x", T0));
+    round(&mut server, &mut a, T0).unwrap();
+    // C reads seq 2, then stays offline.
+    let mut c = Device::empty();
+    pull(&server, &mut c);
+    c.unlock(&sk);
+    assert_eq!(users(&c.items()), vec!["x"]);
+    c.lock();
+    a.save(&login(p, "y", T0 + 1));
+    round(&mut server, &mut a, T0).unwrap();
+    let mut b = Device::empty();
+    pull(&server, &mut b);
+    b.unlock(&sk);
+    assert_eq!(users(&b.items()), vec!["x", "y"]);
+
+    // The user deletes the zone; it comes back empty. C syncs first and
+    // puts its old copy (seq 2) back.
+    let mut server = Server::default();
+    zone_reset(&server, &mut c);
+    push(&mut server, &c).unwrap();
+
+    // A resets onto C's copy: it keeps its own and sends it again.
+    zone_reset(&server, &mut a);
+    a.repo().note_sync_round(T0 + 30).unwrap();
+    assert!(is_behind(health(&mut a, p)));
+    assert_eq!(users(&a.items()), vec!["x", "y"]);
+    a.save(&login(p, "z", T0 + 31));
+    round(&mut server, &mut a, T0 + 60).unwrap();
+
+    zone_reset(&server, &mut b);
+    round(&mut server, &mut b, T0 + 60).unwrap();
+    c.unlock(&sk);
+    round(&mut server, &mut c, T0 + 60).unwrap();
+    converged(&mut [&mut a, &mut b, &mut c], p, &["x", "y", "z"]);
+}
+
+/// Device C reads Personnel at seq 2, then writes twice offline: the
+/// records of its own seq 3 and 4, a history that forks from the server's.
+fn offline_fork(server: &Server, sk: &SecretKey, p: Id) -> Vec<Record> {
+    let mut c = Device::empty();
+    pull(server, &mut c);
+    c.unlock(sk);
+    c.save(&login(p, "c1", T0 + 1));
+    c.save(&login(p, "c2", T0 + 2));
+    outbox(&c).iter().map(|(ch, _)| as_record(ch)).collect()
+}
+
+#[test]
+fn unresolvable_fork_alerts() {
+    let mut server = Server::default();
+    let (mut a, sk) = Device::create();
+    let p = personal_vault_of(&mut a);
+    a.save(&login(p, "x", T0));
+    round(&mut server, &mut a, T0).unwrap();
+    let forked = offline_fork(&server, &sk, p);
+    // A moves on to its seq 3; B reads it, then writes offline.
+    a.save(&login(p, "y", T0 + 3));
+    round(&mut server, &mut a, T0).unwrap();
+    let mut b = Device::empty();
+    pull(&server, &mut b);
+    b.unlock(&sk);
+    assert_eq!(users(&b.items()), vec!["x", "y"]);
+    b.save(&login(p, "b", T0 + 4));
+
+    // The store serves C's history instead: a seq 4 built on another seq 3.
+    for r in forked {
+        server.replay(r);
+    }
+    // B's write cannot be merged onto it: an alert at once, no threshold.
+    assert_eq!(
+        round(&mut server, &mut b, T0 + 30),
+        Err(Error::Integrity(IntegrityError::ManifestRollback))
+    );
+    assert_eq!(
+        health(&mut b, p),
+        VaultSyncHealth::Alert(IntegrityError::ManifestRollback)
+    );
+    // B still reads its own copy, to export it.
+    assert_eq!(users(&b.items()), vec!["b", "x", "y"]);
+
+    // A, without a local write, sees the fork too, reads its copy and
+    // refuses to write over the fork.
+    round(&mut server, &mut a, T0 + 30).unwrap();
+    assert_eq!(
+        health(&mut a, p),
+        VaultSyncHealth::Alert(IntegrityError::ManifestRollback)
+    );
+    assert_eq!(users(&a.items()), vec!["x", "y"]);
+    let v = a.vault();
+    assert_eq!(
+        a.repo().save_item(&v, login(p, "w", T0 + 5)),
+        Err(Error::Integrity(IntegrityError::ManifestRollback))
+    );
 }

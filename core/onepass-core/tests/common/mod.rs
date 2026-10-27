@@ -12,7 +12,10 @@ pub use onepass_core::crypto::{KdfParams, SecretKey, random_array};
 pub use onepass_core::model::{FieldValue, Item, ItemType, new_item};
 pub use onepass_core::repo::{Repository, split_item_record};
 pub use onepass_core::store::{Record, RecordKind, RecordStore};
-pub use onepass_core::sync::{AccountState, Change, RemoteChange, SyncStore};
+pub use onepass_core::sync::{
+    AccountState, Change, RemoteChange, STALE_ALERT_ROUNDS, STALE_ALERT_SECONDS, SyncStore,
+    VaultSyncHealth,
+};
 pub use onepass_core::vault::{ItemRecord, Vault, VaultMeta};
 pub use onepass_core::{Error, Id, IntegrityError, Result};
 pub use time::OffsetDateTime;
@@ -346,6 +349,54 @@ pub fn sync(server: &mut Server, dev: &mut Device) -> Result<()> {
         }
     }
     panic!("no agreement after three rounds");
+}
+
+/// Change token key of the harness devices (any name the store does not use).
+pub const TOKEN_KEY: &str = "sync.token";
+
+/// The zone was deleted and recreated: the device settles a reset fetch of
+/// what the zone holds now, so the rows it lacks go up again.
+pub fn zone_reset(server: &Server, dev: &mut Device) {
+    let (changes, cursor) = server.changes_since(0);
+    let mut store = dev.store();
+    store.begin_zone_reset(TOKEN_KEY).unwrap();
+    for c in changes.into_iter().filter(|c| c.data.is_some()) {
+        store.stage_remote(c).unwrap();
+    }
+    store.commit_remote().unwrap();
+    store.finish_full_fetch().unwrap();
+    dev.cursor = cursor;
+}
+
+/// One sync round as the apps run it, unlocked, at `now`: push (pull and
+/// rebase on a conflict), pull, rebase what is still held, then count the
+/// round (`note_sync_round`).
+pub fn round(server: &mut Server, dev: &mut Device, now: i64) -> Result<()> {
+    let synced = sync(server, dev);
+    if synced.is_ok() && !dev.store().vaults_needing_rebase()?.is_empty() {
+        dev.repo().rebase()?;
+    }
+    dev.repo().note_sync_round(now)?;
+    synced
+}
+
+/// The sync health of one vault.
+pub fn health(dev: &mut Device, vault: Id) -> VaultSyncHealth {
+    dev.repo().sync_health().unwrap()[&vault]
+}
+
+pub fn is_behind(h: VaultSyncHealth) -> bool {
+    matches!(h, VaultSyncHealth::ServerBehind { .. })
+}
+
+/// A pending change as the record the server would hold.
+pub fn as_record(c: &Change) -> Record {
+    Record {
+        kind: c.kind,
+        id: c.id,
+        version: c.version,
+        data: c.data.clone().expect("a write"),
+    }
 }
 
 // ---------------------------------------------------------------- items
