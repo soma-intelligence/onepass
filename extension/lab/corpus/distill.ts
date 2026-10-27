@@ -151,11 +151,16 @@ export function distill(samples: Sample[], baseline: Patterns): Patterns {
   };
 }
 
+/** Sample files of a samples directory: every `.json` except the crawler's `<host>.done.json` site markers. */
+export function sampleFiles(names: string[]): string[] {
+  return names.filter((f) => f.endsWith(".json") && !f.endsWith(".done.json")).sort();
+}
+
 function main(): void {
   const dir = fileURLToPath(new URL(".", import.meta.url));
   const baseline = JSON.parse(readFileSync(dir + "seed-lexicon.json", "utf8")) as Patterns;
   let files: string[] = [];
-  try { files = readdirSync(dir + "samples").filter((f) => f.endsWith(".json")).sort(); } catch { /* no samples yet */ }
+  try { files = sampleFiles(readdirSync(dir + "samples")); } catch { /* no samples yet */ }
   const samples = files.map((f) => JSON.parse(readFileSync(dir + "samples/" + f, "utf8")) as Sample);
   const out = distill(samples, baseline);
   writeFileSync(dir + "patterns.json", stableJson(out));

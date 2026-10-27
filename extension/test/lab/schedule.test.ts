@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { HostPacer, SiteBudget, pendingHosts, routeVerdict, writeAtomic, writeAtomicWith } from "../../lab/corpus/schedule.ts";
+import { HostPacer, SiteBudget, clearHost, pendingHosts, routeVerdict, writeAtomic, writeAtomicWith } from "../../lab/corpus/schedule.ts";
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "sched-")); });
@@ -105,5 +105,13 @@ describe("routeVerdict", () => {
     expect(routeVerdict({ method: "GET", isMainNavigation: false }, false)).toBe("continue");
     expect(routeVerdict({ method: "GET", isMainNavigation: true }, true)).toBe("continue");
     expect(routeVerdict({ method: "GET", isMainNavigation: true }, false)).toBe("abort-robots");
+  });
+});
+
+describe("clearHost", () => {
+  it("removes page files, marker and tmp of one host only", () => {
+    for (const f of ["a.example.0.json", "a.example.3.json", "a.example.done.json", "a.example.1.json.tmp", "b.a.example.0.json", "ab.example.0.json", "a.example.txt"]) writeFileSync(join(dir, f), "{}");
+    clearHost("a.example", dir);
+    expect(readdirSync(dir).sort()).toEqual(["a.example.txt", "ab.example.0.json", "b.a.example.0.json"]);
   });
 });

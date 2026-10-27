@@ -1,6 +1,6 @@
 // Scheduling helpers of the top 1000 crawl: done markers, atomic writes,
 // per-host pacing and the per-site page and error budget.
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** A host is done when `<host>.done.json` exists and parses; page files alone prove nothing. */
@@ -63,4 +63,12 @@ export function routeVerdict(req: { method: string; isMainNavigation: boolean },
   if (req.method.toUpperCase() !== "GET") return "abort-method";
   if (req.isMainNavigation && !allowed) return "abort-robots";
   return "continue";
+}
+
+/** Deletes the page files, marker and tmp files a previous, unfinished run left for one host. */
+export function clearHost(host: string, outDir: string): void {
+  let names: string[] = [];
+  try { names = readdirSync(outDir); } catch { return; }
+  const own = new RegExp("^" + host.replace(/[.+?^${}()|[\]\\]/g, "\\$&") + "\\.(\\d+|done)\\.json(\\.tmp)?$");
+  for (const n of names) if (own.test(n)) { try { unlinkSync(join(outDir, n)); } catch { /* gone */ } }
 }
