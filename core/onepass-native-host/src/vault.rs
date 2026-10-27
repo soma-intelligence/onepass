@@ -3,22 +3,30 @@
 //! `RepoVault` serves both sources: `fixture` (a `MemoryStore` built from a
 //! JSON file, see `fixture.rs`) and `dev` (the data directory of the
 //! development CLI: `device.bin` and `vault.sqlite`). Only the minimal
-//! open logic of the CLI is copied here. After each write `device.bin` is
-//! rewritten with the new last seen manifests, so a rollback of
-//! `vault.sqlite` stays detectable, as with the CLI.
+//! open logic of the CLI is copied here. For the dev source, each read and
+//! each write runs under the data directory lock on a repository rebuilt
+//! from the `device.bin` on disk merged with what this process saw (per
+//! vault, the higher seq wins; the same seq with another hash is a fork and
+//! is refused). After each read and each write `device.bin` is rewritten
+//! with the merged last seen manifests (only when they changed), so a
+//! rollback of `vault.sqlite` stays detectable across connections, and a
+//! manifest the CLI or another host process accepted meanwhile is never
+//! regressed, as with the CLI.
 
 use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use onepass_bridge::service::{VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError};
+use onepass_core::account::Auk;
 use onepass_core::crypto::SecretKey;
 use onepass_core::model::Item;
 use onepass_core::repo::{DeviceState, Repository};
 use onepass_core::store::{RecordStore, SqliteStore};
-use onepass_core::{Error, Id};
+use onepass_core::{Error, Id, IntegrityError};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -35,6 +43,11 @@ pub type Opener<S> = Box<dyn FnMut() -> Option<Repository<S>> + Send>;
 /// lock (the dev source rewrites `device.bin`, the fixture source its
 /// cache). An error makes the `save` reply `internal`.
 pub type AfterSave<S> = Box<dyn FnMut(&Repository<S>) -> Result<(), HostError> + Send>;
+/// Called before each read and each write, under the data directory lock:
+/// returns the repository to use instead of the current one (the dev
+/// source rebuilds it on the device state of disk merged with its own).
+/// An error makes the request reply `internal` and keeps the current one.
+pub type Refresh<S> = Box<dyn FnMut(&Repository<S>) -> Result<Repository<S>, HostError> + Send>;
 
 /// A `VaultAccess` over a repository, with a simulated lock state.
 pub struct RepoVault<S: RecordStore> {
@@ -48,6 +61,10 @@ pub struct RepoVault<S: RecordStore> {
     colors: HashMap<Id, String>,
     opener: Option<Opener<S>>,
     after_save: Option<AfterSave<S>>,
+    /// Like `after_save`, after each `items` (reads move the last seen
+    /// manifests too), even when the read failed.
+    after_read: Option<AfterSave<S>>,
+    refresh: Option<Refresh<S>>,
     /// Lock file of the CLI data directory, held during each store access.
     lock_path: Option<PathBuf>,
 }
@@ -73,6 +90,8 @@ impl<S: RecordStore> RepoVault<S> {
             colors: HashMap::new(),
             opener: None,
             after_save: None,
+            after_read: None,
+            refresh: None,
             lock_path: None,
         }
     }
@@ -105,6 +124,40 @@ impl<S: RecordStore> RepoVault<S> {
 
     pub fn set_after_save(&mut self, f: AfterSave<S>) {
         self.after_save = Some(f);
+    }
+
+    pub fn set_after_read(&mut self, f: AfterSave<S>) {
+        self.after_read = Some(f);
+    }
+
+    pub fn set_refresh(&mut self, f: Refresh<S>) {
+        self.refresh = Some(f);
+    }
+
+    /// Replace the repository through the `refresh` hook, if any. The
+    /// caller holds the data directory lock.
+    fn refresh_repo(&mut self) -> Result<(), BridgeError> {
+        if let (Some(f), Some(repo)) = (self.refresh.as_mut(), self.repo.as_ref()) {
+            let fresh = f(repo).map_err(|_| BridgeError::App(AppErrorCode::Internal))?;
+            self.repo = Some(fresh);
+        }
+        Ok(())
+    }
+
+    fn read_items(&mut self) -> onepass_bridge::Result<Vec<(VaultInfo, Item)>> {
+        let repo = self.repo.as_mut().ok_or(LOCKED)?;
+        let vaults = repo.vaults().map_err(bridge_error)?;
+        let mut out = Vec::new();
+        let mut infos = Vec::new();
+        for v in &vaults {
+            let items = repo.items(v).map_err(bridge_error)?;
+            infos.push((v.id, items));
+        }
+        for (v, (_, items)) in vaults.iter().zip(infos) {
+            let info = self.info(v);
+            out.extend(items.into_iter().map(|i| (info.clone(), i)));
+        }
+        Ok(out)
     }
 
     pub fn set_lock_path(&mut self, path: PathBuf) {
@@ -181,18 +234,16 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
             return Err(LOCKED);
         }
         let _g = self.guard()?;
-        let repo = self.repo.as_mut().ok_or(LOCKED)?;
-        let vaults = repo.vaults().map_err(bridge_error)?;
-        let mut out = Vec::new();
-        let mut infos = Vec::new();
-        for v in &vaults {
-            let items = repo.items(v).map_err(bridge_error)?;
-            infos.push((v.id, items));
-        }
-        for (v, (_, items)) in vaults.iter().zip(infos) {
-            let info = self.info(v);
-            out.extend(items.into_iter().map(|i| (info.clone(), i)));
-        }
+        self.refresh_repo()?;
+        let result = self.read_items();
+        // Persisted whatever the result, as the CLI does: a vault read
+        // before a failure still moved its last seen manifest.
+        let saved = match (self.after_read.as_mut(), self.repo.as_ref()) {
+            (Some(f), Some(repo)) => f(repo).map_err(|_| BridgeError::App(AppErrorCode::Internal)),
+            _ => Ok(()),
+        };
+        let out = result?;
+        saved?;
         Ok(out)
     }
 
@@ -201,6 +252,7 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
             return Err(LOCKED);
         }
         let _g = self.guard()?;
+        self.refresh_repo()?;
         let repo = self.repo.as_mut().ok_or(LOCKED)?;
         let vaults = repo.vaults().map_err(bridge_error)?;
         let vault = vaults
@@ -238,21 +290,56 @@ struct DeviceRef<'a> {
     state: &'a DeviceState,
 }
 
-/// Rewrite `device.bin` with `state`, keeping its Secret Key unchanged, as
-/// the CLI does after each change: atomically, 0600, file and directory
-/// synced, and only when the state changed. The caller holds the data
-/// directory lock.
-pub fn persist_device(dir: &Path, state: &DeviceState) -> Result<(), HostError> {
-    let path = dir.join(DEVICE_FILE);
+/// Merge two device states: the pinned account of `base` (of `other` when
+/// `base` pinned none), and per vault the last seen manifest with the
+/// higher seq. At the same seq the entry of `base` stays; a different hash
+/// there means two histories of the vault (a fork): refused with
+/// `ManifestRollback`, as the core refuses it, rather than choosing one.
+pub fn merge_device(base: &DeviceState, other: &DeviceState) -> Result<DeviceState, Error> {
+    let mut out = base.clone();
+    if out.pinned.is_none() {
+        out.pinned = other.pinned.clone();
+    }
+    for (id, seen) in &other.last_seen {
+        match out.last_seen.get(id) {
+            Some(kept) if kept.seq > seen.seq => {}
+            Some(kept) if kept.seq == seen.seq => {
+                if kept.hash != seen.hash {
+                    return Err(IntegrityError::ManifestRollback.into());
+                }
+            }
+            _ => {
+                out.last_seen.insert(*id, seen.clone());
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn read_device(path: &Path) -> Result<(Zeroizing<Vec<u8>>, DeviceFile), HostError> {
     let bytes = Zeroizing::new(
-        fs::read(&path).map_err(|e| HostError::new(format!("device.bin: {}", e.kind())))?,
+        fs::read(path).map_err(|e| HostError::new(format!("device.bin: {}", e.kind())))?,
     );
     let file: DeviceFile =
         postcard::from_bytes(&bytes).map_err(|_| HostError::new("device.bin is unreadable"))?;
+    Ok((bytes, file))
+}
+
+/// Rewrite `device.bin` with `state` merged into the state on disk
+/// (`merge_device`, the pinned account of `state` first), keeping its
+/// Secret Key unchanged, as the CLI does after each request: atomically,
+/// 0600, file and directory synced, and only when the bytes change. So a
+/// manifest another process accepted meanwhile is never regressed. The
+/// caller holds the data directory lock.
+pub fn persist_device(dir: &Path, state: &DeviceState) -> Result<(), HostError> {
+    let path = dir.join(DEVICE_FILE);
+    let (bytes, file) = read_device(&path)?;
+    let merged =
+        merge_device(state, &file.state).map_err(|e| HostError::new(format!("device.bin: {e}")))?;
     let new = Zeroizing::new(
         postcard::to_allocvec(&DeviceRef {
             secret_key: &file.secret_key,
-            state,
+            state: &merged,
         })
         .map_err(|_| HostError::new("cannot encode device.bin"))?,
     );
@@ -284,8 +371,9 @@ pub fn env_password() -> Option<Zeroizing<String>> {
     std::env::var("ONEPASS_PASSWORD").ok().map(Zeroizing::new)
 }
 
-/// Unlock the CLI account of `dir` with `password`, holding its lock.
-pub fn open_dev(dir: &Path, password: &str) -> Result<Repository<SqliteStore>, HostError> {
+/// Unlock the CLI account of `dir` with `password`, holding its lock. Also
+/// returns the Account Unlock Key, for `reopen_dev`.
+pub fn open_dev(dir: &Path, password: &str) -> Result<(Repository<SqliteStore>, Auk), HostError> {
     let device = dir.join(DEVICE_FILE);
     let store_path = dir.join(STORE_FILE);
     if !device.is_file() || !store_path.is_file() {
@@ -302,24 +390,53 @@ pub fn open_dev(dir: &Path, password: &str) -> Result<Repository<SqliteStore>, H
         .map_err(|_| HostError::new("device.bin holds an invalid key"))?;
     let store = SqliteStore::open(&store_path)
         .map_err(|_| HostError::new("cannot open the vault store"))?;
-    Repository::unlock(store, password, &key, file.state)
+    Repository::unlock_exporting_auk(store, password, &key, file.state)
         .map_err(|e| HostError::new(format!("cannot unlock the dev vault: {e}")))
+}
+
+/// Rebuild the repository of `dir` with `auk`, on the device state of disk
+/// merged with `seen` (what this process accepted so far): what another
+/// process accepted meanwhile is taken into account, and nothing this
+/// process accepted is forgotten. The caller holds the data directory lock.
+pub fn reopen_dev(
+    dir: &Path,
+    auk: &Auk,
+    seen: &DeviceState,
+) -> Result<Repository<SqliteStore>, HostError> {
+    let (_, file) = read_device(&dir.join(DEVICE_FILE))?;
+    let merged =
+        merge_device(&file.state, seen).map_err(|e| HostError::new(format!("device.bin: {e}")))?;
+    let store = SqliteStore::open(&dir.join(STORE_FILE))
+        .map_err(|_| HostError::new("cannot open the vault store"))?;
+    Repository::unlock_with_auk(store, auk, merged)
+        .map_err(|e| HostError::new(format!("cannot reopen the dev vault: {e}")))
 }
 
 /// Build the `dev` source. With `unlocked`, try the environment password
 /// now; otherwise (or if that fails) stay locked until `unlock`.
 pub fn load_dev(dir: PathBuf, unlocked: bool, log: &crate::log::Log) -> DevVault {
+    // The Account Unlock Key of the open repository, to rebuild it before
+    // each request without the password (and without the KDF).
+    let auk: Arc<Mutex<Option<Auk>>> = Arc::default();
     let try_open = {
         let dir = dir.clone();
+        let auk = auk.clone();
         move || -> Option<Repository<SqliteStore>> {
             let password = env_password()?;
-            open_dev(&dir, &password).ok()
+            let (repo, key) = open_dev(&dir, &password).ok()?;
+            *auk.lock().ok()? = Some(key);
+            Some(repo)
         }
     };
     let repo = if unlocked {
         match env_password() {
             Some(p) => match open_dev(&dir, &p) {
-                Ok(r) => Some(r),
+                Ok((r, key)) => {
+                    if let Ok(mut slot) = auk.lock() {
+                        *slot = Some(key);
+                    }
+                    Some(r)
+                }
                 Err(e) => {
                     log.line(&format!("dev vault stays locked: {e}"));
                     None
@@ -339,6 +456,63 @@ pub fn load_dev(dir: PathBuf, unlocked: bool, log: &crate::log::Log) -> DevVault
     v.set_after_save(Box::new(move |repo| {
         persist_device(&device_dir, repo.device_state())
     }));
+    let device_dir = dir.clone();
+    v.set_after_read(Box::new(move |repo| {
+        persist_device(&device_dir, repo.device_state())
+    }));
+    let device_dir = dir.clone();
+    v.set_refresh(Box::new(move |repo| {
+        let slot = auk
+            .lock()
+            .map_err(|_| HostError::new("account key unavailable"))?;
+        let key = slot
+            .as_ref()
+            .ok_or_else(|| HostError::new("account key unavailable"))?;
+        reopen_dev(&device_dir, key, repo.device_state())
+    }));
     v.set_lock_path(dir.join(LOCK_FILE));
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use onepass_core::manifest::SeenManifest;
+
+    fn state(entries: &[(Id, u64, u8)]) -> DeviceState {
+        let mut s = DeviceState::default();
+        for (id, seq, h) in entries {
+            s.last_seen.insert(
+                *id,
+                SeenManifest {
+                    seq: *seq,
+                    hash: [*h; 32],
+                },
+            );
+        }
+        s
+    }
+
+    #[test]
+    fn merge_keeps_the_higher_seq_per_vault() {
+        let (a, b, c) = (Id::new(), Id::new(), Id::new());
+        let disk = state(&[(a, 5, 1), (b, 2, 2)]);
+        let mem = state(&[(a, 3, 9), (b, 4, 4), (c, 1, 7)]);
+        let merged = merge_device(&disk, &mem).unwrap();
+        assert_eq!(merged, state(&[(a, 5, 1), (b, 4, 4), (c, 1, 7)]));
+        assert_eq!(merge_device(&mem, &disk).unwrap(), merged);
+    }
+
+    #[test]
+    fn merge_refuses_a_fork_at_equal_seq() {
+        let a = Id::new();
+        assert_eq!(
+            merge_device(&state(&[(a, 3, 1)]), &state(&[(a, 3, 1)])).unwrap(),
+            state(&[(a, 3, 1)])
+        );
+        assert!(matches!(
+            merge_device(&state(&[(a, 3, 1)]), &state(&[(a, 3, 2)])),
+            Err(Error::Integrity(IntegrityError::ManifestRollback))
+        ));
+    }
 }
