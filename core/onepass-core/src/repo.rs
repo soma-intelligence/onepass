@@ -571,6 +571,9 @@ impl<S: RecordStore> Repository<S> {
         if newer {
             self.device.last_seen = s.epoch.heads.clone();
             self.device.epoch = s.epoch.epoch;
+            for vault in s.epoch.heads.keys() {
+                self.store.vault_event(*vault, VaultEvent::EpochAccepted)?;
+            }
         }
         if self.store.restore_epoch_mark()? != Some((s.epoch.epoch, s.hash)) {
             self.store.set_restore_epoch_mark(s.epoch.epoch, s.hash)?;

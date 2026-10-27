@@ -75,6 +75,16 @@ impl Repository<SyncStore> {
         checked
     }
 
+    /// Forget the sync health of every vault, after the owner chose to:
+    /// each reads `Ok` until the next rounds find it behind again or in
+    /// alert (a fork shows again on the next read). Discards no data: the
+    /// way out of an unreadable health map (`sync_health` failing with
+    /// `Error::Store`) other than taking the server's state. The memory of
+    /// cleared vaults goes too.
+    pub fn reset_sync_health(&mut self) -> Result<()> {
+        self.store.reset_health()
+    }
+
     fn check_vaults(&mut self) -> Result<()> {
         self.sync_epoch()?;
         for vault in self.vaults()? {

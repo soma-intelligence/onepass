@@ -979,3 +979,44 @@ fn unresolvable_fork_alerts() {
         Err(Error::Integrity(IntegrityError::ManifestRollback))
     );
 }
+
+#[test]
+fn unreadable_health_never_blocks_reads_or_export() {
+    let mut server = Server::default();
+    let (mut a, _b, _sk, p, seq2) = both_at_seq3(&mut server);
+    // The server goes back, and the health map on disk is damaged.
+    server.replay(seq2);
+    pull(&server, &mut a);
+    a.store().set_meta("sync_health", &[1, 0xff]).unwrap();
+
+    // Reads go on (the copy this device verified), and so does the export.
+    assert_eq!(users(&a.items()), vec!["x", "y"]);
+    let repo = a.repo();
+    let mut vaults = Vec::new();
+    for v in repo.vaults().unwrap() {
+        let items = repo.items(&v).unwrap();
+        vaults.push(onepass_core::archive::ArchivedVault {
+            id: v.id,
+            meta: v.meta,
+            items,
+        });
+    }
+    let archive =
+        onepass_core::archive::backup(repo.account(), vaults, Some(("export pass phrase", kdf())))
+            .unwrap();
+    assert!(!archive.is_empty());
+
+    // The health fails closed: the app shows the safe exits.
+    assert!(matches!(a.repo().sync_health(), Err(Error::Store(_))));
+    assert!(matches!(
+        a.repo().note_sync_round(T0 + 60),
+        Err(Error::Store(_))
+    ));
+
+    // The exit that discards nothing: forget the health, recount.
+    a.repo().reset_sync_health().unwrap();
+    assert_eq!(health(&mut a, p), VaultSyncHealth::Ok);
+    round(&mut server, &mut a, T0 + 120).unwrap();
+    assert!(a.repo().sync_health().is_ok());
+    assert_eq!(users(&a.items()), vec!["x", "y"]);
+}

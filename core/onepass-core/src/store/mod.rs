@@ -133,6 +133,11 @@ pub enum VaultEvent {
     /// Nothing safe to serve or merge: no verified local copy, or a server
     /// manifest that forks from it (`seq`: the local copy's, 0 for none).
     Alert { seq: u64, cause: IntegrityError },
+    /// A newer restore epoch with this vault among its heads was accepted:
+    /// the owner took a safe exit (maybe on another device), so an alert
+    /// from a fork now clears like one from staying behind, once the
+    /// server serves the head cleanly.
+    EpochAccepted,
 }
 
 /// Shared behavior checks, run against every store.

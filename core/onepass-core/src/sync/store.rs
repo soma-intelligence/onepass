@@ -478,7 +478,7 @@ impl SyncStore {
         if kind == RecordKind::Manifest {
             // The server took this device's copy back: only a fetch that
             // serves it (or newer) shows that it kept it.
-            update_health(&tx, |map| {
+            update_health_lenient(&tx, |map| {
                 map.get_mut(&id)
                     .map(|e| {
                         e.awaiting = true;
@@ -732,7 +732,7 @@ impl SyncStore {
         append_ignored(&tx, &ignored)?;
         // A vault the server was behind on: served again at least as new as
         // the device's copy, or still older.
-        update_health(&tx, |map| {
+        update_health_lenient(&tx, |map| {
             let mut changed = false;
             for (v, version) in &manifests {
                 if let Some(e) = map.get_mut(v) {
@@ -1021,6 +1021,19 @@ impl SyncStore {
         tx.commit()
     }
 
+    /// Forget the sync health and the memory of cleared vaults, after the
+    /// owner chose to (`Repository::reset_sync_health`): every vault reads
+    /// `Ok` until the next rounds find it behind again. The way out of an
+    /// unreadable health map that discards nothing.
+    pub(crate) fn reset_health(&mut self) -> Result<()> {
+        let tx = self.write_tx()?;
+        for key in [HEALTH_KEY, HEALTH_MEMORY_KEY] {
+            tx.execute("DELETE FROM meta WHERE key = ?1", params![key])
+                .map_err(store_err)?;
+        }
+        tx.commit()
+    }
+
     /// The end of a sync round at `now` (Unix seconds).
     ///
     /// A vault that loaded cleanly in this round (`VaultEvent::Clean` with
@@ -1041,7 +1054,14 @@ impl SyncStore {
     /// is clean only if a fresh clean load marks it again, so a round that
     /// stopped before loading the vault (an epoch or vault list error)
     /// counts as behind, not clean. A cleared vault's count is remembered
-    /// for `STALE_MEMORY_ROUNDS` rounds (`HealthMemory`).
+    /// for `STALE_MEMORY_ROUNDS` rounds (`HealthMemory`), alert included.
+    ///
+    /// An alert from a fork or from no verified copy (`VaultEvent::Alert`)
+    /// is never cleared here: only a safe exit (keep this device, take the
+    /// server, `reset_health`) ends it. An alert reached by staying behind
+    /// clears like the rest, after `STALE_CLEAR_ROUNDS` clean rounds.
+    ///
+    /// Fails closed: an unreadable health map is an error.
     pub(crate) fn count_round(&mut self, now: i64) -> Result<()> {
         let tx = self.write_tx()?;
         let mut memory = memory_in(&tx)?;
@@ -1055,6 +1075,12 @@ impl SyncStore {
             for (v, e) in map.iter_mut() {
                 if e.clean {
                     e.clean = false;
+                    if e.fork {
+                        // A fork (or no verified copy) is settled by a safe
+                        // exit only, never by clean rounds.
+                        e.clean_rounds = 0;
+                        continue;
+                    }
                     e.clean_rounds = e.clean_rounds.saturating_add(1);
                     if u32::from(e.clean_rounds) >= STALE_CLEAR_ROUNDS {
                         cleared.push(*v);
@@ -1082,6 +1108,7 @@ impl SyncStore {
                         HealthMemory {
                             since: e.since,
                             rounds: e.rounds,
+                            alert: e.alert,
                             left: u8::try_from(STALE_MEMORY_ROUNDS).unwrap_or(u8::MAX),
                         },
                     );
@@ -1252,6 +1279,10 @@ pub(crate) struct HealthEntry {
     pub clean: bool,
     /// Clean rounds in a row (`count_round`).
     pub clean_rounds: u8,
+    /// The alert came from a fork or from no verified copy
+    /// (`VaultEvent::Alert`), not from staying behind: clean rounds never
+    /// clear it, only a safe exit.
+    pub fork: bool,
 }
 
 impl HealthEntry {
@@ -1265,6 +1296,7 @@ impl HealthEntry {
             alert: false,
             clean: false,
             clean_rounds: 0,
+            fork: false,
         }
     }
 
@@ -1284,6 +1316,8 @@ impl HealthEntry {
 struct HealthMemory {
     since: Option<i64>,
     rounds: u32,
+    /// It was cleared in alert: found behind again, it is an alert at once.
+    alert: bool,
     /// Rounds before it is forgotten.
     left: u8,
 }
@@ -1300,6 +1334,7 @@ fn resume(
     if let Some(m) = memory.remove(&vault) {
         e.since = m.since;
         e.rounds = m.rounds;
+        e.alert = m.alert;
     }
     e
 }
@@ -1347,6 +1382,7 @@ const HEALTH_SINCE: u8 = 1;
 const HEALTH_AWAITING: u8 = 2;
 const HEALTH_ALERT: u8 = 4;
 const HEALTH_CLEAN: u8 = 8;
+const HEALTH_FORK: u8 = 16;
 
 fn encode_health(map: &BTreeMap<Id, HealthEntry>) -> Vec<u8> {
     let mut out = Vec::with_capacity(1 + map.len() * HEALTH_ENTRY_BYTES);
@@ -1355,7 +1391,8 @@ fn encode_health(map: &BTreeMap<Id, HealthEntry>) -> Vec<u8> {
         let flags = if e.since.is_some() { HEALTH_SINCE } else { 0 }
             | if e.awaiting { HEALTH_AWAITING } else { 0 }
             | if e.alert { HEALTH_ALERT } else { 0 }
-            | if e.clean { HEALTH_CLEAN } else { 0 };
+            | if e.clean { HEALTH_CLEAN } else { 0 }
+            | if e.fork { HEALTH_FORK } else { 0 };
         out.extend_from_slice(&v.0);
         out.extend_from_slice(&e.seq.to_be_bytes());
         out.push(cause_code(e.cause));
@@ -1406,6 +1443,7 @@ fn decode_health(bytes: &[u8]) -> Result<BTreeMap<Id, HealthEntry>> {
                 alert: cause.is_none() || flags & HEALTH_ALERT != 0,
                 clean: flags & HEALTH_CLEAN != 0,
                 clean_rounds: c[38],
+                fork: flags & HEALTH_FORK != 0,
             },
         );
     }
@@ -1435,7 +1473,10 @@ fn encode_memory(map: &BTreeMap<Id, HealthMemory>) -> Vec<u8> {
     out.push(HEALTH_MEMORY_VERSION);
     for (v, m) in map {
         out.extend_from_slice(&v.0);
-        out.push(if m.since.is_some() { HEALTH_SINCE } else { 0 });
+        out.push(
+            if m.since.is_some() { HEALTH_SINCE } else { 0 }
+                | if m.alert { HEALTH_ALERT } else { 0 },
+        );
         out.extend_from_slice(&m.since.unwrap_or(0).to_be_bytes());
         out.extend_from_slice(&m.rounds.to_be_bytes());
         out.push(m.left);
@@ -1466,6 +1507,7 @@ fn decode_memory(bytes: &[u8]) -> Result<BTreeMap<Id, HealthMemory>> {
             HealthMemory {
                 since: (c[16] & HEALTH_SINCE != 0).then_some(i64::from_be_bytes(since)),
                 rounds: u32::from_be_bytes(rounds),
+                alert: c[16] & HEALTH_ALERT != 0,
                 left: c[29],
             },
         );
@@ -1496,12 +1538,34 @@ fn save_memory(conn: &Connection, map: &BTreeMap<Id, HealthMemory>) -> Result<()
     Ok(())
 }
 
-/// Apply `f` to the health map and save it if `f` says it changed.
+/// `update_health` for the paths a read or a fetch takes: an unreadable
+/// map is left as is (so `health` keeps failing and the app offers the
+/// safe exits) and `f` is skipped, instead of blocking every read and the
+/// export of the vaults.
+fn update_health_lenient(
+    conn: &Connection,
+    f: impl FnOnce(&mut BTreeMap<Id, HealthEntry>) -> bool,
+) -> Result<()> {
+    match health_in(conn) {
+        Ok(map) => save_health(conn, map, f),
+        Err(_) => Ok(()),
+    }
+}
+
+/// Apply `f` to the health map and save it if `f` says it changed. Fails
+/// closed on an unreadable map.
 fn update_health(
     conn: &Connection,
     f: impl FnOnce(&mut BTreeMap<Id, HealthEntry>) -> bool,
 ) -> Result<()> {
-    let mut map = health_in(conn)?;
+    save_health(conn, health_in(conn)?, f)
+}
+
+fn save_health(
+    conn: &Connection,
+    mut map: BTreeMap<Id, HealthEntry>,
+    f: impl FnOnce(&mut BTreeMap<Id, HealthEntry>) -> bool,
+) -> Result<()> {
     if !f(&mut map) {
         return Ok(());
     }
@@ -1842,7 +1906,9 @@ impl RecordStore for SyncStore {
                         |r| r.get(0),
                     )
                     .map_err(store_err)?;
-                Ok(!kept && !health_in(c)?.contains_key(&vault))
+                // An unreadable map is no entry here: reads go on.
+                let entry = health_in(c).is_ok_and(|m| m.contains_key(&vault));
+                Ok(!kept && !entry)
             })?;
             if idle {
                 return Ok(());
@@ -1856,7 +1922,7 @@ impl RecordStore for SyncStore {
                 // settled after `STALE_CLEAR_ROUNDS` such rounds
                 // (`count_round`).
                 let pending = has_pending_manifest(&tx, vault)?;
-                update_health(&tx, |map| match map.get_mut(&vault) {
+                update_health_lenient(&tx, |map| match map.get_mut(&vault) {
                     Some(e) if !e.awaiting && !pending && !e.clean => {
                         e.clean = true;
                         true
@@ -1865,26 +1931,38 @@ impl RecordStore for SyncStore {
                 })?;
             }
             VaultEvent::Behind { seq, cause } => {
-                let mut memory = memory_in(&tx)?;
-                let resumed = memory.contains_key(&vault);
-                update_health(&tx, |map| {
-                    let e = map
-                        .entry(vault)
-                        .or_insert_with(|| resume(&mut memory, vault, seq, cause));
-                    e.seq = e.seq.max(seq);
-                    e.cause = cause;
-                    e.dirty();
-                    true
-                })?;
-                if resumed && !memory.contains_key(&vault) {
-                    save_memory(&tx, &memory)?;
+                // An unreadable map (or memory) is left as is: the read
+                // goes on, `health` and `count_round` report it.
+                if let (Ok(health), Ok(mut memory)) = (health_in(&tx), memory_in(&tx)) {
+                    let resumed = memory.contains_key(&vault);
+                    save_health(&tx, health, |map| {
+                        let e = map
+                            .entry(vault)
+                            .or_insert_with(|| resume(&mut memory, vault, seq, cause));
+                        e.seq = e.seq.max(seq);
+                        e.cause = cause;
+                        e.dirty();
+                        true
+                    })?;
+                    if resumed && !memory.contains_key(&vault) {
+                        save_memory(&tx, &memory)?;
+                    }
                 }
+            }
+            VaultEvent::EpochAccepted => {
+                update_health_lenient(&tx, |map| match map.get_mut(&vault) {
+                    Some(e) if e.fork => {
+                        e.fork = false;
+                        true
+                    }
+                    _ => false,
+                })?;
             }
             VaultEvent::CaughtUp => {
                 // The rebase verified the server's newer state: a clean
                 // round, settled like the others.
                 delete_kept(&tx, vault)?;
-                update_health(&tx, |map| match map.get_mut(&vault) {
+                update_health_lenient(&tx, |map| match map.get_mut(&vault) {
                     Some(e) if !e.clean => {
                         e.clean = true;
                         true
@@ -1893,20 +1971,24 @@ impl RecordStore for SyncStore {
                 })?;
             }
             VaultEvent::Alert { seq, cause } => {
-                let mut memory = memory_in(&tx)?;
-                let resumed = memory.contains_key(&vault);
-                update_health(&tx, |map| {
-                    let e = map
-                        .entry(vault)
-                        .or_insert_with(|| resume(&mut memory, vault, seq, cause));
-                    e.seq = e.seq.max(seq);
-                    e.cause = cause;
-                    e.alert = true;
-                    e.dirty();
-                    true
-                })?;
-                if resumed && !memory.contains_key(&vault) {
-                    save_memory(&tx, &memory)?;
+                // An unreadable map (or memory) is left as is: the read
+                // goes on, `health` and `count_round` report it.
+                if let (Ok(health), Ok(mut memory)) = (health_in(&tx), memory_in(&tx)) {
+                    let resumed = memory.contains_key(&vault);
+                    save_health(&tx, health, |map| {
+                        let e = map
+                            .entry(vault)
+                            .or_insert_with(|| resume(&mut memory, vault, seq, cause));
+                        e.seq = e.seq.max(seq);
+                        e.cause = cause;
+                        e.alert = true;
+                        e.fork = true;
+                        e.dirty();
+                        true
+                    })?;
+                    if resumed && !memory.contains_key(&vault) {
+                        save_memory(&tx, &memory)?;
+                    }
                 }
             }
         }
@@ -3001,46 +3083,100 @@ mod tests {
         assert_eq!(e.rounds, 1 + STALE_CLEAR_ROUNDS);
     }
 
-    /// Every `IntegrityError`, kept complete by `exhaustive`.
-    const ALL_CAUSES: [IntegrityError; 13] = [
-        IntegrityError::Commitment,
-        IntegrityError::Aead,
-        IntegrityError::Signature,
-        IntegrityError::ManifestRollback,
-        IntegrityError::ManifestMissingItem,
-        IntegrityError::ManifestUnexpectedItem,
-        IntegrityError::ManifestItemMismatch,
-        IntegrityError::ParamsUnsigned,
-        IntegrityError::ParamsDowngrade,
-        IntegrityError::WrongKind,
-        IntegrityError::WrongContext,
-        IntegrityError::VaultMissing,
-        IntegrityError::EpochRollback,
-    ];
+    /// Defines `ALL_CAUSES` and `exhaustive` from one list: `exhaustive`
+    /// does not compile once a variant is added, until it is listed here,
+    /// which also puts it in `ALL_CAUSES`.
+    macro_rules! causes {
+        ($($v:ident),* $(,)?) => {
+            const ALL_CAUSES: &[IntegrityError] = &[$(IntegrityError::$v),*];
+            fn exhaustive(e: IntegrityError) {
+                match e {
+                    $(IntegrityError::$v)|* => {}
+                }
+            }
+        };
+    }
+    causes!(
+        Commitment,
+        Aead,
+        Signature,
+        ManifestRollback,
+        ManifestMissingItem,
+        ManifestUnexpectedItem,
+        ManifestItemMismatch,
+        ParamsUnsigned,
+        ParamsDowngrade,
+        WrongKind,
+        WrongContext,
+        VaultMissing,
+        EpochRollback,
+    );
 
-    /// Does not compile once a variant is added: add it to `ALL_CAUSES`.
-    fn exhaustive(e: IntegrityError) {
-        match e {
-            IntegrityError::Commitment
-            | IntegrityError::Aead
-            | IntegrityError::Signature
-            | IntegrityError::ManifestRollback
-            | IntegrityError::ManifestMissingItem
-            | IntegrityError::ManifestUnexpectedItem
-            | IntegrityError::ManifestItemMismatch
-            | IntegrityError::ParamsUnsigned
-            | IntegrityError::ParamsDowngrade
-            | IntegrityError::WrongKind
-            | IntegrityError::WrongContext
-            | IntegrityError::VaultMissing
-            | IntegrityError::EpochRollback => {}
+    #[test]
+    fn alerts_stay_until_resolved() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (fork, behind) = (Id::new(), Id::new());
+        let cause = IntegrityError::ManifestRollback;
+        // A fork alert: clean rounds never clear it.
+        s.vault_event(fork, VaultEvent::Alert { seq: 3, cause })
+            .unwrap();
+        for i in 0..2 * STALE_CLEAR_ROUNDS {
+            s.vault_event(fork, VaultEvent::Clean).unwrap();
+            s.count_round(i64::from(i)).unwrap();
+            let e = s.health().unwrap()[&fork];
+            assert!(e.alert && e.fork);
         }
+        // Only a safe exit does.
+        s.reset_health().unwrap();
+        assert!(s.health().unwrap().is_empty());
+        // An alert reached by staying behind clears after the clean rounds,
+        // and comes back at once if the server goes back within the window.
+        s.vault_event(behind, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        for _ in 0..STALE_ALERT_MAX_ROUNDS {
+            s.count_round(0).unwrap();
+        }
+        assert!(s.health().unwrap()[&behind].alert);
+        for _ in 0..STALE_CLEAR_ROUNDS {
+            s.vault_event(behind, VaultEvent::Clean).unwrap();
+            s.count_round(0).unwrap();
+        }
+        assert!(s.health().unwrap().is_empty());
+        s.vault_event(behind, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        let e = s.health().unwrap()[&behind];
+        assert!(e.alert && !e.fork);
+        assert_eq!(e.rounds, STALE_ALERT_MAX_ROUNDS);
+    }
+
+    #[test]
+    fn unreadable_health_never_blocks_reads() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let cause = IntegrityError::ManifestRollback;
+        s.set_meta(HEALTH_KEY, &[HEALTH_VERSION, 1]).unwrap();
+        // The events of a read or a fetch go on and leave the map as is.
+        s.vault_event(vault, VaultEvent::Clean).unwrap();
+        s.vault_event(vault, VaultEvent::CaughtUp).unwrap();
+        s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        s.vault_event(vault, VaultEvent::Alert { seq: 3, cause })
+            .unwrap();
+        assert_eq!(s.meta(HEALTH_KEY).unwrap(), Some(vec![HEALTH_VERSION, 1]));
+        // The health and the rounds fail closed.
+        assert!(matches!(s.health(), Err(Error::Store(_))));
+        assert!(matches!(s.count_round(0), Err(Error::Store(_))));
+        assert!(matches!(s.keep_targets(), Err(Error::Store(_))));
+        s.reset_health().unwrap();
+        assert!(s.health().unwrap().is_empty());
+        s.count_round(0).unwrap();
     }
 
     #[test]
     fn health_cause_codes_round_trip_and_fail_closed() {
         let mut codes = std::collections::BTreeSet::new();
-        for cause in ALL_CAUSES {
+        assert_eq!(ALL_CAUSES.len(), 13);
+        for &cause in ALL_CAUSES {
             exhaustive(cause);
             let code = cause_code(cause);
             assert_eq!(cause_of(code), Some(cause));
@@ -3051,6 +3187,7 @@ mod tests {
             e.rounds = 9;
             e.clean = true;
             e.clean_rounds = 2;
+            e.fork = true;
             map.insert(Id([3; 16]), e);
             assert_eq!(decode_health(&encode_health(&map)), Ok(map));
         }
@@ -3076,6 +3213,7 @@ mod tests {
             HealthMemory {
                 since: Some(-1),
                 rounds: 4,
+                alert: true,
                 left: 3,
             },
         );
@@ -3084,6 +3222,7 @@ mod tests {
             HealthMemory {
                 since: None,
                 rounds: 0,
+                alert: false,
                 left: 1,
             },
         );

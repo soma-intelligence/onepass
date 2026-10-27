@@ -35,8 +35,19 @@ pub const STALE_CLEAR_ROUNDS: u32 = 3;
 /// count of its last stretch behind (`since`, rounds): found behind again
 /// within them, it resumes that count instead of starting over, so a store
 /// that rolls back once every `STALE_CLEAR_ROUNDS + 1` rounds still reaches
-/// the alert.
+/// the alert. An alert is remembered too: found behind again within the
+/// window, the vault is an alert at once.
+///
+/// Evasion bound: a store that serves an old state for one round, then
+/// the good one for `STALE_CLEAR_ROUNDS + STALE_MEMORY_ROUNDS` rounds (one
+/// behind round every `STALE_CLEAR_ROUNDS + STALE_MEMORY_ROUNDS + 1` = 24
+/// rounds), or for up to `STALE_ALERT_ROUNDS - 1` rounds in a row with the
+/// same gap (4 rounds in 27, about 15% of the time), never reaches the
+/// alert. Meanwhile the device serves its verified copy and pushes it
+/// back, so no data is lost or replaced; only the warning is missed.
 pub const STALE_MEMORY_ROUNDS: u32 = 20;
+
+const _: () = assert!(STALE_MEMORY_ROUNDS <= 255, "stored in one byte");
 
 /// The sync state of one vault (`Repository::sync_health`). Not an
 /// integrity error by itself: only `Alert` is.
