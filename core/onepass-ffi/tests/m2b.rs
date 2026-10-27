@@ -165,6 +165,7 @@ fn ffi_full_pairing_end_to_end() {
             a.session.clone(),
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
+            false,
         )
         .unwrap();
     // A second grant is refused.
@@ -172,7 +173,8 @@ fn ffi_full_pairing_end_to_end() {
         ap.seal_full_grant(
             a.session.clone(),
             a.secret_key.clone(),
-            FfiDeviceMode::Personal
+            FfiDeviceMode::Personal,
+            false
         )
         .is_err()
     );
@@ -259,7 +261,8 @@ fn ffi_public_pairing_items_only() {
         ap.seal_full_grant(
             a.session.clone(),
             a.secret_key.clone(),
-            FfiDeviceMode::Public
+            FfiDeviceMode::Public,
+            false
         )
         .is_err()
     );
@@ -368,6 +371,7 @@ fn tampered_snapshot_rejected() {
             a.session.clone(),
             a.secret_key.clone(),
             FfiDeviceMode::Shared,
+            false,
         )
         .unwrap();
     assert!(matches!(
@@ -394,6 +398,7 @@ fn import_refuses_non_empty_store() {
             a.session.clone(),
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
+            false,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -428,6 +433,7 @@ fn secret_key_withheld_after_failed_import() {
             a.session.clone(),
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
+            false,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -488,7 +494,12 @@ fn ffi_change_password() {
     // The approver pushes the change, then pairs a device.
     push(&a.path);
     let frame = ap
-        .seal_full_grant(s.clone(), a.secret_key.clone(), FfiDeviceMode::Personal)
+        .seal_full_grant(
+            s.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false,
+        )
         .unwrap();
     n.open(frame).unwrap();
     let u = n
@@ -508,6 +519,7 @@ fn ffi_revoke_and_detect() {
             a.session.clone(),
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
+            false,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -584,4 +596,135 @@ fn ffi_delete_vault() {
         a.session.delete_vault(made.id).err(),
         Some(OnePassError::NotFound)
     );
+}
+
+#[test]
+fn full_grant_without_sync_includes_local_state() {
+    // An approver that never synced: everything it holds is pending.
+    let dir = TempDir::new().unwrap();
+    let path = db_path(dir.path());
+    let created = create_account_with_kdf(path.clone(), PASSWORD.into(), FAST).unwrap();
+    let vault_id = created.session.vaults().unwrap()[0].id.clone();
+    created
+        .session
+        .register_this_device(
+            "Mac de Camille".into(),
+            FfiDeviceKind::Mac,
+            FfiDeviceMode::Personal,
+        )
+        .unwrap();
+    let a = Device {
+        _dir: dir,
+        path,
+        session: created.session,
+        secret_key: created.secret_key,
+        vault_id,
+    };
+    save_login(&a, &a.vault_id, "Messagerie exemple.fr", "pw-atlas-1");
+    let (n, ap) = confirmed(FfiDeviceMode::Personal);
+
+    // The server view is empty: refused, and nothing is listed.
+    assert!(
+        ap.seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false
+        )
+        .is_err()
+    );
+    assert_eq!(a.session.devices().unwrap().len(), 1);
+
+    // The local view carries everything, the new device list included.
+    let frame = ap
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            true,
+        )
+        .unwrap();
+    assert!(matches!(
+        n.open(frame).unwrap(),
+        FfiPairingMessage::FullGrant { .. }
+    ));
+    let dev = empty_device();
+    let unlocked = n
+        .import_snapshot(dev.path.clone(), PASSWORD.into())
+        .unwrap();
+    assert_eq!(n.take_secret_key(), Some(a.secret_key.clone()));
+    let items = unlocked.session.item_summaries().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].title, "Messagerie exemple.fr");
+    let seen = unlocked.session.devices().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert!(
+        seen.iter()
+            .any(|d| d.id == n.device_id() && d.is_this_device)
+    );
+    assert!(!unlocked.session.is_this_device_revoked().unwrap());
+}
+
+#[test]
+fn public_grant_strips_history_and_passkeys() {
+    let a = approver_device();
+    let item = save_login(&a, &a.vault_id, "Banque exemple.fr", "pw-ancien-1");
+    // A second password leaves the first one in the history.
+    let mut changed = a.session.item(a.vault_id.clone(), item.id.clone()).unwrap();
+    for f in changed
+        .sections
+        .iter_mut()
+        .flat_map(|s| s.fields.iter_mut())
+    {
+        if f.id == "password" {
+            f.value = FfiFieldValue::Password {
+                value: "pw-nouveau-2".into(),
+            };
+        }
+    }
+    let changed = a.session.save_item(changed).unwrap();
+    assert_eq!(changed.password_history_count, 1);
+    a.session
+        .create_passkey(FfiPasskeyCreation {
+            vault_id: a.vault_id.clone(),
+            item_id: Some(item.id.clone()),
+            rp_id: "exemple.fr".into(),
+            user_name: "camille".into(),
+            user_handle: vec![1, 2, 3, 4],
+            client_data_hash: vec![9; 32],
+            excluded_credential_ids: Vec::new(),
+        })
+        .unwrap();
+    let has_passkey = |i: &FfiItem| {
+        i.sections
+            .iter()
+            .flat_map(|s| &s.fields)
+            .any(|f| matches!(f.value, FfiFieldValue::Passkey { .. }))
+    };
+    let stored = a.session.item(a.vault_id.clone(), item.id.clone()).unwrap();
+    assert!(has_passkey(&stored));
+    assert_eq!(stored.password_history_count, 1);
+
+    let (n, ap) = confirmed(FfiDeviceMode::Public);
+    let refs = vec![FfiItemRef {
+        vault_id: a.vault_id.clone(),
+        item_id: item.id.clone(),
+    }];
+    let frame = ap.seal_public_grant(a.session.clone(), refs, 15).unwrap();
+    let FfiPairingMessage::PublicGrant { items, .. } = n.open(frame).unwrap() else {
+        panic!("expected a public grant");
+    };
+    assert_eq!(items.len(), 1);
+    let lent = &items[0];
+    assert_eq!(lent.password_history_count, 0);
+    assert!(!has_passkey(lent), "no passkey crosses to a public device");
+    // The current password still does.
+    assert!(lent.sections.iter().flat_map(|s| &s.fields).any(|f| f.value
+        == FfiFieldValue::Password {
+            value: "pw-nouveau-2".into()
+        }));
+    // The approver's item keeps both.
+    let kept = a.session.item(a.vault_id.clone(), item.id.clone()).unwrap();
+    assert!(has_passkey(&kept));
+    assert_eq!(kept.password_history_count, 1);
 }

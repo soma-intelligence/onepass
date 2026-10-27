@@ -11,11 +11,12 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use onepass_core::chain::ChainState;
 use onepass_core::crypto::SecretKey;
 use onepass_core::devices::{DeviceEntry, DeviceMode};
+use onepass_core::model::{FieldValue, Item};
 use onepass_core::pairing::{
     Approver, AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Message, Newcomer, PairingQr,
-    PublicGrant, snapshot_from_store,
+    PublicGrant, SnapshotRecord, check_snapshot_size, snapshot_from_store,
 };
-use onepass_core::store::RecordKind;
+use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::{AccountState, SyncStore};
 use onepass_core::{Id, IntegrityError};
 use time::OffsetDateTime;
@@ -367,6 +368,35 @@ fn import(
 
 // ---- approver ---------------------------------------------------------------
 
+/// The store as this device sees it (ruling A10): every kind, the `base`
+/// rows with the pending writes on top, pending deletions left out. Each
+/// row is a signed record as written; the size cap applies.
+fn local_snapshot(store: &SyncStore) -> Result<Vec<SnapshotRecord>, OnePassError> {
+    let mut snapshot = Vec::new();
+    for code in 1..=u8::MAX {
+        let Ok(kind) = RecordKind::from_code(code) else {
+            break;
+        };
+        let mut rows = store.list(kind)?;
+        rows.sort_by_key(|r| r.id);
+        snapshot.extend(rows.iter().map(SnapshotRecord::from_record));
+    }
+    check_snapshot_size(&snapshot)?;
+    Ok(snapshot)
+}
+
+/// An item as a public device gets it (ruling A11): no password history
+/// and no passkey (its private key would sign for the account).
+fn lean(mut item: Item) -> Item {
+    item.password_history.clear();
+    for section in &mut item.sections {
+        section
+            .fields
+            .retain(|f| !matches!(f.value, FieldValue::Passkey(_)));
+    }
+    item
+}
+
 struct ApproverState {
     core: Approver,
     peer_confirmed: bool,
@@ -450,14 +480,20 @@ impl PairingApprover {
     /// confirmed the code and the user here approved (calling this is that
     /// approval). Adds the newcomer to the signed device list (added by this
     /// device) and saves it, then seals the Secret Key and the store
-    /// snapshot (the rows the server holds, at most 50 MiB). Refused before
-    /// the peer's confirmation, for a public request, for a mode other than
-    /// the one requested, and when the store holds no synced account yet.
+    /// snapshot, at most 50 MiB. Without `include_pending` (an approver
+    /// that syncs, and synced just before) the snapshot is the rows the
+    /// server holds, and a store with no synced account is refused. With
+    /// `include_pending` (an approver without sync, ruling A10) it is the
+    /// full local view: the server rows with every pending write on top,
+    /// the new device list included; each is a signed record the newcomer
+    /// checks like a server fetch. Refused before the peer's confirmation,
+    /// for a public request, and for a mode other than the one requested.
     pub fn seal_full_grant(
         &self,
         session: Arc<Session>,
         secret_key: String,
         mode: FfiDeviceMode,
+        include_pending: bool,
     ) -> Result<Vec<u8>, OnePassError> {
         let secret_key = Zeroizing::new(secret_key);
         let secret_key = Zeroizing::new(SecretKey::parse(&secret_key)?.to_display());
@@ -475,17 +511,23 @@ impl PairingApprover {
         let peer = self.peer.clone();
         let (account_id, snapshot) = session.with(|repo| {
             let account_id = account_id_of(repo)?;
-            // The snapshot is the `base` rows: the device list written below
-            // is pending and reaches the newcomer through sync.
-            let snapshot = snapshot_from_store(repo.store())?;
-            let synced = |kind: RecordKind| {
-                snapshot
-                    .iter()
-                    .any(|r| r.kind == kind.code() && r.id == account_id)
+            // Without pending writes the snapshot is the `base` rows: the
+            // device list written below is pending and reaches the newcomer
+            // through sync.
+            let base = if include_pending {
+                None
+            } else {
+                let snapshot = snapshot_from_store(repo.store())?;
+                let synced = |kind: RecordKind| {
+                    snapshot
+                        .iter()
+                        .any(|r| r.kind == kind.code() && r.id == account_id)
+                };
+                if !synced(RecordKind::AccountParams) || !synced(RecordKind::Keyset) {
+                    return Err(invalid("account not synced"));
+                }
+                Some(snapshot)
             };
-            if !synced(RecordKind::AccountParams) || !synced(RecordKind::Keyset) {
-                return Err(invalid("account not synced"));
-            }
             repo.devices()?;
             let added_by = repo.this_device_id();
             repo.add_device(DeviceEntry {
@@ -498,6 +540,10 @@ impl PairingApprover {
                 revoked_at: None,
             })?;
             repo.persist_device_state()?;
+            let snapshot = match base {
+                Some(snapshot) => snapshot,
+                None => local_snapshot(repo.store())?,
+            };
             Ok((account_id, snapshot))
         })?;
         let grant = Grant::Full(FullGrant {
@@ -552,7 +598,7 @@ impl PairingApprover {
             let mut out = Vec::with_capacity(refs.len());
             for (vault_id, item_id) in &refs {
                 let vault = find_vault(repo, *vault_id)?;
-                out.push(find_item(repo, &vault, *item_id)?);
+                out.push(lean(find_item(repo, &vault, *item_id)?));
             }
             Ok(out)
         })?;
