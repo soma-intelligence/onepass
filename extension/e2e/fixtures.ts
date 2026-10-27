@@ -131,6 +131,9 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         headless: true,
         viewport: { width: 1280, height: 860 },
         locale: "fr-FR",
+        ...(process.env.ONEPASS_E2E_VIDEO
+          ? { recordVideo: { dir: process.env.ONEPASS_E2E_VIDEO, size: { width: 1280, height: 860 } } }
+          : {}),
         args: [
           `--disable-extensions-except=${extPath}`,
           `--load-extension=${extPath}`,
