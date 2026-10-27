@@ -48,6 +48,8 @@ public actor WatchtowerFetcher {
     private let session: URLSession
     private let cacheDirectory: URL?
     private var ranges: [String: (body: Data, at: Date)] = [:]
+    /// Bumped by `clear()`: a download that started before a lock never lands in `ranges`.
+    private var epoch = 0
 
     public init(session: URLSession? = nil, cacheDirectory: URL? = WatchtowerFetcher.defaultCacheDirectory) {
         self.session = session ?? Self.makeSession()
@@ -67,6 +69,7 @@ public actor WatchtowerFetcher {
         config.urlCredentialStorage = nil
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 60
         config.httpAdditionalHeaders = ["User-Agent": "OnePass-Watchtower"]
         return URLSession(configuration: config)
     }
@@ -91,6 +94,7 @@ public actor WatchtowerFetcher {
         for prefixes: [String], progress: @escaping @Sendable (Int, Int) -> Void = { _, _ in }
     ) async -> [FfiRangeResponse] {
         let now = Date.now
+        let started = epoch
         ranges = ranges.filter { now.timeIntervalSince($0.value.at) < Self.rangeLifetime }
         let wanted = Array(Set(prefixes.filter(Self.isValidPrefix))).sorted()
         var out: [FfiRangeResponse] = []
@@ -113,6 +117,10 @@ public actor WatchtowerFetcher {
                 group.addTask { (prefix, await Self.fetchRange(prefix, session: session)) }
             }
             while let (prefix, body) = await group.next() {
+                if epoch != started || Task.isCancelled {
+                    group.cancelAll()
+                    break
+                }
                 if let body {
                     ranges[prefix] = (body, .now)
                     out.append(FfiRangeResponse(prefix: prefix, body: body))
@@ -132,10 +140,21 @@ public actor WatchtowerFetcher {
         return await fetch(request, session: session, limit: maxRangeBytes)
     }
 
+    /// Streams the body and gives up past `limit`, so a huge or endless body never sits in memory.
     private static func fetch(_ request: URLRequest, session: URLSession, limit: Int) async -> Data? {
-        guard let (data, response) = try? await session.data(for: request),
-            let http = response as? HTTPURLResponse, http.statusCode == 200, data.count <= limit
+        guard let (bytes, response) = try? await session.bytes(for: request),
+            let http = response as? HTTPURLResponse, http.statusCode == 200,
+            http.expectedContentLength <= Int64(limit)
         else { return nil }
+        var data = Data()
+        do {
+            for try await byte in bytes {
+                guard data.count < limit else { return nil }
+                data.append(byte)
+            }
+        } catch {
+            return nil
+        }
         return data
     }
 
@@ -166,6 +185,7 @@ public actor WatchtowerFetcher {
 
     /// On lock: the ranges held say which prefixes the vault has.
     public func clear() {
+        epoch += 1
         ranges.removeAll()
     }
 }
