@@ -380,6 +380,37 @@ fn login_methods_and_ids_roundtrip() {
 }
 
 #[test]
+fn provider_login_saves_without_username_and_shows_provider() {
+    let fx = fixture();
+    let account = saved_login(&fx, "pw-fournisseur-2");
+    let mut item = login(&fx, "Atlas via GitHub");
+    assert!(matches!(
+        fx.session.save_item(item.clone()).unwrap_err(),
+        OnePassError::Validation { field, .. } if field == "username"
+    ));
+    item.login_methods = vec![
+        FfiLoginMethod::Passkey,
+        FfiLoginMethod::Provider {
+            provider: "github".into(),
+            account_item_id: account.id.clone(),
+            relay_email: None,
+        },
+        FfiLoginMethod::Provider {
+            provider: "oidc:sso.exemple.fr".into(),
+            account_item_id: account.id.clone(),
+            relay_email: None,
+        },
+    ];
+    let saved = fx.session.save_item(item).unwrap();
+    let summaries = fx.session.item_summaries().unwrap();
+    let row = summaries.iter().find(|s| s.id == saved.id).unwrap();
+    assert_eq!(row.subtitle, "");
+    assert_eq!(row.sign_in_provider.as_deref(), Some("github"));
+    let plain = summaries.iter().find(|s| s.id == account.id).unwrap();
+    assert_eq!(plain.sign_in_provider, None);
+}
+
+#[test]
 fn repeatable_fields_keep_order() {
     let fx = fixture();
     let mut item = login(&fx, "Codes");

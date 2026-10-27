@@ -613,6 +613,10 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
         trashed_at: i.trashed_at.map(ts),
         created_at: ts(i.created_at),
         updated_at: ts(i.updated_at),
+        sign_in_provider: i.login_methods.iter().find_map(|m| match m {
+            LoginMethod::Provider { provider, .. } => Some(provider_to_string(provider)),
+            _ => None,
+        }),
     }
 }
 
