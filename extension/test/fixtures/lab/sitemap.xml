@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://shop.example/produits</loc></url>
+  <url><loc>https://shop.example/register</loc></url>
+  <url><loc>https://shop.example/signin</loc></url>
+  <url><loc>https://elsewhere.example/login</loc></url>
+  <url><loc>https://shop.example/logout</loc></url>
+  <url><loc>https://shop.example/checkout</loc></url>
+</urlset>
