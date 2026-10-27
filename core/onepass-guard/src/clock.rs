@@ -11,6 +11,18 @@ pub trait Clock: Send + Sync {
     fn monotonic(&self) -> Instant;
 }
 
+/// A shared clock is a clock (lets a server and its control callback share
+/// one).
+impl<C: Clock + ?Sized> Clock for std::sync::Arc<C> {
+    fn now_unix(&self) -> i64 {
+        (**self).now_unix()
+    }
+
+    fn monotonic(&self) -> Instant {
+        (**self).monotonic()
+    }
+}
+
 /// The operating system clocks.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SystemClock;

@@ -20,4 +20,4 @@ pub use code::{
     ClientIdentity, CodeIdentity, LAUNCHERS, LINUX_LAUNCHER_PATHS, MAX_LAUNCHERS, PeerError,
     file_sha256, identify_mcp_parent, identify_peer, identify_pid, identity_of_file,
 };
-pub use cred::{PeerCred, effective_uid, exe_path, parent_of, parent_pid, peer_cred};
+pub use cred::{PeerCred, effective_uid, exe_path, parent_of, parent_pid, peer_cred, pid_exists};

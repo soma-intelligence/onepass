@@ -9,20 +9,22 @@
 //! which keeps it in memory (see `GrantStore::apply_revocations` and
 //! `ClientRegistryLoader::apply_unpairs`).
 //!
-//! - Each server binds `<data-dir>/run/<pid>.sock` (directory 0700 set
-//!   through its descriptor, socket 0600 once the server has proven the path
-//!   reaches it; a live socket is never replaced, a stale one is).
+//! - Each server binds `<data-dir>/run/<pid>.sock`. The protection is the
+//!   directory: created 0700, or set to 0700 through a descriptor opened
+//!   with `O_NOFOLLOW`, so only this user can reach the socket whatever its
+//!   own mode (left to the umask; no path-based chmod, which could follow a
+//!   swapped path). A live socket is never replaced, a stale one is.
 //! - Notification, one JSON line signed under `control-notify` over the
 //!   canonical JSON of every field but `sig`:
-//!   `{ "account_id", "kind": "grants", "generation", "nonce", "revoked": [{ "id", "expires_at" }], "sig" }`
+//!   `{ "account_id", "kind": "grants", "generation", "nonce", "revoked": [{ "id", "expires_at" }], "selectors": [RevokeSelector], "sig" }`
 //!   or `{ "account_id", "kind": "clients", "generation", "nonce", "unpaired": [{ "client_id", "at" }], "sig" }`.
 //!   The account must be the server's own. The server calls its callback,
 //!   then answers `{ "nonce", "pid", "generation", "sig" }` signed under
 //!   `control-ack` over `nonce|pid|generation`. Anything invalid closes the
 //!   connection without an answer. At most 8 connections are served at once
 //!   (more are closed at once), each within 2 s overall.
-//! - [`notify_servers`] contacts every socket of the run directory at once
-//!   (64 at most) within one overall deadline, counts a server as reached
+//! - [`notify_servers`] contacts every `<pid>.sock` of the run directory
+//!   whose pid exists, at once (256 at most), within one overall deadline, counts a server as reached
 //!   only if its signed pid is the one in its socket name, and never deletes
 //!   anything (each server removes its own socket when it stops).
 //! - Fail closed: a watchdog thread pings the server's own socket path every
@@ -35,7 +37,7 @@
 //!   the server's only entrance, which this check cannot tell apart.
 
 use crate::clients::Unpaired;
-use crate::grants::RevokedGrant;
+use crate::grants::{RevokeSelector, RevokedGrant};
 use crate::{GuardError, LocalSigner};
 use data_encoding::{BASE64, HEXLOWER};
 use serde::{Deserialize, Serialize};
@@ -59,7 +61,7 @@ pub const PING_DOMAIN: &[u8] = b"control-ping";
 /// Default overall deadline of [`notify_servers`].
 pub const DEFAULT_NOTIFY_DEADLINE: Duration = Duration::from_secs(3);
 /// Most sockets [`notify_servers`] contacts; more is an error.
-pub const MAX_CONTROL_SOCKETS: usize = 64;
+pub const MAX_CONTROL_SOCKETS: usize = 256;
 
 /// Longest line accepted on the control channel.
 const MAX_LINE: usize = 256 * 1024;
@@ -90,8 +92,11 @@ pub enum ControlChange {
     Grants {
         /// Generation of the grants file after the revocation.
         generation: u64,
-        /// The revoked grants.
+        /// The revoked grants the command found in the file it read.
         revoked: Vec<RevokedGrant>,
+        /// What the revocation covers, including grants the command did not
+        /// see.
+        selectors: Vec<RevokeSelector>,
     },
     /// The client registry is at `generation` and these clients are unpaired.
     Clients {
@@ -137,6 +142,8 @@ struct NotifyBody<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     revoked: Option<&'a [RevokedGrant]>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    selectors: Option<&'a [RevokeSelector]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     unpaired: Option<&'a [Unpaired]>,
 }
 
@@ -150,6 +157,8 @@ struct Notify {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     revoked: Option<Vec<RevokedGrant>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    selectors: Option<Vec<RevokeSelector>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     unpaired: Option<Vec<Unpaired>>,
     sig: String,
 }
@@ -162,6 +171,7 @@ impl Notify {
             generation: self.generation,
             nonce: &self.nonce,
             revoked: self.revoked.as_deref(),
+            selectors: self.selectors.as_deref(),
             unpaired: self.unpaired.as_deref(),
         })
         .map_err(|_| GuardError::Format("notification"))
@@ -169,12 +179,13 @@ impl Notify {
 
     /// The change carried, if the kind and the list agree.
     fn change(&self) -> Option<ControlChange> {
-        match (self.kind, &self.revoked, &self.unpaired) {
-            (Kind::Grants, Some(r), None) => Some(ControlChange::Grants {
+        match (self.kind, &self.revoked, &self.selectors, &self.unpaired) {
+            (Kind::Grants, Some(r), Some(sel), None) => Some(ControlChange::Grants {
                 generation: self.generation,
                 revoked: r.clone(),
+                selectors: sel.clone(),
             }),
-            (Kind::Clients, None, Some(u)) => Some(ControlChange::Clients {
+            (Kind::Clients, None, None, Some(u)) => Some(ControlChange::Clients {
                 generation: self.generation,
                 unpaired: u.clone(),
             }),
@@ -189,10 +200,17 @@ impl Notify {
         change: &ControlChange,
         nonce: &str,
     ) -> Result<Notify, GuardError> {
-        let (kind, revoked, unpaired) = match change {
-            ControlChange::Grants { revoked, .. } => (Kind::Grants, Some(revoked.clone()), None),
+        let (kind, revoked, selectors, unpaired) = match change {
+            ControlChange::Grants {
+                revoked, selectors, ..
+            } => (
+                Kind::Grants,
+                Some(revoked.clone()),
+                Some(selectors.clone()),
+                None,
+            ),
             ControlChange::Clients { unpaired, .. } => {
-                (Kind::Clients, None, Some(unpaired.clone()))
+                (Kind::Clients, None, None, Some(unpaired.clone()))
             }
         };
         let mut n = Notify {
@@ -201,6 +219,7 @@ impl Notify {
             generation: change.generation(),
             nonce: nonce.to_owned(),
             revoked,
+            selectors,
             unpaired,
             sig: String::new(),
         };
@@ -413,15 +432,8 @@ impl ControlServer {
                 "control socket does not answer its own ping",
             ));
         }
-        // Proven ours just now: set the mode, never through a symlink.
-        match fs::symlink_metadata(path) {
-            Ok(m)
-                if m.file_type().is_socket() && m.dev() == server.dev && m.ino() == server.ino =>
-            {
-                fs::set_permissions(path, Permissions::from_mode(0o600))?
-            }
-            _ => return Err(GuardError::Config("control socket replaced while starting")),
-        }
+        // No chmod of the socket path: the 0700 directory is the
+        // protection (see the module documentation).
 
         let (wshared, wpath) = (shared, server.path.clone());
         server
@@ -661,22 +673,41 @@ pub struct NotifyOutcome {
     /// pid of their socket name.
     pub reached: BTreeSet<u32>,
     /// Socket file names that did not (refused, no answer in time, bad
-    /// answer, name not a pid), sorted.
+    /// answer), sorted.
     pub failed: Vec<String>,
 }
 
-/// Sends `change` for `account_id` to every socket of `run_dir` at once,
-/// within `deadline` overall (connect, write and the full answer), and
-/// verifies each acknowledgement (signature, nonce, generation, pid equal to
-/// the socket name). Nothing is ever deleted. More than
-/// [`MAX_CONTROL_SOCKETS`] sockets is an error. A missing `run_dir` reaches
-/// nobody.
+/// The pid named by a socket file name `^[0-9]{1,10}\.sock$`.
+fn socket_pid(name: &str) -> Option<u32> {
+    let digits = name.strip_suffix(".sock")?;
+    if digits.is_empty() || digits.len() > 10 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// Sends `change` for `account_id` to every socket of `run_dir` named
+/// `<pid>.sock` (1 to 10 digits) whose pid `pid_alive` says exists (the
+/// caller passes `kill(pid, 0)` succeeding or failing with `EPERM`, for
+/// example `onepass_peer::pid_exists`; this crate holds no `unsafe`), all at
+/// once, and verifies each acknowledgement (signature, nonce, generation,
+/// pid equal to the socket name). Other names are ignored. Nothing is ever
+/// deleted. More than [`MAX_CONTROL_SOCKETS`] such sockets is an error. A
+/// missing `run_dir` reaches nobody.
+///
+/// `deadline` bounds the whole call: the result is returned by then, and
+/// each exchange's write and read use what is left of it. A blocking
+/// `connect` cannot be bounded that way (a listener whose backlog is full
+/// can hold it on some systems); its thread is then abandoned and may
+/// outlive the call, which is acceptable for the one-shot command that
+/// calls this, not for a long-running process.
 pub fn notify_servers(
     run_dir: &Path,
     account_id: &str,
     signer: &dyn LocalSigner,
     change: &ControlChange,
     deadline: Duration,
+    pid_alive: &dyn Fn(u32) -> bool,
 ) -> Result<NotifyOutcome, GuardError> {
     let until = Instant::now() + deadline;
     let mut out = NotifyOutcome::default();
@@ -688,13 +719,18 @@ pub fn notify_servers(
     let mut sockets: Vec<(String, PathBuf)> = Vec::new();
     for e in entries.filter_map(|e| e.ok()) {
         let path = e.path();
-        if !path.extension().is_some_and(|x| x == "sock") {
+        let Some(name) = e.file_name().to_str().map(str::to_owned) else {
             continue;
-        }
+        };
+        let Some(pid) = socket_pid(&name) else {
+            continue;
+        };
         if !fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_socket()) {
             continue;
         }
-        let name = e.file_name().to_string_lossy().into_owned();
+        if !pid_alive(pid) {
+            continue;
+        }
         sockets.push((name, path));
     }
     if sockets.len() > MAX_CONTROL_SOCKETS {
@@ -712,8 +748,9 @@ pub fn notify_servers(
     let (tx, rx) = mpsc::channel::<(usize, Option<String>)>();
     for (i, (_, path)) in sockets.iter().enumerate() {
         let (tx, path, line) = (tx.clone(), path.clone(), line.clone());
-        // Detached: a peer that stalls past the deadline only keeps its own
-        // thread, whose I/O is bounded by the same deadline.
+        // Detached: the result is collected only until the deadline. Writes
+        // and reads use what is left of it; a blocking connect does not, so
+        // this thread may outlive the call (see the function documentation).
         thread::spawn(move || {
             let answer = UnixStream::connect(&path).ok().and_then(|s| {
                 if write_deadline(&s, line.as_bytes(), until) {
@@ -743,9 +780,7 @@ pub fn notify_servers(
     }
 
     for ((name, _), answer) in sockets.iter().zip(answers) {
-        let pid = name
-            .strip_suffix(".sock")
-            .and_then(|p| p.parse::<u32>().ok());
+        let pid = socket_pid(name);
         let ok = match (pid, answer) {
             (Some(pid), Some(a)) => verify_ack(signer, &a, &nonce, change.generation(), pid),
             _ => false,
@@ -792,6 +827,7 @@ mod tests {
     use crate::clients::{
         ClientRecord, ClientRegistry, ClientRegistryLoader, load_clients, save_clients,
     };
+    use crate::clock::Clock;
     use crate::clock::testing::FakeClock;
     use crate::grants::{DEFAULT_GRANT_TTL, GrantCheck, GrantRequest, GrantStore, Revoke};
     use crate::testutil::TestSigner;
@@ -831,6 +867,7 @@ mod tests {
         ControlChange::Grants {
             generation,
             revoked: vec![],
+            selectors: vec![],
         }
     }
 
@@ -839,9 +876,14 @@ mod tests {
     }
 
     /// A server process holding a grant store, wired to the control channel.
-    fn grant_server(path: &Path, run: &Path) -> (Arc<Mutex<GrantStore>>, ControlServer) {
+    fn grant_server(
+        path: &Path,
+        run: &Path,
+        clock: &Arc<FakeClock>,
+    ) -> (Arc<Mutex<GrantStore>>, ControlServer) {
         let store = Arc::new(Mutex::new(GrantStore::open(path, ACC)));
         let shared = store.clone();
+        let clock = clock.clone();
         let control = ControlServer::start(
             run,
             ACC,
@@ -850,12 +892,15 @@ mod tests {
                 if let ControlChange::Grants {
                     generation,
                     revoked,
+                    selectors,
                 } = ch
                 {
-                    shared
-                        .lock()
-                        .unwrap()
-                        .apply_revocations(*generation, revoked);
+                    shared.lock().unwrap().apply_revocations(
+                        &clock,
+                        *generation,
+                        revoked,
+                        selectors,
+                    );
                 }
             }),
             None,
@@ -864,7 +909,7 @@ mod tests {
         (store, control)
     }
 
-    fn server_check(st: &Arc<Mutex<GrantStore>>, s: &TestSigner, c: &FakeClock) -> GrantCheck {
+    fn server_check(st: &Arc<Mutex<GrantStore>>, s: &TestSigner, c: &dyn Clock) -> GrantCheck {
         st.lock()
             .unwrap()
             .check(s, c, "platform:a", Surface::Mcp, "use", "k1")
@@ -876,8 +921,8 @@ mod tests {
         let path = dir.path().join("grants.json");
         let run = dir.path().join("run");
         let s = TestSigner::new();
-        let c = FakeClock::new(1_800_000_000);
-        let (server, control) = grant_server(&path, &run);
+        let c = Arc::new(FakeClock::new(1_800_000_000));
+        let (server, control) = grant_server(&path, &run, &c);
         let g = server
             .lock()
             .unwrap()
@@ -896,8 +941,9 @@ mod tests {
         let change = ControlChange::Grants {
             generation: out.generation,
             revoked: out.revoked,
+            selectors: vec![out.selector],
         };
-        let n = notify_servers(&run, ACC, &s, &change, DEFAULT_NOTIFY_DEADLINE).unwrap();
+        let n = notify_servers(&run, ACC, &s, &change, DEFAULT_NOTIFY_DEADLINE, &|_| true).unwrap();
         assert_eq!(n.reached, reached_me());
         assert!(n.failed.is_empty());
 
@@ -925,8 +971,8 @@ mod tests {
         let path = dir.path().join("grants.json");
         let run = dir.path().join("run");
         let s = TestSigner::new();
-        let c = FakeClock::new(1_800_000_000);
-        let (server, _control) = grant_server(&path, &run);
+        let c = Arc::new(FakeClock::new(1_800_000_000));
+        let (server, _control) = grant_server(&path, &run, &c);
         let g = server
             .lock()
             .unwrap()
@@ -941,8 +987,9 @@ mod tests {
         let change = ControlChange::Grants {
             generation: out.generation,
             revoked: out.revoked,
+            selectors: vec![out.selector],
         };
-        let n = notify_servers(&run, ACC, &s, &change, DEFAULT_NOTIFY_DEADLINE).unwrap();
+        let n = notify_servers(&run, ACC, &s, &change, DEFAULT_NOTIFY_DEADLINE, &|_| true).unwrap();
         assert_eq!(n.reached, reached_me());
         assert!(!matches!(
             server_check(&server, &s, &c),
@@ -993,13 +1040,13 @@ mod tests {
             None,
         )
         .unwrap();
-        let u = reg.unpair("platform:a", 2_000).unwrap();
+        let u = reg.unpair("platform:a", 2_000);
         save_clients(&path, &s, &mut reg).unwrap();
         let change = ControlChange::Clients {
             generation: reg.generation,
             unpaired: vec![u],
         };
-        let n = notify_servers(&run, ACC, &s, &change, DEFAULT_NOTIFY_DEADLINE).unwrap();
+        let n = notify_servers(&run, ACC, &s, &change, DEFAULT_NOTIFY_DEADLINE, &|_| true).unwrap();
         assert_eq!(n.reached, reached_me());
 
         let found = |l: &Arc<Mutex<ClientRegistryLoader>>| {
@@ -1077,6 +1124,7 @@ mod tests {
             &TestSigner::new(),
             &change,
             DEFAULT_NOTIFY_DEADLINE,
+            &|_| true,
         )
         .unwrap();
         assert_eq!(ok.reached, reached_me());
@@ -1110,7 +1158,8 @@ mod tests {
         .unwrap();
         let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&run), 0o700);
-        assert_eq!(mode(control.path()), 0o600);
+        // The socket's own mode is left to the umask: the 0700 directory
+        // is the protection.
         assert!(control.alive());
         // Still alive a few periods later.
         thread::sleep(Duration::from_millis(2500));
@@ -1178,6 +1227,7 @@ mod tests {
             &TestSigner::new(),
             &grants_change(4),
             Duration::from_millis(500),
+            &|_| true,
         )
         .unwrap();
         let took = t.elapsed();
@@ -1203,6 +1253,7 @@ mod tests {
             &TestSigner::new(),
             &grants_change(2),
             DEFAULT_NOTIFY_DEADLINE,
+            &|_| true,
         )
         .unwrap();
         assert!(out.reached.is_empty());
@@ -1252,6 +1303,7 @@ mod tests {
                 &TestSigner::new(),
                 &grants_change(5),
                 DEFAULT_NOTIFY_DEADLINE,
+                &|_| true,
             )
             .unwrap();
             assert!(out.reached.is_empty());
@@ -1274,7 +1326,8 @@ mod tests {
                 ACC,
                 &TestSigner::new(),
                 &grants_change(1),
-                DEFAULT_NOTIFY_DEADLINE
+                DEFAULT_NOTIFY_DEADLINE,
+                &|_| true
             ),
             Err(GuardError::Config(_))
         ));
@@ -1284,6 +1337,7 @@ mod tests {
             &TestSigner::new(),
             &grants_change(1),
             DEFAULT_NOTIFY_DEADLINE,
+            &|_| true,
         )
         .unwrap();
         assert_eq!(none, NotifyOutcome::default());
@@ -1319,6 +1373,7 @@ mod tests {
             &TestSigner::new(),
             &grants_change(1),
             DEFAULT_NOTIFY_DEADLINE,
+            &|_| true,
         )
         .unwrap();
         assert_eq!(out.reached, reached_me());
@@ -1378,5 +1433,89 @@ mod tests {
         assert!(s3.alive());
         drop(s3);
         assert!(!stale.exists());
+    }
+
+    #[test]
+    fn pushed_selector_refuses_grant_the_revoking_command_never_saw() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("grants.json");
+        let run = dir.path().join("run");
+        let s = TestSigner::new();
+        let c = Arc::new(FakeClock::new(1_800_000_000));
+        let (server, _control) = grant_server(&path, &run, &c);
+        // F0 without G, F1 with G.
+        server
+            .lock()
+            .unwrap()
+            .add(&s, &c, req("platform:o", "ko"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        let f0 = fs::read(&path).unwrap();
+        c.advance(Duration::from_secs(5));
+        server
+            .lock()
+            .unwrap()
+            .add(&s, &c, req("platform:a", "k1"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        let f1 = fs::read(&path).unwrap();
+        // F0 restored, then `revoke --all` sees no G.
+        fs::write(&path, &f0).unwrap();
+        c.advance(Duration::from_secs(5));
+        let out = GrantStore::open(&path, ACC)
+            .revoke(&s, &c, Revoke::All)
+            .unwrap();
+        let change = ControlChange::Grants {
+            generation: out.generation,
+            revoked: out.revoked,
+            selectors: vec![out.selector],
+        };
+        let n = notify_servers(&run, ACC, &s, &change, DEFAULT_NOTIFY_DEADLINE, &|_| true).unwrap();
+        assert_eq!(n.reached, reached_me());
+        // F1 restored: G is refused.
+        fs::write(&path, &f1).unwrap();
+        assert_eq!(server_check(&server, &s, &c), GrantCheck::Revoked);
+    }
+
+    #[test]
+    fn only_live_pid_sockets_are_contacted() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path().join("run");
+        let (_n, cb) = counter();
+        let _control = ControlServer::start(&run, ACC, signer(), cb, None).unwrap();
+        for name in [
+            "abc.sock",
+            "12345678901.sock",
+            "-1.sock",
+            "7.sock.bak",
+            "77.sock",
+        ] {
+            drop(UnixListener::bind(run.join(name)).unwrap());
+        }
+        let asked = Mutex::new(Vec::new());
+        let alive = |pid: u32| {
+            asked.lock().unwrap().push(pid);
+            pid == me()
+        };
+        let out = notify_servers(
+            &run,
+            ACC,
+            &TestSigner::new(),
+            &grants_change(1),
+            DEFAULT_NOTIFY_DEADLINE,
+            &alive,
+        )
+        .unwrap();
+        assert_eq!(out.reached, reached_me());
+        assert!(out.failed.is_empty());
+        let mut asked = asked.into_inner().unwrap();
+        asked.sort();
+        assert_eq!(asked, {
+            let mut v = vec![77, me()];
+            v.sort();
+            v
+        });
+        assert_eq!(socket_pid("4294967295.sock"), Some(u32::MAX));
+        assert_eq!(socket_pid("4294967296.sock"), None);
+        assert_eq!(socket_pid(".sock"), None);
+        assert_eq!(socket_pid("+1.sock"), None);
     }
 }

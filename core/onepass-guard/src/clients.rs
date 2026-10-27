@@ -74,15 +74,23 @@ impl ClientRegistry {
         }
     }
 
-    /// Removes every record of `id` (all surfaces); `Some` if there was one,
-    /// with what to push to running servers.
-    pub fn unpair(&mut self, id: &str, at: i64) -> Option<Unpaired> {
-        let before = self.clients.len();
+    /// Removes every record of `id` (all surfaces) and returns what to push
+    /// to running servers, even when the registry read had no record of `id`
+    /// (it may have been restored to hide one). `at` is the later of `now`
+    /// and the newest `paired_at` removed, so every removed record is
+    /// covered.
+    pub fn unpair(&mut self, id: &str, now: i64) -> Unpaired {
+        let newest = self
+            .clients
+            .iter()
+            .filter(|c| c.id == id)
+            .map(|c| c.paired_at)
+            .max();
         self.clients.retain(|c| c.id != id);
-        (self.clients.len() != before).then(|| Unpaired {
+        Unpaired {
             client_id: id.to_owned(),
-            at,
-        })
+            at: newest.map_or(now, |p| p.max(now)),
+        }
     }
 
     /// The client paired for `surface` with code identity `id`.
@@ -433,8 +441,16 @@ mod tests {
                 .is_some()
         );
 
-        let u = reg.unpair("platform:a", 2_000).unwrap();
-        assert!(reg.unpair("platform:a", 2_000).is_none());
+        let u = reg.unpair("platform:a", 2_000);
+        assert_eq!(u.at, 2_000);
+        // Absent: still pushed. A record paired later than `now` sets `at`.
+        assert_eq!(reg.unpair("platform:a", 2_000).at, 2_000);
+        let mut future = ClientRegistry::empty("acc");
+        let mut r = record("platform:f", Surface::Ssh);
+        r.paired_at = 5_000;
+        future.clients.push(r);
+        assert_eq!(future.unpair("platform:f", 2_000).at, 5_000);
+        assert!(future.clients.is_empty());
         save_clients(&path, &s, &mut reg).unwrap();
         server.apply_unpairs(reg.generation, std::slice::from_ref(&u));
 
@@ -464,5 +480,44 @@ mod tests {
                 .find(Surface::Mcp, "platform:a")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn unpair_pushed_even_when_the_registry_read_hid_the_client() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clients.json");
+        let s = TestSigner::new();
+        // F0: without C. F1: with C.
+        let mut reg = ClientRegistry::empty("acc");
+        reg.clients.push(record("platform:other", Surface::Mcp));
+        save_clients(&path, &s, &mut reg).unwrap();
+        let f0 = fs::read(&path).unwrap();
+        let mut rec = record("platform:c", Surface::Mcp);
+        rec.paired_at = 1_000;
+        reg.clients.push(rec);
+        save_clients(&path, &s, &mut reg).unwrap();
+        let f1 = fs::read(&path).unwrap();
+        let mut server = ClientRegistryLoader::new();
+        assert!(
+            server
+                .load(&path, &s, "acc")
+                .unwrap()
+                .find(Surface::Mcp, "platform:c")
+                .is_some()
+        );
+
+        // F0 restored before the unpairing: the command does not see C.
+        fs::write(&path, &f0).unwrap();
+        let mut seen = load_clients(&path, &s, "acc").unwrap();
+        assert!(seen.find(Surface::Mcp, "platform:c").is_none());
+        let u = seen.unpair("platform:c", 2_000);
+        save_clients(&path, &s, &mut seen).unwrap();
+        server.apply_unpairs(seen.generation, std::slice::from_ref(&u));
+
+        // F1 restored after (same generation as the command's write).
+        fs::write(&path, &f1).unwrap();
+        let back = server.load(&path, &s, "acc").unwrap();
+        assert!(back.find(Surface::Mcp, "platform:c").is_none());
+        assert!(back.find(Surface::Mcp, "platform:other").is_some());
     }
 }

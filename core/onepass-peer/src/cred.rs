@@ -36,6 +36,20 @@ pub fn parent_pid() -> i32 {
     unsafe { libc::getppid() }
 }
 
+/// True if a process with this pid exists: `kill(pid, 0)` succeeds, or
+/// fails with `EPERM` (it exists but belongs to another user). Pids that are
+/// not positive never name one process and give `false`.
+pub fn pid_exists(pid: i32) -> bool {
+    if pid <= 0 {
+        return false;
+    }
+    // SAFETY: kill with signal 0 sends nothing, only checks that `pid`
+    // names a process this one could signal; `pid > 0` so it never targets
+    // a process group.
+    let r = unsafe { libc::kill(pid, 0) };
+    r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
 /// Effective uid of this process.
 pub fn effective_uid() -> u32 {
     // SAFETY: geteuid takes no argument, cannot fail and has no side effect.
@@ -219,7 +233,20 @@ pub fn exe_path(_pid: i32) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_stat_ppid;
+    use super::{parse_stat_ppid, pid_exists};
+
+    #[test]
+    fn pid_exists_for_live_and_foreign_pids_only() {
+        assert!(pid_exists(std::process::id() as i32));
+        // pid 1 belongs to root: EPERM still means it exists.
+        assert!(pid_exists(1));
+        assert!(!pid_exists(0));
+        assert!(!pid_exists(-1));
+        let mut child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
+        let pid = child.id() as i32;
+        child.wait().unwrap();
+        assert!(!pid_exists(pid));
+    }
 
     #[test]
     fn stat_ppid_survives_odd_command_names() {

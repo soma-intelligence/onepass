@@ -112,9 +112,66 @@ pub struct RevokedGrant {
     pub expires_at: i64,
 }
 
+/// What a revocation covers, pushed to running servers as such, so it also
+/// covers grants the revoking command did not see (its file may have been
+/// restored). `created_at` comes from the signed grant.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum RevokeSelector {
+    /// One grant by id.
+    Id {
+        /// The grant id.
+        id: String,
+    },
+    /// Every grant of `client_id` created at or before the revocation.
+    Client {
+        /// Code identity of the client.
+        client_id: String,
+        /// Wall time of the revocation.
+        created_at_or_before: i64,
+    },
+    /// Every grant created at or before the revocation.
+    All {
+        /// Wall time of the revocation.
+        all_created_at_or_before: i64,
+    },
+}
+
+impl RevokeSelector {
+    /// True if `g` is covered.
+    pub fn matches(&self, g: &Grant) -> bool {
+        match self {
+            RevokeSelector::Id { id } => &g.id == id,
+            RevokeSelector::Client {
+                client_id,
+                created_at_or_before,
+            } => &g.client_id == client_id && g.created_at <= *created_at_or_before,
+            RevokeSelector::All {
+                all_created_at_or_before,
+            } => g.created_at <= *all_created_at_or_before,
+        }
+    }
+
+    /// The selector for `which`, revoked at wall time `now`.
+    pub fn for_revoke(which: &Revoke, now: i64) -> Self {
+        match which {
+            Revoke::Id(id) => RevokeSelector::Id { id: id.clone() },
+            Revoke::Client(c) => RevokeSelector::Client {
+                client_id: c.clone(),
+                created_at_or_before: now,
+            },
+            Revoke::All => RevokeSelector::All {
+                all_created_at_or_before: now,
+            },
+        }
+    }
+}
+
 /// Result of [`GrantStore::revoke`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RevokeOutcome {
+    /// The selector of this revocation, pushed to running servers.
+    pub selector: RevokeSelector,
     /// Grants revoked by this call (not revoked before).
     pub newly: usize,
     /// Every unexpired grant matching the request, revoked before or now:
@@ -174,6 +231,10 @@ pub struct GrantStore {
     /// Revocations pushed by control notifications: grant id to expiry. They
     /// hold whatever the file says, until the grant would have expired.
     pushed_revoked: HashMap<String, i64>,
+    /// Revocation selectors pushed by control notifications, each with the
+    /// wall time until which it is kept (every grant it can match has
+    /// expired by then).
+    pushed_selectors: Vec<(RevokeSelector, i64)>,
 }
 
 impl GrantStore {
@@ -186,6 +247,7 @@ impl GrantStore {
             generation_seen: 0,
             issued: HashMap::new(),
             pushed_revoked: HashMap::new(),
+            pushed_selectors: Vec::new(),
         }
     }
 
@@ -201,12 +263,36 @@ impl GrantStore {
         self.generation_seen = self.generation_seen.max(generation);
     }
 
-    /// Applies a verified control notification: raises the floor and
-    /// remembers each revoked grant until its expiry, so a restored or
-    /// laundered file (even one at a higher generation) cannot revive it in
-    /// this process.
-    pub fn apply_revocations(&mut self, generation: u64, revoked: &[RevokedGrant]) {
+    /// Applies a verified control notification: raises the floor, remembers
+    /// each enumerated revoked grant until its expiry and each selector for
+    /// the longest grant life, so a restored or laundered file (even one at
+    /// a higher generation, even one holding grants the revoking command
+    /// never saw) cannot revive a covered grant in this process.
+    pub fn apply_revocations(
+        &mut self,
+        clock: &dyn Clock,
+        generation: u64,
+        revoked: &[RevokedGrant],
+        selectors: &[RevokeSelector],
+    ) {
         self.raise_floor(generation);
+        let now = clock.now_unix();
+        // `MAX_GRANT_TTL` is 3600 s: the cast cannot truncate.
+        let life = MAX_GRANT_TTL.as_secs() as i64;
+        for sel in selectors {
+            let since = match sel {
+                RevokeSelector::Id { .. } => now,
+                RevokeSelector::Client {
+                    created_at_or_before,
+                    ..
+                } => now.max(*created_at_or_before),
+                RevokeSelector::All {
+                    all_created_at_or_before,
+                } => now.max(*all_created_at_or_before),
+            };
+            self.pushed_selectors
+                .push((sel.clone(), since.saturating_add(life)));
+        }
         for r in revoked {
             let e = self
                 .pushed_revoked
@@ -214,6 +300,26 @@ impl GrantStore {
                 .or_insert(r.expires_at);
             *e = (*e).max(r.expires_at);
         }
+    }
+
+    /// Selectors pushed to this store and still remembered.
+    pub fn pushed_selectors(&self) -> Vec<RevokeSelector> {
+        self.pushed_selectors
+            .iter()
+            .map(|(s, _)| s.clone())
+            .collect()
+    }
+
+    /// Forgets pushed revocations that can no longer match a live grant.
+    fn prune_pushed(&mut self, now: i64) {
+        self.pushed_revoked.retain(|_, e| *e > now);
+        self.pushed_selectors.retain(|(_, until)| *until > now);
+    }
+
+    /// True if a pushed revocation covers `g`.
+    fn pushed_covers(&self, g: &Grant) -> bool {
+        self.pushed_revoked.contains_key(&g.id)
+            || self.pushed_selectors.iter().any(|(s, _)| s.matches(g))
     }
 
     /// Ids of the revocations pushed to this store and still remembered.
@@ -287,7 +393,7 @@ impl GrantStore {
         };
         self.generation_seen = self.generation_seen.max(file.generation);
         let now = clock.now_unix();
-        self.pushed_revoked.retain(|_, e| *e > now);
+        self.prune_pushed(now);
         let revoked = file.revoked_ids();
         let mut result = GrantCheck::None;
         for g in file.grants.iter().filter(|g| {
@@ -309,7 +415,9 @@ impl GrantStore {
     /// Revokes the matching live grants. The file is rewritten (higher
     /// generation) only if at least one grant was newly revoked (or a
     /// replayed file had to be replaced). The outcome lists every unexpired
-    /// matching grant, newly or already revoked, for the control push.
+    /// matching grant, newly or already revoked, and the selector of the
+    /// revocation (`Revoke::Id` gives an id selector even when the id is not
+    /// in the file read), for the control push.
     pub fn revoke(
         &mut self,
         signer: &dyn LocalSigner,
@@ -318,17 +426,16 @@ impl GrantStore {
     ) -> Result<RevokeOutcome, GuardError> {
         let _lock = self.lock(true)?;
         let (mut file, healed) = self.load_for_write(signer)?;
+        if !healed {
+            self.generation_seen = self.generation_seen.max(file.generation);
+        }
         let now = clock.now_unix();
+        let selector = RevokeSelector::for_revoke(&which, now);
         let already: HashSet<String> = file.revoked.iter().map(|t| t.id.clone()).collect();
         let mut matching: Vec<RevokedGrant> = file
             .grants
             .iter()
-            .filter(|g| match &which {
-                Revoke::Id(id) => &g.id == id,
-                Revoke::Client(c) => &g.client_id == c,
-                Revoke::All => true,
-            })
-            .filter(|g| g.expires_at > now)
+            .filter(|g| selector.matches(g) && g.expires_at > now)
             .map(|g| RevokedGrant {
                 id: g.id.clone(),
                 expires_at: g.expires_at,
@@ -347,6 +454,7 @@ impl GrantStore {
             self.write(signer, file)?;
         }
         Ok(RevokeOutcome {
+            selector,
             newly: count,
             revoked: matching,
             generation: self.generation_seen,
@@ -365,7 +473,7 @@ impl GrantStore {
         };
         self.generation_seen = self.generation_seen.max(file.generation);
         let now = clock.now_unix();
-        self.pushed_revoked.retain(|_, e| *e > now);
+        self.prune_pushed(now);
         let revoked = file.revoked_ids();
         Ok(file
             .grants
@@ -376,7 +484,7 @@ impl GrantStore {
     }
 
     fn state(&self, g: &Grant, revoked: &HashSet<&str>, clock: &dyn Clock) -> State {
-        if revoked.contains(g.id.as_str()) || self.pushed_revoked.contains_key(&g.id) {
+        if revoked.contains(g.id.as_str()) || self.pushed_covers(g) {
             return State::Revoked;
         }
         let now = clock.now_unix();
@@ -443,16 +551,17 @@ impl GrantStore {
     fn write(&mut self, signer: &dyn LocalSigner, mut file: GrantsFile) -> Result<(), GuardError> {
         // Pushed revocations go back into the file, so a laundered file is
         // repaired by the next write of this process.
-        let present: HashSet<String> = file.grants.iter().map(|g| g.id.clone()).collect();
         let listed: HashSet<String> = file.revoked.iter().map(|t| t.id.clone()).collect();
-        for (id, e) in &self.pushed_revoked {
-            if present.contains(id) && !listed.contains(id) {
-                file.revoked.push(RevokedGrant {
-                    id: id.clone(),
-                    expires_at: *e,
-                });
-            }
-        }
+        let repaired: Vec<RevokedGrant> = file
+            .grants
+            .iter()
+            .filter(|g| !listed.contains(&g.id) && self.pushed_covers(g))
+            .map(|g| RevokedGrant {
+                id: g.id.clone(),
+                expires_at: g.expires_at,
+            })
+            .collect();
+        file.revoked.extend(repaired);
         file.generation = file
             .generation
             .max(self.generation_seen)
@@ -984,7 +1093,7 @@ mod tests {
         let before = fs::read(&path).unwrap();
         let mut cli = GrantStore::open(&path, "acc");
         let out = cli.revoke(&s, &c, Revoke::Id(g.id.clone())).unwrap();
-        server.apply_revocations(out.generation, &out.revoked);
+        server.apply_revocations(&c, out.generation, &out.revoked, &[]);
         // Restore, then a fresh process writes N + 1 with G live.
         fs::write(&path, &before).unwrap();
         GrantStore::open(&path, "acc")
@@ -1012,5 +1121,119 @@ mod tests {
         c.advance(DEFAULT_GRANT_TTL);
         let _ = check(&mut server, &s, &c, "platform:a", "k1");
         assert!(server.pushed_revocations().is_empty());
+    }
+
+    /// F0 has no G; the server then issues G (F1). F0 is restored before the
+    /// revocation, so the revoking command never sees G; F1 is restored
+    /// after: the pushed selector still refuses G.
+    fn revoke_unseen_grant(which: impl Fn(&Grant) -> Revoke) {
+        let (_d, path, s, c) = setup();
+        let mut server = GrantStore::open(&path, "acc");
+        server
+            .add(&s, &c, req("platform:o", "ko"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        let f0 = fs::read(&path).unwrap();
+        c.advance(Duration::from_secs(10));
+        let g = server
+            .add(&s, &c, req("platform:a", "k1"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        let f1 = fs::read(&path).unwrap();
+        fs::write(&path, &f0).unwrap();
+        c.advance(Duration::from_secs(10));
+        let mut cli = GrantStore::open(&path, "acc");
+        let out = cli.revoke(&s, &c, which(&g)).unwrap();
+        assert!(out.revoked.iter().all(|r| r.id != g.id));
+        server.apply_revocations(
+            &c,
+            out.generation,
+            &out.revoked,
+            std::slice::from_ref(&out.selector),
+        );
+        fs::write(&path, &f1).unwrap();
+        assert_eq!(
+            check(&mut server, &s, &c, "platform:a", "k1"),
+            GrantCheck::Revoked
+        );
+        assert!(server.list(&s, &c).unwrap().iter().all(|x| x.id != g.id));
+        // A grant created after the revocation is not covered (except by id).
+        c.advance(Duration::from_secs(10));
+        server
+            .add(&s, &c, req("platform:a", "k2"), DEFAULT_GRANT_TTL)
+            .unwrap();
+        assert!(matches!(
+            check(&mut server, &s, &c, "platform:a", "k2"),
+            GrantCheck::Valid(_)
+        ));
+        // Selectors are forgotten after the longest grant life.
+        c.advance(MAX_GRANT_TTL + Duration::from_secs(60));
+        let _ = check(&mut server, &s, &c, "platform:a", "k2");
+        assert!(server.pushed_selectors().is_empty());
+    }
+
+    #[test]
+    fn selector_all_refuses_grant_unseen_by_revoke() {
+        revoke_unseen_grant(|_| Revoke::All);
+    }
+
+    #[test]
+    fn selector_client_refuses_grant_unseen_by_revoke() {
+        revoke_unseen_grant(|_| Revoke::Client("platform:a".into()));
+    }
+
+    #[test]
+    fn selector_absent_id_refuses_grant_unseen_by_revoke() {
+        revoke_unseen_grant(|g| Revoke::Id(g.id.clone()));
+    }
+
+    #[test]
+    fn selectors_match_on_signed_fields() {
+        let g = Grant {
+            id: "00aa".into(),
+            client_id: "platform:a".into(),
+            surface: Surface::Mcp,
+            action: "use".into(),
+            key: "k".into(),
+            vault_id: None,
+            created_at: 100,
+            expires_at: 400,
+        };
+        assert!(RevokeSelector::for_revoke(&Revoke::Id("00aa".into()), 0).matches(&g));
+        assert!(!RevokeSelector::for_revoke(&Revoke::Id("00bb".into()), 0).matches(&g));
+        assert!(RevokeSelector::for_revoke(&Revoke::Client("platform:a".into()), 100).matches(&g));
+        assert!(!RevokeSelector::for_revoke(&Revoke::Client("platform:a".into()), 99).matches(&g));
+        assert!(!RevokeSelector::for_revoke(&Revoke::Client("platform:b".into()), 500).matches(&g));
+        assert!(RevokeSelector::for_revoke(&Revoke::All, 100).matches(&g));
+        assert!(!RevokeSelector::for_revoke(&Revoke::All, 99).matches(&g));
+        // Wire form.
+        let j = |s: &RevokeSelector| serde_json::to_string(s).unwrap();
+        assert_eq!(j(&RevokeSelector::Id { id: "x".into() }), r#"{"id":"x"}"#);
+        assert_eq!(
+            j(&RevokeSelector::Client {
+                client_id: "c".into(),
+                created_at_or_before: 5
+            }),
+            r#"{"client_id":"c","created_at_or_before":5}"#
+        );
+        assert_eq!(
+            j(&RevokeSelector::All {
+                all_created_at_or_before: 5
+            }),
+            r#"{"all_created_at_or_before":5}"#
+        );
+        for sel in [
+            RevokeSelector::Id { id: "x".into() },
+            RevokeSelector::Client {
+                client_id: "c".into(),
+                created_at_or_before: 5,
+            },
+            RevokeSelector::All {
+                all_created_at_or_before: 5,
+            },
+        ] {
+            assert_eq!(
+                serde_json::from_str::<RevokeSelector>(&j(&sel)).unwrap(),
+                sel
+            );
+        }
     }
 }
