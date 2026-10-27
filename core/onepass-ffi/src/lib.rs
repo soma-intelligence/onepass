@@ -5,6 +5,7 @@
 // This crate writes no `unsafe` (the UniFFI scaffolding builds under the lint).
 #![deny(unsafe_code)]
 
+mod archive;
 mod autofill;
 mod companion;
 mod convert;
@@ -29,6 +30,7 @@ use onepass_core::sync::{AccountState, SyncStore};
 use onepass_core::totp;
 use zeroize::Zeroizing;
 
+pub use archive::*;
 pub use companion::*;
 use convert::{sections_to_ffi, type_label};
 pub use error::OnePassError;

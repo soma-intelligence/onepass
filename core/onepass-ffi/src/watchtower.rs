@@ -27,7 +27,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use onepass_core::generator;
 use onepass_core::model::{FieldValue, Item};
 use onepass_core::watchtower::{
-    Check, Options, PwnedStatus, RangeSource, SiteDirectory, Sources, analyze,
+    BreachCatalog, Check, Options, PwnedStatus, RangeSource, SiteDirectory, Sources, analyze,
 };
 use onepass_core::{Error, Id};
 use time::OffsetDateTime;
@@ -63,6 +63,9 @@ pub struct FfiWatchtowerOptions {
     pub passkeys_directory: Option<Vec<u8>>,
     /// Vaults left out of the analysis (hidden on this device).
     pub excluded_vault_ids: Vec<String>,
+    /// Have I Been Pwned `/api/v3/breaches` (the whole public catalog).
+    /// Without it, or when it does not parse, `breached_site` does not run.
+    pub breach_catalog: Option<Vec<u8>>,
 }
 
 /// Breach lookup outcome.
@@ -176,6 +179,10 @@ pub(crate) fn report(items: &[Item], options: &FfiWatchtowerOptions) -> FfiWatch
     opts.expiry_warning_days = options.expiry_warning_days;
     opts.old_password_days = options.old_password_days;
     let directory = sites(options);
+    let breaches = options
+        .breach_catalog
+        .as_deref()
+        .and_then(|json| BreachCatalog::from_hibp(json).ok());
     let mut held = options.ranges.as_ref().map(|ranges| HeldRanges {
         bodies: ranges
             .iter()
@@ -189,7 +196,7 @@ pub(crate) fn report(items: &[Item], options: &FfiWatchtowerOptions) -> FfiWatch
         Sources {
             pwned: held.as_mut().map(|h| h as &mut dyn RangeSource),
             sites: directory.as_ref(),
-            breaches: None,
+            breaches: breaches.as_ref(),
         },
     );
     let mut by_check: BTreeMap<Check, (u32, BTreeSet<Id>)> = BTreeMap::new();
@@ -280,6 +287,7 @@ mod tests {
             twofa_directory: Some(br#"{"exemple.fr":{"methods":["totp"]}}"#.to_vec()),
             passkeys_directory: Some(b"not json".to_vec()),
             excluded_vault_ids: vec![],
+            breach_catalog: None,
         };
         let dir = sites(&options).unwrap();
         assert!(dir.lookup("exemple.fr").unwrap().totp);
