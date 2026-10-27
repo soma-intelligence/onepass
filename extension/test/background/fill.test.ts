@@ -146,6 +146,19 @@ describe("fill pipeline", () => {
     expect(ext.sentToTabs).toEqual([]);
   });
 
+  it("a chain fill (same origin as the top frame) refuses a same-site frame of another origin", async () => {
+    const { ext, client, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/login`, "top");
+    ext.setFrame(7, 4, "https://login.atlas-cloud.test/frame", "doc-4");
+    const t = target({ frameId: 4, origin: "https://login.atlas-cloud.test", documentId: "doc-4", sameOriginAsTop: true });
+    expect(await code(filler.fillLogin(t, "it_01", ["password"]))).toBe("origin_mismatch");
+    expect(client.requests).toEqual([]);
+    // The same frame at the top frame's origin passes.
+    ext.setFrame(7, 4, `${SITE}/frame`, "doc-4");
+    await filler.fillLogin(target({ frameId: 4, documentId: "doc-4", sameOriginAsTop: true }), "it_01", ["password"]);
+    expect(ext.sentToTabs.at(-1)?.options).toEqual({ documentId: "doc-4" });
+  });
+
   it("fill_refused_http", async () => {
     const { ext, client, filler } = await setup();
     ext.setFrame(7, 0, "http://atlas-cloud.test/login", "doc-1");

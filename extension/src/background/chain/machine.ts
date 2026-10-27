@@ -1,8 +1,10 @@
 // The one-click sign-in chain (spec 8.6, 8.7) as a pure state machine: no
 // browser API, the clock is a parameter. The driver (driver.ts) feeds it the
-// analyses of the top frame of the chain's tab (origin from `sender`), the
-// navigations and load completions of that frame, and timer ticks; it runs
-// the actions the machine returns.
+// analyses of the chain's tab (origin from `sender`): the top frame's, or
+// those of a child frame of exactly the top frame's origin that holds the
+// sign-in form (spec C1); the navigations and load completions of the top
+// frame and of the frame the last step acted in; and timer ticks. It runs
+// the actions the machine returns, in the frame of the analysis.
 //
 // The state is plain JSON, persisted in `storage.session` by the driver. It
 // holds ids, labels, hosts and times, never a secret: values are fetched
@@ -10,7 +12,7 @@
 //
 // Double submission: every acted step records a signature of the page (kind
 // of step, host and path, fields involved) and the navigation counter of the
-// top frame. The same signature on the same navigation is a re-analysis of a
+// page (top frame, or the frame the chain acts in). The same signature on the same navigation is a re-analysis of a
 // page already handled (ignored); on a later navigation it is the same step
 // coming back (password refused): `repeat`.
 import type { FillField, Summary } from "../../bridge/client";
@@ -24,7 +26,10 @@ import { titleFromSite } from "../save";
 export const DEADLINE_MS = 60_000;
 /** Spec 8.6: no recognized field 4 s after the page finished loading. */
 export const UNKNOWN_MS = 4_000;
-/** Back on the site without a sign-in form for this long: done. */
+/**
+ * Back on the site without a sign-in form for this long: done. Never sooner
+ * than `UNKNOWN_MS` after the page loaded (spec B1: its form may come late).
+ */
 export const DONE_SETTLE_MS = 1_500;
 /** A submitted form still there, same document, after this long: refused. */
 export const REPEAT_MS = 8_000;
@@ -37,21 +42,29 @@ export interface ChainStep {
   kind: StepKind;
   /** Page signature the step acted on ("" for done / stop). */
   sig: string;
-  /** Navigation counter of the top frame when the step ran. */
+  /** Navigation counter of the page when the step ran. */
   nav: number;
+  /** Child frame the step acted in (spec C1); absent for the top frame. */
+  frameId?: number;
   at: number;
   /** Set when the step submitted its form. */
   submittedAt?: number;
+  /** The submit did not reach the form (re-rendered): retried once on its copy. */
+  missed?: boolean;
+  /** The retry on the copy was sent: a second miss is not retried. */
+  retried?: boolean;
   label: string;
   detail?: string;
   state: StepState;
 }
 
 export interface ChainPage {
-  /** Top frame navigations since the start. */
+  /** Navigations of the top frame, or of the frame the chain acts in, since the start. */
   nav: number;
   /** Load completed (`webNavigation.onCompleted`) at. */
   settledAt?: number;
+  /** Latest analysis (the content script reports only changes) at. */
+  seenAt?: number;
   /** The latest analysis showed nothing the chain can act on. */
   idle: boolean;
   /** Signature of the latest recognized analysis. */
@@ -281,8 +294,12 @@ function fillLabel(fields: FillField[], provider: string | null): string {
   return fields.includes("username") ? "Identifiant rempli" : "Mot de passe rempli";
 }
 
-/** One top-frame analysis of the chain's tab; `pageOrigin` comes from `sender`. */
-export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: number): StepResult {
+/**
+ * One analysis of the chain's tab; `pageOrigin` comes from `sender`.
+ * `frameId` is the frame it came from (0: top frame), recorded on the step it
+ * starts so the driver follows that frame's navigations.
+ */
+export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: number, frameId = 0): StepResult {
   if (s.status !== "running") return { state: s, actions: [] };
   if (now >= s.deadline) return stopped(s, "timeout", now);
   const w = where(s, pageOrigin);
@@ -294,6 +311,7 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
 
   const d = decide(s, a, onProvider);
   const n = clone(s);
+  n.page.seenAt = now;
   if (d === null) {
     n.page.sig = undefined;
     const last = n.steps.at(-1);
@@ -322,13 +340,22 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
   const prev = n.steps.find((x) => x.sig === sig);
   if (prev) {
     // Same page again: a re-analysis (same document) or the step coming back.
-    if (prev.nav === n.page.nav) return { state: n, actions: [] };
-    return stopped(s, "repeat", now);
+    if (prev.nav !== n.page.nav) return stopped(s, "repeat", now);
+    // Spec B2: the page re-rendered the step's form before the submit reached
+    // it. Not a repeat: submit the copy, once (no second fill).
+    if (prev.missed && prev === n.steps.at(-1) && (d.kind === "fill" || d.kind === "otp") && n.autoSubmit) {
+      delete prev.missed;
+      prev.retried = true;
+      prev.submittedAt = now;
+      return { state: n, actions: [{ type: "submit", formRef: d.form.ref }] };
+    }
+    return { state: n, actions: [] };
   }
 
   const pname = onProvider && n.provider ? providerName(n.provider) : null;
   const actions: ChainAction[] = [];
   const st: ChainStep = { kind: d.kind, sig, nav: n.page.nav, at: now, label: "", state: "done" };
+  if (frameId !== 0) st.frameId = frameId;
   switch (d.kind) {
     case "provider_click":
       st.label = `Clic sur « Continuer avec ${providerName(n.provider ?? "google")} »`;
@@ -365,7 +392,22 @@ function where(s: ChainState, url: string): { ok: boolean; onProvider: boolean; 
   return { ok: p?.https === true && (onProvider || p.site === s.site), onProvider, host: p?.host ?? url.slice(0, 256) };
 }
 
-/** A new document committed in the top frame of the chain's tab. */
+/**
+ * The last step's submit did not reach its form (the content script said
+ * so). The step may submit a re-rendered copy once; `submittedAt` stays, so
+ * a page that does not change still ends in `repeat` after `REPEAT_MS`, and
+ * a second miss (the retry) is not retried.
+ */
+export function submitMissed(s: ChainState): ChainState {
+  const last = s.steps.at(-1);
+  if (s.status !== "running" || last?.submittedAt === undefined || last.retried || last.missed) return s;
+  const n = clone(s);
+  const l = n.steps.at(-1);
+  if (l) l.missed = true;
+  return n;
+}
+
+/** A new document committed in the top frame of the chain's tab, or in the frame it acts in. */
 export function navigated(s: ChainState, url: string, now: number): ChainState {
   if (s.status !== "running") return s;
   const w = where(s, url);
@@ -376,7 +418,7 @@ export function navigated(s: ChainState, url: string, now: number): ChainState {
   return n;
 }
 
-/** The top frame finished loading (`webNavigation.onCompleted`). */
+/** The page finished loading (`webNavigation.onCompleted`). */
 export function settled(s: ChainState, now: number): ChainState {
   if (s.status !== "running" || s.page.settledAt !== undefined) return s;
   const n = clone(s);
@@ -392,7 +434,14 @@ function lastActionAt(s: ChainState): number | undefined {
 
 function unknownDue(s: ChainState): number | null {
   if (!s.page.idle || s.page.settledAt === undefined) return null;
-  return Math.max(s.page.settledAt, lastActionAt(s) ?? 0) + UNKNOWN_MS;
+  // Spec B1: a page that changed since restarts the wait (fields built late).
+  return Math.max(s.page.settledAt, lastActionAt(s) ?? 0, s.page.seenAt ?? 0) + UNKNOWN_MS;
+}
+
+function doneDue(s: ChainState): number | null {
+  if (s.page.doneAt === undefined) return null;
+  const loaded = s.page.settledAt === undefined ? 0 : s.page.settledAt + UNKNOWN_MS;
+  return Math.max(s.page.doneAt + DONE_SETTLE_MS, loaded);
 }
 
 function repeatDue(s: ChainState): number | null {
@@ -404,7 +453,7 @@ function repeatDue(s: ChainState): number | null {
 /** Earliest time `tick` may change the state; null once the chain ended. */
 export function nextDue(s: ChainState): number | null {
   if (s.status !== "running") return null;
-  const dues = [s.deadline, unknownDue(s), repeatDue(s), s.page.doneAt === undefined ? null : s.page.doneAt + DONE_SETTLE_MS];
+  const dues = [s.deadline, unknownDue(s), repeatDue(s), doneDue(s)];
   return Math.min(...dues.filter((x): x is number => x !== null));
 }
 
@@ -412,7 +461,8 @@ export function nextDue(s: ChainState): number | null {
 export function tick(s: ChainState, now: number): StepResult {
   if (s.status !== "running") return { state: s, actions: [] };
   if (now >= s.deadline) return stopped(s, "timeout", now);
-  if (s.page.doneAt !== undefined && now >= s.page.doneAt + DONE_SETTLE_MS) return finished(s, now);
+  const d = doneDue(s);
+  if (d !== null && now >= d) return finished(s, now);
   const u = unknownDue(s);
   if (u !== null && now >= u) return stopped(s, "unknown", now);
   const r = repeatDue(s);
@@ -478,6 +528,10 @@ function parseStep(v: unknown): ChainStep {
   };
   const sub = optInt(o.submittedAt);
   if (sub !== undefined) st.submittedAt = sub;
+  if (o.missed !== undefined) st.missed = bool(o.missed);
+  if (o.retried !== undefined) st.retried = bool(o.retried);
+  const frameId = optInt(o.frameId);
+  if (frameId !== undefined && frameId > 0) st.frameId = frameId;
   if (o.detail !== undefined) st.detail = str(o.detail, 256);
   return st;
 }
@@ -491,6 +545,8 @@ export function parseChainState(raw: unknown): ChainState | null {
     const page: ChainPage = { nav: int(pg.nav), idle: bool(pg.idle) };
     const settledAt = optInt(pg.settledAt);
     if (settledAt !== undefined) page.settledAt = settledAt;
+    const seenAt = optInt(pg.seenAt);
+    if (seenAt !== undefined) page.seenAt = seenAt;
     if (pg.sig !== undefined) page.sig = str(pg.sig, 1024);
     const doneAt = optInt(pg.doneAt);
     if (doneAt !== undefined) page.doneAt = doneAt;

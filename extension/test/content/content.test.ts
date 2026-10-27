@@ -307,6 +307,157 @@ describe("filler", () => {
   });
 });
 
+describe("re-rendered forms (B2)", () => {
+  /**
+   * A single-page app that replaces the form with a fresh clone on `input`
+   * (same attributes): `copy` carries the values over, `times` is how many
+   * input events re-render (Infinity: every one).
+   */
+  let stopRerender: (() => void) | null = null;
+  afterEach(() => {
+    stopRerender?.();
+    stopRerender = null;
+  });
+
+  function rerenderOnInput(opts: { copy: boolean; times: number }): void {
+    let left = opts.times;
+    const onInput = () => {
+      if (left <= 0) return;
+      left--;
+      const old = document.getElementById("login") as HTMLFormElement;
+      const fresh = old.cloneNode(true) as HTMLFormElement;
+      const from = old.querySelectorAll("input");
+      const to = fresh.querySelectorAll("input");
+      from.forEach((el, i) => (to[i]!.value = opts.copy ? el.value : ""));
+      old.replaceWith(fresh);
+    };
+    document.addEventListener("input", onInput);
+    const before = stopRerender;
+    stopRerender = () => {
+      document.removeEventListener("input", onInput);
+      before?.();
+    };
+  }
+
+  it("fill_resolves_detached_ref_again", () => {
+    setPage(LOGIN);
+    s = start();
+    const f = formById(s, "login");
+    rerenderOnInput({ copy: true, times: 1 });
+    const first = input("u");
+    expect(fill(s, f.ref, { username: "alex@atlas.dev", current_password: "pw-1" })).toEqual({ ok: true });
+    expect(input("u")).not.toBe(first);
+    expect(input("u").value).toBe("alex@atlas.dev");
+    expect(input("p").value).toBe("pw-1");
+  });
+
+  it("refill_once_after_rerender_clears_value", () => {
+    setPage(LOGIN);
+    s = start();
+    const f = formById(s, "login");
+    rerenderOnInput({ copy: false, times: 1 });
+    fill(s, f.ref, { username: "alex@atlas.dev", current_password: "pw-1" });
+    expect(input("u").value).toBe("alex@atlas.dev");
+    expect(input("p").value).toBe("pw-1");
+  });
+
+  it("endless_rerender_refills_once", () => {
+    setPage(LOGIN);
+    s = start();
+    const f = formById(s, "login");
+    rerenderOnInput({ copy: false, times: Number.POSITIVE_INFINITY });
+    const writes: string[] = [];
+    document.addEventListener("input", (e) => writes.push((e.target as HTMLElement).id), true);
+    fill(s, f.ref, { username: "alex@atlas.dev", current_password: "pw-1" });
+    // One fill, then a single second fill of the replaced fields; never more.
+    expect(writes).toEqual(["u", "p", "u", "p"]);
+  });
+
+  it("a stale form ref is not resolved to a different form", () => {
+    setPage(`${LOGIN}<form id="other"><input id="ou" autocomplete="username"><input id="op" type="password" autocomplete="current-password"></form>`);
+    s = start();
+    const f = formById(s, "login");
+    document.getElementById("login")!.remove();
+    expect(fill(s, f.ref, { username: "alex", current_password: "pw" })).toEqual({ ok: false });
+    expect(input("ou").value).toBe("");
+  });
+
+  it("submits the re-rendered form for a stale form ref", () => {
+    setPage(LOGIN);
+    s = start();
+    const f = formById(s, "login");
+    rerenderOnInput({ copy: true, times: 1 });
+    fill(s, f.ref, { username: "alex@atlas.dev" });
+    let clicks = 0;
+    document.getElementById("go")!.addEventListener("click", (e) => {
+      clicks++;
+      e.preventDefault();
+    });
+    expect(s.ext.deliver({ type: "submit", origin: ORIGIN, ref: f.ref })).toEqual({ ok: true });
+    expect(clicks).toBe(1);
+  });
+
+  it("form identity reads attributes: fields named id or tagName do not blur two forms together", () => {
+    const form = (id: string, p: string) =>
+      `<form id="${id}"><input name="id" autocomplete="username"><input name="tagName" type="hidden"><input id="${p}" type="password" autocomplete="current-password"></form>`;
+    setPage(form("login", "p") + form("other", "op"));
+    // Browsers expose a form's controls as named properties of the form,
+    // shadowing `form.id` and `form.tagName`; jsdom does not, so mimic it.
+    const proto = HTMLFormElement.prototype;
+    const saved = ["id", "tagName"].map((k) => [k, Object.getOwnPropertyDescriptor(Element.prototype, k)!] as const);
+    for (const [k] of saved) {
+      Object.defineProperty(proto, k, {
+        configurable: true,
+        get(this: HTMLFormElement) {
+          return this.elements.namedItem(k);
+        },
+      });
+    }
+    stopRerender = () => {
+      for (const [k] of saved) delete (proto as unknown as Record<string, unknown>)[k];
+    };
+    s = start();
+    const f = analysis(s).forms.find((x) => s!.cs.internals.refs.get(x.ref)?.getAttribute("id") === "login")!;
+    rerenderOnInput({ copy: true, times: 1 });
+    fill(s, f.ref, { username: "alex@atlas.dev", current_password: "pw-1" });
+    expect(input("p").value).toBe("pw-1");
+    expect(input("op").value).toBe("");
+  });
+});
+
+describe("late fields (B1)", () => {
+  it("ArrowDown in a field added before the next analysis opens the menu", async () => {
+    useTimers();
+    setPage(`<div id="app"></div>`);
+    s = start();
+    s.ext.reply = () => ({ ok: { url: `${EXT_BASE}menu.html#${TOKEN}` } });
+    document.getElementById("app")!.innerHTML = LOGIN;
+    await flush();
+    userKey(input("u"), "ArrowDown");
+    await flush();
+    expect(s.ext.ofType("open_menu")).toHaveLength(1);
+  });
+
+  it("analyses on such a key at most once per 150 ms", async () => {
+    useTimers();
+    setPage(`<div id="app"></div><div id="more"></div>`);
+    s = start();
+    s.ext.reply = () => ({ ok: null });
+    document.getElementById("app")!.innerHTML = LOGIN;
+    await flush();
+    userKey(input("u"), "ArrowDown");
+    expect(s.ext.ofType("page_analysis")).toHaveLength(2);
+    document.getElementById("more")!.innerHTML = `<form id="b"><input id="bu" autocomplete="username"><input id="bp" type="password" autocomplete="current-password"></form>`;
+    await flush();
+    vi.advanceTimersByTime(100);
+    userKey(input("bu"), "ArrowDown");
+    // Within 150 ms of the last one: no analysis on the key, the observer's comes on time.
+    expect(s.ext.ofType("page_analysis")).toHaveLength(2);
+    vi.advanceTimersByTime(60);
+    expect(s.ext.ofType("page_analysis")).toHaveLength(3);
+  });
+});
+
 describe("submission watcher", () => {
   function creds(st: Started) {
     return st.ext.ofType("submitted_credentials").map((m) => [m.username, m.password, m.isNew]);

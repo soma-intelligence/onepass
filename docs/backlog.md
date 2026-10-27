@@ -19,3 +19,10 @@ Noté le 2026-10-26. Pas commencé.
 **Dépendances.** Il faut un client OnePass sur l'appareil cible : extension en mode autonome (jalon 4), ou future app Windows, Linux ou Android. Le mieux est de le traiter avec le jalon 2b (appairage et appareils), qui pose le même protocole d'appairage.
 
 **Questions ouvertes.** Transfert unique ou sync continue entre l'appareil Apple et l'appareil hors Apple ? Quel stockage local sur l'appareil cible ? Comment révoquer l'appareil (liste signée des appareils, jalon 2b) ?
+
+## Extension : connexion dans une iframe de même origine, limites restantes
+
+Noté le 2026-10-26 (Task 3, C1). Pas commencé.
+
+- **Boutons fournisseur et sélecteur de compte dans un cadre enfant.** La chaîne et l'overlay ne retiennent d'un cadre enfant de même origine que ses formulaires de connexion ou de code. Un bouton "Continuer avec Google" ou un sélecteur de compte placé dans ce cadre n'est pas cliqué : une page qui ne propose que cela dans une iframe reste au menu.
+- **Commits du cadre et compteur de navigation.** Un commit du cadre où la chaîne a agi fait avancer le compteur de navigation de la chaîne, comme un commit du cadre principal. Entre ce commit et l'analyse du nouveau document du cadre, une analyse du cadre principal sans formulaire peut lancer l'attente de fin (1,5 s) plus tôt que voulu. Même course que pour une navigation du cadre principal ; la fin n'arrive jamais moins de 4 s après le chargement.

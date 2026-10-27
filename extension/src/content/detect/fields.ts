@@ -131,8 +131,10 @@ function add(scores: Record<FieldRole, number>, w: Weights, factor = 1): void {
 /**
  * The single scoring function of the detector (ruling R-09): one score per
  * role. A recognized `autocomplete` token gives its role AUTOCOMPLETE_SCORE.
+ * `cardForm` false means the field's form holds no other card field: terms
+ * with `alone` weights (an ambiguous "security code") use them instead.
  */
-export function scoreField(el: FieldElement): Record<FieldRole, number> {
+export function scoreField(el: FieldElement, cardForm = true): Record<FieldRole, number> {
   const scores = zeroScores();
   const type = controlType(el);
 
@@ -158,7 +160,9 @@ export function scoreField(el: FieldElement): Record<FieldRole, number> {
   for (const [src, text] of sources(el)) {
     const t = normalizeText(text);
     if (t === "") continue;
-    for (const term of TERMS) if (term.re.test(t)) add(scores, term.w, SOURCE_WEIGHTS[src]);
+    for (const term of TERMS) {
+      if (term.re.test(t)) add(scores, cardForm ? term.w : (term.alone ?? term.w), SOURCE_WEIGHTS[src]);
+    }
   }
 
   const typeWeights = TYPE_WEIGHTS[type];
@@ -183,9 +187,9 @@ export function scoreField(el: FieldElement): Record<FieldRole, number> {
   return scores;
 }
 
-/** Highest-scoring role above SCORE_THRESHOLD, else `unknown` with score 0. */
-export function classifyField(el: FieldElement): { role: FieldRole; score: number } {
-  const scores = scoreField(el);
+/** Highest-scoring role above SCORE_THRESHOLD, else `unknown` with score 0 (`cardForm`: see scoreField). */
+export function classifyField(el: FieldElement, cardForm = true): { role: FieldRole; score: number } {
+  const scores = scoreField(el, cardForm);
   let best: FieldRole = "unknown";
   let bestScore = 0;
   for (const r of SCORED_ROLES) {
