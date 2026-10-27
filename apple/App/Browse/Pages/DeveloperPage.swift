@@ -2,11 +2,14 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Développeur page: the tools of milestone 7 (SSH agent, MCP server) and the CLI. They run from
-/// the `onepass` command line in development mode for now, with their own data folder: each card
-/// says how to start them, nothing here pretends the app runs them.
+/// Développeur page: the tools of milestone 7 (SSH agent, MCP server) and the CLI. On the Mac the app
+/// serves the agent and the MCP server on its own vaults: their cards open Réglages > Développeur.
+/// Elsewhere they run from the `onepass` command line, with its own data folder, and the cards say how.
 struct DeveloperPage: View {
     @Environment(AppModel.self) private var model
+    #if os(macOS)
+    @Environment(\.openSettings) private var openSettings
+    #endif
     @State private var guide: DeveloperGuide?
 
     var body: some View {
@@ -22,13 +25,13 @@ struct DeveloperPage: View {
                         title: String(localized: "Agent SSH"),
                         message: String(localized: "Garde tes clés SSH dans un coffre, connecte-toi à tes serveurs et signe tes commits Git, avec une approbation à chaque usage."),
                         button: String(localized: "Voir l'agent SSH")
-                    ) { guide = .ssh }
+                    ) { show(.ssh) }
                     DeveloperCard(
                         tile: AnyView(PageTile(symbol: "point.3.connected.trianglepath.dotted", color: .purple, size: 34)),
                         title: String(localized: "Serveur MCP"),
                         message: String(localized: "Laisse un agent IA utiliser les coffres que tu choisis, sans jamais lui montrer un secret."),
                         button: String(localized: "Voir le serveur MCP")
-                    ) { guide = .mcp }
+                    ) { show(.mcp) }
                     DeveloperCard(
                         tile: AnyView(PageTile(symbol: "terminal.fill", color: .black, size: 34)),
                         title: String(localized: "CLI"),
@@ -52,6 +55,16 @@ struct DeveloperPage: View {
             DeveloperGuideSheet(guide: guide)
         }
         .accessibilityIdentifier("page.developer")
+    }
+
+    /// The Mac app serves the agent and the MCP server: their settings. Elsewhere, the CLI guide.
+    private func show(_ g: DeveloperGuide) {
+        #if os(macOS)
+        model.settingsPageRequest = .developer
+        openSettings()
+        #else
+        guide = g
+        #endif
     }
 }
 
@@ -144,7 +157,7 @@ struct DeveloperGuideSheet: View {
     }
 
     @ViewBuilder private var ssh: some View {
-        Text("L'agent sert les clés SSH de tes coffres à `ssh` et à `git`. Chaque signature demande ton accord dans le terminal, avec le titre de la clé, son empreinte et le programme qui la demande. La clé privée ne quitte jamais le coffre.")
+        Text("L'agent de la CLI sert les clés SSH de ses coffres à `ssh` et à `git`. Chaque signature demande ton accord dans le terminal, avec le titre de la clé, son empreinte et le programme qui la demande. La clé privée ne quitte jamais le coffre.")
             .fixedSize(horizontal: false, vertical: true)
         step(String(localized: "Crée une clé et rends-la disponible pour l'agent :"),
              #"onepass ssh-key generate --title "Github" --type ed25519 --host github.com --agent"#)
@@ -163,7 +176,7 @@ struct DeveloperGuideSheet: View {
     }
 
     @ViewBuilder private var mcp: some View {
-        Text("Le serveur MCP parle JSON-RPC sur l'entrée et la sortie standard. Il ne voit que les coffres créés avec l'accès MCP, et chaque usage d'un secret demande ton accord dans le terminal. L'agent reçoit des métadonnées ou le résultat d'une commande masquée, jamais la valeur.")
+        Text("Le serveur MCP de la CLI parle JSON-RPC sur l'entrée et la sortie standard. Il ne voit que les coffres créés avec l'accès MCP, et chaque usage d'un secret demande ton accord dans le terminal. L'agent reçoit des métadonnées ou le résultat d'une commande masquée, jamais la valeur.")
             .fixedSize(horizontal: false, vertical: true)
         step(String(localized: "Crée un coffre réservé aux agents et ranges-y leurs secrets :"),
              #"onepass vault create "Agents" --mcp-access"#)
@@ -180,7 +193,7 @@ struct DeveloperGuideSheet: View {
                }
              }
              """)
-        Text("Appairage : pour l'instant, le client qui lance le serveur est le seul client, sans identification. La politique signée décide de ses droits, `reveal_secret` et `totp_code` demandent Touch ID, et `onepass mcp audit` affiche le journal de chaque accès. Le mot de passe maître est demandé dans le terminal : un client de bureau sans terminal ne peut pas encore déverrouiller le serveur.")
+        Text("La politique signée décide des droits du client, `reveal_secret` et `totp_code` demandent Touch ID, et `onepass mcp audit` affiche le journal de chaque accès. Le mot de passe maître est demandé dans le terminal. Sur Mac, l'app sert un serveur MCP sans terminal, avec appairage des clients : Réglages > Développeur.")
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -204,7 +217,7 @@ struct DeveloperGuideSheet: View {
 
     private var devModeNote: some View {
         Label {
-            Text("Mode développement : la CLI, l'agent SSH et le serveur MCP utilisent pour l'instant leur propre dossier de données (`~/.onepass-dev`), pas les coffres de cette app.")
+            Text("La CLI utilise son propre dossier de données (`~/.onepass-dev`), pas les coffres de cette app. Sur Mac, l'app sert elle-même l'agent SSH et le serveur MCP sur tes coffres : Réglages > Développeur.")
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: "info.circle")

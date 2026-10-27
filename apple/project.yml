@@ -75,6 +75,11 @@ targets:
       # Safari Web Extension: Mac only for now (the iOS one needs the bridge in the app, R-17).
       - target: OnePassSafari
         destinationFilters: [macOS]
+    postBuildScripts:
+      # The MCP relay MCP clients launch (Contents/Helpers/onepass-mcp, macOS only).
+      - name: Embed MCP relay
+        basedOnDependencyAnalysis: false
+        script: '"${PROJECT_DIR}/scripts/embed-mcp-relay.sh"'
     info:
       path: App/Support/Info.plist
       properties:

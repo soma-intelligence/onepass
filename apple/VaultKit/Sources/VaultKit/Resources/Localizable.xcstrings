@@ -17,6 +17,16 @@
         }
       }
     },
+    "Appairer %@ avec OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair %@ with OnePass"
+          }
+        }
+      }
+    },
     "Aucun compte iCloud n'est disponible." : {
       "localizations" : {
         "en" : {
@@ -29,6 +39,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aucun compte iCloud n'est disponible."
+          }
+        }
+      }
+    },
+    "Autorisation inconnue." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown permission."
           }
         }
       }
@@ -129,6 +149,16 @@
         }
       }
     },
+    "Ce type de clé SSH n'est pas pris en charge." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This SSH key type is not supported."
+          }
+        }
+      }
+    },
     "Cet export Bitwarden est chiffré. Refais l'export en JSON non chiffré (ou en CSV), puis réessaie." : {
       "localizations" : {
         "en" : {
@@ -193,6 +223,16 @@
         }
       }
     },
+    "Cette clé est chiffrée : saisis sa phrase de passe." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This key is encrypted: enter its passphrase."
+          }
+        }
+      }
+    },
     "Cette clé s'ajoute à ton mot de passe maître pour protéger ton coffre. Elle est stockée sur tes appareils et n'est jamais envoyée à personne." : {
       "localizations" : {
         "en" : {
@@ -237,6 +277,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Champ obligatoire"
+          }
+        }
+      }
+    },
+    "Clé SSH illisible." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unreadable SSH key."
           }
         }
       }
@@ -333,6 +383,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Des données chiffrées ont été modifiées."
+          }
+        }
+      }
+    },
+    "Des modifications de ces coffres ne sont pas encore dans iCloud. Synchronise, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some changes to these vaults are not in iCloud yet. Sync, then try again."
           }
         }
       }
@@ -577,6 +637,16 @@
         }
       }
     },
+    "Impossible d'ouvrir le socket." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The socket could not be opened."
+          }
+        }
+      }
+    },
     "Impossible de lire ce compte iCloud. Vérifie ta connexion puis réessaie." : {
       "localizations" : {
         "en" : {
@@ -621,6 +691,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Impossible de ranger la Secret Key dans le trousseau de cet appareil. Le coffre n'a pas été créé."
+          }
+        }
+      }
+    },
+    "Impossible de vérifier la signature de ce programme." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The signature of this program could not be checked."
           }
         }
       }
@@ -717,6 +797,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La synchronisation n'a pas abouti, nouvel essai bientôt."
+          }
+        }
+      }
+    },
+    "Le Travel Mode est déjà activé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode is already on."
+          }
+        }
+      }
+    },
+    "Le Travel Mode n'est pas activé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode is not on."
+          }
+        }
+      }
+    },
+    "Le chemin du socket est trop long pour macOS." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The socket path is too long for macOS."
+          }
+        }
+      }
+    },
+    "Le commentaire de la clé ne doit pas contenir de caractère de contrôle." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The key comment must not contain control characters."
           }
         }
       }
@@ -1025,6 +1145,16 @@
         }
       }
     },
+    "Phrase de passe incorrecte." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wrong passphrase."
+          }
+        }
+      }
+    },
     "Phrase de récupération invalide" : {
       "localizations" : {
         "en" : {
@@ -1249,6 +1379,16 @@
         }
       }
     },
+    "Tous tes coffres sont marqués sûrs en voyage : aucun ne quitterait cet appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All your vaults are marked safe for travel: none would leave this device."
+          }
+        }
+      }
+    },
     "Trop d'essais. Réessaie après %@." : {
       "localizations" : {
         "en" : {
@@ -1297,6 +1437,16 @@
         }
       }
     },
+    "Un autre agent SSH utilise déjà ce socket." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another SSH agent already uses this socket."
+          }
+        }
+      }
+    },
     "Un compte OnePass existe déjà sur cet appareil." : {
       "localizations" : {
         "en" : {
@@ -1341,6 +1491,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un enregistrement iCloud reste illisible : la synchronisation est bloquée. OnePass réessaiera."
+          }
+        }
+      }
+    },
+    "Un hôte s'écrit en un seul mot, sans espace ni guillemet." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A host is one word, without spaces or quotes."
           }
         }
       }
@@ -1501,6 +1661,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Valeur invalide."
+          }
+        }
+      }
+    },
+    "iCloud n'a pas encore une copie complète de ces coffres. Synchronise, puis réessaie : rien n'a été retiré." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud does not hold a full copy of these vaults yet. Sync, then try again: nothing was removed."
           }
         }
       }
