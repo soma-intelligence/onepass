@@ -61,7 +61,7 @@ struct NumberEditor: View {
 
     var body: some View {
         ParsedTextField(
-            title: field.label, prompt: "0", kind: .number, value: number,
+            title: field.displayLabel, prompt: "", kind: .number, value: number,
             parse: NumberInput.integer, format: { String($0) },
             commit: { value = $0.map { .number(value: $0) } ?? .empty })
             .accessibilityIdentifier("editor.field.\(field.id)")
@@ -91,7 +91,7 @@ struct MoneyEditor: View {
     var body: some View {
         HStack {
             ParsedTextField(
-                title: field.label, prompt: "0,00", kind: .money,
+                title: field.displayLabel, prompt: "0,00", kind: .money,
                 value: parts.map { Money.amount(minorUnits: $0.minor) },
                 parse: NumberInput.decimal, format: NumberInput.text,
                 commit: { amount in

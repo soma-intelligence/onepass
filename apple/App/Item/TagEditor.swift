@@ -1,3 +1,4 @@
+import DesignKit
 import SwiftUI
 import VaultKit
 
@@ -19,35 +20,38 @@ struct TagEditor: View {
     }
 
     var body: some View {
-        if !draft.item.tags.isEmpty {
-            FlowLayout(spacing: 6) {
-                ForEach(draft.item.tags, id: \.self) { tag in
-                    Button {
-                        draft.removeTag(tag)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(tag)
-                            Image(systemName: "xmark").font(.caption2.weight(.bold))
-                        }
-                        .font(.footnote)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(.tint.opacity(0.14), in: Capsule())
+        FlowLayout(spacing: 8) {
+            ForEach(draft.item.tags, id: \.self) { tag in
+                Button {
+                    draft.removeTag(tag)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(tag)
+                        Image(systemName: "xmark").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .visionHoverEffect()
-                    .accessibilityLabel(Text("Retirer le tag \(tag)"))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.fill.tertiary, in: Capsule())
                 }
+                .buttonStyle(.plain)
+                .visionHoverEffect()
+                .help("Retirer le tag")
+                .accessibilityLabel(Text("Retirer le tag \(tag)"))
             }
-        }
-        HStack {
-            TextField("+ ajouter un tag", text: $newTag)
-                .onSubmit(add)
-                .fieldInput(.text)
-                .accessibilityIdentifier("editor.tag")
-            if !newTag.trimmingCharacters(in: .whitespaces).isEmpty {
-                Button("Ajouter", action: add).buttonStyle(.borderless)
+            HStack(spacing: 6) {
+                Image(systemName: "plus").font(.callout.weight(.semibold))
+                TextField("Tag", text: $newTag, prompt: Text("Ajouter un tag").foregroundStyle(Theme.accent.mix(with: .white, by: 0.3)))
+                    .labelsHidden()
+                    .textFieldStyle(.plain)
+                    .onSubmit(add)
+                    .fieldInput(.text)
+                    .frame(width: 110)
+                    .accessibilityIdentifier("editor.tag")
             }
+            .foregroundStyle(Theme.accent.mix(with: .white, by: 0.3))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .overlay { Capsule().strokeBorder(Theme.accent.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
         }
         let suggestions = suggestions
         if !suggestions.isEmpty {
