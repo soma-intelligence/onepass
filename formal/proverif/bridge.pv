@@ -1,0 +1,61 @@
+(* formal-lib: bridge_core.pvl *)
+(* OnePass formal model: extension <-> app bridge (milestone 4), both KEM
+   halves sound. Processes, events and abstractions in bridge_core.pvl.
+   Phase 0: any number of pairings, sessions and channel messages.
+   Phase 1: the PK of every session record is published (P13).
+   The sessions run over PairingRecord (compositional abstraction justified
+   by P10 and P11, see bridge_core.pvl) and over CorruptRecord (records
+   whose PK the attacker knows); P12 to P15 are stated for honest records
+   (flag hon).
+
+   Queries are grouped in three query declarations: ProVerif saturates once
+   per declaration (one declaration per query would exceed 300 s). *)
+
+(* Secrecy and P15 (one saturation). *)
+query p: bitstring, t: bitstring, k: key, r: bitstring, s: bitstring,
+      m: bitstring;
+  (* P10: PK secret on both sides (phase 0, before the phase 1 leak). *)
+  event(HostPaired(p, t, k)) && attacker(k) phase 0;
+  event(ExtConfirm(p, t, k)) && attacker(k) phase 0;
+  (* P12: session keys and application messages secret (phase 0). *)
+  event(SessionKey(hon, r, s, k)) && attacker(k) phase 0;
+  event(AppMsg(hon, m)) && attacker(m) phase 0;
+  (* P13: forward secrecy. PK is published in phase 1; the keys and the
+     messages of the phase 0 sessions stay secret. *)
+  event(SessionKey(hon, r, s, k)) && attacker(k) phase 1;
+  event(AppMsg(hon, m)) && attacker(m) phase 1;
+  (* Sanity for P13 (expected false): the PK of the session records does
+     leak in phase 1. *)
+  event(Record(p, k)) && attacker(k) phase 1;
+  (* P15: the host serves a request only in a session whose peer finished
+     the handshake with the stored PK (an extension holding PK). *)
+  event(HostServe(hon, p, k, s, m)) ==> event(ExtFinish(hon, p, k, s)).
+
+(* Injective agreements (one saturation). *)
+query p: bitstring, t: bitstring, k: key, s: bitstring, d: bitstring,
+      n: bitstring, m: bitstring;
+  (* P11: injective agreement on (pairing_id, transcript, PK) after the
+     SAS comparison, both directions. *)
+  inj-event(ExtConfirm(p, t, k)) ==> inj-event(HostDone(p, t, k));
+  inj-event(HostPaired(p, t, k)) ==> inj-event(ExtConfirm(p, t, k));
+  (* P14: authenticity and non-replay of application messages, injective
+     on (session_id, direction, counter, message), both directions. *)
+  inj-event(HostRecv(hon, s, d, n, m)) ==> inj-event(ExtSend(hon, s, d, n, m));
+  inj-event(ExtRecv(hon, s, d, n, m)) ==> inj-event(HostSend(hon, s, d, n, m)).
+
+(* Sanity (expected false): pairing completes on both sides, a session
+   opens, the host receives the second request, the extension receives
+   the second response. *)
+query p: bitstring, t: bitstring, k: key, s: bitstring, m: bitstring;
+  event(ExtConfirm(p, t, k));
+  event(HostPaired(p, t, k));
+  event(ExtFinish(hon, p, k, s));
+  event(HostRecv(hon, s, dir_e2h, ctr1, m));
+  event(ExtRecv(hon, s, dir_h2e, ctr1, m));
+  (* the attacker does run sessions over a corrupted record: the host
+     serves it (P15 restricted to hon is not true for lack of such
+     sessions). *)
+  event(HostServe(cor, p, k, s, m)).
+
+process
+  Bridge(leak_none)

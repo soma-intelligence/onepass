@@ -1,0 +1,185 @@
+# Résultats attendus du modèle formel, lus par formal/run.sh.
+# Format : fichier.pv | texte exact de la requête tel qu'imprimé par ProVerif | true|false
+# "false" = attaque trouvée. Il n'est permis que pour les requêtes de sanité
+# (atteignabilité de la fin du protocole) et les limites documentées (ruling F-03).
+# Un résultat "cannot be proved" ne correspond jamais à une ligne de ce fichier.
+
+# sanity.pv : auto-test de la bibliothèque commune et du harnais.
+sanity.pv | not attacker(secret_msg[]) | true
+sanity.pv | not attacker(auk_msg[]) | true
+sanity.pv | not attacker(bridge_msg[]) | true
+# Sanité : un secret scellé sous une clé dérivée de données publiques fuit.
+sanity.pv | not attacker(leaked_msg[]) | false
+sanity.pv | event(Received(m_4)) ==> event(Sent(m_4)) | true
+# Sanité : le récepteur va au bout.
+sanity.pv | not event(Received(m_4)) | false
+# Sanité : l'échange KEM du pont va au bout.
+sanity.pv | not event(BridgeDone) | false
+sanity.pv | Weak secret pw | true
+# Sanité : Secret Key publiée, le mot de passe tombe au dictionnaire hors ligne.
+sanity.pv | Weak secret pw_leaky | false
+
+# account.pv : compte, 2SKD, paramètres signés et épingle, keyset, enveloppe KEM du coffre, items.
+# P1 : clés de coffre et contenu des items secrets face au stockage.
+account.pv | not (event(VaultCreated(acct_main,s,v_18,k_6)) && attacker(k_6)) | true
+account.pv | not (event(ItemSealed(acct_main,m_6)) && attacker(m_6)) | true
+# P2 : AUK secrète avec la Secret Key seule, avec le mot de passe seul, et sans fuite.
+account.pv | not (event(AukCreated(acct_sk_leaked,k_6)) && attacker(k_6)) | true
+account.pv | not (event(AukCreated(acct_pw_leaked,k_6)) && attacker(k_6)) | true
+account.pv | not (event(AukCreated(acct_main,k_6)) && attacker(k_6)) | true
+# P3 : mot de passe secret faible tant que la Secret Key ne fuit pas.
+account.pv | Weak secret pw_main | true
+# Limite documentée (F-03, spec section 3) : Secret Key publiée, le keyset
+# sert de vérificateur, le mot de passe tombe au dictionnaire hors ligne.
+account.pv | Weak secret pw_sk_leaked | false
+# P4 : un appareil épinglé n'accepte que les paramètres signés par l'identité épinglée.
+account.pv | event(ParamsAccepted(i,a,sa,s,pm,px)) ==> event(ParamsSigned(i,a,sa,s,pm,px)) | true
+# P5 : clé de coffre substituée par le stockage jamais acceptée.
+account.pv | event(VaultAccepted(t,s,v_18,k_6)) ==> event(VaultCreated(t,s,v_18,k_6)) | true
+# Sanité : déverrouillage (chaque compte), coffre listé, item lu, item écrit.
+account.pv | not event(Unlocked(acct_main)) | false
+account.pv | not event(Unlocked(acct_sk_leaked)) | false
+account.pv | not event(Unlocked(acct_pw_leaked)) | false
+account.pv | not event(VaultAccepted(acct_main,s,v_18,k_6)) | false
+account.pv | not event(ItemRead(acct_main,v_18,i,m_6)) | false
+account.pv | not event(ItemWritten(acct_main,v_18,m_6)) | false
+
+# account_kem_mlkem_broken.pv : moitié ML-KEM-1024 publiée ; P1 et P5 restent vrais.
+account_kem_mlkem_broken.pv | not (event(VaultCreated(acct_main,s,v_6,k_2)) && attacker(k_2)) | true
+account_kem_mlkem_broken.pv | not (event(ItemSealed(acct_main,m_2)) && attacker(m_2)) | true
+account_kem_mlkem_broken.pv | event(VaultAccepted(t,s,v_6,k_2)) ==> event(VaultCreated(t,s,v_6,k_2)) | true
+# Sanité.
+account_kem_mlkem_broken.pv | not event(Unlocked(acct_main)) | false
+account_kem_mlkem_broken.pv | not event(VaultAccepted(acct_main,s,v_6,k_2)) | false
+account_kem_mlkem_broken.pv | not event(ItemRead(acct_main,v_6,i,m_2)) | false
+account_kem_mlkem_broken.pv | not event(ItemWritten(acct_main,v_6,m_2)) | false
+
+# account_kem_x25519_broken.pv : moitié X25519 publiée ; P1 et P5 restent vrais.
+account_kem_x25519_broken.pv | not (event(VaultCreated(acct_main,s,v_6,k_2)) && attacker(k_2)) | true
+account_kem_x25519_broken.pv | not (event(ItemSealed(acct_main,m_2)) && attacker(m_2)) | true
+account_kem_x25519_broken.pv | event(VaultAccepted(t,s,v_6,k_2)) ==> event(VaultCreated(t,s,v_6,k_2)) | true
+# Sanité.
+account_kem_x25519_broken.pv | not event(Unlocked(acct_main)) | false
+account_kem_x25519_broken.pv | not event(VaultAccepted(acct_main,s,v_6,k_2)) | false
+account_kem_x25519_broken.pv | not event(ItemRead(acct_main,v_6,i,m_2)) | false
+account_kem_x25519_broken.pv | not event(ItemWritten(acct_main,v_6,m_2)) | false
+
+# manifest.pv : manifestes signés, état last_seen de l'appareil, retour en arrière et bifurcation.
+# P6 : tout manifeste accepté a été signé par le compte, pour ce coffre.
+manifest.pv | event(Accept(d_3,v_84,n,mh_12,e)) ==> event(Signed(v_84,n,p,mh_12,e)) | true
+# P7 : pas de retour en arrière (requête temporelle).
+manifest.pv | event(Accept(d_3,v_84,n,h1,e1))@i_6 && event(Accept(d_3,v_84,m_3,h2,e2))@j ==> i_6 > j || m_3 ≥ n | true
+# P8 : pas de bifurcation, jamais deux hash différents acceptés pour le même seq.
+manifest.pv | event(Accept(d_3,v_84,n,h1,e1)) && event(Accept(d_3,v_84,n,h2,e2)) ==> h1 = h2 | true
+# P8 (chaînage) : le seq suivant lu se chaîne au manifeste vu.
+manifest.pv | event(Fetched(d_3,v_84,seen(n,h0),n + 1,mh_12)) ==> event(Signed(v_84,n + 1,h0,mh_12,e)) | true
+# P9 : un item accepté figure dans un manifeste accepté, même version et même hash.
+manifest.pv | event(ItemAccepted(d_3,v_84,one_entry(i_6,ver_9,rh_6))) ==> event(Accept(d_3,v_84,n,mh_12,one_entry(i_6,ver_9,rh_6))) | true
+# Limite documentée (F-03, verify_manifest, README 3.7) : un écart de plus
+# d'un seq est accepté sans chaînage, même s'il descend d'une bifurcation.
+manifest.pv | event(Fetched(d_3,v_84,seen(2,h0),4,mh_12)) ==> event(Signed(v_84,4,p,mh_12,e)) && event(Signed(v_84,3,h0,p,e3)) | false
+# Sanité : deux écrivains signent deux manifestes différents au même seq.
+manifest.pv | event(Signed(v_84,2,p1,h1,e1)) && event(Signed(v_84,2,p2,h2,e2)) ==> h1 = h2 | false
+# Sanité : lecture du suivant, d'un écart, du même seq, du suivant après 2, puis d'un item.
+manifest.pv | not event(Fetched(d_3,v_84,seen(1,h0),2,mh_12)) | false
+manifest.pv | not event(Fetched(d_3,v_84,seen(1,h0),3,mh_12)) | false
+manifest.pv | not event(Fetched(d_3,v_84,seen(2,h0),2,mh_12)) | false
+manifest.pv | not event(Fetched(d_3,v_84,seen(2,h0),3,mh_12)) | false
+manifest.pv | not event(ItemAccepted(d_3,v_84,one_entry(i_6,ver_9,rh_6))) | false
+
+# bridge.pv : pont extension et app (jalon 4), appairage avec engagement et SAS
+# (F-02 : canal hors bande authentifié), session KEM hybride + PK, canal à compteurs.
+# Les sessions tournent sur des enregistrements PairingRecord (abstraction
+# compositionnelle justifiée par P10 et P11, voir bridge_core.pvl) et sur des
+# enregistrements corrompus (CorruptRecord, PK connue de l'attaquant) ; P12 à P15
+# portent sur les enregistrements honnêtes (hon).
+# P10 : PK secrète des deux côtés.
+bridge.pv | not (event(HostPaired(p_2,t_4,k_2)) && attacker(k_2)) | true
+bridge.pv | not (event(ExtConfirm(p_2,t_4,k_2)) && attacker(k_2)) | true
+# P12 : clés de session et messages applicatifs secrets.
+bridge.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker(k_2)) | true
+bridge.pv | not (event(AppMsg(hon,m)) && attacker(m)) | true
+# P13 : confidentialité persistante, PK publiée en phase 1.
+bridge.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker_p1(k_2)) | true
+bridge.pv | not (event(AppMsg(hon,m)) && attacker_p1(m)) | true
+# Sanité de P13 : PK fuit bien en phase 1.
+bridge.pv | not (event(Record(p_2,k_2)) && attacker_p1(k_2)) | false
+# P15 : l'hôte ne sert une requête qu'à un pair qui a fini la poignée de main avec PK.
+bridge.pv | event(HostServe(hon,p_2,k_2,s,m)) ==> event(ExtFinish(hon,p_2,k_2,s)) | true
+# P11 : accord injectif sur (pairing_id, transcription, PK) après la comparaison SAS, deux sens.
+bridge.pv | inj-event(ExtConfirm(p_2,t_4,k_2)) ==> inj-event(HostDone(p_2,t_4,k_2)) | true
+bridge.pv | inj-event(HostPaired(p_2,t_4,k_2)) ==> inj-event(ExtConfirm(p_2,t_4,k_2)) | true
+# P14 : authenticité et non-rejeu, injectif sur (session_id, sens, compteur, message).
+bridge.pv | inj-event(HostRecv(hon,s,d,n_8,m)) ==> inj-event(ExtSend(hon,s,d,n_8,m)) | true
+bridge.pv | inj-event(ExtRecv(hon,s,d,n_8,m)) ==> inj-event(HostSend(hon,s,d,n_8,m)) | true
+# Sanité : appairage des deux côtés, session ouverte, deuxième requête et deuxième réponse reçues.
+bridge.pv | not event(ExtConfirm(p_2,t_4,k_2)) | false
+bridge.pv | not event(HostPaired(p_2,t_4,k_2)) | false
+bridge.pv | not event(ExtFinish(hon,p_2,k_2,s)) | false
+bridge.pv | not event(HostRecv(hon,s,dir_e2h,ctr1,m)) | false
+bridge.pv | not event(ExtRecv(hon,s,dir_h2e,ctr1,m)) | false
+# Sanité : l'attaquant mène bien des sessions sur un enregistrement corrompu (CorruptRecord).
+bridge.pv | not event(HostServe(cor,p_2,k_2,s,m)) | false
+
+# bridge_kem_mlkem_broken.pv : moitié ML-KEM-1024 des KEM éphémères publiée ; P10, P12 et P13 restent vrais.
+bridge_kem_mlkem_broken.pv | not (event(HostPaired(p_2,t_4,k_2)) && attacker(k_2)) | true
+bridge_kem_mlkem_broken.pv | not (event(ExtConfirm(p_2,t_4,k_2)) && attacker(k_2)) | true
+bridge_kem_mlkem_broken.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker(k_2)) | true
+bridge_kem_mlkem_broken.pv | not (event(AppMsg(hon,m)) && attacker(m)) | true
+bridge_kem_mlkem_broken.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker_p1(k_2)) | true
+bridge_kem_mlkem_broken.pv | not (event(AppMsg(hon,m)) && attacker_p1(m)) | true
+# Sanité.
+bridge_kem_mlkem_broken.pv | not (event(Record(p_2,k_2)) && attacker_p1(k_2)) | false
+bridge_kem_mlkem_broken.pv | not event(HostPaired(p_2,t_4,k_2)) | false
+bridge_kem_mlkem_broken.pv | not event(ExtRecv(hon,s,dir_h2e,ctr1,m)) | false
+
+# bridge_kem_x25519_broken.pv : moitié X25519 des KEM éphémères publiée ; P10, P12 et P13 restent vrais.
+bridge_kem_x25519_broken.pv | not (event(HostPaired(p_2,t_4,k_2)) && attacker(k_2)) | true
+bridge_kem_x25519_broken.pv | not (event(ExtConfirm(p_2,t_4,k_2)) && attacker(k_2)) | true
+bridge_kem_x25519_broken.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker(k_2)) | true
+bridge_kem_x25519_broken.pv | not (event(AppMsg(hon,m)) && attacker(m)) | true
+bridge_kem_x25519_broken.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker_p1(k_2)) | true
+bridge_kem_x25519_broken.pv | not (event(AppMsg(hon,m)) && attacker_p1(m)) | true
+# Sanité.
+bridge_kem_x25519_broken.pv | not (event(Record(p_2,k_2)) && attacker_p1(k_2)) | false
+bridge_kem_x25519_broken.pv | not event(HostPaired(p_2,t_4,k_2)) | false
+bridge_kem_x25519_broken.pv | not event(ExtRecv(hon,s,dir_h2e,ctr1,m)) | false
+
+# emergency_kit.pv : restauration par Emergency Kit sur un nouvel appareil sans épingle
+# (Secret Key du kit et mot de passe saisi, canaux privés ; stockage hostile ;
+# épingle au premier usage). Processus repris d'account_core.pvl.
+# P16 : clés de coffre et items du vrai compte secrets, stockage hostile pendant la restauration.
+emergency_kit.pv | not (event(VaultCreated(acct_main,s,v_42,k_10)) && attacker(k_10)) | true
+emergency_kit.pv | not (event(ItemSealed(acct_main,m_14)) && attacker(m_14)) | true
+emergency_kit.pv | not (event(ItemSealed(restore_main,m_14)) && attacker(m_14)) | true
+# P16 : l'appareil restauré n'accepte que les clés de coffre du vrai compte et n'affiche que ses items.
+emergency_kit.pv | event(VaultAccepted(restore_main,s,v_42,k_10)) ==> event(VaultCreated(acct_main,s,v_42,k_10)) | true
+emergency_kit.pv | event(ItemRead(restore_main,v_42,i,m_14)) ==> event(ItemSealed(acct_main,m_14)) || event(ItemSealed(restore_main,m_14)) | true
+# P18 : au premier usage, l'appareil n'épingle que le compte de l'utilisateur (2SKD : le keyset
+# doit s'ouvrir sous l'AUK de son mot de passe et de sa Secret Key).
+emergency_kit.pv | event(Pinned(restore_main,a,i)) ==> event(AccountOwned(acct_main,a,i)) | true
+# Le sel choisi par le stockage ne donne aucun test hors ligne du mot de passe.
+emergency_kit.pv | Weak secret pw_main | true
+# P17 : kit perdu (Secret Key publique), mot de passe secret.
+emergency_kit.pv | not (event(ItemSealed(acct_kit_lost,m_14)) && attacker(m_14)) | true
+emergency_kit.pv | not (event(ItemSealed(restore_kit_lost,m_14)) && attacker(m_14)) | true
+emergency_kit.pv | not (event(AukCreated(acct_kit_lost,k_10)) && attacker(k_10)) | true
+emergency_kit.pv | event(Pinned(restore_kit_lost,a,i)) ==> event(AccountOwned(acct_kit_lost,a,i)) | true
+# Limite documentée (F-03, comme pw_sk_leaked d'account.pv) : Secret Key publique, le vrai keyset
+# sert de vérificateur, le mot de passe tombe au dictionnaire hors ligne ; P17 vaut pour un mot de passe fort.
+emergency_kit.pv | Weak secret pw_kit_lost | false
+# Secret Key publique sans vrai keyset : la dérivation sur un sel de l'attaquant n'offre aucun test hors ligne.
+emergency_kit.pv | Weak secret pw_no_keyset | true
+# Limite documentée (F-03, P18) : les deux facteurs connus (kit perdu avec le mot de passe écrit à la
+# main, ou Secret Key fuitée et mot de passe trouvé hors ligne), un stockage hostile au premier usage
+# fait épingler un compte de l'attaquant ; l'utilisateur voit le coffre et les items de l'attaquant.
+emergency_kit.pv | event(Pinned(restore_kit_pw,a,i)) ==> event(AccountOwned(acct_kit_pw,a,i)) | false
+emergency_kit.pv | event(ItemRead(restore_kit_pw,v_42,i,m_14)) ==> event(ItemSealed(acct_kit_pw,m_14)) || event(ItemSealed(restore_kit_pw,m_14)) | false
+# Sanité : la restauration épingle, liste un coffre, lit et écrit un item ; la restauration kit perdu
+# épingle ; l'appareil sans vrai keyset dérive une AUK.
+emergency_kit.pv | not event(Pinned(restore_main,a,i)) | false
+emergency_kit.pv | not event(VaultAccepted(restore_main,s,v_42,k_10)) | false
+emergency_kit.pv | not event(ItemRead(restore_main,v_42,i,m_14)) | false
+emergency_kit.pv | not event(ItemWritten(restore_main,v_42,m_14)) | false
+emergency_kit.pv | not event(Pinned(restore_kit_lost,a,i)) | false
+emergency_kit.pv | not event(AukDerived(restore_no_keyset)) | false

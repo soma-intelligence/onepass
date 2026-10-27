@@ -18,7 +18,7 @@ use std::thread;
 
 use onepass_bridge::service::VaultAccess;
 
-use crate::config::{Config, HostError, Reprompt, Source, extension_id};
+use crate::config::{Approval, Config, HostError, Reprompt, Source, extension_id};
 use crate::host::{APPROVED_FILE, Conn, Limits, spawn_reader};
 use crate::log::{Log, ensure_dir, now};
 use crate::pairings::{Pairings, write_atomic};
@@ -89,12 +89,25 @@ where
     });
 }
 
-fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
-    if matches!(cfg.source, Source::Fixture { .. }) && !cfg!(debug_assertions) {
+/// Settings a release build refuses: the fixture source, and pairing
+/// approval `auto`, which approves without any code comparison so that
+/// any local process could pair with the host.
+fn check_build(cfg: &Config, release: bool) -> Result<(), HostError> {
+    if matches!(cfg.source, Source::Fixture { .. }) && release {
         return Err(HostError::new(
             "the fixture source is refused in a release build",
         ));
     }
+    if cfg.approval == Approval::Auto && release {
+        return Err(HostError::new(
+            "automatic pairing approval is refused in a release build",
+        ));
+    }
+    Ok(())
+}
+
+fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
+    check_build(cfg, !cfg!(debug_assertions))?;
     let log = Log::open(&cfg.data_dir);
     log.line("DEV MODE: OnePass development native messaging host, not for real secrets");
     let pairings = Pairings::load(&cfg.data_dir)?;
@@ -182,5 +195,31 @@ mod tests {
 
         assert!(parse_args(args(&["approve"])).is_err());
         assert!(parse_args(args(&["--config"])).is_err());
+    }
+
+    fn config(source: &str, approval: &str) -> Config {
+        let json = format!(
+            r#"{{"data_dir":"/d","allowed_extensions":["x"],"source":{source},"approval":"{approval}"}}"#
+        );
+        Config::parse(json.as_bytes()).unwrap()
+    }
+
+    const DEV: &str = r#"{"kind":"dev"}"#;
+    const FIXTURE: &str = r#"{"kind":"fixture","path":"/f.json"}"#;
+
+    #[test]
+    fn release_build_refuses_auto_approval() {
+        // Approving a pairing without any code comparison lets any local
+        // process pair with the host: test builds only.
+        assert!(check_build(&config(DEV, "auto"), true).is_err());
+        assert!(check_build(&config(DEV, "auto"), false).is_ok());
+        assert!(check_build(&config(DEV, "file"), true).is_ok());
+    }
+
+    #[test]
+    fn release_build_refuses_fixture_source() {
+        assert!(check_build(&config(FIXTURE, "file"), true).is_err());
+        assert!(check_build(&config(FIXTURE, "file"), false).is_ok());
+        assert!(check_build(&config(FIXTURE, "auto"), false).is_ok());
     }
 }
