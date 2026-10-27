@@ -107,6 +107,12 @@ export const MAX_SOURCE_CHARS = 200;
 export interface Term {
   re: RegExp;
   w: Weights;
+  /**
+   * Weights used instead of `w` when the field's form holds no other card
+   * field: an ambiguous "security code" is a card code next to a card number,
+   * a one-time code on its own.
+   */
+  alone?: Weights;
 }
 
 /**
@@ -159,8 +165,14 @@ export const TERMS: readonly Term[] = [
     w: { cc_name: 6, full_name: -3, family_name: -3 },
   },
   {
-    re: /\b(cvc|cvv|cvv2|cvc2|csc|cid|cryptogramme|crypto|security code|code de securite|card code|code de la carte|card verification)\b/,
+    re: /\b(cvc|cvv|cvv2|cvc2|csc|cid|cryptogramme|crypto|card code|code de la carte|card verification)\b/,
     w: { cc_csc: 6, otp: -6 },
+  },
+  // "Security code" names a card code in a card form and a one-time code elsewhere.
+  {
+    re: /\b(security code|code de securite|sicherheits ?code|codigo de seguridad|codice di sicurezza|codigo de seguranca|beveiligings ?code|veiligheids ?code)\b/,
+    w: { cc_csc: 6, otp: -6 },
+    alone: { otp: 6, cc_csc: -6 },
   },
   {
     re: /\b(expir\w*|exp|expiry|expires|valid thru|valid until|validite|date d expiration|date de validite)\b/,
@@ -208,6 +220,117 @@ export const TERMS: readonly Term[] = [
   { re: /\b(state|region|province|county|departement)\b/, w: { region: 4 } },
   { re: /\b(country|pays)\b/, w: { country: 5 } },
 
+  // German, Spanish, Italian, Portuguese and Dutch. Kept in terms of their own
+  // so that the French and English weights above stay as they are; the texts
+  // are normalized (accents stripped, "ß" read as "ss").
+
+  // Passwords.
+  {
+    re: /\b(kennwort|contrasena|senha|palavra passe|wachtwoord)\b/,
+    w: { current_password: 3, new_password: 1, confirm_password: 1 },
+  },
+  {
+    re: /\b(neu|neue|neues|neuer|neuen|erstellen|wahlen|nueva|nuevo|crea|crear|elige|nuova|nuovo|scegli|nova|novo|crie|criar|escolha|nieuw|nieuwe|kies|maak|aanmaken)\b/,
+    w: { new_password: 3, current_password: -3 },
+  },
+  {
+    re: /\b(bestatigen|bestatigung|wiederholen|erneut|confirmar|confirma|confirme|confirmacion|confirmacao|repetir|repite|repita|conferma|confermare|ripeti|ripetere|bevestig|bevestigen|herhaal|herhalen|opnieuw)\b/,
+    w: { confirm_password: 5, current_password: -4, new_password: -2 },
+  },
+  {
+    re: /\b(aktuell\w*|bisherig\w*|alte|altes|alten|actual|antigua|anterior|attuale|vecchia|atual|antiga|huidig\w*|oud|oude)\b/,
+    w: { current_password: 2, new_password: -2 },
+  },
+
+  // Identifiers, with the usual field names of identifier-only steps.
+  {
+    re: /\b(benutzer\w*|nutzername|anmeldename|kennung|usuario|identificador|utente|utilizador|gebruiker\w*|loginfmt|login ?fmt|uname|user(?! ?(name|id)\b))\b/,
+    w: { username: 3, given_name: -3, family_name: -3, full_name: -3 },
+  },
+  // "Email, phone or Skype": one field that takes any account identifier. Only
+  // an email first: "phone or email" stays a phone, "mobile phone" too.
+  {
+    re: /\b(e ?mail|correo|user ?name)( (or|ou|oder|o|of))? (phone|telephone|mobile|skype|telefon\w*|telefono|telefone|telefoon\w*)\b/,
+    w: { username: 6, tel: -6, email: -3 },
+  },
+  {
+    re: /\b(correo|correo electronico|correio eletronico|correio electronico|posta elettronica|e ?mailadres|e ?mail ?adres)\b/,
+    w: { email: 3, address_line1: -4 },
+  },
+
+  // One-time codes. "codigo" and "codice" alone are weak, like "code".
+  {
+    re: /\b(bestatigungscode|verifizierungscode|einmalcode|einmal ?kennwort|einmal ?passwort|verificacion|verificacao|verifica|verificatie ?code|verificatie|un solo uso|uso unico|eenmalig\w*|zwei faktor\w*|dos pasos|due fattori|dois fatores|tweestaps\w*|ziffern|digitos|cifre)\b/,
+    w: { otp: 3 },
+  },
+  { re: /\b(codigo|codice)\b/, w: { otp: 1.5 } },
+
+  // Cards.
+  {
+    re: /\b(kartennummer|kreditkartennummer|numero de (la )?tarjeta|numero (della |di )?carta|numero do cartao|numero de cartao|kaartnummer|creditcardnummer)\b/,
+    w: { cc_number: 5 },
+  },
+  {
+    re: /\b(karteninhaber\w*|name auf der karte|titular|nombre en la tarjeta|titolare|intestatario|nome sulla carta|nome no cartao|naam op (de )?kaart|kaarthouder)\b/,
+    w: { cc_name: 6, full_name: -3, family_name: -3, given_name: -3 },
+  },
+  { re: /\b(prufziffer|prufnummer|kartenprufnummer)\b/, w: { cc_csc: 6, otp: -6 } },
+  {
+    re: /\b(ablauf\w*|gultig bis|gultigkeit|caducidad|vencimiento|expiracion|scadenza|validade|vencimento|vervaldatum|geldig tot)\b/,
+    w: { cc_exp: 3, cc_exp_month: 1.5, cc_exp_year: 1.5 },
+  },
+  { re: /\b(monat|ablaufmonat|mes|mese|maand)\b/, w: { cc_exp_month: 3, cc_exp: -1 } },
+  { re: /\b(jahr|ablaufjahr|ano|anno|jaar|jj|jjjj)\b/, w: { cc_exp_year: 3, cc_exp: -1 } },
+  { re: /\b(mm ?(jj|jjjj))\b/, w: { cc_exp: 5, cc_exp_month: -4, cc_exp_year: -4 } },
+
+  // Identity. "nombre" and "nome" alone are weak, like "nom".
+  {
+    re: /\b(vorname|nombre de pila|primer nombre|primeiro nome|voornaam)\b/,
+    w: { given_name: 5, full_name: -3, family_name: -3 },
+  },
+  { re: /\b(nombre|nome)\b/, w: { given_name: 2.5 } },
+  {
+    re: /\b(nachname|familienname|apellido|apellidos|cognome|sobrenome|apelido|achternaam)\b/,
+    w: { family_name: 5, full_name: -3, given_name: -3 },
+  },
+  {
+    re: /\b(vollstandiger name|nombre completo|nombre y apellidos?|nome completo|nome e cognome|volledige naam)\b/,
+    w: { full_name: 8, given_name: -5, family_name: -8 },
+  },
+  {
+    re: /\b(telefon\w*|telefono|telefone|telefoon\w*|handy\w*|mobilnummer|mobiltelefon|movil|celular|cellulare|telemovel|mobiel\w*)\b/,
+    w: { tel: 5 },
+  },
+  {
+    re: /\b(firma|firmenname|unternehmen|empresa|compania|azienda|societa|organizacao|organizacion|organizzazione|bedrijf\w*|organisatie)\b/,
+    w: { organization: 5, full_name: -3, given_name: -3 },
+  },
+  {
+    re: /\b(geburtsdatum|geburtstag|nacimiento|cumpleanos|nascita|compleanno|nascimento|aniversario|geboortedatum|verjaardag)\b/,
+    w: { bday: 5, cc_exp: -3, cc_exp_month: -3, cc_exp_year: -3 },
+  },
+
+  // Address.
+  {
+    re: /\b(anschrift|strasse|hausnummer|direccion|calle|domicilio|indirizzo|endereco|morada|rua|straat|straatnaam|adres|linea ?1|riga ?1|linha ?1)\b/,
+    w: { address_line1: 3 },
+  },
+  {
+    re: /\b(adresszeile ?2|adresszusatz|zusatz|piso|puerta|escalera|linea ?2|interno|scala|riga ?2|complemento|apartamento|andar|linha ?2|toevoeging)\b/,
+    w: { address_line2: 6, address_line1: -4 },
+  },
+  { re: /\b(postleitzahl|codice postale|cap|cep)\b/, w: { postal_code: 5, otp: -5 } },
+  {
+    re: /\b(ort|wohnort|stadt|ciudad|localidad|poblacion|citta|localita|comune|cidade|localidade|plaats|woonplaats|stad)\b/,
+    w: { city: 5 },
+  },
+  { re: /\b(bundesland|provincia|estado|regione|distrito|provincie)\b/, w: { region: 4 } },
+  { re: /\b(land|pais|paese|nazione)\b/, w: { country: 5 } },
+  {
+    re: /\b(angemeldet bleiben|eingeloggt bleiben|merken|recordarme|recuerdame|mantener la sesion|ricordami|resta connesso|lembrar|manter sessao|mantenha me conectado|onthoud|ingelogd blijven|aangemeld blijven)\b/,
+    w: { remember_me: 5 },
+  },
+
   // "Remember me" (checkboxes only, see TYPE rules in fields.ts).
   {
     re: /\b(remember|stay signed|keep me|trust this|se souvenir|souviens|rester connecte|memoriser|faire confiance)\b/,
@@ -251,7 +374,7 @@ export const ATTRIBUTE_WEIGHTS = {
   digitPattern: { otp: 0.5 },
 } as const satisfies Record<string, Weights>;
 
-/** Lowercase, strip accents, split camelCase, keep only letters and digits. */
+/** Lowercase, strip accents, read "ß" as "ss", split camelCase, keep only letters and digits. */
 export function normalizeText(s: string): string {
   return s
     .slice(0, MAX_SOURCE_CHARS)
@@ -259,6 +382,7 @@ export function normalizeText(s: string): string {
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .toLowerCase()
+    .replace(/ß/g, "ss")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }

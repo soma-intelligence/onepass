@@ -279,3 +279,126 @@ describe("analyzeDocument: page signals", () => {
     expect(analyze("account-chooser.html").a.accountChooser).toEqual([]);
   });
 });
+
+/** Analyzes `body` under `title` at `url`; returns the analysis and its registry. */
+function analyzeHtml(body: string, url = SITE, title = "Atlas Cloud"): { a: PageAnalysis; refs: RefRegistry } {
+  document.documentElement.innerHTML = `<head><title>${title}</title></head><body>${body}</body>`;
+  const refs = new RefRegistry();
+  return { a: analyzeDocument(document, refs, { url, geometry: testGeometry }), refs };
+}
+
+describe("analyzeDocument: lab fixes (A2 to A4)", () => {
+  it("security_code_alone_is_otp", () => {
+    const { a, refs } = analyzeHtml(
+      '<h1>Two-step verification</h1><form id="f"><label for="code">Security code</label>' +
+        '<input id="code" name="code" type="text" inputmode="numeric"><button id="go" type="submit">Verify</button></form>',
+      "https://atlas-cloud.test/otp",
+      "Two-step verification",
+    );
+    expect(a.forms.map((f) => [f.kind, roles(f, refs)])).toEqual([["otp", { code: "otp" }]]);
+  });
+
+  it("security_code_alone_is_otp in other languages", () => {
+    for (const label of ["Sicherheitscode", "Código de seguridad", "Codice di sicurezza", "Code de sécurité"]) {
+      const { a, refs } = analyzeHtml(
+        `<form id="f"><label for="code">${label}</label><input id="code" name="x1" type="text"><button type="submit">OK</button></form>`,
+      );
+      expect(a.forms.map((f) => [f.kind, roles(f, refs)])).toEqual([["otp", { code: "otp" }]]);
+    }
+  });
+
+  it("security_code_with_card_fields_is_csc", () => {
+    for (const label of ["Security code", "Sicherheitscode", "Código de seguridad", "Code de sécurité"]) {
+      const { a, refs } = analyzeHtml(
+        '<form id="f"><label for="num">Card number</label><input id="num" name="a1" type="text">' +
+          '<label for="exp">Expiry date</label><input id="exp" name="a2" type="text">' +
+          `<label for="sc">${label}</label><input id="sc" name="a3" type="text">` +
+          '<button type="submit">Pay</button></form>',
+      );
+      expect(a.forms.map((f) => [f.kind, roles(f, refs)])).toEqual([
+        ["card", { num: "cc_number", exp: "cc_exp", sc: "cc_csc" }],
+      ]);
+    }
+  });
+
+  it("identifier_only_step_without_autocomplete", () => {
+    const { a, refs } = analyzeHtml(
+      '<h1>Sign in</h1><form id="f"><label for="i0116">Enter your email, phone, or Skype.</label>' +
+        '<input id="i0116" name="loginfmt" type="text"><button id="next" type="submit">Next</button></form>',
+      "https://login.atlas-cloud.test/",
+      "Sign in to your account",
+    );
+    expect(a.forms.map((f) => [f.kind, roles(f, refs), idOf(refs, f.submitRef)])).toEqual([
+      ["login", { i0116: "username" }, "next"],
+    ]);
+  });
+
+  it("identifier_only_step_without_autocomplete: usual names", () => {
+    for (const name of ["loginfmt", "identifier", "login", "user"]) {
+      const { a, refs } = analyzeHtml(
+        `<form id="f"><input id="u" name="${name}" type="text"><button type="submit">Continue</button></form>`,
+        "https://atlas-cloud.test/signin",
+      );
+      expect(a.forms.map((f) => [f.kind, roles(f, refs)])).toEqual([["login", { u: "username" }]]);
+    }
+  });
+
+  it("newsletter_single_field_is_not_login", () => {
+    const pages = [
+      '<form id="nl"><label for="e">Your email</label><input id="e" name="email" type="email"><button type="submit">Continue</button></form>',
+      '<form id="nl"><label for="e">E-mail</label><input id="e" name="newsletter" type="text"><button type="submit">Next</button></form>',
+      '<form id="s"><label for="q">Email or keyword</label><input id="q" name="q" type="text"><button type="submit">Continue</button></form>',
+    ];
+    for (const body of pages) {
+      const { a } = analyzeHtml(`<h1>Spring sale</h1>${body}`, "https://shop.atlas-cloud.test/deals", "Atlas Shop");
+      expect(a.forms).toEqual([]);
+    }
+  });
+
+  it("an identifier step with a sign-in button needs no sign-in page", () => {
+    const { a } = analyzeHtml(
+      '<form id="f"><label for="e">Email</label><input id="e" name="email" type="email"><button type="submit">Sign in</button></form>',
+      "https://atlas-cloud.test/",
+    );
+    expect(a.forms.map((f) => f.kind)).toEqual(["login"]);
+  });
+
+  it("an identifier step on a page with a forgot password link", () => {
+    const { a } = analyzeHtml(
+      '<form id="f"><label for="e">Email</label><input id="e" name="email" type="email"><button type="submit">Next</button></form>' +
+        '<a href="/reset">Forgot your password?</a>',
+      "https://atlas-cloud.test/",
+    );
+    expect(a.forms.map((f) => f.kind)).toEqual(["login"]);
+  });
+
+  it("split_otp_six_cells", () => {
+    const cells = Array.from(
+      { length: 6 },
+      (_, k) => `<input type="text" class="otp-cell" id="x-${k + 1}" inputmode="numeric" maxlength="1" aria-label="${k + 1}/6">`,
+    ).join("");
+    const { a, refs } = analyzeHtml(
+      `<form id="f"><div class="field"><label for="x-1">Bestätigungscode</label><div class="otp-cells">${cells}</div>` +
+        '<input type="hidden" id="x" name="q7x"></div><button type="submit">Bestätigen</button></form>',
+      "https://atlas-cloud.test/otp",
+    );
+    expect(a.forms).toHaveLength(1);
+    const f = a.forms[0]!;
+    expect(f.kind).toBe("otp");
+    expect(f.fields.map((x) => [x.role, x.parts?.map((r) => idOf(refs, r))])).toEqual([
+      ["otp", ["x-1", "x-2", "x-3", "x-4", "x-5", "x-6"]],
+    ]);
+  });
+
+  it("split_otp_four_cells", () => {
+    const { a, refs } = analyzeHtml(
+      '<div id="box"><p>Enter the code</p>' +
+        [1, 2, 3, 4].map((i) => `<span><input id="d${i}" type="tel" maxlength="1"></span>`).join("") +
+        '<button type="button">Verify</button></div>',
+      "https://atlas-cloud.test/otp",
+    );
+    expect(a.forms.map((f) => [f.kind, f.fields.map((x) => [x.role, x.parts?.map((r) => idOf(refs, r))])])).toEqual([
+      ["otp", [["otp", ["d1", "d2", "d3", "d4"]]]],
+    ]);
+  });
+});
