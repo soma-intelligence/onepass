@@ -114,9 +114,11 @@ impl Session {
         self.with(|repo| Ok(repo.issue_restore_epoch_take_server()?.epoch))
     }
 
-    /// The restore epoch this device accepted last, `None` before any.
+    /// The restore epoch this device accepted last, `None` before any (or
+    /// while locked). A plain read of the device state under the lock: it
+    /// writes nothing, so no store error can turn into a silent `None`.
     pub fn restore_epoch(&self) -> Option<u64> {
-        self.with(|repo| Ok(repo.restore_epoch())).ok().flatten()
+        self.guard().as_ref().and_then(|repo| repo.restore_epoch())
     }
 
     /// The sync health of every vault, in vault id order.
