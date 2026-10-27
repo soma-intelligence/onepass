@@ -88,7 +88,11 @@ final class OnboardingAndItemUITests: XCTestCase {
         // goes away: never save a vault secret in the system password manager.
         // Milestone 2 limit, gone in milestone 3 (OnePass becomes the AutoFill provider).
         let notNow = app.buttons.matching(NSPredicate(format: "label IN %@", ["Not Now", "Pas maintenant"])).firstMatch
-        if notNow.waitForExistence(timeout: 3) { notNow.tap() }
+        // iOS 27 can raise the sheet a second time right after the first is dismissed.
+        for _ in 0..<3 where notNow.waitForExistence(timeout: 3) {
+            notNow.tap()
+            _ = notNow.waitForNonExistence(timeout: 3)
+        }
         let search = tabButton(app, id: "tab.search", label: "Rechercher")
         tap(search)
         XCTAssertTrue(row(app).waitForExistence(timeout: Self.uiTimeout), "row missing after save")
