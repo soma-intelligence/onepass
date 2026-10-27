@@ -5,9 +5,12 @@
 //
 // Also kept, for the chain and its overlay (spec C1): the last analysis of
 // each child frame that shows forms, with the origin and document the
-// browser reported in `sender`. Whether such a frame may be acted on (exactly
-// the top frame's origin, still that document) is decided by the reader
-// against `webNavigation`, never here.
+// browser reported in `sender`, not when it has another origin than the top
+// frame's last analysis (so other-origin frames cannot crowd the cap). Whether
+// such a frame may be acted on (exactly the top frame's origin up to frame 0,
+// still that document) is decided by the reader against `webNavigation`,
+// never here. Changes of a tab are serialized: two analyses read and write
+// the stored list one after the other, also after a worker restart.
 import type { PageAnalysis } from "../shared/messages";
 import type { BgExt, StorageArea } from "./ext";
 import type { CsContext } from "./frames";
@@ -49,6 +52,7 @@ function parseFrames(raw: unknown): FrameAnalysis[] {
 export class PageAnalyses {
   private readonly mem = new Map<number, TopAnalysis>();
   private readonly kids = new Map<number, FrameAnalysis[]>();
+  private readonly queues = new Map<number, Promise<unknown>>();
   private readonly listeners = new Set<(a: PageAnalysis, from: CsContext) => void>();
 
   constructor(private readonly area: StorageArea) {}
@@ -56,7 +60,7 @@ export class PageAnalyses {
   install(ext: Pick<BgExt, "webNavigation" | "tabs">): void {
     ext.webNavigation.onCommitted.addListener((d) => {
       if (d.frameId === 0) void this.drop(d.tabId);
-      else void this.dropFrame(d.tabId, d.frameId);
+      else void this.serial(d.tabId, () => this.dropFrame(d.tabId, d.frameId));
     });
     ext.tabs.onRemoved.addListener((tabId) => void this.drop(tabId));
   }
@@ -66,20 +70,27 @@ export class PageAnalyses {
   }
 
   async record(a: PageAnalysis, from: CsContext): Promise<void> {
-    if (from.frameId === 0) {
-      const top: TopAnalysis = { tabId: from.tabId, origin: from.origin, analysis: a };
-      if (from.documentId !== undefined) top.documentId = from.documentId;
-      this.mem.set(from.tabId, top);
-      await this.area.set({ [PREFIX + from.tabId]: top });
-    } else {
-      const list = (await this.children(from.tabId)).filter((x) => x.frameId !== from.frameId);
-      if (a.forms.length > 0 && list.length < MAX_FRAMES) {
+    await this.serial(from.tabId, async () => {
+      if (from.frameId === 0) {
+        const top: TopAnalysis = { tabId: from.tabId, origin: from.origin, analysis: a };
+        if (from.documentId !== undefined) top.documentId = from.documentId;
+        this.mem.set(from.tabId, top);
+        await this.area.set({ [PREFIX + from.tabId]: top });
+        // Children recorded before the top frame's analysis, of another origin: dropped.
+        const list = await this.load(from.tabId);
+        if (list.some((x) => x.origin !== from.origin)) await this.saveFrames(from.tabId, list.filter((x) => x.origin === from.origin));
+        return;
+      }
+      const list = (await this.load(from.tabId)).filter((x) => x.frameId !== from.frameId);
+      const topOrigin = (await this.top(from.tabId))?.origin;
+      const ofTop = topOrigin === undefined || topOrigin === from.origin;
+      if (a.forms.length > 0 && ofTop && list.length < MAX_FRAMES) {
         const f: FrameAnalysis = { frameId: from.frameId, origin: from.origin, analysis: a };
         if (from.documentId !== undefined) f.documentId = from.documentId;
         list.push(f);
       }
       await this.saveFrames(from.tabId, list);
-    }
+    });
     for (const l of this.listeners) l(a, from);
   }
 
@@ -93,6 +104,10 @@ export class PageAnalyses {
 
   /** The child frames of a tab that last showed forms, in frame order. */
   async children(tabId: number): Promise<FrameAnalysis[]> {
+    return this.serial(tabId, () => this.load(tabId));
+  }
+
+  private async load(tabId: number): Promise<FrameAnalysis[]> {
     const m = this.kids.get(tabId);
     if (m) return [...m];
     const list = parseFrames((await this.area.get(FRAMES_PREFIX + tabId))[FRAMES_PREFIX + tabId]);
@@ -101,14 +116,27 @@ export class PageAnalyses {
   }
 
   async drop(tabId: number): Promise<void> {
-    this.mem.delete(tabId);
-    this.kids.delete(tabId);
-    await this.area.remove([PREFIX + tabId, FRAMES_PREFIX + tabId]);
+    await this.serial(tabId, async () => {
+      this.mem.delete(tabId);
+      this.kids.delete(tabId);
+      await this.area.remove([PREFIX + tabId, FRAMES_PREFIX + tabId]);
+    });
   }
 
   private async dropFrame(tabId: number, frameId: number): Promise<void> {
-    const list = await this.children(tabId);
+    const list = await this.load(tabId);
     if (list.some((x) => x.frameId === frameId)) await this.saveFrames(tabId, list.filter((x) => x.frameId !== frameId));
+  }
+
+  private serial<T>(tabId: number, fn: () => Promise<T>): Promise<T> {
+    const prev = this.queues.get(tabId) ?? Promise.resolve();
+    const next = prev.then(fn, fn);
+    const settled = next.catch(() => undefined);
+    this.queues.set(tabId, settled);
+    void settled.then(() => {
+      if (this.queues.get(tabId) === settled) this.queues.delete(tabId);
+    });
+    return next;
   }
 
   private async saveFrames(tabId: number, list: FrameAnalysis[]): Promise<void> {

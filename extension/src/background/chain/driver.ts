@@ -65,7 +65,7 @@ export interface ChainDeps {
   /** `storage.local`: the auto-submit preference (R-12). */
   local: StorageArea;
   session: Pick<Session, "request">;
-  frames: Pick<Frames, "frameOrigin" | "checkFillTarget" | "details">;
+  frames: Pick<Frames, "frameOrigin" | "checkFillTarget" | "details" | "ancestorsOfOrigin">;
   filler: Pick<Filler, "fillLogin" | "fillProvider">;
   analyses: Pick<PageAnalyses, "top" | "children" | "onAnalysis">;
   overlays: OverlayPort;
@@ -260,7 +260,8 @@ export class ChainRunner implements ChainDriver {
    * in with `provider`, if any); else the first child frame of exactly the
    * top frame's origin whose analysis holds a sign-in or code form, its
    * origin and document read again from
-   * `webNavigation` (an analysis of a document since replaced is ignored);
+   * `webNavigation` (an analysis of a document since replaced is ignored),
+   * every frame above it up to the top frame of that origin too;
    * else the top frame's. A CAPTCHA or push prompt of the top frame still
    * counts with a child frame's form.
    */
@@ -280,6 +281,8 @@ export class ChainRunner implements ChainDriver {
         if (c.origin !== p.origin || !c.analysis.forms.some(isChainForm)) continue;
         const cf = await this.deps.frames.details(tabId, c.frameId);
         if (!cf || parseOrigin(cf.url)?.origin !== c.origin || !sameDoc(c.documentId, cf.documentId)) continue;
+        // Nested: every frame between it and the top frame has the same origin.
+        if (!(await this.deps.frames.ancestorsOfOrigin(tabId, c.frameId, p.origin))) continue;
         const cs: CsContext = { tabId, frameId: c.frameId, origin: c.origin };
         const cdoc = c.documentId ?? cf.documentId;
         if (cdoc !== undefined) cs.documentId = cdoc;

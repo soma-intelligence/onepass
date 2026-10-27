@@ -1,6 +1,6 @@
 // In-memory WebExtension API for background tests: runtime messaging,
 // native ports, tabs, webNavigation and storage areas.
-import type { BgExt, FrameDetails, MessageListener, NativePort, Sender, StorageArea } from "../../src/background/ext";
+import type { BgExt, FrameDetails, FrameNode, MessageListener, NativePort, Sender, StorageArea } from "../../src/background/ext";
 
 export const EXT_ID = "onepassextensionid";
 export const EXT_ORIGIN = `chrome-extension://${EXT_ID}/`;
@@ -69,6 +69,8 @@ export class FakeExt implements BgExt {
   readonly ports: FakePort[] = [];
   connectNativeError: Error | undefined;
   readonly frames = new Map<string, FrameDetails>();
+  /** Parent of a child frame (`tabId:frameId`); 0 when not set. */
+  readonly parents = new Map<string, number>();
   readonly sentToTabs: SentToTab[] = [];
   readonly onRemoved = new Emitter<(tabId: number) => void>();
   readonly onCommitted = new Emitter<(d: { tabId: number; frameId: number; url: string }) => void>();
@@ -106,6 +108,15 @@ export class FakeExt implements BgExt {
     getFrame: async ({ tabId, frameId }) => {
       const f = this.frames.get(`${tabId}:${frameId}`);
       return f ? { ...f } : null;
+    },
+    getAllFrames: async ({ tabId }) => {
+      const out: FrameNode[] = [];
+      for (const [k, f] of this.frames) {
+        const [t, id] = k.split(":").map(Number) as [number, number];
+        if (t !== tabId) continue;
+        out.push({ ...f, frameId: id, parentFrameId: id === 0 ? -1 : (this.parents.get(k) ?? 0) });
+      }
+      return out;
     },
     onCommitted: this.onCommitted,
     onCompleted: this.onCompleted,

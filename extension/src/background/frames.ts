@@ -5,7 +5,7 @@
 // renderer controls every message field, never `sender` (spec 3). Before
 // every fill the target frame is read again from `webNavigation` (spec 8.4).
 import { parseOrigin, sameSite } from "../shared/domain";
-import type { BgExt, FrameDetails, Sender } from "./ext";
+import type { BgExt, FrameDetails, FrameNode, Sender } from "./ext";
 
 /** A content script sender, as vouched for by the browser. */
 export interface CsContext {
@@ -70,7 +70,7 @@ export type FillRefusal = "insecure_origin" | "origin_mismatch" | "cross_site_fr
 export type FillCheck = { ok: true } | { ok: false; code: FillRefusal };
 
 export class Frames {
-  constructor(private readonly nav: Pick<BgExt["webNavigation"], "getFrame">) {}
+  constructor(private readonly nav: Pick<BgExt["webNavigation"], "getFrame" | "getAllFrames">) {}
 
   private async frame(tabId: number, frameId: number): Promise<FrameDetails | null> {
     try {
@@ -85,6 +85,30 @@ export class Frames {
   /** A frame as the browser reports it now (URL, documentId where supported), or null. */
   async details(tabId: number, frameId: number): Promise<FrameDetails | null> {
     return this.frame(tabId, frameId);
+  }
+
+  /**
+   * Spec C1: every frame from `frameId` up to the top frame, as the browser
+   * reports them now, has exactly `origin`. A frame of the site nested in a
+   * third-party frame does not pass. Unknown frames or a loop: false.
+   */
+  async ancestorsOfOrigin(tabId: number, frameId: number, origin: string): Promise<boolean> {
+    let all: FrameNode[] | null;
+    try {
+      all = await this.nav.getAllFrames({ tabId });
+    } catch {
+      return false;
+    }
+    if (!all) return false;
+    const byId = new Map(all.map((f) => [f.frameId, f]));
+    let id = frameId;
+    for (let hops = 0; hops <= all.length; hops++) {
+      const f = byId.get(id);
+      if (!f || parseOrigin(f.url)?.origin !== origin) return false;
+      if (id === 0) return true;
+      id = f.parentFrameId;
+    }
+    return false;
   }
 
   /** Current origin of a frame, or null (gone, about:, data:, ...). */

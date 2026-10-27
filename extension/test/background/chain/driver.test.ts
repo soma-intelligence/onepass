@@ -457,6 +457,44 @@ describe("same-origin frames (C1)", () => {
     expect(toTab(t, "fill").at(-1)).toMatchObject({ formRef: "f1", opts: { documentId: "fdoc-1" } });
   });
 
+  it("a frame of the site nested in a third-party frame is excluded; nested in a frame of the site, it counts", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    t.ext.setFrame(7, 5, "https://widgets.evil.test/embed", "wdoc");
+    t.ext.parents.set("7:6", 5);
+    await analyzeFrame(t, 6, `${SITE}/frame`, page(`${SITE}/frame`, [loginForm]), "fdoc-1");
+    expect(overlays(t)).toEqual([]);
+    await t.runner.start(7, "it_01");
+    expect(ops(t)).not.toContain("fill_login");
+    expect(toTab(t, "fill")).toEqual([]);
+    // The middle frame is of the site: the nested form counts.
+    const u = await setup();
+    await analyze(u, `${SITE}/login`, page(`${SITE}/login`));
+    u.ext.setFrame(7, 5, `${SITE}/shell`, "sdoc");
+    u.ext.parents.set("7:6", 5);
+    await analyzeFrame(u, 6, `${SITE}/frame`, page(`${SITE}/frame`, [loginForm]), "fdoc-1");
+    expect(overlays(u)).toHaveLength(1);
+  });
+
+  it("a frame that moves to another origin while the host answers gets no fill", async () => {
+    let t: T | null = null;
+    t = await setup(
+      answerWith({
+        fill_login: () => {
+          t?.ext.setFrame(7, 3, "https://evil.test/frame", "edoc");
+          return { username: "alex@atlas.dev", password: "Atlas-Pass-1" };
+        },
+      }),
+    );
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    await analyzeFrame(t, 3, `${SITE}/frame`, page(`${SITE}/frame`, [loginForm]), "fdoc-1");
+    await t.runner.start(7, "it_01");
+    expect(ops(t)).toContain("fill_login");
+    expect(toTab(t, "fill")).toEqual([]);
+    expect(toTab(t, "submit")).toEqual([]);
+    expect(JSON.stringify(t.ext.sentToTabs)).not.toContain("Atlas-Pass-1");
+  });
+
   it("a frame whose document changed since its analysis is not acted on", async () => {
     const t = await setup();
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
