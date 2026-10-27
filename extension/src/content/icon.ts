@@ -1,7 +1,8 @@
-// In-field icon (spec 8.3): a 20 px accent glyph at the right edge of each
+// In-field icon (spec 8.3): a 20 px indigo tile with the keyhole mark at the right edge of each
 // fillable field, inside the closed shadow root. A click opens the menu only
 // when the browser vouches for it (`isTrusted`): a page cannot open the menu
 // with a synthetic click (S2).
+import { tr } from "../shared/i18n";
 import type { FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
 import type { RefRegistry } from "./detect/refs";
 import type { Geometry } from "./detect/visibility";
@@ -54,19 +55,17 @@ export interface Icons {
 }
 
 function glyph(doc: Document): SVGElement {
-  // Same key glyph as the Inline mockup.
+  // The OnePass mark: a white keyhole on the indigo tile (as in the app).
   const svg = doc.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 12 12");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "1.6");
+  svg.setAttribute("fill", "currentColor");
   svg.setAttribute("aria-hidden", "true");
   const circle = doc.createElementNS(SVG_NS, "circle");
   circle.setAttribute("cx", "6");
   circle.setAttribute("cy", "4.6");
-  circle.setAttribute("r", "2");
+  circle.setAttribute("r", "2.3");
   const path = doc.createElementNS(SVG_NS, "path");
-  path.setAttribute("d", "M6 6.6v3.2M6 8.4h1.4");
+  path.setAttribute("d", "M5.2 6.2h1.6l.7 3.6H4.5z");
   svg.append(circle, path);
   return svg;
 }
@@ -81,7 +80,7 @@ export function createIcons(opts: IconsOptions): Icons {
     const icon = doc.createElement("div");
     icon.className = "icon";
     icon.setAttribute("role", "button");
-    icon.setAttribute("aria-label", "Ouvrir le menu OnePass");
+    icon.setAttribute("aria-label", tr("Ouvrir le menu OnePass", "Open the OnePass menu"));
     icon.appendChild(glyph(doc));
     // Keep the focus in the field.
     icon.addEventListener("mousedown", (e) => e.preventDefault());

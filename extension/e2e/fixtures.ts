@@ -139,6 +139,8 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           `--load-extension=${extPath}`,
           `--host-resolver-rules=MAP * 127.0.0.1:${server.port}, EXCLUDE localhost`,
           `--ignore-certificate-errors-spki-list=${cert.spki}`,
+          // The extension follows the browser's UI language; the specs read French.
+          "--lang=fr-FR",
           "--no-first-run",
           "--no-default-browser-check",
           "--disable-sync",

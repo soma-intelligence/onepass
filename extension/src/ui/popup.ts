@@ -1,8 +1,10 @@
-// Toolbar popup (spec 8.8, Extension mockup): pairing, locked and missing
-// host states, suggestions for the active tab, search, item detail with
-// reveal and TOTP, "Remplir", the generator with its history, and
-// "Oublier cet appairage" (spec 6.4) from the main and locked views.
+// Toolbar popup (spec 8.8, Extension mockup, Mac app design language):
+// pairing, locked and missing host states, suggestions for the active tab,
+// search, item detail with copy buttons, reveal and a TOTP countdown ring,
+// "Remplir", the generator with its history, and "Oublier cet appairage"
+// (spec 6.4) from the main and locked views.
 import { ext } from "../shared/browser";
+import { tr } from "../shared/i18n";
 import type { GeneratorEntry, GeneratorKind, PopupStatus, Summary } from "../shared/ui";
 import {
   type Send,
@@ -11,11 +13,11 @@ import {
   errorText,
   h,
   icon,
+  itemArt,
   mark,
   mount,
   realTimers,
   srOnly,
-  tile,
 } from "./components";
 import {
   parseEmpty,
@@ -48,12 +50,31 @@ export interface PopupHandle {
 const MASK = "••••••••••••";
 const TOAST_MS = 1600;
 const SEARCH_DEBOUNCE_MS = 150;
+/** TOTP period drawn by the ring (the bridge sends the seconds left only). */
+const TOTP_PERIOD = 30;
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 export const GENERATOR_TYPES: readonly { kind: GeneratorKind; label: string; help: string }[] = [
-  { kind: "smart", label: "Intelligent", help: "Un mot de passe fort, lisible et facile à saisir." },
-  { kind: "random", label: "Aléatoire", help: "Caractères tirés au hasard par le générateur sécurisé du système." },
-  { kind: "memorable", label: "Mémorisable", help: "Des mots faciles à taper, difficiles à deviner." },
-  { kind: "pin", label: "Code PIN", help: "Des chiffres seulement, pour les codes et les cadenas." },
+  {
+    kind: "smart",
+    label: tr("Intelligent", "Smart"),
+    help: tr("Un mot de passe fort, lisible et facile à saisir.", "A strong password that is easy to read and type."),
+  },
+  {
+    kind: "random",
+    label: tr("Aléatoire", "Random"),
+    help: tr("Caractères tirés au hasard par le générateur sécurisé du système.", "Characters drawn by the system's secure generator."),
+  },
+  {
+    kind: "memorable",
+    label: tr("Mémorisable", "Memorable"),
+    help: tr("Des mots faciles à taper, difficiles à deviner.", "Words that are easy to type and hard to guess."),
+  },
+  {
+    kind: "pin",
+    label: tr("Code PIN", "PIN code"),
+    help: tr("Des chiffres seulement, pour les codes et les cadenas.", "Digits only, for codes and locks."),
+  },
 ];
 
 /** "703083" -> "703 083". */
@@ -68,8 +89,50 @@ function initials(account: string): string {
   return letters.toUpperCase() || "OP";
 }
 
+/** Strength in words from the generator's entropy. */
+function strengthText(bits: number): string {
+  if (bits < 40) return tr("Faible", "Weak");
+  if (bits < 60) return tr("Correct", "Fair");
+  if (bits < 80) return tr("Fort", "Strong");
+  return tr("Très fort", "Very strong");
+}
+
+/** Countdown ring of a one-time code (the app's TotpCountdown). */
+function ring(): { el: SVGSVGElement; set: (remaining: number) => void } {
+  const r = 6.5;
+  const c = 2 * Math.PI * r;
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "16");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("class", "ring");
+  const mk = (cls: string) => {
+    const el = document.createElementNS(SVG_NS, "circle");
+    el.setAttribute("cx", "8");
+    el.setAttribute("cy", "8");
+    el.setAttribute("r", String(r));
+    el.setAttribute("fill", "none");
+    el.setAttribute("stroke-width", "2");
+    el.setAttribute("class", cls);
+    svg.appendChild(el);
+    return el;
+  };
+  mk("track");
+  const arc = mk("arc");
+  arc.setAttribute("stroke-linecap", "round");
+  arc.setAttribute("stroke-dasharray", c.toFixed(2));
+  const set = (remaining: number) => {
+    const f = Math.min(Math.max(remaining / TOTP_PERIOD, 0), 1);
+    arc.setAttribute("stroke-dashoffset", (c * (1 - f)).toFixed(2));
+  };
+  set(0);
+  return { el: svg, set };
+}
+
 export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   const timers = deps.timers ?? realTimers;
+  const copyText = deps.copy ?? ((t: string) => navigator.clipboard.writeText(t));
   const container = h("div", { class: "pp" });
   mount(root, container);
   let pending: Promise<unknown> = Promise.resolve();
@@ -78,36 +141,59 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     return p;
   };
 
-  // ---- toast ----
+  // ---- toast: green check or red triangle ----
   let toastEl: HTMLElement | null = null;
   let toastTimer: unknown = null;
-  const toast = (text: string) => {
+  const toast = (text: string, tone: "ok" | "error" = "ok") => {
     toastEl?.remove();
     if (toastTimer !== null) timers.clearTimeout(toastTimer);
-    const el = h("div", { class: "toast", attrs: { role: "status" } }, text);
+    const el = h(
+      "div",
+      { class: `toast ${tone}`, attrs: { role: tone === "error" ? "alert" : "status" } },
+      h("span", { class: "toast-mark", attrs: { "aria-hidden": "true" } }, icon(tone === "ok" ? "check" : "alert", tone === "ok" ? 11 : 18)),
+      h("span", null, text),
+    );
     toastEl = el;
     container.append(el);
     toastTimer = timers.setTimeout(() => el.remove(), TOAST_MS);
   };
+  const copy = (value: string, done: string) =>
+    copyText(value).then(
+      () => toast(done),
+      () => toast(tr("Copie impossible", "Could not copy"), "error"),
+    );
 
   const button = (label: string, cls: string, fn: () => void, attrs: Record<string, string> = {}) =>
     h("button", { class: cls, attrs: { type: "button", ...attrs }, on: { click: () => fn() } }, label);
+  const iconButton = (label: string, glyph: Parameters<typeof icon>[0], fn: () => void, size = 15) =>
+    h("button", { class: "btn-icon", attrs: { type: "button", "aria-label": label, title: label }, on: { click: () => fn() } }, icon(glyph, size));
 
   // ---- full-page states ----
   const center = (...children: (Node | null)[]) => mount(container, h("div", { class: "center" }, ...children));
 
   function renderUnpaired(err?: string): void {
     center(
-      mark("m"),
-      h("h1", null, "OnePass n'est pas appairé"),
-      h("p", null, "Relie cette extension à l'app OnePass de cet ordinateur pour remplir tes logins."),
-      button("Appairer avec OnePass", "btn btn-primary", () => void track(startPairing())),
+      mark("l"),
+      h("h1", null, tr("OnePass n'est pas appairé", "OnePass is not paired")),
+      h(
+        "p",
+        null,
+        tr(
+          "Relie cette extension à l'app OnePass de cet ordinateur pour remplir tes logins.",
+          "Link this extension to the OnePass app on this computer to fill your logins.",
+        ),
+      ),
+      h("div", { class: "actions" }, button(tr("Appairer avec OnePass", "Pair with OnePass"), "btn btn-primary", () => void track(startPairing()))),
       err ? h("p", { class: "error-line", attrs: { role: "alert" } }, err) : null,
     );
   }
 
   async function startPairing(): Promise<void> {
-    center(mark("m"), h("h1", null, "Appairage…"), h("p", null, "Ouvre l'app OnePass si elle ne l'est pas."));
+    center(
+      mark("l"),
+      h("h1", null, tr("Appairage…", "Pairing…")),
+      h("p", null, tr("Ouvre l'app OnePass si elle ne l'est pas.", "Open the OnePass app if it is not open.")),
+    );
     const r = await call(deps.send, { type: "popup_pair_start" }, parseSas);
     if (!r.ok) {
       if (r.code === "host_missing") renderHostMissing();
@@ -115,17 +201,18 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       return;
     }
     center(
-      h("h1", null, "Compare les codes"),
-      h("p", null, "Le même code doit s'afficher dans l'app OnePass."),
-      h("div", { class: "sas", attrs: { "aria-label": "Code d'appairage" } }, r.value.sas),
+      mark("l"),
+      h("h1", null, tr("Compare les codes", "Compare the codes")),
+      h("p", null, tr("Le même code doit s'afficher dans l'app OnePass.", "The OnePass app must show the same code.")),
+      h("div", { class: "sas", attrs: { "aria-label": tr("Code d'appairage", "Pairing code") } }, r.value.sas),
       h(
         "div",
         { class: "actions" },
-        button("Annuler", "btn", () => {
+        button(tr("Annuler", "Cancel"), "btn", () => {
           void call(deps.send, { type: "popup_pair_cancel" }, parseEmpty);
           renderUnpaired();
         }),
-        button("Les codes sont identiques", "btn btn-primary", () => void track(approve())),
+        button(tr("Les codes sont identiques", "The codes match"), "btn btn-primary", () => void track(approve())),
       ),
     );
   }
@@ -139,20 +226,20 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     await load();
   }
 
-  const forgetButton = () => button("Oublier cet appairage", "btn-link", () => confirmForget());
+  const forgetButton = () => button(tr("Oublier cet appairage", "Forget this pairing"), "btn-link", () => confirmForget());
 
   /** Confirmation step; "Annuler" goes back to the current state. */
   function confirmForget(): void {
     stopTotp();
     center(
-      mark("m"),
-      h("h1", null, "Oublier cet appairage ?"),
-      h("p", null, "Il faudra appairer à nouveau."),
+      mark("l"),
+      h("h1", null, tr("Oublier cet appairage ?", "Forget this pairing?")),
+      h("p", null, tr("Il faudra appairer à nouveau.", "You will have to pair again.")),
       h(
         "div",
         { class: "actions" },
-        button("Annuler", "btn", () => void track(load())),
-        button("Oublier", "btn btn-primary", () => void track(forget())),
+        button(tr("Annuler", "Cancel"), "btn", () => void track(load())),
+        button(tr("Oublier", "Forget"), "btn btn-primary", () => void track(forget())),
       ),
     );
   }
@@ -169,15 +256,20 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
   function renderLocked(): void {
     center(
-      mark("m"),
-      h("h1", null, "OnePass est verrouillé"),
-      button("Déverrouiller dans OnePass", "btn btn-primary", () =>
-        void track(
-          call(deps.send, { type: "popup_unlock" }, parseLocked).then((r) => {
-            if (r.ok && !r.value.locked) return load();
-            if (!r.ok) toast(errorText(r.code));
-            return undefined;
-          }),
+      mark("l"),
+      h("h1", null, tr("OnePass est verrouillé", "OnePass is locked")),
+      h("p", null, tr("Déverrouille l'app pour voir et remplir tes logins.", "Unlock the app to see and fill your logins.")),
+      h(
+        "div",
+        { class: "actions" },
+        button(tr("Déverrouiller dans OnePass", "Unlock in OnePass"), "btn btn-primary", () =>
+          void track(
+            call(deps.send, { type: "popup_unlock" }, parseLocked).then((r) => {
+              if (r.ok && !r.value.locked) return load();
+              if (!r.ok) toast(errorText(r.code), "error");
+              return undefined;
+            }),
+          ),
         ),
       ),
       forgetButton(),
@@ -186,15 +278,19 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
   function renderHostMissing(): void {
     center(
-      mark("m"),
-      h("h1", null, "App OnePass introuvable"),
-      h("p", null, "Installe ou ouvre l'app OnePass sur cet ordinateur, puis réessaie."),
-      button("Réessayer", "btn btn-primary", () => void track(load())),
+      mark("l"),
+      h("h1", null, tr("App OnePass introuvable", "OnePass app not found")),
+      h("p", null, tr("Installe ou ouvre l'app OnePass sur cet ordinateur, puis réessaie.", "Install or open the OnePass app on this computer, then try again.")),
+      h("div", { class: "actions" }, button(tr("Réessayer", "Try again"), "btn btn-primary", () => void track(load()))),
     );
   }
 
   function renderError(code: string): void {
-    center(mark("m"), h("h1", null, errorText(code)), button("Réessayer", "btn btn-primary", () => void track(load())));
+    center(
+      mark("l"),
+      h("h1", null, errorText(code)),
+      h("div", { class: "actions" }, button(tr("Réessayer", "Try again"), "btn btn-primary", () => void track(load()))),
+    );
   }
 
   // ---- main view ----
@@ -206,8 +302,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   let view: "detail" | "gen" | "none" = "none";
   let totpTimer: unknown = null;
   let searchTimer: unknown = null;
-  const side = h("div", { class: "pp-side" });
-  const main = h("div", { class: "pp-main" });
+  const side = h("aside", { class: "pp-side glass" });
+  const main = h("section", { class: "pp-main" });
 
   const stopTotp = () => {
     if (totpTimer !== null) timers.clearInterval(totpTimer);
@@ -215,41 +311,69 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   };
 
   function renderMain(): void {
+    const placeholder = tr("Rechercher dans OnePass", "Search OnePass");
     const input = h("input", {
-      attrs: { type: "search", placeholder: "Rechercher dans OnePass", "aria-label": "Rechercher dans OnePass", maxlength: "256" },
+      attrs: { type: "search", placeholder, "aria-label": placeholder, maxlength: "256" },
     });
     input.addEventListener("input", () => {
       if (searchTimer !== null) timers.clearTimeout(searchTimer);
       const q = input.value;
       searchTimer = timers.setTimeout(() => void track(search(q)), SEARCH_DEBOUNCE_MS);
     });
+    const genLabel = tr("Générateur de mot de passe", "Password generator");
     const genBtn = h(
       "button",
       {
-        class: `btn-icon${view === "gen" ? " on" : ""}`,
-        attrs: { type: "button", "aria-label": "Générateur de mot de passe" },
+        class: `btn-icon gen-toggle${view === "gen" ? " on" : ""}`,
+        attrs: { type: "button", "aria-label": genLabel, title: genLabel },
         on: { click: () => void track(openGenerator()) },
       },
       icon("key", 18),
     );
+    const account = status?.account ?? "";
     mount(
       container,
       h(
         "div",
         { class: "pp-head" },
-        h("span", { class: "account" }, h("span", { class: "avatar", attrs: { "aria-hidden": "true" } }, initials(status?.account ?? "")), status?.account ?? ""),
-        h("label", { class: "search" }, icon("search", 14), input),
+        h("span", { class: "brand" }, mark("m"), "OnePass"),
+        h("label", { class: "search glass" }, icon("search", 14), input),
         genBtn,
+        h("span", { class: "account", attrs: { title: account } }, h("span", { class: "avatar", attrs: { "aria-hidden": "true" } }, initials(account)), h("span", null, account)),
       ),
       h("div", { class: "pp-body" }, side, main),
     );
     renderSide();
-    if (view === "none") mount(main, h("div", { class: "center" }, h("p", null, "Choisis un élément ou ouvre le générateur.")));
+    if (view === "none") renderIdleMain();
+  }
+
+  function renderIdleMain(): void {
+    mount(
+      main,
+      h(
+        "div",
+        { class: "center" },
+        h("h2", null, tr("Choisis un élément", "Pick an item")),
+        h("p", null, tr("Ou ouvre le générateur pour créer un mot de passe.", "Or open the generator to make a password.")),
+      ),
+    );
   }
 
   function renderSide(): void {
-    const list = h("div", { class: "pp-list", attrs: { role: "listbox", "aria-label": results ? "Résultats" : "Suggestions" } });
     const items = results ?? suggestions;
+    let title: string;
+    let empty: string | null = null;
+    if (results) {
+      title = tr("Résultats", "Results");
+      if (items.length === 0) empty = tr("Aucun résultat", "No results");
+    } else if (domain) {
+      title = tr(`Suggestions pour ${domain}`, `Suggestions for ${domain}`);
+      if (items.length === 0) empty = tr(`Aucun login pour ${domain}`, `No login for ${domain}`);
+    } else {
+      title = tr("Suggestions", "Suggestions");
+      empty = tr("Cette page n'est pas un site HTTPS.", "This page is not an HTTPS site.");
+    }
+    const list = h("div", { class: "pp-list", attrs: { role: "listbox", "aria-label": title } });
     for (const it of items) {
       list.append(
         h(
@@ -259,26 +383,14 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             attrs: { type: "button", role: "option", "aria-selected": String(view === "detail" && selected === it.item_id) },
             on: { click: () => void track(openItem(it.item_id)) },
           },
-          tile(it.icon_letter, it.icon_color, "m"),
+          itemArt(it, "m"),
           h("span", { class: "stack" }, h("span", { class: "t1" }, it.title), h("span", { class: "t2" }, it.subtitle)),
         ),
       );
     }
-    let title: string;
-    let empty: string | null = null;
-    if (results) {
-      title = "Résultats";
-      if (items.length === 0) empty = "Aucun résultat";
-    } else if (domain) {
-      title = `Suggestions pour ${domain}`;
-      if (items.length === 0) empty = `Aucun login pour ${domain}`;
-    } else {
-      title = "Suggestions";
-      empty = "Cette page n'est pas un site HTTPS.";
-    }
     mount(
       side,
-      h("h1", { class: "pp-side-title" }, icon("star", 14), title),
+      h("h1", { class: "pp-side-title" }, icon(results ? "search" : "star", 13), title),
       list,
       empty ? h("p", { class: "pp-empty" }, empty) : null,
       domain && !results
@@ -286,7 +398,14 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             "div",
             { class: "verified" },
             icon("shield", 16),
-            h("span", null, `Domaine vérifié : ${domain}. Le remplissage ne marche que sur ce site exact.`),
+            h(
+              "span",
+              null,
+              tr(
+                `Domaine vérifié : ${domain}. Le remplissage ne marche que sur ce site exact.`,
+                `Verified domain: ${domain}. Filling only works on this exact site.`,
+              ),
+            ),
           )
         : null,
       h("div", { class: "pp-foot" }, forgetButton()),
@@ -314,7 +433,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     if (code === "locked") renderLocked();
     else if (code === "unpaired") renderUnpaired();
     else if (code === "host_missing") renderHostMissing();
-    else toast(errorText(code));
+    else toast(errorText(code), "error");
   }
 
   const fieldRow = (label: string, value: Node | string, ...extra: (Node | null)[]) =>
@@ -334,34 +453,74 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     renderSide();
     const { summary: s, website } = r.value;
     const card = h("div", { class: "card" });
-    card.append(fieldRow(s.kind === "login" ? "nom d’utilisateur" : s.kind === "card" ? "carte" : "identité", s.subtitle));
+    const firstLabel =
+      s.kind === "login" ? tr("nom d’utilisateur", "username") : s.kind === "card" ? tr("carte", "card") : tr("identité", "identity");
+    card.append(
+      fieldRow(
+        firstLabel,
+        s.subtitle,
+        s.kind === "login" && s.subtitle !== ""
+          ? iconButton(tr("Copier le nom d’utilisateur", "Copy username"), "copy", () =>
+              void track(copy(s.subtitle, tr("Nom d’utilisateur copié", "Username copied"))),
+            )
+          : null,
+      ),
+    );
     if (s.kind === "login" && s.has_password) {
       const value = h("span", { class: "field-value mono pwd-value" }, MASK);
-      let shown = false;
-      const toggle: HTMLButtonElement = button("Afficher", "btn btn-link", () =>
+      let shown: string | null = null;
+      const label = { show: tr("Afficher", "Show"), hide: tr("Masquer", "Hide") };
+      const toggle: HTMLButtonElement = button(label.show, "btn btn-link", () =>
         void track(
           (async () => {
-            if (shown) {
+            if (shown !== null) {
               value.textContent = MASK;
-              toggle.textContent = "Afficher";
-              shown = false;
+              toggle.textContent = label.show;
+              shown = null;
               return;
             }
             const v = await call(deps.send, { type: "popup_reveal", itemId }, parseValue);
             if (!v.ok) return handleError(v.code);
             value.textContent = v.value.value;
-            toggle.textContent = "Masquer";
-            shown = true;
+            toggle.textContent = label.hide;
+            shown = v.value.value;
           })(),
         ),
       );
-      card.append(fieldRow("mot de passe", value, toggle));
+      // Copy asks the app for the value at the click, like "Afficher"; it is
+      // never kept once the row is gone.
+      const copyPwd = iconButton(tr("Copier le mot de passe", "Copy password"), "copy", () =>
+        void track(
+          (async () => {
+            let secret = shown;
+            if (secret === null) {
+              const v = await call(deps.send, { type: "popup_reveal", itemId }, parseValue);
+              if (!v.ok) return handleError(v.code);
+              secret = v.value.value;
+            }
+            await copy(secret, tr("Mot de passe copié", "Password copied"));
+          })(),
+        ),
+      );
+      card.append(fieldRow(tr("mot de passe", "password"), value, toggle, copyPwd));
     }
     if (s.kind === "login" && s.has_totp) {
       const code = h("span", { class: "field-value mono totp-code" }, "··· ···");
       const left = h("span", { class: "field-note totp-left" }, "");
-      card.append(fieldRow("code à usage unique", code, left));
+      const countdown = ring();
+      const pill = h("span", { class: "totp-pill" }, countdown.el, left);
+      let current = "";
       let remaining = 0;
+      const show = () => {
+        left.textContent = `${remaining} s`;
+        countdown.set(remaining);
+        pill.classList.toggle("low", remaining <= 5);
+        pill.setAttribute("aria-label", tr(`encore ${remaining} secondes`, `${remaining} seconds left`));
+      };
+      const copyCode = iconButton(tr("Copier le code", "Copy code"), "copy", () => {
+        if (current !== "") void track(copy(current, tr("Code copié", "Code copied")));
+      });
+      card.append(fieldRow(tr("code à usage unique", "one-time code"), code, pill, copyCode));
       // One request at a time: ticks during a slow refresh do not stack.
       let inFlight = false;
       const refresh = async () => {
@@ -374,9 +533,10 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             stopTotp();
             return handleError(t.code);
           }
+          current = t.value.code;
           code.textContent = formatCode(t.value.code);
           remaining = Math.max(0, Math.floor(t.value.remaining));
-          left.textContent = `${remaining} s`;
+          show();
         } finally {
           inFlight = false;
         }
@@ -385,29 +545,30 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       totpTimer = timers.setInterval(() => {
         remaining -= 1;
         if (remaining <= 0) void track(refresh());
-        else left.textContent = `${remaining} s`;
+        else show();
       }, 1000);
     }
-    const fill = button("Remplir", "btn btn-primary", () =>
+    if (website) {
+      card.append(h("div", { class: "field-row website" }, h("span", { class: "stack" }, h("span", { class: "cell-label" }, tr("site web", "website")), h("span", { class: "field-value" }, website))));
+    }
+    const fill = button(tr("Remplir", "Fill"), "btn btn-primary", () =>
       void track(
         call(deps.send, { type: "popup_fill", itemId }, parseFilled).then((f) => {
-          if (f.ok) toast(`Rempli sur ${f.value.domain}`);
+          if (f.ok) toast(tr(`Rempli sur ${f.value.domain}`, `Filled on ${f.value.domain}`));
           else handleError(f.code);
         }),
       ),
     );
     mount(
       main,
-      h("div", { class: "pp-bar" }, h("span", { class: "pp-vault" }, s.vault_name), fill),
       h(
         "div",
-        { class: "pp-detail" },
-        h("h2", { class: "pp-title" }, tile(s.icon_letter, s.icon_color, "l"), h("span", null, s.title)),
-        card,
-        website
-          ? h("div", { class: "website" }, h("span", { class: "cell-label" }, "site web"), h("span", { class: "field-value" }, website))
-          : null,
+        { class: "pp-bar" },
+        itemArt(s, 52),
+        h("div", { class: "pp-title" }, h("h2", null, s.title), h("span", { class: "vault" }, s.vault_name)),
+        fill,
       ),
+      h("div", { class: "pp-detail" }, card),
     );
   }
 
@@ -435,12 +596,12 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     view = "gen";
     selected = null;
     renderSide();
-    container.querySelector(".pp-head .btn-icon")?.classList.add("on");
+    container.querySelector(".pp-head .gen-toggle")?.classList.add("on");
     await generate();
   }
 
   function colored(pw: string): HTMLElement {
-    const out = h("div", { class: "gen-out", attrs: { "aria-label": "Mot de passe généré" } });
+    const out = h("div", { class: "gen-out", attrs: { "aria-label": tr("Mot de passe généré", "Generated password") } });
     for (const ch of pw) {
       const cls = /[0-9]/.test(ch) ? "ch-digit" : /\p{L}/u.test(ch) ? "" : "ch-symbol";
       out.append(cls ? h("span", { class: cls }, ch) : ch);
@@ -449,7 +610,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   }
 
   async function renderGenerator(): Promise<void> {
-    const select = h("select", { class: "select", attrs: { "aria-label": "Type de mot de passe" } });
+    const select = h("select", { class: "select", attrs: { "aria-label": tr("Type de mot de passe", "Password type") } });
     for (const t of GENERATOR_TYPES) {
       const o = h("option", { attrs: { value: t.kind } }, t.label);
       if (t.kind === genKind) o.selected = true;
@@ -462,16 +623,16 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
         void track(generate());
       }
     });
-    let lengthRow: HTMLElement | null = null;
+    const settings = h("div", { class: "card" }, h("label", { class: "gen-line" }, tr("Type", "Type"), select));
     if (genKind === "random") {
-      const range = h("input", { attrs: { type: "range", min: "8", max: "64", value: String(genLength), "aria-label": "Longueur" } });
+      const range = h("input", { attrs: { type: "range", min: "8", max: "64", value: String(genLength), "aria-label": tr("Longueur", "Length") } });
       const shown = h("span", { class: "field-note" }, String(genLength));
       range.addEventListener("input", () => (shown.textContent = range.value));
       range.addEventListener("change", () => {
         genLength = Number(range.value);
         void track(generate());
       });
-      lengthRow = h("label", { class: "gen-line" }, "Longueur", range, shown);
+      settings.append(h("label", { class: "gen-line" }, tr("Longueur", "Length"), range, shown));
     }
     let historyList: HTMLElement | null = null;
     if (historyOpen) {
@@ -479,7 +640,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       const entries: GeneratorEntry[] = r.ok ? r.value.entries : [];
       historyList = h("ul", { class: "history-list" });
       for (const e of entries) historyList.append(h("li", null, e.password));
-      if (entries.length === 0) historyList.append(h("li", null, "Aucun mot de passe généré"));
+      if (entries.length === 0) historyList.append(h("li", null, tr("Aucun mot de passe généré", "No generated password")));
     }
     const strength = h("div", { class: "strength" }, h("div"));
     (strength.firstChild as HTMLElement).style.width = `${Math.min(100, Math.round((genEntropy / 100) * 100))}%`;
@@ -488,12 +649,12 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       h(
         "div",
         { class: "gen-head" },
-        h("h2", null, "Générateur de mot de passe"),
+        h("h2", null, tr("Générateur de mot de passe", "Password generator")),
         h(
           "button",
           {
             class: "btn-icon",
-            attrs: { type: "button", "aria-label": "Fermer le générateur" },
+            attrs: { type: "button", "aria-label": tr("Fermer le générateur", "Close the generator") },
             on: {
               click: () => {
                 view = "none";
@@ -508,37 +669,38 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       h(
         "div",
         { class: "gen" },
+        colored(genPassword),
+        h(
+          "div",
+          { class: "strength-line" },
+          strength,
+          h("span", { class: "strength-label" }, strengthText(genEntropy)),
+          srOnly(tr(`Entropie : ${Math.round(genEntropy)} bits`, `Entropy: ${Math.round(genEntropy)} bits`)),
+        ),
         h(
           "div",
           { class: "actions" },
-          button("Copier", "btn", () =>
-            void track(
-              (deps.copy ?? ((t: string) => navigator.clipboard.writeText(t)))(genPassword).then(
-                () => toast("Copié"),
-                () => toast("Copie impossible"),
-              ),
-            ),
-          ),
-          h("span", { class: "stack" }),
+          button(tr("Copier", "Copy"), "btn", () => void track(copy(genPassword, tr("Copié", "Copied")))),
           h(
             "button",
-            { class: "btn-icon", attrs: { type: "button", "aria-label": "Générer un autre" }, on: { click: () => void track(generate()) } },
+            {
+              class: "btn-icon",
+              attrs: { type: "button", "aria-label": tr("Générer un autre", "Generate another"), title: tr("Générer un autre", "Generate another") },
+              on: { click: () => void track(generate()) },
+            },
             icon("refresh", 16),
           ),
-          button("Remplir", "btn btn-primary", () =>
+          h("span", { class: "stack" }),
+          button(tr("Remplir", "Fill"), "btn btn-primary", () =>
             void track(
               call(deps.send, { type: "popup_fill_generated", password: genPassword }, parseFilled).then((f) => {
-                if (f.ok) toast(`Rempli sur ${f.value.domain}`);
+                if (f.ok) toast(tr(`Rempli sur ${f.value.domain}`, `Filled on ${f.value.domain}`));
                 else handleError(f.code);
               }),
             ),
           ),
         ),
-        colored(genPassword),
-        strength,
-        srOnly(`Entropie : ${Math.round(genEntropy)} bits`),
-        h("label", { class: "gen-line" }, "Type", select),
-        lengthRow,
+        settings,
         h("p", { class: "gen-help" }, GENERATOR_TYPES.find((t) => t.kind === genKind)?.help ?? ""),
         h(
           "button",
@@ -553,7 +715,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             },
           },
           icon("history", 16),
-          h("span", { class: "stack" }, "Historique du générateur"),
+          h("span", { class: "stack" }, tr("Historique du générateur", "Generator history")),
           icon("chevron", 10),
         ),
         historyList,
@@ -586,7 +748,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     renderMain();
   }
 
-  mount(container, h("div", { class: "center" }, mark("m")));
+  mount(container, h("div", { class: "center" }, mark("l")));
   // A pairing in progress dies with the popup.
   addEventListener("pagehide", () => void deps.send({ type: "popup_pair_cancel" }).catch(() => undefined));
   const ready = load();

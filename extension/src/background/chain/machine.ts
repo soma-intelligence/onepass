@@ -13,6 +13,7 @@
 // top frame. The same signature on the same navigation is a re-analysis of a
 // page already handled (ignored); on a later navigation it is the same step
 // coming back (password refused): `repeat`.
+import { tr } from "../../shared/i18n";
 import type { FillField, Summary } from "../../bridge/client";
 import { parseOrigin } from "../../shared/domain";
 import type { FieldRole, FormInfo, PageAnalysis, ProviderId } from "../../shared/messages";
@@ -117,15 +118,15 @@ export interface StartParams {
 const USER_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>(["username", "email"]);
 
 const STOP_LABELS: Readonly<Record<StopReason, string>> = {
-  domain: "Domaine non autorisé",
-  captcha: "CAPTCHA détecté",
-  push: "Validation sur le téléphone",
-  otp: "Code demandé",
-  unknown: "Étape inconnue",
-  timeout: "Délai dépassé",
-  user: "Arrêté",
-  locked: "OnePass verrouillé",
-  repeat: "Étape répétée",
+  domain: tr("Domaine non autorisé", "Domain not allowed"),
+  captcha: tr("CAPTCHA détecté", "CAPTCHA detected"),
+  push: tr("Validation sur le téléphone", "Approval on the phone"),
+  otp: tr("Code demandé", "Code requested"),
+  unknown: tr("Étape inconnue", "Unknown step"),
+  timeout: tr("Délai dépassé", "Time limit reached"),
+  user: tr("Arrêté", "Stopped"),
+  locked: tr("OnePass verrouillé", "OnePass locked"),
+  repeat: tr("Étape répétée", "Step repeated"),
 };
 
 function providerName(id: ProviderId): string {
@@ -187,7 +188,7 @@ function stopped(s: ChainState, reason: StopReason, now: number, host?: string):
   if (host !== undefined) n.host = host;
   const st: Omit<ChainStep, "nav" | "at" | "sig"> = { kind: "stop", label: STOP_LABELS[reason], state: "stopped" };
   if (reason === "domain" && host) st.detail = host;
-  if (reason === "captcha") st.detail = "Jamais résolu automatiquement";
+  if (reason === "captcha") st.detail = tr("Jamais résolu automatiquement", "Never solved automatically");
   end(n, now, reason === "user" ? "stopped" : "handoff", st);
   return { state: n, actions: [{ type: "stop", reason }] };
 }
@@ -200,7 +201,7 @@ export function stopChain(s: ChainState, reason: StopReason, now: number): Chain
 
 function finished(s: ChainState, now: number): StepResult {
   const n = clone(s);
-  const label = n.provider ? `Retour sur ${titleFromSite(n.site)}` : "Connecté";
+  const label = n.provider ? tr(`Retour sur ${titleFromSite(n.site)}`, `Back on ${titleFromSite(n.site)}`) : tr("Connecté", "Signed in");
   const st: Omit<ChainStep, "nav" | "at" | "sig"> = { kind: "done", label, state: "done" };
   if (n.provider) st.detail = n.site;
   end(n, now, "done", st);
@@ -274,11 +275,11 @@ function signature(d: Exclude<Decision, { kind: "stop" }>, host: string, url: st
 function fillLabel(fields: FillField[], provider: string | null): string {
   const both = fields.includes("username") && fields.includes("password");
   if (provider) {
-    if (both) return `Identifiant et mot de passe ${provider} remplis`;
-    return fields.includes("username") ? `Identifiant ${provider} rempli` : `Mot de passe ${provider} rempli`;
+    if (both) return tr(`Identifiant et mot de passe ${provider} remplis`, `${provider} username and password filled`);
+    return fields.includes("username") ? tr(`Identifiant ${provider} rempli`, `${provider} username filled`) : tr(`Mot de passe ${provider} rempli`, `${provider} password filled`);
   }
-  if (both) return "Identifiant et mot de passe remplis";
-  return fields.includes("username") ? "Identifiant rempli" : "Mot de passe rempli";
+  if (both) return tr("Identifiant et mot de passe remplis", "Username and password filled");
+  return fields.includes("username") ? tr("Identifiant rempli", "Username filled") : tr("Mot de passe rempli", "Password filled");
 }
 
 /** One top-frame analysis of the chain's tab; `pageOrigin` comes from `sender`. */
@@ -331,16 +332,16 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
   const st: ChainStep = { kind: d.kind, sig, nav: n.page.nav, at: now, label: "", state: "done" };
   switch (d.kind) {
     case "provider_click":
-      st.label = `Clic sur « Continuer avec ${providerName(n.provider ?? "google")} »`;
+      st.label = tr(`Clic sur « Continuer avec ${providerName(n.provider ?? "google")} »`, `Clicked "Continue with ${providerName(n.provider ?? "google")}"`);
       actions.push({ type: "click", ref: d.ref });
       break;
     case "account":
-      st.label = `Compte choisi : ${d.email}`;
-      st.detail = `${host} · domaine officiel vérifié`;
+      st.label = tr(`Compte choisi : ${d.email}`, `Account chosen: ${d.email}`);
+      st.detail = tr(`${host} · domaine officiel vérifié`, `${host} · official domain verified`);
       actions.push({ type: "click", ref: d.ref });
       break;
     case "otp":
-      st.label = pname ? `Code ${pname} rempli` : "Code à usage unique rempli";
+      st.label = pname ? tr(`Code ${pname} rempli`, `${pname} code filled`) : tr("Code à usage unique rempli", "One-time code filled");
       actions.push({ type: onProvider ? "fill_provider" : "fill", formRef: d.form.ref, fields: ["totp"] });
       break;
     case "fill":
