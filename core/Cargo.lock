@@ -1657,8 +1657,12 @@ name = "onepass-ffi"
 version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
+ "data-encoding",
+ "onepass-bridge",
  "onepass-core",
+ "onepass-relay",
  "psl",
+ "serde_json",
  "tempfile",
  "time",
  "uniffi",
