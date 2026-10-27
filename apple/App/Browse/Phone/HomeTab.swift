@@ -98,7 +98,7 @@ struct HomeTab: View {
                 .accessibilityIdentifier("home.nearby")
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
     }
 
     /// Recently opened items still present and active, newest first.
@@ -178,6 +178,7 @@ private struct HomeTile<Value: View>: View {
 
 /// One foldable card of the home screen: small accent label, count and chevron, then its items.
 private struct HomeSection: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: LocalizedStringKey
     @Binding var isOpen: Bool
     let items: [FfiItemSummary]
@@ -187,7 +188,7 @@ private struct HomeSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation(.snappy) { isOpen.toggle() }
+                withAnimation(Motion.fold(reduceMotion: reduceMotion)) { isOpen.toggle() }
             } label: {
                 HStack(spacing: 8) {
                     PhoneSectionLabel(title)
@@ -204,7 +205,7 @@ private struct HomeSection: View {
                         .rotationEffect(.degrees(isOpen ? 0 : -90))
                 }
                 .padding(.horizontal, 6)
-                .contentShape(Rectangle())
+                .tapTarget()
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(.isHeader)
@@ -218,8 +219,10 @@ private struct HomeSection: View {
                         .padding(16)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .phoneCard()
+                        .transition(Motion.reveal(reduceMotion: reduceMotion))
                 } else {
                     PhoneItemRows(items: items, vaultName: { _ in nil })
+                        .transition(Motion.reveal(reduceMotion: reduceMotion))
                 }
             }
         }
@@ -228,13 +231,13 @@ private struct HomeSection: View {
 
 /// Item rows in one card (Accueil): the list rows of the Mac, a chevron, hairlines between rows.
 struct PhoneItemRows: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let items: [FfiItemSummary]
     let vaultName: (String) -> String?
 
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, summary in
-                if index > 0 { Divider().padding(.leading, 62) }
                 NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
                     HStack(spacing: 8) {
                         ItemListRow(summary: summary, vaultName: vaultName(summary.vaultId))
@@ -247,18 +250,17 @@ struct PhoneItemRows: View {
                     .padding(.vertical, 7)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(PhoneRowButtonStyle())
+                .buttonStyle(RowHighlightButtonStyle())
+                // The hairline belongs to the row below it, so a row leaving takes its own line along.
+                .overlay(alignment: .top) {
+                    if index > 0 { Divider().padding(.leading, 62) }
+                }
+                .transition(.opacity)
             }
         }
+        // A favorite added or removed elsewhere: the rows around it slide to their new place.
+        .animation(Motion.list(reduceMotion: reduceMotion), value: items.map(\.id))
         .phoneCard()
-    }
-}
-
-/// A row that highlights while pressed, like a list row.
-struct PhoneRowButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(configuration.isPressed ? Color.primary.opacity(0.08) : .clear)
     }
 }
 
@@ -277,18 +279,22 @@ extension View {
     }
 }
 
-/// The screen behind the iPhone cards: the grouped background with a faint accent glow on top, the
-/// iPhone's take on the Mac window glass.
+/// The screen behind the iPhone cards: the grouped background, plain. The cards and the glass bars
+/// carry the depth; a tinted wash on top read as decoration.
 struct PhoneBackground: View {
     var body: some View {
         Color(uiColor: .systemGroupedBackground)
-            .overlay(alignment: .top) {
-                LinearGradient(
-                    colors: [Theme.accent.opacity(0.10), Theme.accent.opacity(0)],
-                    startPoint: .top, endPoint: .bottom)
-                    .frame(height: 320)
-            }
             .ignoresSafeArea()
+    }
+}
+
+extension View {
+    /// Grows the touch area of a small control (a fold header, a glyph) to 44 pt high without
+    /// moving anything on screen.
+    func tapTarget(height: CGFloat = 44) -> some View {
+        frame(minHeight: height)
+            .contentShape(.rect)
+            .padding(.vertical, -max(0, height - 24) / 2)
     }
 }
 

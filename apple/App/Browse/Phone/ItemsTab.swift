@@ -155,13 +155,14 @@ struct ItemsTab: View {
 /// Section title of the Éléments tab: the small accent label of the Mac cards and a chevron that
 /// folds the block.
 struct FoldHeader: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: LocalizedStringKey
     @Binding var isOpen: Bool
     let id: String
 
     var body: some View {
         Button {
-            withAnimation(.snappy) { isOpen.toggle() }
+            withAnimation(Motion.fold(reduceMotion: reduceMotion)) { isOpen.toggle() }
         } label: {
             HStack {
                 PhoneSectionLabel(title)
@@ -171,7 +172,7 @@ struct FoldHeader: View {
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isOpen ? 0 : -90))
             }
-            .contentShape(Rectangle())
+            .tapTarget()
         }
         .buttonStyle(.plain)
         .textCase(nil)
