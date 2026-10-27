@@ -15,8 +15,12 @@ final class OnboardingAndItemUITests: XCTestCase {
     private static let uiTimeout: TimeInterval = 15
 
     /// Debug: the app's own test store, defaults suite and keychain service
-    /// (`me.somalabs.onepass.uitest`), never the real ones.
-    private static let isolated = ["-OnePassTestIsolation", "YES"]
+    /// (`me.somalabs.onepass.uitest`), never the real ones. The app is
+    /// localized: the labels below are checked in French, its source language, whatever the
+    /// language of the simulator.
+    private static let isolated = [
+        "-OnePassTestIsolation", "YES", "-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR",
+    ]
 
     override func setUp() async throws {
         continueAfterFailure = false
