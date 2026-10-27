@@ -5,8 +5,20 @@ import type { Envelope } from "../bridge/wire";
 import type { BgExt } from "./ext";
 import { safariTransport } from "./safari";
 
-/** Development host name (spec 9); the product host comes with the Mac app. */
-export const NATIVE_HOST = "me.somalabs.onepass.dev";
+/** Set by `build.mjs`: `--dev-host` (and the e2e and lab builds) gives the development host. */
+declare const __ONEPASS_NATIVE_HOST__: string | undefined;
+
+/** The product host: `onepass-relay` inside OnePass.app, installed by `scripts/install-app-host.mjs`. */
+export const APP_HOST = "me.somalabs.onepass";
+/** The development host (spec 9, `core/onepass-native-host`). */
+export const DEV_HOST = "me.somalabs.onepass.dev";
+
+/**
+ * The native messaging host this build talks to. One name per build, never
+ * a fallback from one to the other (spec 2026-10-27-release-bridge-design, P-12).
+ */
+export const NATIVE_HOST: string =
+  typeof __ONEPASS_NATIVE_HOST__ === "string" ? __ONEPASS_NATIVE_HOST__ : APP_HOST;
 
 type NativeApi = Pick<BgExt["runtime"], "connectNative" | "lastError">;
 
