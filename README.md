@@ -54,7 +54,7 @@ Browser extension for Chromium, Firefox and Safari. Your vault stays encrypted e
 - Leaked password check through Have I Been Pwned **k-anonymity** (5-character hash prefix, padded responses). Offline modes available.
 
 ### Import and export
-Import from 17 formats:
+Import from 21 formats:
 
 | Source | Formats |
 |---|---|
@@ -64,6 +64,8 @@ Import from 17 formats:
 | LastPass | CSV |
 | Dashlane | CSV, ZIP |
 | Proton Pass | CSV |
+| NordPass, Keeper, RoboForm | CSV |
+| Enpass | JSON |
 | KeePass 2 | XML |
 | FIDO Credential Exchange | CXF |
 | Other | `otpauth://` URIs, Wi-Fi QR codes, OnePass archive, OnePass CSV |
@@ -130,7 +132,7 @@ Master password + Secret Key
 - NIST ACVP vectors for ML-KEM-1024, ML-DSA-87 and SLH-DSA.
 - Differential tests between `aws-lc-rs` and `libcrux`.
 - Property tests on the AEAD.
-- 18 `cargo-fuzz` targets, run in CI.
+- 19 `cargo-fuzz` targets, run in CI.
 - A malicious store test suite that replays every known server-side attack.
 - **Formal models** in ProVerif (`formal/`) for account creation and unlock, vault manifests, the Emergency Kit and the extension bridge, including runs where one half of each hybrid KEM is broken. Run them with `make formal`; results are in [`docs/security/formal/results.md`](docs/security/formal/results.md).
 - The **autofill lab** (`extension/lab/`): hundreds of seeded, fictional websites served locally to measure fill rate and catch leaks. The first 200-site run reported 63.8% success and **0 leaks** ([report](docs/lab/2026-10-26-autofill-lab-run.md)).
