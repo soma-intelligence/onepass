@@ -18,6 +18,12 @@ pub enum IntegrityError {
     VaultMissing,
     /// Account params older than the epoch this device already accepted.
     ParamsRollback,
+    /// A device list older than the one this device already accepted, a
+    /// fork of it, or none where one was accepted.
+    DeviceListRollback,
+    /// A vault list older than the one this device already accepted, a
+    /// fork of it, or none where one was accepted.
+    VaultListRollback,
 }
 
 impl fmt::Display for IntegrityError {
@@ -36,6 +42,8 @@ impl fmt::Display for IntegrityError {
             Self::WrongContext => "record is bound to a different context",
             Self::VaultMissing => "a known vault is missing",
             Self::ParamsRollback => "account parameters rollback detected",
+            Self::DeviceListRollback => "device list rollback detected",
+            Self::VaultListRollback => "vault list rollback detected",
         };
         f.write_str(s)
     }

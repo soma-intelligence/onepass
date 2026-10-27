@@ -20,6 +20,10 @@ pub enum RecordKind {
     VaultMeta,
     Item,
     Manifest,
+    /// The signed device list, id = account id, version = its seq.
+    DeviceList,
+    /// The signed vault list, id = account id, version = its seq.
+    VaultList,
 }
 
 impl RecordKind {
@@ -31,6 +35,8 @@ impl RecordKind {
             Self::VaultMeta => 4,
             Self::Item => 5,
             Self::Manifest => 6,
+            Self::DeviceList => 7,
+            Self::VaultList => 8,
         }
     }
 
@@ -42,6 +48,8 @@ impl RecordKind {
             4 => Self::VaultMeta,
             5 => Self::Item,
             6 => Self::Manifest,
+            7 => Self::DeviceList,
+            8 => Self::VaultList,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -176,11 +184,17 @@ mod tests {
             RecordKind::VaultMeta,
             RecordKind::Item,
             RecordKind::Manifest,
+            RecordKind::DeviceList,
+            RecordKind::VaultList,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
         assert_eq!(
             RecordKind::from_code(0).unwrap_err(),
+            Error::InvalidFormat("record kind")
+        );
+        assert_eq!(
+            RecordKind::from_code(9).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
     }

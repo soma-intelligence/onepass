@@ -24,6 +24,13 @@
 //! for that vault (its signature and vault key are still checked). If the
 //! server manifest is exactly the local one, it is simply adopted.
 //!
+//! The signed lists (device list, vault list) are rebased the same way
+//! (`SyncStore::lists_needing_rebase`): the server list must chain to the
+//! ancestor the local list was built on, then the local list is rebuilt as
+//! the union of both (`lists::rebase_entries`), signed at the server's seq
+//! plus one and chained to it. When the server list already holds every
+//! local change, it is simply accepted and nothing is written.
+//!
 //! One vault's rebase is one SQLite transaction (`SyncStore::begin_batch`):
 //! dropping the pending rows, the replay and the device state with the new
 //! last seen manifest commit together. A failure or a crash leaves the
@@ -37,6 +44,9 @@
 //! interleave; the apps guarantee it by running the rebase inside the sync
 //! round that owns the fetch (one round at a time).
 
+use crate::chain::Seen;
+use crate::devices::DeviceEntry;
+use crate::lists::{AccountList, Stored, open_record, rebase_entries};
 use crate::manifest::{
     Manifest, ManifestEntry, SignedManifest, manifest_hash, record_hash, verify_manifest,
 };
@@ -45,6 +55,7 @@ use crate::repo::{Repository, seen, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore};
 use crate::sync::SyncStore;
 use crate::vault::{ItemRecord, Vault};
+use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
 
 /// A local item write to replay: the item and the hash of its local record.
@@ -79,10 +90,10 @@ impl Repository<SyncStore> {
             .set_device_and_chain_state(&self.device, &self.chain)
     }
 
-    /// Rebase every held vault (see the module doc) and return their ids.
-    /// Each vault is tried, in one transaction with the device state; a
-    /// failing vault does not stop the others. The device state is
-    /// persisted again at the end.
+    /// Rebase every held vault (see the module doc) and return their ids,
+    /// then every held signed list. Each vault and each list is tried, in
+    /// one transaction with the device state; a failing one does not stop
+    /// the others. The device state is persisted again at the end.
     ///
     /// Errors, the first one met after trying every vault: a local
     /// manifest that does not descend from its ancestor, or a server
@@ -100,6 +111,15 @@ impl Repository<SyncStore> {
                 Err(e) => {
                     first_error.get_or_insert(e);
                 }
+            }
+        }
+        for (kind, _) in self.store.lists_needing_rebase()? {
+            let result = match kind {
+                RecordKind::DeviceList => self.rebase_list::<DeviceEntry>(),
+                _ => self.rebase_list::<VaultListEntry>(),
+            };
+            if let Err(e) = result {
+                first_error.get_or_insert(e);
             }
         }
         let persisted = self.persist_device_state();
@@ -126,6 +146,56 @@ impl Repository<SyncStore> {
             // The original error wins. If the rollback fails too, SQLite
             // undoes the open transaction when the connection closes, and
             // the next batch on it is refused ("batch already open").
+            let _ = self.store.rollback_batch();
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    /// Rebuild the held local list of this kind over the server's (see the
+    /// module doc), in one transaction with the device state. The server
+    /// list must chain to the ancestor (`DeviceListRollback`,
+    /// `VaultListRollback`). On failure the local list stays pending and
+    /// held, and the chain state is as it was.
+    fn rebase_list<E: AccountList>(&mut self) -> Result<()> {
+        let id = self.account.params.account_id;
+        let local = self.store.get(E::KIND, id)?.ok_or(Error::NotFound)?;
+        let local: crate::lists::ListBody<E> = open_record(&self.account, &local, None)?;
+        let ancestor = match self.store.ancestor_record(E::KIND, id)? {
+            Some(rec) => Some(open_record::<E>(&self.account, &rec, None)?),
+            None => None,
+        };
+        let server = self
+            .store
+            .base_record(E::KIND, id)?
+            .ok_or(Error::NotFound)?;
+        let after: Option<Seen> = ancestor.as_ref().map(|a| a.seen());
+        let server = Stored {
+            version: server.version,
+            body: open_record::<E>(&self.account, &server, after.as_ref())?,
+        };
+        let entries = rebase_entries(
+            ancestor.as_ref().map(|a| a.entries.as_slice()),
+            &local.entries,
+            &server.body.entries,
+        );
+        let previous = self.chain.clone();
+        self.store.begin_batch()?;
+        let result = self
+            .store
+            .drop_pending_record(E::KIND, id)
+            .and_then(|()| {
+                if entries == server.body.entries {
+                    E::set_seen(&mut self.chain, server.body.seen());
+                    Ok(())
+                } else {
+                    self.write_list(Some(&server), entries)
+                }
+            })
+            .and_then(|()| self.persist_device_state())
+            .and_then(|()| self.store.commit_batch());
+        if let Err(e) = result {
+            self.chain = previous;
             let _ = self.store.rollback_batch();
             return Err(e);
         }

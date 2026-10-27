@@ -946,6 +946,19 @@ struct SyncCoordinatorStoreSafetyTests {
         #expect(try await Self.readToken(device.store) == ScriptedRemote.token(1))
     }
 
+    /// The signed device and vault lists (kinds 7 and 8) are staged like the other kinds.
+    @Test func signedListKindsAreValid() {
+        let meta = InMemoryRemote.serverMeta(tag: 1)
+        let record = { (kind: UInt8) in
+            RemoteRecord(name: RecordName(kind: kind, id: Self.hex(1)), version: 1, data: Data([1]), serverMeta: meta)
+        }
+        for kind in UInt8(1)...8 {
+            #expect(SyncCoordinator.isValid(record(kind)))
+        }
+        #expect(!SyncCoordinator.isValid(record(0)))
+        #expect(!SyncCoordinator.isValid(record(9)))
+    }
+
     /// I2: the token moves only once a page is staged; a crash in between fetches the page again.
     @Test func tokenIsNotAdvancedWhenStagingFails() async throws {
         let meta = InMemoryRemote.serverMeta(tag: 1)

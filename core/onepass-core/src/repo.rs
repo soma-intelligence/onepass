@@ -7,7 +7,9 @@
 //! - signed manifest (`Manifest`), id = vault id, version = seq,
 //!   data = `postcard(SignedManifest)`;
 //! - item records (`Item`), id = a fresh blob id per written version,
-//!   version = item version, data = `vault_id (16 bytes) || postcard(ItemRecord)`.
+//!   version = item version, data = `vault_id (16 bytes) || postcard(ItemRecord)`;
+//! - signed device list (`DeviceList`) and vault list (`VaultList`), id =
+//!   account id, version = seq (see `lists`, `devices`, `vaultlist`).
 //!
 //! Item versions get their own blob ids so that writing a new version never
 //! overwrites the one the current manifest lists. Writes go record first,
@@ -38,6 +40,9 @@ use time::OffsetDateTime;
 
 use crate::account::{Account, Auk, NewAccount, PinnedAccount, Rekeyed};
 use crate::chain::ChainState;
+use crate::devices::{DeviceEntry, now, self_entry};
+use crate::lists::{ListBody, list_record};
+use crate::vaultlist::VaultListEntry;
 use zeroize::Zeroizing;
 
 use crate::crypto::{Aad, BlobKind, KdfParams, SecretKey, seal};
@@ -192,10 +197,13 @@ fn personal() -> VaultMeta {
 }
 
 impl<S: RecordStore> Repository<S> {
-    /// Create an account in an empty store: params, keyset, then the
-    /// "Personnel" vault. The device pins the new account.
+    /// Create an account in an empty store, in one write
+    /// (`RecordStore::put_all_if_version`): params, keyset, the device list
+    /// with this device (named `devices::DEFAULT_DEVICE_NAME` until
+    /// `register_this_device`), the vault list, and the "Personnel" vault.
+    /// The device pins the new account.
     pub fn create_account(
-        mut store: S,
+        store: S,
         password: &str,
         kdf: KdfParams,
     ) -> Result<(Repository<S>, SecretKey)> {
@@ -209,23 +217,16 @@ impl<S: RecordStore> Repository<S> {
             keyset_record,
         } = Account::create_with_params(password, kdf)?;
         let id = account.params.account_id;
-        for (kind, data) in [
-            (RecordKind::AccountParams, params_record),
-            (RecordKind::Keyset, keyset_record),
-        ] {
-            store.put(Record {
-                id,
-                kind,
-                version: 1,
-                data,
-            })?;
-        }
+        let device_id = Id::new();
+        let at = now();
+        let (vault, envelope, meta_blob) = Vault::create(&account, personal())?;
         let device = DeviceState {
             pinned: Some(pin(&account)),
             last_seen: BTreeMap::new(),
         };
         let chain = ChainState {
             params_epoch: account.params.epoch,
+            device_id: Some(device_id),
             ..ChainState::default()
         };
         let mut repo = Repository {
@@ -234,7 +235,38 @@ impl<S: RecordStore> Repository<S> {
             device,
             chain,
         };
-        repo.create_vault(personal())?;
+        let (manifest, seen) = repo.manifest_record(&vault, None, vec![])?;
+        let devices = ListBody::next(None, id, vec![self_entry(device_id, None, at)])?;
+        let vaults = ListBody::next(
+            None,
+            id,
+            vec![VaultListEntry {
+                vault_id: vault.id,
+                created_at: at,
+                deleted_at: None,
+            }],
+        )?;
+        let (device_seen, vault_seen) = (devices.seen(), vaults.seen());
+        let record = |kind, id, data| Record {
+            id,
+            kind,
+            version: 1,
+            data,
+        };
+        let writes = vec![
+            record(RecordKind::AccountParams, id, params_record),
+            record(RecordKind::Keyset, id, keyset_record),
+            list_record::<DeviceEntry>(&repo.account, devices)?,
+            list_record::<VaultListEntry>(&repo.account, vaults)?,
+            manifest,
+            record(RecordKind::VaultMeta, vault.id, meta_blob),
+            record(RecordKind::VaultKey, vault.id, envelope),
+        ];
+        repo.store
+            .put_all_if_version(writes.into_iter().map(|r| (r, None)).collect())?;
+        repo.chain.device_list = Some(device_seen);
+        repo.chain.vault_list = Some(vault_seen);
+        repo.device.last_seen.insert(vault.id, seen);
         Ok((repo, secret_key))
     }
 
@@ -396,11 +428,6 @@ impl<S: RecordStore> Repository<S> {
         &self.chain
     }
 
-    #[allow(dead_code)] // Used by the signed lists (milestone 2b, task 2).
-    pub(crate) fn chain_mut(&mut self) -> &mut ChainState {
-        &mut self.chain
-    }
-
     /// The underlying record store, for the sync layer.
     pub fn store(&self) -> &S {
         &self.store
@@ -432,11 +459,28 @@ impl<S: RecordStore> Repository<S> {
     /// `InvalidFormat("vault meta")`; a vault without a manifest is
     /// `ManifestMissingItem`; a vault this device already read
     /// (`DeviceState::last_seen`) whose key record is gone is
-    /// `VaultMissing`. The vault list itself is not signed in M1: a store
-    /// can still hide a vault from a device that never read it.
+    /// `VaultMissing`.
+    ///
+    /// The signed vault list (`vaultlist`), when there is one, is verified
+    /// against the one last accepted (`VaultListRollback`), and every live
+    /// vault it lists must be present, even one this device never read
+    /// (`VaultMissing`). A vault it marks deleted is neither expected nor
+    /// returned. A valid vault it does not list is returned (adopted into
+    /// the list later). No list yet (an account from before the list) means
+    /// no list check.
     pub fn vaults(&self) -> Result<Vec<Vault>> {
+        let list = self.read_list::<VaultListEntry>()?;
+        let entries: &[VaultListEntry] = list.as_ref().map_or(&[], |l| &l.body.entries);
+        let deleted = |id: Id| {
+            entries
+                .iter()
+                .any(|e| e.vault_id == id && e.deleted_at.is_some())
+        };
         let mut out = Vec::new();
         for key in self.store.list(RecordKind::VaultKey)? {
+            if deleted(key.id) {
+                continue;
+            }
             let meta = self
                 .store
                 .get(RecordKind::VaultMeta, key.id)?
@@ -445,35 +489,62 @@ impl<S: RecordStore> Repository<S> {
             self.read_manifest(&vault, None)?;
             out.push(vault);
         }
-        if self
-            .device
-            .last_seen
-            .keys()
-            .any(|id| !out.iter().any(|v| v.id == *id))
-        {
-            return Err(IntegrityError::VaultMissing.into());
+        let expected = self.device.last_seen.keys().copied().chain(
+            entries
+                .iter()
+                .filter(|e| e.deleted_at.is_none())
+                .map(|e| e.vault_id),
+        );
+        for id in expected {
+            if !deleted(id) && !out.iter().any(|v| v.id == id) {
+                return Err(IntegrityError::VaultMissing.into());
+            }
         }
         out.sort_by_key(|v| v.id);
         Ok(out)
     }
 
     /// Create a vault with an empty signed manifest (seq 1), so that a
-    /// vault without a manifest is always a storage fault. The key envelope
-    /// is written last: until then the vault is not listed, and the device
-    /// remembers its manifest only once it is.
+    /// vault without a manifest is always a storage fault. Manifest, meta,
+    /// key envelope and, when the account has a vault list, the next list
+    /// with the new vault go in one write
+    /// (`RecordStore::put_all_if_version`, the key after the manifest and
+    /// meta); the device remembers the manifest once it is written. Without
+    /// a vault list (an account from before it), the vault is adopted into
+    /// the list when it is created (see `devices`). A list changed by
+    /// another writer meanwhile is `Error::Conflict`, and nothing is written.
     pub fn create_vault(&mut self, meta: VaultMeta) -> Result<Vault> {
+        let list = self.read_list::<VaultListEntry>()?;
         let (vault, envelope, meta_blob) = Vault::create(&self.account, meta)?;
-        let seen = self.put_manifest(&vault, None, vec![])?;
+        let (manifest, seen) = self.manifest_record(&vault, None, vec![])?;
+        let mut writes = vec![(manifest, None)];
         for (kind, data) in [
             (RecordKind::VaultMeta, meta_blob),
             (RecordKind::VaultKey, envelope),
         ] {
-            self.store.put(Record {
+            let r = Record {
                 id: vault.id,
                 kind,
                 version: 1,
                 data,
-            })?;
+            };
+            writes.push((r, None));
+        }
+        let mut list_body = None;
+        if let Some(list) = &list {
+            let mut entries = list.body.entries.clone();
+            entries.push(VaultListEntry {
+                vault_id: vault.id,
+                created_at: now(),
+                deleted_at: None,
+            });
+            let (rec, expected, body) = self.list_write(Some(list), entries)?;
+            writes.push((rec, expected));
+            list_body = Some(body);
+        }
+        self.store.put_all_if_version(writes)?;
+        if let Some(body) = list_body {
+            self.chain.vault_list = Some(body.seen());
         }
         self.device.last_seen.insert(vault.id, seen);
         Ok(vault)
@@ -763,19 +834,29 @@ impl<S: RecordStore> Repository<S> {
         prev: Option<&Manifest>,
         entries: Vec<ManifestEntry>,
     ) -> Result<SeenManifest> {
+        let (rec, seen) = self.manifest_record(vault, prev, entries)?;
+        self.store.put_if_version(rec, prev.map(|p| p.seq))?;
+        Ok(seen)
+    }
+
+    /// The signed record of the manifest following `prev` (or the first
+    /// one), not written.
+    fn manifest_record(
+        &self,
+        vault: &Vault,
+        prev: Option<&Manifest>,
+        entries: Vec<ManifestEntry>,
+    ) -> Result<(Record, SeenManifest)> {
         let m = Manifest::next(prev, vault.id, entries)?;
         let sm = sign_manifest(vault, &self.account.keyset().signing, &m)?;
         let data = postcard::to_allocvec(&sm).map_err(|_| Error::InvalidFormat("manifest"))?;
-        self.store.put_if_version(
-            Record {
-                id: vault.id,
-                kind: RecordKind::Manifest,
-                version: m.seq,
-                data,
-            },
-            prev.map(|p| p.seq),
-        )?;
-        Ok(seen(&m))
+        let rec = Record {
+            id: vault.id,
+            kind: RecordKind::Manifest,
+            version: m.seq,
+            data,
+        };
+        Ok((rec, seen(&m)))
     }
 }
 

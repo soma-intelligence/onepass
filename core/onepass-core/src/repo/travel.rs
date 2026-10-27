@@ -21,8 +21,13 @@
 //! records are deleted and the device state is restored, so the
 //! `TravelState` stays valid.
 //!
-//! Neither direction touches the account (params, keyset) or the
-//! `travel_safe` vaults.
+//! Neither direction touches the account (params, keyset), the device list
+//! or the `travel_safe` vaults. Entering drops the local signed vault list
+//! (`vaultlist`), which lists the hidden vaults as live: without it the
+//! device does not expect them while it travels. The next call that brings
+//! the lists up to date writes a new one with the vaults present, and the
+//! restored ones are adopted into it after the exit (trust on first use, as
+//! for an account from before the list).
 //!
 //! Records of a vault: `VaultKey`, `VaultMeta` and `Manifest` with id = the
 //! vault id, and the `Item` records whose prefix (`split_item_record`) is the
@@ -163,26 +168,39 @@ impl<S: RecordStore> Repository<S> {
             plan.push((vault.id, seen(&loaded.manifest), records));
         }
 
+        // The vault list goes first: a cut after it leaves vaults the device
+        // no longer expects, never an expected vault missing.
+        let list = if plan.is_empty() {
+            None
+        } else {
+            let id = self.account.params.account_id;
+            self.store.get(RecordKind::VaultList, id)?
+        };
+        let had_list = list.is_some();
         let mut deleted: Vec<Record> = Vec::new();
-        for (_, _, records) in &plan {
-            for r in records {
-                if let Err(e) = self.store.delete(r.kind, r.id) {
-                    // Put back what was deleted (reverse order: items before
-                    // the key), best effort over every record. If a put
-                    // fails too, the device is not as it was: that error is
-                    // returned instead of `e`, so the caller does not take
-                    // the device for unchanged.
-                    let mut rollback = Ok(());
-                    for d in deleted.into_iter().rev() {
-                        if let Err(e2) = self.store.put(d) {
-                            rollback = rollback.and(Err(e2));
-                        }
+        let order = list
+            .iter()
+            .chain(plan.iter().flat_map(|(_, _, records)| records));
+        for r in order {
+            if let Err(e) = self.store.delete(r.kind, r.id) {
+                // Put back what was deleted (reverse order: items before
+                // the key), best effort over every record. If a put
+                // fails too, the device is not as it was: that error is
+                // returned instead of `e`, so the caller does not take
+                // the device for unchanged.
+                let mut rollback = Ok(());
+                for d in deleted.into_iter().rev() {
+                    if let Err(e2) = self.store.put(d) {
+                        rollback = rollback.and(Err(e2));
                     }
-                    rollback?;
-                    return Err(e);
                 }
-                deleted.push(r.clone());
+                rollback?;
+                return Err(e);
             }
+            deleted.push(r.clone());
+        }
+        if had_list {
+            self.chain.vault_list = None;
         }
         let mut parked = BTreeMap::new();
         for (id, seen, _) in plan {

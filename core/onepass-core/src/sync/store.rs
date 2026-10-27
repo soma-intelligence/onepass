@@ -177,11 +177,21 @@ fn fetch_mode(conn: &Connection) -> Result<Option<u8>> {
     Ok(value.and_then(|v| v.first().copied()))
 }
 
-/// Write a pending data row. A manifest write over a `base` manifest with no
-/// `ancestor` yet first keeps that `base` row as its ancestor.
+/// The kinds whose pending row keeps the `base` row it was built on as its
+/// `ancestor`, to be rebased when the server moves on: manifests and the two
+/// signed lists.
+fn keeps_ancestor(kind: RecordKind) -> bool {
+    matches!(
+        kind,
+        RecordKind::Manifest | RecordKind::DeviceList | RecordKind::VaultList
+    )
+}
+
+/// Write a pending data row. A manifest or list write over a `base` row with
+/// no `ancestor` yet first keeps that `base` row as its ancestor.
 fn write_pending(tx: &Connection, r: &Record) -> Result<()> {
     let version = to_i64(r.version)?;
-    if r.kind == RecordKind::Manifest {
+    if keeps_ancestor(r.kind) {
         tx.execute(
             "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
              SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
@@ -217,6 +227,33 @@ fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
         })
         .map_err(store_err)?;
     rows.map(|id| decode_id(id.map_err(store_err)?)).collect()
+}
+
+/// The signed lists (device list, vault list) whose pending row was not
+/// built on the current `base` row, as for `held_vaults`: the server list
+/// moved on, and the local one must be rebuilt over it (`Repository::rebase`)
+/// before any push.
+fn held_lists(conn: &Connection) -> Result<BTreeSet<(RecordKind, Id)>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT p.kind, p.id FROM pending p
+             JOIN base b ON b.kind = p.kind AND b.id = p.id
+             LEFT JOIN ancestor a ON a.kind = p.kind AND a.id = p.id
+             WHERE p.kind IN (?1, ?2) AND p.data IS NOT NULL
+               AND (a.id IS NULL OR a.version != b.version)",
+        )
+        .map_err(store_err)?;
+    let rows = stmt
+        .query_map(
+            params![RecordKind::DeviceList.code(), RecordKind::VaultList.code()],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
+        )
+        .map_err(store_err)?;
+    rows.map(|row| {
+        let (kind, id) = row.map_err(store_err)?;
+        Ok((decode_kind(kind)?, decode_id(id)?))
+    })
+    .collect()
 }
 
 /// The epoch of an account params record, `None` if it does not decode.
@@ -279,7 +316,8 @@ fn account_pair_pushable(conn: &Connection, id: Id) -> Result<bool> {
 /// pending one) is dropped, both rows together, so it can never be pushed
 /// over the server's pair. If the server pair is not this very change (a
 /// push confirmed before `mark_pushed`), the change lost a race: the
-/// `password_change_superseded` flag is raised for the app.
+/// `password_change_superseded` flag is raised for the app. A pending keyset
+/// left without its pending params is dropped as well.
 fn settle_account_changes(tx: &Connection) -> Result<()> {
     let ids: Vec<Vec<u8>> = {
         let mut stmt = tx
@@ -319,12 +357,23 @@ fn settle_account_changes(tx: &Connection) -> Result<()> {
             .map_err(store_err)?;
         }
     }
+    // A pending keyset without its pending params can never go out (the
+    // pair goes together, `account_pair_pushable`): it is the leftover of a
+    // change whose params were confirmed or dropped, and goes too.
+    tx.execute(
+        "DELETE FROM pending WHERE kind = ?1 AND data IS NOT NULL AND NOT EXISTS
+             (SELECT 1 FROM pending p WHERE p.kind = ?2 AND p.id = pending.id
+                  AND p.data IS NOT NULL)",
+        params![RecordKind::Keyset.code(), RecordKind::AccountParams.code()],
+    )
+    .map_err(store_err)?;
     Ok(())
 }
 
 /// `SyncStore::pending_changes` on a consistent view.
 fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
     let held = held_vaults(tx)?;
+    let held_lists = held_lists(tx)?;
     let mut stmt = tx
         .prepare("SELECT kind, id, version, data, vault FROM pending ORDER BY kind, id")
         .map_err(store_err)?;
@@ -354,7 +403,7 @@ fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
             },
             _ => None,
         };
-        if vault.is_some_and(|v| held.contains(&v)) {
+        if vault.is_some_and(|v| held.contains(&v)) || held_lists.contains(&(kind, id)) {
             continue;
         }
         if data.is_some()
@@ -503,7 +552,7 @@ impl SyncStore {
             params![kind.code(), &id.0[..]],
         )
         .map_err(store_err)?;
-        if kind == RecordKind::Manifest {
+        if keeps_ancestor(kind) {
             tx.execute(
                 "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2",
                 params![kind.code(), &id.0[..]],
@@ -633,9 +682,13 @@ impl SyncStore {
                 &format!(
                     "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
                      SELECT b.kind, b.id, b.version, b.data FROM base b
-                     WHERE b.kind = ?1 AND {missing}"
+                     WHERE b.kind IN (?1, ?2, ?3) AND {missing}"
                 ),
-                params![RecordKind::Manifest.code()],
+                params![
+                    RecordKind::Manifest.code(),
+                    RecordKind::DeviceList.code(),
+                    RecordKind::VaultList.code()
+                ],
             )
             .map_err(store_err)?;
             tx.execute(
@@ -941,6 +994,53 @@ impl SyncStore {
         delete_vault_rows(&tx, vault)?;
         tx.commit()
     }
+
+    /// The signed lists held back because the server list caught up with,
+    /// or passed, the local pending one (`held_lists`): `(kind, account id)`,
+    /// sorted.
+    pub fn lists_needing_rebase(&self) -> Result<Vec<(RecordKind, Id)>> {
+        Ok(held_lists(&self.conn)?.into_iter().collect())
+    }
+
+    /// The `table` row (`base` or `ancestor`) of `(kind, id)`, if any.
+    fn table_record(&self, table: &str, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+        self.conn
+            .query_row(
+                &format!("SELECT version, data FROM {table} WHERE kind = ?1 AND id = ?2"),
+                params![kind.code(), &id.0[..]],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
+            )
+            .optional()
+            .map_err(store_err)?
+            .map(|(version, data)| decode_row(i64::from(kind.code()), id.0.to_vec(), version, data))
+            .transpose()
+    }
+
+    /// The `base` row of `(kind, id)`: the last server state, under any
+    /// pending row.
+    pub(crate) fn base_record(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+        self.table_record("base", kind, id)
+    }
+
+    /// The `base` row a pending row of `(kind, id)` was built on.
+    pub(crate) fn ancestor_record(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+        self.table_record("ancestor", kind, id)
+    }
+
+    /// Remove the pending row of `(kind, id)` and its ancestor, so the next
+    /// local write starts again from the current `base`. Read
+    /// `ancestor_record` first.
+    pub(crate) fn drop_pending_record(&mut self, kind: RecordKind, id: Id) -> Result<()> {
+        let tx = self.write_tx()?;
+        for table in ["pending", "ancestor"] {
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE kind = ?1 AND id = ?2"),
+                params![kind.code(), &id.0[..]],
+            )
+            .map_err(store_err)?;
+        }
+        tx.commit()
+    }
 }
 
 /// What `SyncStore::account_state` found.
@@ -1068,11 +1168,15 @@ fn device_state_in(conn: &Connection) -> Result<DeviceState> {
 }
 
 /// A remote deletion `commit_remote` ignores: account params and keysets
-/// (never deleted by a client in M2), and the vault key, meta or manifest of
-/// a vault the device has seen (no vault deletion in M2, R14).
+/// (never deleted by a client in M2), the signed device and vault lists
+/// (never deleted by a client), and the vault key, meta or manifest of a
+/// vault the device has seen (no vault deletion in M2, R14).
 fn protected_from_remote_deletion(kind: RecordKind, id: &[u8], seen: &BTreeSet<Id>) -> bool {
     match kind {
-        RecordKind::AccountParams | RecordKind::Keyset => true,
+        RecordKind::AccountParams
+        | RecordKind::Keyset
+        | RecordKind::DeviceList
+        | RecordKind::VaultList => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v))
         }
@@ -1214,7 +1318,7 @@ impl RecordStore for SyncStore {
                 } else {
                     None
                 };
-                if kind == RecordKind::Manifest {
+                if keeps_ancestor(kind) {
                     tx.execute(
                         "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
                          SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
@@ -1425,6 +1529,78 @@ mod tests {
         s.conn
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
             .unwrap()
+    }
+
+    #[test]
+    fn list_held_when_the_server_moved_on() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let a = Id::new();
+        let kinds = |s: &SyncStore| -> Vec<RecordKind> {
+            s.pending_changes()
+                .unwrap()
+                .iter()
+                .map(|c| c.kind)
+                .collect()
+        };
+        seed_base(&mut s, RecordKind::DeviceList, a, 1, b"l1".to_vec());
+        // A local list built on the server's seq 1: it goes out.
+        s.put_if_version(rec(a, RecordKind::DeviceList, 2, b"l2"), Some(1))
+            .unwrap();
+        assert_eq!(kinds(&s), vec![RecordKind::DeviceList]);
+        assert_eq!(s.lists_needing_rebase().unwrap(), vec![]);
+        assert_eq!(
+            s.ancestor_record(RecordKind::DeviceList, a)
+                .unwrap()
+                .unwrap()
+                .data,
+            b"l1"
+        );
+        // The server moves on: held, kept for the rebase.
+        seed_base(&mut s, RecordKind::DeviceList, a, 2, b"other".to_vec());
+        assert_eq!(kinds(&s), vec![]);
+        assert_eq!(
+            s.lists_needing_rebase().unwrap(),
+            vec![(RecordKind::DeviceList, a)]
+        );
+        assert_eq!(
+            s.base_record(RecordKind::DeviceList, a)
+                .unwrap()
+                .unwrap()
+                .data,
+            b"other"
+        );
+        assert_eq!(
+            s.get(RecordKind::DeviceList, a).unwrap().unwrap().data,
+            b"l2"
+        );
+        // Dropped: the server list shows again, nothing held.
+        s.drop_pending_record(RecordKind::DeviceList, a).unwrap();
+        assert_eq!(s.lists_needing_rebase().unwrap(), vec![]);
+        assert_eq!(s.ancestor_record(RecordKind::DeviceList, a).unwrap(), None);
+        assert_eq!(
+            s.get(RecordKind::DeviceList, a).unwrap().unwrap().data,
+            b"other"
+        );
+        // Confirmed pushes clear the ancestor.
+        s.put_if_version(rec(a, RecordKind::VaultList, 1, b"v1"), None)
+            .unwrap();
+        s.mark_pushed(RecordKind::VaultList, a, 1, Some(vec![1]))
+            .unwrap();
+        assert_eq!(s.ancestor_record(RecordKind::VaultList, a).unwrap(), None);
+        assert_eq!(count(&s, "pending"), 0);
+    }
+
+    #[test]
+    fn fetch_drops_a_lone_pending_keyset() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let a = Id::new();
+        seed_base(&mut s, RecordKind::Keyset, a, 1, b"k1".to_vec());
+        s.put(rec(a, RecordKind::Keyset, 2, b"k2")).unwrap();
+        assert_eq!(count(&s, "pending"), 1);
+        s.commit_remote().unwrap();
+        assert_eq!(count(&s, "pending"), 0);
+        assert_eq!(s.get(RecordKind::Keyset, a).unwrap().unwrap().data, b"k1");
+        assert!(!s.take_password_change_superseded().unwrap());
     }
 
     #[test]
