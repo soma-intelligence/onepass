@@ -193,12 +193,17 @@ struct AutoFillLabel: View {
     }
 }
 
-/// A row that highlights while pressed, like a list row.
+/// A row that highlights while pressed, like a list row. iPhone: lit the instant the finger lands,
+/// the highlight fading on release (`RowHighlightButtonStyle`, shared with the app).
 struct AutoFillRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        #if os(iOS)
+        RowHighlightButtonStyle().makeBody(configuration: configuration)
+        #else
         configuration.label
             .background(configuration.isPressed ? Color.primary.opacity(0.08) : .clear)
             .contentShape(Rectangle())
+        #endif
     }
 }
 
