@@ -67,6 +67,27 @@
 | bridge_kem_x25519_broken.pv | `not (event(Record(p_2,k_2)) && attacker_p1(k_2))` | false | false |
 | bridge_kem_x25519_broken.pv | `not event(HostPaired(p_2,t_4,k_2))` | false | false |
 | bridge_kem_x25519_broken.pv | `not event(ExtRecv(hon,s,dir_h2e,ctr1,m))` | false | false |
+| emergency_kit.pv | `not (event(VaultCreated(acct_main,s,v_42,k_10)) && attacker(k_10))` | true | true |
+| emergency_kit.pv | `not (event(ItemSealed(acct_main,m_14)) && attacker(m_14))` | true | true |
+| emergency_kit.pv | `not (event(ItemSealed(restore_main,m_14)) && attacker(m_14))` | true | true |
+| emergency_kit.pv | `event(VaultAccepted(restore_main,s,v_42,k_10)) ==> event(VaultCreated(acct_main,s,v_42,k_10))` | true | true |
+| emergency_kit.pv | `event(ItemRead(restore_main,v_42,i,m_14)) ==> event(ItemSealed(acct_main,m_14)) \|\| event(ItemSealed(restore_main,m_14))` | true | true |
+| emergency_kit.pv | `event(Pinned(restore_main,a,i)) ==> event(AccountOwned(acct_main,a,i))` | true | true |
+| emergency_kit.pv | `Weak secret pw_main` | true | true |
+| emergency_kit.pv | `not (event(ItemSealed(acct_kit_lost,m_14)) && attacker(m_14))` | true | true |
+| emergency_kit.pv | `not (event(ItemSealed(restore_kit_lost,m_14)) && attacker(m_14))` | true | true |
+| emergency_kit.pv | `not (event(AukCreated(acct_kit_lost,k_10)) && attacker(k_10))` | true | true |
+| emergency_kit.pv | `event(Pinned(restore_kit_lost,a,i)) ==> event(AccountOwned(acct_kit_lost,a,i))` | true | true |
+| emergency_kit.pv | `Weak secret pw_kit_lost` | false | false |
+| emergency_kit.pv | `Weak secret pw_no_keyset` | true | true |
+| emergency_kit.pv | `event(Pinned(restore_kit_pw,a,i)) ==> event(AccountOwned(acct_kit_pw,a,i))` | false | false |
+| emergency_kit.pv | `event(ItemRead(restore_kit_pw,v_42,i,m_14)) ==> event(ItemSealed(acct_kit_pw,m_14)) \|\| event(ItemSealed(restore_kit_pw,m_14))` | false | false |
+| emergency_kit.pv | `not event(Pinned(restore_main,a,i))` | false | false |
+| emergency_kit.pv | `not event(VaultAccepted(restore_main,s,v_42,k_10))` | false | false |
+| emergency_kit.pv | `not event(ItemRead(restore_main,v_42,i,m_14))` | false | false |
+| emergency_kit.pv | `not event(ItemWritten(restore_main,v_42,m_14))` | false | false |
+| emergency_kit.pv | `not event(Pinned(restore_kit_lost,a,i))` | false | false |
+| emergency_kit.pv | `not event(AukDerived(restore_no_keyset))` | false | false |
 | manifest.pv | `event(Accept(d_3,v_84,n,mh_12,e)) ==> event(Signed(v_84,n,p,mh_12,e))` | true | true |
 | manifest.pv | `event(Accept(d_3,v_84,n,h1,e1))@i_6 && event(Accept(d_3,v_84,m_3,h2,e2))@j ==> i_6 > j \|\| m_3 ≥ n` | true | true |
 | manifest.pv | `event(Accept(d_3,v_84,n,h1,e1)) && event(Accept(d_3,v_84,n,h2,e2)) ==> h1 = h2` | true | true |

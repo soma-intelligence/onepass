@@ -35,7 +35,7 @@
      signed account id is not modeled (record ids are not modeled).
    - unlock_with_auk (AUK kept in the Keychain) and trust on first use on an
      unpinned device are out of scope here (emergency_kit.pv covers the
-     latter). *)
+     latter, with the RestoreDevice process it defines on top of Device). *)
 
 (* Account tags. *)
 const acct_main: bitstring.
@@ -58,6 +58,9 @@ const ver_one: bitstring.
    Arguments: identity_pub, account_id, kdf salt, signing_pub, kem_pub. *)
 event ParamsSigned(pkey, bitstring, bitstring, pkey, mlkem_pk, x25519_pk).
 event ParamsAccepted(pkey, bitstring, bitstring, pkey, mlkem_pk, x25519_pk).
+(* emergency_kit.pv (P18): the account created under a tag (tag, account_id,
+   identity_pub). Not used by the account models. *)
+event AccountOwned(bitstring, bitstring, pkey).
 (* P2: the AUK of an account. *)
 event AukCreated(bitstring, key).
 (* Sanity: unlock went through every check. *)
@@ -248,6 +251,7 @@ let CreateAccount(tag: bitstring, pw: password, sk_acct: key, skm: seed,
   let auk = derive_auk(pw, sk_acct, salt) in
   let keyset_blob = aead_seal(auk, keyset_aad(acct_id), (skm, skx, ssk, id_sk)) in
   event ParamsSigned(pk(id_sk), acct_id, salt, pk(ssk), pkm, pkx);
+  event AccountOwned(tag, acct_id, pk(id_sk));
   event AukCreated(tag, auk);
   (* repo.rs: create_account stores the params and keyset records *)
   out(c, (params, keyset_blob));

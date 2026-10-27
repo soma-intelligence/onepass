@@ -144,3 +144,42 @@ bridge_kem_x25519_broken.pv | not (event(AppMsg(hon,m)) && attacker_p1(m)) | tru
 bridge_kem_x25519_broken.pv | not (event(Record(p_2,k_2)) && attacker_p1(k_2)) | false
 bridge_kem_x25519_broken.pv | not event(HostPaired(p_2,t_4,k_2)) | false
 bridge_kem_x25519_broken.pv | not event(ExtRecv(hon,s,dir_h2e,ctr1,m)) | false
+
+# emergency_kit.pv : restauration par Emergency Kit sur un nouvel appareil sans épingle
+# (Secret Key du kit et mot de passe saisi, canaux privés ; stockage hostile ;
+# épingle au premier usage). Processus repris d'account_core.pvl.
+# P16 : clés de coffre et items du vrai compte secrets, stockage hostile pendant la restauration.
+emergency_kit.pv | not (event(VaultCreated(acct_main,s,v_42,k_10)) && attacker(k_10)) | true
+emergency_kit.pv | not (event(ItemSealed(acct_main,m_14)) && attacker(m_14)) | true
+emergency_kit.pv | not (event(ItemSealed(restore_main,m_14)) && attacker(m_14)) | true
+# P16 : l'appareil restauré n'accepte que les clés de coffre du vrai compte et n'affiche que ses items.
+emergency_kit.pv | event(VaultAccepted(restore_main,s,v_42,k_10)) ==> event(VaultCreated(acct_main,s,v_42,k_10)) | true
+emergency_kit.pv | event(ItemRead(restore_main,v_42,i,m_14)) ==> event(ItemSealed(acct_main,m_14)) || event(ItemSealed(restore_main,m_14)) | true
+# P18 : au premier usage, l'appareil n'épingle que le compte de l'utilisateur (2SKD : le keyset
+# doit s'ouvrir sous l'AUK de son mot de passe et de sa Secret Key).
+emergency_kit.pv | event(Pinned(restore_main,a,i)) ==> event(AccountOwned(acct_main,a,i)) | true
+# Le sel choisi par le stockage ne donne aucun test hors ligne du mot de passe.
+emergency_kit.pv | Weak secret pw_main | true
+# P17 : kit perdu (Secret Key publique), mot de passe secret.
+emergency_kit.pv | not (event(ItemSealed(acct_kit_lost,m_14)) && attacker(m_14)) | true
+emergency_kit.pv | not (event(ItemSealed(restore_kit_lost,m_14)) && attacker(m_14)) | true
+emergency_kit.pv | not (event(AukCreated(acct_kit_lost,k_10)) && attacker(k_10)) | true
+emergency_kit.pv | event(Pinned(restore_kit_lost,a,i)) ==> event(AccountOwned(acct_kit_lost,a,i)) | true
+# Limite documentée (F-03, comme pw_sk_leaked d'account.pv) : Secret Key publique, le vrai keyset
+# sert de vérificateur, le mot de passe tombe au dictionnaire hors ligne ; P17 vaut pour un mot de passe fort.
+emergency_kit.pv | Weak secret pw_kit_lost | false
+# Secret Key publique sans vrai keyset : la dérivation sur un sel de l'attaquant n'offre aucun test hors ligne.
+emergency_kit.pv | Weak secret pw_no_keyset | true
+# Limite documentée (F-03, P18) : les deux facteurs connus (kit perdu avec le mot de passe écrit à la
+# main, ou Secret Key fuitée et mot de passe trouvé hors ligne), un stockage hostile au premier usage
+# fait épingler un compte de l'attaquant ; l'utilisateur voit le coffre et les items de l'attaquant.
+emergency_kit.pv | event(Pinned(restore_kit_pw,a,i)) ==> event(AccountOwned(acct_kit_pw,a,i)) | false
+emergency_kit.pv | event(ItemRead(restore_kit_pw,v_42,i,m_14)) ==> event(ItemSealed(acct_kit_pw,m_14)) || event(ItemSealed(restore_kit_pw,m_14)) | false
+# Sanité : la restauration épingle, liste un coffre, lit et écrit un item ; la restauration kit perdu
+# épingle ; l'appareil sans vrai keyset dérive une AUK.
+emergency_kit.pv | not event(Pinned(restore_main,a,i)) | false
+emergency_kit.pv | not event(VaultAccepted(restore_main,s,v_42,k_10)) | false
+emergency_kit.pv | not event(ItemRead(restore_main,v_42,i,m_14)) | false
+emergency_kit.pv | not event(ItemWritten(restore_main,v_42,m_14)) | false
+emergency_kit.pv | not event(Pinned(restore_kit_lost,a,i)) | false
+emergency_kit.pv | not event(AukDerived(restore_no_keyset)) | false
