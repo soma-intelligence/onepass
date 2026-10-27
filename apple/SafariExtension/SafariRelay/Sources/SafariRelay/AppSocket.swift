@@ -4,10 +4,18 @@ import Security
 /// The production path (spec 2026-10-27-release-bridge-design): the Mac app
 /// listens on `bridge.sock` at the root of its App Group container
 /// (`<team>.me.somalabs.onepass`) and serves the bridge from the vault the
-/// user unlocked. The extension connects, checks with the kernel audit token
-/// that the listener is the OnePass app signed by its own team, sends the
-/// opening frame `{"onepass_relay":1}`, then relays envelopes byte for byte.
-/// The app checks this extension's signature the same way.
+/// user unlocked. The extension connects, sends the opening frame
+/// `{"onepass_relay":1}`, then relays envelopes byte for byte. The app checks
+/// this extension's code signature (kernel audit token) before reading a byte.
+///
+/// The extension checks the listener's signature the same way when the system
+/// lets it. Inside an app bundle the App Sandbox refuses that lookup with EPERM
+/// (measured 2026-10-27, spec P-02): the extension then relies on the App
+/// Group container (only this team's processes, or ones the user lets read
+/// other apps' data, can create the socket) and on the bridge protocol (a
+/// session needs the pairing key; a pairing needs the code the user compares
+/// with the app's Touch ID sheet). A listener positively identified as anything
+/// else is refused.
 public enum AppSocket {
     public static let appIdentifier = "me.somalabs.onepass"
     public static let groupSuffix = "me.somalabs.onepass"
@@ -45,21 +53,52 @@ public enum AppSocket {
         return team
     }
 
-    /// Whether the process at the other end of `fd` satisfies `requirement`,
+    /// What the check of the listener found.
+    public enum Listener: Equatable, Sendable {
+        /// Identified, and it satisfies the requirement.
+        case verified
+        /// The App Sandbox refused the lookup (EPERM): nothing is known.
+        case lookupDenied
+        /// Identified as something else, or unreadable: refused.
+        case refused
+    }
+
+    /// `kPOSIXErrorBase + EPERM`: what the guest lookup returns when the
+    /// App Sandbox refuses it.
+    static let lookupDeniedStatus: OSStatus = 100_000 + EPERM
+
+    /// The verdict from the lookup status and, when it succeeded, the
+    /// validity check's status.
+    static func verdict(lookup: OSStatus, validity: OSStatus?) -> Listener {
+        if lookup == lookupDeniedStatus { return .lookupDenied }
+        guard lookup == errSecSuccess, let validity else { return .refused }
+        return validity == errSecSuccess ? .verified : .refused
+    }
+
+    /// Checks the process at the other end of `fd` against `requirement`,
     /// identified by its audit token (never by pid, which can be reused).
-    public static func peerSatisfies(fd: Int32, requirement text: String) -> Bool {
+    public static func checkPeer(fd: Int32, requirement text: String) -> Listener {
         var token = audit_token_t()
         var len = socklen_t(MemoryLayout<audit_token_t>.size)
         guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERTOKEN, &token, &len) == 0,
             Int(len) == MemoryLayout<audit_token_t>.size
-        else { return false }
+        else { return .refused }
         let data = withUnsafeBytes(of: &token) { Data($0) }
         var code: SecCode?
         let attrs = [kSecGuestAttributeAudit: data] as CFDictionary
-        guard SecCodeCopyGuestWithAttributes(nil, attrs, [], &code) == errSecSuccess, let code else { return false }
+        let lookup = SecCodeCopyGuestWithAttributes(nil, attrs, [], &code)
+        guard lookup == errSecSuccess, let code else { return verdict(lookup: lookup, validity: nil) }
         var req: SecRequirement?
-        guard SecRequirementCreateWithString(text as CFString, [], &req) == errSecSuccess, let req else { return false }
-        return SecCodeCheckValidity(code, [], req) == errSecSuccess
+        guard SecRequirementCreateWithString(text as CFString, [], &req) == errSecSuccess, let req else {
+            return .refused
+        }
+        return verdict(lookup: lookup, validity: SecCodeCheckValidity(code, [], req))
+    }
+
+    /// Whether the extension may talk to this listener: verified, or the
+    /// sandbox forbids the check (see the type's documentation).
+    public static func acceptsListener(_ l: Listener) -> Bool {
+        l != .refused
     }
 
     /// The launcher for the app's socket, or nil when this build is not
@@ -69,7 +108,7 @@ public enum AppSocket {
             let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "\(team).\(groupSuffix)")
         else { return nil }
         let path = dir.appendingPathComponent(socketName).path
-        return AppSocketLauncher(path: path) { fd in peerSatisfies(fd: fd, requirement: requirement) }
+        return AppSocketLauncher(path: path) { fd in acceptsListener(checkPeer(fd: fd, requirement: requirement)) }
     }
 }
 

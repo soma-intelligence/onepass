@@ -112,7 +112,18 @@ struct AppSocketTests {
         defer { close(fds[0]); close(fds[1]) }
         // The peer is this ad hoc test process: never the app.
         let req = AppSocket.requirement(team: "2RFY9Z4UVH")!
-        #expect(!AppSocket.peerSatisfies(fd: fds[0], requirement: req))
-        #expect(!AppSocket.peerSatisfies(fd: -1, requirement: req))
+        #expect(AppSocket.checkPeer(fd: fds[0], requirement: req) == .refused)
+        #expect(AppSocket.checkPeer(fd: -1, requirement: req) == .refused)
+    }
+
+    @Test func onlyASandboxRefusalOfTheLookupIsTolerated() {
+        #expect(AppSocket.verdict(lookup: errSecSuccess, validity: errSecSuccess) == .verified)
+        #expect(AppSocket.verdict(lookup: errSecSuccess, validity: errSecCSReqFailed) == .refused)
+        #expect(AppSocket.verdict(lookup: 100_001, validity: nil) == .lookupDenied)
+        #expect(AppSocket.verdict(lookup: errSecCSNoSuchCode, validity: nil) == .refused)
+        #expect(AppSocket.verdict(lookup: 100_000 + ESRCH, validity: nil) == .refused)
+        #expect(AppSocket.acceptsListener(.verified))
+        #expect(AppSocket.acceptsListener(.lookupDenied))
+        #expect(!AppSocket.acceptsListener(.refused))
     }
 }
