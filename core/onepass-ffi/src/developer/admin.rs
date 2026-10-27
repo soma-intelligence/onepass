@@ -34,7 +34,9 @@ pub(crate) struct GuardState {
 /// The [`GuardState`] of `dir` for `account_id`, made on first use. A new
 /// account in the same folder gets fresh state.
 pub(crate) fn guard_state(dir: &Path, account_id: &str) -> Arc<GuardState> {
-    static STATES: OnceLock<Mutex<HashMap<(PathBuf, String), Arc<GuardState>>>> = OnceLock::new();
+    /// One state per (data folder, account).
+    type States = HashMap<(PathBuf, String), Arc<GuardState>>;
+    static STATES: OnceLock<Mutex<States>> = OnceLock::new();
     let mut states = STATES
         .get_or_init(Default::default)
         .lock()

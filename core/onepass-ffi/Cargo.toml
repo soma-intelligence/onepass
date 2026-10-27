@@ -21,6 +21,8 @@ onepass-core = { path = "../onepass-core" }
 # app, with the hardened guards (approvals, grants, registry, audit log).
 onepass-guard = { path = "../onepass-guard" }
 onepass-mcp = { path = "../onepass-mcp" }
+# The relay's wire messages (the relay itself is a separate binary).
+onepass-mcp-relay = { path = "../onepass-mcp-relay" }
 onepass-peer = { path = "../onepass-peer" }
 onepass-ssh-agent = { path = "../onepass-ssh-agent" }
 postcard = { version = "1", default-features = false, features = ["alloc"] }

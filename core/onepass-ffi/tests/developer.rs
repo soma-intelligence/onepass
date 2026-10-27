@@ -60,6 +60,14 @@ struct Fixture {
 }
 
 impl Fixture {
+    fn mcp_socket(&self) -> String {
+        self.dir
+            .path()
+            .join("dev")
+            .join("mcp.sock")
+            .display()
+            .to_string()
+    }
     fn data(&self) -> String {
         self.dir.path().join("dev").display().to_string()
     }
@@ -403,4 +411,250 @@ fn programs_pair_and_unpair_and_the_audit_log_rotates() {
     fx.session.clone().rotate_audit_log(data.clone()).unwrap();
     let report = fx.session.clone().audit_report(data).unwrap();
     assert!(report.problem.is_none() && report.entries.is_empty());
+}
+
+// ---- MCP server, with the test playing the relay
+
+mod mcp {
+    use super::*;
+    use std::io::{BufRead, BufReader};
+
+    struct Relay {
+        out: UnixStream,
+        input: BufReader<UnixStream>,
+    }
+
+    impl Relay {
+        fn connect(socket: &str, client: serde_json::Value) -> Relay {
+            let out = UnixStream::connect(socket).unwrap();
+            let input = BufReader::new(out.try_clone().unwrap());
+            let mut r = Relay { out, input };
+            r.send(serde_json::json!({"t": "hello", "v": 1, "client": client}));
+            r
+        }
+
+        fn send(&mut self, v: serde_json::Value) {
+            let mut line = v.to_string();
+            line.push('\n');
+            self.out.write_all(line.as_bytes()).unwrap();
+        }
+
+        fn recv(&mut self) -> serde_json::Value {
+            let mut line = String::new();
+            self.input.read_line(&mut line).unwrap();
+            serde_json::from_str(&line).unwrap()
+        }
+
+        /// One JSON-RPC request; answers the relay requests (exec) the
+        /// app sends meanwhile with `exec`, until the response comes.
+        fn call(
+            &mut self,
+            id: u64,
+            method: &str,
+            params: serde_json::Value,
+            exec: &dyn Fn(&serde_json::Value) -> serde_json::Value,
+        ) -> serde_json::Value {
+            let rpc =
+                serde_json::json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
+            self.send(serde_json::json!({"t": "mcp", "line": rpc.to_string()}));
+            loop {
+                let msg = self.recv();
+                match msg["t"].as_str().unwrap() {
+                    "mcp" => {
+                        return serde_json::from_str(msg["line"].as_str().unwrap()).unwrap();
+                    }
+                    "exec" => {
+                        let reply = exec(&msg);
+                        self.send(reply);
+                    }
+                    other => panic!("unexpected {other}"),
+                }
+            }
+        }
+    }
+
+    fn signed_client() -> serde_json::Value {
+        serde_json::json!({
+            "id": "team:TEAMID0001:com.exemple.agent", "label": "Agent Exemple",
+            "signed": true, "hardened": null,
+            "code": {"kind": "team", "team_id": "TEAMID0001", "identifier": "com.exemple.agent"},
+            "chain": ["team:TEAMID0001:com.exemple.agent"],
+        })
+    }
+
+    fn no_exec(_: &serde_json::Value) -> serde_json::Value {
+        panic!("no command expected")
+    }
+
+    /// A vault exposed with metadata and use, holding one note.
+    fn exposed(fx: &Fixture) -> String {
+        let vault = fx
+            .session
+            .vaults()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.id == fx.vault_id)
+            .unwrap();
+        let mut meta = vault.meta.clone();
+        meta.mcp_access = true;
+        fx.session.update_vault(fx.vault_id.clone(), meta).unwrap();
+        fx.session
+            .clone()
+            .set_mcp_policy(
+                fx.data(),
+                vec![FfiClientScopes {
+                    vault_id: fx.vault_id.clone(),
+                    scopes: vec!["metadata".into(), "use".into()],
+                }],
+                true,
+            )
+            .unwrap();
+        let mut note = fx
+            .session
+            .new_item(
+                fx.vault_id.clone(),
+                FfiItemType::SecureNote,
+                "Jeton Atlas".into(),
+            )
+            .unwrap();
+        for f in note.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+            if f.id == "content" {
+                f.value = FfiFieldValue::Text {
+                    value: "jeton-secret-atlas-42".into(),
+                };
+            }
+        }
+        fx.session.save_item(note).unwrap();
+        // References name the vault and the item (names or hyphenated ids).
+        format!("onepass://{}/Jeton Atlas/content", vault.meta.name)
+    }
+
+    fn start(fx: &Fixture, ui: Arc<ScriptedUi>) -> Arc<McpHost> {
+        McpHost::start_any_relay_for_tests(
+            fx.session.clone(),
+            FfiMcpHostConfig {
+                data_dir: fx.data(),
+                socket_path: fx.mcp_socket(),
+                relay_path: "/unused".into(),
+            },
+            ui,
+        )
+        .unwrap()
+    }
+
+    fn initialize(r: &mut Relay) {
+        let init = r.call(
+            1,
+            "initialize",
+            serde_json::json!({"protocolVersion": "2025-11-25", "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1"}}),
+            &no_exec,
+        );
+        assert_eq!(init["result"]["serverInfo"]["name"], "onepass");
+    }
+
+    #[test]
+    fn a_signed_client_pairs_lists_and_runs_with_masked_secrets() {
+        let fx = fixture();
+        let reference = exposed(&fx);
+        let ui = ScriptedUi::new(FfiDecision::AllowOnce, true);
+        let host = start(&fx, ui.clone());
+        let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
+        initialize(&mut r);
+        let clients = fx.session.clone().paired_clients(fx.data()).unwrap();
+        assert_eq!(clients.len(), 1);
+        assert_eq!(clients[0].id, "team:TEAMID0001:com.exemple.agent");
+
+        let listed = r.call(
+            2,
+            "tools/call",
+            serde_json::json!({"name": "list_vaults", "arguments": {}}),
+            &no_exec,
+        );
+        assert_eq!(listed["result"]["isError"], false, "{listed}");
+
+        let ran = r.call(
+            3,
+            "tools/call",
+            serde_json::json!({"name": "run_with_secrets", "arguments": {
+                "command": ["sh", "-c", "printf %s \"$TOKEN\""], "env": {"TOKEN": reference}}}),
+            &|exec| {
+                // The relay gets the value to inject, and returns it raw.
+                assert_eq!(exec["env"][0][1], "jeton-secret-atlas-42");
+                serde_json::json!({"t": "exec_result", "id": exec["id"], "ok": {
+                    "code": 0, "stdout": "jeton-secret-atlas-42", "stderr": "",
+                    "timed_out": false, "truncated": false}})
+            },
+        );
+        let text = ran.to_string();
+        assert!(!text.contains("jeton-secret-atlas-42"), "{text}");
+        assert!(text.contains("concealed:TOKEN"), "{text}");
+        assert_eq!(ui.asked.lock().unwrap().len(), 1);
+        assert_eq!(ui.asked.lock().unwrap()[0].surface, "mcp");
+
+        drop(r);
+        host.stop();
+        let report = fx.session.clone().audit_report(fx.data()).unwrap();
+        assert!(
+            report
+                .entries
+                .iter()
+                .any(|e| e.action == "run_with_secrets")
+        );
+    }
+
+    #[test]
+    fn an_unpaired_ad_hoc_client_is_refused_without_a_prompt() {
+        let fx = fixture();
+        exposed(&fx);
+        let ui = ScriptedUi::new(FfiDecision::AllowOnce, true);
+        let host = start(&fx, ui.clone());
+        let mut r = Relay::connect(
+            &fx.mcp_socket(),
+            serde_json::json!({"id": "adhoc:abcdef", "label": "outil-local", "signed": false,
+                "hardened": false, "code": {"kind": "adhoc"}, "chain": []}),
+        );
+        initialize(&mut r);
+        let listed = r.call(
+            2,
+            "tools/call",
+            serde_json::json!({"name": "list_vaults", "arguments": {}}),
+            &no_exec,
+        );
+        assert_eq!(listed["result"]["isError"], true, "{listed}");
+        assert!(listed.to_string().contains("not paired"), "{listed}");
+        assert!(ui.asked.lock().unwrap().is_empty());
+        assert!(
+            fx.session
+                .clone()
+                .paired_clients(fx.data())
+                .unwrap()
+                .is_empty()
+        );
+        host.stop();
+    }
+
+    #[test]
+    fn a_refused_pairing_serves_nothing() {
+        let fx = fixture();
+        exposed(&fx);
+        let ui = Arc::new(ScriptedUi {
+            answer: Mutex::new(FfiDecision::AllowOnce),
+            present: true,
+            pair: false,
+            asked: Mutex::new(Vec::new()),
+            presence_checks: AtomicUsize::new(0),
+        });
+        let host = start(&fx, ui);
+        let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
+        initialize(&mut r);
+        let listed = r.call(
+            2,
+            "tools/call",
+            serde_json::json!({"name": "list_vaults", "arguments": {}}),
+            &no_exec,
+        );
+        assert_eq!(listed["result"]["isError"], true, "{listed}");
+        host.stop();
+    }
 }
