@@ -39,12 +39,12 @@ public enum PasswordReason: Sendable, Equatable {
     /// French message for the unlock screen.
     public var message: String {
         switch self {
-        case .expired: "Le mot de passe maître est demandé régulièrement."
-        case .rebooted: "Le mot de passe maître est demandé après un redémarrage."
-        case .invalidated: "La biométrie a changé : saisissez le mot de passe maître."
-        case .notEnrolled: "Saisissez le mot de passe maître."
-        case .userChosePassword: "Saisissez le mot de passe maître."
-        case .lockedOut: "La biométrie est temporairement bloquée : saisissez le mot de passe maître."
+        case .expired: String(localized: "Le mot de passe maître est demandé régulièrement.", bundle: VaultKitStrings.bundle)
+        case .rebooted: String(localized: "Le mot de passe maître est demandé après un redémarrage.", bundle: VaultKitStrings.bundle)
+        case .invalidated: String(localized: "La biométrie a changé : saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
+        case .notEnrolled: String(localized: "Saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
+        case .userChosePassword: String(localized: "Saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
+        case .lockedOut: String(localized: "La biométrie est temporairement bloquée : saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
         }
     }
 }

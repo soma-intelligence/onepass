@@ -7,6 +7,9 @@ import Testing
 
 @Suite("EmergencyKit")
 struct EmergencyKitTests {
+    /// Messages are compared in French, the source language, whatever the machine's language.
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     /// Fictional key: the core's published test vector.
     static let secretKey = "AAAQ-EAYE-AUDA-OCAJ-BIFQ-YDIO-B4IB-CEQT-CQKR-MFYY-DENB-WHA5-DYPQ-B"
     static let accountID = String(repeating: "0", count: 32)

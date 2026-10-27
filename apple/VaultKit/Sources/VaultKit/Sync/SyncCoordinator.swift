@@ -212,9 +212,12 @@ public actor SyncCoordinator: SyncTrigger {
         return outcome
     }
 
-    nonisolated static let noAccountMessage = "Aucun compte iCloud n'est disponible."
-    nonisolated static let zoneUnreadableMessage =
-        "Impossible de lire ce compte iCloud. Vérifie ta connexion puis réessaie."
+    nonisolated static var noAccountMessage: String {
+        String(localized: "Aucun compte iCloud n'est disponible.", bundle: VaultKitStrings.bundle)
+    }
+    nonisolated static var zoneUnreadableMessage: String {
+        String(localized: "Impossible de lire ce compte iCloud. Vérifie ta connexion puis réessaie.", bundle: VaultKitStrings.bundle)
+    }
 
     private func inspectZone(_ remote: any RemoteRecordStore) async throws -> AccountChangeCheck {
         let store = store
@@ -335,7 +338,7 @@ public actor SyncCoordinator: SyncTrigger {
     private func round() async {
         guard let remote else { return }
         guard await remote.accountAvailable() else {
-            setStatus(.error("Aucun compte iCloud n'est disponible."))
+            setStatus(.error(String(localized: "Aucun compte iCloud n'est disponible.", bundle: VaultKitStrings.bundle)))
             return
         }
         setStatus(.syncing)
@@ -375,7 +378,7 @@ public actor SyncCoordinator: SyncTrigger {
             setStatus(.offline)
             scheduleRetry(after: nil)
         } catch RemoteStoreError.retryable(let after) {
-            setStatus(.error("Le serveur est momentanément indisponible, nouvel essai bientôt."))
+            setStatus(.error(String(localized: "Le serveur est momentanément indisponible, nouvel essai bientôt.", bundle: VaultKitStrings.bundle)))
             scheduleRetry(after: after)
         } catch RemoteStoreError.recordUnreadable {
             unreadableRounds += 1
@@ -383,7 +386,7 @@ public actor SyncCoordinator: SyncTrigger {
                 Self.log.error("a remote record stays unreadable")
                 setStatus(.error(Self.unreadableMessage))
             } else {
-                setStatus(.error("Le serveur est momentanément indisponible, nouvel essai bientôt."))
+                setStatus(.error(String(localized: "Le serveur est momentanément indisponible, nouvel essai bientôt.", bundle: VaultKitStrings.bundle)))
             }
             scheduleRetry(after: nil)
         } catch RemoteStoreError.accountChanged {
@@ -392,7 +395,7 @@ public actor SyncCoordinator: SyncTrigger {
             setStatus(.accountChanged)
         } catch RoundError.unsettled {
             Self.log.notice("sync round ended with conflicts left")
-            setStatus(.error("La synchronisation n'a pas abouti, nouvel essai bientôt."))
+            setStatus(.error(String(localized: "La synchronisation n'a pas abouti, nouvel essai bientôt.", bundle: VaultKitStrings.bundle)))
             scheduleRetry(after: nil)
         } catch OnePassError.Integrity(let kind) {
             Self.log.error("remote data refused: \(kind, privacy: .public)")
@@ -516,8 +519,9 @@ public actor SyncCoordinator: SyncTrigger {
         try await checkAccountIdentity(remote)
     }
 
-    nonisolated static let unreadableMessage =
-        "Un enregistrement iCloud reste illisible : la synchronisation est bloquée. OnePass réessaiera."
+    nonisolated static var unreadableMessage: String {
+        String(localized: "Un enregistrement iCloud reste illisible : la synchronisation est bloquée. OnePass réessaiera.", bundle: VaultKitStrings.bundle)
+    }
 
     /// The remote lost everything. Step 1, atomic in the core: server tags, staged pages and the change
     /// token are dropped and a persisted flag is set. Nothing is queued yet, so a stale local record

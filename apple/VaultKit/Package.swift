@@ -14,6 +14,7 @@ let ffiPath: String = {
 
 let package = Package(
     name: "VaultKit",
+    defaultLocalization: "fr",
     platforms: [.iOS("26.0"), .macOS("26.0"), .watchOS("26.0"), .visionOS("26.0")],
     products: [
         .library(name: "VaultKit", targets: ["VaultKit"]),
@@ -33,7 +34,8 @@ let package = Package(
         ),
         .target(
             name: "VaultKit",
-            dependencies: ["OnePassCore"]
+            dependencies: ["OnePassCore"],
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "VaultKitTests",

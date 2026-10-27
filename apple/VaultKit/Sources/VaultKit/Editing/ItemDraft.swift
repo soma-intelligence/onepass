@@ -106,17 +106,17 @@ public struct ItemDraft: Equatable, Sendable {
         }.max() ?? 0
     }
 
-    /// Label used when the user leaves it blank. French literals: VaultKit has no string catalog
-    /// (the app's catalog is French only in milestone 2).
+    /// Label used when the user leaves it blank, in the app's language (it is stored as typed).
     public static func defaultLabel(_ kind: FfiFieldType) -> String {
         switch kind {
-        case .concealed: "Champ masqué"
-        case .password: "Mot de passe"
-        case .date: "Date"
-        case .url: "Site web"
-        case .email: "Email"
-        case .phone: "Téléphone"
-        default: "Texte"
+        case .concealed: String(localized: "Champ masqué", bundle: VaultKitStrings.bundle)
+        case .password: String(localized: "Mot de passe", bundle: VaultKitStrings.bundle)
+        case .date: String(localized: "Date", bundle: VaultKitStrings.bundle)
+        case .url: String(localized: "Site web", bundle: VaultKitStrings.bundle)
+        case .email: String(localized: "Email", bundle: VaultKitStrings.bundle)
+        case .phone: String(localized: "Téléphone", bundle: VaultKitStrings.bundle)
+        case .location: String(localized: "Lieu", bundle: VaultKitStrings.bundle)
+        default: String(localized: "Texte", bundle: VaultKitStrings.bundle)
         }
     }
 

@@ -18,13 +18,13 @@ public enum SyncStatus: Equatable, Sendable {
     /// French text for the UI.
     public var label: String {
         switch self {
-        case .disabled: "Synchronisation désactivée"
-        case .idle: "À jour"
-        case .syncing: "Synchronisation en cours"
-        case .offline: "Hors ligne"
+        case .disabled: String(localized: "Synchronisation désactivée", bundle: VaultKitStrings.bundle)
+        case .idle: String(localized: "À jour", bundle: VaultKitStrings.bundle)
+        case .syncing: String(localized: "Synchronisation en cours", bundle: VaultKitStrings.bundle)
+        case .offline: String(localized: "Hors ligne", bundle: VaultKitStrings.bundle)
         case .error(let message): message
-        case .refused(let kind): "Données refusées : \(VaultError.integrityLabel(kind))"
-        case .accountChanged: "Le compte iCloud a changé"
+        case .refused(let kind): String(localized: "Données refusées : \(VaultError.integrityLabel(kind))", bundle: VaultKitStrings.bundle)
+        case .accountChanged: String(localized: "Le compte iCloud a changé", bundle: VaultKitStrings.bundle)
         }
     }
 }
@@ -51,7 +51,8 @@ public enum AccountChangeOutcome: Equatable, Sendable {
     case failed(String)
 
     /// The refusal shown to the user.
-    public static let otherVaultMessage =
-        "Ce compte iCloud contient déjà un autre coffre OnePass. Reviens au compte iCloud d'origine pour synchroniser."
+    public static var otherVaultMessage: String {
+        String(localized: "Ce compte iCloud contient déjà un autre coffre OnePass. Reviens au compte iCloud d'origine pour synchroniser.", bundle: VaultKitStrings.bundle)
+    }
 }
 

@@ -86,6 +86,9 @@ func fillRequired(_ item: inout FfiItem) {
 @MainActor
 @Suite("Vault session")
 struct VaultSessionTests {
+    /// Messages are compared in French, the source language, whatever the machine's language.
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     /// The AutoFill extension must not create the shared store before the app migrated into it.
     @Test func missingStoreIsNoAccountAndIsNotCreated() async throws {
         let h = try SessionHarness()
@@ -559,6 +562,9 @@ final class CoreGate: Sendable {
 @MainActor
 @Suite("Vault session hardening")
 struct VaultSessionHardeningTests {
+    /// Messages are compared in French, the source language, whatever the machine's language.
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     @Test func concurrentPasswordChecksCannotBypassLockout() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }
