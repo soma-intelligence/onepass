@@ -3,8 +3,8 @@
 // clicks, no submission). Respects robots.txt, one page per host, paced.
 // Usage: node --experimental-strip-types lab/corpus/extract.ts --sites <json> --out <dir> [--only <host>] [--delay-ms 5000]
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { isAllowed, robotsEntry } from "./robots.ts";
-import type { RobotsEntry } from "./robots.ts";
+import { USER_AGENT, urlAllowed } from "./robots-net.ts";
+import { INIT_SCRIPT, pageExtra } from "./page-capture.ts";
 import { build, type PageExtra } from "./build.ts";
 import { sanitizeText } from "./sanitize.ts";
 import { extractFeatures } from "../../src/content/detect/features.ts";
@@ -12,8 +12,6 @@ import type { PageFeatures } from "../../src/content/detect/features.ts";
 import { stableJson } from "./types.ts";
 import type { Category, Sample } from "./types.ts";
 
-const USER_AGENT = "Mozilla/5.0 (compatible; OnePassLabCorpus/1; structure-only research crawler)";
-const ROBOTS_AGENT = "OnePassLabCorpus";
 const USAGE = `Usage: node --experimental-strip-types lab/corpus/extract.ts --sites <json> --out <dir> [--only <host>] [--delay-ms 5000]
 
 Captures the DOM structure (never values) of the public pages listed in the sites file.
@@ -22,52 +20,6 @@ Captures the DOM structure (never values) of the public pages listed in the site
   --only      restrict the run to one host
   --delay-ms  minimum pause between two page requests (default 5000)
   --help      print this text`;
-
-// Passive init script: records calls to navigator.credentials, never alters them.
-const INIT_SCRIPT = `(() => {
-  const calls = (window.__lab_webauthn = []);
-  const c = navigator.credentials;
-  if (!c) return;
-  for (const k of ["get", "create"]) {
-    const orig = c[k] && c[k].bind(c);
-    if (!orig) continue;
-    c[k] = function (opts) { if (opts && opts.publicKey) calls.push(k); return orig(opts); };
-  }
-})();`;
-
-/** Runs inside the page: document language and the text of sign-in provider buttons. */
-function pageExtra(): PageExtra {
-  const textOf = (el: Element) => (el.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
-  const providerTexts: string[] = [];
-  document.querySelectorAll("button, a, [role=button]").forEach((b) => {
-    const t = textOf(b);
-    if (/google|apple|microsoft/i.test(t) && t.length < 80) providerTexts.push(t);
-  });
-  return { lang: document.documentElement.lang || undefined, providerTexts };
-}
-
-const robotsCache = new Map<string, RobotsEntry>();
-
-async function getRobots(origin: string): Promise<RobotsEntry> {
-  const hit = robotsCache.get(origin);
-  if (hit !== undefined) return hit;
-  let entry: RobotsEntry;
-  try {
-    const res = await fetch(origin + "/robots.txt", { headers: { "user-agent": USER_AGENT }, signal: AbortSignal.timeout(10_000) });
-    const text = res.ok ? await res.text() : "";
-    entry = robotsEntry({ status: res.status, ok: res.ok, redirected: res.redirected, contentType: res.headers.get("content-type") ?? "" }, () => text);
-  } catch {
-    entry = "deny";
-  }
-  robotsCache.set(origin, entry);
-  return entry;
-}
-
-async function urlAllowed(u: URL): Promise<boolean> {
-  const e = await getRobots(u.origin);
-  if (e === "deny") return false;
-  return e === null || isAllowed(e, ROBOTS_AGENT, u.pathname + u.search);
-}
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const out: Record<string, string | boolean> = {};
