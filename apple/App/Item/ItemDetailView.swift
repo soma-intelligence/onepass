@@ -160,6 +160,7 @@ struct ItemDetailView: View {
             .frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.top)
+        .groupedScreen()
         .environment(\.openURL, OpenURLAction { url in
             // Links in notes and fields open only on a tap, and only web or mail links.
             ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") ? .systemAction : .discarded

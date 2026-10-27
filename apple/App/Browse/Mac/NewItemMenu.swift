@@ -60,6 +60,35 @@ struct NewItemSheet: View {
     @State private var query = ""
     @State private var showAll = false
     @FocusState private var searchFocused: Bool
+    /// iPhone: the sheet stays up after a pick, the editor takes its place (`PhoneNewItemSheet`).
+    private let inPhoneSheet: Bool
+
+    init(inPhoneSheet: Bool = false) {
+        self.inPhoneSheet = inPhoneSheet
+        // iPhone: the full-height sheet lists every category under the six tiles.
+        _showAll = State(initialValue: inPhoneSheet)
+    }
+
+    /// Closes the type picker: the whole sheet, or on iPhone only the picker (the editor follows).
+    private func close() {
+        if inPhoneSheet { model.showNewItemPicker = false } else { dismiss() }
+    }
+
+    #if os(iOS)
+    private static let sideInset: CGFloat = 16
+    private static let searchInset: CGFloat = 16
+    private static let searchFont = Font.body
+    private static let moreFont = Font.headline
+    private static let fanTile: CGFloat = 28
+    private static let fanStep: CGFloat = 18
+    #else
+    private static let sideInset: CGFloat = 28
+    private static let searchInset: CGFloat = 60
+    private static let searchFont = Font.title3
+    private static let moreFont = Font.title3.weight(.medium)
+    private static let fanTile: CGFloat = 34
+    private static let fanStep: CGFloat = 26
+    #endif
 
     static let featured: [FfiItemType] = [.login, .secureNote, .creditCard, .identity, .apiCredential, .document]
 
@@ -91,7 +120,7 @@ struct NewItemSheet: View {
             HStack {
                 Spacer()
                 Button {
-                    dismiss()
+                    close()
                 } label: {
                     Image(systemName: "xmark").font(.body.weight(.semibold)).foregroundStyle(.secondary)
                         .frame(width: 28, height: 28)
@@ -109,7 +138,7 @@ struct NewItemSheet: View {
                 .padding(.bottom, 16)
 
             searchField
-                .padding(.horizontal, 60)
+                .padding(.horizontal, Self.searchInset)
                 .padding(.bottom, 22)
 
             ScrollView {
@@ -134,14 +163,23 @@ struct NewItemSheet: View {
                         }
                     }
                 }
-                .padding(.horizontal, 28)
+                .padding(.horizontal, Self.sideInset)
                 .padding(.bottom, 16)
             }
+            .scrollDismissesKeyboard(.immediately)
 
-            Divider().padding(.horizontal, 28)
+            Divider().padding(.horizontal, Self.sideInset)
             Button {
-                dismiss()
-                model.showImport = true
+                close()
+                if inPhoneSheet {
+                    // The import sheet comes once this one has gone.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(450))
+                        model.showImport = true
+                    }
+                } else {
+                    model.showImport = true
+                }
             } label: {
                 Label("Importer depuis un autre gestionnaire", systemImage: "square.and.arrow.down")
                     .font(.body.weight(.medium))
@@ -153,7 +191,8 @@ struct NewItemSheet: View {
         #if os(macOS)
         .frame(width: 600, height: 620)
         #endif
-        .onAppear { searchFocused = true }
+        // iPhone: the grid first, the keyboard only once the field is touched.
+        .onAppear { if !inPhoneSheet { searchFocused = true } }
     }
 
     private static let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
@@ -163,7 +202,7 @@ struct NewItemSheet: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Rechercher un site ou une catégorie", text: $query)
                 .textFieldStyle(.plain)
-                .font(.title3)
+                .font(Self.searchFont)
                 .focused($searchFocused)
                 .onSubmit(submit)
                 .accessibilityIdentifier("newItem.search")
@@ -185,17 +224,18 @@ struct NewItemSheet: View {
         } label: {
             HStack {
                 Text(showAll ? "Moins de catégories" : "Plus de catégories")
-                    .font(.title3.weight(.medium))
-                Spacer()
+                    .font(Self.moreFont)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
                 ZStack {
                     ForEach(Array([FfiItemType.router, .medicalRecord, .sshKey, .passport, .vehicle, .bankAccount].enumerated()), id: \.offset) { i, type in
-                        CategoryTile(category: ItemCategory.of(type), size: 34)
+                        CategoryTile(category: ItemCategory.of(type), size: Self.fanTile)
                             .rotationEffect(.degrees(Double(i % 3 - 1) * 9))
-                            .offset(x: CGFloat(i) * 26 - 70, y: i.isMultiple(of: 2) ? 6 : -6)
+                            .offset(x: CGFloat(i) * Self.fanStep - Self.fanStep * 2.7, y: i.isMultiple(of: 2) ? 6 : -6)
                             .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
                     }
                 }
-                .frame(width: 160, height: 44)
+                .frame(width: Self.fanStep * 6.2, height: 44)
                 .opacity(showAll ? 0.5 : 1)
                 Image(systemName: "chevron.down")
                     .rotationEffect(.degrees(showAll ? 180 : 0))
@@ -222,7 +262,11 @@ struct NewItemSheet: View {
                         .padding(.leading, 4)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], spacing: 8) {
                         ForEach(group.types, id: \.self) { type in
-                            NewItemTile(type: type) { pick(type) }
+                            // A common type already has its big tile above: another identifier.
+                            let duplicate = trimmed.isEmpty && Self.featured.contains(type)
+                            NewItemTile(type: type, identifier: duplicate ? "newItem.all.\(NewItemMenu.key(type))" : nil) {
+                                pick(type)
+                            }
                         }
                     }
                 }
@@ -238,7 +282,7 @@ struct NewItemSheet: View {
     }
 
     private func pick(_ type: FfiItemType) {
-        dismiss()
+        close()
         model.perform(.newItem(type))
     }
 
@@ -270,7 +314,7 @@ struct NewItemSheet: View {
     /// A login named after the site, its address filled in, and its sign-in provider when one was
     /// chosen: its account item right away when only one login looks like it, else the editor asks.
     private func pickWebsite(_ site: (title: String, url: String), provider: LoginProvider? = nil) {
-        dismiss()
+        close()
         model.perform(.newItem(.login))
         guard var draft = model.newItemDraft else { return }
         draft.item.title = site.title
@@ -296,12 +340,29 @@ private struct BigTypeTile: View {
     let action: () -> Void
     @State private var hovering = false
 
+    // iPhone: three narrow tiles a row, the name on up to two lines.
+    #if os(iOS)
+    private static let art: CGFloat = 40
+    private static let spacing: CGFloat = 12
+    private static let font = Font.subheadline.weight(.semibold)
+    private static let lines = 2
+    private static let padding: CGFloat = 12
+    private static let height: CGFloat = 104
+    #else
+    private static let art: CGFloat = 44
+    private static let spacing: CGFloat = 18
+    private static let font = Font.title3.weight(.medium)
+    private static let lines = 1
+    private static let padding: CGFloat = 16
+    private static let height: CGFloat = 118
+    #endif
+
     var body: some View {
         let category = ItemCategory.of(type)
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: Self.spacing) {
                 HStack(alignment: .top) {
-                    CategoryTile(category: category, size: 44)
+                    CategoryTile(category: category, size: Self.art)
                     Spacer()
                     Image(systemName: "plus")
                         .font(.title3.weight(.semibold))
@@ -309,13 +370,14 @@ private struct BigTypeTile: View {
                         .opacity(hovering ? 1 : 0)
                 }
                 Text(category.singular)
-                    .font(.title3.weight(.medium))
+                    .font(Self.font)
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .lineLimit(Self.lines)
                     .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
+            .padding(Self.padding)
+            .frame(maxWidth: .infinity, minHeight: Self.height, alignment: .topLeading)
             .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.16)) : AnyShapeStyle(.fill.quinary),
                 in: .rect(cornerRadius: 14))
             .overlay {
@@ -362,6 +424,7 @@ private struct WebsiteTile: View {
 /// One type in the ⌘N grid: the type's colored glyph and its name, highlighted on hover.
 private struct NewItemTile: View {
     let type: FfiItemType
+    var identifier: String?
     let action: () -> Void
     @State private var hovering = false
 
@@ -388,6 +451,6 @@ private struct NewItemTile: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(category.singular)
-        .accessibilityIdentifier("newItem.\(NewItemMenu.key(type))")
+        .accessibilityIdentifier(identifier ?? "newItem.\(NewItemMenu.key(type))")
     }
 }

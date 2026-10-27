@@ -3,6 +3,7 @@
 import type { Transport } from "../bridge/client";
 import type { Envelope } from "../bridge/wire";
 import type { BgExt } from "./ext";
+import { safariTransport } from "./safari";
 
 /** Development host name (spec 9); the product host comes with the Mac app. */
 export const NATIVE_HOST = "me.somalabs.onepass.dev";
@@ -55,4 +56,25 @@ export function nativeTransport(hostName: string, runtime: NativeApi): Transport
       }
     },
   };
+}
+
+type RuntimeApi = NativeApi & Pick<BgExt["runtime"], "getURL" | "sendNativeMessage">;
+
+/** Safari serves its extension pages from `safari-web-extension:`. */
+export function isSafari(runtime: Pick<BgExt["runtime"], "getURL">): boolean {
+  return runtime.getURL("").startsWith("safari-web-extension:");
+}
+
+/**
+ * The transport to the app for this browser: the Safari relay in Safari
+ * (no native messaging host there), the native messaging port elsewhere.
+ * Either way the bridge protocol on top is the same, pairing included.
+ */
+export function openTransport(runtime: RuntimeApi): Transport {
+  if (isSafari(runtime)) {
+    const send = runtime.sendNativeMessage;
+    if (typeof send !== "function") throw new Error("sendNativeMessage is unavailable");
+    return safariTransport({ sendNativeMessage: (app, msg) => send.call(runtime, app, msg) });
+  }
+  return nativeTransport(NATIVE_HOST, runtime);
 }

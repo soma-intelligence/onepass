@@ -19,7 +19,7 @@ struct ConfigurationView: View {
         AutoFillScaffold(title: Text(verbatim: ""), model: model) {
             ScrollView {
                 VStack(spacing: 16) {
-                    AppGlyph(size: 84)
+                    AppGlyph(size: 72)
                     Text("OnePass est prêt")
                         .font(.title2.weight(.semibold))
                         .multilineTextAlignment(.center)
@@ -32,17 +32,11 @@ struct ConfigurationView: View {
                             .font(.callout.weight(.medium))
                             .multilineTextAlignment(.center)
                     }
-                    Button {
+                    AutoFillPrimaryButton {
                         model.cancel()
                     } label: {
                         Text("OK")
-                            .font(.system(size: 17, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 36)
                     }
-                    .buttonStyle(.glassProminent)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.large)
                     .keyboardShortcut(.defaultAction)
                     .padding(.top, 8)
                     .accessibilityIdentifier("autofill.done")

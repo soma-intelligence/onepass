@@ -2,11 +2,6 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-extension Theme {
-    /// Accent lightened for text on the dark glass (links, "Copier"), same mix as `EditorLabel`.
-    static let readableAccent = Theme.accent.mix(with: .white, by: 0.45)
-}
-
 extension String {
     /// Field labels read like the editor's: "Mot de passe" gives "mot de passe". An acronym first
     /// ("PIN", "URL") stays as is.

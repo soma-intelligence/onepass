@@ -57,6 +57,8 @@ export interface BgExt {
     getURL(path: string): string;
     onMessage: Event<MessageListener>;
     connectNative(application: string): NativePort;
+    /** Safari: one request to the app extension's handler, one reply. */
+    sendNativeMessage?(application: string, message: unknown): Promise<unknown>;
     lastError?: { message?: string } | undefined;
   };
   tabs: {

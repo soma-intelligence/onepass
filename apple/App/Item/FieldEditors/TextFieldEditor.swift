@@ -36,7 +36,7 @@ struct EditorLabel: View {
 
     var body: some View {
         // Lightened accent: 4.5:1 or better on the dark glass, still reads as "editable".
-        Text(text).font(.subheadline.weight(.medium)).foregroundStyle(Theme.accent.mix(with: .white, by: 0.45))
+        Text(text).font(.subheadline.weight(.medium)).foregroundStyle(Theme.readableAccent)
     }
 }
 
@@ -47,9 +47,28 @@ struct EditorCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) { content }
             .frame(maxWidth: .infinity, alignment: .leading)
+            #if os(iOS)
+            // iPhone and iPad: the grouped cell color over the grouped background (`groupedScreen`),
+            // so a card reads the same in the lists, the detail and the editor.
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: 14))
+            .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.06)) }
+            #else
             // See-through over the window material, with a hairline to hold the edge.
             .background(.fill.quaternary, in: .rect(cornerRadius: 14))
             .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.07)) }
+            #endif
+    }
+}
+
+extension View {
+    /// iPhone and iPad: the grouped background behind the cards of the detail and the editor.
+    /// Mac and Vision Pro: unchanged (the window glass).
+    @ViewBuilder func groupedScreen() -> some View {
+        #if os(iOS)
+        background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        #else
+        self
+        #endif
     }
 }
 

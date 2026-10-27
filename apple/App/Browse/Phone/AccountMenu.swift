@@ -2,35 +2,36 @@
 import DesignKit
 import SwiftUI
 
-/// Account button of the iPhone navigation bars (mockups `PhoneHome`, `PhoneItems`): initials on
-/// an accent square. Its menu holds Réglages (a sheet) and Verrouiller, which asks first when an
-/// edited draft would be lost.
+/// Account button of the iPhone navigation bars (mockups `PhoneHome`, `PhoneItems`): the account's
+/// initials on the accent square, as in the Mac account header. Its menu holds the account actions
+/// of the Mac popover: Nouveau coffre, Importer, Réglages (the tab) and Verrouiller, which asks
+/// first when an edited draft would be lost.
 struct AccountMenu: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openPhoneTab) private var openTab
+    @State private var creatingVault = false
 
     var body: some View {
         Menu {
             Section(model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName) {
-                Button("Réglages", systemImage: "gearshape") { model.showSettings = true }
+                Button("Nouveau coffre…", systemImage: "plus.rectangle.on.rectangle") { creatingVault = true }
+                    .accessibilityIdentifier("account.newVault")
+                Button("Importer…", systemImage: "square.and.arrow.down") { model.showImport = true }
+                    .accessibilityIdentifier("account.import")
+                Button("Réglages", systemImage: "gearshape") { openTab(.settings) }
                     .accessibilityIdentifier("account.settings")
-                Button("Verrouiller", systemImage: "lock") { model.perform(.lock) }
-                    .accessibilityIdentifier("account.lock")
             }
+            Button("Verrouiller", systemImage: "lock", role: .destructive) { model.perform(.lock) }
+                .accessibilityIdentifier("account.lock")
         } label: {
-            HStack(spacing: 4) {
-                Text(model.initials.isEmpty ? "?" : model.initials)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
-            }
-            .contentShape(Rectangle())
+            AccountAvatar(initials: model.initials, size: 34)
+                .contentShape(Rectangle())
         }
         .accessibilityLabel(Text("Menu du compte"))
         .accessibilityIdentifier("account.menu")
+        .sheet(isPresented: $creatingVault) {
+            VaultEditorView(vault: nil) { creatingVault = false }
+        }
     }
 }
 
@@ -46,6 +47,7 @@ struct PhoneRootToolbar: ToolbarContent {
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .topBarTrailing) {
             Button("Nouvel élément", systemImage: "plus") { model.showNewItemPicker = true }
+                .buttonStyle(.glassProminent)
                 .accessibilityIdentifier("items.new")
         }
     }

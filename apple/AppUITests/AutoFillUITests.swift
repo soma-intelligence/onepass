@@ -73,10 +73,23 @@ final class AutoFillUITests: XCTestCase {
             attachScreenshot("status-not-refreshed")
             print("Simulator limit: autofill.status is \(String(describing: status.value)) while the system settings show OnePass on")
         }
-        // Back to the settings list, then "OK" closes the sheet.
+        // Back to the settings list, then to Accueil (Réglages is a tab on iPhone, a sheet with
+        // "OK" elsewhere).
         let back = onePass.navigationBars["Remplissage automatique"].buttons.firstMatch
         if back.exists { tap(back, in: onePass) }
-        tap(onePass.buttons["settings.done"], in: onePass)
+        let done = onePass.buttons["settings.done"]
+        if done.exists {
+            tap(done, in: onePass)
+        } else {
+            tap(tabButton(onePass, id: "tab.home", label: "Accueil"), in: onePass)
+            // Accueil still shows the first Login: back to its root, where "Nouvel élément" is.
+            let back = onePass.navigationBars.buttons.element(boundBy: 0)
+            var pops = 0
+            while !onePass.buttons["items.new"].waitForExistence(timeout: 2), back.exists, pops < 4 {
+                back.tap()
+                pops += 1
+            }
+        }
 
         // Second Login, OnePass now the provider: no "Save Password?" sheet (spec 7). Limit: an
         // absence is only watched for 10 s (the sheet came within 3 s before activation).
@@ -95,6 +108,7 @@ final class AutoFillUITests: XCTestCase {
         // The extension: master password (Argon2id in the extension process), then the Login.
         let master = element("autofill.password", type: .secureTextField)
         XCTAssertTrue(master.waitForExistence(timeout: Self.uiTimeout), "extension unlock screen missing")
+        attachScreenshot("extension-unlock")
         master.tap()
         master.typeText(Self.masterPassword)
         element("autofill.unlock", type: .button).tap()
@@ -111,11 +125,13 @@ final class AutoFillUITests: XCTestCase {
             XCTFail("extension did not unlock")
             return
         }
+        attachScreenshot("extension-list")
         if !candidate.exists {
             print("No Login for this app: \(others.label)")
             tap(others, in: host)
         }
         require(candidate, in: host, "candidate list")
+        attachScreenshot("extension-list-others")
         tap(candidate, in: host)
 
         // Filled: the username in clear, the password masked but not empty.
@@ -163,18 +179,8 @@ final class AutoFillUITests: XCTestCase {
     }
 
     private func openAutoFillSettings() {
-        let home = tabButton(onePass, id: "tab.home", label: "Accueil")
-        tap(home, in: onePass)
-        let back = onePass.navigationBars.buttons.element(boundBy: 0)
-        let menu = onePass.descendants(matching: .any)["account.menu"].firstMatch
-        var pops = 0
-        while !menu.waitForExistence(timeout: 2), back.exists, pops < 4 {
-            back.tap()
-            pops += 1
-        }
-        tap(menu, in: onePass)
-        let item = onePass.descendants(matching: .any)["account.settings"].firstMatch
-        tap(item.waitForExistence(timeout: 2) ? item : onePass.buttons["Réglages"].firstMatch, in: onePass)
+        // iPhone: Réglages is a tab.
+        tap(tabButton(onePass, id: "tab.settings", label: "Réglages"), in: onePass)
         // A tap that lands while the sheet is still sliding up does not push the page: tap again.
         let row = onePass.descendants(matching: .any)["settings.autofill"].firstMatch
         let status = onePass.descendants(matching: .any)["autofill.status"].firstMatch

@@ -84,6 +84,7 @@ struct ItemEditorView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.top)
+            .groupedScreen()
             .environment(\.requestGenerator) { request in generatorRequest = request }
             .sheet(item: $generatorRequest) { request in
                 GeneratorSheet(onUse: { _ in }, onUseWithBits: { text, bits in request.apply(text, bits) })
@@ -175,13 +176,22 @@ struct ItemEditorView: View {
 
     // MARK: - Sections
 
+    #if os(iOS)
+    private static let titleHairline = Color.primary.opacity(0.06)
+    #else
+    private static let titleHairline = Color.white.opacity(0.08)
+    #endif
+
     private var titleHeader: some View {
         VStack(alignment: .leading, spacing: 10) {
+            #if !os(iOS)
+            // iPhone: the navigation bar already says it.
             Text(editor.isNew ? "Nouvel élément" : "Modification")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.accent.mix(with: .white, by: 0.3))
                 .textCase(.uppercase)
                 .tracking(0.6)
+            #endif
             HStack(alignment: .center, spacing: 16) {
                 ItemIcon(type: item.itemType, title: item.title, siteIcon: nil, size: 64)
                 TextField("Titre", text: $editor.draft.item.title, prompt: Text(ItemCategory.of(item.itemType).singular))
@@ -191,10 +201,14 @@ struct ItemEditorView: View {
                     .onChange(of: item.title) { editor.clearError(for: "title") }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
+                    #if os(iOS)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: 12))
+                    #else
                     .background(.fill.quaternary, in: .rect(cornerRadius: 12))
+                    #endif
                     .overlay {
                         RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(titleFocused ? AnyShapeStyle(Theme.accent.opacity(0.9)) : AnyShapeStyle(.white.opacity(0.08)),
+                            .strokeBorder(titleFocused ? AnyShapeStyle(Theme.accent.opacity(0.9)) : AnyShapeStyle(Self.titleHairline),
                                 lineWidth: titleFocused ? 1.5 : 1)
                     }
                     .animation(.easeOut(duration: 0.15), value: titleFocused)

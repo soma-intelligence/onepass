@@ -3,15 +3,19 @@ import LocalAuthentication
 import SwiftUI
 import VaultKit
 
-/// "Déverrouiller OnePass", with the rules of the app's lock screen: glyph, ONE master password field
-/// (show or hide button, then the biometric button behind a thin divider), "Déverrouiller" once
-/// something is typed, Return unlocks. The Secret Key is never asked: it stays in the keychain. The
-/// model tries Face ID / Touch ID once when this screen shows up (ruling A2); the field takes the
-/// focus only when no such attempt runs, or once it failed or was cancelled. Like the app's lock
-/// screen, the field has no password content type, so the system never offers to save it.
+/// "Déverrouille OnePass", in the design of the app's lock screen: glyph, title, the site asking,
+/// the account, ONE master password field (show or hide button, accent focus ring) and below it the
+/// main action: "Déverrouiller avec Face ID" (Touch ID, Optic ID) while the field is empty and
+/// biometric unlock is on, otherwise "Déverrouiller". Return unlocks. The Secret Key is never asked:
+/// it stays in the keychain. The model tries Face ID / Touch ID once when this screen shows up
+/// (ruling A2); the field takes the focus only when no such attempt runs, or once it failed or was
+/// cancelled. Like the app's lock screen, the field has no password content type, so the system
+/// never offers to save it.
 struct UnlockView: View {
     let model: AutoFillModel
     let session: VaultSession
+    /// The site or app asking ("exemple.fr").
+    var site: String?
 
     @State private var password = ""
     @State private var revealed = false
@@ -22,31 +26,50 @@ struct UnlockView: View {
 
     private var unlocking: Bool { busy || session.state == .unlocking }
     private var settings: VaultSettings { session.environment.settings }
+    private var biometrics: Bool { session.canUseBiometrics }
+
+    #if os(macOS)
+    private static let fieldHeight: CGFloat = 40
+    private static let corner: CGFloat = 10
+    #else
+    private static let fieldHeight: CGFloat = 50
+    private static let corner: CGFloat = 14
+    #endif
 
     var body: some View {
         AutoFillScaffold(title: Text(verbatim: ""), model: model) {
             ScrollView {
-                VStack(spacing: 16) {
-                    AppGlyph(size: 84)
-                    Text("Déverrouiller OnePass")
+                VStack(spacing: 0) {
+                    AppGlyph(size: 72)
+                    Text("Déverrouille OnePass")
                         .font(.title2.weight(.semibold))
                         .multilineTextAlignment(.center)
-                        .padding(.top, 6)
-                    passwordField
-                        .padding(.top, 4)
-                    if !password.isEmpty || unlocking {
-                        unlockButton
-                            .transition(.opacity)
+                        .padding(.top, 16)
+                        .accessibilityAddTraits(.isHeader)
+                    if let site {
+                        Text("pour remplir \(site)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .padding(.top, 4)
                     }
+                    account
+                        .padding(.top, 12)
+                    passwordField
+                        .padding(.top, 22)
+                    status
+                    actions
+                        .padding(.top, 14)
                 }
                 .animation(.smooth(duration: 0.2), value: password.isEmpty)
-                .frame(maxWidth: 334)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 32)
+                .animation(.smooth(duration: 0.2), value: message)
+                .frame(maxWidth: 340)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 28)
                 .frame(maxWidth: .infinity)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .background(background)
         }
         .task {
             // No automatic biometric attempt: the keyboard comes up at once.
@@ -64,63 +87,158 @@ struct UnlockView: View {
         }
     }
 
-    private var background: some View {
-        #if os(iOS)
-        Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
-        #else
-        Color.clear
-        #endif
+    /// The account in a capsule, as on the app's lock screen.
+    @ViewBuilder private var account: some View {
+        let name = settings.displayName
+        let initials = name.split(whereSeparator: { $0.isWhitespace || $0 == "-" })
+            .prefix(2).compactMap { $0.first.map { String($0).uppercased() } }.joined()
+        HStack(spacing: 8) {
+            Circle()
+                .fill(Theme.accent.gradient)
+                .frame(width: 24, height: 24)
+                .overlay {
+                    if initials.isEmpty {
+                        Image(systemName: "person.fill").font(.system(size: 11)).foregroundStyle(.white)
+                    } else {
+                        Text(verbatim: initials).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
+                    }
+                }
+            Group {
+                if name.isEmpty { Text("Compte OnePass") } else { Text(verbatim: name) }
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 12)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(name.isEmpty ? Text("Compte OnePass") : Text(verbatim: name))
     }
 
     private var passwordField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                Group {
-                    if revealed {
-                        TextField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
-                            .autocorrectionDisabled()
-                            #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            #endif
+        let shape = RoundedRectangle(cornerRadius: Self.corner, style: .continuous)
+        let ring: Color = message != nil ? .red : (fieldFocused ? Theme.accent : .clear)
+        return HStack(spacing: 4) {
+            Group {
+                if revealed {
+                    TextField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                } else {
+                    SecureField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                }
+            }
+            .labelsHidden()
+            .textFieldStyle(.plain)
+            .font(.system(size: 17))
+            .focused($fieldFocused)
+            #if os(macOS)
+            .focusEffectDisabled()
+            #endif
+            .submitLabel(.go)
+            .onSubmit { Task { await unlockWithPassword() } }
+            .disabled(unlocking || lockedOut)
+            .privacySensitive()
+            .accessibilityIdentifier("autofill.password")
+            Button {
+                revealed.toggle()
+                fieldFocused = true
+            } label: {
+                Image(systemName: revealed ? "eye.slash" : "eye")
+                    .font(.system(size: 17))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: Self.fieldHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
+            .accessibilityIdentifier("autofill.reveal")
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .frame(height: Self.fieldHeight)
+        .background {
+            #if os(iOS)
+            shape.fill(Color(uiColor: .secondarySystemGroupedBackground))
+            #else
+            shape.fill(.background.opacity(0.8))
+            #endif
+        }
+        .overlay { shape.strokeBorder(Color.primary.opacity(ring == .clear ? 0.12 : 0), lineWidth: 1) }
+        .overlay {
+            // Focus (accent) or error (red) ring, drawn just outside the field.
+            RoundedRectangle(cornerRadius: Self.corner + 3, style: .continuous)
+                .strokeBorder(ring.opacity(0.35), lineWidth: 3.5)
+                .padding(-3.5)
+                .allowsHitTesting(false)
+        }
+        .overlay { shape.strokeBorder(ring, lineWidth: ring == .clear ? 0 : 1).allowsHitTesting(false) }
+        .animation(.smooth(duration: 0.15), value: fieldFocused)
+    }
+
+    @ViewBuilder private var status: some View {
+        if let message {
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.red)
+                .multilineTextAlignment(.center)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityIdentifier("autofill.error")
+        }
+        if let until = lockoutUntil {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let remaining = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
+                Text(remaining > 0
+                     ? String(localized: "Trop d'essais. Nouvel essai possible dans \(Self.duration(remaining)).")
+                     : String(localized: "Tu peux réessayer."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.top, 8)
+        }
+    }
+
+    /// Empty field with biometrics on: the biometric button leads. Something typed: "Déverrouiller"
+    /// leads and biometrics stay one tap away.
+    @ViewBuilder private var actions: some View {
+        VStack(spacing: 10) {
+            if biometrics, password.isEmpty {
+                AutoFillPrimaryButton {
+                    Task { await unlockWithBiometrics() }
+                } label: {
+                    if unlocking {
+                        ProgressView()
                     } else {
-                        SecureField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                        Label("Déverrouiller avec \(Self.biometryName)", systemImage: Self.biometrySymbol)
                     }
                 }
-                .labelsHidden()
-                .textFieldStyle(.plain)
-                .font(.system(size: 17))
-                .focused($fieldFocused)
-                .submitLabel(.go)
-                .onSubmit { Task { await unlockWithPassword() } }
-                .disabled(unlocking || lockedOut)
-                .privacySensitive()
-                .accessibilityIdentifier("autofill.password")
-                Button {
-                    revealed.toggle()
-                    fieldFocused = true
+                .disabled(unlocking)
+                .accessibilityLabel(Text("Déverrouiller avec \(Self.biometryName)"))
+                .accessibilityIdentifier("autofill.biometrics")
+            } else {
+                AutoFillPrimaryButton {
+                    Task { await unlockWithPassword() }
                 } label: {
-                    Image(systemName: revealed ? "eye.slash" : "eye")
-                        .font(.system(size: 17))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 32, height: 40)
-                        .contentShape(Rectangle())
+                    if unlocking { ProgressView() } else { Text("Déverrouiller") }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
-                .accessibilityIdentifier("autofill.reveal")
-                if session.canUseBiometrics {
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.15))
-                        .frame(width: 1, height: 24)
-                        .padding(.horizontal, 4)
-                        .accessibilityHidden(true)
+                .keyboardShortcut(.defaultAction)
+                .disabled(password.isEmpty || unlocking || lockedOut)
+                .accessibilityIdentifier("autofill.unlock")
+                if biometrics {
                     Button {
                         Task { await unlockWithBiometrics() }
                     } label: {
-                        Image(systemName: Self.biometryName == "Touch ID" ? "touchid" : "faceid")
-                            .font(.system(size: 24))
+                        Label("Utiliser \(Self.biometryName)", systemImage: Self.biometrySymbol)
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(Theme.accent)
-                            .frame(width: 40, height: 40)
+                            .padding(.vertical, 4)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -129,59 +247,7 @@ struct UnlockView: View {
                     .accessibilityIdentifier("autofill.biometrics")
                 }
             }
-            .padding(.leading, 16)
-            .padding(.trailing, 8)
-            .frame(height: 50)
-            .background {
-                let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-                #if os(iOS)
-                shape.fill(Color(uiColor: .secondarySystemGroupedBackground))
-                    .overlay(shape.strokeBorder(message == nil ? Color.primary.opacity(0.12) : .red, lineWidth: 1))
-                #else
-                shape.fill(.background)
-                    .overlay(shape.strokeBorder(message == nil ? Color.primary.opacity(0.15) : .red, lineWidth: 1))
-                #endif
-            }
-            if let message {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("autofill.error")
-            }
-            if let until = lockoutUntil {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let remaining = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
-                    Text(remaining > 0
-                         ? String(localized: "Trop d'essais. Nouvel essai possible dans \(Self.duration(remaining)).")
-                         : String(localized: "Tu peux réessayer."))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
         }
-    }
-
-    private var unlockButton: some View {
-        Button {
-            Task { await unlockWithPassword() }
-        } label: {
-            Group {
-                if unlocking {
-                    ProgressView()
-                } else {
-                    Text("Déverrouiller")
-                }
-            }
-            .font(.system(size: 17, weight: .semibold))
-            .frame(maxWidth: .infinity)
-            .frame(height: 36)
-        }
-        .buttonStyle(.glassProminent)
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
-        .keyboardShortcut(.defaultAction)
-        .disabled(password.isEmpty || unlocking || lockedOut)
-        .accessibilityIdentifier("autofill.unlock")
     }
 
     // MARK: - State
@@ -214,6 +280,14 @@ struct UnlockView: View {
             #endif
         }
     }()
+
+    private static var biometrySymbol: String {
+        switch biometryName {
+        case "Touch ID": "touchid"
+        case "Optic ID": "opticid"
+        default: "faceid"
+        }
+    }
 
     // MARK: - Actions
 

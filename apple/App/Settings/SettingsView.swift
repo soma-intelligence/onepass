@@ -57,11 +57,15 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
 #if os(iOS) || os(visionOS)
 /// iPhone, iPad and Vision Pro (mockup `PhoneSettings`): grouped list of pages, "OK" closes. Later milestones
-/// add their pages (Extension Safari, Remplissage auto, Appareils) to this list.
+/// add their pages (Extension Safari, Remplissage auto, Appareils) to this list. On iPhone it is the
+/// Réglages tab (`inTab`): the account on top, as in the Mac account popover, "Verrouiller" at the
+/// bottom, no "OK".
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var path: [SettingsPage] = SettingsView.initialPath
+    @State private var creatingVault = false
+    var inTab = false
 
     /// Screenshots (Debug): `-OnePassDemoSettingsPage <page>` opens that page.
     private static var initialPath: [SettingsPage] {
@@ -78,6 +82,9 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
+                if inTab {
+                    accountSection
+                }
                 Section {
                     row(.general)
                     row(.security)
@@ -93,24 +100,90 @@ struct SettingsView: View {
                 Section {
                     row(.about)
                 } footer: {
-                    Text("OnePass est open source (AGPL-3.0)")
+                    if !inTab { Text("OnePass est open source (AGPL-3.0)") }
+                }
+                if inTab {
+                    Section {
+                        Button(role: .destructive) {
+                            model.perform(.lock)
+                        } label: {
+                            Label {
+                                Text("Verrouiller").foregroundStyle(.red)
+                            } icon: {
+                                tile("lock.fill", .red)
+                            }
+                        }
+                        .accessibilityIdentifier("settings.lock")
+                    } footer: {
+                        Text("OnePass est open source (AGPL-3.0)")
+                    }
                 }
             }
             .navigationTitle("Réglages")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(inTab ? .large : .inline)
             .navigationDestination(for: SettingsPage.self) { page in
                 page.content
             }
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("OK") { dismiss() }
-                        .accessibilityIdentifier("settings.done")
+                if !inTab {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("OK") { dismiss() }
+                            .accessibilityIdentifier("settings.done")
+                    }
                 }
+            }
+            .sheet(isPresented: $creatingVault) {
+                VaultEditorView(vault: nil) { creatingVault = false }
             }
         }
         // Not a tap gesture on the stack or the pages: on iOS 27 it swallows the taps of the
         // navigation rows and pickers below it. Opening or leaving a page counts as activity.
         .onChange(of: path) { model.session.noteActivity() }
+    }
+
+    /// The Réglages tab: who is signed in and on which kind of device, then the account actions.
+    @ViewBuilder private var accountSection: some View {
+        let name = model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
+        Section {
+            HStack(spacing: 14) {
+                AccountAvatar(initials: model.initials, size: 52)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(.title3.weight(.semibold)).lineLimit(1)
+                    Text(model.settings.deviceMode == .shared
+                         ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("settings.account")
+            Button {
+                creatingVault = true
+            } label: {
+                Label { Text("Nouveau coffre…").foregroundStyle(.primary) } icon: {
+                    tile("plus.rectangle.on.rectangle", Theme.accent)
+                }
+            }
+            .accessibilityIdentifier("settings.newVault")
+            Button {
+                model.showImport = true
+            } label: {
+                Label { Text("Importer…").foregroundStyle(.primary) } icon: {
+                    tile("square.and.arrow.down", Color(red: 0.13, green: 0.63, blue: 0.42))
+                }
+            }
+            .accessibilityIdentifier("settings.import")
+        }
+    }
+
+    /// The colored tile of a row, as in the Mac settings sidebar.
+    private func tile(_ symbol: String, _ color: Color) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 28, height: 28)
+            .background(color.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     #if os(iOS)
@@ -128,7 +201,7 @@ struct SettingsView: View {
                     .foregroundStyle(.white)
                     .frame(width: 28, height: 28)
                     .background(
-                        Color(red: 0.20, green: 0.52, blue: 0.80),
+                        Color(red: 0.20, green: 0.52, blue: 0.80).gradient,
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
         }
@@ -145,7 +218,7 @@ struct SettingsView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 28, height: 28)
-                    .background(page.tint, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .background(page.tint.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
         }
         .accessibilityIdentifier("settings.\(page.rawValue)")

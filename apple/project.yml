@@ -42,6 +42,8 @@ packages:
     path: DesignKit
   CompanionKit:
     path: CompanionKit
+  SafariRelay:
+    path: SafariExtension/SafariRelay
 
 targets:
   OnePass:
@@ -70,6 +72,9 @@ targets:
       # AutoFill credential provider: iPhone, iPad and Mac (no visionOS slice).
       - target: OnePassAutoFill
         destinationFilters: [iOS, macOS]
+      # Safari Web Extension: Mac only for now (the iOS one needs the bridge in the app, R-17).
+      - target: OnePassSafari
+        destinationFilters: [macOS]
     info:
       path: App/Support/Info.plist
       properties:
@@ -216,6 +221,72 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: ""
           "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": AutoFill/Support/OnePassAutoFill-macOS-CloudKit.entitlements
+
+  # Safari Web Extension (spec milestone 4, R-02, R-08), embedded in OnePass.app/PlugIns on the
+  # Mac. Resources = extension/dist/safari (`cd extension && npm run build` first). Its handler
+  # relays `browser.runtime.sendNativeMessage` to the bridge host with the same frames as Chrome's
+  # native messaging. Until the app serves the bridge over XPC (R-17), Debug embeds the
+  # development native host (core/onepass-native-host) and Release configurations embed none.
+  # Entitlements: Debug and Release sandbox only; Release-CloudKit and Release-Signed add the App
+  # Group (the future XPC rendezvous with the app).
+  OnePassSafari:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: SafariExtension
+        excludes:
+          - "SafariRelay/**"
+          - "scripts/**"
+          - "Support/Info.plist"
+          - "Support/*.entitlements"
+    dependencies:
+      - package: SafariRelay
+        product: SafariRelay
+    info:
+      path: SafariExtension/Support/Info.plist
+      properties:
+        CFBundleDisplayName: OnePass
+        CFBundleDevelopmentRegion: fr
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
+    postBuildScripts:
+      - name: Copy web extension
+        basedOnDependencyAnalysis: false
+        script: '"${PROJECT_DIR}/SafariExtension/scripts/copy-web-extension.sh"'
+      - name: Embed development native host
+        basedOnDependencyAnalysis: false
+        script: '"${PROJECT_DIR}/SafariExtension/scripts/embed-dev-host.sh"'
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.safari
+        PRODUCT_NAME: OnePassSafari
+        "ARCHS[sdk=macosx*]": arm64
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: SafariExtension/Support/OnePassSafari-macOS.entitlements
+        # YES embeds core/onepass-native-host (development host, DEV MODE): Debug only.
+        ONEPASS_SAFARI_DEV_HOST: NO
+      configs:
+        Debug:
+          ONEPASS_SAFARI_DEV_HOST: YES
+        Release-CloudKit:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ONEPASS_CLOUDKIT"
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+          CODE_SIGN_ENTITLEMENTS: SafariExtension/Support/OnePassSafari-macOS-Signed.entitlements
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+          CODE_SIGN_ENTITLEMENTS: SafariExtension/Support/OnePassSafari-macOS-Signed.entitlements
 
   # Test host for the AutoFill UI test (ruling A16): a sign-in form with username, password and
   # one-time code fields. iOS only, never embedded in OnePass, never shipped.

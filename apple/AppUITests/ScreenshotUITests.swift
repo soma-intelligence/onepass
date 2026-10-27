@@ -23,7 +23,8 @@ final class ScreenshotUITests: XCTestCase {
         Screen(
             name: "edit", arguments: demo + ["-OnePassDemoItem", "Forge Atlas", "-OnePassDebugEdit", "YES"],
             ready: "editor.save"),
-        Screen(name: "settings", arguments: demo + ["-OnePassDemoSettings", "YES"], ready: "settings.done"),
+        // iPhone: Réglages is a tab; iPad and Mac: the sheet or window. Both list "Général".
+        Screen(name: "settings", arguments: demo + ["-OnePassDemoSettings", "YES"], ready: "settings.general"),
     ]
 
     private static let demo = ["-OnePassDemoData", "YES"]

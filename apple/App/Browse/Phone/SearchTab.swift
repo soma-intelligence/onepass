@@ -48,9 +48,7 @@ struct SearchTab: View {
                 }
             } header: {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(resultsTitle(searching: !trimmed.isEmpty))
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.primary)
+                    PhoneSectionLabel(verbatim: resultsTitle(searching: !trimmed.isEmpty).lowercased())
                     Spacer()
                     Text(ItemListColumn.countLabel(results.count))
                         .font(.footnote)
@@ -60,17 +58,20 @@ struct SearchTab: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(PhoneBackground())
         .navigationTitle("Rechercher")
     }
 
     private func chips(_ categories: [ItemCategory]) -> some View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
-                chip(String(localized: "Tout"), selected: category == nil, id: "search.category.all") {
+                chip(String(localized: "Tout"), type: nil, selected: category == nil, id: "search.category.all") {
                     category = nil
                 }
                 ForEach(categories) { item in
-                    chip(item.plural, selected: category == item.type, id: "search.category.\(NewItemMenu.key(item.type))") {
+                    chip(item.plural, type: item.type, selected: category == item.type,
+                        id: "search.category.\(NewItemMenu.key(item.type))") {
                         category = category == item.type ? nil : item.type
                     }
                 }
@@ -81,14 +82,22 @@ struct SearchTab: View {
         .scrollIndicators(.hidden)
     }
 
-    private func chip(_ label: String, selected: Bool, id: String, action: @escaping () -> Void) -> some View {
+    /// A category chip: the type's artwork, its name; the chosen one in the accent.
+    private func chip(_ label: String, type: FfiItemType?, selected: Bool, id: String, action: @escaping () -> Void)
+        -> some View
+    {
         Button(action: action) {
-            Text(label)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 14)
-                .frame(height: 34)
-                .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-                .background(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.fill.tertiary), in: Capsule())
+            HStack(spacing: 6) {
+                if let type { CategoryArtwork(type: type, size: 20) }
+                Text(label).font(.subheadline.weight(.semibold))
+            }
+            .padding(.leading, type == nil ? 14 : 7)
+            .padding(.trailing, 14)
+            .frame(height: 34)
+            .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .background(selected ? AnyShapeStyle(Theme.accent.gradient) : AnyShapeStyle(Color(uiColor: .secondarySystemGroupedBackground)),
+                in: Capsule())
+            .overlay { Capsule().strokeBorder(Color.primary.opacity(selected ? 0 : 0.06)) }
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])

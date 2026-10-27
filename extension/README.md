@@ -35,7 +35,11 @@ Construire d'abord (`npm run build`).
 
 Firefox MV3 n'accorde pas les permissions d'hôte à l'installation : elles sont optionnelles. Sans elles, le script de contenu ne s'injecte nulle part et aucune icône n'apparaît. Les accorder dans `about:addons` > OnePass > Permissions : activer l'accès aux données de `https://*/*` (tous les sites en HTTPS). Le manifeste ne demande que `https://*/*`, jamais HTTP.
 
-Safari est une cible de conception ; l'empaquetage vient au jalon 2 (R-08). `dist/safari` existe pour vérifier que le build tient.
+**Safari (Mac).** L'extension est empaquetée dans l'app Mac : cible `OnePassSafari` (`apple/SafariExtension/`, identifiant `me.somalabs.onepass.safari`), intégrée à `OnePass.app/Contents/PlugIns`, dont les ressources sont `dist/safari` (une phase de build les copie ; construire l'extension avant l'app). Safari n'a pas d'hôte de messagerie native : `src/background/safari.ts` envoie chaque trame par `browser.runtime.sendNativeMessage` au `SafariWebExtensionHandler` de l'extension d'app, qui la relaie octet pour octet (même enveloppe, même appairage, même session que Chrome, R-03). `native.ts` choisit ce transport quand les pages de l'extension sont servies depuis `safari-web-extension:`.
+
+Tant que l'app ne sert pas le pont par XPC (R-17), le build Debug embarque l'hôte de développement (`Contents/MacOS/onepass-native-host`, signé avec le bac à sable hérité) et le lance une fois par connexion, comme Chrome. Les configurations Release n'embarquent aucun hôte : l'extension affiche "App OnePass introuvable". L'extension d'app est dans le bac à sable : l'hôte lit `~/.onepass-dev/native-host.json` où `~` est `~/Library/Containers/me.somalabs.onepass.safari/Data`, avec `"allowed_extensions": ["me.somalabs.onepass.safari"]`. Le fichier de fixture et le `data_dir` doivent être dans ce conteneur (le bac à sable ne lit pas le dépôt). Approbation `file` : `onepass-native-host approve <code> --config ~/Library/Containers/me.somalabs.onepass.safari/Data/.onepass-dev/native-host.json`.
+
+Essayer : `cd extension && npm run build`, puis `make -C apple project` si besoin et un build Debug de `OnePass` pour macOS, lancer l'app une fois (Safari découvre l'extension), activer Safari > Réglages > Avancés > "Afficher les fonctionnalités pour les développeurs web", puis Développement > "Autoriser les extensions non signées" (build signé ad hoc), et cocher OnePass dans Safari > Réglages > Extensions. Safari sur iPhone et iPad attend le pont dans l'app (pas de processus fils sur iOS).
 
 ## Hôte natif de développement
 
@@ -145,7 +149,7 @@ Captures sur la vraie extension et le vrai hôte (hors suite) : `ONEPASS_E2E_SHO
 
 Rulings de la spec (section 14) qui bornent cette version :
 
-- R-08 : Safari est une cible de conception ; Chromium et Firefox sont exercés, les tests de bout en bout ne tournent que sur Chromium (Playwright ne charge d'extensions que là). Empaquetage Safari au jalon 2.
+- R-08 : Chromium et Firefox sont exercés, les tests de bout en bout ne tournent que sur Chromium (Playwright ne charge d'extensions que là). Safari est empaqueté pour le Mac (voir plus haut) ; son relais a des tests unitaires (`swift test --package-path apple/SafariExtension/SafariRelay`) mais pas de test de bout en bout.
 - R-10 : aucune exception aux iframes d'autres sites, même pour un paiement (Stripe et consorts). Les cartes dans ces iframes ne sont pas remplies.
 - R-11 : la chaîne "Connexion en un clic" s'arrête (`handoff`) dès que le domaine sort de la liste autorisée, sans exception, même pour un SSO d'entreprise à domaines multiples.
 - R-12 : "Se souvenir de cet appareil" n'est jamais touché. La soumission automatique est une préférence locale par item (`chrome.storage.local`, activée par défaut) ; il n'y a pas encore d'interface pour la changer (pas d'UI `autoSubmit`).

@@ -181,6 +181,16 @@
         }
       }
     },
+    "Code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code"
+          }
+        }
+      }
+    },
     "Code de vérification" : {
       "localizations" : {
         "en" : {
@@ -221,6 +231,16 @@
         }
       }
     },
+    "Compte OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass account"
+          }
+        }
+      }
+    },
     "Copier" : {
       "localizations" : {
         "en" : {
@@ -247,6 +267,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Data Refused"
+          }
+        }
+      }
+    },
+    "Déverrouille OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock OnePass"
           }
         }
       }
@@ -361,6 +391,16 @@
         }
       }
     },
+    "La passkey reste dans ton coffre OnePass, chiffrée sur tes appareils." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The passkey stays in your OnePass vault, encrypted on your devices."
+          }
+        }
+      }
+    },
     "Le nouveau mot de passe remplace l'ancien, qui reste dans l'historique de l'élément." : {
       "localizations" : {
         "en" : {
@@ -467,6 +507,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "New Item"
+          }
+        }
+      }
+    },
+    "Nouvelle passkey" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New passkey"
           }
         }
       }
@@ -641,12 +691,82 @@
         }
       }
     },
+    "Utiliser %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use %@"
+          }
+        }
+      }
+    },
+    "ajouter à" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "add to"
+          }
+        }
+      }
+    },
+    "app" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "app"
+          }
+        }
+      }
+    },
+    "autres éléments" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "other items"
+          }
+        }
+      }
+    },
+    "champ à insérer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "field to insert"
+          }
+        }
+      }
+    },
+    "connexion" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "login"
+          }
+        }
+      }
+    },
     "encore %lld secondes" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld seconds left"
+          }
+        }
+      }
+    },
+    "identifiant" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "username"
           }
         }
       }
@@ -661,12 +781,112 @@
         }
       }
     },
+    "mot de passe" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "password"
+          }
+        }
+      }
+    },
+    "nouvel élément" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "new item"
+          }
+        }
+      }
+    },
+    "pour %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "for %@"
+          }
+        }
+      }
+    },
+    "pour ce site" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "for this site"
+          }
+        }
+      }
+    },
+    "pour remplir %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "to fill %@"
+          }
+        }
+      }
+    },
+    "résultats" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "results"
+          }
+        }
+      }
+    },
+    "site" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "site"
+          }
+        }
+      }
+    },
+    "titre" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "title"
+          }
+        }
+      }
+    },
+    "tous les éléments" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "all items"
+          }
+        }
+      }
+    },
     "Éléments existants" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Existing Items"
+          }
+        }
+      }
+    },
+    "élément mis à jour" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "item updated"
           }
         }
       }
