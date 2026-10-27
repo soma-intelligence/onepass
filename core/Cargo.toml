@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["onepass-core", "onepass-cli", "onepass-ffi", "onepass-guard", "onepass-mcp", "onepass-peer", "onepass-ssh-agent", "onepass-bridge", "onepass-native-host"]
+members = ["onepass-core", "onepass-cli", "onepass-ffi", "onepass-guard", "onepass-mcp", "onepass-mcp-relay", "onepass-peer", "onepass-ssh-agent", "onepass-bridge", "onepass-native-host"]
 
 [workspace.package]
 version = "0.1.0"

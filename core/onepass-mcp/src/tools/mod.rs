@@ -21,6 +21,7 @@ use crate::guards::{ClientContext, LivenessFn, McpGuards, RegistryFn};
 use crate::policy::{ClientScopes, Narrowing, Policy, Scope, effective_for_client};
 use crate::port::{PortError, VaultInfo, VaultPort};
 use crate::protocol::{ClientInfo, ToolHost, ToolOutcome, ToolSpec};
+use crate::workspace::{LocalWorkspace, Workspace, WorkspaceRefusal};
 use onepass_core::Id;
 use onepass_core::model::Item;
 use onepass_core::reference::{SecretRef, parse_ref};
@@ -140,6 +141,12 @@ impl Approver for SharedApprover {
     }
 }
 
+impl From<WorkspaceRefusal> for Refusal {
+    fn from(e: WorkspaceRefusal) -> Self {
+        Refusal::Invalid(e.message().to_owned())
+    }
+}
+
 impl From<PortError> for Refusal {
     fn from(e: PortError) -> Self {
         match e {
@@ -162,6 +169,12 @@ pub(crate) enum Failure {
 impl From<Refusal> for Failure {
     fn from(r: Refusal) -> Self {
         Failure::Refused(r)
+    }
+}
+
+impl From<WorkspaceRefusal> for Failure {
+    fn from(e: WorkspaceRefusal) -> Self {
+        Failure::Refused(e.into())
     }
 }
 
@@ -263,6 +276,9 @@ pub struct McpTools<P: VaultPort> {
     gate: PromptGate<SharedApprover>,
     audit: Box<dyn AuditSink>,
     forbidden_dir: Option<PathBuf>,
+    /// Runs the commands and reads and writes the files of the secret
+    /// tools ([`LocalWorkspace`] unless replaced).
+    workspace: Box<dyn Workspace + Send>,
     client: ClientContext,
     registry: RegistryFn,
     grants: Arc<Mutex<GrantStore>>,
@@ -305,6 +321,7 @@ impl<P: VaultPort> McpTools<P> {
             gate: PromptGate::new(SharedApprover(approver), guards.prompt_wait),
             audit,
             forbidden_dir,
+            workspace: Box::new(LocalWorkspace),
             client: guards.client,
             registry: guards.registry,
             grants: guards.grants,
@@ -336,6 +353,14 @@ impl<P: VaultPort> McpTools<P> {
         }
         self.unpaired_audited.push_back(now);
         true
+    }
+
+    /// The same host with its side effects (commands of
+    /// `run_with_secrets`, files of `fill_template`) done by `workspace`
+    /// instead of [`LocalWorkspace`].
+    pub fn with_workspace(mut self, workspace: Box<dyn Workspace + Send>) -> Self {
+        self.workspace = workspace;
+        self
     }
 
     /// The identity of the client this server serves.
