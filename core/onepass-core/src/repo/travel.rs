@@ -170,27 +170,13 @@ impl<S: RecordStore> Repository<S> {
             plan.push((vault.id, seen(&loaded.manifest), records));
         }
 
-        let mut deleted: Vec<Record> = Vec::new();
-        for (_, _, records) in &plan {
-            for r in records {
-                if let Err(e) = self.store.delete(r.kind, r.id) {
-                    // Put back what was deleted (reverse order: items before
-                    // the key), best effort over every record. If a put
-                    // fails too, the device is not as it was: that error is
-                    // returned instead of `e`, so the caller does not take
-                    // the device for unchanged.
-                    let mut rollback = Ok(());
-                    for d in deleted.into_iter().rev() {
-                        if let Err(e2) = self.store.put(d) {
-                            rollback = rollback.and(Err(e2));
-                        }
-                    }
-                    rollback?;
-                    return Err(e);
-                }
-                deleted.push(r.clone());
-            }
-        }
+        // Only this device's copy goes (`evict`, all or nothing): a store
+        // with a server never pushes these as deletions.
+        let all: Vec<Record> = plan
+            .iter()
+            .flat_map(|(_, _, r)| r.iter().cloned())
+            .collect();
+        self.store.evict_all(&all)?;
         let mut parked = BTreeMap::new();
         for (id, seen, _) in plan {
             self.device.last_seen.remove(&id);
@@ -343,7 +329,7 @@ impl<S: RecordStore> Repository<S> {
             // short never leaves a listed vault without its items.
             let mut rollback = Ok(());
             for (kind, id) in copied.into_iter().rev() {
-                if let Err(e) = self.store.delete(kind, id) {
+                if let Err(e) = self.store.evict(kind, id) {
                     rollback = rollback.and(Err(e));
                 }
             }
