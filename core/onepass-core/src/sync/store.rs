@@ -1037,6 +1037,14 @@ impl SyncStore {
         Ok(())
     }
 
+    /// Remove a local meta value; a missing key is not an error.
+    pub fn delete_meta(&mut self, key: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM meta WHERE key = ?1", params![key])
+            .map_err(store_err)?;
+        Ok(())
+    }
+
     /// The vaults the Travel Mode keeps off this device: `stage_remote`
     /// drops their records. Device-local, never pushed. An empty set
     /// removes the entry.

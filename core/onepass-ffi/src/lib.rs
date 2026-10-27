@@ -14,6 +14,7 @@ mod import;
 mod rules;
 mod session;
 pub mod timeline;
+mod travel;
 mod types;
 pub mod watchtower;
 
@@ -37,6 +38,7 @@ pub use hardening::*;
 pub use import::*;
 pub use rules::password_from_rules;
 pub use session::{Session, SyncStoreHandle};
+pub use travel::{FfiTravelPlanEntry, FfiTravelStatus};
 pub use types::*;
 
 uniffi::setup_scaffolding!();
