@@ -1179,7 +1179,10 @@ struct ItemWatchtowerSection: View {
 
     private var flagged: [String] {
         guard let report else { return [] }
-        return WatchtowerExclusions.checks(of: item.id, in: report).filter { WatchtowerCard.of(check: $0) != nil }
+        // The report may predate an exclusion just saved: an ignored check is listed once, as ignored.
+        return WatchtowerExclusions.checks(of: item.id, in: report).filter {
+            WatchtowerCard.of(check: $0) != nil && !item.watchtowerExclusions.contains($0)
+        }
     }
 
     var body: some View {
