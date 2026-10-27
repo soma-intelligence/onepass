@@ -8,9 +8,11 @@
 mod autofill;
 mod companion;
 mod convert;
+mod devices;
 mod error;
 mod hardening;
 mod import;
+mod pairing;
 mod rules;
 mod session;
 pub mod timeline;
@@ -31,10 +33,12 @@ use zeroize::Zeroizing;
 
 pub use companion::*;
 use convert::{sections_to_ffi, type_label};
+pub use devices::*;
 pub use error::OnePassError;
 use error::invalid;
 pub use hardening::*;
 pub use import::*;
+pub use pairing::*;
 pub use rules::password_from_rules;
 pub use session::{Session, SyncStoreHandle};
 pub use types::*;
