@@ -90,53 +90,57 @@ manifest.pv | not event(ItemAccepted(d_3,v_84,one_entry(i_6,ver_9,rh_6))) | fals
 # bridge.pv : pont extension et app (jalon 4), appairage avec engagement et SAS
 # (F-02 : canal hors bande authentifié), session KEM hybride + PK, canal à compteurs.
 # Les sessions tournent sur des enregistrements PairingRecord (abstraction
-# compositionnelle justifiée par P10 et P11, voir bridge_core.pvl).
+# compositionnelle justifiée par P10 et P11, voir bridge_core.pvl) et sur des
+# enregistrements corrompus (CorruptRecord, PK connue de l'attaquant) ; P12 à P15
+# portent sur les enregistrements honnêtes (hon).
 # P10 : PK secrète des deux côtés.
 bridge.pv | not (event(HostPaired(p_2,t_4,k_2)) && attacker(k_2)) | true
 bridge.pv | not (event(ExtConfirm(p_2,t_4,k_2)) && attacker(k_2)) | true
 # P12 : clés de session et messages applicatifs secrets.
-bridge.pv | not (event(SessionKey(r,s,k_2)) && attacker(k_2)) | true
-bridge.pv | not (event(AppMsg(m)) && attacker(m)) | true
+bridge.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker(k_2)) | true
+bridge.pv | not (event(AppMsg(hon,m)) && attacker(m)) | true
 # P13 : confidentialité persistante, PK publiée en phase 1.
-bridge.pv | not (event(SessionKey(r,s,k_2)) && attacker_p1(k_2)) | true
-bridge.pv | not (event(AppMsg(m)) && attacker_p1(m)) | true
+bridge.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker_p1(k_2)) | true
+bridge.pv | not (event(AppMsg(hon,m)) && attacker_p1(m)) | true
 # Sanité de P13 : PK fuit bien en phase 1.
 bridge.pv | not (event(Record(p_2,k_2)) && attacker_p1(k_2)) | false
 # P15 : l'hôte ne sert une requête qu'à un pair qui a fini la poignée de main avec PK.
-bridge.pv | event(HostServe(p_2,k_2,s,m)) ==> event(ExtFinish(p_2,k_2,s)) | true
+bridge.pv | event(HostServe(hon,p_2,k_2,s,m)) ==> event(ExtFinish(hon,p_2,k_2,s)) | true
 # P11 : accord injectif sur (pairing_id, transcription, PK) après la comparaison SAS, deux sens.
 bridge.pv | inj-event(ExtConfirm(p_2,t_4,k_2)) ==> inj-event(HostDone(p_2,t_4,k_2)) | true
 bridge.pv | inj-event(HostPaired(p_2,t_4,k_2)) ==> inj-event(ExtConfirm(p_2,t_4,k_2)) | true
 # P14 : authenticité et non-rejeu, injectif sur (session_id, sens, compteur, message).
-bridge.pv | inj-event(HostRecv(s,d,n_8,m)) ==> inj-event(ExtSend(s,d,n_8,m)) | true
-bridge.pv | inj-event(ExtRecv(s,d,n_8,m)) ==> inj-event(HostSend(s,d,n_8,m)) | true
+bridge.pv | inj-event(HostRecv(hon,s,d,n_8,m)) ==> inj-event(ExtSend(hon,s,d,n_8,m)) | true
+bridge.pv | inj-event(ExtRecv(hon,s,d,n_8,m)) ==> inj-event(HostSend(hon,s,d,n_8,m)) | true
 # Sanité : appairage des deux côtés, session ouverte, deuxième requête et deuxième réponse reçues.
 bridge.pv | not event(ExtConfirm(p_2,t_4,k_2)) | false
 bridge.pv | not event(HostPaired(p_2,t_4,k_2)) | false
-bridge.pv | not event(ExtFinish(p_2,k_2,s)) | false
-bridge.pv | not event(HostRecv(s,dir_e2h,ctr1,m)) | false
-bridge.pv | not event(ExtRecv(s,dir_h2e,ctr1,m)) | false
+bridge.pv | not event(ExtFinish(hon,p_2,k_2,s)) | false
+bridge.pv | not event(HostRecv(hon,s,dir_e2h,ctr1,m)) | false
+bridge.pv | not event(ExtRecv(hon,s,dir_h2e,ctr1,m)) | false
+# Sanité : l'attaquant mène bien des sessions sur un enregistrement corrompu (CorruptRecord).
+bridge.pv | not event(HostServe(cor,p_2,k_2,s,m)) | false
 
 # bridge_kem_mlkem_broken.pv : moitié ML-KEM-1024 des KEM éphémères publiée ; P10, P12 et P13 restent vrais.
 bridge_kem_mlkem_broken.pv | not (event(HostPaired(p_2,t_4,k_2)) && attacker(k_2)) | true
 bridge_kem_mlkem_broken.pv | not (event(ExtConfirm(p_2,t_4,k_2)) && attacker(k_2)) | true
-bridge_kem_mlkem_broken.pv | not (event(SessionKey(r,s,k_2)) && attacker(k_2)) | true
-bridge_kem_mlkem_broken.pv | not (event(AppMsg(m)) && attacker(m)) | true
-bridge_kem_mlkem_broken.pv | not (event(SessionKey(r,s,k_2)) && attacker_p1(k_2)) | true
-bridge_kem_mlkem_broken.pv | not (event(AppMsg(m)) && attacker_p1(m)) | true
+bridge_kem_mlkem_broken.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker(k_2)) | true
+bridge_kem_mlkem_broken.pv | not (event(AppMsg(hon,m)) && attacker(m)) | true
+bridge_kem_mlkem_broken.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker_p1(k_2)) | true
+bridge_kem_mlkem_broken.pv | not (event(AppMsg(hon,m)) && attacker_p1(m)) | true
 # Sanité.
 bridge_kem_mlkem_broken.pv | not (event(Record(p_2,k_2)) && attacker_p1(k_2)) | false
 bridge_kem_mlkem_broken.pv | not event(HostPaired(p_2,t_4,k_2)) | false
-bridge_kem_mlkem_broken.pv | not event(ExtRecv(s,dir_h2e,ctr1,m)) | false
+bridge_kem_mlkem_broken.pv | not event(ExtRecv(hon,s,dir_h2e,ctr1,m)) | false
 
 # bridge_kem_x25519_broken.pv : moitié X25519 des KEM éphémères publiée ; P10, P12 et P13 restent vrais.
 bridge_kem_x25519_broken.pv | not (event(HostPaired(p_2,t_4,k_2)) && attacker(k_2)) | true
 bridge_kem_x25519_broken.pv | not (event(ExtConfirm(p_2,t_4,k_2)) && attacker(k_2)) | true
-bridge_kem_x25519_broken.pv | not (event(SessionKey(r,s,k_2)) && attacker(k_2)) | true
-bridge_kem_x25519_broken.pv | not (event(AppMsg(m)) && attacker(m)) | true
-bridge_kem_x25519_broken.pv | not (event(SessionKey(r,s,k_2)) && attacker_p1(k_2)) | true
-bridge_kem_x25519_broken.pv | not (event(AppMsg(m)) && attacker_p1(m)) | true
+bridge_kem_x25519_broken.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker(k_2)) | true
+bridge_kem_x25519_broken.pv | not (event(AppMsg(hon,m)) && attacker(m)) | true
+bridge_kem_x25519_broken.pv | not (event(SessionKey(hon,r,s,k_2)) && attacker_p1(k_2)) | true
+bridge_kem_x25519_broken.pv | not (event(AppMsg(hon,m)) && attacker_p1(m)) | true
 # Sanité.
 bridge_kem_x25519_broken.pv | not (event(Record(p_2,k_2)) && attacker_p1(k_2)) | false
 bridge_kem_x25519_broken.pv | not event(HostPaired(p_2,t_4,k_2)) | false
-bridge_kem_x25519_broken.pv | not event(ExtRecv(s,dir_h2e,ctr1,m)) | false
+bridge_kem_x25519_broken.pv | not event(ExtRecv(hon,s,dir_h2e,ctr1,m)) | false

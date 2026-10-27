@@ -3,7 +3,9 @@
    the "formal-lib: bridge_core.pvl" directive).
 
    Sources: core/onepass-bridge/src/{kem,transcript,kdf,pairing,session,
-   channel,wire}.rs, the host loop core/onepass-native-host/src/host.rs
+   channel,wire}.rs and their TypeScript twins
+   extension/src/bridge/{kem,transcript,kdf,pairing,session,channel,
+   wire}.ts (same protocol, cross-checked by the shared test vectors), the host loop core/onepass-native-host/src/host.rs
    (pairing, session), the extension client extension/src/bridge/client.ts
    (pair), docs/security/README.md section 12.2, milestone 4 spec
    (docs/superpowers/specs/2026-10-25-milestone-4-extension-design.md)
@@ -97,9 +99,14 @@ const leak_x25519: bitstring.
 (* ------------------------------------------------------------------ *)
 
 (* pairings.rs: Pairings (host, pairing_id -> PK);
-   extension chrome.storage.local (pairing_id, PK). *)
-table host_pairings(bitstring, key).
-table ext_pairings(bitstring, key).
+   extension chrome.storage.local (pairing_id, PK).
+   The third column is the honesty flag of the record: hon (drawn by
+   PairingRecord, secret) or cor (drawn by CorruptRecord, known to the
+   attacker). Session events carry it; P12 to P15 are stated for hon. *)
+const hon: bitstring.
+const cor: bitstring.
+table host_pairings(bitstring, key, bitstring).
+table ext_pairings(bitstring, key, bitstring).
 (* The two screens of the SAS comparison (F-02). *)
 table ext_screen(key).
 table host_screen(key).
@@ -116,21 +123,21 @@ event ExtConfirm(bitstring, bitstring, key).
 (* Host: valid extension MAC, record stored (HostPairing::on_confirm). *)
 event HostPaired(bitstring, bitstring, key).
 (* Extension: valid host MAC in welcome, finish about to be sent. *)
-event ExtFinish(bitstring, key, bitstring).
+event ExtFinish(bitstring, bitstring, key, bitstring).
 (* PairingRecord: a record (pairing_id, PK) drawn for the sessions. *)
 event Record(bitstring, key).
 (* A session key of an authenticated session (role, session_id, key). *)
-event SessionKey(bitstring, bitstring, key).
+event SessionKey(bitstring, bitstring, bitstring, key).
 (* A fresh application message (request or response) sealed in phase 0. *)
-event AppMsg(bitstring).
+event AppMsg(bitstring, bitstring).
 (* Channel: (session_id, direction, counter, plaintext). *)
-event ExtSend(bitstring, bitstring, bitstring, bitstring).
-event HostRecv(bitstring, bitstring, bitstring, bitstring).
-event HostSend(bitstring, bitstring, bitstring, bitstring).
-event ExtRecv(bitstring, bitstring, bitstring, bitstring).
+event ExtSend(bitstring, bitstring, bitstring, bitstring, bitstring).
+event HostRecv(bitstring, bitstring, bitstring, bitstring, bitstring).
+event HostSend(bitstring, bitstring, bitstring, bitstring, bitstring).
+event ExtRecv(bitstring, bitstring, bitstring, bitstring, bitstring).
 (* Host: an application request handed to Service::handle
    (pairing_id, PK, session_id, request). *)
-event HostServe(bitstring, key, bitstring, bitstring).
+event HostServe(bitstring, bitstring, key, bitstring, bitstring).
 
 (* ------------------------------------------------------------------ *)
 (* Derivations                                                         *)
@@ -177,7 +184,8 @@ let LeakHalf(mode: bitstring, skm: seed, skx: seed) =
 (* Extension side.
    pairing.rs: ExtPairing::start (pair_hello), on_offer / offer_with
    (encapsulate to pk_H, pair_reveal, code), on_done (host MAC), confirm
-   (pair_confirm and the record); extension/src/bridge/client.ts: pair
+   (pair_confirm and the record); TS twin extension/src/bridge/pairing.ts
+   (ExtPairing); extension/src/bridge/client.ts: pair
    (on_done and the user's "codes are equal" both before confirm). *)
 let ExtPairing(mode: bitstring) =
   new skm_p: seed; new skx_p: seed; new n_e: bitstring;
@@ -212,7 +220,8 @@ let ExtPairing(mode: bitstring) =
 (* Host side.
    pairing.rs: HostPairing::start (pair_offer), on_reveal (commitment,
    decapsulate, code), approve (pair_done), on_confirm (extension MAC, the
-   record); host.rs: pairing (store the record). *)
+   record); host.rs: pairing (store the record). The host side has no TS
+   twin (the app or the native host runs it). *)
 let HostPairing(mode: bitstring) =
   in(c, (=t_pair_hello, cm: bitstring, en: bitstring, br: bitstring));
   new pid: bitstring; new skm_h: seed; new skx_h: seed; new n_h: bitstring;
@@ -251,9 +260,10 @@ let HostPairing(mode: bitstring) =
    session.rs: ext_hello / hello_with (hello), ExtPending::on_welcome
    (decapsulate, derive, host MAC, finish, Channel::new(Role::Ext));
    channel.rs: Channel::seal (e2h), Channel::open (h2e, the exact next
-   counter). *)
+   counter). TS twins (the code the extension runs):
+   extension/src/bridge/session.ts, extension/src/bridge/channel.ts. *)
 let ExtSession(mode: bitstring) =
-  get ext_pairings(pid, pk) in
+  get ext_pairings(pid, pk, hf) in
   new skm_e: seed; new skx_e: seed; new n_e: bitstring;
   let pke = (kem_pk_m(skm_e), kem_pk_x(skx_e)) in
   (LeakHalf(mode, skm_e, skx_e) |
@@ -266,26 +276,26 @@ let ExtSession(mode: bitstring) =
   let kh2e = session_expand(t, ss_e, pk, lbl_bridge_h2e) in
   let kcf = session_expand(t, ss_e, pk, lbl_bridge_session_confirm) in
   if mac_h = mac(kcf, (role_host, t)) then
-  event ExtFinish(pid, pk, sid);
-  event SessionKey(role_ext, sid, ke2h);
-  event SessionKey(role_ext, sid, kh2e);
+  event ExtFinish(hf, pid, pk, sid);
+  event SessionKey(hf, role_ext, sid, ke2h);
+  event SessionKey(hf, role_ext, sid, kh2e);
   out(c, (t_finish, mac(kcf, (role_ext, t))));
   (* Request 1, counter 0. *)
   new q1: bitstring;
-  event AppMsg(q1);
-  event ExtSend(sid, dir_e2h, ctr0, q1);
+  event AppMsg(hf, q1);
+  event ExtSend(hf, sid, dir_e2h, ctr0, q1);
   out(c, (t_msg, ctr0, aead_seal(ke2h, chan_aad(sid, dir_e2h, ctr0), q1)));
   in(c, (=t_msg, =ctr0, d1: bitstring));
   let r1 = aead_open(kh2e, chan_aad(sid, dir_h2e, ctr0), d1) in
-  event ExtRecv(sid, dir_h2e, ctr0, r1);
+  event ExtRecv(hf, sid, dir_h2e, ctr0, r1);
   (* Request 2, counter 1. *)
   new q2: bitstring;
-  event AppMsg(q2);
-  event ExtSend(sid, dir_e2h, ctr1, q2);
+  event AppMsg(hf, q2);
+  event ExtSend(hf, sid, dir_e2h, ctr1, q2);
   out(c, (t_msg, ctr1, aead_seal(ke2h, chan_aad(sid, dir_e2h, ctr1), q2)));
   in(c, (=t_msg, =ctr1, d2: bitstring));
   let r2 = aead_open(kh2e, chan_aad(sid, dir_h2e, ctr1), d2) in
-  event ExtRecv(sid, dir_h2e, ctr1, r2)).
+  event ExtRecv(hf, sid, dir_h2e, ctr1, r2)).
 
 (* Host side.
    session.rs: host_accept / accept_with (pairing lookup, encapsulate to
@@ -295,7 +305,7 @@ let ExtSession(mode: bitstring) =
 let HostSession =
   in(c, (=t_hello, pid: bitstring, pkm_e: mlkem_pk, pkx_e: x25519_pk,
          n_e: bitstring));
-  get host_pairings(=pid, pk) in (
+  get host_pairings(=pid, pk, hf) in (
   new rm: seed; new rx: seed; new n_h: bitstring; new sid: bitstring;
   let ct = bridge_encaps_ct(pkm_e, pkx_e, rm, rx) in
   let ss_e = bridge_encaps_ss(pkm_e, pkx_e, rm, rx) in
@@ -306,25 +316,25 @@ let HostSession =
   out(c, (t_welcome, ct, n_h, sid, mac(kcf, (role_host, t))));
   in(c, (=t_finish, mac_e: bitstring));
   if mac_e = mac(kcf, (role_ext, t)) then
-  event SessionKey(role_host, sid, ke2h);
-  event SessionKey(role_host, sid, kh2e);
+  event SessionKey(hf, role_host, sid, ke2h);
+  event SessionKey(hf, role_host, sid, kh2e);
   (* Request 1, counter 0, and its response. *)
   in(c, (=t_msg, =ctr0, d1: bitstring));
   let q1 = aead_open(ke2h, chan_aad(sid, dir_e2h, ctr0), d1) in
-  event HostRecv(sid, dir_e2h, ctr0, q1);
-  event HostServe(pid, pk, sid, q1);
+  event HostRecv(hf, sid, dir_e2h, ctr0, q1);
+  event HostServe(hf, pid, pk, sid, q1);
   new r1: bitstring;
-  event AppMsg(r1);
-  event HostSend(sid, dir_h2e, ctr0, r1);
+  event AppMsg(hf, r1);
+  event HostSend(hf, sid, dir_h2e, ctr0, r1);
   out(c, (t_msg, ctr0, aead_seal(kh2e, chan_aad(sid, dir_h2e, ctr0), r1)));
   (* Request 2, counter 1, and its response. *)
   in(c, (=t_msg, =ctr1, d2: bitstring));
   let q2 = aead_open(ke2h, chan_aad(sid, dir_e2h, ctr1), d2) in
-  event HostRecv(sid, dir_e2h, ctr1, q2);
-  event HostServe(pid, pk, sid, q2);
+  event HostRecv(hf, sid, dir_e2h, ctr1, q2);
+  event HostServe(hf, pid, pk, sid, q2);
   new r2: bitstring;
-  event AppMsg(r2);
-  event HostSend(sid, dir_h2e, ctr1, r2);
+  event AppMsg(hf, r2);
+  event HostSend(hf, sid, dir_h2e, ctr1, r2);
   out(c, (t_msg, ctr1, aead_seal(kh2e, chan_aad(sid, dir_h2e, ctr1), r2))))
   else
   (* session.rs:122: unknown pairing_id. *)
@@ -333,8 +343,8 @@ let HostSession =
 (* Phase 1 (P13): every pairing key stored by either side is published. *)
 let LeakPairingKeys =
   phase 1;
-  ((! get host_pairings(p, k) in out(c, k)) |
-   (! get ext_pairings(p, k) in out(c, k))).
+  ((! get host_pairings(p, k, hf0) in out(c, k)) |
+   (! get ext_pairings(p, k, hf0) in out(c, k))).
 
 (* Pairing records used by the sessions (compositional abstraction, see
    "Pairing records" in the header): a fresh secret PK under a fresh
@@ -343,13 +353,27 @@ let LeakPairingKeys =
 let PairingRecord =
   new pid: bitstring; new pk: key;
   event Record(pid, pk);
-  insert ext_pairings(pid, pk);
-  insert host_pairings(pid, pk);
+  insert ext_pairings(pid, pk, hon);
+  insert host_pairings(pid, pk, hon);
   out(c, pid).
+
+(* Corrupted pairing records: a record whose PK the attacker knows, stored
+   on both sides and published. Real causes: a pairing approved without
+   comparison (development host approval "auto", refused in release builds
+   since the fix of this task), a "file" approval written by a local process
+   that can write the host data_dir, a leaked browser profile or
+   pairings.json. Sessions over such a record are the attacker's; the
+   queries check that they do not affect the sessions of honest records
+   (same host processes, same tables). *)
+let CorruptRecord =
+  new pid: bitstring; new pk: key;
+  insert ext_pairings(pid, pk, cor);
+  insert host_pairings(pid, pk, cor);
+  out(c, (pid, pk)).
 
 (* Everything, any number of times. *)
 let Bridge(mode: bitstring) =
   (! ExtPairing(mode)) | (! HostPairing(mode)) |
-  (! PairingRecord) |
+  (! PairingRecord) | (! CorruptRecord) |
   (! ExtSession(mode)) | (! HostSession) |
   LeakPairingKeys.

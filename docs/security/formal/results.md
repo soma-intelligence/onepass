@@ -33,39 +33,40 @@
 | account_kem_x25519_broken.pv | `not event(ItemWritten(acct_main,v_6,m_2))` | false | false |
 | bridge.pv | `not (event(HostPaired(p_2,t_4,k_2)) && attacker(k_2))` | true | true |
 | bridge.pv | `not (event(ExtConfirm(p_2,t_4,k_2)) && attacker(k_2))` | true | true |
-| bridge.pv | `not (event(SessionKey(r,s,k_2)) && attacker(k_2))` | true | true |
-| bridge.pv | `not (event(AppMsg(m)) && attacker(m))` | true | true |
-| bridge.pv | `not (event(SessionKey(r,s,k_2)) && attacker_p1(k_2))` | true | true |
-| bridge.pv | `not (event(AppMsg(m)) && attacker_p1(m))` | true | true |
+| bridge.pv | `not (event(SessionKey(hon,r,s,k_2)) && attacker(k_2))` | true | true |
+| bridge.pv | `not (event(AppMsg(hon,m)) && attacker(m))` | true | true |
+| bridge.pv | `not (event(SessionKey(hon,r,s,k_2)) && attacker_p1(k_2))` | true | true |
+| bridge.pv | `not (event(AppMsg(hon,m)) && attacker_p1(m))` | true | true |
 | bridge.pv | `not (event(Record(p_2,k_2)) && attacker_p1(k_2))` | false | false |
-| bridge.pv | `event(HostServe(p_2,k_2,s,m)) ==> event(ExtFinish(p_2,k_2,s))` | true | true |
+| bridge.pv | `event(HostServe(hon,p_2,k_2,s,m)) ==> event(ExtFinish(hon,p_2,k_2,s))` | true | true |
 | bridge.pv | `inj-event(ExtConfirm(p_2,t_4,k_2)) ==> inj-event(HostDone(p_2,t_4,k_2))` | true | true |
 | bridge.pv | `inj-event(HostPaired(p_2,t_4,k_2)) ==> inj-event(ExtConfirm(p_2,t_4,k_2))` | true | true |
-| bridge.pv | `inj-event(HostRecv(s,d,n_8,m)) ==> inj-event(ExtSend(s,d,n_8,m))` | true | true |
-| bridge.pv | `inj-event(ExtRecv(s,d,n_8,m)) ==> inj-event(HostSend(s,d,n_8,m))` | true | true |
+| bridge.pv | `inj-event(HostRecv(hon,s,d,n_8,m)) ==> inj-event(ExtSend(hon,s,d,n_8,m))` | true | true |
+| bridge.pv | `inj-event(ExtRecv(hon,s,d,n_8,m)) ==> inj-event(HostSend(hon,s,d,n_8,m))` | true | true |
 | bridge.pv | `not event(ExtConfirm(p_2,t_4,k_2))` | false | false |
 | bridge.pv | `not event(HostPaired(p_2,t_4,k_2))` | false | false |
-| bridge.pv | `not event(ExtFinish(p_2,k_2,s))` | false | false |
-| bridge.pv | `not event(HostRecv(s,dir_e2h,ctr1,m))` | false | false |
-| bridge.pv | `not event(ExtRecv(s,dir_h2e,ctr1,m))` | false | false |
+| bridge.pv | `not event(ExtFinish(hon,p_2,k_2,s))` | false | false |
+| bridge.pv | `not event(HostRecv(hon,s,dir_e2h,ctr1,m))` | false | false |
+| bridge.pv | `not event(ExtRecv(hon,s,dir_h2e,ctr1,m))` | false | false |
+| bridge.pv | `not event(HostServe(cor,p_2,k_2,s,m))` | false | false |
 | bridge_kem_mlkem_broken.pv | `not (event(HostPaired(p_2,t_4,k_2)) && attacker(k_2))` | true | true |
 | bridge_kem_mlkem_broken.pv | `not (event(ExtConfirm(p_2,t_4,k_2)) && attacker(k_2))` | true | true |
-| bridge_kem_mlkem_broken.pv | `not (event(SessionKey(r,s,k_2)) && attacker(k_2))` | true | true |
-| bridge_kem_mlkem_broken.pv | `not (event(AppMsg(m)) && attacker(m))` | true | true |
-| bridge_kem_mlkem_broken.pv | `not (event(SessionKey(r,s,k_2)) && attacker_p1(k_2))` | true | true |
-| bridge_kem_mlkem_broken.pv | `not (event(AppMsg(m)) && attacker_p1(m))` | true | true |
+| bridge_kem_mlkem_broken.pv | `not (event(SessionKey(hon,r,s,k_2)) && attacker(k_2))` | true | true |
+| bridge_kem_mlkem_broken.pv | `not (event(AppMsg(hon,m)) && attacker(m))` | true | true |
+| bridge_kem_mlkem_broken.pv | `not (event(SessionKey(hon,r,s,k_2)) && attacker_p1(k_2))` | true | true |
+| bridge_kem_mlkem_broken.pv | `not (event(AppMsg(hon,m)) && attacker_p1(m))` | true | true |
 | bridge_kem_mlkem_broken.pv | `not (event(Record(p_2,k_2)) && attacker_p1(k_2))` | false | false |
 | bridge_kem_mlkem_broken.pv | `not event(HostPaired(p_2,t_4,k_2))` | false | false |
-| bridge_kem_mlkem_broken.pv | `not event(ExtRecv(s,dir_h2e,ctr1,m))` | false | false |
+| bridge_kem_mlkem_broken.pv | `not event(ExtRecv(hon,s,dir_h2e,ctr1,m))` | false | false |
 | bridge_kem_x25519_broken.pv | `not (event(HostPaired(p_2,t_4,k_2)) && attacker(k_2))` | true | true |
 | bridge_kem_x25519_broken.pv | `not (event(ExtConfirm(p_2,t_4,k_2)) && attacker(k_2))` | true | true |
-| bridge_kem_x25519_broken.pv | `not (event(SessionKey(r,s,k_2)) && attacker(k_2))` | true | true |
-| bridge_kem_x25519_broken.pv | `not (event(AppMsg(m)) && attacker(m))` | true | true |
-| bridge_kem_x25519_broken.pv | `not (event(SessionKey(r,s,k_2)) && attacker_p1(k_2))` | true | true |
-| bridge_kem_x25519_broken.pv | `not (event(AppMsg(m)) && attacker_p1(m))` | true | true |
+| bridge_kem_x25519_broken.pv | `not (event(SessionKey(hon,r,s,k_2)) && attacker(k_2))` | true | true |
+| bridge_kem_x25519_broken.pv | `not (event(AppMsg(hon,m)) && attacker(m))` | true | true |
+| bridge_kem_x25519_broken.pv | `not (event(SessionKey(hon,r,s,k_2)) && attacker_p1(k_2))` | true | true |
+| bridge_kem_x25519_broken.pv | `not (event(AppMsg(hon,m)) && attacker_p1(m))` | true | true |
 | bridge_kem_x25519_broken.pv | `not (event(Record(p_2,k_2)) && attacker_p1(k_2))` | false | false |
 | bridge_kem_x25519_broken.pv | `not event(HostPaired(p_2,t_4,k_2))` | false | false |
-| bridge_kem_x25519_broken.pv | `not event(ExtRecv(s,dir_h2e,ctr1,m))` | false | false |
+| bridge_kem_x25519_broken.pv | `not event(ExtRecv(hon,s,dir_h2e,ctr1,m))` | false | false |
 | manifest.pv | `event(Accept(d_3,v_84,n,mh_12,e)) ==> event(Signed(v_84,n,p,mh_12,e))` | true | true |
 | manifest.pv | `event(Accept(d_3,v_84,n,h1,e1))@i_6 && event(Accept(d_3,v_84,m_3,h2,e2))@j ==> i_6 > j \|\| m_3 ≥ n` | true | true |
 | manifest.pv | `event(Accept(d_3,v_84,n,h1,e1)) && event(Accept(d_3,v_84,n,h2,e2)) ==> h1 = h2` | true | true |
