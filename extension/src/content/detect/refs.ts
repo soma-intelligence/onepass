@@ -1,3 +1,4 @@
+import type { FormInfo, PageAnalysis } from "../../shared/messages";
 import { newToken } from "../../shared/tokens";
 
 /**
@@ -35,5 +36,55 @@ export class RefRegistry {
       const el = weak.deref();
       if (el === undefined || !el.isConnected) this.byRef.delete(ref);
     }
+  }
+}
+
+/** Most forms remembered by `FormLineage` (oldest dropped first). */
+const LINEAGE_MAX = 256;
+
+/**
+ * Identity of a form across re-renders. Single-page apps often replace a
+ * form with a fresh copy (same markup, new nodes) while it is being filled:
+ * every ref of the old copy is then dead. A form is identified by what the
+ * page renders (tag, `id`, `name`, kind, field roles in order), recorded at
+ * each analysis; a dead form ref resolves to the one connected form of the
+ * current analysis with the same identity, never to a lookalike when two
+ * forms share it.
+ */
+export class FormLineage {
+  private readonly keys = new Map<string, string>();
+
+  constructor(private readonly refs: RefRegistry) {}
+
+  private keyOf(f: FormInfo): string | null {
+    const el = this.refs.get(f.ref);
+    if (!el) return null;
+    const fields = f.fields.map((x) => `${x.role}:${x.parts?.length ?? 0}`);
+    return JSON.stringify([el.tagName, el.id, el.getAttribute("name") ?? "", f.kind, fields]);
+  }
+
+  /** Remembers the identity of each form of an analysis. */
+  record(a: PageAnalysis): void {
+    for (const f of a.forms) {
+      const k = this.keyOf(f);
+      if (k === null) continue;
+      this.keys.delete(f.ref);
+      this.keys.set(f.ref, k);
+    }
+    while (this.keys.size > LINEAGE_MAX) {
+      const oldest = this.keys.keys().next().value;
+      if (oldest === undefined) break;
+      this.keys.delete(oldest);
+    }
+  }
+
+  /** The form `ref` is now in `a`: itself if still there, else its unique successor. */
+  resolve(ref: string, a: PageAnalysis): FormInfo | null {
+    const same = a.forms.find((f) => f.ref === ref);
+    if (same) return same;
+    const k = this.keys.get(ref);
+    if (k === undefined) return null;
+    const next = a.forms.filter((f) => this.keyOf(f) === k);
+    return next.length === 1 ? (next[0] ?? null) : null;
   }
 }

@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBackground } from "../../../src/background/app";
 import type { ChainRunner } from "../../../src/background/chain/driver";
-import { DONE_SETTLE_MS } from "../../../src/background/chain/machine";
+import { UNKNOWN_MS } from "../../../src/background/chain/machine";
 import { BgError } from "../../../src/background/session";
 import { MemoryPairingStore, Store } from "../../../src/background/store";
 import type { FormInfo, PageAnalysis } from "../../../src/shared/messages";
@@ -140,7 +140,8 @@ describe("chain driver", () => {
     t.ext.complete(7, 0);
     await analyze(t, `${SITE}/home`, page(`${SITE}/home`), "doc-2");
     expect((await t.runner.state(7))?.status).toBe("running");
-    t.clock.t += DONE_SETTLE_MS;
+    // Done once the page had time to build a late form (spec B1).
+    t.clock.t += UNKNOWN_MS;
     const v = await t.runner.state(7);
     expect(v?.status).toBe("done");
     expect(v?.steps.map((s) => s.label)).toEqual(["Identifiant et mot de passe remplis", "Connecté"]);
@@ -308,6 +309,26 @@ describe("chain driver", () => {
   });
 });
 
+describe("re-rendered forms (B2)", () => {
+  it("a submit that missed its re-rendered form is sent to the copy, once", async () => {
+    const t = await setup();
+    const send = t.ext.tabs.sendMessage;
+    t.ext.tabs.sendMessage = async (tabId, message, options) => {
+      await send(tabId, message, options);
+      // The form was re-rendered by the fill: the old ref is gone.
+      return (message as { type: string; ref?: string }).type === "submit" && (message as { ref?: string }).ref === "f1" ? { ok: false } : { ok: true };
+    };
+    const userOnly: FormInfo = { ref: "f1", kind: "login", fields: [{ ref: "u1", role: "email" }] };
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userOnly]));
+    await t.runner.start(7, "it_01");
+    expect(toTab(t, "fill")).toHaveLength(1);
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [{ ...userOnly, ref: "f9", fields: [{ ref: "u9", role: "email" }] }]));
+    expect(toTab(t, "submit").map((m) => m.ref)).toEqual(["f1", "f9"]);
+    expect(toTab(t, "fill")).toHaveLength(1);
+    expect((await t.runner.state(7))?.status).toBe("running");
+  });
+});
+
 describe("overlay offer", () => {
   it("on a sign-in page of a site with logins, once per document", async () => {
     const t = await setup();
@@ -317,6 +338,47 @@ describe("overlay offer", () => {
     t.ext.navigate(7, 0, `${SITE}/login`, "doc-2");
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]), "doc-2");
     expect(toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay")).toHaveLength(2);
+  });
+
+  const overlays = (t: T) => toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay");
+  const closeOverlay = async (t: T) => {
+    const url = (overlays(t).at(-1) as { url: string }).url;
+    const token = url.slice(url.indexOf("#") + 1);
+    await t.ext.send({ type: "overlay_close", token }, uiSender(`overlay.html#${token}`, 7));
+  };
+  const userForm: FormInfo = { ref: "f1", kind: "login", fields: [{ ref: "u1", role: "email" }] };
+
+  it("overlay_offered_when_sign_in_form_appears_later", async () => {
+    let locked = true;
+    const t = await setup(
+      answerWith({
+        list_for_origin: (r) => {
+          if (locked) throw new BgError("locked");
+          return answerWith()(r);
+        },
+      }),
+    );
+    // The page loads without a form, then builds one while OnePass is locked.
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userForm]));
+    expect(overlays(t)).toHaveLength(0);
+    // Unlocked; the page then shows its password field: a new analysis, offered.
+    locked = false;
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+    expect(overlays(t)).toHaveLength(1);
+  });
+
+  it("a later sign-in form of the same document is offered again; its re-render is not", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userForm]));
+    expect(overlays(t)).toHaveLength(1);
+    await closeOverlay(t);
+    // The same form re-rendered (new refs): the user closed the overlay, it stays closed.
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [{ ...userForm, ref: "f7", fields: [{ ref: "u7", role: "email" }] }]));
+    expect(overlays(t)).toHaveLength(1);
+    // A different sign-in form appears in the same document.
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+    expect(overlays(t)).toHaveLength(2);
   });
 
   it("not without logins for the site, nor without a sign-in form", async () => {

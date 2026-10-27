@@ -14,7 +14,7 @@ import { ext as browserExt } from "../shared/browser";
 import { parseOrigin } from "../shared/domain";
 import type { BgToCs, CsToBg, FieldRole, FrameKind, PageAnalysis } from "../shared/messages";
 import { analyzeDocument } from "./detect/forms";
-import { RefRegistry } from "./detect/refs";
+import { FormLineage, RefRegistry } from "./detect/refs";
 import { domGeometry, type Geometry } from "./detect/visibility";
 import { createFiller } from "./filler";
 import { checkFrameUrl, createFrames, createShell, type Shell } from "./frames";
@@ -70,6 +70,9 @@ function fillValues(v: unknown): Partial<Record<FieldRole, string>> | null {
   return out;
 }
 
+const isControl = (t: EventTarget | null): boolean =>
+  t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement;
+
 /** The URL in an `open_menu` reply (`{ok: {url}}`), or null. */
 function replyUrl(r: unknown): string | null {
   const ok = (r as { ok?: unknown } | null)?.ok;
@@ -84,6 +87,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
   const view = doc.defaultView;
   const raf = o.raf ?? ((cb: () => void) => (view ? view.requestAnimationFrame(() => cb()) : setTimeout(cb, 16)));
   const refs = new RefRegistry();
+  const lineage = new FormLineage(refs);
   let shell: Shell | null = null;
   let stopped = false;
   const cleanups: (() => void)[] = [];
@@ -98,7 +102,9 @@ export function createContentScript(o: ContentOptions): ContentScript {
 
   const analyze = (): PageAnalysis => {
     refs.prune();
-    return analyzeDocument(doc, refs, { url: o.href(), geometry });
+    const a = analyzeDocument(doc, refs, { url: o.href(), geometry });
+    lineage.record(a);
+    return a;
   };
 
   // Lazily built in start(): nothing touches the page on a non-HTTPS frame.
@@ -232,7 +238,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
           void send({ type: "page_analysis", analysis: a });
         },
       });
-      const filler = createFiller({ refs, geometry, analyze: () => observer.refresh() });
+      const filler = createFiller({ refs, geometry, analyze: () => observer.refresh(), resolve: (ref, a) => lineage.resolve(ref, a) });
       const submit = createSubmitWatcher({
         doc,
         refs,
@@ -240,6 +246,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         isTrusted,
         latest: () => observer.latest(),
         analyze: () => observer.refresh(),
+        resolve: (ref, a) => lineage.resolve(ref, a),
         onCredentials: (c) => void send(c),
       });
       parts = { shell: sh, frames, icons, observer, filler, submit };
@@ -258,7 +265,13 @@ export function createContentScript(o: ContentOptions): ContentScript {
             return;
           }
           if (e.key !== "ArrowDown" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-          const t = icons.targetOf(e.target);
+          // A field the page added since the last analysis (it runs 150 ms
+          // after a mutation burst): analyse now rather than miss the key.
+          let t = icons.targetOf(e.target);
+          if (!t && isControl(e.target)) {
+            observer.refresh();
+            t = icons.targetOf(e.target);
+          }
           if (!t || parts?.frames.has("menu")) return;
           e.preventDefault();
           void openMenu(t);

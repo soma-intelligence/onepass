@@ -15,10 +15,11 @@
 //
 // Also here, since it shares the page analysis of the top frame: showing the
 // overlay on a recognized sign-in page of a site that has logins (once per
-// document), and on every page of a running chain.
+// sign-in form of a document, so a form built late is offered too), and on
+// every page of a running chain.
 import type { Summary } from "../../bridge/client";
 import { parseOrigin } from "../../shared/domain";
-import type { BgToCs, PageAnalysis, ProviderId } from "../../shared/messages";
+import type { BgToCs, FormInfo, PageAnalysis, ProviderId } from "../../shared/messages";
 import type { ChainView } from "../../shared/ui";
 import type { PageAnalyses } from "../analyses";
 import type { BgExt, StorageArea } from "../ext";
@@ -36,6 +37,7 @@ import {
   startChain,
   step,
   stopChain,
+  submitMissed,
   tick,
 } from "./machine";
 import { autoSubmitFor } from "./save-flow";
@@ -64,11 +66,22 @@ export interface ChainDeps {
   timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(id: unknown): void };
 }
 
+/** Sign-in forms offered per document, at most (a page cannot reopen it at will). */
+const MAX_OFFERS = 8;
+
 const SIGN_IN_ROLES = new Set(["username", "email", "current_password"]);
 
-/** A sign-in form the overlay can offer to complete. */
-function isSignInPage(a: PageAnalysis): boolean {
-  return a.forms.some((f) => f.kind === "login" && f.fields.some((x) => SIGN_IN_ROLES.has(x.role)));
+function isSignInForm(f: FormInfo): boolean {
+  return f.kind === "login" && f.fields.some((x) => SIGN_IN_ROLES.has(x.role));
+}
+
+/**
+ * The sign-in forms of a page as the user sees them (kinds and roles, no
+ * refs): a re-render of the same form keeps it, a new step changes it.
+ */
+function signInShape(a: PageAnalysis): string | null {
+  const forms = a.forms.filter(isSignInForm);
+  return forms.length === 0 ? null : JSON.stringify(forms.map((f) => [f.kind, f.fields.map((x) => x.role)]));
 }
 
 function canSignIn(it: Summary): boolean {
@@ -79,8 +92,8 @@ export class ChainRunner implements ChainDriver {
   private readonly mem = new Map<number, ChainState>();
   private readonly queues = new Map<number, Promise<unknown>>();
   private readonly armed = new Map<number, unknown>();
-  /** Per tab: the document the overlay was offered on (once per document). */
-  private readonly offered = new Map<number, string>();
+  /** Per tab: the document the overlay was offered on, and its sign-in forms offered. */
+  private readonly offered = new Map<number, { doc: string; shapes: Set<string> }>();
   /** Per tab: top frame commits, to key documents where `documentId` is absent. */
   private readonly navs = new Map<number, number>();
   private readonly now: () => number;
@@ -231,8 +244,13 @@ export class ChainRunner implements ChainDriver {
   private async advance(prev: ChainState, r: { state: ChainState; actions: ChainAction[] }, cs: CsContext): Promise<ChainState> {
     if (r.state !== prev) await this.save(r.state);
     try {
-      for (const a of r.actions) await this.run(r.state, a, cs);
-      return r.state;
+      let missed = false;
+      for (const a of r.actions) if ((await this.run(r.state, a, cs)) === "missed") missed = true;
+      if (!missed) return r.state;
+      // The content script found no form to submit (re-rendered meanwhile).
+      const n = submitMissed(r.state);
+      if (n !== r.state) await this.save(n);
+      return n;
     } catch (e) {
       const code = toBgError(e).code;
       const n = stopChain(r.state, code === "locked" ? "locked" : "unknown", this.now());
@@ -247,7 +265,7 @@ export class ChainRunner implements ChainDriver {
     return t;
   }
 
-  private async run(s: ChainState, a: ChainAction, cs: CsContext): Promise<void> {
+  private async run(s: ChainState, a: ChainAction, cs: CsContext): Promise<"missed" | undefined> {
     switch (a.type) {
       case "fill":
         await this.deps.filler.fillLogin(this.target(cs, a.formRef), s.itemId, a.fields, "chain");
@@ -262,8 +280,8 @@ export class ChainRunner implements ChainDriver {
         if (!c.ok) throw new BgError(c.code);
         const msg: BgToCs = { type: a.type, origin: cs.origin, ref: a.type === "click" ? a.ref : a.formRef };
         const opts = cs.documentId !== undefined ? { documentId: cs.documentId } : { frameId: 0 };
-        await this.deps.ext.tabs.sendMessage(cs.tabId, msg, opts);
-        return;
+        const reply: unknown = await this.deps.ext.tabs.sendMessage(cs.tabId, msg, opts);
+        return a.type === "submit" && (reply as { ok?: unknown } | null | undefined)?.ok === false ? "missed" : undefined;
       }
       case "stop":
       case "done":
@@ -281,12 +299,23 @@ export class ChainRunner implements ChainDriver {
     }
   }
 
-  /** Spec 8.6: the overlay on a recognized sign-in page of a site with logins, once per document. */
+  /**
+   * Spec 8.6: the overlay on a recognized sign-in page of a site with logins.
+   * Spec B1: any analysis may offer it, not just the first of the document,
+   * once per sign-in form (a form built late, or the next step of the same
+   * document); a re-render of a form already offered does not offer again.
+   */
   private async offerOverlay(a: PageAnalysis, cs: CsContext): Promise<void> {
-    if (!isSignInPage(a) || parseOrigin(cs.origin)?.https !== true) return;
-    const key = cs.documentId ?? `${cs.origin}#${this.navs.get(cs.tabId) ?? 0}`;
-    if (this.offered.get(cs.tabId) === key) return;
-    this.offered.set(cs.tabId, key);
+    const shape = signInShape(a);
+    if (shape === null || parseOrigin(cs.origin)?.https !== true) return;
+    const doc = cs.documentId ?? `${cs.origin}#${this.navs.get(cs.tabId) ?? 0}`;
+    let seen = this.offered.get(cs.tabId);
+    if (seen?.doc !== doc) {
+      seen = { doc, shapes: new Set() };
+      this.offered.set(cs.tabId, seen);
+    }
+    if (seen.shapes.has(shape) || seen.shapes.size >= MAX_OFFERS) return;
+    seen.shapes.add(shape);
     try {
       const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "overlay", origin: cs.origin });
       if (items.some(canSignIn)) await this.showOverlay(cs);

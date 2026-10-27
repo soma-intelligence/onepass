@@ -24,7 +24,10 @@ import { titleFromSite } from "../save";
 export const DEADLINE_MS = 60_000;
 /** Spec 8.6: no recognized field 4 s after the page finished loading. */
 export const UNKNOWN_MS = 4_000;
-/** Back on the site without a sign-in form for this long: done. */
+/**
+ * Back on the site without a sign-in form for this long: done. Never sooner
+ * than `UNKNOWN_MS` after the page loaded (spec B1: its form may come late).
+ */
 export const DONE_SETTLE_MS = 1_500;
 /** A submitted form still there, same document, after this long: refused. */
 export const REPEAT_MS = 8_000;
@@ -42,6 +45,8 @@ export interface ChainStep {
   at: number;
   /** Set when the step submitted its form. */
   submittedAt?: number;
+  /** The submit did not reach the form (re-rendered): retried once on its copy. */
+  missed?: boolean;
   label: string;
   detail?: string;
   state: StepState;
@@ -52,6 +57,8 @@ export interface ChainPage {
   nav: number;
   /** Load completed (`webNavigation.onCompleted`) at. */
   settledAt?: number;
+  /** Latest analysis (the content script reports only changes) at. */
+  seenAt?: number;
   /** The latest analysis showed nothing the chain can act on. */
   idle: boolean;
   /** Signature of the latest recognized analysis. */
@@ -294,14 +301,16 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
 
   const d = decide(s, a, onProvider);
   const n = clone(s);
+  n.page.seenAt = now;
   if (d === null) {
     n.page.sig = undefined;
     const last = n.steps.at(-1);
     const waitingForUser = last !== undefined && last.nav === n.page.nav && last.kind === "fill" && last.submittedAt === undefined;
     const leftPage = last !== undefined && (last.nav < n.page.nav || last.submittedAt !== undefined);
     if (!onProvider && leftPage) {
-      // Back on the site without a sign-in form: done, once it stays so.
-      n.page.doneAt ??= now;
+      // Back on the site without a sign-in form: done, once it stays so
+      // (each change of the page starts the wait again).
+      n.page.doneAt = now;
       n.page.idle = false;
     } else {
       n.page.doneAt = undefined;
@@ -322,8 +331,15 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
   const prev = n.steps.find((x) => x.sig === sig);
   if (prev) {
     // Same page again: a re-analysis (same document) or the step coming back.
-    if (prev.nav === n.page.nav) return { state: n, actions: [] };
-    return stopped(s, "repeat", now);
+    if (prev.nav !== n.page.nav) return stopped(s, "repeat", now);
+    // Spec B2: the page re-rendered the step's form before the submit reached
+    // it. Not a repeat: submit the copy, once (no second fill).
+    if (prev.missed && prev === n.steps.at(-1) && (d.kind === "fill" || d.kind === "otp") && n.autoSubmit) {
+      delete prev.missed;
+      prev.submittedAt = now;
+      return { state: n, actions: [{ type: "submit", formRef: d.form.ref }] };
+    }
+    return { state: n, actions: [] };
   }
 
   const pname = onProvider && n.provider ? providerName(n.provider) : null;
@@ -365,6 +381,19 @@ function where(s: ChainState, url: string): { ok: boolean; onProvider: boolean; 
   return { ok: p?.https === true && (onProvider || p.site === s.site), onProvider, host: p?.host ?? url.slice(0, 256) };
 }
 
+/** The last step's submit did not reach its form (the content script said so). */
+export function submitMissed(s: ChainState): ChainState {
+  const last = s.steps.at(-1);
+  if (s.status !== "running" || last?.submittedAt === undefined) return s;
+  const n = clone(s);
+  const l = n.steps.at(-1);
+  if (l) {
+    delete l.submittedAt;
+    l.missed = true;
+  }
+  return n;
+}
+
 /** A new document committed in the top frame of the chain's tab. */
 export function navigated(s: ChainState, url: string, now: number): ChainState {
   if (s.status !== "running") return s;
@@ -392,7 +421,14 @@ function lastActionAt(s: ChainState): number | undefined {
 
 function unknownDue(s: ChainState): number | null {
   if (!s.page.idle || s.page.settledAt === undefined) return null;
-  return Math.max(s.page.settledAt, lastActionAt(s) ?? 0) + UNKNOWN_MS;
+  // Spec B1: a page that changed since restarts the wait (fields built late).
+  return Math.max(s.page.settledAt, lastActionAt(s) ?? 0, s.page.seenAt ?? 0) + UNKNOWN_MS;
+}
+
+function doneDue(s: ChainState): number | null {
+  if (s.page.doneAt === undefined) return null;
+  const loaded = s.page.settledAt === undefined ? 0 : s.page.settledAt + UNKNOWN_MS;
+  return Math.max(s.page.doneAt + DONE_SETTLE_MS, loaded);
 }
 
 function repeatDue(s: ChainState): number | null {
@@ -404,7 +440,7 @@ function repeatDue(s: ChainState): number | null {
 /** Earliest time `tick` may change the state; null once the chain ended. */
 export function nextDue(s: ChainState): number | null {
   if (s.status !== "running") return null;
-  const dues = [s.deadline, unknownDue(s), repeatDue(s), s.page.doneAt === undefined ? null : s.page.doneAt + DONE_SETTLE_MS];
+  const dues = [s.deadline, unknownDue(s), repeatDue(s), doneDue(s)];
   return Math.min(...dues.filter((x): x is number => x !== null));
 }
 
@@ -412,7 +448,8 @@ export function nextDue(s: ChainState): number | null {
 export function tick(s: ChainState, now: number): StepResult {
   if (s.status !== "running") return { state: s, actions: [] };
   if (now >= s.deadline) return stopped(s, "timeout", now);
-  if (s.page.doneAt !== undefined && now >= s.page.doneAt + DONE_SETTLE_MS) return finished(s, now);
+  const d = doneDue(s);
+  if (d !== null && now >= d) return finished(s, now);
   const u = unknownDue(s);
   if (u !== null && now >= u) return stopped(s, "unknown", now);
   const r = repeatDue(s);
@@ -478,6 +515,7 @@ function parseStep(v: unknown): ChainStep {
   };
   const sub = optInt(o.submittedAt);
   if (sub !== undefined) st.submittedAt = sub;
+  if (o.missed !== undefined) st.missed = bool(o.missed);
   if (o.detail !== undefined) st.detail = str(o.detail, 256);
   return st;
 }
@@ -491,6 +529,8 @@ export function parseChainState(raw: unknown): ChainState | null {
     const page: ChainPage = { nav: int(pg.nav), idle: bool(pg.idle) };
     const settledAt = optInt(pg.settledAt);
     if (settledAt !== undefined) page.settledAt = settledAt;
+    const seenAt = optInt(pg.seenAt);
+    if (seenAt !== undefined) page.seenAt = seenAt;
     if (pg.sig !== undefined) page.sig = str(pg.sig, 1024);
     const doneAt = optInt(pg.doneAt);
     if (doneAt !== undefined) page.doneAt = doneAt;

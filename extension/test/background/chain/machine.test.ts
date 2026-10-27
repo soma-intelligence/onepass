@@ -17,6 +17,7 @@ import {
   startChain,
   step,
   stopChain,
+  submitMissed,
   tick,
 } from "../../../src/background/chain/machine";
 import type { FormInfo, PageAnalysis } from "../../../src/shared/messages";
@@ -348,6 +349,62 @@ describe("stop reasons", () => {
     s = navigated(s, `${SITE}/login?error=1`, T0 + 500);
     const r = step(s, page([loginForm()], {}, `${SITE}/login?error=1`), SITE, T0 + 700);
     expect(r.actions).toEqual([{ type: "stop", reason: "repeat" }]);
+  });
+});
+
+describe("late fields and re-rendered forms (B1, B2)", () => {
+  it("unknown_deadline_restarts_on_new_analysis", () => {
+    let s = navigated(start(), `${SITE}/next`, T0 + 50);
+    s = settled(step(s, page([]), SITE, T0 + 100).state, T0 + 200);
+    // The page changed (still nothing to act on) 3 s after it loaded.
+    s = step(s, page([], { providerButtons: [] }, `${SITE}/next#ready`), SITE, T0 + 3200).state;
+    expect(tick(s, T0 + 200 + UNKNOWN_MS).actions).toEqual([]);
+    expect(nextDue(s)).toBe(T0 + 3200 + UNKNOWN_MS);
+    expect(tick(s, T0 + 3200 + UNKNOWN_MS).actions).toEqual([{ type: "stop", reason: "unknown" }]);
+  });
+
+  it("a sign-in form built late on the next page is filled, not taken for done", () => {
+    let s = step(start(), page([userOnly()]), SITE, T0 + 100).state;
+    s = navigated(s, `${SITE}/password`, T0 + 300);
+    s = settled(s, T0 + 400);
+    s = step(s, page([], {}, `${SITE}/password`), SITE, T0 + 450).state;
+    expect(tick(s, T0 + 450 + DONE_SETTLE_MS).state.status).toBe("running");
+    // The form shows up 2.5 s after the load.
+    const r = step(s, page([passOnly()], {}, `${SITE}/password`), SITE, T0 + 2900);
+    expect(types(r.actions)).toEqual(["fill", "submit"]);
+  });
+
+  it("back on the site without a form: done once the late-field window passed", () => {
+    let s = step(start(), page([loginForm()]), SITE, T0 + 100).state;
+    s = navigated(s, `${SITE}/home`, T0 + 300);
+    s = settled(s, T0 + 400);
+    s = step(s, page([], {}, `${SITE}/home`), SITE, T0 + 450).state;
+    expect(nextDue(s)).toBe(T0 + 400 + UNKNOWN_MS);
+    expect(tick(s, T0 + 400 + UNKNOWN_MS).actions).toEqual([{ type: "done" }]);
+  });
+
+  it("rerender_same_step_is_not_repeat_before_submit", () => {
+    const r1 = step(start(), page([userOnly("f1")]), SITE, T0 + 100);
+    expect(types(r1.actions)).toEqual(["fill", "submit"]);
+    // The submit did not reach the form: the page had re-rendered it.
+    let s = submitMissed(r1.state);
+    expect(tick(s, T0 + 100 + REPEAT_MS).actions).toEqual([]);
+    // The same step, re-rendered (new refs), same document: submit the copy, no new fill.
+    const r2 = step(s, page([userOnly("f9")]), SITE, T0 + 400);
+    expect(r2.actions).toEqual([{ type: "submit", formRef: "f9" }]);
+    s = r2.state;
+    expect(s.status).toBe("running");
+    // Once only: a later copy of that step is a re-analysis, then repeat if it stays.
+    expect(step(s, page([userOnly("f10")]), SITE, T0 + 600).actions).toEqual([]);
+    expect(tick(s, T0 + 400 + REPEAT_MS).actions).toEqual([{ type: "stop", reason: "repeat" }]);
+  });
+
+  it("a re-render before submit with auto-submit off acts on nothing and never repeats", () => {
+    const st = start(summary("it_01"), { autoSubmit: false });
+    const s = step(st, page([loginForm("f1")]), SITE, T0 + 100).state;
+    const r = step(s, page([loginForm("f9")]), SITE, T0 + 400);
+    expect(r.actions).toEqual([]);
+    expect(tick(r.state, T0 + 400 + REPEAT_MS * 3).state.status).toBe("running");
   });
 });
 

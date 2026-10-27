@@ -274,7 +274,7 @@ export const TERMS: readonly Term[] = [
     w: { cc_number: 5 },
   },
   {
-    re: /\b(karteninhaber\w*|name auf der karte|titular (de la tarjeta|do cartao)|nombre en la tarjeta|titolare|intestatario|nome sulla carta|nome no cartao|naam op (de )?kaart|kaarthouder)\b/,
+    re: /\b(karteninhaber\w*|name auf der karte|titular (de la tarjeta|do cartao)|nombre del titular|nome do titular|nombre en la tarjeta|titolare|intestatario|nome sulla carta|nome no cartao|naam op (de )?kaart|kaarthouder)\b/,
     w: { cc_name: 6, full_name: -3, family_name: -3, given_name: -3 },
   },
   { re: /\b(prufziffer|prufnummer|kartenprufnummer)\b/, w: { cc_csc: 6, otp: -6 } },
@@ -328,7 +328,7 @@ export const TERMS: readonly Term[] = [
     w: { city: 5 },
   },
   { re: /\b(bundesland|provincia|estado|regione|distrito|provincie)\b/, w: { region: 4 } },
-  { re: /\b(land oder region|pais|paese|nazione)\b/, w: { country: 5 } },
+  { re: /\b(land (oder )?region|pais|paese|nazione)\b/, w: { country: 5 } },
   // Short words that are also English words ("Spending cap", "Land line") or
   // fragments of other phrases count only when they are the whole text.
   { re: /^(cap|cep)$/, w: { postal_code: 5, otp: -5 } },
