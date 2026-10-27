@@ -450,6 +450,16 @@
         }
       }
     },
+    "%u coffres seront créés" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%u vaults will be created"
+          }
+        }
+      }
+    },
     "%u versions précédentes" : {
       "localizations" : {
         "en" : {
@@ -466,6 +476,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%u items analyzed"
+          }
+        }
+      }
+    },
+    "%u éléments déjà présents, laissés tels quels" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%u items already here, left as they are"
+          }
+        }
+      }
+    },
+    "%u éléments restaurés" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%u items restored"
+          }
+        }
+      }
+    },
+    "%u éléments étaient déjà là." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%u items were already here."
           }
         }
       }
@@ -506,6 +546,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "+ add tag"
+          }
+        }
+      }
+    },
+    "1 coffre sera créé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 vault will be created"
           }
         }
       }
@@ -560,12 +610,42 @@
         }
       }
     },
+    "1 élément déjà présent, laissé tel quel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 item already here, left as it is"
+          }
+        }
+      }
+    },
     "1 élément importé dans « %@ »" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 item imported into “%@”"
+          }
+        }
+      }
+    },
+    "1 élément restauré" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 item restored"
+          }
+        }
+      }
+    },
+    "1 élément était déjà là." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 item was already here."
           }
         }
       }
@@ -686,6 +766,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Turning on %@..."
+          }
+        }
+      }
+    },
+    "Active « Vérifier les fuites » pour télécharger le catalogue des sites piratés." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on “Check for breaches” to download the list of breached sites."
           }
         }
       }
@@ -1650,6 +1740,16 @@
         }
       }
     },
+    "Catalogue des fuites pas encore téléchargé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Breach list not downloaded yet."
+          }
+        }
+      }
+    },
     "Catalogue des sites pas encore téléchargé." : {
       "localizations" : {
         "en" : {
@@ -1710,6 +1810,36 @@
         }
       }
     },
+    "Ce fichier n'a pas pu être lu, ou il est trop gros." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file could not be read, or it is too large."
+          }
+        }
+      }
+    },
+    "Ce fichier n'est pas chiffré. Choisis un emplacement hors ligne et supprime-le après usage." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is not encrypted. Choose an offline location and delete it after use."
+          }
+        }
+      }
+    },
+    "Ce fichier n'est pas chiffré. Toute personne ou app qui y accède lit tous tes mots de passe, codes et notes. Un tableur peut exécuter une cellule qui commence par « = ». Les passkeys et les lieux n'y figurent pas." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is not encrypted. Anyone or any app that can open it reads all your passwords, codes and notes. A spreadsheet may run a cell that starts with “=”. Passkeys and locations are not in it."
+          }
+        }
+      }
+    },
     "Ce kit plus ton mot de passe maître donnent un accès complet à ton coffre. Imprime-le et range la feuille hors ligne ; ne le photographie pas." : {
       "localizations" : {
         "en" : {
@@ -1740,12 +1870,32 @@
         }
       }
     },
+    "Ces réseaux utilisent WEP ou aucun chiffrement. Passe-les en WPA2 ou WPA3 sur le routeur." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These networks use WEP or no encryption. Switch them to WPA2 or WPA3 on the router."
+          }
+        }
+      }
+    },
     "Ces sites acceptent les passkeys, plus sûres et plus simples qu'un mot de passe." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "These sites support passkeys, safer and simpler than a password."
+          }
+        }
+      }
+    },
+    "Ces sites ont subi une fuite depuis ton dernier changement de mot de passe. Change-le sur chacun." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These sites had a breach since you last changed your password. Change it on each one."
           }
         }
       }
@@ -1856,6 +2006,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This screenshot contains your Secret Key. Delete it from Photos, then from the Recently Deleted album: Photos and iCloud can copy it off this device."
+          }
+        }
+      }
+    },
+    "Cette sauvegarde n'est pas pour ce compte : elle s'ouvre avec la phrase de passe choisie à l'export." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This backup is not for this account: it opens with the passphrase chosen when it was exported."
           }
         }
       }
@@ -2010,6 +2170,16 @@
         }
       }
     },
+    "Choisir une sauvegarde…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a Backup…"
+          }
+        }
+      }
+    },
     "Choisis OnePass comme app de codes de vérification : le code du Login du site est proposé dans le champ." : {
       "localizations" : {
         "en" : {
@@ -2056,6 +2226,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose an offline location, such as a USB drive. iCloud Drive and other clouds sync the Secret Key off this Mac."
+          }
+        }
+      }
+    },
+    "Choisis un fichier .onepass : une sauvegarde chiffrée de ce compte, ou une sauvegarde d'un autre compte avec sa phrase de passe. Rien de ce qui est déjà dans OnePass n'est remplacé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a .onepass file: an encrypted backup of this account, or another account's backup with its passphrase. Nothing already in OnePass is replaced."
           }
         }
       }
@@ -2136,6 +2316,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Public Key"
+          }
+        }
+      }
+    },
+    "Clés RSA de moins de 3 072 bits ou DSA. Remplace-les par une clé Ed25519." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RSA keys under 3,072 bits, or DSA. Replace them with an Ed25519 key."
+          }
+        }
+      }
+    },
+    "Clés SSH faibles" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weak SSH keys"
           }
         }
       }
@@ -2326,6 +2526,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ accounts"
+          }
+        }
+      }
+    },
+    "Comptes de connexion exposés" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exposed sign-in accounts"
           }
         }
       }
@@ -2710,6 +2920,16 @@
         }
       }
     },
+    "Créée le" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Created"
+          }
+        }
+      }
+    },
     "Créée le %@" : {
       "localizations" : {
         "en" : {
@@ -2866,6 +3086,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Two-factor authentication available"
+          }
+        }
+      }
+    },
+    "Doublons" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicates"
           }
         }
       }
@@ -3310,6 +3540,16 @@
         }
       }
     },
+    "Enregistrer le fichier…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save File…"
+          }
+        }
+      }
+    },
     "Enregistrer quand même" : {
       "localizations" : {
         "en" : {
@@ -3400,6 +3640,36 @@
         }
       }
     },
+    "Export OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass export"
+          }
+        }
+      }
+    },
+    "Export non chiffré" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unencrypted Export"
+          }
+        }
+      }
+    },
+    "Export prêt." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export ready."
+          }
+        }
+      }
+    },
     "Exporte depuis %@" : {
       "localizations" : {
         "en" : {
@@ -3430,6 +3700,16 @@
         }
       }
     },
+    "Exporter en CSV non chiffré…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export as Unencrypted CSV…"
+          }
+        }
+      }
+    },
     "Exporter une sauvegarde chiffrée" : {
       "localizations" : {
         "en" : {
@@ -3446,6 +3726,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exporting an encrypted backup keeps a copy of what this device holds. Keeping this device's version sends it back to iCloud; taking iCloud's version drops it in favor of what iCloud holds. Both record a restore signed by your account, and detection stays on afterward."
+          }
+        }
+      }
+    },
+    "Exporter une sauvegarde chiffrée…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export an Encrypted Backup…"
           }
         }
       }
@@ -3530,6 +3820,16 @@
         }
       }
     },
+    "Fichier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File"
+          }
+        }
+      }
+    },
     "Fichier .json au format d'échange d'identifiants (CXF)." : {
       "localizations" : {
         "en" : {
@@ -3576,6 +3876,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "File > Export, then the 1PUX format (or CSV)."
+          }
+        }
+      }
+    },
+    "Fichier enregistré." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File saved."
           }
         }
       }
@@ -3860,6 +4170,16 @@
         }
       }
     },
+    "Ignoré pour cet élément" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ignored for this item"
+          }
+        }
+      }
+    },
     "Il est partagé" : {
       "localizations" : {
         "en" : {
@@ -3896,6 +4216,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Importing…"
+          }
+        }
+      }
+    },
+    "Import terminé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import complete"
           }
         }
       }
@@ -4060,6 +4390,16 @@
         }
       }
     },
+    "Indique où est rangée la copie physique de la phrase de récupération de ces portefeuilles." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note where the physical copy of these wallets' recovery phrase is kept."
+          }
+        }
+      }
+    },
     "Installe OnePass sur ton Apple Watch" : {
       "localizations" : {
         "en" : {
@@ -4116,6 +4456,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Never"
+          }
+        }
+      }
+    },
+    "Je comprends que ce fichier n'est pas chiffré" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I understand this file is not encrypted"
           }
         }
       }
@@ -4320,6 +4670,16 @@
         }
       }
     },
+    "La sauvegarde chiffrée s'ouvre avec ton compte, dont la signature est vérifiée, ou avec sa phrase de passe. Restaurer n'écrase rien. Le CSV non chiffré sert seulement à passer à un autre gestionnaire." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The encrypted backup opens with your account, whose signature is checked, or with its passphrase. Restoring overwrites nothing. The unencrypted CSV is only for moving to another password manager."
+          }
+        }
+      }
+    },
     "La sauvegarde n'a pas pu être enregistrée." : {
       "localizations" : {
         "en" : {
@@ -4490,6 +4850,26 @@
         }
       }
     },
+    "Le fichier n'a pas pu être enregistré." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file could not be saved."
+          }
+        }
+      }
+    },
+    "Le fichier n'a pas pu être préparé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file could not be prepared."
+          }
+        }
+      }
+    },
     "Le fichier sera copié sur les serveurs de ce service et sur tes autres appareils. Avec ton mot de passe maître, il donne un accès complet à ton coffre." : {
       "localizations" : {
         "en" : {
@@ -4506,6 +4886,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The file will be copied to this service's servers and to your other devices. It stays encrypted, but its security then rests on your passphrase alone."
+          }
+        }
+      }
+    },
+    "Le fichier, en clair, sera copié sur les serveurs de ce service et sur tes autres appareils." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file, unencrypted, will be copied to this service's servers and to your other devices."
           }
         }
       }
@@ -4700,6 +5090,26 @@
         }
       }
     },
+    "Les éléments de la corbeille ne sont pas exportés." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Items in Recently Deleted are not exported."
+          }
+        }
+      }
+    },
+    "Les éléments gardent leur identifiant, ceux de la corbeille et les archivés compris. Une restauration signée par ton compte est enregistrée pour tes autres appareils." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Items keep their identifier, deleted and archived ones included. A restore signed by your account is recorded for your other devices."
+          }
+        }
+      }
+    },
     "Les éléments mis à la corbeille restent ici 30 jours." : {
       "localizations" : {
         "en" : {
@@ -4716,6 +5126,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Items you open appear here until OnePass locks."
+          }
+        }
+      }
+    },
+    "Les éléments rangés autrement que dans la source sont dans la section « Importé » de chaque élément." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Values stored differently from the source are in each item's “Imported” section."
+          }
+        }
+      }
+    },
+    "Les éléments sont restaurés, mais la restauration n'a pas pu être enregistrée pour tes autres appareils. Synchronise, puis restaure à nouveau ce fichier." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The items are restored, but the restore could not be recorded for your other devices. Sync, then restore this file again."
           }
         }
       }
@@ -4916,6 +5346,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hidden on This Device"
+          }
+        }
+      }
+    },
+    "Me prévenir" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notify Me"
           }
         }
       }
@@ -5240,6 +5680,16 @@
         }
       }
     },
+    "Même site et même identifiant dans plusieurs éléments. Garde-en un seul." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Same site and same username in several items. Keep only one."
+          }
+        }
+      }
+    },
     "Navigateurs" : {
       "localizations" : {
         "en" : {
@@ -5296,6 +5746,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not Available on This Device"
+          }
+        }
+      }
+    },
+    "Non signée : seule la phrase de passe protège ce fichier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not signed: only the passphrase protects this file"
           }
         }
       }
@@ -5920,6 +6380,16 @@
         }
       }
     },
+    "Portefeuilles sans sauvegarde" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallets without a backup"
+          }
+        }
+      }
+    },
     "Position introuvable" : {
       "localizations" : {
         "en" : {
@@ -5966,6 +6436,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "To suggest the right account, the system receives the domains and usernames of your Logins, never your passwords, codes or keys. When this is off, nothing is shared and you pick the account with the key button on the keyboard."
+          }
+        }
+      }
+    },
+    "Pour une copie de sécurité, préfère la sauvegarde chiffrée. N'utilise ce fichier que pour passer à un autre gestionnaire, puis supprime-le." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For a safety copy, use the encrypted backup. Use this file only to move to another password manager, then delete it."
           }
         }
       }
@@ -6350,6 +6830,26 @@
         }
       }
     },
+    "Restaurer une sauvegarde" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore a Backup"
+          }
+        }
+      }
+    },
+    "Restaurer une sauvegarde…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore a Backup…"
+          }
+        }
+      }
+    },
     "Restauré" : {
       "localizations" : {
         "en" : {
@@ -6720,6 +7220,16 @@
         }
       }
     },
+    "Rétablir" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore"
+          }
+        }
+      }
+    },
     "Révéler" : {
       "localizations" : {
         "en" : {
@@ -6780,12 +7290,32 @@
         }
       }
     },
+    "Sauvegarde du compte" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account backup"
+          }
+        }
+      }
+    },
     "Sauvegarde enregistrée." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Backup saved."
+          }
+        }
+      }
+    },
+    "Sauvegarde et export" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup and Export"
           }
         }
       }
@@ -6960,6 +7490,36 @@
         }
       }
     },
+    "Signature de ton compte vérifiée" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your account's signature verified"
+          }
+        }
+      }
+    },
+    "Signée par ton compte : la signature est vérifiée à l'ouverture" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed by your account: the signature is checked when it opens"
+          }
+        }
+      }
+    },
+    "Signée par un autre compte : seule la phrase de passe protège ce fichier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed by another account: only the passphrase protects this file"
+          }
+        }
+      }
+    },
     "Site inconnu" : {
       "localizations" : {
         "en" : {
@@ -7010,6 +7570,16 @@
         }
       }
     },
+    "Sites piratés" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Breached sites"
+          }
+        }
+      }
+    },
     "Sites web" : {
       "localizations" : {
         "en" : {
@@ -7036,6 +7606,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Refused Deletions"
+          }
+        }
+      }
+    },
+    "Supprime le fichier dès que tu n'en as plus besoin, corbeille comprise." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete the file as soon as you no longer need it, and empty the Trash."
           }
         }
       }
@@ -7300,12 +7880,12 @@
         }
       }
     },
-    "Tes mots de passe ne quittent jamais l'appareil. Pour chacun, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres mots de passe, et compare le reste ici. Les catalogues publics de 2fa.directory (double authentification et passkeys) sont téléchargés en entier et gardés une semaine. Désactivé, Watchtower ne fait aucune requête réseau." : {
+    "Tes mots de passe ne quittent jamais l'appareil. Pour chacun, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres mots de passe, et compare le reste ici. Les catalogues publics de 2fa.directory (double authentification et passkeys) et la liste des sites piratés de Have I Been Pwned sont téléchargés en entier et gardés une semaine. Désactivé, Watchtower ne fait aucune requête réseau." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your passwords never leave the device. For each one, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared by hundreds of other passwords, and compares the rest here. The public 2fa.directory catalogs (two-factor and passkeys) are downloaded whole and kept for a week. When off, Watchtower makes no network request."
+            "value" : "Your passwords never leave the device. For each one, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of other passwords, and compares the rest here. The public 2fa.directory catalogs (two-factor authentication and passkeys) and Have I Been Pwned's list of breached sites are downloaded whole and kept for a week. When off, Watchtower makes no network request."
           }
         }
       }
@@ -7510,6 +8090,16 @@
         }
       }
     },
+    "Tout ce que contient cette sauvegarde est déjà dans OnePass." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Everything in this backup is already in OnePass."
+          }
+        }
+      }
+    },
     "Tout est chiffré avant de quitter cet appareil. iCloud ne voit que des données illisibles." : {
       "localizations" : {
         "en" : {
@@ -7680,6 +8270,16 @@
         }
       }
     },
+    "Un compte qui te sert à te connecter ailleurs est compromis, faible, réutilisé ou sans double authentification : tous les sites qui en dépendent sont exposés." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An account you use to sign in elsewhere is compromised, weak, reused or without two-factor authentication: every site that depends on it is exposed."
+          }
+        }
+      }
+    },
     "Un fichier peut quitter cet appareil sans que tu le voies : iCloud Drive, Photos, les messageries et les captures d'écran synchronisent la Secret Key ailleurs. Préfère l'impression, ou enregistre sur un support hors ligne que tu ranges en lieu sûr." : {
       "localizations" : {
         "en" : {
@@ -7716,6 +8316,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "An encrypted OnePass archive of everything this device holds, vaults and items in the trash included. It opens with the passphrase chosen here or with your account."
+          }
+        }
+      }
+    },
+    "Une notification quand Watchtower trouve un nouveau mot de passe compromis, un site piraté, un compte de connexion exposé ou un élément qui expire. Elle donne seulement le nombre, jamais le nom d'un élément." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A notification when Watchtower finds a new compromised password, breached site, exposed sign-in account or expiring item. It gives only the number, never an item's name."
           }
         }
       }
@@ -8080,6 +8690,16 @@
         }
       }
     },
+    "WATCHTOWER" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WATCHTOWER"
+          }
+        }
+      }
+    },
     "Watchtower" : {
       "localizations" : {
         "en" : {
@@ -8116,6 +8736,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watchtower will flag accounts caught in a data breach, weak or reused passwords and items about to expire."
+          }
+        }
+      }
+    },
+    "Wi-Fi peu protégés" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poorly protected Wi-Fi"
           }
         }
       }
