@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { classifyField } from "../../src/content/detect/fields";
 import { analyzeDocument } from "../../src/content/detect/forms";
 import { RefRegistry } from "../../src/content/detect/refs";
 import type { FieldRole, FormKind } from "../../src/shared/messages";
@@ -118,5 +119,47 @@ describe("one-time codes in other languages", () => {
     ["nl", "Verificatiecode"],
   ])("%s: %s is an otp form", (_lang, label) => {
     expect(analyzeForm([["o", "text", label]], "OK")).toEqual({ kind: "otp", roles: { o: "otp" } });
+  });
+});
+
+describe("review fixes: whole-text words and attribute names", () => {
+  const roleOf = (html: string) => {
+    document.body.innerHTML = html;
+    return classifyField(document.getElementById("f") as HTMLInputElement).role;
+  };
+
+  it("user[...] attribute names keep their own role, a field named user is a username", () => {
+    document.body.innerHTML =
+      '<form id="p"><input id="g" name="user[first_name]"><input id="fa" name="user[last_name]">' +
+      '<input id="e" name="user[email]"><input id="t" name="user[phone]"><button type="submit">Save</button></form>';
+    const refs = new RefRegistry();
+    const a = analyzeDocument(document, refs, { url: SITE, geometry: testGeometry });
+    const roles: Record<string, FieldRole> = {};
+    for (const fi of a.forms[0]!.fields) roles[(refs.get(fi.ref) as HTMLElement).id] = fi.role;
+    expect([a.forms[0]!.kind, roles]).toEqual(["identity", { g: "given_name", fa: "family_name", e: "email", t: "tel" }]);
+    expect(roleOf('<input id="f" name="user">')).toBe("username");
+  });
+
+  it.each([
+    ["Spending cap", "unknown"],
+    ["Land line", "unknown"],
+    ["Rua", "address_line1"],
+    ["CAP", "postal_code"],
+    ["CEP", "postal_code"],
+    ["Ort", "city"],
+    ["Land", "country"],
+    ["Land oder Region", "country"],
+    ["Año", "cc_exp_year"],
+    ["Año de vencimiento", "cc_exp_year"],
+    ["Titular", "cc_name"],
+    ["Titular do cartão", "cc_name"],
+    ["Actual name", "full_name"],
+    ["Portal", "unknown"],
+  ])("label %s -> %s", (label, expected) => {
+    expect(roleOf(`<label for="f">${label}</label><input id="f" name="x9" type="text">`)).toBe(expected);
+  });
+
+  it("Contraseña actual is the current password", () => {
+    expect(roleOf('<label for="f">Contraseña actual</label><input id="f" name="x9" type="password">')).toBe("current_password");
   });
 });

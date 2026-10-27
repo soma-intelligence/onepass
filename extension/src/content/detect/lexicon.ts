@@ -238,15 +238,18 @@ export const TERMS: readonly Term[] = [
     w: { confirm_password: 5, current_password: -4, new_password: -2 },
   },
   {
-    re: /\b(aktuell\w*|bisherig\w*|alte|altes|alten|actual|antigua|anterior|attuale|vecchia|atual|antiga|huidig\w*|oud|oude)\b/,
+    re: /\b(aktuell\w*|bisherig\w*|alte|altes|alten|(contrasena|clave|senha) (actual|atual)|antigua|anterior|attuale|vecchia|antiga|huidig\w*|oud|oude)\b/,
     w: { current_password: 2, new_password: -2 },
   },
 
   // Identifiers, with the usual field names of identifier-only steps.
   {
-    re: /\b(benutzer\w*|nutzername|anmeldename|kennung|usuario|identificador|utente|utilizador|gebruiker\w*|loginfmt|login ?fmt|uname|user(?! ?(name|id)\b))\b/,
+    re: /\b(benutzer\w*|nutzername|anmeldename|kennung|usuario|identificador|utente|utilizador|gebruiker\w*|loginfmt|login ?fmt|uname)\b/,
     w: { username: 3, given_name: -3, family_name: -3, full_name: -3 },
   },
+  // A field named or labelled just "user". Whole text only: Rails and Django
+  // attribute names such as user[first_name] or user[email] are not identifiers.
+  { re: /^user$/, w: { username: 3, given_name: -3, family_name: -3, full_name: -3 } },
   // "Email, phone or Skype": one field that takes any account identifier. Only
   // an email first: "phone or email" stays a phone, "mobile phone" too.
   {
@@ -271,7 +274,7 @@ export const TERMS: readonly Term[] = [
     w: { cc_number: 5 },
   },
   {
-    re: /\b(karteninhaber\w*|name auf der karte|titular|nombre en la tarjeta|titolare|intestatario|nome sulla carta|nome no cartao|naam op (de )?kaart|kaarthouder)\b/,
+    re: /\b(karteninhaber\w*|name auf der karte|titular (de la tarjeta|do cartao)|nombre en la tarjeta|titolare|intestatario|nome sulla carta|nome no cartao|naam op (de )?kaart|kaarthouder)\b/,
     w: { cc_name: 6, full_name: -3, family_name: -3, given_name: -3 },
   },
   { re: /\b(prufziffer|prufnummer|kartenprufnummer)\b/, w: { cc_csc: 6, otp: -6 } },
@@ -280,7 +283,7 @@ export const TERMS: readonly Term[] = [
     w: { cc_exp: 3, cc_exp_month: 1.5, cc_exp_year: 1.5 },
   },
   { re: /\b(monat|ablaufmonat|mes|mese|maand)\b/, w: { cc_exp_month: 3, cc_exp: -1 } },
-  { re: /\b(jahr|ablaufjahr|ano|anno|jaar|jj|jjjj)\b/, w: { cc_exp_year: 3, cc_exp: -1 } },
+  { re: /\b(jahr|ablaufjahr|ano de (vencimiento|caducidad|expiracion|validade|vencimento)|anno|jaar|jj|jjjj)\b/, w: { cc_exp_year: 3, cc_exp: -1 } },
   { re: /\b(mm ?(jj|jjjj))\b/, w: { cc_exp: 5, cc_exp_month: -4, cc_exp_year: -4 } },
 
   // Identity. "nombre" and "nome" alone are weak, like "nom".
@@ -312,20 +315,28 @@ export const TERMS: readonly Term[] = [
 
   // Address.
   {
-    re: /\b(anschrift|strasse|hausnummer|direccion|calle|domicilio|indirizzo|endereco|morada|rua|straat|straatnaam|adres|linea ?1|riga ?1|linha ?1)\b/,
+    re: /\b(anschrift|strasse|hausnummer|direccion|calle|domicilio|indirizzo|endereco|morada|straat|straatnaam|adres|linea ?1|riga ?1|linha ?1)\b/,
     w: { address_line1: 3 },
   },
   {
     re: /\b(adresszeile ?2|adresszusatz|zusatz|piso|puerta|escalera|linea ?2|interno|scala|riga ?2|complemento|apartamento|andar|linha ?2|toevoeging)\b/,
     w: { address_line2: 6, address_line1: -4 },
   },
-  { re: /\b(postleitzahl|codice postale|cap|cep)\b/, w: { postal_code: 5, otp: -5 } },
+  { re: /\b(postleitzahl|codice postale)\b/, w: { postal_code: 5, otp: -5 } },
   {
-    re: /\b(ort|wohnort|stadt|ciudad|localidad|poblacion|citta|localita|comune|cidade|localidade|plaats|woonplaats|stad)\b/,
+    re: /\b(wohnort|stadt|ciudad|localidad|poblacion|citta|localita|comune|cidade|localidade|plaats|woonplaats|stad)\b/,
     w: { city: 5 },
   },
   { re: /\b(bundesland|provincia|estado|regione|distrito|provincie)\b/, w: { region: 4 } },
-  { re: /\b(land|pais|paese|nazione)\b/, w: { country: 5 } },
+  { re: /\b(land oder region|pais|paese|nazione)\b/, w: { country: 5 } },
+  // Short words that are also English words ("Spending cap", "Land line") or
+  // fragments of other phrases count only when they are the whole text.
+  { re: /^(cap|cep)$/, w: { postal_code: 5, otp: -5 } },
+  { re: /^ort$/, w: { city: 5 } },
+  { re: /^land$/, w: { country: 5 } },
+  { re: /^ano$/, w: { cc_exp_year: 3, cc_exp: -1 } },
+  { re: /^rua$/, w: { address_line1: 3 } },
+  { re: /^titular$/, w: { cc_name: 6, full_name: -3, family_name: -3, given_name: -3 } },
   {
     re: /\b(angemeldet bleiben|eingeloggt bleiben|merken|recordarme|recuerdame|mantener la sesion|ricordami|resta connesso|lembrar|manter sessao|mantenha me conectado|onthoud|ingelogd blijven|aangemeld blijven)\b/,
     w: { remember_me: 5 },

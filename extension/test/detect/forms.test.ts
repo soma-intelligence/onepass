@@ -353,6 +353,32 @@ describe("analyzeDocument: lab fixes (A2 to A4)", () => {
       const { a } = analyzeHtml(`<h1>Spring sale</h1>${body}`, "https://shop.atlas-cloud.test/deals", "Atlas Shop");
       expect(a.forms).toEqual([]);
     }
+    // "auth" words must be whole: authors, authority and authentic are not sign-in pages.
+    const { a } = analyzeHtml(
+      `<h1>Our authors</h1>${pages[0]}`,
+      "https://atlas-cloud.test/authors",
+      "Authors and authority: an authentic story",
+    );
+    expect(a.forms).toEqual([]);
+  });
+
+  it("forgot password wording counts only in a link", () => {
+    const form =
+      '<form id="f"><label for="e">Email</label><input id="e" name="email" type="email"><button type="submit">Next</button></form>';
+    expect(analyzeHtml(`${form}<p>Forgot your password? Call our support.</p>`, "https://atlas-cloud.test/").a.forms).toEqual([]);
+    expect(analyzeHtml(`${form}<a href="/reset">Mot de passe oublié ?</a>`, "https://atlas-cloud.test/").a.forms.map((f) => f.kind)).toEqual([
+      "login",
+    ]);
+  });
+
+  it("Étape suivante moves an identifier step forward", () => {
+    const { a, refs } = analyzeHtml(
+      '<h1>Connexion</h1><form id="f"><label for="u">Nom d\'utilisateur</label><input id="u" name="uid_15" type="text">' +
+        '<button id="go" type="submit">Étape suivante</button></form>',
+      "https://atlas-cloud.test/",
+      "Connexion",
+    );
+    expect(a.forms.map((f) => [f.kind, roles(f, refs)])).toEqual([["login", { u: "username" }]]);
   });
 
   it("an identifier step with a sign-in button needs no sign-in page", () => {

@@ -12,5 +12,5 @@
   "8:menu_fill": "fail",
   "9:menu_fill": "pass",
   "10:one_click": "pass",
-  "11:one_click": "fail"
+  "11:one_click": "pass"
 }

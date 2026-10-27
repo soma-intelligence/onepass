@@ -7,7 +7,7 @@ import { classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate } fr
 import { AUTOCOMPLETE_SCORE, normalizeText } from "./lexicon";
 import { buttonLabel, detectAccountChooser, detectProviderButtons, providerOfButton } from "./provider";
 import type { RefRegistry } from "./refs";
-import { ownText, pageText } from "./text";
+import { ownText } from "./text";
 import { domGeometry, type Geometry, isRendered, isVisible } from "./visibility";
 
 /** Most form controls inspected per page (hostile pages may create thousands). */
@@ -22,7 +22,7 @@ const MAX_NEXT_LABEL = 40;
 
 /** Labels of buttons that move a sign-in forward (French, English, German, Spanish, Italian, Portuguese, Dutch). */
 const NEXT_TEXT =
-  /\b(next|continue|continuer|suivant|sign in|log in|login|se connecter|connexion|valider|verify|verifier|weiter|fortfahren|anmelden|einloggen|bestatigen|siguiente|continuar|iniciar sesion|acceder|entrar|verificar|avanti|continua|prosegui|accedi|verifica|proximo|seguinte|iniciar sessao|volgende|doorgaan|verder|inloggen|aanmelden)\b/;
+  /\b(next|continue|continuer|suivant|suivante|etape suivante|sign in|log in|login|se connecter|connexion|valider|verify|verifier|weiter|fortfahren|anmelden|einloggen|bestatigen|siguiente|continuar|iniciar sesion|acceder|entrar|verificar|avanti|continua|prosegui|accedi|verifica|proximo|seguinte|iniciar sessao|volgende|doorgaan|verder|inloggen|aanmelden)\b/;
 
 /**
  * Words that make a page or a button a sign-in one. An identifier-only step
@@ -31,12 +31,12 @@ const NEXT_TEXT =
  * taken for a login.
  */
 const SIGN_IN_TEXT =
-  /\b(sign ?in|signin|log ?in|login|logon|auth\w*|sso|connexion|se connecter|identifi\w*|anmelden|anmeldung|einloggen|iniciar sesion|acceder|accedi|accesso|entrar|iniciar sessao|inloggen|aanmelden)\b/;
-/** "Forgot password" wording, matched on page text (see pageText). */
+  /\b(sign ?in|signin|log ?in|login|logon|auth|authenticate|authentication|authentifi\w*|authorize|oauth|sso|connexion|se connecter|identifi\w*|anmelden|anmeldung|einloggen|iniciar sesion|acceder|accedi|accesso|entrar|iniciar sessao|inloggen|aanmelden)\b/;
+/** "Forgot password" wording, matched on link texts. */
 const FORGOT_TEXT =
   /\b(forgot|forgotten|mot de passe oublie|passwort vergessen|kennwort vergessen|olvidaste|olvido|password dimenticata|esqueceu|esqueci|wachtwoord vergeten)\b/;
-/** Page text read for the "forgot password" wording. */
-const MAX_SIGN_IN_TEXT = 5000;
+/** Links read for the "forgot password" wording. */
+const MAX_FORGOT_LINKS = 300;
 /** Headings read for sign-in wording. */
 const MAX_HEADINGS = 5;
 
@@ -256,6 +256,8 @@ function mergeSplitOtp(fields: Classified[], refs: RefRegistry): FieldInfo[] {
 /**
  * An ambiguous "security code" is a card code only next to another card field
  * (number, name, expiry); alone it is read again as a one-time code.
+ * Accepted limit: a card code alone in its own frame (hosted card fields)
+ * without `autocomplete="cc-csc"` reads as a one-time code.
  */
 function resolveSecurityCodes(fields: Classified[]): void {
   if (fields.some((f) => CARD.has(f.role) && f.role !== "cc_csc")) return;
@@ -321,14 +323,16 @@ export function formKind(roles: FieldRole[], nextButton: boolean): FormKind | nu
   return null;
 }
 
-/** Page-level sign-in wording: title, URL, first headings or a "forgot password" text. */
+/** Page-level sign-in wording: title, URL, first headings or a "forgot password" link. */
 function signInPage(doc: Document, url: string): boolean {
   const headings = Array.from(doc.querySelectorAll("h1, h2"))
     .slice(0, MAX_HEADINGS)
     .map((h) => ownText(h, 100));
   const texts = [doc.title, url, ...headings];
   if (texts.some((t) => SIGN_IN_TEXT.test(normalizeText(t)))) return true;
-  return FORGOT_TEXT.test(pageText(doc, MAX_SIGN_IN_TEXT));
+  return Array.from(doc.querySelectorAll("a"))
+    .slice(0, MAX_FORGOT_LINKS)
+    .some((a) => FORGOT_TEXT.test(normalizeText(ownText(a, 100))));
 }
 
 /**
