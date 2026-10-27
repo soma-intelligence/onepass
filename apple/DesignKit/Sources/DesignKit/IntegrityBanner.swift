@@ -6,21 +6,23 @@ public struct IntegrityBanner: View {
 
     public init(kind: String) { self.kind = kind }
 
-    nonisolated static let fallback = "Le stockage a renvoyé des données altérées."
+    nonisolated static var fallback: String {
+        String(localized: "Le stockage a renvoyé des données altérées.", bundle: DesignKitStrings.bundle)
+    }
 
-    /// French text for a core `Integrity { kind }`.
+    /// Text for a core `Integrity { kind }`.
     public nonisolated static func message(for kind: String) -> String {
         switch kind {
-        case "account_missing": "Le compte a disparu du stockage."
-        case "vault_missing": "Un coffre a disparu du stockage."
-        case "manifest_rollback": "Une ancienne version des données a été rejouée."
-        case "manifest_missing_item": "Un élément a été retenu ou supprimé du stockage."
-        case "manifest_unexpected_item": "Un élément inconnu a été ajouté au stockage."
-        case "manifest_item_mismatch": "Un élément ne correspond pas à la liste signée du coffre."
-        case "commitment", "aead": "Des données chiffrées ont été modifiées."
-        case "signature", "params_unsigned": "Une signature est invalide."
-        case "params_downgrade": "Les paramètres de sécurité du compte ont été affaiblis."
-        case "wrong_kind", "wrong_context": "Un enregistrement a été déplacé ou substitué."
+        case "account_missing": String(localized: "Le compte a disparu du stockage.", bundle: DesignKitStrings.bundle)
+        case "vault_missing": String(localized: "Un coffre a disparu du stockage.", bundle: DesignKitStrings.bundle)
+        case "manifest_rollback": String(localized: "Une ancienne version des données a été rejouée.", bundle: DesignKitStrings.bundle)
+        case "manifest_missing_item": String(localized: "Un élément a été retenu ou supprimé du stockage.", bundle: DesignKitStrings.bundle)
+        case "manifest_unexpected_item": String(localized: "Un élément inconnu a été ajouté au stockage.", bundle: DesignKitStrings.bundle)
+        case "manifest_item_mismatch": String(localized: "Un élément ne correspond pas à la liste signée du coffre.", bundle: DesignKitStrings.bundle)
+        case "commitment", "aead": String(localized: "Des données chiffrées ont été modifiées.", bundle: DesignKitStrings.bundle)
+        case "signature", "params_unsigned": String(localized: "Une signature est invalide.", bundle: DesignKitStrings.bundle)
+        case "params_downgrade": String(localized: "Les paramètres de sécurité du compte ont été affaiblis.", bundle: DesignKitStrings.bundle)
+        case "wrong_kind", "wrong_context": String(localized: "Un enregistrement a été déplacé ou substitué.", bundle: DesignKitStrings.bundle)
         default: fallback
         }
     }

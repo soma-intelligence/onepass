@@ -2,8 +2,8 @@ import ImageIO
 import SwiftUI
 import VaultKit
 
-/// Row icon: the site icon when one was loaded, otherwise the category tile
-/// (a letter for logins, the category symbol for the other types).
+/// Row icon: the site icon when one was loaded, otherwise the illustrated category artwork
+/// (for logins, the teal tile carries the title's first letter when there is one).
 public struct ItemIcon: View {
     private let type: FfiItemType
     private let title: String
@@ -36,6 +36,7 @@ public struct ItemIcon: View {
             if let image {
                 Image(decorative: image, scale: 1)
                     .resizable()
+                    .interpolation(.high)
                     .scaledToFill()
                     .frame(width: side, height: side)
                     .background(Color.primary.opacity(0.06))
@@ -44,26 +45,11 @@ public struct ItemIcon: View {
                         RoundedRectangle(cornerRadius: corner, style: .continuous)
                             .strokeBorder(Color.primary.opacity(0.08)))
             } else {
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .fill(category.color)
-                    .frame(width: side, height: side)
-                    .overlay { glyph }
+                CategoryArtwork(type: type, size: side, monogram: type == .login ? title : nil)
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: "\(category.singular), \(title)"))
-    }
-
-    @ViewBuilder private var glyph: some View {
-        if type == .login, let first = title.trimmingCharacters(in: .whitespaces).first {
-            Text(String(first).uppercased())
-                .font(.system(size: side * 0.47, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
-        } else {
-            Image(systemName: category.symbol)
-                .font(.system(size: side * 0.47, weight: .medium))
-                .foregroundStyle(.white)
-        }
     }
 }
 

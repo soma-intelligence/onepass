@@ -6,6 +6,7 @@ import PackageDescription
 // `make test` passes the same variable to both packages.
 let package = Package(
     name: "DesignKit",
+    defaultLocalization: "fr",
     platforms: [.iOS("26.0"), .macOS("26.0"), .visionOS("26.0")],
     products: [
         .library(name: "DesignKit", targets: ["DesignKit"])
@@ -16,7 +17,8 @@ let package = Package(
     targets: [
         .target(
             name: "DesignKit",
-            dependencies: [.product(name: "VaultKit", package: "VaultKit")]
+            dependencies: [.product(name: "VaultKit", package: "VaultKit")],
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "DesignKitTests",
