@@ -145,7 +145,9 @@ fn run_with_secrets_invalid_names() {
 
 #[test]
 fn session_grant_reused_for_identical_request() {
-    let a = approver(vec![Decision::AllowForSession]);
+    let a = approver(vec![Decision::AllowFor(std::time::Duration::from_secs(
+        300,
+    ))]);
     let (mut t, audit) = tools_with_audit(default_policy(), a.clone());
     let args =
         json!({"command": ["/bin/echo", "hi"], "env": {"T": "onepass://Dev/GitHub/password"}});
@@ -155,12 +157,15 @@ fn session_grant_reused_for_identical_request() {
     }
     assert_eq!(a.calls().len(), 1);
     let decisions: Vec<String> = audit.entries().into_iter().map(|e| e.decision).collect();
-    assert_eq!(decisions, ["session", "remembered"]);
+    assert_eq!(decisions, ["grant_5m", "remembered"]);
 }
 
 #[test]
 fn session_grant_not_reused_for_different_command() {
-    let a = approver(vec![Decision::AllowForSession, Decision::Deny]);
+    let a = approver(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+        Decision::Deny,
+    ]);
     let mut t = tools(default_policy(), a.clone());
     let env = json!({"T": "onepass://Dev/GitHub/password"});
     ok(call(
@@ -281,7 +286,10 @@ fn fill_template_refuses_overwrite_and_data_dir() {
 
 #[test]
 fn create_login_returns_reference_only() {
-    let a = approver(vec![Decision::AllowForSession, Decision::AllowOnce]);
+    let a = approver(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+        Decision::AllowOnce,
+    ]);
     let (mut t, audit) =
         tools_with_policy(|r| policy_with(r, &[("Dev", &[Scope::Write])]), a.clone());
     let v = ok(call(
@@ -386,7 +394,10 @@ fn generate_password_respects_policy() {
 
 #[test]
 fn totp_code_needs_scope_and_each_call_approval() {
-    let a = approver(vec![Decision::AllowForSession, Decision::AllowForSession]);
+    let a = approver(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+    ]);
     let (mut t, audit) = tools_with_policy(
         |r| policy_with(r, &[("Dev", &[Scope::Metadata, Scope::Use, Scope::Totp])]),
         a.clone(),
@@ -420,7 +431,10 @@ fn totp_code_needs_scope_and_each_call_approval() {
 
 #[test]
 fn reveal_secret_with_scope_and_approval() {
-    let a = approver(vec![Decision::AllowForSession, Decision::AllowOnce]);
+    let a = approver(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+        Decision::AllowOnce,
+    ]);
     let (mut t, audit) =
         tools_with_policy(|r| policy_with(r, &[("Dev", &[Scope::Reveal])]), a.clone());
     for _ in 0..2 {
@@ -447,7 +461,10 @@ fn fill_template_session_grant_follows_the_placeholders() {
     let template = dir.path().join("t.tpl");
     let output = dir.path().join("out.env");
     fs::write(&template, "A={{ onepass://Dev/GitHub/username }}").unwrap();
-    let a = approver(vec![Decision::AllowForSession, Decision::Deny]);
+    let a = approver(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+        Decision::Deny,
+    ]);
     let (mut t, audit) = tools_with_audit(default_policy(), a.clone());
     let args = json!({"template_path": template, "output_path": output, "overwrite": true});
     ok(call(&mut t, "fill_template", args.clone()));
@@ -463,7 +480,7 @@ fn fill_template_session_grant_follows_the_placeholders() {
         format!("A={GITHUB_USER}")
     );
     let decisions: Vec<String> = audit.entries().into_iter().map(|e| e.decision).collect();
-    assert_eq!(decisions, ["session", "remembered", "denied"]);
+    assert_eq!(decisions, ["grant_5m", "remembered", "denied"]);
 }
 
 #[test]
@@ -471,7 +488,10 @@ fn fill_template_reprompt_item_is_never_remembered() {
     let dir = tempfile::tempdir().unwrap();
     let template = dir.path().join("t.tpl");
     fs::write(&template, "{{ onepass://Dev/Mail/password }}").unwrap();
-    let a = approver(vec![Decision::AllowForSession, Decision::AllowForSession]);
+    let a = approver(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+    ]);
     let mut t = tools(default_policy(), a.clone());
     add_mail(&mut t, true);
     let args =

@@ -265,7 +265,10 @@ fn denial_fails() {
 
 #[test]
 fn confirm_each_use_never_remembered() {
-    let mut f = fixture(vec![Decision::AllowForSession; 3]);
+    let mut f = fixture(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300));
+        3
+    ]);
     f.source
         .edit(KeyType::Ed25519, |k| k.confirm_each_use = true);
     assert!(is_signature(&f.sign(KeyType::Ed25519, "/usr/bin/ssh")));
@@ -278,7 +281,10 @@ fn confirm_each_use_never_remembered() {
 
 #[test]
 fn session_grant_is_per_key_and_exe() {
-    let mut f = fixture(vec![Decision::AllowForSession; 4]);
+    let mut f = fixture(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300));
+        4
+    ]);
     assert!(is_signature(&f.sign(KeyType::Ed25519, "/usr/bin/ssh")));
     assert_eq!(f.asked(), 1);
     // Same key, same executable: remembered.
@@ -291,7 +297,10 @@ fn session_grant_is_per_key_and_exe() {
     assert!(is_signature(&f.sign(KeyType::EcdsaP256, "/usr/bin/ssh")));
     assert_eq!(f.asked(), 3);
     let decisions: Vec<String> = f.audit.entries().into_iter().map(|e| e.decision).collect();
-    assert_eq!(decisions, ["session", "remembered", "session", "session"]);
+    assert_eq!(
+        decisions,
+        ["grant_5m", "remembered", "grant_5m", "grant_5m"]
+    );
 
     // An unidentified executable is never remembered.
     let mut conn = ConnState::default();
@@ -314,7 +323,7 @@ fn session_grant_expires() {
     };
     let mut f = fixture_with(
         FakeSource::all(),
-        vec![Decision::AllowForSession; 2],
+        vec![Decision::AllowFor(std::time::Duration::from_secs(300)); 2],
         config,
     );
     assert!(is_signature(&f.sign(KeyType::Ed25519, "/usr/bin/ssh")));
@@ -325,7 +334,10 @@ fn session_grant_expires() {
 
 #[test]
 fn lock_unlock() {
-    let mut f = fixture(vec![Decision::AllowForSession; 2]);
+    let mut f = fixture(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300));
+        2
+    ]);
     let mut conn = ConnState::default();
     let p = peer("/usr/bin/ssh");
     let pass = |s: &str| Zeroizing::new(s.as_bytes().to_vec());
@@ -533,7 +545,7 @@ fn forwarded_session_refused_by_default_and_never_remembered_when_allowed() {
     };
     let mut f = fixture_with(
         FakeSource::all(),
-        vec![Decision::AllowForSession; 2],
+        vec![Decision::AllowFor(std::time::Duration::from_secs(300)); 2],
         config,
     );
     let mut conn = ConnState::default();
@@ -629,7 +641,12 @@ impl onepass_guard::AuditSink for BrokenAudit {
 
 #[test]
 fn sign_fails_closed_when_the_audit_log_is_unusable() {
-    let approver = Arc::new(ScriptedApprover::new(vec![Decision::AllowForSession; 4]));
+    let approver = Arc::new(ScriptedApprover::new(vec![
+        Decision::AllowFor(
+            std::time::Duration::from_secs(300)
+        );
+        4
+    ]));
     let mut agent = Agent::new(
         FakeSource::all(),
         approver.clone(),

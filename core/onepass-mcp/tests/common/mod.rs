@@ -4,9 +4,10 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
 use onepass_core::Id;
 use onepass_core::account::{Account, NewAccount};
@@ -15,9 +16,16 @@ use onepass_core::model::{FieldValue, Item, ItemType, ItemUrl, MatchRule, new_it
 use onepass_core::repo::{DeviceState, Repository};
 use onepass_core::store::{MemoryStore, Record, RecordKind, RecordStore};
 use onepass_core::vault::{Vault, VaultMeta};
-use onepass_guard::{Approver, AuditEntry, AuditSink};
+use onepass_guard::testing::{FakeClock, dev_strong};
+use onepass_guard::{
+    Approver, AuditEntry, AuditSink, ClientRegistry, ClientRegistryLoader, GrantStore, GuardError,
+    Limits, LocalSigner, StrongAuth, Throttle, save_clients,
+};
 use onepass_mcp::tools::McpTools;
-use onepass_mcp::{ClientInfo, Narrowing, Policy, RepoPort, Scope, ToolHost, ToolOutcome};
+use onepass_mcp::{
+    ClientContext, ClientInfo, ClientScopes, McpGuards, Narrowing, Policy, RepoPort, Scope,
+    ToolHost, ToolOutcome, file_registry, mcp_client_record,
+};
 use serde_json::Value;
 use zeroize::Zeroizing;
 
@@ -181,7 +189,10 @@ pub fn tools_with(
     tools_full(policy, narrowing, approver, None)
 }
 
-/// Like [`tools_with`], with `forbidden_dir` passed to the tools.
+/// Like [`tools_with`], with `forbidden_dir` passed to the tools. The
+/// client is paired with every scope on every vault (the policy alone
+/// decides), limits are loose and strong authentication always succeeds,
+/// so the milestone 7 behavior is what these tests see.
 pub fn tools_full(
     policy: impl FnOnce(&Repository<MemoryStore>) -> Policy,
     narrowing: impl FnOnce(&Repository<MemoryStore>) -> Narrowing,
@@ -191,6 +202,7 @@ pub fn tools_full(
     let repo = repo();
     let policy = policy(repo);
     let narrowing = narrowing(repo);
+    let guards = default_guards(repo);
     let audit = SharedAudit::default();
     let tools = McpTools::new(
         RepoPort(repo),
@@ -199,8 +211,170 @@ pub fn tools_full(
         approver,
         Box::new(audit.clone()),
         forbidden_dir,
+        guards,
     );
     (tools, audit)
+}
+
+/// HMAC-SHA256 signer binding the domain (stands in for the account key).
+#[derive(Clone)]
+pub struct TestSigner(pub [u8; 32]);
+
+impl TestSigner {
+    fn input(domain: &[u8], msg: &[u8]) -> Vec<u8> {
+        let mut v = domain.to_vec();
+        v.push(0);
+        v.extend_from_slice(msg);
+        v
+    }
+}
+
+impl LocalSigner for TestSigner {
+    fn sign(&self, domain: &[u8], msg: &[u8]) -> Result<Vec<u8>, GuardError> {
+        let key = aws_lc_rs::hmac::Key::new(aws_lc_rs::hmac::HMAC_SHA256, &self.0);
+        Ok(aws_lc_rs::hmac::sign(&key, &Self::input(domain, msg))
+            .as_ref()
+            .to_vec())
+    }
+    fn verify(&self, domain: &[u8], msg: &[u8], sig: &[u8]) -> Result<(), GuardError> {
+        let key = aws_lc_rs::hmac::Key::new(aws_lc_rs::hmac::HMAC_SHA256, &self.0);
+        aws_lc_rs::hmac::verify(&key, &Self::input(domain, msg), sig)
+            .map_err(|_| GuardError::Signature)
+    }
+}
+
+/// The signer of every fixture.
+pub fn signer() -> TestSigner {
+    TestSigner([9; 32])
+}
+
+/// Code identity of the default test client.
+pub const CLIENT_ID: &str = "team:TESTTEAM01:com.example.agent";
+/// Label of the default test client.
+pub const CLIENT_LABEL: &str = "Example Agent";
+
+/// The client context of `id` (signed, labelled after it).
+pub fn client(id: &str) -> ClientContext {
+    ClientContext {
+        client_id: id.to_owned(),
+        label: if id == CLIENT_ID {
+            CLIENT_LABEL.to_owned()
+        } else {
+            format!("client {id}")
+        },
+        signed: true,
+        hardened: None,
+    }
+}
+
+/// Every scope on every vault of `repo`.
+pub fn all_scopes(repo: &Repository<MemoryStore>) -> ClientScopes {
+    repo.vaults()
+        .unwrap()
+        .into_iter()
+        .map(|v| (v.id.to_string(), Scope::ALL.into_iter().collect()))
+        .collect()
+}
+
+/// Loose limits: milestone 7 tests prompt many times in a row.
+pub fn loose_limits() -> Limits {
+    Limits {
+        prompts_per_min: 100_000,
+        secret_per_min: 100_000,
+        denials_before_cooldown: 100_000,
+        cooldown: Duration::from_secs(1),
+    }
+}
+
+/// A data directory with `clients.json` (signed by [`signer`]) and the
+/// path of `grants.json`.
+pub struct DataDir {
+    pub dir: tempfile::TempDir,
+}
+
+impl DataDir {
+    pub fn new() -> Self {
+        DataDir {
+            dir: tempfile::tempdir().unwrap(),
+        }
+    }
+    pub fn clients(&self) -> PathBuf {
+        self.dir.path().join("clients.json")
+    }
+    pub fn grants(&self) -> PathBuf {
+        self.dir.path().join("grants.json")
+    }
+    /// Pairs `c` for MCP with `scopes` (replacing any record of it).
+    pub fn pair(&self, c: &ClientContext, scopes: &ClientScopes, paired_at: i64) {
+        let mut reg = self.registry();
+        reg.clients.retain(|r| r.id != c.client_id);
+        reg.clients.push(mcp_client_record(
+            c,
+            serde_json::json!({"test": true}),
+            scopes,
+            paired_at,
+        ));
+        save_clients(&self.clients(), &signer(), &mut reg).unwrap();
+    }
+    /// Removes every record of `client_id`.
+    pub fn unpair(&self, client_id: &str) {
+        let mut reg = self.registry();
+        reg.unpair(client_id, 0);
+        save_clients(&self.clients(), &signer(), &mut reg).unwrap();
+    }
+    fn registry(&self) -> ClientRegistry {
+        onepass_guard::load_clients(&self.clients(), &signer(), &account_id()).unwrap()
+    }
+}
+
+impl Default for DataDir {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Guards over `data`: `client`, the registry and grants files of `data`,
+/// `strong`, `clock` and `limits`.
+pub fn guards_in(
+    data: &DataDir,
+    client: ClientContext,
+    strong: Arc<dyn StrongAuth>,
+    clock: Arc<FakeClock>,
+    limits: Limits,
+) -> McpGuards {
+    let registry = file_registry(
+        data.clients(),
+        signer(),
+        account_id(),
+        Arc::new(Mutex::new(ClientRegistryLoader::new())),
+    );
+    let grants = Arc::new(Mutex::new(GrantStore::open(data.grants(), &account_id())));
+    let mut g = McpGuards::new(client, registry, grants, Box::new(signer()), strong, clock);
+    g.throttle = Throttle::new(limits);
+    g
+}
+
+/// The guards of the milestone 7 fixtures: [`CLIENT_ID`] paired with every
+/// scope on every vault of `repo`, loose limits, strong authentication
+/// that always succeeds. The data directory lives as long as the guards.
+pub fn default_guards(repo: &Repository<MemoryStore>) -> McpGuards {
+    let data = DataDir::new();
+    let c = client(CLIENT_ID);
+    data.pair(&c, &all_scopes(repo), 1);
+    let mut g = guards_in(
+        &data,
+        c,
+        Arc::new(dev_strong(true)),
+        Arc::new(FakeClock::new(1_000_000)),
+        loose_limits(),
+    );
+    // Keep the directory alive with the registry reader.
+    let mut inner = std::mem::replace(&mut g.registry, Box::new(|| unreachable!()));
+    g.registry = Box::new(move || {
+        let _keep: &Path = data.dir.path();
+        inner()
+    });
+    g
 }
 
 /// A policy of the fixture's account granting `scopes` on the named

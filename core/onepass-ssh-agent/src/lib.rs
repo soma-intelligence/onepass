@@ -9,8 +9,8 @@
 //!   session binding, and the vault key source.
 //! - [`knownhosts`]: host bookmarks against `known_hosts`.
 //! - [`sshsig`]: namespace of SSHSIG signature requests.
-//! - [`peer`]: credentials of socket clients.
-//! - [`server`]: the Unix socket and its accept loop.
+//! - [`server`]: the Unix socket, its accept loop and the credentials of
+//!   its clients (through `onepass-peer`).
 #![deny(unsafe_code)]
 
 pub mod agent;
@@ -18,16 +18,16 @@ mod der;
 pub mod keys;
 pub mod knownhosts;
 mod openssh;
-pub mod peer;
 pub mod server;
 pub mod sshsig;
 pub mod wire;
 
+pub use agent::PeerInfo;
 pub use agent::{
     Agent, AgentConfig, BoundHost, ConnState, KeyInfo, KeySource, Reply, RepoKeySource,
     load_key_of, menu_truthy, ssh_keys_of,
 };
 pub use knownhosts::{matching_hosts, pattern_matches};
-pub use peer::{PeerInfo, peer_info};
+pub use server::peer_info;
 pub use server::{bind_socket, serve};
 pub use sshsig::sshsig_namespace;

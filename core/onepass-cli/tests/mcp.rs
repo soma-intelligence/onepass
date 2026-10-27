@@ -35,6 +35,7 @@ fn onepass(dir: &Path) -> Command {
         .env("ONEPASS_PASSWORD", PASSWORD)
         .env("ONEPASS_DEV_FAST_KDF", "1")
         .env("ONEPASS_DEV_AUTO_APPROVE", "once")
+        .env("ONEPASS_DEV_STRONG_AUTH", "allow")
         .arg("--data-dir")
         .arg(dir);
     c
@@ -121,6 +122,7 @@ impl Server {
             .env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
             .env("ONEPASS_PASSWORD", PASSWORD)
             .env("ONEPASS_DEV_AUTO_APPROVE", "once")
+            .env("ONEPASS_DEV_STRONG_AUTH", "allow")
             .arg("--data-dir")
             .arg(dir)
             .arg("mcp")

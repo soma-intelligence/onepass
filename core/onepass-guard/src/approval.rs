@@ -1,6 +1,11 @@
 //! User approvals for sensitive actions.
 
+// The terminal handling calls libc on our own `/dev/tty` descriptor
+// (tcflush, fcntl); each block has its SAFETY comment.
+#![allow(unsafe_code)]
+
 use crate::display::sanitize_for_display;
+use crate::grants::{DEFAULT_GRANT_TTL, MAX_GRANT_TTL};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
@@ -45,15 +50,19 @@ pub struct Target {
 pub struct ApprovalRequest {
     /// Requesting surface.
     pub surface: Surface,
-    /// Client name as declared by the agent (untrusted).
+    /// Client name as declared by the agent (untrusted), or a label of a
+    /// verified client when `client_verified`.
     pub client: String,
+    /// True when `client` names a verified, paired client identity; false
+    /// shows it as declared and unverified.
+    pub client_verified: bool,
     /// Action name.
     pub action: String,
     /// Non-secret detail lines (label, value).
     pub details: Vec<(String, String)>,
     /// Items the action touches.
     pub targets: Vec<Target>,
-    /// Whether "allow for this session" may be offered.
+    /// Whether "allow for a few minutes" (a grant) may be offered.
     pub remember_allowed: bool,
 }
 
@@ -64,8 +73,32 @@ pub enum Decision {
     Deny,
     /// Allow this request only.
     AllowOnce,
-    /// Allow this exact request for the rest of the session.
-    AllowForSession,
+    /// Allow this exact request again for the given duration (one of
+    /// [`GRANT_CHOICES`], at most 60 minutes).
+    AllowFor(Duration),
+}
+
+/// Durations offered at the prompt: answer suffix and duration. `s` is the
+/// default grant (5 minutes), `s60` the ceiling.
+pub const GRANT_CHOICES: [(&str, Duration); 3] = [
+    ("s", DEFAULT_GRANT_TTL),
+    ("s15", Duration::from_secs(15 * 60)),
+    ("s60", MAX_GRANT_TTL),
+];
+
+/// Audit label of a decision: `denied`, `once`, or `grant_<n>m` for a grant
+/// of one of the [`GRANT_CHOICES`] durations (`grant` for any other).
+pub fn decision_label(decision: &Decision) -> &'static str {
+    match decision {
+        Decision::Deny => "denied",
+        Decision::AllowOnce => "once",
+        Decision::AllowFor(d) => match d.as_secs() {
+            300 => "grant_5m",
+            900 => "grant_15m",
+            3600 => "grant_60m",
+            _ => "grant",
+        },
+    }
 }
 
 /// Asks the user (or a stand-in) to approve a request.
@@ -106,10 +139,14 @@ pub fn render_prompt(req: &ApprovalRequest, code: &str) -> String {
         "\nOnePass approval request ({})\n",
         req.surface.label()
     ));
-    out.push_str(&format!(
-        "  client: {} (declared, unverified)\n",
-        s(&req.client)
-    ));
+    if req.client_verified {
+        out.push_str(&format!("  client: {}\n", s(&req.client)));
+    } else {
+        out.push_str(&format!(
+            "  client: {} (declared, unverified)\n",
+            s(&req.client)
+        ));
+    }
     out.push_str(&format!("  action: {}\n", s(&req.action)));
     for (label, value) in &req.details {
         out.push_str(&format!("  {}: {}\n", s(label), s(value)));
@@ -127,9 +164,14 @@ pub fn render_prompt(req: &ApprovalRequest, code: &str) -> String {
     }
     let code = s(code);
     if req.remember_allowed {
-        out.push_str(&format!(
-            "type {code} to allow once, \"{code} s\" to allow for this session, anything else denies: "
-        ));
+        out.push_str(&format!("type {code} to allow once"));
+        for (suffix, d) in GRANT_CHOICES {
+            out.push_str(&format!(
+                ", \"{code} {suffix}\" for {} min",
+                d.as_secs() / 60
+            ));
+        }
+        out.push_str(", anything else denies: ");
     } else {
         out.push_str(&format!(
             "type {code} to allow once, anything else denies: "
@@ -139,8 +181,9 @@ pub fn render_prompt(req: &ApprovalRequest, code: &str) -> String {
 }
 
 /// Interprets one line typed at the prompt against the challenge `code`:
-/// the code alone allows once, the code followed by ` s` allows for the
-/// session (only when `remember_allowed`), anything else denies.
+/// the code alone allows once; the code followed by a space and one of the
+/// [`GRANT_CHOICES`] suffixes (`s` 5 min, `s15`, `s60`) allows for that
+/// duration (only when `remember_allowed`); anything else denies.
 pub fn parse_answer(line: &str, code: &str, remember_allowed: bool) -> Decision {
     let answer = line.trim();
     if code.is_empty() {
@@ -149,10 +192,19 @@ pub fn parse_answer(line: &str, code: &str, remember_allowed: bool) -> Decision 
     if answer == code {
         return Decision::AllowOnce;
     }
-    if remember_allowed && answer.strip_suffix(" s") == Some(code) {
-        return Decision::AllowForSession;
+    if !remember_allowed {
+        return Decision::Deny;
     }
-    Decision::Deny
+    let Some(suffix) = answer
+        .strip_prefix(code)
+        .and_then(|rest| rest.strip_prefix(' '))
+    else {
+        return Decision::Deny;
+    };
+    GRANT_CHOICES
+        .iter()
+        .find(|(s, _)| *s == suffix)
+        .map_or(Decision::Deny, |&(_, d)| Decision::AllowFor(d))
 }
 
 /// Longest answer line read from the terminal; a longer one denies.
@@ -305,7 +357,9 @@ pub(crate) fn parse_dev_auto_approve(
     }
     match v {
         "once" => Ok(Some(DevAutoApprover(Decision::AllowOnce))),
-        "session" => Ok(Some(DevAutoApprover(Decision::AllowForSession))),
+        "session" => Ok(Some(DevAutoApprover(Decision::AllowFor(
+            GRANT_CHOICES[0].1,
+        )))),
         "deny" => Ok(Some(DevAutoApprover(Decision::Deny))),
         _ => Err("ONEPASS_DEV_AUTO_APPROVE must be once, session or deny".into()),
     }
@@ -364,6 +418,7 @@ mod tests {
     fn req(remember_allowed: bool) -> ApprovalRequest {
         ApprovalRequest {
             surface: Surface::Mcp,
+            client_verified: false,
             client: "evil\x1b[2Jclient\r".into(),
             action: "run_with_secrets\x1b]0;x\x07".into(),
             details: vec![("command".into(), "sh -c 'echo \x1b[31mhi'".into())],
@@ -374,6 +429,20 @@ mod tests {
             }],
             remember_allowed,
         }
+    }
+
+    #[test]
+    fn verified_client_is_not_shown_as_declared() {
+        let mut r = req(false);
+        assert!(render_prompt(&r, "ab").contains("(declared, unverified)"));
+        r.client_verified = true;
+        r.client = "Example Agent (declared: x)".into();
+        let text = render_prompt(&r, "ab");
+        assert!(
+            text.contains("  client: Example Agent (declared: x)\n"),
+            "{text}"
+        );
+        assert!(!text.contains("unverified"), "{text}");
     }
 
     #[test]
@@ -393,17 +462,19 @@ mod tests {
     fn render_prompt_shows_the_challenge() {
         let text = render_prompt(&req(true), "kq");
         assert!(text.contains("type kq to allow once"));
-        assert!(text.contains("kq s"));
+        assert!(text.contains("\"kq s\" for 5 min"));
+        assert!(text.contains("\"kq s15\" for 15 min"));
+        assert!(text.contains("\"kq s60\" for 60 min"));
         let text = render_prompt(&req(false), "kq");
         assert!(text.contains("type kq to allow once"));
         assert!(!text.contains("kq s"));
+        assert!(!text.contains("min"));
     }
 
     #[test]
     fn parse_answer_cases() {
         assert_eq!(parse_answer("kq", "kq", true), Decision::AllowOnce);
         assert_eq!(parse_answer(" kq \n", "kq", false), Decision::AllowOnce);
-        assert_eq!(parse_answer("kq s", "kq", true), Decision::AllowForSession);
         assert_eq!(parse_answer("kq s\n", "kq", false), Decision::Deny);
         // The old fixed answers and a wrong code all deny.
         assert_eq!(parse_answer("y", "kq", true), Decision::Deny);
@@ -416,6 +487,45 @@ mod tests {
         assert_eq!(parse_answer("kq  s", "kq", true), Decision::Deny);
         // An empty expected code never matches.
         assert_eq!(parse_answer("", "", true), Decision::Deny);
+    }
+
+    #[test]
+    fn grant_choices_follow_the_grant_limits_and_have_labels() {
+        assert_eq!(GRANT_CHOICES[0].1, DEFAULT_GRANT_TTL);
+        assert_eq!(GRANT_CHOICES[2].1, MAX_GRANT_TTL);
+        let labels: Vec<_> = GRANT_CHOICES
+            .iter()
+            .map(|(_, d)| decision_label(&Decision::AllowFor(*d)))
+            .collect();
+        assert_eq!(labels, ["grant_5m", "grant_15m", "grant_60m"]);
+        assert_eq!(decision_label(&Decision::Deny), "denied");
+        assert_eq!(decision_label(&Decision::AllowOnce), "once");
+        assert_eq!(
+            decision_label(&Decision::AllowFor(Duration::from_secs(1))),
+            "grant"
+        );
+    }
+
+    #[test]
+    fn parse_answer_durations() {
+        let min = |m: u64| Decision::AllowFor(Duration::from_secs(m * 60));
+        assert_eq!(parse_answer("kq s", "kq", true), min(5));
+        assert_eq!(parse_answer(" kq s\r\n", "kq", true), min(5));
+        assert_eq!(parse_answer("kq s15", "kq", true), min(15));
+        assert_eq!(parse_answer("kq s60", "kq", true), min(60));
+        // Only the offered durations; never beyond the 60 min ceiling.
+        for other in [
+            "kq s5", "kq s0", "kq s30", "kq s61", "kq s120", "kq S15", "kq s 15", "kq s015",
+            "kq s60s", "kq s-1", "kq 15", "kq s1e9",
+        ] {
+            assert_eq!(parse_answer(other, "kq", true), Decision::Deny, "{other:?}");
+        }
+        // No duration when remembering is not offered.
+        for line in ["kq s", "kq s15", "kq s60"] {
+            assert_eq!(parse_answer(line, "kq", false), Decision::Deny);
+        }
+        // A wrong code with a duration denies.
+        assert_eq!(parse_answer("ab s15", "kq", true), Decision::Deny);
     }
 
     #[test]
@@ -633,10 +743,11 @@ mod tests {
 
     #[test]
     fn scripted_approver_records_calls() {
-        let a = ScriptedApprover::new(vec![Decision::AllowOnce, Decision::AllowForSession]);
+        let five = Decision::AllowFor(Duration::from_secs(300));
+        let a = ScriptedApprover::new(vec![Decision::AllowOnce, five]);
         let r = req(true);
         assert_eq!(a.approve(&r), Decision::AllowOnce);
-        assert_eq!(a.approve(&r), Decision::AllowForSession);
+        assert_eq!(a.approve(&r), five);
         assert_eq!(a.approve(&r), Decision::Deny);
         let calls = a.calls();
         assert_eq!(calls.len(), 3);
@@ -651,7 +762,7 @@ mod tests {
         assert_eq!(d("once", true).unwrap().unwrap().0, Decision::AllowOnce);
         assert_eq!(
             d("session", true).unwrap().unwrap().0,
-            Decision::AllowForSession
+            Decision::AllowFor(Duration::from_secs(5 * 60))
         );
         assert!(d("always", true).is_err());
         assert!(d("once", false).is_err());

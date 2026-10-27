@@ -128,6 +128,7 @@ fn vault_name_shadowing_resolves_inside_mcp_only() {
         .insert(shadow.id.to_string(), Scope::ALL.into_iter().collect());
     let a = approver(vec![Decision::AllowOnce]);
     let audit = SharedAudit::default();
+    let guards = default_guards(repo);
     let mut t = McpTools::new(
         RepoPort(repo),
         p,
@@ -135,6 +136,7 @@ fn vault_name_shadowing_resolves_inside_mcp_only() {
         a.clone(),
         Box::new(audit.clone()),
         None,
+        guards,
     );
     let v = ok(call(
         &mut t,
@@ -170,7 +172,10 @@ fn user_denial_runs_nothing() {
 
 #[test]
 fn reprompt_item_is_never_remembered() {
-    let a = approver(vec![Decision::AllowForSession, Decision::AllowForSession]);
+    let a = approver(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+    ]);
     let (mut t, audit) = tools_with_audit(default_policy(), a.clone());
     add_mail(&mut t, true);
     let args = json!({"command": ["/bin/echo", "hi"], "env": {"P": "onepass://Dev/Mail/password"}});
@@ -369,6 +374,7 @@ fn flaky_tools(
 ) -> (McpTools<Flaky>, SharedAudit, Arc<Mutex<usize>>, Id) {
     let repo = repo();
     let dev = vault(repo, "Dev").id;
+    let guards = default_guards(repo);
     let hits = Arc::new(Mutex::new(0));
     let port = Flaky {
         inner: RepoPort(repo),
@@ -385,6 +391,7 @@ fn flaky_tools(
         approver,
         Box::new(audit.clone()),
         None,
+        guards,
     );
     (t, audit, hits, dev)
 }
