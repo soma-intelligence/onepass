@@ -58,7 +58,7 @@
 //! interleave; the apps guarantee it by running the rebase inside the sync
 //! round that owns the fetch (one round at a time).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::epoch::{EpochReason, RestoreEpoch};
 use crate::manifest::{
@@ -114,15 +114,20 @@ impl Repository<SyncStore> {
     /// 2. The epoch is issued like `issue_restore_epoch`, each head being
     ///    the copy this device serves (`served` with `Use::Keep`: its
     ///    verified copy, even over a fork), re-signed at the epoch floor.
-    /// 3. Only the vaults whose sync health is not `Ok` (behind, alert) or
-    ///    that stay held get their pending manifest rebuilt on the current
-    ///    server row (`SyncStore::rebuild_ancestors_on_base`): their push
-    ///    overwrites the server's copy. Every other vault keeps its
-    ///    ancestor: if another device wrote it meanwhile, the push
-    ///    conflicts, the rebase drops this epoch (`Error::Conflict`) and
-    ///    the caller syncs and calls this again. Another device's write is
-    ///    never overwritten silently. Their health restarts (behind, not
-    ///    counted) until the server serves the copies back.
+    /// 3. Only the vaults in alert (a fork, or behind past the
+    ///    thresholds) or whose server state went back (older than the copy,
+    ///    or gone) get their pending manifest rebuilt on the current server
+    ///    row (`SyncStore::keep_targets`, `rebuild_ancestors_on_base`):
+    ///    their push overwrites the server's copy. Their health restarts
+    ///    (behind, not counted) until the server serves the copies back.
+    ///    Every other vault keeps its ancestor. One whose server state is
+    ///    newer but incomplete (another device's write, part of it not
+    ///    fetched yet) stays held on its copy, nothing of it is sent, and
+    ///    the rebase merges onto the server's state once complete. One
+    ///    another device wrote meanwhile conflicts at the push. Either way
+    ///    the epoch cannot ship while a vault is held: the rebase drops it
+    ///    (`Error::Conflict`) and the caller syncs and calls this again.
+    ///    Another device's committed write is never overwritten silently.
     ///
     /// `reason` must be `KeepThisDevice` (`InvalidFormat("restore epoch
     /// reason")` otherwise; `TakeServer` is
@@ -136,12 +141,10 @@ impl Repository<SyncStore> {
             None | Some(Error::Integrity(_) | Error::Conflict) => {}
             Some(e) => return Err(e),
         }
-        let mut troubled: BTreeSet<Id> = self.store.health()?.into_keys().collect();
-        troubled.extend(self.store.vaults_needing_rebase()?);
+        let troubled = self.store.keep_targets()?;
         let stored = self.sync_epoch()?.map(|e| e.epoch);
         let vaults = self.vaults()?;
         let issued = self.issue_epoch(reason, stored, vaults, true)?;
-        let troubled: Vec<Id> = troubled.into_iter().collect();
         self.store.rebuild_ancestors_on_base(&troubled)?;
         let heads: BTreeMap<Id, u64> = troubled
             .iter()
@@ -164,10 +167,28 @@ impl Repository<SyncStore> {
     /// lost. The caller exports them first (an encrypted archive) and asks
     /// for the master password. The stored epoch's signature is checked,
     /// not its number (the owner takes the server as it is); the new epoch
-    /// is above both the stored one and this device's. A vault whose
-    /// server state fails its checks fails the call (nothing to take); the
-    /// local writes are already gone then, as asked.
+    /// is above both the stored one and this device's.
+    ///
+    /// All or nothing: one store transaction. A vault whose server state
+    /// fails its checks (nothing safe to take) fails the call before
+    /// anything is discarded: the local writes and the device state stay.
     pub fn issue_restore_epoch_take_server(&mut self) -> Result<RestoreEpoch> {
+        let device = self.device.clone();
+        self.store.begin_batch()?;
+        let result = self.take_server().and_then(|issued| {
+            self.store.commit_batch()?;
+            Ok(issued)
+        });
+        if result.is_err() {
+            self.device = device;
+            // The original error wins; SQLite undoes an open transaction
+            // when the connection closes anyway.
+            let _ = self.store.rollback_batch();
+        }
+        result
+    }
+
+    fn take_server(&mut self) -> Result<RestoreEpoch> {
         self.store.discard_local_changes()?;
         self.device.last_seen.clear();
         let stored = self.stored_epoch_number()?;
@@ -231,20 +252,27 @@ impl Repository<SyncStore> {
         let epoch = self.sync_epoch()?;
         let mut rebased = Vec::new();
         let mut first_error = None;
+        // From here on, an error (the store's included) goes into the
+        // report with the vaults already rebased: they changed either way.
         for v in held {
             match self.rebase_vault(v, epoch.as_ref()) {
                 Ok(()) => {
-                    self.store.vault_event(v, VaultEvent::CaughtUp)?;
                     rebased.push(v);
-                }
-                Err(e) => {
-                    if let Some(e) = self.rebase_failed(v, e)? {
+                    if let Err(e) = self.store.vault_event(v, VaultEvent::CaughtUp) {
                         first_error.get_or_insert(e);
                     }
                 }
+                Err(e) => match self.rebase_failed(v, e) {
+                    Ok(None) => {}
+                    Ok(Some(e)) | Err(e) => {
+                        first_error.get_or_insert(e);
+                    }
+                },
             }
         }
-        self.persist_device_state()?;
+        if let Err(e) = self.persist_device_state() {
+            first_error.get_or_insert(e);
+        }
         let error = if lost_epoch {
             Some(Error::Conflict)
         } else {

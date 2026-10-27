@@ -11,12 +11,19 @@
 //! `STALE_ALERT_SECONDS` seconds, it is an `Alert`. A fork the rebase
 //! cannot merge, or no verified copy at all, is an `Alert` at once.
 //!
-//! The vault stops being behind when a fetch serves a state at least as new
-//! as the copy and it loads cleanly (or the rebase merges onto it). The
+//! A round is clean for a vault when a fetch served a state at least as new
+//! as the copy and it loads cleanly (or the rebase merged onto it). The
 //! confirmation of this device's own push does not count: a server that
-//! takes the copy and serves the old state again stays behind, so a store
-//! that keeps going back is reported after the threshold, never hidden for
-//! longer.
+//! takes the copy and serves the old state again stays behind. The vault is
+//! `Ok` again only after `STALE_CLEAR_ROUNDS` clean rounds in a row: a
+//! store that alternates the good state and an old one never gets there,
+//! its rounds keep counting (`since` is never reset) and it is reported at
+//! the threshold, never hidden for longer.
+//!
+//! Clock: `since` moves back to an earlier `now` (a clock set forward once
+//! cannot push the alert back), and past `STALE_ALERT_MAX_ROUNDS` rounds the
+//! alert does not wait for the seconds (a clock that stands still cannot
+//! hold it back).
 //!
 //! The health lives in the store's local meta, never in a server record.
 

@@ -568,7 +568,8 @@ fn fork_world(server: &mut Server) -> (Device, Device, SecretKey, Id, Vec<Record
 
 /// Every device reads `expected` in Personnel, at `epoch`, `Ok`, with
 /// nothing left to send.
-fn settled(devs: &mut [&mut Device], p: Id, expected: &[&str], epoch: u64) {
+fn settled(server: &mut Server, devs: &mut [&mut Device], p: Id, expected: &[&str], epoch: u64) {
+    settle(server, devs, T0 + 3600);
     for dev in devs.iter_mut() {
         assert_eq!(users(&dev.items()), expected);
         assert_eq!(dev.repo().restore_epoch(), Some(epoch));
@@ -606,7 +607,7 @@ fn keep_this_device_after_fork_heals_both_devices() {
     round(&mut server, &mut b, T0 + 60).unwrap();
     round(&mut server, &mut a, T0 + 60).unwrap();
     round(&mut server, &mut b, T0 + 90).unwrap();
-    settled(&mut [&mut a, &mut b], p, &["x", "y", "z"], 1);
+    settled(&mut server, &mut [&mut a, &mut b], p, &["x", "y", "z"], 1);
 }
 
 #[test]
@@ -638,7 +639,7 @@ fn keep_this_device_without_local_writes_heals() {
     round(&mut server, &mut b, T0 + 60).unwrap();
     round(&mut server, &mut a, T0 + 60).unwrap();
     round(&mut server, &mut b, T0 + 90).unwrap();
-    settled(&mut [&mut a, &mut b], p, &["x", "y"], 1);
+    settled(&mut server, &mut [&mut a, &mut b], p, &["x", "y"], 1);
 }
 
 #[test]
@@ -667,7 +668,7 @@ fn take_server_after_alert_converges() {
     // epoch's heads.
     round(&mut server, &mut a, T0 + 60).unwrap();
     round(&mut server, &mut b, T0 + 90).unwrap();
-    settled(&mut [&mut a, &mut b], p, &["c1", "c2", "x"], 1);
+    settled(&mut server, &mut [&mut a, &mut b], p, &["c1", "c2", "x"], 1);
 }
 
 #[test]
@@ -738,4 +739,70 @@ fn rebase_report_lists_vaults_rebased_before_a_conflict() {
     assert_eq!(report.rebased, vec![p]);
     assert_eq!(report.error, Some(Error::Conflict));
     assert_eq!(users(&a.items()), vec!["x.b"]);
+}
+
+#[test]
+fn keep_this_device_never_erases_newer_incomplete_server_state() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let p = items[0].vault_id;
+    // A adds N; the server serves the manifest but not yet N's record.
+    let n = login(p, "n", T0 + 1);
+    a.save(&n);
+    round(&mut server, &mut a, T0).unwrap();
+    let blob = server.item_blob(n.id, 1);
+    let rec = server.get(RecordKind::Item, blob).unwrap();
+    server.withhold(RecordKind::Item, blob);
+    round(&mut server, &mut b, T0 + 10).unwrap();
+    assert!(is_behind(health(&mut b, p)));
+
+    // "Keep this device" does not push B's older copy over A's write: the
+    // vault stays held on B's copy, nothing of it goes out.
+    b.repo()
+        .issue_restore_epoch_from_local(EpochReason::KeepThisDevice)
+        .unwrap();
+    assert_eq!(b.store().vaults_needing_rebase().unwrap(), vec![p]);
+    assert!(
+        outbox(&b)
+            .iter()
+            .all(|(c, _)| c.kind != RecordKind::Manifest && c.kind != RecordKind::Item)
+    );
+
+    // The record arrives: the rebase merges onto A's state and drops the
+    // epoch that could not ship (the caller would issue it again).
+    server.replay(rec);
+    assert_eq!(round(&mut server, &mut b, T0 + 60), Err(Error::Conflict));
+    assert_eq!(b.repo().restore_epoch(), None);
+    round(&mut server, &mut a, T0 + 60).unwrap();
+    settle(&mut server, &mut [&mut a, &mut b], T0 + 120);
+    for dev in [&mut a, &mut b] {
+        assert_eq!(users(&dev.items()), vec!["n", "x"]);
+        assert_eq!(health(dev, p), VaultSyncHealth::Ok);
+        assert_eq!(outbox(dev), vec![]);
+    }
+}
+
+#[test]
+fn take_server_refused_keeps_local_writes() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let p = items[0].vault_id;
+    let n = login(p, "n", T0 + 1);
+    a.save(&n);
+    round(&mut server, &mut a, T0).unwrap();
+    let blob = server.item_blob(n.id, 1);
+    server.withhold(RecordKind::Item, blob);
+    b.save(&login(p, "z", T0 + 2));
+    pull(&server, &mut b);
+    let before = b.repo().device_state().clone();
+
+    // The server's state is incomplete: nothing to take, nothing dropped.
+    assert_eq!(
+        b.repo().issue_restore_epoch_take_server().map(|e| e.epoch),
+        Err(Error::Integrity(IntegrityError::ManifestMissingItem))
+    );
+    assert_eq!(b.repo().device_state(), &before);
+    assert_eq!(b.store().vaults_needing_rebase().unwrap(), vec![p]);
+    assert_eq!(users(&b.items()), vec!["x", "z"]);
+    assert_eq!(b.repo().restore_epoch(), None);
 }

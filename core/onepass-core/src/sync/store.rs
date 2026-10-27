@@ -28,7 +28,10 @@ use rusqlite::{
 
 use std::collections::BTreeMap;
 
-use super::{Change, MAX_RECORD_BYTES, RemoteChange, STALE_ALERT_ROUNDS, STALE_ALERT_SECONDS};
+use super::{
+    Change, MAX_RECORD_BYTES, RemoteChange, STALE_ALERT_MAX_ROUNDS, STALE_ALERT_ROUNDS,
+    STALE_ALERT_SECONDS, STALE_CLEAR_ROUNDS,
+};
 use crate::format::STORE_USER_VERSION;
 use crate::repo::{DeviceState, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
@@ -49,8 +52,9 @@ pub const MAX_IGNORED_DELETIONS: usize = 100;
 /// `sync.` namespace of the FFI handle: only the core writes it.
 const HEALTH_KEY: &str = "sync_health";
 const HEALTH_VERSION: u8 = 1;
-/// `vault (16) | seq (8) | cause (1) | flags (1) | since (8) | rounds (4)`.
-const HEALTH_ENTRY_BYTES: usize = 16 + 8 + 1 + 1 + 8 + 4;
+/// `vault (16) | seq (8) | cause (1) | flags (1) | since (8) | rounds (4)
+/// | clean rounds (1)`.
+const HEALTH_ENTRY_BYTES: usize = 16 + 8 + 1 + 1 + 8 + 4 + 1;
 const FETCH_MODE_KEY: &str = "zone.full_fetch";
 const FETCH_PLAIN: u8 = 1;
 const FETCH_RESET: u8 = 2;
@@ -469,7 +473,12 @@ impl SyncStore {
             // The server took this device's copy back: only a fetch that
             // serves it (or newer) shows that it kept it.
             update_health(&tx, |map| {
-                map.get_mut(&id).map(|e| e.awaiting = true).is_some()
+                map.get_mut(&id)
+                    .map(|e| {
+                        e.awaiting = true;
+                        e.dirty();
+                    })
+                    .is_some()
             })?;
         }
         tx.commit()
@@ -722,6 +731,9 @@ impl SyncStore {
             for (v, version) in &manifests {
                 if let Some(e) = map.get_mut(v) {
                     e.awaiting = u64::try_from(*version).map_or(true, |n| n < e.seq);
+                    if e.awaiting {
+                        e.dirty();
+                    }
                     changed = true;
                 }
             }
@@ -965,6 +977,25 @@ impl SyncStore {
         self.read(|c| Ok(health_in(c)))
     }
 
+    /// The vaults whose copy "keep this device" pushes over the server's:
+    /// those in alert (a fork, or behind past the thresholds), and those
+    /// the server went back on (its `base` manifest older than the copy,
+    /// or gone). A vault behind because the server's state is newer but
+    /// incomplete is not one: another device's write is there, the vault
+    /// stays held on its copy until the rebase merges onto it.
+    pub(crate) fn keep_targets(&self) -> Result<Vec<Id>> {
+        self.read(|c| {
+            let mut out = Vec::new();
+            for (v, e) in health_in(c) {
+                let older = base_manifest(c, v)?.is_none_or(|(version, _)| version < e.seq);
+                if e.alert || older {
+                    out.push(v);
+                }
+            }
+            Ok(out)
+        })
+    }
+
     /// Replace the entries of `vaults` by fresh ones for the copy at
     /// `seq`: behind, not counted yet, no alert. After the owner chose this
     /// device's copy.
@@ -982,23 +1013,51 @@ impl SyncStore {
         tx.commit()
     }
 
-    /// The end of a sync round at `now` (Unix seconds): every vault still
-    /// behind counts one more round, from `now` if it was not counted yet,
-    /// and becomes an alert once it reached `STALE_ALERT_ROUNDS` rounds and
-    /// `STALE_ALERT_SECONDS` seconds.
+    /// The end of a sync round at `now` (Unix seconds).
+    ///
+    /// A vault that loaded cleanly in this round (`VaultEvent::Clean` with
+    /// nothing left to confirm) counts one clean round; after
+    /// `STALE_CLEAR_ROUNDS` clean rounds in a row its entry is removed
+    /// (`Ok`). A single clean round is not enough: a store that serves the
+    /// good state one round and the old one the next keeps the vault behind
+    /// and its count running.
+    ///
+    /// Every other vault still behind counts one more round, from `now` if
+    /// it was not counted yet, and becomes an alert once it reached
+    /// `STALE_ALERT_ROUNDS` rounds and `STALE_ALERT_SECONDS` seconds, or
+    /// `STALE_ALERT_MAX_ROUNDS` rounds whatever the clock says. A clock
+    /// earlier than `since` moves `since` back: a clock set forward once
+    /// cannot push the alert back.
     pub(crate) fn count_round(&mut self, now: i64) -> Result<()> {
         let tx = self.write_tx()?;
         update_health(&tx, |map| {
-            for e in map.values_mut().filter(|e| !e.alert) {
-                let since = *e.since.get_or_insert(now);
+            let mut cleared = Vec::new();
+            for (v, e) in map.iter_mut() {
+                if e.clean {
+                    e.clean_rounds = e.clean_rounds.saturating_add(1);
+                    if u32::from(e.clean_rounds) >= STALE_CLEAR_ROUNDS {
+                        cleared.push(*v);
+                    }
+                    continue;
+                }
+                e.clean_rounds = 0;
+                if e.alert {
+                    continue;
+                }
+                let since = e.since.map_or(now, |s| s.min(now));
+                e.since = Some(since);
                 e.rounds = e.rounds.saturating_add(1);
                 if e.rounds >= STALE_ALERT_ROUNDS
-                    && now.saturating_sub(since) >= STALE_ALERT_SECONDS
+                    && (now.saturating_sub(since) >= STALE_ALERT_SECONDS
+                        || e.rounds >= STALE_ALERT_MAX_ROUNDS)
                 {
                     e.alert = true;
                 }
             }
-            !map.is_empty()
+            for v in cleared {
+                map.remove(&v);
+            }
+            true
         })?;
         tx.commit()
     }
@@ -1155,6 +1214,11 @@ pub(crate) struct HealthEntry {
     /// kept it.
     pub awaiting: bool,
     pub alert: bool,
+    /// The vault loaded cleanly from a state the server served, with
+    /// nothing left to confirm, since the last round that found it behind.
+    pub clean: bool,
+    /// Clean rounds in a row (`count_round`).
+    pub clean_rounds: u8,
 }
 
 impl HealthEntry {
@@ -1166,45 +1230,77 @@ impl HealthEntry {
             rounds: 0,
             awaiting: false,
             alert: false,
+            clean: false,
+            clean_rounds: 0,
         }
+    }
+
+    /// Found behind (or alerting) again: the clean streak restarts.
+    fn dirty(&mut self) {
+        self.clean = false;
+        self.clean_rounds = 0;
     }
 }
 
-/// Every `IntegrityError`, its index the code persisted in the health map.
-const CAUSES: [IntegrityError; 13] = [
-    IntegrityError::Commitment,
-    IntegrityError::Aead,
-    IntegrityError::Signature,
-    IntegrityError::ManifestRollback,
-    IntegrityError::ManifestMissingItem,
-    IntegrityError::ManifestUnexpectedItem,
-    IntegrityError::ManifestItemMismatch,
-    IntegrityError::ParamsUnsigned,
-    IntegrityError::ParamsDowngrade,
-    IntegrityError::WrongKind,
-    IntegrityError::WrongContext,
-    IntegrityError::VaultMissing,
-    IntegrityError::EpochRollback,
-];
+/// The code of an `IntegrityError` persisted in the health map. Exhaustive:
+/// a new variant does not compile until it gets its code.
+fn cause_code(e: IntegrityError) -> u8 {
+    match e {
+        IntegrityError::Commitment => 0,
+        IntegrityError::Aead => 1,
+        IntegrityError::Signature => 2,
+        IntegrityError::ManifestRollback => 3,
+        IntegrityError::ManifestMissingItem => 4,
+        IntegrityError::ManifestUnexpectedItem => 5,
+        IntegrityError::ManifestItemMismatch => 6,
+        IntegrityError::ParamsUnsigned => 7,
+        IntegrityError::ParamsDowngrade => 8,
+        IntegrityError::WrongKind => 9,
+        IntegrityError::WrongContext => 10,
+        IntegrityError::VaultMissing => 11,
+        IntegrityError::EpochRollback => 12,
+    }
+}
+
+fn cause_of(code: u8) -> Option<IntegrityError> {
+    Some(match code {
+        0 => IntegrityError::Commitment,
+        1 => IntegrityError::Aead,
+        2 => IntegrityError::Signature,
+        3 => IntegrityError::ManifestRollback,
+        4 => IntegrityError::ManifestMissingItem,
+        5 => IntegrityError::ManifestUnexpectedItem,
+        6 => IntegrityError::ManifestItemMismatch,
+        7 => IntegrityError::ParamsUnsigned,
+        8 => IntegrityError::ParamsDowngrade,
+        9 => IntegrityError::WrongKind,
+        10 => IntegrityError::WrongContext,
+        11 => IntegrityError::VaultMissing,
+        12 => IntegrityError::EpochRollback,
+        _ => return None,
+    })
+}
 
 const HEALTH_SINCE: u8 = 1;
 const HEALTH_AWAITING: u8 = 2;
 const HEALTH_ALERT: u8 = 4;
+const HEALTH_CLEAN: u8 = 8;
 
 fn encode_health(map: &BTreeMap<Id, HealthEntry>) -> Vec<u8> {
     let mut out = Vec::with_capacity(1 + map.len() * HEALTH_ENTRY_BYTES);
     out.push(HEALTH_VERSION);
     for (v, e) in map {
-        let cause = CAUSES.iter().position(|c| *c == e.cause).unwrap_or(0);
         let flags = if e.since.is_some() { HEALTH_SINCE } else { 0 }
             | if e.awaiting { HEALTH_AWAITING } else { 0 }
-            | if e.alert { HEALTH_ALERT } else { 0 };
+            | if e.alert { HEALTH_ALERT } else { 0 }
+            | if e.clean { HEALTH_CLEAN } else { 0 };
         out.extend_from_slice(&v.0);
         out.extend_from_slice(&e.seq.to_be_bytes());
-        out.push(u8::try_from(cause).unwrap_or(0));
+        out.push(cause_code(e.cause));
         out.push(flags);
         out.extend_from_slice(&e.since.unwrap_or(0).to_be_bytes());
         out.extend_from_slice(&e.rounds.to_be_bytes());
+        out.push(e.clean_rounds);
     }
     out
 }
@@ -1227,11 +1323,13 @@ fn decode_health(bytes: &[u8]) -> Option<BTreeMap<Id, HealthEntry>> {
             v,
             HealthEntry {
                 seq: u64::from_be_bytes(c[16..24].try_into().ok()?),
-                cause: *CAUSES.get(usize::from(c[24]))?,
+                cause: cause_of(c[24])?,
                 since: (flags & HEALTH_SINCE != 0).then_some(since),
                 rounds: u32::from_be_bytes(c[34..38].try_into().ok()?),
                 awaiting: flags & HEALTH_AWAITING != 0,
                 alert: flags & HEALTH_ALERT != 0,
+                clean: flags & HEALTH_CLEAN != 0,
+                clean_rounds: c[38],
             },
         );
     }
@@ -1607,28 +1705,43 @@ impl RecordStore for SyncStore {
         match event {
             VaultEvent::Clean => {
                 delete_kept(&tx, vault)?;
-                // Settled once the server serves the copy back by itself.
+                // Clean once the server serves the copy back by itself;
+                // settled after `STALE_CLEAR_ROUNDS` such rounds
+                // (`count_round`).
                 let pending = has_pending_manifest(&tx, vault)?;
-                update_health(&tx, |map| {
-                    let settled = map.get(&vault).is_some_and(|e| !e.awaiting && !pending);
-                    settled && map.remove(&vault).is_some()
+                update_health(&tx, |map| match map.get_mut(&vault) {
+                    Some(e) if !e.awaiting && !pending && !e.clean => {
+                        e.clean = true;
+                        true
+                    }
+                    _ => false,
                 })?;
             }
             VaultEvent::Behind { seq, cause } => update_health(&tx, |map| {
                 let e = map.entry(vault).or_insert(HealthEntry::new(seq, cause));
                 e.seq = e.seq.max(seq);
                 e.cause = cause;
+                e.dirty();
                 true
             })?,
             VaultEvent::CaughtUp => {
+                // The rebase verified the server's newer state: a clean
+                // round, settled like the others.
                 delete_kept(&tx, vault)?;
-                update_health(&tx, |map| map.remove(&vault).is_some())?;
+                update_health(&tx, |map| match map.get_mut(&vault) {
+                    Some(e) if !e.clean => {
+                        e.clean = true;
+                        true
+                    }
+                    _ => false,
+                })?;
             }
             VaultEvent::Alert { seq, cause } => update_health(&tx, |map| {
                 let e = map.entry(vault).or_insert(HealthEntry::new(seq, cause));
                 e.seq = e.seq.max(seq);
                 e.cause = cause;
                 e.alert = true;
+                e.dirty();
                 true
             })?,
         }
@@ -2636,13 +2749,52 @@ mod tests {
             decode_health(&encode_health(&s.health().unwrap())),
             Some(s.health().unwrap())
         );
-        // Served back, loaded cleanly: settled.
+        // Served back, loaded cleanly: settled after `STALE_CLEAR_ROUNDS`
+        // clean rounds in a row, not one.
         seed_base(&mut s, RecordKind::Manifest, vault, 3, b"m3".to_vec());
+        for _ in 1..STALE_CLEAR_ROUNDS {
+            s.vault_event(vault, VaultEvent::Clean).unwrap();
+            s.count_round(1000).unwrap();
+            assert!(s.health().unwrap()[&vault].clean);
+        }
         s.vault_event(vault, VaultEvent::Clean).unwrap();
+        s.count_round(1000).unwrap();
         assert!(s.health().unwrap().is_empty());
         // An unreadable map reads as empty.
         s.set_meta(HEALTH_KEY, &[HEALTH_VERSION, 1, 2]).unwrap();
         assert!(s.health().unwrap().is_empty());
+    }
+
+    #[test]
+    fn alert_is_clock_proof() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (ahead, stuck) = (Id::new(), Id::new());
+        let cause = IntegrityError::ManifestRollback;
+        for v in [ahead, stuck] {
+            s.vault_event(v, VaultEvent::Behind { seq: 3, cause })
+                .unwrap();
+        }
+        // Clock a year ahead for one round, then right again: `since`
+        // follows it back, the alert comes on time.
+        let t0 = 1_793_000_000;
+        s.count_round(t0 + 31_536_000).unwrap();
+        for i in 0..STALE_ALERT_ROUNDS - 1 {
+            s.count_round(t0 + 150 * i64::from(i + 1)).unwrap();
+        }
+        let e = s.health().unwrap()[&ahead];
+        assert_eq!((e.since, e.rounds, e.alert), (Some(t0 + 150), 5, false));
+        s.count_round(t0 + 150 + STALE_ALERT_SECONDS).unwrap();
+        assert!(s.health().unwrap()[&ahead].alert);
+        // A clock that stands still: the alert comes at the round cap.
+        let mut s = SyncStore::open_in_memory().unwrap();
+        s.vault_event(stuck, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        for _ in 1..STALE_ALERT_MAX_ROUNDS {
+            s.count_round(t0).unwrap();
+        }
+        assert!(!s.health().unwrap()[&stuck].alert);
+        s.count_round(t0).unwrap();
+        assert!(s.health().unwrap()[&stuck].alert);
     }
 
     #[test]

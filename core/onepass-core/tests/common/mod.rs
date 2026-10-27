@@ -13,8 +13,8 @@ pub use onepass_core::model::{FieldValue, Item, ItemType, new_item};
 pub use onepass_core::repo::{Repository, split_item_record};
 pub use onepass_core::store::{Record, RecordKind, RecordStore};
 pub use onepass_core::sync::{
-    AccountState, Change, RemoteChange, STALE_ALERT_ROUNDS, STALE_ALERT_SECONDS, SyncStore,
-    VaultSyncHealth,
+    AccountState, Change, RemoteChange, STALE_ALERT_MAX_ROUNDS, STALE_ALERT_ROUNDS,
+    STALE_ALERT_SECONDS, STALE_CLEAR_ROUNDS, SyncStore, VaultSyncHealth,
 };
 pub use onepass_core::vault::{ItemRecord, Vault, VaultMeta};
 pub use onepass_core::{Error, Id, IntegrityError, Result};
@@ -378,6 +378,16 @@ pub fn round(server: &mut Server, dev: &mut Device, now: i64) -> Result<()> {
     }
     dev.repo().note_sync_round(now)?;
     synced
+}
+
+/// `STALE_CLEAR_ROUNDS` rounds for every device, from `now`, one minute
+/// apart: long enough for a vault the server caught up on to be `Ok` again.
+pub fn settle(server: &mut Server, devs: &mut [&mut Device], now: i64) {
+    for i in 0..STALE_CLEAR_ROUNDS {
+        for dev in devs.iter_mut() {
+            round(server, dev, now + 60 * i64::from(i)).unwrap();
+        }
+    }
 }
 
 /// The sync health of one vault.

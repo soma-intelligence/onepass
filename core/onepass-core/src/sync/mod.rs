@@ -20,6 +20,17 @@ pub const STALE_ALERT_ROUNDS: u32 = 5;
 /// `STALE_ALERT_ROUNDS`; both must be reached).
 pub const STALE_ALERT_SECONDS: i64 = 600;
 
+/// Rounds after which a vault still behind is an alert whatever the clock
+/// says (with `STALE_ALERT_ROUNDS`): a wrong clock cannot delay the alert
+/// past this many rounds.
+pub const STALE_ALERT_MAX_ROUNDS: u32 = 50;
+
+/// Clean rounds in a row (the server serves a state at least as new as the
+/// device's copy, nothing left to confirm) before a vault behind is `Ok`
+/// again. A store that alternates the good state and an old one never gets
+/// there, and the alert count keeps running.
+pub const STALE_CLEAR_ROUNDS: u32 = 3;
+
 /// The sync state of one vault (`Repository::sync_health`). Not an
 /// integrity error by itself: only `Alert` is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

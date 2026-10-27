@@ -224,7 +224,11 @@ fn server_replaying_old_manifest_is_never_accepted() {
     assert_eq!(b.try_items().unwrap().len(), 2);
     sync(&mut server, &mut b).unwrap();
     assert_eq!(server.get(RecordKind::Manifest, v).unwrap().version, 3);
+    // Served back: `Ok` after `STALE_CLEAR_ROUNDS` clean rounds, not one.
+    pull(&server, &mut b);
     b.repo().note_sync_round(T0).unwrap();
+    assert!(is_behind(health(&mut b, v)));
+    settle(&mut server, &mut [&mut b], T0 + 60);
     assert_eq!(health(&mut b, v), VaultSyncHealth::Ok);
 }
 
@@ -622,7 +626,8 @@ fn both_at_seq3(server: &mut Server) -> (Device, Device, SecretKey, Id, Record) 
 
 /// Every device reads `expected`, sees the vault `Ok` and has nothing left
 /// to send.
-fn converged(devs: &mut [&mut Device], p: Id, expected: &[&str]) {
+fn converged(server: &mut Server, devs: &mut [&mut Device], p: Id, expected: &[&str]) {
+    settle(server, devs, T0 + 3600);
     for dev in devs.iter_mut() {
         let v = dev.repo().vaults().unwrap();
         let v = v.iter().find(|v| v.id == p).unwrap();
@@ -647,7 +652,7 @@ fn propagation_delay_no_alert() {
     // The next round sends A's copy again: both devices converge.
     round(&mut server, &mut a, T0 + 60).unwrap();
     round(&mut server, &mut b, T0 + 60).unwrap();
-    converged(&mut [&mut a, &mut b], p, &["x", "y", "z"]);
+    converged(&mut server, &mut [&mut a, &mut b], p, &["x", "y", "z"]);
 }
 
 #[test]
@@ -725,6 +730,28 @@ fn swallowed_copy_stays_behind_until_served() {
     assert_eq!(users(&b.items()), vec!["x", "y"]);
 }
 
+#[test]
+fn alternating_store_still_alerts() {
+    let mut server = Server::default();
+    let (mut a, _b, _sk, p, seq2) = both_at_seq3(&mut server);
+    // The store serves the old state one round and A's copy the next: a
+    // single clean round never settles the vault, the count keeps running.
+    for i in 0..10u32 {
+        push(&mut server, &a).unwrap();
+        if i % 2 == 0 {
+            server.replay(seq2.clone());
+        }
+        pull(&server, &mut a);
+        a.repo().note_sync_round(T0 + 120 * i64::from(i)).unwrap();
+        assert_ne!(health(&mut a, p), VaultSyncHealth::Ok, "round {i}");
+        assert_eq!(users(&a.items()), vec!["x", "y"]);
+    }
+    assert_eq!(
+        health(&mut a, p),
+        VaultSyncHealth::Alert(IntegrityError::ManifestRollback)
+    );
+}
+
 /// A edits X twice and adds N: its batch is X's record two versions on,
 /// N's record, the manifest, then X's old record deleted. Returns the item
 /// records and the rest, the two halves of a split batch.
@@ -762,7 +789,7 @@ fn partial_send_retry_no_alert() {
     round(&mut server, &mut a, T0 + 30).unwrap();
     round(&mut server, &mut b, T0 + 60).unwrap();
     round(&mut server, &mut a, T0 + 60).unwrap();
-    converged(&mut [&mut a, &mut b], p, &["n", "x.a2", "y.b"]);
+    converged(&mut server, &mut [&mut a, &mut b], p, &["n", "x.a2", "y.b"]);
 }
 
 #[test]
@@ -784,7 +811,7 @@ fn split_batch_seen_midway_no_alert() {
     // The second half lands; the next round converges.
     round(&mut server, &mut a, T0 + 30).unwrap();
     round(&mut server, &mut b, T0 + 30).unwrap();
-    converged(&mut [&mut a, &mut b], p, &["n", "x.a2", "y"]);
+    converged(&mut server, &mut [&mut a, &mut b], p, &["n", "x.a2", "y"]);
 }
 
 #[test]
@@ -817,7 +844,7 @@ fn partial_fetch_no_alert() {
     round(&mut server, &mut a, T0 + 30).unwrap();
     round(&mut server, &mut a, T0 + 60).unwrap();
     round(&mut server, &mut b, T0 + 60).unwrap();
-    converged(&mut [&mut a, &mut b], p, &["n", "x.a", "y.b"]);
+    converged(&mut server, &mut [&mut a, &mut b], p, &["n", "x.a", "y.b"]);
 }
 
 #[test]
@@ -845,7 +872,7 @@ fn expired_token_full_fetch_no_alert() {
 
     round(&mut server, &mut a, T0 + 60).unwrap();
     round(&mut server, &mut b, T0 + 60).unwrap();
-    converged(&mut [&mut a, &mut b], p, &["n", "x", "z"]);
+    converged(&mut server, &mut [&mut a, &mut b], p, &["n", "x", "z"]);
 }
 
 #[test]
@@ -886,7 +913,12 @@ fn zone_deleted_recreated_no_alert() {
     round(&mut server, &mut b, T0 + 60).unwrap();
     c.unlock(&sk);
     round(&mut server, &mut c, T0 + 60).unwrap();
-    converged(&mut [&mut a, &mut b, &mut c], p, &["x", "y", "z"]);
+    converged(
+        &mut server,
+        &mut [&mut a, &mut b, &mut c],
+        p,
+        &["x", "y", "z"],
+    );
 }
 
 /// Device C reads Personnel at seq 2, then writes twice offline: the
