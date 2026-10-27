@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:08:44.958Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "www.zalando.de",
+  "source_url": "https://www.zalando.de/login/",
+  "status": "error: timeout"
+}

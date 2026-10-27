@@ -1,0 +1,32 @@
+(* formal-lib: bridge_core.pvl *)
+(* OnePass formal model: the bridge model of bridge.pv (processes in
+   bridge_core.pvl) with the ML-KEM-1024 half of every ephemeral hybrid KEM
+   broken: LeakHalf(leak_mlkem, ...) publishes its secret key, out(c, sk),
+   for the host's pairing key pair (pair_offer), the extension's session
+   key pair (hello) and the extension's committed pairing key pair. The
+   X25519 half alone must keep PK and the session keys secret.
+   Phase 1 publishes PK as in bridge.pv. Corrupted records as in
+   bridge.pv; P12 and P13 are stated for honest records (hon). *)
+
+query p: bitstring, t: bitstring, k: key, r: bitstring, s: bitstring,
+      m: bitstring;
+  (* P10 with one KEM half broken. *)
+  event(HostPaired(p, t, k)) && attacker(k) phase 0;
+  event(ExtConfirm(p, t, k)) && attacker(k) phase 0;
+  (* P12 with one KEM half broken. *)
+  event(SessionKey(hon, r, s, k)) && attacker(k) phase 0;
+  event(AppMsg(hon, m)) && attacker(m) phase 0;
+  (* P13 with one KEM half broken: PK published in phase 1. *)
+  event(SessionKey(hon, r, s, k)) && attacker(k) phase 1;
+  event(AppMsg(hon, m)) && attacker(m) phase 1;
+  (* Sanity (expected false): PK does leak in phase 1. *)
+  event(Record(p, k)) && attacker(k) phase 1.
+
+(* Sanity (expected false): pairing completes, the second response is
+   received. *)
+query p: bitstring, t: bitstring, k: key, s: bitstring, m: bitstring;
+  event(HostPaired(p, t, k));
+  event(ExtRecv(hon, s, dir_h2e, ctr1, m)).
+
+process
+  Bridge(leak_mlkem)

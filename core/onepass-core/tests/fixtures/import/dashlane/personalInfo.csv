@@ -1,0 +1,8 @@
+type,title,first_name,middle_name,last_name,login,date_of_birth,place_of_birth,email,email_type,item_name,phone_number,address,country,state,city,zip,url,job_title
+name,MR,Alice,Marie,Example,aexample,1990-04-02,Paris,,,,,,,,,,,Engineer
+email,,,,,,,,alice@example.com,personal,Main email,,,,,,,,
+number,,,,,,,,,,Mobile,+15551230000,,,,,,,
+address,,,,,,,,,,Home,,1 Example Street,US,CA,Springfield,90210,,
+website,,,,,,,,,,,,,,,,,https://alice.example.com,
+name,,Bob,,Sample,,,,,,,,,,,,,,
+email,,,,,,,,bob@example.org,,,,,,,,,,

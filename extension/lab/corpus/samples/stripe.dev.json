@@ -1,0 +1,31 @@
+{
+  "captured_at": "2026-10-26T21:12:10.549Z",
+  "category": "checkout",
+  "extractor": 1,
+  "forms": [],
+  "host": "stripe.dev",
+  "iframes": [
+    {
+      "origin": "https://b.stripecdn.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://b.stripecdn.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://stripe.dev/elements-examples/",
+  "status": "ok",
+  "webauthnCalls": []
+}

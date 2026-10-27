@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><title>Atlas Cloud - Sign in</title></head>
+<body>
+  <form id="login" action="/session" method="post">
+    <input id="u" name="username" type="text" placeholder="Username">
+    <input id="p" name="password" type="password" placeholder="Password">
+    <div class="challenge">
+      <iframe id="cap" title="challenge" src="https://www.google.com/recaptcha/api2/anchor?k=atlas-test-key"></iframe>
+    </div>
+    <button type="submit">Sign in</button>
+  </form>
+</body></html>

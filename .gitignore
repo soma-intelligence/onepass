@@ -1,0 +1,18 @@
+.superpowers/
+core/target/
+core/fuzz/target
+core/fuzz/corpus
+core/fuzz/artifacts
+.DS_Store
+
+# Apple
+apple/build/
+apple/VaultKit/Sources/OnePassCore/
+apple/**/.build/
+apple/DerivedData/
+
+# Autofill lab run output
+extension/lab/out/
+
+# ProVerif (formal/run.sh logs and intermediate files)
+formal/out/

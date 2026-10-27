@@ -1,0 +1,159 @@
+{
+  "captured_at": "2026-10-26T21:12:01.789Z",
+  "category": "checkout",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Pay €25.96"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "label": "Name",
+          "name": "name",
+          "required": true,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "label": "Email",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "label": "Address",
+          "name": "address",
+          "required": false,
+          "role": "address_line1",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "label": "City",
+          "name": "city",
+          "required": false,
+          "role": "city",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "label": "State",
+          "name": "state",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "label": "ZIP",
+          "name": "postal_code",
+          "required": false,
+          "role": "postal_code",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "label": "Country Australia Austria Belgium Brazil Canada China Denmar",
+          "name": "country",
+          "required": false,
+          "role": "country",
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "false",
+          "hasPattern": false,
+          "maxlength": 1,
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        },
+        {
+          "autocomplete": "false",
+          "hasPattern": false,
+          "maxlength": 1,
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        },
+        {
+          "autocomplete": "false",
+          "hasPattern": false,
+          "maxlength": 1,
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "host": "stripe-payments-demo.appspot.com",
+  "iframes": [
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://stripe-payments-demo.appspot.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

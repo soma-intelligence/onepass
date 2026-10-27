@@ -1,0 +1,45 @@
+url,username,password,totp,extra,name,grouping,fav
+https://mail.example.com/login,alice@example.com,Tr0ub4dor-Invented1,JBSWY3DPEHPK3PXP,Recovery code in the drawer,Example Mail,Personal,1
+http://sn,,,,"NoteType:Credit Card
+Language:en-US
+Name on Card:Alice Example
+Type:Visa
+Number:4111111111111111
+Security Code:123
+Start Date:January,2020
+Expiration Date:June,2027
+Notes:Test card
+Second line: with a colon",Example Visa,Finance,0
+http://sn,,,,"NoteType:Wi-Fi Password
+Language:en-US
+SSID:ExampleNet
+Password:wifi-Invented-3
+Connection Type:WPA2
+Notes:Living room",Home Wi-Fi,Home,0
+http://sn,,,,"NoteType:Custom Thing
+Foo:bar
+Secret Code:12345
+Notes:hello
+world",Odd Note,,0
+http://sn,,,,"NoteType:SSH Key
+Language:en-US
+Bit Strength:2048
+Format:RSA
+Passphrase:pass-Invented-4
+Private Key:-----BEGIN OPENSSH PRIVATE KEY-----
+AAAAFAKEFAKEFAKE
+-----END OPENSSH PRIVATE KEY-----
+Public Key:ssh-ed25519 AAAAFAKE alice@example.com
+Hostname:git.example.com
+Date:January 5, 2024
+Notes:Deploy key",Example Deploy Key,Servers,0
+http://sn,,,,"NoteType:Bank Account
+Bank Name:Example Bank
+Account Type:Checking
+Routing Number:021000021
+Account Number:12345678
+PIN:4321",Example Checking,Finance,0
+http://sn,,,,"Just a free-form note: no type line
+second line",Plain Note,,0
+,,,,,,,
+https://shop.example.org,bob,Sh0p-Invented-2,,,Example Shop,,0,spare cell

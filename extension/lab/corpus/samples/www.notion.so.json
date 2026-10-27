@@ -1,0 +1,56 @@
+{
+  "captured_at": "2026-10-26T21:06:42.964Z",
+  "category": "login",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Continue"
+      ],
+      "fields": [
+        {
+          "autocomplete": "username",
+          "hasPattern": false,
+          "id": ":r4:",
+          "label": "Email",
+          "required": false,
+          "role": "username",
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "current-password",
+          "hasPattern": false,
+          "required": false,
+          "role": "password",
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "host": "www.notion.so",
+  "iframes": [
+    {
+      "origin": "https://identity.notion.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://aif.notion.so",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source_url": "https://www.notion.so/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

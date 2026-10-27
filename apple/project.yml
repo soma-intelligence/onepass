@@ -1,0 +1,473 @@
+# OnePass app (iPhone, iPad, native Mac). Generate with `make -C apple project`
+# (xcodegen generate); the generated OnePass.xcodeproj is committed (ruling R15).
+name: OnePass
+
+options:
+  bundleIdPrefix: me.somalabs
+  developmentLanguage: fr
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+    watchOS: "26.0"
+    visionOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+configs:
+  Debug: debug
+  Release: release
+  Release-CloudKit: release
+  # Signed without CloudKit: the shared keychain group only (a restricted entitlement, so a
+  # provisioning profile is required; ad hoc builds never carry it).
+  Release-Signed: release
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEAD_CODE_STRIPPING: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    SWIFT_EMIT_LOC_STRINGS: YES
+    # App Group shared by the app and the AutoFill extension (Info.plist key `OnePassAppGroup`).
+    ONEPASS_APP_GROUP: group.me.somalabs.onepass
+    "ONEPASS_APP_GROUP[sdk=macosx*]": $(TeamIdentifierPrefix)me.somalabs.onepass
+
+packages:
+  VaultKit:
+    path: VaultKit
+  DesignKit:
+    path: DesignKit
+  CompanionKit:
+    path: CompanionKit
+
+targets:
+  OnePass:
+    type: application
+    supportedDestinations: [iOS, macOS, visionOS]
+    sources:
+      - path: App
+        excludes:
+          - "Support/Info.plist"
+          - "Support/*.entitlements"
+    dependencies:
+      - package: VaultKit
+        product: VaultKit
+      - package: DesignKit
+        product: DesignKit
+      # The iOS app carries the watch app; the Mac build has no watch content.
+      - target: OnePassWatch
+        destinationFilters: [iOS]
+      - package: CompanionKit
+        product: GlanceKit
+      - package: CompanionKit
+        product: CompanionLink
+      # Widgets and Controls: iPhone and iPad only.
+      - target: OnePassWidgets
+        destinationFilters: [iOS]
+      # AutoFill credential provider: iPhone, iPad and Mac (no visionOS slice).
+      - target: OnePassAutoFill
+        destinationFilters: [iOS, macOS]
+    info:
+      path: App/Support/Info.plist
+      properties:
+        CFBundleDisplayName: OnePass
+        CFBundleDevelopmentRegion: fr
+        LSApplicationCategoryType: public.app-category.productivity
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
+        OnePassAppGroup: $(ONEPASS_APP_GROUP)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # The app ships its own cryptography; export compliance is settled before submission (README).
+        ITSAppUsesNonExemptEncryption: true
+        NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
+        NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit."
+        # Asked only on "Utiliser ma position" or when "À proximité" opens (macOS reads NSLocationUsageDescription).
+        NSLocationWhenInUseUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
+        NSLocationUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIBackgroundModes: [remote-notification]
+        # Deep links from the widgets and Controls (GlanceKit `OnePassLink`).
+        CFBundleURLTypes:
+          - CFBundleURLName: me.somalabs.onepass
+            CFBundleURLSchemes: [onepass]
+        UISupportedInterfaceOrientations~iphone:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass
+        PRODUCT_NAME: OnePass
+        TARGETED_DEVICE_FAMILY: "1,2,7"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        "ARCHS[sdk=macosx*]": arm64
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass.entitlements
+        # iOS, every configuration: App Group (shared with the AutoFill extension and the widgets),
+        # shared keychain group, AutoFill provider. A simulator build signed ad hoc embeds them
+        # (Xcode injects a prefix for the keychain group).
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Support/OnePass-iOS.entitlements
+      configs:
+        Release-CloudKit:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ONEPASS_CLOUDKIT"
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          # Fill in the Apple team to sign this configuration (iCloud, shared keychain group, push).
+          DEVELOPMENT_TEAM: ""
+          CODE_SIGN_ENTITLEMENTS: App/Support/OnePass-CloudKit.entitlements
+          "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass-CloudKit-macOS.entitlements
+          # Overrides the base iOS file (the CloudKit file carries the App Group too).
+          "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Support/OnePass-CloudKit.entitlements
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          # Fill in the Apple team: keychain-access-groups needs a provisioning profile.
+          DEVELOPMENT_TEAM: ""
+          "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass-Signed-macOS.entitlements
+          "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Support/OnePass-Signed-iOS.entitlements
+          "CODE_SIGN_ENTITLEMENTS[sdk=xr*]": App/Support/OnePass-Signed-iOS.entitlements
+
+  # AutoFill credential provider (spec 5), embedded in OnePass.app/PlugIns. Links its own static
+  # copy of the Rust core through VaultKit (ruling A15). Entitlements: iOS, every configuration:
+  # App Group, keychain group, provider; macOS Debug and Release: sandbox only (an ad hoc build
+  # cannot carry the restricted entitlements); macOS Release-CloudKit: all of them.
+  OnePassAutoFill:
+    type: app-extension
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - path: AutoFill
+        excludes:
+          - "Support/Info.plist"
+          - "Support/*.entitlements"
+    dependencies:
+      - package: VaultKit
+        product: VaultKit
+      - package: DesignKit
+        product: DesignKit
+    info:
+      path: AutoFill/Support/Info.plist
+      properties:
+        CFBundleDisplayName: OnePass
+        CFBundleDevelopmentRegion: fr
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
+        OnePassAppGroup: $(ONEPASS_APP_GROUP)
+        NSFaceIDUsageDescription: "OnePass utilise Face ID pour remplir tes mots de passe sans retaper ton mot de passe maître."
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.authentication-services-credential-provider-ui
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).CredentialProviderViewController
+          NSExtensionAttributes:
+            # One Info.plist for both platforms: macOS has no text insertion and ignores
+            # ProvidesTextToInsert. The 26.2 save and generate keys are ignored before 26.2.
+            ASCredentialProviderExtensionCapabilities:
+              ProvidesPasswords: true
+              ProvidesPasskeys: true
+              ProvidesOneTimeCodes: true
+              ProvidesTextToInsert: true
+              ShowsConfigurationUI: true
+              SupportsSavePasswordCredentials: true
+              SupportsGeneratePasswordCredentials: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.autofill
+        PRODUCT_NAME: OnePassAutoFill
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        "ARCHS[sdk=macosx*]": arm64
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": AutoFill/Support/OnePassAutoFill-iOS.entitlements
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": AutoFill/Support/OnePassAutoFill-macOS.entitlements
+      configs:
+        Release-CloudKit:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ONEPASS_CLOUDKIT"
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+          "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": AutoFill/Support/OnePassAutoFill-macOS-CloudKit.entitlements
+        # Signed without CloudKit (milestone 2): the extension carries no iCloud entitlement, so the
+        # signed Mac file of Release-CloudKit serves here too (App Group, keychain group, provider).
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+          "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": AutoFill/Support/OnePassAutoFill-macOS-CloudKit.entitlements
+
+  # Test host for the AutoFill UI test (ruling A16): a sign-in form with username, password and
+  # one-time code fields. iOS only, never embedded in OnePass, never shipped.
+  AutoFillHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: AutoFillHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.autofillhost
+        PRODUCT_NAME: AutoFillHost
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "Hôte AutoFill"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+
+  # XCUITest, iPhone simulator `OnePass M2 iPhone` (`make -C apple uitest`). The screenshot
+  # tests in the same bundle are skipped unless `scripts/screenshots.sh` runs them.
+  OnePassUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AppUITests
+        excludes:
+          - "AutoFillUITests.swift"
+    dependencies:
+      - target: OnePass
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        TEST_TARGET_NAME: OnePass
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+
+  # Apple Watch app (milestone 6): codes and items marked "Sur l'Apple Watch", sent by the
+  # iPhone sealed to the watch key (CompanionLink). Embedded in the iOS app.
+  OnePassWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: Watch
+        excludes:
+          - "Info.plist"
+    dependencies:
+      - package: CompanionKit
+        product: CompanionLink
+      - package: VaultKit
+        product: OnePassCore
+      - target: OnePassWatchWidgets
+    info:
+      path: Watch/Info.plist
+      properties:
+        CFBundleDisplayName: OnePass
+        CFBundleDevelopmentRegion: fr
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: true
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: me.somalabs.onepass
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.watchkitapp
+        PRODUCT_NAME: OnePassWatch
+        "ARCHS[sdk=watchos*]": arm64
+        # The core XCFramework has no x86_64 watch simulator slice.
+        "EXCLUDED_ARCHS[sdk=watchsimulator*]": x86_64
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+      configs:
+        Release-CloudKit:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+
+  # Complication and Smart Stack card (glyph and name only, no vault data).
+  OnePassWatchWidgets:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: WatchWidgets
+        excludes:
+          - "Info.plist"
+    info:
+      path: WatchWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: OnePass
+        CFBundleDevelopmentRegion: fr
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.watchkitapp.widgets
+        PRODUCT_NAME: OnePassWatchWidgets
+        "ARCHS[sdk=watchos*]": arm64
+        # The core XCFramework has no x86_64 watch simulator slice.
+        "EXCLUDED_ARCHS[sdk=watchsimulator*]": x86_64
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+      configs:
+        Release-CloudKit:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+
+  # iPhone and iPad widgets ("Codes", "Favoris") and Controls (spec 7 and 8). Reads the App
+  # Group snapshot through GlanceKit only: no Rust core in the extension.
+  OnePassWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+        excludes:
+          - "Info.plist"
+          - "*.entitlements"
+    dependencies:
+      - package: CompanionKit
+        product: GlanceKit
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: OnePass
+        CFBundleDevelopmentRegion: fr
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.widgets
+        PRODUCT_NAME: OnePassWidgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: Widgets/OnePassWidgets.entitlements
+      configs:
+        Release-CloudKit:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+
+  # XCUITest of the AutoFill extension on `OnePass M3 iPhone` (`make -C apple uitest-autofill`):
+  # drives AutoFillHost; OnePass (with its extension) is installed beside it by the Makefile.
+  OnePassAutoFillUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AppUITests/AutoFillUITests.swift
+    dependencies:
+      - target: AutoFillHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.autofilluitests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        TEST_TARGET_NAME: AutoFillHost
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+
+schemes:
+  OnePass:
+    build:
+      targets:
+        OnePass: all
+      # Before the build, so before the Swift packages that link the XCFramework. The XCFramework
+      # and the Swift bindings are generated, not committed (ruling R17). On a fresh clone, run
+      # `make -C apple core` first: Xcode resolves packages when the project opens.
+      preActions:
+        - name: Build Rust core
+          settingsTarget: OnePass
+          script: |
+            if [ ! -d "${PROJECT_DIR}/build/OnePassFFI.xcframework" ]; then
+              make -C "${PROJECT_DIR}" core
+            fi
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OnePassUITests
+    archive:
+      config: Release
+  OnePassWatch:
+    build:
+      targets:
+        OnePassWatch: all
+      preActions:
+        - name: Build Rust core
+          settingsTarget: OnePassWatch
+          script: |
+            if [ ! -d "${PROJECT_DIR}/build/OnePassFFI.xcframework" ]; then
+              make -C "${PROJECT_DIR}" core
+            fi
+    run:
+      config: Debug
+      commandLineArguments:
+        "-OnePassWatchDemo YES": false
+    archive:
+      config: Release
+
+  # Builds OnePass (with its AutoFill extension) and AutoFillHost, tests the AutoFill UI.
+  OnePassAutoFill:
+    build:
+      targets:
+        OnePass: all
+        AutoFillHost: all
+      preActions:
+        - name: Build Rust core
+          settingsTarget: OnePass
+          script: |
+            if [ ! -d "${PROJECT_DIR}/build/OnePassFFI.xcframework" ]; then
+              make -C "${PROJECT_DIR}" core
+            fi
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OnePassAutoFillUITests
+    archive:
+      config: Release

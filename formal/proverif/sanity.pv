@@ -1,0 +1,83 @@
+(* Harness self-test: exercises every primitive of common.pvl on a trivial
+   exchange, so a broken library or a broken run.sh shows up here first.
+   Not a model of OnePass code.
+
+   Sender: derives an AUK from a password and a secret key (Argon2 + HKDF),
+   wraps a fresh content key to the receiver's hybrid KEM key (core
+   envelope), seals a secret under it, signs the envelope, and also seals a
+   second secret under the AUK. Receiver: checks the signature, unwraps,
+   opens. A bridge KEM exchange runs alongside. *)
+
+free secret_msg: bitstring [private].
+free auk_msg: bitstring [private].
+free bridge_msg: bitstring [private].
+free pw: password [private].
+(* Same derivation with the secret key published: the password falls to
+   an offline dictionary attack, so weaksecret must fail. *)
+free pw_leaky: password [private].
+(* Secret, but sealed under a key the attacker can derive: must leak. *)
+free leaked_msg: bitstring [private].
+
+const ctx_test: bitstring.
+
+event Sent(bitstring).
+event Received(bitstring).
+event BridgeDone.
+
+query attacker(secret_msg).
+query attacker(auk_msg).
+query attacker(bridge_msg).
+query attacker(leaked_msg).
+query m: bitstring; event(Received(m)) ==> event(Sent(m)).
+query m: bitstring; event(Received(m)).
+query event(BridgeDone).
+weaksecret pw.
+weaksecret pw_leaky.
+
+let Sender(sig_sk: skey, rpkm: mlkem_pk, rpkx: x25519_pk, sk_account: key) =
+  new rm: seed; new rx: seed; new k: key;
+  let env = core_wrap(rpkm, rpkx, rm, rx, ctx_test, k) in
+  let ct = aead_seal(k, blob_aad(kind_item, ctx_test, no_vault), secret_msg) in
+  event Sent((env, ct));
+  out(c, (env, ct, sign_dom(sig_sk, dom_manifest, (env, ct))));
+  (* Password-derived key: public salt, secret key kept on the device. *)
+  new salt: nonce;
+  let auk = derive_auk(pw, sk_account, n2b(salt)) in
+  out(c, (salt, aead_seal(auk, blob_aad(kind_keyset, empty, no_vault), auk_msg)));
+  (* Key derived from public data only: the attacker opens it. *)
+  out(c, aead_seal(hkdf(empty, n2b(salt), lbl_auk), empty, leaked_msg)).
+
+let LeakySender =
+  new sk_leaky: key; new salt: nonce;
+  out(c, (sk_leaky, salt));
+  let auk = derive_auk(pw_leaky, sk_leaky, n2b(salt)) in
+  out(c, aead_seal(auk, blob_aad(kind_keyset, empty, no_vault), empty)).
+
+let Receiver(vk: pkey, skm: seed, skx: seed) =
+  in(c, (env: bitstring, ct: bitstring, s: bitstring));
+  if verify_dom(vk, dom_manifest, (env, ct), s) = true then
+  let k = core_unwrap(skm, skx, ctx_test, env) in
+  let m = aead_open(k, blob_aad(kind_item, ctx_test, no_vault), ct) in
+  event Received((env, ct)).
+
+let BridgeInit(bpkm: mlkem_pk, bpkx: x25519_pk) =
+  new rm: seed; new rx: seed;
+  let ss = bridge_encaps_ss(bpkm, bpkx, rm, rx) in
+  out(c, (bridge_encaps_ct(bpkm, bpkx, rm, rx),
+          aead_seal(derive(ss, lbl_bridge_e2h), empty, bridge_msg))).
+
+let BridgeResp(bskm: seed, bskx: seed) =
+  in(c, (ct: bitstring, blob: bitstring));
+  let ss = bridge_decaps(bskm, bskx, ct) in
+  let m = aead_open(derive(ss, lbl_bridge_e2h), empty, blob) in
+  event BridgeDone.
+
+process
+  new sig_sk: skey; new skm: seed; new skx: seed; new sk_account: key;
+  new bskm: seed; new bskx: seed;
+  out(c, (pk(sig_sk), kem_pk_m(skm), kem_pk_x(skx), kem_pk_m(bskm), kem_pk_x(bskx)));
+  ( !Sender(sig_sk, kem_pk_m(skm), kem_pk_x(skx), sk_account)
+  | !Receiver(pk(sig_sk), skm, skx)
+  | !BridgeInit(kem_pk_m(bskm), kem_pk_x(bskx))
+  | !BridgeResp(bskm, bskx)
+  | LeakySender )

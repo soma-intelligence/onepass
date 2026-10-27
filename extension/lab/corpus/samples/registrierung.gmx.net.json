@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:09:37.556Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "registrierung.gmx.net",
+  "source_url": "https://registrierung.gmx.net/",
+  "status": "skipped: robots"
+}

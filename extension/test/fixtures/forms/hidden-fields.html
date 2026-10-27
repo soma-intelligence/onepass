@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><title>Atlas Cloud - Sign in</title>
+<style>
+  .gone { display: none; }
+  .ghost { visibility: hidden; }
+  .faint { opacity: 0.05; }
+</style></head>
+<body>
+  <form id="login" action="/session" method="post">
+    <input id="u" name="username" type="text" placeholder="Username">
+    <input id="p" name="password" type="password" placeholder="Password">
+    <input id="d-display" class="gone" name="password2" type="password">
+    <div class="gone"><input id="d-display-parent" name="password3" type="password"></div>
+    <input id="d-visibility" class="ghost" name="password4" type="password">
+    <div style="opacity: 0.5"><div style="opacity: 0.1"><input id="d-opacity" name="password5" type="password"></div></div>
+    <input id="d-opacity-self" class="faint" name="password6" type="password">
+    <input id="d-size" name="password7" type="password" data-test-rect="0,0,2,2">
+    <input id="d-offscreen" name="password8" type="password" data-test-rect="-5000,0,200,30">
+    <input id="d-aria" name="password9" type="password" aria-hidden="true">
+    <div aria-hidden="true"><input id="d-aria-parent" name="password10" type="password"></div>
+    <input id="d-disabled" name="password11" type="password" disabled>
+    <fieldset disabled><input id="d-fieldset" name="password12" type="password"></fieldset>
+    <input id="d-readonly" name="password13" type="password" readonly>
+    <input id="d-hidden" name="password14" type="hidden" value="x">
+    <div aria-hidden="TRUE"><input id="d-aria-upper" name="password15" type="password"></div>
+    <input id="d-clip-path" name="password16" type="password" style="clip-path: inset(100%)">
+    <input id="d-clip-rect" name="password17" type="password" style="position: absolute; clip: rect(0, 0, 0, 0)">
+    <div style="overflow: hidden" data-test-rect="0,0,1,1"><input id="d-overflow" name="password18" type="password"></div>
+    <div style="overflow: hidden" data-test-rect="0,0,200,30"><input id="d-overflow-zero" name="password19" type="password" data-test-rect="0,400,200,30"></div>
+    <button id="submit" type="submit">Sign in</button>
+  </form>
+</body></html>

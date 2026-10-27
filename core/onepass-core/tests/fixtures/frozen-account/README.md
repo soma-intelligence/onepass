@@ -1,0 +1,3 @@
+# Compte figé
+
+Compte synthétique (mot de passe et Secret Key de test, aucune donnée réelle) aux paramètres KDF de développement (`m_kib = 8192, t = 1, p = 1`). Produit une seule fois le 2026-10-26 par `cargo test -p onepass-core --features dev-fast-kdf --test frozen_account -- --ignored generate_fixture --nocapture` (qui écrit `params.bin`, `keyset.bin`, `secret_key.txt` et `password.txt` ici et affiche les valeurs figées dans `tests/frozen_account.rs`). Ne jamais le régénérer : le test vérifie qu'un compte déjà stocké se déverrouille toujours et que ses clés publiques recalculées restent les mêmes.

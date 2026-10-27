@@ -1,0 +1,5 @@
+title,type,vault,url,username,password,otpauth,notes,tags,extra
+Example Mail,login,Perso,https://mail.example.com,alice@example.com,OnePass-Invented-1,otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example,Main mailbox,mail;personal,"email=alice@example.com
+url=https://mail2.example.com"
+Invented Card,credit-card,Perso,,,,,,,"cardholder=Alice Example
+number=4111111111111111"

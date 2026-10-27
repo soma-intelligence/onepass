@@ -1,0 +1,62 @@
+{
+  "captured_at": "2026-10-26T21:07:02.006Z",
+  "category": "login",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Continue"
+      ],
+      "fields": [
+        {
+          "autocomplete": "username webauthn",
+          "hasPattern": false,
+          "id": "<redacted>",
+          "inputmode": "text",
+          "label": "Email",
+          "name": "susi_email",
+          "required": false,
+          "role": "username",
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "id": "credential-autofill-hint",
+          "name": "autofill-password",
+          "required": false,
+          "role": "password",
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "host": "www.dropbox.com",
+  "iframes": [
+    {
+      "origin": "https://dropboxcaptcha.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.dropbox.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://marketing.dropbox.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source_url": "https://www.dropbox.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

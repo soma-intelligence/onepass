@@ -1,0 +1,65 @@
+{
+  "captured_at": "2026-10-26T21:11:28.852Z",
+  "category": "signup",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Sign up"
+      ],
+      "fields": [
+        {
+          "autocomplete": "email",
+          "hasPattern": false,
+          "label": "email",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "new-password",
+          "hasPattern": false,
+          "label": "password",
+          "name": "password",
+          "required": false,
+          "role": "new_password",
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "label": "Search",
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "www.tumblr.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source_url": "https://www.tumblr.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

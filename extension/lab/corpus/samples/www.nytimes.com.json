@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-26T21:13:06.200Z",
+  "category": "identity",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "postal-code",
+          "hasPattern": false,
+          "id": "zipcode",
+          "maxlength": 5,
+          "name": "zipCode",
+          "required": false,
+          "role": "postal_code",
+          "tag": "input",
+          "type": "tel",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "www.nytimes.com",
+  "iframes": [
+    {
+      "origin": "https://pay.google.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "und",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source_url": "https://www.nytimes.com/subscription",
+  "status": "ok",
+  "webauthnCalls": []
+}

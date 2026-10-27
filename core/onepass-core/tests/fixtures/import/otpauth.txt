@@ -1,0 +1,7 @@
+otpauth://totp/Example:alice@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example&algorithm=SHA256&digits=8&period=60
+
+otpauth://totp/Acme:bob@example.com?secret=GEZDGNBVGY3TQOJQ
+otpauth://totp/carol@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Corp
+otpauth://totp/Steam:dave?secret=JBSWY3DPEHPK3PXP&encoder=steam
+not an otpauth line
+otpauth-migration://offline?data=CjQKFDEyMzQ1Njc4OTAxMjM0NTY3ODkwEg5HaXRIdWI6cXVlbnRpbhoGR2l0SHViIAEoATAC

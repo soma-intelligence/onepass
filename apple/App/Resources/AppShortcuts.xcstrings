@@ -1,0 +1,82 @@
+{
+  "sourceLanguage" : "fr",
+  "strings" : {
+    "Copier le code de ${item} avec ${applicationName}" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy the code for ${item} with ${applicationName}"
+          }
+        },
+        "fr" : {
+          "stringSet" : {
+            "state" : "new",
+            "values" : [
+              "Copier le code de ${item} avec ${applicationName}"
+            ]
+          }
+        }
+      }
+    },
+    "Générer un mot de passe avec ${applicationName}" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generate a password with ${applicationName}"
+          }
+        },
+        "fr" : {
+          "stringSet" : {
+            "state" : "new",
+            "values" : [
+              "Générer un mot de passe avec ${applicationName}"
+            ]
+          }
+        }
+      }
+    },
+    "Ouvrir ${item} dans ${applicationName}" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open ${item} in ${applicationName}"
+          }
+        },
+        "fr" : {
+          "stringSet" : {
+            "state" : "new",
+            "values" : [
+              "Ouvrir ${item} dans ${applicationName}"
+            ]
+          }
+        }
+      }
+    },
+    "Verrouiller ${applicationName}" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lock ${applicationName}"
+          }
+        },
+        "fr" : {
+          "stringSet" : {
+            "state" : "new",
+            "values" : [
+              "Verrouiller ${applicationName}"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

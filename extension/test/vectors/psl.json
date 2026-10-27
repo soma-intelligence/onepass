@@ -1,0 +1,22 @@
+{
+  "cases": [
+    { "a": "https://www.atlas-cloud.test/login", "b": "https://app.atlas-cloud.test", "same_site": true, "site_a": "atlas-cloud.test" },
+    { "a": "https://atlas-cloud.test:8443/x?y=1#z", "b": "https://atlas-cloud.test", "same_site": true, "site_a": "atlas-cloud.test" },
+    { "a": "https://a.example.co.uk", "b": "https://b.example.co.uk", "same_site": true, "site_a": "example.co.uk" },
+    { "a": "https://example.co.uk", "b": "https://other.co.uk", "same_site": false, "site_a": "example.co.uk" },
+    { "a": "https://x.github.io", "b": "https://y.github.io", "same_site": false, "site_a": "x.github.io" },
+    { "a": "https://deep.sub.x.github.io", "b": "https://x.github.io", "same_site": true, "site_a": "x.github.io" },
+    { "a": "https://a.blogspot.com", "b": "https://b.blogspot.com", "same_site": false, "site_a": "a.blogspot.com" },
+    { "a": "https://www.bücher.de", "b": "https://xn--bcher-kva.de", "same_site": true, "site_a": "xn--bcher-kva.de" },
+    { "a": "https://xn--bcher-kva.de", "b": "https://bucher.de", "same_site": false, "site_a": "xn--bcher-kva.de" },
+    { "a": "https://192.168.1.1", "b": "https://192.168.1.2", "same_site": false, "site_a": "192.168.1.1" },
+    { "a": "https://192.168.1.1/a", "b": "https://192.168.1.1:8443/b", "same_site": true, "site_a": "192.168.1.1" },
+    { "a": "https://[::1]/", "b": "https://[::1]:8443/", "same_site": true, "site_a": "[::1]" },
+    { "a": "https://atlas-cloud.test./", "b": "https://atlas-cloud.test", "same_site": true, "site_a": "atlas-cloud.test" },
+    { "a": "https://ATLAS-Cloud.TEST", "b": "https://login.atlas-cloud.test", "same_site": true, "site_a": "atlas-cloud.test" },
+    { "a": "https://atlas-cloud.test.evil.test", "b": "https://atlas-cloud.test", "same_site": false, "site_a": "evil.test" },
+    { "a": "https://atlass-cloud.test", "b": "https://atlas-cloud.test", "same_site": false, "site_a": "atlass-cloud.test" },
+    { "a": "https://evil-atlas-cloud.test", "b": "https://atlas-cloud.test", "same_site": false, "site_a": "evil-atlas-cloud.test" },
+    { "a": "https://co.uk", "b": "https://co.uk", "same_site": true, "site_a": "co.uk" }
+  ]
+}

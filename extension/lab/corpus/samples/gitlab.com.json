@@ -1,0 +1,14 @@
+{
+  "captured_at": "2026-10-26T21:05:24.960Z",
+  "category": "login",
+  "extractor": 1,
+  "forms": [],
+  "host": "gitlab.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://gitlab.com/users/sign_in",
+  "status": "ok",
+  "webauthnCalls": []
+}

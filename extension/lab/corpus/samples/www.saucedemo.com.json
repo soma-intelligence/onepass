@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-26T21:07:10.992Z",
+  "category": "login",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Login"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "user-name",
+          "label": "Username",
+          "name": "user-name",
+          "required": false,
+          "role": "username",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "id": "password",
+          "label": "Password",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "host": "www.saucedemo.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://www.saucedemo.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

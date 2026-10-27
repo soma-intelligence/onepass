@@ -1,0 +1,13 @@
+<div class="brand">Atlas Cloud</div>
+<h1>Paiement</h1>
+<form id="card" action="/checkout" method="post">
+  <label for="cc-name">Nom du titulaire</label>
+  <input id="cc-name" name="name" type="text" autocomplete="cc-name">
+  <label for="cc-number">Numéro de carte</label>
+  <input id="cc-number" name="number" type="text" inputmode="numeric" autocomplete="cc-number">
+  <label for="cc-exp">Date d'expiration</label>
+  <input id="cc-exp" name="exp" type="text" placeholder="MM/AA" autocomplete="cc-exp">
+  <label for="cc-csc">Cryptogramme</label>
+  <input id="cc-csc" name="csc" type="text" inputmode="numeric" maxlength="4" autocomplete="cc-csc">
+  <button id="submit" type="submit">Payer</button>
+</form>

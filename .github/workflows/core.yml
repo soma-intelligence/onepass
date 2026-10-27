@@ -1,0 +1,138 @@
+name: core
+
+on:
+  push:
+    paths:
+      - "core/**"
+      - ".github/workflows/core.yml"
+  pull_request:
+    paths:
+      - "core/**"
+      - ".github/workflows/core.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned nightly for Miri and fuzz; also the default of core/Makefile.
+  NIGHTLY: nightly-2026-10-20
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # rustup reads core/rust-toolchain.toml (pinned toolchain, rustfmt, clippy).
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: core
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-deny,cargo-audit,cargo-vet,cargo-cyclonedx@0.5.9
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --workspace
+      - name: Differential tests (release)
+        run: cargo test --release -p onepass-core --test differential
+      - name: Licenses, bans and sources
+        run: cargo deny check
+      # Imported audit sets are fetched from the network; exemptions are
+      # recorded in core/supply-chain/config.toml.
+      - name: Supply-chain audits
+        run: cargo vet
+      # Informative only: a new RustSec advisory can turn this red without
+      # any change here. It must not block a merge; read it and act.
+      - name: Advisories
+        run: cargo audit
+        continue-on-error: true
+      - name: SBOM (CycloneDX)
+        if: matrix.os == 'ubuntu-latest'
+        run: make sbom
+      - name: Keep the SBOM
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-core
+          path: core/target/sbom/*.cdx.json
+          if-no-files-found: error
+
+  miri:
+    name: miri
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install nightly with Miri
+        run: |
+          rustup toolchain install "$NIGHTLY" --profile minimal --component miri,rust-src
+          cargo "+$NIGHTLY" miri setup
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: core
+          key: miri
+      # The locked-memory pool (mlock, page guards) under Miri.
+      - name: Miri
+        run: make miri NIGHTLY="$NIGHTLY"
+
+  fuzz:
+    name: fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - blob_open
+          - signed_manifest
+          - account_params
+          - item_record
+          - signature_verify
+          - otpauth_parse
+          - reference_parse
+          - import_csv
+          - import_1pux
+          - import_bitwarden_json
+          - import_keepass_xml
+          - import_cxf
+          - import_text
+          - archive_open
+          - hibp_range
+          - site_directory
+          - mcp_line
+          - ssh_agent_frame
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install nightly
+        run: rustup toolchain install "$NIGHTLY" --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: core/fuzz
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-fuzz
+      - name: Fuzz 30 s
+        run: cargo "+$NIGHTLY" fuzz run ${{ matrix.target }} -- -max_total_time=30 -rss_limit_mb=4096
+      - name: Keep the crashing input
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: core/fuzz/artifacts/${{ matrix.target }}

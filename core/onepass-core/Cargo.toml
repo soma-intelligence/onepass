@@ -1,0 +1,100 @@
+[package]
+name = "onepass-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+uuid.workspace = true
+aws-lc-rs.workspace = true
+zeroize.workspace = true
+data-encoding.workspace = true
+argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
+unicode-normalization = "0.1.26"
+slh-dsa = "=0.1.0"
+# Not used directly: slh-dsa 0.1.0 only builds against this prerelease
+# (later 2.3.0-pre releases moved to rand_core 0.9). Remove with slh-dsa 0.2.
+signature = "=2.3.0-pre.4"
+serde_bytes = "0.11.17"
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+time = { version = "0.3", default-features = false, features = ["serde", "std", "parsing"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
+prost = "0.14"
+zxcvbn = { version = "3", default-features = false }
+csv = "1"
+serde_json = "1"
+quick-xml = "0.42.0"
+zip = { version = "9.1.1", default-features = false, features = ["deflate"] }
+
+# mlock for the page-locked key slots (crypto::locked).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[features]
+# Lowers the enforced Argon2id floor to DEV_KDF_FLOOR, in builds with debug
+# assertions only (a release build ignores it). For the dev CLI and the
+# integration tests: never enable it in a shipped build.
+dev-fast-kdf = []
+
+# Unlocks accounts made with fast KDF parameters: needs the dev floor.
+[[test]]
+name = "malicious_store"
+required-features = ["dev-fast-kdf"]
+
+# Accounts and archives at the dev KDF floor.
+[[test]]
+name = "archive"
+required-features = ["dev-fast-kdf"]
+
+[[test]]
+name = "travel"
+required-features = ["dev-fast-kdf"]
+
+# A frozen account at the dev KDF floor (tests/fixtures/frozen-account).
+[[test]]
+name = "frozen_account"
+required-features = ["dev-fast-kdf"]
+
+[dev-dependencies]
+time = { version = "0.3", features = ["macros"] }
+proptest = "1.12"
+serde_json = "1"
+libcrux-ml-kem = "0.0.11"
+libcrux-ml-dsa = "0.0.11"
+tempfile = "3"
+# Differential test only (tests/slh_dsa_differential.rs): the release
+# candidate the identity key moves to once it is stable (Ruling 13).
+slh-dsa-next = { package = "slh-dsa", version = "=0.2.0-rc.5" }
+
+# Two devices over fast-KDF accounts: needs the dev floor.
+[[test]]
+name = "sync_two_devices"
+required-features = ["dev-fast-kdf"]
+
+# Two processes over one store file: needs the dev floor.
+[[test]]
+name = "sync_two_processes"
+required-features = ["dev-fast-kdf"]
+
+# Restore epochs over the two-device harness: needs the dev floor.
+[[test]]
+name = "restore_epoch"
+required-features = ["dev-fast-kdf"]
+
+# Password change across two devices, fast-KDF accounts: needs the dev floor.
+[[test]]
+name = "password_change"
+required-features = ["dev-fast-kdf"]
+
+# Signed lists across devices, fast-KDF accounts: needs the dev floor.
+[[test]]
+name = "signed_lists"
+required-features = ["dev-fast-kdf"]
+
+# Vault deletion across devices, fast-KDF accounts: needs the dev floor.
+[[test]]
+name = "vault_deletion"
+required-features = ["dev-fast-kdf"]

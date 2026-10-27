@@ -1,0 +1,35 @@
+{
+  "captured_at": "2026-10-26T21:11:37.663Z",
+  "category": "signup",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Continuer"
+      ],
+      "fields": [
+        {
+          "autocomplete": "email",
+          "hasPattern": false,
+          "id": "email",
+          "label": "Email",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "host": "www.deezer.com",
+  "iframes": [],
+  "lang": "fr",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://www.deezer.com/fr/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

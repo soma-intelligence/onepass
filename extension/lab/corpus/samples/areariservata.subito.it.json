@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:09:59.224Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "areariservata.subito.it",
+  "source_url": "https://areariservata.subito.it/login_form",
+  "status": "skipped: robots"
+}

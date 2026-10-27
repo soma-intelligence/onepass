@@ -1,0 +1,4 @@
+"Personal","Example Mail","alice@example.com","Keeper-Invented-1","https://mail.example.com","Main mailbox","","TFC:Keeper","otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example","Security question","Invented answer"
+"","Shop","bob","Keeper-Invented-2","https://shop.example.org","","Team"
+,,,,,,
+"Personal","Router admin","","Keeper-Invented-3","https://router.example.com","","Personal","PIN code","1234","lonely"

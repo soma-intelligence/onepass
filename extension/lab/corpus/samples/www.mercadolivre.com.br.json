@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:10:16.508Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "www.mercadolivre.com.br",
+  "source_url": "https://www.mercadolivre.com.br/hub/login",
+  "status": "skipped: robots"
+}

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><title>Atlas Cloud - Sign in</title></head>
+<body>
+  <div class="providers">
+    <button id="b-google" type="button"><span>Continue with Google</span></button>
+    <a id="b-apple" href="https://appleid.apple.com/auth/authorize?client_id=atlas">Se connecter avec Apple</a>
+    <div id="b-ms" role="button" aria-label="Sign in with Microsoft"><span class="icon"></span></div>
+    <a id="b-gh" href="https://github.com/login/oauth/authorize?client_id=atlas">Log in</a>
+    <button id="b-hidden" type="button" style="display:none">Continue with Slack</button>
+  </div>
+  <footer>
+    <a id="footer-gh" href="https://github.com/atlas-cloud">Our code on GitHub</a>
+    <a id="lookalike" href="https://accounts.google.com.evil.test/signin">Help</a>
+  </footer>
+  <form id="login" action="/session" method="post">
+    <input id="u" name="email" type="email" placeholder="Email">
+    <button id="next" type="submit">Continue</button>
+  </form>
+</body></html>

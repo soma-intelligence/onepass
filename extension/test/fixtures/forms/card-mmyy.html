@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="fr"><head><title>Atlas Cloud - Paiement</title></head>
+<body>
+  <form id="card" action="/paiement" method="post">
+    <label for="titulaire">Nom du titulaire</label>
+    <input id="titulaire" name="titulaire" type="text">
+    <label for="num">Numéro de carte</label>
+    <input id="num" name="numero" type="text">
+    <label for="exp">Date d'expiration</label>
+    <input id="exp" name="exp" type="text" placeholder="MM/AA" maxlength="5">
+    <label for="crypto">Cryptogramme</label>
+    <input id="crypto" name="crypto" type="text" maxlength="3">
+    <button id="submit" type="submit">Payer</button>
+  </form>
+</body></html>

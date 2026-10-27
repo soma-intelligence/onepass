@@ -1,0 +1,79 @@
+{
+  "captured_at": "2026-10-26T21:12:56.015Z",
+  "category": "address",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "BUSCAR"
+      ],
+      "fields": [
+        {
+          "autocomplete": "none",
+          "hasPattern": false,
+          "id": "<redacted>",
+          "label": "Escribe aquí una dirección",
+          "name": "<redacted>",
+          "required": false,
+          "role": "address_line1",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Volver",
+        "NUEVA BÚSQUEDA",
+        "BUSCAR",
+        "Buscar mi ubicación",
+        "Acercar",
+        "Alejar",
+        "CONTINUAR",
+        "RECHAZAR TODAS",
+        "CONFIGURAR COOKIES",
+        "ACEPTAR TODAS",
+        "RECHAZAR TODAS",
+        "GUARDAR CONFIGURACIÓN",
+        "ACEPTAR TODAS"
+      ],
+      "fields": [
+        {
+          "autocomplete": "none",
+          "hasPattern": false,
+          "id": "<redacted>",
+          "label": "Nº de seguimiento, producto o servicio",
+          "name": "<redacted>",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "id": "date-picker",
+          "label": "Selecciona el día",
+          "name": "date-picker",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "www.correos.es",
+  "iframes": [],
+  "lang": "es",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://www.correos.es/es/es/herramientas/codigos-postales",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:05:49.323Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "www.ebay.com",
+  "source_url": "https://www.ebay.com/signin/",
+  "status": "skipped: robots"
+}

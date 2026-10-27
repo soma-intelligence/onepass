@@ -1,0 +1,434 @@
+//! Vaults and encrypted items, one random key per item.
+//!
+//! A vault owns a symmetric key, delivered to the account as a KEM envelope.
+//! Each item has its own random key, wrapped by the vault key. The item
+//! plaintext carries the record version and the full item (including its
+//! `vault_id`), so a swapped version or a cross-vault replay is caught on open.
+
+use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
+
+use crate::account::Account;
+use crate::crypto::{Aad, BlobKind, SymmetricKey, open, seal, unwrap_key, wrap_key};
+use crate::model::events::{EventKind, ItemTrailer};
+use crate::model::{Item, validate};
+use crate::{Error, Id, IntegrityError, Result};
+
+const SCHEMA: u16 = crate::format::ITEM_SCHEMA;
+
+/// Display settings of a vault, sealed with the vault key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VaultMeta {
+    pub name: String,
+    pub icon: String,
+    pub color: String,
+    pub travel_safe: bool,
+    pub mcp_access: bool,
+}
+
+/// An unlocked vault.
+pub struct Vault {
+    pub id: Id,
+    pub meta: VaultMeta,
+    key: SymmetricKey,
+}
+
+impl std::fmt::Debug for Vault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Vault")
+            .field("id", &self.id)
+            .field("key", &"**")
+            .finish_non_exhaustive()
+    }
+}
+
+/// A stored item: opaque blobs plus the cleartext id and version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemRecord {
+    pub item_id: Id,
+    pub version: u64,
+    pub wrapped_key: Vec<u8>,
+    pub blob: Vec<u8>,
+}
+
+impl ItemRecord {
+    /// Decode an item record body, which may come from a hostile store: the
+    /// whole buffer, trailing bytes refused (`InvalidFormat("item record")`).
+    /// Nothing is verified here: the manifest and `Vault::open_item` do.
+    pub fn decode(bytes: &[u8]) -> Result<ItemRecord> {
+        match postcard::take_from_bytes(bytes) {
+            Ok((rec, [])) => Ok(rec),
+            _ => Err(Error::InvalidFormat("item record")),
+        }
+    }
+}
+
+/// KEM context of a vault key envelope: `"vault:" || vault_id` (22 bytes).
+pub(crate) fn kem_context(vault_id: Id) -> Vec<u8> {
+    let mut c = b"vault:".to_vec();
+    c.extend_from_slice(&vault_id.0);
+    c
+}
+
+fn meta_aad(vault_id: Id) -> Aad {
+    Aad {
+        blob_id: vault_id,
+        vault_id: Some(vault_id),
+        schema: SCHEMA,
+    }
+}
+
+fn item_aad(item_id: Id, vault_id: Id) -> Aad {
+    Aad {
+        blob_id: item_id,
+        vault_id: Some(vault_id),
+        schema: SCHEMA,
+    }
+}
+
+/// Postcard of `(version, item)` in a buffer wiped on drop, sized up front so
+/// no reallocation leaves copies of the plaintext behind. An item with
+/// events gets them after, as an `ItemTrailer` (see `model::events`): an
+/// item without any is written exactly as before events existed.
+fn encode_item(version: u64, item: &Item) -> Result<Zeroizing<Vec<u8>>> {
+    const BAD: Error = Error::InvalidFormat("item");
+    let value = (version, item);
+    let trailer = (!item.events.is_empty()).then(|| ItemTrailer {
+        events: item.events.clone(),
+    });
+    let head = postcard::experimental::serialized_size(&value).map_err(|_| BAD)?;
+    let tail = match &trailer {
+        Some(t) => postcard::experimental::serialized_size(t).map_err(|_| BAD)?,
+        None => 0,
+    };
+    let mut buf = Zeroizing::new(vec![0u8; head + tail]);
+    let (first, rest) = buf.split_at_mut(head);
+    postcard::to_slice(&value, first).map_err(|_| BAD)?;
+    if let Some(t) = &trailer {
+        postcard::to_slice(t, rest).map_err(|_| BAD)?;
+    }
+    Ok(buf)
+}
+
+/// `(version, item)` then, when bytes remain, exactly one `ItemTrailer`.
+fn decode_item(plain: &[u8]) -> Result<(u64, Item)> {
+    const BAD: Error = Error::InvalidFormat("item");
+    let ((version, mut item), rest): ((u64, Item), &[u8]) =
+        postcard::take_from_bytes(plain).map_err(|_| BAD)?;
+    if !rest.is_empty() {
+        let trailer: ItemTrailer = match postcard::take_from_bytes(rest) {
+            Ok((t, [])) => t,
+            _ => return Err(BAD),
+        };
+        if trailer.events.is_empty() || trailer.events.len() > crate::model::events::MAX_EVENTS {
+            return Err(BAD);
+        }
+        item.events = trailer.events;
+    }
+    Ok((version, item))
+}
+
+impl Vault {
+    /// Create a vault. Returns the vault, the key envelope for the account
+    /// (KEM context `"vault:" || vault_id`) and the sealed meta blob.
+    pub fn create(account: &Account, meta: VaultMeta) -> Result<(Vault, Vec<u8>, Vec<u8>)> {
+        let id = Id::new();
+        let key = SymmetricKey::generate()?;
+        let envelope = wrap_key(&account.params.kem_pub, &key, &kem_context(id))?;
+        let meta_blob = seal_meta(&key, id, &meta)?;
+        Ok((Vault { id, meta, key }, envelope, meta_blob))
+    }
+
+    /// Open a vault from its stored envelope and meta blob.
+    pub fn open(account: &Account, id: Id, key_envelope: &[u8], meta_blob: &[u8]) -> Result<Vault> {
+        let key = unwrap_key(&account.keyset().kem, key_envelope, &kem_context(id))?;
+        let plain = open(&key, BlobKind::VaultMeta, &meta_aad(id), meta_blob)?;
+        let meta: VaultMeta = match postcard::take_from_bytes(&plain) {
+            Ok((meta, [])) => meta,
+            _ => return Err(Error::InvalidFormat("vault meta")),
+        };
+        Ok(Vault { id, meta, key })
+    }
+
+    /// The vault key. The manifest of the vault is sealed with it.
+    pub(crate) fn key(&self) -> &SymmetricKey {
+        &self.key
+    }
+
+    /// Validate and encrypt an item under a fresh random item key. The
+    /// version is part of the sealed plaintext and checked again on open.
+    pub fn seal_item(&self, item: &Item, version: u64) -> Result<ItemRecord> {
+        validate(item)?;
+        if item.vault_id != self.id {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        let item_key = SymmetricKey::generate()?;
+        self.seal_with(&item_key, item, version)
+    }
+
+    fn seal_with(&self, item_key: &SymmetricKey, item: &Item, version: u64) -> Result<ItemRecord> {
+        let aad = item_aad(item.id, self.id);
+        let wrapped_key = seal(self.key(), BlobKind::ItemKey, &aad, item_key.expose())?;
+        let plain = encode_item(version, item)?;
+        let blob = seal(item_key, BlobKind::Item, &aad, &plain)?;
+        Ok(ItemRecord {
+            item_id: item.id,
+            version,
+            wrapped_key,
+            blob,
+        })
+    }
+
+    fn unwrap_item_key(&self, rec: &ItemRecord) -> Result<SymmetricKey> {
+        let plain = open(
+            self.key(),
+            BlobKind::ItemKey,
+            &item_aad(rec.item_id, self.id),
+            &rec.wrapped_key,
+        )?;
+        if plain.len() != 32 {
+            return Err(Error::InvalidFormat("item key length"));
+        }
+        // Straight into the key buffer: no [u8; 32] temporary.
+        let mut key = SymmetricKey::zeroed();
+        key.bytes_mut().copy_from_slice(&plain);
+        Ok(key)
+    }
+
+    fn open_with(&self, item_key: &SymmetricKey, rec: &ItemRecord) -> Result<Item> {
+        let plain = open(
+            item_key,
+            BlobKind::Item,
+            &item_aad(rec.item_id, self.id),
+            &rec.blob,
+        )?;
+        let (version, item) = decode_item(&plain)?;
+        if version != rec.version || item.vault_id != self.id || item.id != rec.item_id {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        Ok(item)
+    }
+
+    /// Decrypt an item. Refuses a record whose inner version, item id or
+    /// vault id differ from the record and this vault.
+    pub fn open_item(&self, rec: &ItemRecord) -> Result<Item> {
+        let item_key = self.unwrap_item_key(rec)?;
+        self.open_with(&item_key, rec)
+    }
+
+    /// Move an item to another vault. The item key is unchanged and is only
+    /// re-wrapped under the target vault key. The item blob is re-sealed too,
+    /// because `vault_id` is part of both the AAD and the plaintext.
+    pub fn move_item(&self, to: &Vault, rec: &ItemRecord, new_version: u64) -> Result<ItemRecord> {
+        let item_key = self.unwrap_item_key(rec)?;
+        let mut item = self.open_with(&item_key, rec)?;
+        item.vault_id = to.id;
+        item.record(
+            time::OffsetDateTime::now_utc(),
+            EventKind::Moved {
+                from: self.meta.name.clone(),
+                to: to.meta.name.clone(),
+            },
+        );
+        to.seal_with(&item_key, &item, new_version)
+    }
+}
+
+fn seal_meta(key: &SymmetricKey, id: Id, meta: &VaultMeta) -> Result<Vec<u8>> {
+    let plain = Zeroizing::new(
+        postcard::to_allocvec(meta).map_err(|_| Error::InvalidFormat("vault meta"))?,
+    );
+    seal(key, BlobKind::VaultMeta, &meta_aad(id), &plain)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::OnceLock;
+
+    use super::*;
+    use crate::account::NewAccount;
+    use crate::crypto::{KdfParams, random_array};
+    use crate::model::{FieldValue, ItemType, new_item};
+
+    fn shared() -> &'static NewAccount {
+        static N: OnceLock<NewAccount> = OnceLock::new();
+        N.get_or_init(|| {
+            let kdf = KdfParams {
+                m_kib: 8192,
+                t: 1,
+                p: 1,
+                salt: random_array().unwrap(),
+            };
+            Account::create_with_params("pw", kdf).unwrap()
+        })
+    }
+
+    fn meta(name: &str) -> VaultMeta {
+        VaultMeta {
+            name: name.into(),
+            icon: "key".into(),
+            color: "blue".into(),
+            travel_safe: true,
+            mcp_access: false,
+        }
+    }
+
+    fn vault(name: &str) -> (Vault, Vec<u8>, Vec<u8>) {
+        Vault::create(&shared().account, meta(name)).unwrap()
+    }
+
+    fn login(v: &Vault) -> Item {
+        let mut item = new_item(ItemType::Login, v.id, "Example");
+        item.field_mut("username").unwrap().value = FieldValue::Text("alice".into());
+        item
+    }
+
+    #[test]
+    fn vault_create_open_roundtrip() {
+        let (v, env, mb) = vault("Perso");
+        let o = Vault::open(&shared().account, v.id, &env, &mb).unwrap();
+        assert_eq!(o.id, v.id);
+        assert_eq!(o.meta, v.meta);
+        // The envelope is bound to the vault id.
+        assert!(Vault::open(&shared().account, Id::new(), &env, &mb).is_err());
+    }
+
+    #[test]
+    fn seal_open_item() {
+        let (v, _, _) = vault("A");
+        let item = login(&v);
+        let rec = v.seal_item(&item, 1).unwrap();
+        assert_eq!(rec.item_id, item.id);
+        assert_eq!(rec.version, 1);
+        assert_eq!(v.open_item(&rec).unwrap(), item);
+        // A fresh item key per seal.
+        let rec2 = v.seal_item(&item, 1).unwrap();
+        assert_ne!(rec.wrapped_key, rec2.wrapped_key);
+    }
+
+    #[test]
+    fn events_ride_in_a_trailer_and_old_records_still_open() {
+        let (v, _, _) = vault("A");
+        let mut item = login(&v);
+        // Without events the plaintext is exactly the pre-events encoding.
+        let plain = encode_item(3, &item).unwrap();
+        assert_eq!(
+            &plain[..],
+            &postcard::to_allocvec(&(3u64, &item)).unwrap()[..]
+        );
+        assert_eq!(decode_item(&plain).unwrap(), (3, item.clone()));
+        item.record(item.created_at, EventKind::Created);
+        item.record(item.created_at, EventKind::Archived);
+        let rec = v.seal_item(&item, 1).unwrap();
+        let opened = v.open_item(&rec).unwrap();
+        assert_eq!(opened.events, item.events);
+        assert_eq!(opened, item);
+        // Garbage or an empty trailer after the item is refused.
+        let mut bad = postcard::to_allocvec(&(1u64, &item)).unwrap();
+        bad.push(0);
+        assert!(decode_item(&bad).is_err());
+        bad.pop();
+        bad.extend([1, 0xff]);
+        assert!(decode_item(&bad).is_err());
+    }
+
+    #[test]
+    fn move_records_the_vault_names() {
+        let (a, _, _) = vault("Perso");
+        let (b, _, _) = vault("Projet Atlas");
+        let rec = a.seal_item(&login(&a), 1).unwrap();
+        let moved = b.open_item(&a.move_item(&b, &rec, 1).unwrap()).unwrap();
+        assert_eq!(
+            moved.events.last().unwrap().kind,
+            EventKind::Moved {
+                from: "Perso".into(),
+                to: "Projet Atlas".into()
+            }
+        );
+    }
+
+    #[test]
+    fn item_from_another_vault_is_refused() {
+        let (a, _, _) = vault("A");
+        let (b, _, _) = vault("B");
+        let rec = a.seal_item(&login(&a), 1).unwrap();
+        assert!(matches!(b.open_item(&rec), Err(Error::Integrity(_))));
+        // An item that names another vault is not sealed either.
+        assert!(matches!(
+            b.seal_item(&login(&a), 1),
+            Err(Error::Integrity(IntegrityError::WrongContext))
+        ));
+    }
+
+    #[test]
+    fn version_swap_is_refused() {
+        let (v, _, _) = vault("A");
+        let mut rec = v.seal_item(&login(&v), 1).unwrap();
+        rec.version = 2;
+        assert!(matches!(
+            v.open_item(&rec),
+            Err(Error::Integrity(IntegrityError::WrongContext))
+        ));
+    }
+
+    #[test]
+    fn swapped_item_id_is_refused() {
+        let (v, _, _) = vault("A");
+        let mut rec = v.seal_item(&login(&v), 1).unwrap();
+        rec.item_id = Id::new();
+        assert!(matches!(v.open_item(&rec), Err(Error::Integrity(_))));
+    }
+
+    #[test]
+    fn move_item_keeps_content_and_changes_vault() {
+        let (a, _, _) = vault("A");
+        let (b, _, _) = vault("B");
+        let item = login(&a);
+        let rec = a.seal_item(&item, 1).unwrap();
+        let moved = a.move_item(&b, &rec, 2).unwrap();
+        assert_eq!(moved.version, 2);
+        let out = b.open_item(&moved).unwrap();
+        assert_eq!(out.vault_id, b.id);
+        let mut expected = item;
+        expected.vault_id = b.id;
+        expected.events.clone_from(&out.events);
+        assert_eq!(out, expected);
+        assert!(a.open_item(&moved).is_err());
+    }
+
+    #[test]
+    fn invalid_item_is_not_sealed() {
+        let (v, _, _) = vault("A");
+        let item = new_item(ItemType::CreditCard, v.id, "Visa");
+        assert!(matches!(v.seal_item(&item, 1), Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn trailing_bytes_in_item_and_meta_are_refused() {
+        let (v, env, _) = vault("A");
+        let item = login(&v);
+        let rec = v.seal_item(&item, 1).unwrap();
+        let item_key = v.unwrap_item_key(&rec).unwrap();
+        let mut plain = encode_item(1, &item).unwrap().to_vec();
+        plain.push(0);
+        let bad = ItemRecord {
+            blob: seal(&item_key, BlobKind::Item, &item_aad(item.id, v.id), &plain).unwrap(),
+            ..rec
+        };
+        assert_eq!(v.open_item(&bad), Err(Error::InvalidFormat("item")));
+
+        let mut meta = postcard::to_allocvec(&v.meta).unwrap();
+        meta.push(0);
+        let blob = seal(v.key(), BlobKind::VaultMeta, &meta_aad(v.id), &meta).unwrap();
+        assert_eq!(
+            Vault::open(&shared().account, v.id, &env, &blob).err(),
+            Some(Error::InvalidFormat("vault meta"))
+        );
+    }
+
+    #[test]
+    fn debug_hides_the_key() {
+        let (v, _, _) = vault("A");
+        assert!(format!("{v:?}").contains("**"));
+    }
+}

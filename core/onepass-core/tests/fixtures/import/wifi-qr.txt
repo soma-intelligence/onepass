@@ -1,0 +1,7 @@
+WIFI:T:WPA;S:HomeNet-Test;P:secret-pass-1;;
+WIFI:S:my\;net;T:WPA2;P:p\:w\\d;H:true;;
+
+WIFI:S:CafeOpen-Test;T:nopass;;
+WIFI:T:SAE;S:Wpa3Net-Test;P:sae-pass;;
+this is not a wifi code
+WIFI:T:WPA;P:nossid;;

@@ -1,0 +1,66 @@
+{
+  "folders": [
+    {"icon": "1008", "parent_uuid": "", "title": "Personal", "updated_at": 1700000000, "uuid": "f0000000-0000-4000-8000-000000000001"}
+  ],
+  "items": [
+    {
+      "archived": 0, "auto_submit": 1, "category": "login", "createdAt": 1700000000,
+      "favorite": 1, "folders": ["f0000000-0000-4000-8000-000000000001"],
+      "icon": {"fav": "mail.example.com", "type": 1},
+      "note": "Main mailbox", "subtitle": "alice", "template_type": "login.default",
+      "title": "Example Mail", "trashed": 0, "updated_at": 1700000500,
+      "uuid": "a0000000-0000-4000-8000-000000000001",
+      "attachments": [{"kind": "image/png", "name": "scan.png", "size": 10}],
+      "fields": [
+        {"deleted": 0, "label": "Username", "order": 1, "sensitive": 0, "type": "username", "uid": 10, "value": "alice"},
+        {"deleted": 0, "label": "E-mail", "order": 2, "sensitive": 0, "type": "email", "uid": 11, "value": "alice@example.com"},
+        {"deleted": 0, "label": "Password", "order": 3, "sensitive": 1, "type": "password", "uid": 12, "value": "Enpass-Invented-1"},
+        {"deleted": 0, "label": "Website", "order": 4, "sensitive": 0, "type": "url", "uid": 13, "value": "https://mail.example.com"},
+        {"deleted": 0, "label": "One-time code", "order": 5, "sensitive": 0, "type": "totp", "uid": 14, "value": "otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example"},
+        {"deleted": 0, "label": "Additional Details", "order": 6, "sensitive": 0, "type": "section", "uid": 15, "value": ""},
+        {"deleted": 0, "label": "Security answer", "order": 7, "sensitive": 1, "type": "text", "uid": 16, "value": "Invented"},
+        {"deleted": 1, "label": "Old", "order": 8, "sensitive": 0, "type": "text", "uid": 17, "value": "gone"}
+      ]
+    },
+    {
+      "archived": 0, "category": "creditcard", "favorite": 0, "folders": [],
+      "note": "", "template_type": "creditcard.default", "title": "Example Visa", "trashed": 0,
+      "fields": [
+        {"deleted": 0, "label": "Cardholder", "sensitive": 0, "type": "ccName", "value": "Alice Example"},
+        {"deleted": 0, "label": "Type", "sensitive": 0, "type": "ccType", "value": "Visa"},
+        {"deleted": 0, "label": "Number", "sensitive": 0, "type": "ccNumber", "value": "4111111111111111"},
+        {"deleted": 0, "label": "CVC", "sensitive": 1, "type": "ccCvc", "value": "123"},
+        {"deleted": 0, "label": "Expiry date", "sensitive": 0, "type": "ccExpiry", "value": "12/2029"}
+      ]
+    },
+    {
+      "archived": 1, "category": "note", "favorite": 0, "folders": [],
+      "note": "Invented note body", "template_type": "note.default", "title": "Wifi instructions", "trashed": 0,
+      "fields": []
+    },
+    {
+      "archived": 0, "category": "identity", "favorite": 0, "folders": [],
+      "note": "", "template_type": "identity.default", "title": "Alice", "trashed": 0,
+      "fields": [
+        {"deleted": 0, "label": "First name", "sensitive": 0, "type": "text", "value": "Alice"},
+        {"deleted": 0, "label": "Last name", "sensitive": 0, "type": "text", "value": "Example"},
+        {"deleted": 0, "label": "Email", "sensitive": 0, "type": "email", "value": "alice@example.org"},
+        {"deleted": 0, "label": "Gender", "sensitive": 0, "type": "text", "value": "F"}
+      ]
+    },
+    {
+      "archived": 0, "category": "login", "favorite": 0, "folders": [],
+      "note": "", "template_type": "login.default", "title": "Example Shop", "trashed": 1,
+      "fields": []
+    },
+    {
+      "archived": 0, "category": "login", "favorite": 0, "folders": [],
+      "note": "", "template_type": "login.default", "title": "Shop", "trashed": 0,
+      "fields": [
+        {"deleted": 0, "label": "E-mail", "sensitive": 0, "type": "email", "value": "bob@example.org"},
+        {"deleted": 0, "label": "Password", "sensitive": 1, "type": "password", "value": "Enpass-Invented-2"},
+        {"deleted": 0, "label": "Website", "sensitive": 0, "type": "url", "value": "https://shop.example.org"}
+      ]
+    }
+  ]
+}

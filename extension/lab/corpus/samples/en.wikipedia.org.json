@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:06:51.677Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "en.wikipedia.org",
+  "source_url": "https://en.wikipedia.org/w/index.php?title=Special:UserLogin",
+  "status": "skipped: robots"
+}

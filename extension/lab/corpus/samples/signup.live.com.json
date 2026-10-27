@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-26T21:11:08.869Z",
+  "category": "signup",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Get a new email address",
+        "Next"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "usernameInput",
+          "label": "New email",
+          "maxlength": 120,
+          "name": "New email",
+          "required": false,
+          "role": "email",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "host": "signup.live.com",
+  "iframes": [
+    {
+      "origin": "https://fpt.live.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://iframe.hsprotect.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://signup.live.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

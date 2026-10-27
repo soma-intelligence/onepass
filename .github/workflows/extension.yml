@@ -1,0 +1,77 @@
+name: extension
+
+on:
+  push:
+    paths:
+      - "extension/**"
+      - "core/onepass-bridge/**"
+      - "core/onepass-native-host/**"
+      - ".github/workflows/extension.yml"
+  pull_request:
+    paths:
+      - "extension/**"
+      - "core/onepass-bridge/**"
+      - "core/onepass-native-host/**"
+      - ".github/workflows/extension.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  extension:
+    name: extension (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      # rustup reads core/rust-toolchain.toml (pinned toolchain); the e2e
+      # global setup builds the native host with it.
+      - name: Install the pinned Rust toolchain
+        working-directory: core
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: core
+      - name: Install dependencies
+        run: npm ci
+      # Production dependencies must be clean; blocking.
+      - name: Audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=low
+      # Informative only: a new advisory on a dev tool must not block a merge.
+      - name: Audit (all dependencies)
+        run: npm audit
+        continue-on-error: true
+      - name: Typecheck, unit tests, build
+        run: npm run check
+      - name: SBOM (CycloneDX)
+        run: npm run sbom
+      - name: Keep the SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-extension
+          path: extension/sbom/extension.cdx.json
+          if-no-files-found: error
+      - name: Install Chromium for Playwright
+        run: npx playwright install chromium
+      - name: End-to-end tests
+        run: npm run e2e -- --reporter=list,html
+      - name: Keep the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report
+          path: |
+            extension/playwright-report
+            extension/test-results
+          if-no-files-found: ignore

@@ -1,0 +1,35 @@
+{
+  "captured_at": "2026-10-26T21:10:49.598Z",
+  "category": "signup",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Continue"
+      ],
+      "fields": [
+        {
+          "autocomplete": "tel-national",
+          "hasPattern": false,
+          "id": "phone-or-email",
+          "inputmode": "email",
+          "label": "Phone number or email",
+          "required": false,
+          "role": "tel",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "www.airbnb.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://www.airbnb.com/signup_login",
+  "status": "ok",
+  "webauthnCalls": []
+}

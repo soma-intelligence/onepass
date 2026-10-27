@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:10:09.740Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "grp01.id.rakuten.co.jp",
+  "source_url": "https://grp01.id.rakuten.co.jp/rms/nid/login",
+  "status": "skipped: robots"
+}

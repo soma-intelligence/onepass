@@ -1,0 +1,96 @@
+{
+  "version": {"major": 1, "minor": 0},
+  "exporterRpId": "export.example.com",
+  "exporterDisplayName": "Synthetic Exporter",
+  "timestamp": 1700000000,
+  "accounts": [
+    {
+      "id": "acc-1",
+      "username": "tester@example.com",
+      "email": "tester@example.com",
+      "items": [
+        {
+          "id": "i1",
+          "title": "Example Login",
+          "favorite": true,
+          "creationAt": 1690000000,
+          "modifiedAt": 1700000000,
+          "scope": {"urls": ["https://example.com/login", "https://login.example.com"]},
+          "tags": ["work", "demo"],
+          "credentials": [
+            {
+              "type": "basic-auth",
+              "username": {"fieldType": "string", "value": "alice"},
+              "password": {"fieldType": "concealed-string", "value": "Pw-Example-1"}
+            },
+            {
+              "type": "totp",
+              "secret": "JBSWY3DPEHPK3PXP",
+              "period": 30,
+              "digits": 6,
+              "algorithm": "sha1",
+              "issuer": "Example",
+              "username": "alice"
+            },
+            {
+              "type": "passkey",
+              "credentialId": "AQIDBA",
+              "rpId": "example.com",
+              "username": "alice",
+              "userHandle": "dXNlcjE",
+              "key": "a2V5Ymxv"
+            }
+          ]
+        },
+        {
+          "id": "i2",
+          "title": "Home Wi-Fi",
+          "credentials": [
+            {
+              "type": "wifi",
+              "ssid": {"fieldType": "string", "value": "HomeNet-Test"},
+              "networkSecurityType": {"fieldType": "wifi-network-security-type", "value": "wpa3-personal"},
+              "passphrase": {"fieldType": "concealed-string", "value": "wifi-pass-123"},
+              "hidden": {"fieldType": "boolean", "value": true}
+            }
+          ]
+        },
+        {
+          "id": "i3",
+          "title": "Test Visa",
+          "credentials": [
+            {
+              "type": "credit-card",
+              "number": {"fieldType": "string", "value": "4111111111111111"},
+              "fullName": {"fieldType": "string", "value": "Alice Example"},
+              "cardType": {"fieldType": "string", "value": "Visa"},
+              "verificationNumber": {"fieldType": "concealed-string", "value": "123"},
+              "pin": {"fieldType": "concealed-string", "value": "4321"},
+              "expiryDate": {"fieldType": "year-month", "value": "2030-05"}
+            }
+          ]
+        },
+        {
+          "id": "i4",
+          "title": "Plain note",
+          "credentials": [
+            {"type": "note", "content": {"fieldType": "string", "value": "remember the milk"}}
+          ]
+        },
+        {
+          "id": "i5",
+          "title": "Router and login",
+          "credentials": [
+            {"type": "basic-auth", "username": "admin", "password": "router-pw"},
+            {"type": "wifi", "ssid": "MixedNet-Test", "networkSecurityType": "wpa2-personal", "passphrase": "mixed-pass", "hidden": false}
+          ]
+        },
+        {
+          "id": "i6",
+          "title": "Odd",
+          "credentials": [{"type": "api-key", "key": "abc"}]
+        }
+      ]
+    }
+  ]
+}

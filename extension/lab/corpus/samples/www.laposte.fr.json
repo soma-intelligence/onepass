@@ -1,0 +1,57 @@
+{
+  "captured_at": "2026-10-26T21:12:42.855Z",
+  "category": "address",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "N° de suivi, rechercher un produit ou un service ....",
+        "Accès rapides",
+        "Changer de site : Particulier",
+        "Aide",
+        "Se connecter",
+        "Panier",
+        "Changer de site : Particulier",
+        "Particulier",
+        "Professionnel",
+        "Entreprises et collectivités",
+        "Buralistes",
+        "Accès rapides",
+        "Le courrier",
+        "Le colis",
+        "Le transfert de courrier",
+        "Les services",
+        "Tous nos produits",
+        "Valider",
+        "Restons connectés",
+        "Nos Services",
+        "Nos Produits",
+        "Nos Tarifs",
+        "La Poste vous accompagne"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "cityCode",
+          "label": "Indiquez un code postal ou une ville *",
+          "maxlength": 38,
+          "name": "cityCode",
+          "required": false,
+          "role": "postal_code",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "www.laposte.fr",
+  "iframes": [],
+  "lang": "fr",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://www.laposte.fr/outils/trouver-un-code-postal",
+  "status": "ok",
+  "webauthnCalls": []
+}

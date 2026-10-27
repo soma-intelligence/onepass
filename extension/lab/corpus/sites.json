@@ -1,0 +1,238 @@
+[
+  {
+    "url": "https://github.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://gitlab.com/users/sign_in",
+    "category": "login"
+  },
+  {
+    "url": "https://news.ycombinator.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.linkedin.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.pinterest.com/login/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.ebay.com/signin/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.paypal.com/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://login.live.com/",
+    "category": "login"
+  },
+  {
+    "url": "https://appleid.apple.com/sign-in",
+    "category": "login"
+  },
+  {
+    "url": "https://www.netflix.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://stackoverflow.com/users/login",
+    "category": "login"
+  },
+  {
+    "url": "https://medium.com/m/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.notion.so/login",
+    "category": "login"
+  },
+  {
+    "url": "https://en.wikipedia.org/w/index.php?title=Special:UserLogin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.twitch.tv/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.dropbox.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.saucedemo.com/",
+    "category": "login"
+  },
+  {
+    "url": "https://the-internet.herokuapp.com/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.amazon.fr/ap/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.fnac.com/Account/Login",
+    "category": "login"
+  },
+  {
+    "url": "https://auth.leboncoin.fr/login/",
+    "category": "login"
+  },
+  {
+    "url": "https://login.orange.fr/",
+    "category": "login"
+  },
+  {
+    "url": "https://subscribe.free.fr/login/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.ovh.com/auth/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.amazon.de/ap/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.ebay.de/signin/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.zalando.de/login/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.otto.de/user/login",
+    "category": "login"
+  },
+  {
+    "url": "https://registrierung.web.de/",
+    "category": "login"
+  },
+  {
+    "url": "https://registrierung.gmx.net/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.amazon.es/ap/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://www.zara.com/es/es/logon",
+    "category": "login"
+  },
+  {
+    "url": "https://www.amazon.it/ap/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://areariservata.subito.it/login_form",
+    "category": "login"
+  },
+  {
+    "url": "https://www.amazon.co.jp/ap/signin",
+    "category": "login"
+  },
+  {
+    "url": "https://grp01.id.rakuten.co.jp/rms/nid/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.mercadolivre.com.br/hub/login",
+    "category": "login"
+  },
+  {
+    "url": "https://www.magazineluiza.com.br/login/",
+    "category": "login"
+  },
+  {
+    "url": "https://www.reddit.com/register/",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.etsy.com/register",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.spotify.com/us/signup/",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.airbnb.com/signup_login",
+    "category": "signup"
+  },
+  {
+    "url": "https://account.proton.me/signup",
+    "category": "signup"
+  },
+  {
+    "url": "https://signup.live.com/",
+    "category": "signup"
+  },
+  {
+    "url": "https://discord.com/register",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.tumblr.com/register",
+    "category": "signup"
+  },
+  {
+    "url": "https://www.deezer.com/fr/register",
+    "category": "signup"
+  },
+  {
+    "url": "https://automationexercise.com/login",
+    "category": "signup"
+  },
+  {
+    "url": "https://demo.nopcommerce.com/register",
+    "category": "signup"
+  },
+  {
+    "url": "https://stripe-payments-demo.appspot.com/",
+    "category": "checkout"
+  },
+  {
+    "url": "https://stripe.dev/elements-examples/",
+    "category": "checkout"
+  },
+  {
+    "url": "https://demo.opencart.com/index.php?route=checkout/checkout",
+    "category": "checkout"
+  },
+  {
+    "url": "https://tools.usps.com/zip-code-lookup.htm?byaddress",
+    "category": "address"
+  },
+  {
+    "url": "https://www.royalmail.com/find-a-postcode",
+    "category": "address"
+  },
+  {
+    "url": "https://www.laposte.fr/outils/trouver-un-code-postal",
+    "category": "address"
+  },
+  {
+    "url": "https://www.correos.es/es/es/herramientas/codigos-postales",
+    "category": "address"
+  },
+  {
+    "url": "https://www.nytimes.com/subscription",
+    "category": "identity"
+  },
+  {
+    "url": "https://www.apple.com/shop/account/home",
+    "category": "identity"
+  },
+  {
+    "url": "https://gravatar.com/connect/",
+    "category": "identity"
+  }
+]

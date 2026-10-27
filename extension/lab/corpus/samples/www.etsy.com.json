@@ -1,0 +1,47 @@
+{
+  "captured_at": "2026-10-26T21:10:32.180Z",
+  "category": "signup",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "label": "Search for anything",
+          "name": "search_query",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "www.etsy.com",
+  "iframes": [
+    {
+      "origin": "https://insight.adsrvr.org",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://www.etsy.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

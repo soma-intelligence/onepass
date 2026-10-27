@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-10-26T21:08:01.678Z",
+  "category": "login",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Login"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "account",
+          "label": "Account ID or email address *",
+          "name": "<redacted>",
+          "required": true,
+          "role": "email",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "id": "password",
+          "label": "Password *",
+          "name": "eec0b766",
+          "required": false,
+          "role": "password",
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "Submit"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "lost-account",
+          "label": "Account ID or email address *",
+          "name": "account",
+          "required": true,
+          "role": "email",
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "www.ovh.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://www.ovh.com/auth/",
+  "status": "ok",
+  "webauthnCalls": []
+}

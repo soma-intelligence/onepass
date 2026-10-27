@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:06:27.469Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "www.netflix.com",
+  "source_url": "https://www.netflix.com/login",
+  "status": "skipped: robots"
+}

@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:05:43.923Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "www.pinterest.com",
+  "source_url": "https://www.pinterest.com/login/",
+  "status": "skipped: robots"
+}

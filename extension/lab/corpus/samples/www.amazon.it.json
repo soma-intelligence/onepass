@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:09:53.769Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "www.amazon.it",
+  "source_url": "https://www.amazon.it/ap/signin",
+  "status": "skipped: robots"
+}
