@@ -8,6 +8,7 @@
 mod companion;
 mod convert;
 mod error;
+mod hardening;
 mod session;
 mod types;
 
@@ -27,6 +28,7 @@ pub use companion::*;
 use convert::{sections_to_ffi, type_label};
 pub use error::OnePassError;
 use error::invalid;
+pub use hardening::*;
 pub use session::{Session, SyncStoreHandle};
 pub use types::*;
 
@@ -36,7 +38,7 @@ fn open_store(db_path: &str) -> Result<SyncStore, OnePassError> {
     Ok(SyncStore::open(Path::new(db_path))?)
 }
 
-fn create(
+pub(crate) fn create(
     db_path: &str,
     password: &str,
     kdf: KdfParams,
@@ -80,11 +82,17 @@ pub fn create_account_with_kdf(
     kdf: FfiKdfParams,
 ) -> Result<FfiCreatedAccount, OnePassError> {
     let password = Zeroizing::new(password);
+    create(&db_path, &password, kdf_params(kdf)?)
+}
+
+/// Explicit Argon2id parameters with a fresh salt. The core checks them
+/// against its floor where they are used.
+pub(crate) fn kdf_params(kdf: FfiKdfParams) -> Result<KdfParams, OnePassError> {
     let mut params = KdfParams::new_default()?;
     params.m_kib = kdf.m_kib;
     params.t = kdf.t;
     params.p = kdf.p;
-    create(&db_path, &password, params)
+    Ok(params)
 }
 
 #[uniffi::export]
@@ -94,10 +102,18 @@ pub fn unlock_with_password(
     secret_key: String,
 ) -> Result<FfiUnlocked, OnePassError> {
     let (password, secret_key) = (Zeroizing::new(password), Zeroizing::new(secret_key));
-    let store = open_store(&db_path)?;
-    let secret_key = SecretKey::parse(&secret_key)?;
+    unlock_password(&db_path, &password, &secret_key)
+}
+
+pub(crate) fn unlock_password(
+    db_path: &str,
+    password: &str,
+    secret_key: &str,
+) -> Result<FfiUnlocked, OnePassError> {
+    let store = open_store(db_path)?;
+    let secret_key = SecretKey::parse(secret_key)?;
     let device = store.device_state()?;
-    let (mut repo, auk) = Repository::unlock_exporting_auk(store, &password, &secret_key, device)?;
+    let (mut repo, auk) = Repository::unlock_exporting_auk(store, password, &secret_key, device)?;
     repo.persist_device_state()?;
     Ok(FfiUnlocked {
         session: Session::new(repo)?,
@@ -117,10 +133,18 @@ pub fn verify_password(
     secret_key: String,
 ) -> Result<Vec<u8>, OnePassError> {
     let (password, secret_key) = (Zeroizing::new(password), Zeroizing::new(secret_key));
-    let store = open_store(&db_path)?;
-    let secret_key = SecretKey::parse(&secret_key)?;
+    verify(&db_path, &password, &secret_key)
+}
+
+pub(crate) fn verify(
+    db_path: &str,
+    password: &str,
+    secret_key: &str,
+) -> Result<Vec<u8>, OnePassError> {
+    let store = open_store(db_path)?;
+    let secret_key = SecretKey::parse(secret_key)?;
     let device = store.device_state()?;
-    let (repo, auk) = Repository::unlock_exporting_auk(store, &password, &secret_key, device)?;
+    let (repo, auk) = Repository::unlock_exporting_auk(store, password, &secret_key, device)?;
     drop(repo);
     Ok(auk.as_bytes().to_vec())
 }
