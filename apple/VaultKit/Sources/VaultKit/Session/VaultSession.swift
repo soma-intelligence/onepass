@@ -44,7 +44,14 @@ public final class VaultSession {
     public var vaults: [FfiVault] { allVaults.filter { !hiddenVaultIDs.contains($0.id) } }
 
     @ObservationIgnored public let environment: VaultEnvironment
-    @ObservationIgnored private var session: Session?
+    @ObservationIgnored private var session: Session? {
+        didSet { if session !== oldValue { coreSessionChanged?(session) } }
+    }
+    /// Told each time the core session is installed or dropped (unlock, lock, failure): the Mac
+    /// browser bridge serves the very same session, so a lock here locks the bridge.
+    @ObservationIgnored public var coreSessionChanged: ((Session?) -> Void)?
+    /// Told when the vaults hidden from AutoFill change (the bridge hides them too).
+    @ObservationIgnored public var hiddenVaultsChanged: ((Set<String>) -> Void)?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var autoLock: AutoLock
     @ObservationIgnored private var autoLockTimer: Task<Void, Never>?
@@ -648,6 +655,7 @@ public final class VaultSession {
         if hidden { ids.insert(vaultID) } else { ids.remove(vaultID) }
         settings.hiddenVaultIDs = ids
         hiddenVaultIDs = ids
+        hiddenVaultsChanged?(ids)
         refreshAutofillIdentities()
     }
 
@@ -1049,6 +1057,12 @@ public final class VaultSession {
                 await self.storeChanged()
             }
         }
+    }
+
+    /// The browser bridge wrote to the vault (a login saved from the extension): reload the lists,
+    /// then push, exactly as for a write of the AutoFill extension.
+    public func bridgeWroteVault() async {
+        await storeChanged()
     }
 
     private func storeChanged() async {
