@@ -1,0 +1,156 @@
+{
+  "sourceLanguage" : "fr",
+  "strings" : {
+    "+ %lld autres" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ %lld more"
+          }
+        }
+      }
+    },
+    "Ajoute un favori avec un code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a favorite with a code"
+          }
+        }
+      }
+    },
+    "Ajoute un favori dans OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a favorite in OnePass"
+          }
+        }
+      }
+    },
+    "Codes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codes"
+          }
+        }
+      }
+    },
+    "Déverrouille ton iPhone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock your iPhone"
+          }
+        }
+      }
+    },
+    "Favoris" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorites"
+          }
+        }
+      }
+    },
+    "Générer un mot de passe" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generate Password"
+          }
+        }
+      }
+    },
+    "Les codes à usage unique de tes favoris." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One-time codes from your favorites."
+          }
+        }
+      }
+    },
+    "Ouvre OnePass pour actualiser" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open OnePass to refresh"
+          }
+        }
+      }
+    },
+    "Ouvre la recherche de OnePass." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens OnePass search."
+          }
+        }
+      }
+    },
+    "Ouvre le générateur de mots de passe de OnePass." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens the OnePass password generator."
+          }
+        }
+      }
+    },
+    "Ouvre un de tes favoris dans OnePass." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens one of your favorites in OnePass."
+          }
+        }
+      }
+    },
+    "Rechercher dans OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search OnePass"
+          }
+        }
+      }
+    },
+    "Verrouille OnePass sur cet appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Locks OnePass on this device."
+          }
+        }
+      }
+    },
+    "Verrouiller OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lock OnePass"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
