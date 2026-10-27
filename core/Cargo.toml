@@ -28,3 +28,8 @@ panic = "abort"
 # about 35 s in debug tests instead of about 15 s.
 [profile.dev.package.sha2]
 opt-level = 3
+
+# SLH-DSA itself (both slh-dsa versions): its hypertree loops dominate the
+# identity key tests in debug builds.
+[profile.dev.package.slh-dsa]
+opt-level = 3
