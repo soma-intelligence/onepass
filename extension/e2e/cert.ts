@@ -36,14 +36,14 @@ function hasOpenssl(): boolean {
   }
 }
 
-/** Generates (into `dir`) a fresh key and self-signed certificate for `CERT_HOSTS`. */
-export function generateCert(dir: string): TestCert {
+/** Generates (into `dir`) a fresh key and self-signed certificate for `hosts` (default `CERT_HOSTS`). */
+export function generateCert(dir: string, hosts: readonly string[] = CERT_HOSTS): TestCert {
   if (!hasOpenssl()) throw new Error("e2e: openssl is required to generate the test certificate");
   mkdirSync(dir, { recursive: true });
   const conf = join(dir, "cert.cnf");
   const keyPath = join(dir, "key.pem");
   const certPath = join(dir, "cert.pem");
-  const san = CERT_HOSTS.map((h, i) => `DNS.${i + 1} = ${h}`).join("\n");
+  const san = hosts.map((h, i) => `DNS.${i + 1} = ${h}`).join("\n");
   writeFileSync(
     conf,
     [

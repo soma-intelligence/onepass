@@ -1,0 +1,865 @@
+{
+  "buttons": {
+    "next": {
+      "de": [
+        "Fortfahren",
+        "Weiter"
+      ],
+      "en": [
+        "Continue",
+        "Next"
+      ],
+      "es": [
+        "CONTINUAR",
+        "Siguiente"
+      ],
+      "fr": [
+        "Continuer",
+        "Suivant",
+        "Étape suivante"
+      ]
+    },
+    "passkey": {
+      "de": [
+        "Mit Passkey anmelden",
+        "Passkey verwenden"
+      ],
+      "en": [
+        "Continue with passkey",
+        "Sign in with a passkey",
+        "Use passkey"
+      ],
+      "es": [
+        "Iniciar sesión con una llave de acceso",
+        "Usar llave de acceso"
+      ],
+      "fr": [
+        "Se connecter avec une clé d'accès",
+        "Utiliser une clé d'accès"
+      ]
+    },
+    "pay": {
+      "de": [
+        "Bezahlen",
+        "Jetzt bezahlen",
+        "Zahlungspflichtig bestellen"
+      ],
+      "en": [
+        "Pay",
+        "Pay now",
+        "Pay €25.96",
+        "Place order"
+      ],
+      "es": [
+        "Pagar",
+        "Pagar ahora",
+        "Realizar pedido"
+      ],
+      "fr": [
+        "Payer",
+        "Payer maintenant",
+        "Valider le paiement"
+      ]
+    },
+    "save": {
+      "de": [
+        "Speichern",
+        "Änderungen speichern"
+      ],
+      "en": [
+        "Save",
+        "Save changes",
+        "Update"
+      ],
+      "es": [
+        "Guardar",
+        "Guardar cambios",
+        "GUARDAR CONFIGURACIÓN"
+      ],
+      "fr": [
+        "Enregistrer",
+        "Sauvegarder",
+        "Valider"
+      ]
+    },
+    "signin": {
+      "de": [
+        "Anmelden",
+        "Einloggen"
+      ],
+      "en": [
+        "Already have an account? Log in",
+        "Log in",
+        "Login",
+        "Sign in"
+      ],
+      "es": [
+        "Acceder",
+        "Entrar",
+        "Iniciar sesión"
+      ],
+      "fr": [
+        "Connexion",
+        "S'identifier",
+        "Se connecter"
+      ]
+    },
+    "signup": {
+      "de": [
+        "Konto erstellen",
+        "Registrieren"
+      ],
+      "en": [
+        "Create Account",
+        "Register",
+        "Sign up",
+        "Signup"
+      ],
+      "es": [
+        "Crear cuenta",
+        "Registrarse"
+      ],
+      "fr": [
+        "Créer un compte",
+        "Inscription",
+        "S'inscrire"
+      ]
+    }
+  },
+  "langs": [
+    [
+      "en",
+      0.7931034482758621
+    ],
+    [
+      "fr",
+      0.10344827586206896
+    ],
+    [
+      "de",
+      0.034482758620689655
+    ],
+    [
+      "es",
+      0.034482758620689655
+    ],
+    [
+      "und",
+      0.034482758620689655
+    ]
+  ],
+  "roles": {
+    "address_line1": {
+      "autocompleteRate": 0.5384615384615384,
+      "labels": {
+        "de": [
+          "Adresse",
+          "Anschrift",
+          "Straße und Hausnummer"
+        ],
+        "en": [
+          "*Street Address",
+          "Address",
+          "Address line 1",
+          "Street address"
+        ],
+        "es": [
+          "Calle y número",
+          "Dirección",
+          "Dirección línea 1",
+          "Escribe aquí una dirección"
+        ],
+        "fr": [
+          "Adresse",
+          "Adresse postale",
+          "Numéro et nom de rue"
+        ]
+      },
+      "tokens": [
+        "addr1",
+        "address",
+        "address1",
+        "address_line1",
+        "adresse",
+        "street",
+        "street-address",
+        "taddress"
+      ]
+    },
+    "address_line2": {
+      "autocompleteRate": 0.5,
+      "labels": {
+        "de": [
+          "Adresszeile 2",
+          "Adresszusatz"
+        ],
+        "en": [
+          "Address line 2",
+          "Apartment, suite, etc.",
+          "Apt/Suite/Other"
+        ],
+        "es": [
+          "Dirección línea 2",
+          "Piso, puerta, escalera"
+        ],
+        "fr": [
+          "Appartement, bâtiment",
+          "Complément d'adresse"
+        ]
+      },
+      "tokens": [
+        "addr2",
+        "address2",
+        "address_line2",
+        "apartment",
+        "complement",
+        "suite",
+        "tapt"
+      ]
+    },
+    "birth_date": {
+      "autocompleteRate": 0.5,
+      "labels": {
+        "de": [
+          "Geburtsdatum",
+          "Geburtstag"
+        ],
+        "en": [
+          "Birthday",
+          "Date of birth"
+        ],
+        "es": [
+          "Cumpleaños",
+          "Fecha de nacimiento"
+        ],
+        "fr": [
+          "Date de naissance",
+          "Né(e) le"
+        ]
+      },
+      "tokens": [
+        "bday",
+        "birthdate",
+        "birthday",
+        "date_of_birth",
+        "dob",
+        "naissance"
+      ]
+    },
+    "cc_csc": {
+      "autocompleteRate": 0.6,
+      "labels": {
+        "de": [
+          "CVC",
+          "Prüfziffer",
+          "Sicherheitscode"
+        ],
+        "en": [
+          "CVC",
+          "CVV",
+          "Security code"
+        ],
+        "es": [
+          "CVC",
+          "CVV",
+          "Código de seguridad"
+        ],
+        "fr": [
+          "Code de sécurité",
+          "Cryptogramme visuel",
+          "CVV"
+        ]
+      },
+      "tokens": [
+        "cc-csc",
+        "csc",
+        "cvc",
+        "cvv",
+        "cvv2",
+        "securitycode"
+      ]
+    },
+    "cc_exp": {
+      "autocompleteRate": 0.6,
+      "labels": {
+        "de": [
+          "Ablaufdatum",
+          "Gültig bis",
+          "MM/JJ"
+        ],
+        "en": [
+          "Expiration date",
+          "Expiry date",
+          "MM/YY"
+        ],
+        "es": [
+          "Caducidad",
+          "Fecha de vencimiento",
+          "MM/AA"
+        ],
+        "fr": [
+          "Date d'expiration",
+          "Expire le",
+          "MM/AA"
+        ]
+      },
+      "tokens": [
+        "card_expiry",
+        "cc-exp",
+        "exp",
+        "expdate",
+        "expiry"
+      ]
+    },
+    "cc_exp_month": {
+      "autocompleteRate": 0.6,
+      "labels": {
+        "de": [
+          "Ablaufmonat",
+          "Monat"
+        ],
+        "en": [
+          "Expiration month",
+          "Month"
+        ],
+        "es": [
+          "Mes",
+          "Mes de vencimiento"
+        ],
+        "fr": [
+          "Mois",
+          "Mois d'expiration"
+        ]
+      },
+      "tokens": [
+        "card_month",
+        "cc-exp-month",
+        "exp-month",
+        "expmonth",
+        "month"
+      ]
+    },
+    "cc_exp_year": {
+      "autocompleteRate": 0.6,
+      "labels": {
+        "de": [
+          "Ablaufjahr",
+          "Jahr"
+        ],
+        "en": [
+          "Expiration year",
+          "Year"
+        ],
+        "es": [
+          "Año",
+          "Año de vencimiento"
+        ],
+        "fr": [
+          "Année",
+          "Année d'expiration"
+        ]
+      },
+      "tokens": [
+        "card_year",
+        "cc-exp-year",
+        "exp-year",
+        "expyear",
+        "year"
+      ]
+    },
+    "cc_name": {
+      "autocompleteRate": 0.6,
+      "labels": {
+        "de": [
+          "Karteninhaber",
+          "Name auf der Karte"
+        ],
+        "en": [
+          "Cardholder name",
+          "Name on card"
+        ],
+        "es": [
+          "Nombre en la tarjeta",
+          "Titular de la tarjeta"
+        ],
+        "fr": [
+          "Nom sur la carte",
+          "Titulaire de la carte"
+        ]
+      },
+      "tokens": [
+        "card_name",
+        "cardholder",
+        "cc-name",
+        "ccname",
+        "holder",
+        "nameoncard"
+      ]
+    },
+    "cc_number": {
+      "autocompleteRate": 0.65,
+      "labels": {
+        "de": [
+          "Kartennummer",
+          "Kreditkartennummer"
+        ],
+        "en": [
+          "Card number",
+          "Credit card number"
+        ],
+        "es": [
+          "Número de la tarjeta",
+          "Número de tarjeta"
+        ],
+        "fr": [
+          "Numéro de carte",
+          "Numéro de carte bancaire"
+        ]
+      },
+      "tokens": [
+        "card_number",
+        "cardnumber",
+        "cc-number",
+        "ccnum",
+        "ccnumber",
+        "pan"
+      ]
+    },
+    "city": {
+      "autocompleteRate": 0.5833333333333334,
+      "labels": {
+        "de": [
+          "Ort",
+          "Stadt"
+        ],
+        "en": [
+          "City",
+          "Town"
+        ],
+        "es": [
+          "Ciudad",
+          "Localidad"
+        ],
+        "fr": [
+          "Commune",
+          "Ville"
+        ]
+      },
+      "tokens": [
+        "city",
+        "locality",
+        "ort",
+        "stadt",
+        "tcity",
+        "town",
+        "ville"
+      ]
+    },
+    "country": {
+      "autocompleteRate": 0.6363636363636364,
+      "labels": {
+        "de": [
+          "Land",
+          "Land oder Region"
+        ],
+        "en": [
+          "Country",
+          "Country Australia Austria Belgium Brazil Canada China Denmar",
+          "Country or region"
+        ],
+        "es": [
+          "País",
+          "País o región"
+        ],
+        "fr": [
+          "Pays",
+          "Pays ou région"
+        ]
+      },
+      "tokens": [
+        "country",
+        "country_code",
+        "countryname",
+        "land",
+        "pays"
+      ]
+    },
+    "email": {
+      "autocompleteRate": 0.5526315789473685,
+      "labels": {
+        "de": [
+          "E-Mail-Adresse"
+        ],
+        "en": [
+          "Account ID or email address *",
+          "E-mail address",
+          "Email",
+          "Email Address",
+          "Enter your email address",
+          "New email",
+          "Your email address"
+        ],
+        "es": [
+          "Correo electrónico",
+          "Dirección de correo electrónico",
+          "Email"
+        ],
+        "fr": [
+          "Adresse e-mail",
+          "Adresse email",
+          "Courriel",
+          "E-mail",
+          "Email"
+        ]
+      },
+      "tokens": [
+        "account",
+        "courriel",
+        "e-mail",
+        "email",
+        "emailaddress",
+        "mail",
+        "new email",
+        "susbscribe_email",
+        "user_email",
+        "usernameinput",
+        "usernameoremail"
+      ]
+    },
+    "family_name": {
+      "autocompleteRate": 0.7,
+      "labels": {
+        "de": [
+          "Familienname",
+          "Nachname"
+        ],
+        "en": [
+          "Family name",
+          "Last name",
+          "Surname"
+        ],
+        "es": [
+          "Apellido",
+          "Apellidos"
+        ],
+        "fr": [
+          "Nom",
+          "Nom de famille"
+        ]
+      },
+      "tokens": [
+        "family-name",
+        "last_name",
+        "lastname",
+        "lname",
+        "nom",
+        "surname"
+      ]
+    },
+    "given_name": {
+      "autocompleteRate": 0.7,
+      "labels": {
+        "de": [
+          "Vorname"
+        ],
+        "en": [
+          "First name",
+          "Given name"
+        ],
+        "es": [
+          "Nombre",
+          "Nombre de pila"
+        ],
+        "fr": [
+          "Prénom"
+        ]
+      },
+      "tokens": [
+        "first_name",
+        "firstname",
+        "fname",
+        "given-name",
+        "givenname",
+        "prenom"
+      ]
+    },
+    "new_password": {
+      "autocompleteRate": 0.7692307692307693,
+      "labels": {
+        "de": [
+          "Neues Passwort",
+          "Passwort bestätigen",
+          "Passwort wiederholen"
+        ],
+        "en": [
+          "Choose a password",
+          "Confirm password",
+          "Create a password",
+          "New password",
+          "Password"
+        ],
+        "es": [
+          "Confirmar contraseña",
+          "Crea una contraseña",
+          "Nueva contraseña"
+        ],
+        "fr": [
+          "Choisissez un mot de passe",
+          "Confirmer le mot de passe",
+          "Nouveau mot de passe"
+        ]
+      },
+      "tokens": [
+        "confirm_password",
+        "new_password",
+        "newpassword",
+        "password",
+        "password2",
+        "password_confirmation",
+        "uid_17"
+      ]
+    },
+    "organization": {
+      "autocompleteRate": 0.36363636363636365,
+      "labels": {
+        "de": [
+          "Firma",
+          "Organisation",
+          "Unternehmen"
+        ],
+        "en": [
+          "Company",
+          "Company name",
+          "Organization"
+        ],
+        "es": [
+          "Compañía",
+          "Empresa",
+          "Organización"
+        ],
+        "fr": [
+          "Entreprise",
+          "Nom de l'entreprise",
+          "Société"
+        ]
+      },
+      "tokens": [
+        "company",
+        "employer",
+        "firma",
+        "organisation",
+        "organization",
+        "societe",
+        "tcompany"
+      ]
+    },
+    "otp": {
+      "autocompleteRate": 0.5,
+      "labels": {
+        "de": [
+          "Bestätigungscode",
+          "Einmalcode",
+          "Verifizierungscode"
+        ],
+        "en": [
+          "Enter the code",
+          "One-time code",
+          "Security code",
+          "Verification code"
+        ],
+        "es": [
+          "Código de seguridad",
+          "Código de un solo uso",
+          "Código de verificación"
+        ],
+        "fr": [
+          "Code de sécurité",
+          "Code de vérification",
+          "Code reçu par sms",
+          "Code à usage unique"
+        ]
+      },
+      "tokens": [
+        "code",
+        "one_time_code",
+        "otp",
+        "sms_code",
+        "token",
+        "totp",
+        "verification_code"
+      ]
+    },
+    "password": {
+      "autocompleteRate": 0.5882352941176471,
+      "labels": {
+        "de": [
+          "Kennwort",
+          "Passwort"
+        ],
+        "en": [
+          "Password",
+          "Password *",
+          "Your password"
+        ],
+        "es": [
+          "Contraseña",
+          "Tu contraseña"
+        ],
+        "fr": [
+          "Mot de passe",
+          "Votre mot de passe"
+        ]
+      },
+      "tokens": [
+        "current_password",
+        "eec0b766",
+        "motdepasse",
+        "pass",
+        "pass_b",
+        "passwd",
+        "password",
+        "pwd"
+      ]
+    },
+    "postal_code": {
+      "autocompleteRate": 0.5666666666666667,
+      "labels": {
+        "de": [
+          "Plz",
+          "Postleitzahl"
+        ],
+        "en": [
+          "Postal code",
+          "Postcode",
+          "Search the Postal Store: Keyword or SKU",
+          "ZIP",
+          "Zip code",
+          "ZIP Code™"
+        ],
+        "es": [
+          "Código postal"
+        ],
+        "fr": [
+          "Code postal",
+          "Indiquez un code postal ou une ville *"
+        ]
+      },
+      "tokens": [
+        "citycode",
+        "codepostal",
+        "global-header--search-track-store",
+        "plz",
+        "postal",
+        "postal_code",
+        "postalcode",
+        "postcode",
+        "q",
+        "tzip-byaddress",
+        "zip",
+        "zipcode"
+      ]
+    },
+    "tel": {
+      "autocompleteRate": 0.6818181818181818,
+      "labels": {
+        "de": [
+          "Handynummer",
+          "Telefon",
+          "Telefonnummer"
+        ],
+        "en": [
+          "Mobile phone",
+          "Phone",
+          "Phone number",
+          "Phone number or email"
+        ],
+        "es": [
+          "Móvil",
+          "Número de teléfono",
+          "Teléfono"
+        ],
+        "fr": [
+          "Numéro de téléphone",
+          "Téléphone",
+          "Téléphone mobile"
+        ]
+      },
+      "tokens": [
+        "mobile",
+        "msisdn",
+        "phone",
+        "phone-or-email",
+        "phonenumber",
+        "tel",
+        "telephone"
+      ]
+    },
+    "username": {
+      "autocompleteRate": 0.6666666666666666,
+      "labels": {
+        "de": [
+          "Anmeldename",
+          "Benutzerkennung",
+          "Benutzername",
+          "Nutzername"
+        ],
+        "en": [
+          "Display Name",
+          "Email",
+          "Email address",
+          "Enter your email, phone, or Skype.",
+          "Login",
+          "User ID",
+          "User name",
+          "Username",
+          "Username or email address"
+        ],
+        "es": [
+          "Identificador",
+          "Nombre de usuario",
+          "Usuario"
+        ],
+        "fr": [
+          "Identifiant",
+          "Identifiant de connexion",
+          "Nom d'utilisateur",
+          "Pseudo"
+        ]
+      },
+      "tokens": [
+        ":r4:",
+        "email",
+        "global_name",
+        "identifiant",
+        "login",
+        "login_b",
+        "login_field",
+        "loginfmt",
+        "susi_email",
+        "uid_14",
+        "uid_15",
+        "uid_16",
+        "uname",
+        "user",
+        "user-name",
+        "user_name",
+        "userid",
+        "username"
+      ]
+    }
+  },
+  "samples": 29,
+  "structure": {
+    "identifierFirst": 0.2948717948717949,
+    "iframe": 0.3794871794871795,
+    "shadow": 0.03333333333333333,
+    "splitOtp": 0.02564102564102564,
+    "sso": {
+      "apple": 0.2692307692307692,
+      "google": 0.21794871794871795,
+      "microsoft": 0.07692307692307693
+    },
+    "webauthn": 0.08974358974358974
+  },
+  "version": 1
+}

@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:07:39.593Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "auth.leboncoin.fr",
+  "source_url": "https://auth.leboncoin.fr/login/",
+  "status": "skipped: robots"
+}

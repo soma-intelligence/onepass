@@ -1,0 +1,14 @@
+{
+  "captured_at": "2026-10-26T21:12:20.671Z",
+  "category": "checkout",
+  "extractor": 1,
+  "forms": [],
+  "host": "demo.opencart.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://demo.opencart.com/index.php?route=checkout/checkout",
+  "status": "ok",
+  "webauthnCalls": []
+}

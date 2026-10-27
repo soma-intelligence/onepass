@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:07:34.173Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "www.fnac.com",
+  "source_url": "https://www.fnac.com/Account/Login",
+  "status": "skipped: robots"
+}

@@ -1,0 +1,73 @@
+{
+  "captured_at": "2026-10-26T21:11:19.290Z",
+  "category": "signup",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Create Account",
+        "Already have an account? Log in"
+      ],
+      "fields": [
+        {
+          "autocomplete": "username",
+          "hasPattern": false,
+          "id": "uid_14",
+          "label": "Email",
+          "name": "email",
+          "required": true,
+          "role": "username",
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "id": "uid_15",
+          "label": "Display Name",
+          "maxlength": 32,
+          "name": "global_name",
+          "required": false,
+          "role": "username",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "id": "uid_16",
+          "label": "Username",
+          "name": "username",
+          "required": true,
+          "role": "username",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "new-password",
+          "hasPattern": false,
+          "id": "uid_17",
+          "label": "Password",
+          "name": "password",
+          "required": true,
+          "role": "new_password",
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "host": "discord.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://discord.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

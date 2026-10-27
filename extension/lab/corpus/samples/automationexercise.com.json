@@ -1,0 +1,100 @@
+{
+  "captured_at": "2026-10-26T21:11:47.623Z",
+  "category": "signup",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Login"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "label": "Email Address",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "label": "Password",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "Signup"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "label": "Name",
+          "name": "name",
+          "required": true,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "label": "Email Address",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "susbscribe_email",
+          "label": "Your email address",
+          "required": true,
+          "role": "email",
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "host": "automationexercise.com",
+  "iframes": [
+    {
+      "origin": "https://googleads.g.doubleclick.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://googleads.g.doubleclick.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://automationexercise.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

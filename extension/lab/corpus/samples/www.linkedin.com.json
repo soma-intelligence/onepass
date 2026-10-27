@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:05:38.406Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "www.linkedin.com",
+  "source_url": "https://www.linkedin.com/login",
+  "status": "skipped: robots"
+}

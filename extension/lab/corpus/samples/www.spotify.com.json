@@ -1,0 +1,85 @@
+{
+  "captured_at": "2026-10-26T21:10:40.899Z",
+  "category": "signup",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Next"
+      ],
+      "fields": [
+        {
+          "autocomplete": "username",
+          "hasPattern": false,
+          "id": "username",
+          "label": "Email address",
+          "name": "username",
+          "required": true,
+          "role": "username",
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "Next",
+        "Back Button",
+        "Filter Icon",
+        "Clear",
+        "Apply",
+        "Cancel",
+        "Confirm My Choices"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "label": "Cookie list search",
+          "name": "vendor-search-handler",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        },
+        {
+          "hasPattern": false,
+          "id": "<redacted>",
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "www.spotify.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://tr.snapchat.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source_url": "https://www.spotify.com/us/signup/",
+  "status": "ok",
+  "webauthnCalls": []
+}

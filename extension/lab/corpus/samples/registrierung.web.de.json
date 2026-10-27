@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:09:32.284Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "registrierung.web.de",
+  "source_url": "https://registrierung.web.de/",
+  "status": "skipped: robots"
+}
