@@ -3,7 +3,7 @@
 // fictional fixture replies, then photographs every state in light and dark
 // at the real popup and frame sizes.
 //
-//   npm run build:chromium && node scripts/ui-shots.mjs <out-dir> [--only name,name]
+//   npm run build:chromium && node scripts/ui-shots.mjs <out-dir> [--only name,name] [--lang fr|en]
 //
 // Output: <out-dir>/site/ (the harness pages, also usable with any browser
 // or page inspector) and <out-dir>/<state>-<light|dark>.png. <out-dir> must be
@@ -22,6 +22,10 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const args = process.argv.slice(2);
 const onlyIdx = args.indexOf("--only");
 const only = onlyIdx === -1 ? null : new Set(args.splice(onlyIdx, 2)[1].split(","));
+const langIdx = args.indexOf("--lang");
+const lang = langIdx === -1 ? "fr" : args.splice(langIdx, 2)[1];
+/** Text of the harness steps in the shot language. */
+const L = (fr, en) => (lang === "en" ? en : fr);
 const out = checkOutDir(args[0] ?? join(root, "test-results", "ui-shots"), root);
 if (out === null) {
   console.error("the output directory must be under extension/ or the OS temp dir");
@@ -69,9 +73,9 @@ const VAULTS = [
   { id: "v2", name: "Atlas (travail)" },
 ];
 const STEPS_RUNNING = [
-  { label: "Identifiant", detail: "alex@atlas.dev", state: "done" },
-  { label: "Mot de passe", state: "active" },
-  { label: "Code à usage unique", state: "pending" },
+  { label: L("Identifiant rempli", "Username filled"), detail: "alex@atlas.dev", state: "done" },
+  { label: L("Mot de passe rempli", "Password filled"), state: "active" },
+  { label: L("Code à usage unique rempli", "One-time code filled"), state: "pending" },
 ];
 
 // Each state: page, its stub replies (by message type) and Playwright steps.
@@ -82,7 +86,7 @@ const STATES = {
     replies: {},
     steps: async (p) => {
       await p.locator("button.row").first().click();
-      await p.getByRole("button", { name: "Afficher" }).click();
+      await p.getByRole("button", { name: L("Afficher", "Show") }).click();
       await p.getByText("pw-Atlas-2026").waitFor();
     },
   },
@@ -90,16 +94,16 @@ const STATES = {
     page: "popup",
     replies: { popup_search: { ok: { items: [] } } },
     steps: async (p) => {
-      await p.getByPlaceholder("Rechercher dans OnePass").fill("zzz");
-      await p.getByText("Aucun résultat").waitFor();
+      await p.getByPlaceholder(L("Rechercher dans OnePass", "Search OnePass")).fill("zzz");
+      await p.getByText(L("Aucun résultat", "No results")).waitFor();
     },
   },
   "popup-generator": {
     page: "popup",
     replies: {},
     steps: async (p) => {
-      await p.getByRole("button", { name: "Générateur de mot de passe" }).click();
-      await p.getByRole("button", { name: "Historique du générateur" }).click();
+      await p.getByRole("button", { name: L("Générateur de mot de passe", "Password generator") }).click();
+      await p.getByRole("button", { name: L("Historique du générateur", "Generator history") }).click();
       await p.getByText("old-Pass-1").waitFor();
     },
   },
@@ -108,8 +112,8 @@ const STATES = {
     replies: {},
     steps: async (p) => {
       await p.locator("button.row").first().click();
-      await p.getByRole("button", { name: "Remplir" }).click();
-      await p.getByText("Rempli sur atlas-cloud.test").waitFor();
+      await p.getByRole("button", { name: L("Remplir", "Fill") }).click();
+      await p.getByText(L("Rempli sur atlas-cloud.test", "Filled on atlas-cloud.test")).waitFor();
     },
   },
   "popup-no-https": { page: "popup", replies: { popup_suggestions: { ok: { domain: null, items: [] } } } },
@@ -118,7 +122,7 @@ const STATES = {
     page: "popup",
     replies: { popup_status: { err: "unpaired" } },
     steps: async (p) => {
-      await p.getByRole("button", { name: "Appairer avec OnePass" }).click();
+      await p.getByRole("button", { name: L("Appairer avec OnePass", "Pair with OnePass") }).click();
       await p.locator(".sas").waitFor();
     },
   },
@@ -167,9 +171,9 @@ const STATES = {
             status: "handoff",
             reason: "captcha",
             steps: [
-              { label: "Identifiant", detail: "alex@atlas.dev", state: "done" },
-              { label: "Mot de passe", state: "stopped" },
-              { label: "Code à usage unique", state: "pending" },
+              { label: L("Identifiant rempli", "Username filled"), detail: "alex@atlas.dev", state: "done" },
+              { label: L("Mot de passe rempli", "Password filled"), state: "stopped" },
+              { label: L("Code à usage unique rempli", "One-time code filled"), state: "pending" },
             ],
           },
         },
@@ -194,7 +198,7 @@ const STATES = {
     replies: {},
     steps: async (p) => {
       await p.waitForTimeout(350);
-      await p.getByRole("button", { name: "Options" }).click();
+      await p.getByRole("button", { name: L("Options", "Options") }).click();
     },
   },
   "save-update": {
@@ -219,9 +223,9 @@ const STATES = {
     replies: {},
     steps: async (p) => {
       await p.waitForTimeout(350);
-      await p.getByRole("button", { name: "Modifier" }).click();
+      await p.getByRole("button", { name: L("Modifier", "Edit") }).click();
       await p.waitForTimeout(350);
-      await p.getByRole("button", { name: "Afficher" }).click();
+      await p.getByRole("button", { name: L("Afficher", "Show") }).click();
       await p.getByText("pw-Atlas-2026").waitFor();
     },
   },
@@ -247,8 +251,8 @@ const STATES = {
     replies: {},
     steps: async (p) => {
       await p.waitForTimeout(350);
-      await p.getByRole("button", { name: "Enregistrer", exact: true }).click();
-      await p.getByText(/enregistré$/).waitFor();
+      await p.getByRole("button", { name: L("Enregistrer", "Save"), exact: true }).click();
+      await p.getByText(L(/enregistré$/, /saved$/)).waitFor();
     },
   },
 };
@@ -280,7 +284,7 @@ const DEFAULTS = {
         { itemId: "it_01", title: "Atlas Cloud", subtitle: "alex@atlas.dev", iconLetter: "A", iconColor: "#14532D" },
         {
           itemId: "it_03",
-          title: "Se connecter avec Google",
+          title: L("Se connecter avec Google", "Sign in with Google"),
           subtitle: "alex.perso@example.com",
           iconLetter: "G",
           iconColor: "#1E3A8A",
@@ -322,7 +326,10 @@ const stub = (replies) => `"use strict";
 // Harness stub: a fake extension runtime with fixture replies.
 (() => {
   const replies = ${JSON.stringify({ ...DEFAULTS, ...replies })};
-  globalThis.chrome = { runtime: { id: "harness", sendMessage: async (m) => structuredClone(replies[m.type] ?? { ok: {} }) } };
+  globalThis.chrome = {
+    runtime: { id: "harness", sendMessage: async (m) => structuredClone(replies[m.type] ?? { ok: {} }) },
+    i18n: { getUILanguage: () => ${JSON.stringify(lang === "en" ? "en-US" : "fr-FR")} },
+  };
   history.replaceState(null, "", "#${TOKEN}");
 })();
 `;
@@ -332,7 +339,7 @@ for (const [name, s] of Object.entries(STATES)) {
   writeFileSync(
     join(site, `${name}.html`),
     `<!doctype html>
-<html lang="fr">
+<html lang="${lang}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -376,7 +383,7 @@ try {
       if (s.steps) await s.steps(page);
       await page.mouse.move(0, 0);
       await page.waitForTimeout(120);
-      await page.screenshot({ path: join(out, `${name}-${scheme}.png`) });
+      await page.screenshot({ path: join(out, `${name}-${scheme}${lang === "fr" ? "" : `-${lang}`}.png`) });
       await page.close();
     }
     console.log(`shot ${name}`);

@@ -138,6 +138,14 @@ public actor IdentityStoreSync {
         await chain?.value
     }
 
+    /// Drops the pending debounced refresh, if any (session locked: it could only fail). Queued
+    /// store operations still run.
+    public func dropPending() {
+        revision &+= 1
+        pending?.cancel()
+        pending = nil
+    }
+
     /// Tests: waits until the pending refresh (if any) and every queued store operation are done.
     func waitForIdle() async {
         await pending?.value

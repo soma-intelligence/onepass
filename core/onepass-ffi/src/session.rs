@@ -91,8 +91,11 @@ impl Session {
         self.with(|repo| {
             let vault = find_vault(repo, vault_id)?;
             let mut item = find_item(repo, &vault, item_id)?;
+            let before = item.clone();
             change(&mut item);
-            item.updated_at = OffsetDateTime::now_utc();
+            let now = OffsetDateTime::now_utc();
+            model::events::record_edit(Some(&before), &mut item, now);
+            item.updated_at = now;
             repo.save_item(&vault, item)?;
             Ok(())
         })
@@ -190,8 +193,10 @@ impl Session {
                 }
             }
             let kept = Kept::new(stored.as_ref(), false);
-            let core = item_to_core(&item, &kept, OffsetDateTime::now_utc())?;
-            let core = crate::validate_for_save(core)?;
+            let now = OffsetDateTime::now_utc();
+            let core = item_to_core(&item, &kept, now)?;
+            let mut core = crate::validate_for_save(core)?;
+            model::events::record_edit(stored.as_ref(), &mut core, now);
             repo.save_item(&vault, core.clone())?;
             Ok(item_to_ffi(&core))
         })

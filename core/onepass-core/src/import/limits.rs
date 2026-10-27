@@ -41,6 +41,18 @@ fn check_input(bytes: &[u8]) -> Result<()> {
 /// must be strict UTF-8. Header names are trimmed and lower-cased; rows
 /// may have any length (`flexible`). Caps: cell size and row count.
 pub(crate) fn csv_records(bytes: &[u8]) -> Result<(Vec<String>, Vec<Vec<String>>)> {
+    let mut rows = csv_rows(bytes)?.into_iter();
+    let header = match rows.next() {
+        None => return Ok((Vec::new(), Vec::new())),
+        Some(first) => first.iter().map(|h| h.trim().to_lowercase()).collect(),
+    };
+    Ok((header, rows.collect()))
+}
+
+/// Every record of a header-less CSV file (Keeper), cells as written.
+/// Same rules and caps as [`csv_records`], whose header is the first
+/// record here (so one more record is allowed).
+pub(crate) fn csv_rows(bytes: &[u8]) -> Result<Vec<Vec<String>>> {
     const BAD: Error = Error::InvalidFormat("csv syntax");
     check_input(bytes)?;
     let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
@@ -49,28 +61,18 @@ pub(crate) fn csv_records(bytes: &[u8]) -> Result<(Vec<String>, Vec<Vec<String>>
         .has_headers(false)
         .flexible(true)
         .from_reader(text.as_bytes());
-    let mut records = reader.records();
-    let cells = |record: &csv::StringRecord| -> Result<Vec<String>> {
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    for record in reader.records() {
+        if rows.len() > MAX_RECORDS {
+            return Err(Error::InvalidFormat("too many csv rows"));
+        }
+        let record = record.map_err(|_| BAD)?;
         if record.iter().any(|c| c.len() > CSV_MAX_CELL) {
             return Err(Error::InvalidFormat("csv cell too large"));
         }
-        Ok(record.iter().map(str::to_owned).collect())
-    };
-    let header = match records.next() {
-        None => return Ok((Vec::new(), Vec::new())),
-        Some(record) => cells(&record.map_err(|_| BAD)?)?
-            .iter()
-            .map(|h| h.trim().to_lowercase())
-            .collect(),
-    };
-    let mut rows = Vec::new();
-    for record in records {
-        if rows.len() >= MAX_RECORDS {
-            return Err(Error::InvalidFormat("too many csv rows"));
-        }
-        rows.push(cells(&record.map_err(|_| BAD)?)?);
+        rows.push(record.iter().map(str::to_owned).collect());
     }
-    Ok((header, rows))
+    Ok(rows)
 }
 
 /// Name and content of every file entry of a zip, in archive order.

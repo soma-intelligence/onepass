@@ -72,7 +72,7 @@ La feature `vectors` ajoute des aides KEM déterministes réservées aux vecteur
 
 ## Fuzzing
 
-Dix-huit cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'un stockage hostile, un fichier d'import ou d'archive hostile, un serveur de réponses hostile, un client MCP ou un client de l'agent SSH hostile atteint avant toute authentification :
+Dix-neuf cibles, chacune exige seulement l'absence de panique. Elles visent ce qu'un stockage hostile, un fichier d'import ou d'archive hostile, un serveur de réponses hostile, un client MCP ou un client de l'agent SSH hostile atteint avant toute authentification :
 
 | Cible | Entrée |
 | --- | --- |
@@ -83,9 +83,10 @@ Dix-huit cibles, chacune exige seulement l'absence de panique. Elles visent ce q
 | `signature_verify` | `HybridVerifyingKey::verify` et `IdentityVerifyingKey::verify` sur des clés et signatures arbitraires, encodées (postcard) et aux longueurs exactes |
 | `otpauth_parse` | texte UTF-8 passé à `parse_otpauth` |
 | `reference_parse` | texte UTF-8 passé à `parse_ref` |
-| `import_csv` | le premier octet choisit l'un des neuf formats CSV (dont LastPass et Dashlane, et le zip Dashlane), le reste est l'entrée de `import::parse` |
+| `import_csv` | le premier octet choisit l'un des treize formats CSV (dont LastPass, Dashlane, NordPass, Keeper, RoboForm, et le zip Dashlane), le reste est l'entrée de `import::parse` |
 | `import_1pux` | `import::parse(OnePasswordPux, ..)` (zip) et `detect` |
 | `import_bitwarden_json` | `import::parse(BitwardenJson, ..)` et `detect` |
+| `import_enpass_json` | `import::parse(EnpassJson, ..)` et `detect` |
 | `import_keepass_xml` | `import::parse(KeePassXml, ..)` et `detect` |
 | `import_cxf` | `import::parse(CredentialExchange, ..)` et `detect` |
 | `import_text` | le premier octet choisit `OtpAuthUris`, `WifiQr` (avec `parse_wifi_qr`), `parse_hardware_ports` ou `parse_preferred_networks` |

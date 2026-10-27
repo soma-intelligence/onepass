@@ -28,6 +28,10 @@ struct BrowseRoot: View {
                     },
                     purpose: .copy)
             }
+            // Fichier > Importer… (⌘⇧I): exports of other password managers.
+            .sheet(isPresented: $model.showImport) {
+                ImportSheet()
+            }
             // "Copier le code à usage unique" when the device cannot confirm the user itself.
             .sheet(item: $model.totpPasswordRequest) { ref in
                 PasswordPromptSheet(
@@ -53,18 +57,10 @@ struct BrowseRoot: View {
             .discardConfirmation(active: !phoneNewItemShown)
             .overlay(alignment: .bottom) {
                 if let toast = model.toast {
-                    Text(toast)
-                        .font(.footnote.weight(.medium))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        #if os(visionOS)
-                        .glassBackgroundEffect(in: Capsule())
-                        #else
-                        .glassEffect(.regular, in: Capsule())
-                        #endif
+                    ToastBanner(toast: toast)
                         .padding(.bottom, 18)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .accessibilityIdentifier("browse.toast")
+                        .id(toast)
                 }
             }
             .animation(.snappy, value: model.toast)
@@ -149,4 +145,62 @@ private struct DiscardConfirmation: ViewModifier {
 /// The master password sheet of "Copier le code à usage unique" is presented for an item.
 extension ItemRef: Identifiable {
     var id: Self { self }
+}
+
+/// What a notification reports: the icon and color follow it.
+enum ToastKind: Equatable {
+    case success, error, info
+}
+
+struct Toast: Equatable, Hashable {
+    let text: String
+    let kind: ToastKind
+    /// Two identical messages in a row are two notifications.
+    let id = UUID()
+}
+
+/// The notification capsule at the bottom of the window: an icon in the kind's color, the text.
+struct ToastBanner: View {
+    let toast: Toast
+
+    private var symbol: String {
+        switch toast.kind {
+        case .success: "checkmark.circle.fill"
+        case .error: "exclamationmark.triangle.fill"
+        case .info: "info.circle.fill"
+        }
+    }
+
+    private var color: Color {
+        switch toast.kind {
+        case .success: .green
+        case .error: .red
+        case .info: .secondary
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundStyle(color)
+                .font(.callout.weight(.semibold))
+                .accessibilityHidden(true)
+            Text(toast.text)
+                .font(.callout.weight(.medium))
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        #if os(visionOS)
+        .glassBackgroundEffect(in: Capsule())
+        #else
+        .glassEffect(.regular, in: Capsule())
+        #endif
+        .overlay {
+            if toast.kind == .error { Capsule().strokeBorder(.red.opacity(0.45)) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isStaticText)
+        .accessibilityIdentifier("browse.toast")
+    }
 }

@@ -5,7 +5,8 @@ import VaultKit
 
 /// Accueil (spec 6.2, mockup `PhoneHome`): the account name, then Favoris and Récents (items
 /// opened during this session, memory only, emptied on lock), each foldable, and "Nouvel élément".
-/// No "À proximité" in milestone 2 (ruling R11). An empty vault shows "Créer ton premier élément".
+/// "À proximité" opens the items placed within 2 km (the position is asked only once it is opened).
+/// An empty vault shows "Créer ton premier élément".
 struct HomeTab: View {
     @Environment(AppModel.self) private var model
     @AppStorage("onepass.home.favoritesOpen", store: AppModel.browseDefaults) private var favoritesOpen = true
@@ -43,6 +44,15 @@ struct HomeTab: View {
                         title: "Récents", systemImage: "clock.arrow.circlepath", color: .teal, isOpen: $recentsOpen,
                         items: recents, emptyText: "Les éléments ouverts apparaissent ici jusqu'au verrouillage.",
                         id: "home.recents")
+                    Section {
+                        NavigationLink(value: PhoneRoute.list(.nearby)) {
+                            HStack(spacing: 12) {
+                                NearbyTile(size: 32)
+                                Text("À proximité").font(.headline)
+                            }
+                        }
+                        .accessibilityIdentifier("home.nearby")
+                    }
                     Section {
                         Button {
                             model.showNewItemPicker = true

@@ -6,7 +6,7 @@
 use libfuzzer_sys::fuzz_target;
 use onepass_core::import::{Format, parse};
 
-const FORMATS: [Format; 10] = [
+const FORMATS: [Format; 13] = [
     Format::OnePasswordCsv,
     Format::BitwardenCsv,
     Format::ChromeCsv,
@@ -17,6 +17,9 @@ const FORMATS: [Format; 10] = [
     Format::ProtonPassCsv,
     Format::DashlaneZip,
     Format::OnePassCsv,
+    Format::NordPassCsv,
+    Format::KeeperCsv,
+    Format::RoboFormCsv,
 ];
 
 fuzz_target!(|data: &[u8]| {

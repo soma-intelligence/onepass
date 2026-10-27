@@ -23,9 +23,9 @@ public enum KeychainError: Error, Equatable, Sendable {
     public var message: String {
         switch self {
         case .unexpectedStatus(let status):
-            return "Erreur du trousseau (code \(status))."
+            return String(localized: "Erreur du trousseau (code \(status)).", bundle: VaultKitStrings.bundle)
         case .notReadBack:
-            return "Le trousseau n'a pas conservé la donnée."
+            return String(localized: "Le trousseau n'a pas conservé la donnée.", bundle: VaultKitStrings.bundle)
         }
     }
 }

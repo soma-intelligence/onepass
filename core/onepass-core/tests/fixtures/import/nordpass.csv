@@ -1,0 +1,8 @@
+name,url,additional_urls,username,password,note,cardholdername,cardnumber,cvc,pin,expirydate,zipcode,folder,full_name,phone_number,email,address1,address2,city,country,state,type,custom_fields,totp
+Example Mail,https://mail.example.com,"[""https://alt.example.com"",""https://mail2.example.com""]",alice@example.com,Nord-Invented-1,Main mailbox,,,,,,,Personal,,,,,,,,,password,"[{""label"":""Recovery PIN"",""type"":""hidden"",""value"":""4321""},{""label"":""Hint"",""type"":""text"",""value"":""blue""}]",otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example
+Example Visa,,,,,,Alice Example,4111111111111111,123,9876,12/29,75001,Personal,,,,,,,,,credit_card,,
+Wifi instructions,,,,,Invented note body,,,,,,,Work,,,,,,,,,note,,
+Personal,,,,,,,,,,,,,,,,,,,,,folder,,
+Alice identity,,,,,,,,,,,75002,,Alice Marie Example,+33123456789,alice@example.org,1 rue Exemple,,Paris,France,,identity,,
+,,,,,,,,,,,,,,,,,,,,,,,
+Bank login,https://bank.example.org,,bob,Nord-Invented-2,,,,,,,,,,,,,,,,,bank_account,,

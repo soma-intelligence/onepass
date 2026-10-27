@@ -86,6 +86,15 @@ struct ItemsTab: View {
                 }
             }
             Section {
+                row(.nearby, id: "items.nearby") {
+                    NearbyTile(size: 32)
+                } label: {
+                    Text("À proximité")
+                } count: {
+                    Text("2 km")
+                }
+            }
+            Section {
                 row(.archive, id: "items.archive") {
                     Image(systemName: "archivebox")
                         .font(.system(size: 19))

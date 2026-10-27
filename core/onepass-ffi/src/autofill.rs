@@ -424,6 +424,15 @@ impl Session {
                 now,
             )?;
             let reg = webauthn::registration(&cred, &request.client_data_hash)?;
+            if item_id.is_none() {
+                item.record(now, onepass_core::model::EventKind::Created);
+            }
+            item.record(
+                now,
+                onepass_core::model::EventKind::PasskeyAdded {
+                    rp_id: request.rp_id.clone(),
+                },
+            );
             add_passkey(&mut item, cred);
             if !item.login_methods.contains(&LoginMethod::Passkey) {
                 item.login_methods.push(LoginMethod::Passkey);

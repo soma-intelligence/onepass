@@ -1,7 +1,7 @@
 use crate::error::{Error, Result, ValidationError};
 use crate::model::checks::{bip39_valid, iban_valid, luhn_valid, national_id_valid};
 use crate::model::field::{Field, FieldValue};
-use crate::model::item::Item;
+use crate::model::item::{Item, LoginMethod};
 use crate::model::templates::ItemType;
 
 fn invalid(field: &str, reason: &'static str) -> Error {
@@ -31,6 +31,18 @@ fn is_missing(value: &FieldValue) -> bool {
         FieldValue::Empty => true,
         other => text_of(other).is_some_and(|s| s.trim().is_empty()),
     }
+}
+
+/// A required field the item may leave blank anyway: the username of a
+/// login that signs in through a provider (Google, GitHub...), which has no
+/// username of its own.
+fn requirement_waived(item: &Item, field: &Field) -> bool {
+    item.item_type == ItemType::Login
+        && field.id == "username"
+        && item
+            .login_methods
+            .iter()
+            .any(|m| matches!(m, LoginMethod::Provider { .. }))
 }
 
 /// Format check for the field, applied to non-blank text only. Returns the
@@ -63,13 +75,14 @@ fn format_problem(item: &Item, field: &Field) -> Option<&'static str> {
 /// Checks an item and returns the first problem found: an empty title, then
 /// for each field in template order a missing required value (empty, or
 /// blank text) and a wrong format (card number, IBAN, recovery phrase,
-/// national number). The error names the field, never its content.
+/// national number). The error names the field, never its content. A login
+/// with a provider sign-in method may leave its username blank.
 pub fn validate(item: &Item) -> Result<()> {
     if item.title.trim().is_empty() {
         return Err(invalid("title", "must not be empty"));
     }
     for field in item.sections.iter().flat_map(|s| s.fields.iter()) {
-        if field.required && is_missing(&field.value) {
+        if field.required && is_missing(&field.value) && !requirement_waived(item, field) {
             return Err(invalid(&field.id, "is required"));
         }
         if let Some(reason) = format_problem(item, field) {
@@ -217,6 +230,45 @@ mod tests {
         let err = validate(&wallet(&phrase)).unwrap_err();
         assert!(!err.to_string().contains("abandon"));
         assert!(!format!("{err:?}").contains("abandon"));
+    }
+
+    fn provider_method() -> LoginMethod {
+        LoginMethod::Provider {
+            provider: crate::model::item::Provider::GitHub,
+            account: Id::new(),
+            relay_email: None,
+        }
+    }
+
+    #[test]
+    fn login_needs_a_username_without_a_provider() {
+        let mut item = new_item(ItemType::Login, Id::new(), "Atlas");
+        assert_eq!(failing_field(&item), "username");
+        item.login_methods = vec![LoginMethod::Password, LoginMethod::Passkey];
+        assert_eq!(failing_field(&item), "username");
+        item.field_mut("username").unwrap().value = tx("  ");
+        assert_eq!(failing_field(&item), "username");
+    }
+
+    #[test]
+    fn login_with_a_provider_needs_no_username() {
+        let mut item = new_item(ItemType::Login, Id::new(), "Atlas");
+        item.login_methods = vec![LoginMethod::Password, provider_method()];
+        validate(&item).unwrap();
+        item.field_mut("username").unwrap().value = tx("   ");
+        validate(&item).unwrap();
+        // The title is still required.
+        item.title = " ".into();
+        assert_eq!(failing_field(&item), "title");
+    }
+
+    #[test]
+    fn provider_waiver_applies_to_login_username_only() {
+        // A card with a provider method (nonsense, but possible on the wire)
+        // still needs its required fields.
+        let mut item = new_item(ItemType::CreditCard, Id::new(), "Visa");
+        item.login_methods = vec![provider_method()];
+        assert_eq!(failing_field(&item), "cardholder");
     }
 
     #[test]

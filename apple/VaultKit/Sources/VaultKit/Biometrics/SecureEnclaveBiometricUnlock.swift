@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import LocalAuthentication
 import Security
+import os
 
 /// Real Secure Enclave keyring (P-256, ECIES cofactor X9.63 SHA-256 AES-GCM).
 /// Exercised by the apps only: tests use `FakeEnclaveKeyring`.
@@ -26,6 +27,36 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
         }
         #endif
         return LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+    }
+
+    /// Probed once per access group and process: whether the keychain takes items from this build.
+    private static let storeProbes = OSAllocatedUnfairLock<[String: Bool]>(initialState: [:])
+
+    public var canStoreKeys: Bool {
+        let key = accessGroup ?? ""
+        if let known = Self.storeProbes.withLock({ $0[key] }) { return known }
+        let accepted = Self.keychainAcceptsItems(accessGroup: accessGroup)
+        Self.storeProbes.withLock { $0[key] = accepted }
+        return accepted
+    }
+
+    /// Adds then removes a throwaway item in the data protection keychain. Only a missing
+    /// entitlement (`-34018`, unsigned or ad hoc build) answers false: any other refusal (a locked
+    /// keychain for example) is left to the enrollment, which reports it.
+    private static func keychainAcceptsItems(accessGroup: String?) -> Bool {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "me.somalabs.onepass.enclave-probe",
+            kSecAttrAccount as String: "probe",
+            kSecUseDataProtectionKeychain as String: true,
+        ]
+        if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
+        var add = query
+        add[kSecValueData as String] = Data([0])
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let status = SecItemAdd(add as CFDictionary, nil)
+        if status == errSecSuccess { SecItemDelete(query as CFDictionary) }
+        return status != errSecMissingEntitlement
     }
 
     /// Data protection keychain on every query (macOS would otherwise use the file keychain).

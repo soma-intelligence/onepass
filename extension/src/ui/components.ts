@@ -8,7 +8,9 @@
 //   never listens to `message` events;
 // - every reply is validated (parse.ts) before anything is rendered.
 import type { ProviderId, UiToBg } from "../shared/messages";
+import { tr } from "../shared/i18n";
 import { PROVIDERS } from "../shared/providers";
+import { type ArtKind, art } from "./art";
 
 // ---- DOM ----
 
@@ -70,6 +72,9 @@ const ICONS = {
   chevron: ["M4.5 3l3 3-3 3"],
   edit: ["M9.5 2.2l2.3 2.3-7 7H2.5V9.2z"],
   lock: ["M4 5.5V4a2 2 0 014 0v1.5", "R2.5 5.5 7 5"],
+  copy: ["R5 5 8.5 8.5", "M3 10.5H2.5a1 1 0 01-1-1v-7a1 1 0 011-1h7a1 1 0 011 1V3"],
+  keyhole: ["C6 4.5 2.3", "M5 6h2l.8 4H4.2z"],
+  alert: ["M7 1.8l5.6 9.7H1.4z", "M7 5.6v2.6", "M7 10h.01"],
 } as const;
 
 export type IconName = keyof typeof ICONS;
@@ -84,6 +89,9 @@ const VIEWBOX: Partial<Record<IconName, string>> = {
   chevron: "0 0 12 12",
   edit: "0 0 14 14",
   lock: "0 0 12 12",
+  copy: "0 0 15 15",
+  keyhole: "0 0 12 12",
+  alert: "0 0 14 14",
 };
 
 export function icon(name: IconName, size = 14): SVGSVGElement {
@@ -93,7 +101,7 @@ export function icon(name: IconName, size = 14): SVGSVGElement {
   svg.setAttribute("viewBox", VIEWBOX[name] ?? "0 0 16 16");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("class", `glyph glyph-${name}`);
-  const filled = name === "more";
+  const filled = name === "more" || name === "keyhole";
   svg.setAttribute("fill", filled ? "currentColor" : "none");
   if (!filled) {
     svg.setAttribute("stroke", "currentColor");
@@ -134,16 +142,38 @@ export function safeColor(c: string): string {
   return COLOR_RE.test(c) ? c : FALLBACK_COLOR;
 }
 
-/** Item tile: one or two letters on the item color. */
-export function tile(letter: string, color: string, size: "s" | "m" | "l" = "m"): HTMLSpanElement {
-  const el = h("span", { class: `tile tile-${size}`, attrs: { "aria-hidden": "true" } }, [...letter].slice(0, 2).join("").toUpperCase());
-  el.style.background = safeColor(color);
-  return el;
+const TILE_PX = { s: 30, m: 34, l: 48 } as const;
+
+/**
+ * Item icon: the illustrated category art of the app. Logins carry the
+ * host's monogram letter on the teal tile. The host sends no site icon over
+ * the bridge, so there is no favicon (and no third-party icon service).
+ */
+export function tile(letter: string, _color: string, size: "s" | "m" | "l" | number = "m", kind: ArtKind = "login"): SVGSVGElement {
+  const px = typeof size === "number" ? size : TILE_PX[size];
+  return art(kind, px, kind === "login" ? letter : undefined);
 }
 
-/** The OnePass mark (accent dot). */
-export function mark(size: "s" | "m" = "m"): HTMLSpanElement {
-  return h("span", { class: `mark mark-${size}`, attrs: { "aria-hidden": "true" } });
+/** Category of a summary: a login without a password but with a linked provider has no secret of its own. */
+export function artKindOf(s: { kind: "login" | "card" | "identity"; has_password: boolean; methods: readonly unknown[] }): ArtKind {
+  if (s.kind === "card") return "card";
+  if (s.kind === "identity") return "identity";
+  return "login";
+}
+
+/** Icon of a summary, at `size`. */
+export function itemArt(
+  s: { kind: "login" | "card" | "identity"; has_password: boolean; methods: readonly unknown[]; icon_letter: string },
+  size: "s" | "m" | "l" | number = "m",
+): SVGSVGElement {
+  const kind = artKindOf(s);
+  return tile(s.icon_letter, "", size, kind);
+}
+
+/** The OnePass mark: indigo tile with a white keyhole. */
+export function mark(size: "s" | "m" | "l" = "m"): HTMLSpanElement {
+  const px = size === "s" ? 13 : size === "m" ? 19 : 36;
+  return h("span", { class: `mark mark-${size}`, attrs: { "aria-hidden": "true" } }, icon("keyhole", px));
 }
 
 /** Text only for assistive technologies. */
@@ -213,46 +243,46 @@ export async function call<T>(send: Send, msg: UiToBg, parse: (v: unknown) => T 
   return value === null ? { ok: false, code: "internal" } : { ok: true, value };
 }
 
-/** French sentence for a stable code; never a host message. */
+/** Sentence (French or English) for a stable code; never a host message. */
 export function errorText(code: string): string {
   switch (code) {
     case "version":
-      return "L'extension et l'app OnePass ne sont pas à la même version.";
+      return tr("L'extension et l'app OnePass ne sont pas à la même version.", "The extension and the OnePass app are not on the same version.");
     case "bad_mac":
     case "bad_frame":
-      return "Échange avec l'app OnePass refusé. Réessaie.";
+      return tr("Échange avec l'app OnePass refusé. Réessaie.", "Exchange with the OnePass app refused. Try again.");
     case "locked":
-      return "OnePass est verrouillé";
+      return tr("OnePass est verrouillé", "OnePass is locked");
     case "not_found":
-      return "Élément introuvable.";
+      return tr("Élément introuvable.", "Item not found.");
     case "origin_mismatch":
-      return "La page a changé : remplissage annulé.";
+      return tr("La page a changé : remplissage annulé.", "The page changed: fill cancelled.");
     case "insecure_origin":
-      return "Page non sécurisée (HTTP) : remplissage refusé.";
+      return tr("Page non sécurisée (HTTP) : remplissage refusé.", "Insecure page (HTTP): fill refused.");
     case "cross_site_frame":
-      return "Cadre d'un autre site : remplissage refusé.";
+      return tr("Cadre d'un autre site : remplissage refusé.", "Frame from another site: fill refused.");
     case "not_allowed":
-      return "Action non permise ici.";
+      return tr("Action non permise ici.", "Action not allowed here.");
     case "reprompt_required":
-      return "Confirme dans l'app OnePass pour cet élément.";
+      return tr("Confirme dans l'app OnePass pour cet élément.", "Confirm this item in the OnePass app.");
     case "rate_limited":
-      return "Trop de demandes. Réessaie dans une minute.";
+      return tr("Trop de demandes. Réessaie dans une minute.", "Too many requests. Try again in a minute.");
     case "invalid":
-      return "Demande refusée.";
+      return tr("Demande refusée.", "Request refused.");
     case "unpaired":
-      return "OnePass n'est pas appairé.";
+      return tr("OnePass n'est pas appairé.", "OnePass is not paired.");
     case "host_missing":
-      return "App OnePass introuvable";
+      return tr("App OnePass introuvable", "OnePass app not found");
     case "timeout":
-      return "L'app OnePass ne répond pas.";
+      return tr("L'app OnePass ne répond pas.", "The OnePass app is not responding.");
     case "refused":
-      return "Appairage refusé dans l'app OnePass.";
+      return tr("Appairage refusé dans l'app OnePass.", "Pairing refused in the OnePass app.");
     case "expired":
-      return "Le code a expiré. Recommence l'appairage.";
+      return tr("Le code a expiré. Recommence l'appairage.", "The code expired. Start pairing again.");
     case "no_form":
-      return "Aucun formulaire à remplir sur cette page.";
+      return tr("Aucun formulaire à remplir sur cette page.", "No form to fill on this page.");
     default:
-      return "Erreur interne de OnePass.";
+      return tr("Erreur interne de OnePass.", "OnePass internal error.");
   }
 }
 

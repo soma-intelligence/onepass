@@ -3,18 +3,22 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Items of one filter of the Éléments tab (vault, category, tag, Archive, Supprimés récemment),
-/// sorted by title, with a search of its own. A row opens the item's detail; swiping an active
-/// item moves it to Supprimés récemment (toast, 30 days to restore).
+/// Items of one filter of the Éléments tab (vault, category, tag, Archive, Supprimés récemment)
+/// sorted by title, or of "À proximité" (closest first, the distance in the subtitle), with a search
+/// of its own. A row opens the item's detail; swiping an active item moves it to Supprimés
+/// récemment (toast, 30 days to restore).
 struct CategoryListView: View {
     @Environment(AppModel.self) private var model
     let filter: ItemFilter
     @State private var query = ""
+    /// "À proximité": rows from the position and the session's location index, closest first.
+    @State private var nearby = NearbyLoader()
 
     private var session: VaultSession { model.session }
 
     var body: some View {
-        let items = session.items(filter: filter, query: query, sort: .title)
+        let items = filter == .nearby
+            ? ItemSearch.filter(nearby.summaries, query: query) : session.items(filter: filter, query: query, sort: .title)
         let showVault = showsVaultName
         List {
             ForEach(items, id: \.id) { summary in
@@ -49,6 +53,11 @@ struct CategoryListView: View {
         .overlay {
             if items.isEmpty { emptyState }
         }
+        // The permission prompt comes from here (opening "À proximité"), never at launch.
+        .task(id: NearbyRequest(active: filter == .nearby, revision: session.summariesRevision)) {
+            guard filter == .nearby else { return }
+            await nearby.load(session)
+        }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $query, placement: .navigationBarDrawer, prompt: Text("Rechercher"))
@@ -76,6 +85,7 @@ struct CategoryListView: View {
         switch filter {
         case .all: String(localized: "Tous les éléments")
         case .favorites: String(localized: "Favoris")
+        case .nearby: String(localized: "À proximité")
         case .vault(let id): vaultName(id) ?? String(localized: "Coffre")
         case .category(let type): ItemCategory.of(type).plural
         case .tag(let tag): tag
@@ -84,9 +94,13 @@ struct CategoryListView: View {
         }
     }
 
-    private var emptyState: some View {
-        ItemListEmptyState(reason: EmptyListReason(filter: filter, query: query)) {
-            model.showNewItemPicker = true
+    @ViewBuilder private var emptyState: some View {
+        if filter == .nearby, query.isEmpty {
+            NearbyStatusView(phase: nearby.phase) { Task { await nearby.load(session) } }
+        } else {
+            ItemListEmptyState(reason: EmptyListReason(filter: filter, query: query)) {
+                model.showNewItemPicker = true
+            }
         }
     }
 }

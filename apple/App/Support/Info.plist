@@ -41,6 +41,10 @@
 	<string>OnePass utilise la caméra pour lire le QR code de ton Emergency Kit.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
 	<key>OnePassAppGroup</key>
 	<string>$(ONEPASS_APP_GROUP)</string>
 	<key>UIApplicationSceneManifest</key>

@@ -89,7 +89,7 @@ struct TextFieldsView: View {
                             insert(field)
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: field.label).font(.footnote).foregroundStyle(.secondary)
+                                Text(verbatim: field.displayLabel).font(.footnote).foregroundStyle(.secondary)
                                 Text(verbatim: Self.preview(field))
                                     .foregroundStyle(.primary)
                                     .lineLimit(1)
@@ -130,8 +130,10 @@ struct TextFieldsView: View {
     private static func preview(_ field: FfiField) -> String {
         if isSecret(field) { return FieldRow.mask }
         switch field.value {
-        case .text(let value), .url(let value), .email(let value), .phone(let value), .menu(let value):
+        case .text(let value), .url(let value), .email(let value), .phone(let value):
             return value
+        case .menu(let value):
+            return CoreLabels.menuOption(value)
         case .barcode(let value, _):
             return value
         case .number(let value):

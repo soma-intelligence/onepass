@@ -1,7 +1,7 @@
 import SwiftUI
 import VaultKit
 
-/// Keyboard commands, identical on Mac and iPad (spec 6.1, 6.3): ⌘N new item, ⌘E edit, ⌘S save,
+/// Keyboard commands, identical on Mac and iPad (spec 6.1, 6.3): ⌘N new item, ⌘⇧I import, ⌘E edit, ⌘S save,
 /// ⌘F search, ⌘L lock, ⌘⌫ move to Supprimés récemment. The views on screen act on the requests
 /// (`AppModel.editRequest`, `saveRequest`, `searchFocusRequest`). ⌘⌫ is enabled only while the
 /// item list has keyboard focus (`FocusedValues.itemListFocused`): never from a text field.
@@ -16,6 +16,10 @@ struct BrowseCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("Nouvel élément") { model.showNewItemPicker = true }
                 .keyboardShortcut("n", modifiers: .command)
+                .disabled(!unlocked)
+            Divider()
+            Button("Importer…") { model.showImport = true }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(!unlocked)
         }
         // Replaces the standard Find submenu, whose ⌘F would compete with this one.

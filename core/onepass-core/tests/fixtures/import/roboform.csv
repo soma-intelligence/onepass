@@ -1,0 +1,5 @@
+Name,Url,MatchUrl,Login,Pwd,Note,Folder,RfFieldsV2
+Example Mail,https://mail.example.com/,https://mail.example.com/login,alice@example.com,Robo-Invented-1,Main mailbox,/Personal,"remember,remember,,chk,1"
+Example Shop,https://shop.example.org/,https://shop.example.org/,bob,Robo-Invented-2,,/Work/Shops,
+Wifi instructions,,,,,Invented note body,/Personal,
+,,,,,,,

@@ -10,6 +10,7 @@ use zeroize::Zeroizing;
 
 use crate::account::Account;
 use crate::crypto::{Aad, BlobKind, SymmetricKey, open, seal, unwrap_key, wrap_key};
+use crate::model::events::{EventKind, ItemTrailer};
 use crate::model::{Item, validate};
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -86,14 +87,45 @@ fn item_aad(item_id: Id, vault_id: Id) -> Aad {
 }
 
 /// Postcard of `(version, item)` in a buffer wiped on drop, sized up front so
-/// no reallocation leaves copies of the plaintext behind.
+/// no reallocation leaves copies of the plaintext behind. An item with
+/// events gets them after, as an `ItemTrailer` (see `model::events`): an
+/// item without any is written exactly as before events existed.
 fn encode_item(version: u64, item: &Item) -> Result<Zeroizing<Vec<u8>>> {
     const BAD: Error = Error::InvalidFormat("item");
     let value = (version, item);
-    let size = postcard::experimental::serialized_size(&value).map_err(|_| BAD)?;
-    let mut buf = Zeroizing::new(vec![0u8; size]);
-    postcard::to_slice(&value, &mut buf[..]).map_err(|_| BAD)?;
+    let trailer = (!item.events.is_empty()).then(|| ItemTrailer {
+        events: item.events.clone(),
+    });
+    let head = postcard::experimental::serialized_size(&value).map_err(|_| BAD)?;
+    let tail = match &trailer {
+        Some(t) => postcard::experimental::serialized_size(t).map_err(|_| BAD)?,
+        None => 0,
+    };
+    let mut buf = Zeroizing::new(vec![0u8; head + tail]);
+    let (first, rest) = buf.split_at_mut(head);
+    postcard::to_slice(&value, first).map_err(|_| BAD)?;
+    if let Some(t) = &trailer {
+        postcard::to_slice(t, rest).map_err(|_| BAD)?;
+    }
     Ok(buf)
+}
+
+/// `(version, item)` then, when bytes remain, exactly one `ItemTrailer`.
+fn decode_item(plain: &[u8]) -> Result<(u64, Item)> {
+    const BAD: Error = Error::InvalidFormat("item");
+    let ((version, mut item), rest): ((u64, Item), &[u8]) =
+        postcard::take_from_bytes(plain).map_err(|_| BAD)?;
+    if !rest.is_empty() {
+        let trailer: ItemTrailer = match postcard::take_from_bytes(rest) {
+            Ok((t, [])) => t,
+            _ => return Err(BAD),
+        };
+        if trailer.events.is_empty() || trailer.events.len() > crate::model::events::MAX_EVENTS {
+            return Err(BAD);
+        }
+        item.events = trailer.events;
+    }
+    Ok((version, item))
 }
 
 impl Vault {
@@ -170,10 +202,7 @@ impl Vault {
             &item_aad(rec.item_id, self.id),
             &rec.blob,
         )?;
-        let (version, item): (u64, Item) = match postcard::take_from_bytes(&plain) {
-            Ok((value, [])) => value,
-            _ => return Err(Error::InvalidFormat("item")),
-        };
+        let (version, item) = decode_item(&plain)?;
         if version != rec.version || item.vault_id != self.id || item.id != rec.item_id {
             return Err(IntegrityError::WrongContext.into());
         }
@@ -194,6 +223,13 @@ impl Vault {
         let item_key = self.unwrap_item_key(rec)?;
         let mut item = self.open_with(&item_key, rec)?;
         item.vault_id = to.id;
+        item.record(
+            time::OffsetDateTime::now_utc(),
+            EventKind::Moved {
+                from: self.meta.name.clone(),
+                to: to.meta.name.clone(),
+            },
+        );
         to.seal_with(&item_key, &item, new_version)
     }
 }
@@ -271,6 +307,47 @@ mod tests {
     }
 
     #[test]
+    fn events_ride_in_a_trailer_and_old_records_still_open() {
+        let (v, _, _) = vault("A");
+        let mut item = login(&v);
+        // Without events the plaintext is exactly the pre-events encoding.
+        let plain = encode_item(3, &item).unwrap();
+        assert_eq!(
+            &plain[..],
+            &postcard::to_allocvec(&(3u64, &item)).unwrap()[..]
+        );
+        assert_eq!(decode_item(&plain).unwrap(), (3, item.clone()));
+        item.record(item.created_at, EventKind::Created);
+        item.record(item.created_at, EventKind::Archived);
+        let rec = v.seal_item(&item, 1).unwrap();
+        let opened = v.open_item(&rec).unwrap();
+        assert_eq!(opened.events, item.events);
+        assert_eq!(opened, item);
+        // Garbage or an empty trailer after the item is refused.
+        let mut bad = postcard::to_allocvec(&(1u64, &item)).unwrap();
+        bad.push(0);
+        assert!(decode_item(&bad).is_err());
+        bad.pop();
+        bad.extend([1, 0xff]);
+        assert!(decode_item(&bad).is_err());
+    }
+
+    #[test]
+    fn move_records_the_vault_names() {
+        let (a, _, _) = vault("Perso");
+        let (b, _, _) = vault("Projet Atlas");
+        let rec = a.seal_item(&login(&a), 1).unwrap();
+        let moved = b.open_item(&a.move_item(&b, &rec, 1).unwrap()).unwrap();
+        assert_eq!(
+            moved.events.last().unwrap().kind,
+            EventKind::Moved {
+                from: "Perso".into(),
+                to: "Projet Atlas".into()
+            }
+        );
+    }
+
+    #[test]
     fn item_from_another_vault_is_refused() {
         let (a, _, _) = vault("A");
         let (b, _, _) = vault("B");
@@ -314,6 +391,7 @@ mod tests {
         assert_eq!(out.vault_id, b.id);
         let mut expected = item;
         expected.vault_id = b.id;
+        expected.events.clone_from(&out.events);
         assert_eq!(out, expected);
         assert!(a.open_item(&moved).is_err());
     }

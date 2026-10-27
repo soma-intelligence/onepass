@@ -3,6 +3,7 @@
 // service worker reports (it polls `overlay_state` while the chain runs).
 // The overlay computes no progress of its own.
 import { ext } from "../shared/browser";
+import { tr } from "../shared/i18n";
 import type { ChainView, OverlayAccount, OverlayInit, StepState, StopReason } from "../shared/ui";
 import {
   ClickGuard,
@@ -25,37 +26,40 @@ import { parseEmpty, parseOverlayInit, parseOverlayState } from "./parse";
 
 export const POLL_MS = 500;
 
-export const HELP_TEXT = "Un clic enchaîne toutes les étapes. Arrêt automatique si le domaine change ou sur un CAPTCHA.";
+export const HELP_TEXT = tr(
+  "Un clic enchaîne toutes les étapes. Arrêt automatique si le domaine change ou sur un CAPTCHA.",
+  "One click runs every step. It stops by itself if the domain changes or on a CAPTCHA.",
+);
 
 /** Spec 8.6 stop reasons, word for word. */
 export function stopText(reason: StopReason, host?: string): string {
   switch (reason) {
     case "domain":
-      return `Le domaine a changé : ${host ?? ""}`.trimEnd();
+      return tr(`Le domaine a changé : ${host ?? ""}`, `The domain changed: ${host ?? ""}`).trimEnd();
     case "captcha":
-      return "CAPTCHA détecté, à toi de jouer";
+      return tr("CAPTCHA détecté, à toi de jouer", "CAPTCHA detected, your turn");
     case "push":
-      return "Valide la connexion sur ton téléphone";
+      return tr("Valide la connexion sur ton téléphone", "Approve the sign-in on your phone");
     case "otp":
-      return "Code reçu par SMS ou email : saisis-le";
+      return tr("Code reçu par SMS ou email : saisis-le", "Code sent by SMS or email: type it in");
     case "unknown":
-      return "Étape inconnue, termine à la main";
+      return tr("Étape inconnue, termine à la main", "Unknown step, finish by hand");
     case "timeout":
-      return "Délai de 60 s dépassé";
+      return tr("Délai de 60 s dépassé", "60 s limit reached");
     case "user":
-      return "Arrêté";
+      return tr("Arrêté", "Stopped");
     case "locked":
-      return "OnePass est verrouillé";
+      return tr("OnePass est verrouillé", "OnePass is locked");
     case "repeat":
-      return "Mot de passe refusé par le site";
+      return tr("Mot de passe refusé par le site", "Password refused by the site");
   }
 }
 
 const STATE_TEXT: Readonly<Record<StepState, string>> = {
-  pending: "en attente",
-  active: "en cours",
-  done: "fait",
-  stopped: "arrêté",
+  pending: tr("en attente", "pending"),
+  active: tr("en cours", "in progress"),
+  done: tr("fait", "done"),
+  stopped: tr("arrêté", "stopped"),
 };
 
 export interface OverlayHandle {
@@ -69,7 +73,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   const timers = deps.timers ?? realTimers;
   const guard = new ClickGuard({ now, ...(deps.trusted ? { trusted: deps.trusted } : {}) });
   const token = tokenFromHash(deps.hash);
-  const container = h("div", { class: "overlay", attrs: { role: "dialog", "aria-label": "Connexion en un clic" } });
+  const container = h("div", { class: "overlay", attrs: { role: "dialog", "aria-label": tr("Connexion en un clic", "One-click sign-in") } });
   mount(root, container);
   (deps.observe ?? observeVisibility)(container, (v) => guard.setVisibility(v));
 
@@ -90,12 +94,12 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       "div",
       { class: "ov-head" },
       mark("m"),
-      h("h1", { class: "ov-title" }, origin ? `Se connecter à ${hostOf(origin)}` : "Connexion en un clic"),
+      h("h1", { class: "ov-title" }, origin ? tr(`Se connecter à ${hostOf(origin)}`, `Sign in to ${hostOf(origin)}`) : tr("Connexion en un clic", "One-click sign-in")),
       h(
         "button",
         {
           class: "btn-icon",
-          attrs: { type: "button", "aria-label": "Fermer" },
+          attrs: { type: "button", "aria-label": tr("Fermer", "Close") },
           on: {
             click: guard.wrap(() => {
               stopPolling();
@@ -111,7 +115,11 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     stopPolling();
     chainUi = null;
     const title =
-      code === "unpaired" ? "Appairer OnePass depuis la barre d'outils" : code === "locked" ? "OnePass est verrouillé" : errorText(code);
+      code === "unpaired"
+        ? tr("Appairer OnePass depuis la barre d'outils", "Pair OnePass from the toolbar")
+        : code === "locked"
+          ? tr("OnePass est verrouillé", "OnePass is locked")
+          : errorText(code);
     mount(container, head(init?.origin ?? null), messageBlock(title));
     guard.reset();
   };
@@ -135,8 +143,9 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     chainUi = null;
     if (!init) return;
     const list = h("div", { class: "ov-accounts" });
+    const card = h("div", { class: "card" });
     for (const a of init.accounts) {
-      list.append(
+      card.append(
         h(
           "div",
           { class: "ov-account" },
@@ -145,12 +154,13 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
           h(
             "button",
             { class: "btn btn-primary", attrs: { type: "button" }, on: { click: guard.wrap(() => void start(a)()) } },
-            "Se connecter",
+            tr("Se connecter", "Sign in"),
           ),
         ),
       );
     }
-    if (init.accounts.length === 0) list.append(messageBlock(`Aucun login pour ${hostOf(init.origin)}`));
+    if (init.accounts.length > 0) list.append(card);
+    else list.append(messageBlock(tr(`Aucun login pour ${hostOf(init.origin)}`, `No login for ${hostOf(init.origin)}`)));
     mount(container, head(init.origin), list, h("p", { class: "ov-help" }, HELP_TEXT));
     guard.reset();
   }
@@ -195,13 +205,13 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
                 }),
               },
             },
-            "Arrêter",
+            tr("Arrêter", "Stop"),
           ),
         );
       } else {
         stopPolling();
         foot.append(
-          h("button", { class: "btn btn-primary", attrs: { type: "button" }, on: { click: guard.wrap(() => renderIdle()) } }, "Recommencer"),
+          h("button", { class: "btn btn-primary", attrs: { type: "button" }, on: { click: guard.wrap(() => renderIdle()) } }, tr("Recommencer", "Start over")),
         );
       }
       mount(container, head(init?.origin ?? null), steps, foot);
@@ -210,16 +220,17 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       chainUi = { mode, steps, status, last: "" };
     }
     mount(chainUi.steps, ...c.steps.map(stepNode));
-    let text = "En cours…";
+    let text = tr("En cours…", "In progress…");
     let tone = "";
     if (c.status === "done") {
-      text = "Connecté";
+      text = tr("Connecté", "Signed in");
       tone = "ok";
     } else if (c.status !== "running") {
-      text = c.reason ? stopText(c.reason, c.host) : "Arrêté";
+      text = c.reason ? stopText(c.reason, c.host) : tr("Arrêté", "Stopped");
       tone = "warn";
     }
-    chainUi.status.textContent = text;
+    const lead = tone === "ok" ? h("span", { class: "dot dot-done", attrs: { "aria-hidden": "true" } }, icon("check", 10)) : tone === "warn" ? icon("alert", 16) : null;
+    mount(chainUi.status, lead, text);
     chainUi.status.className = `ov-status ${tone}`.trimEnd();
     chainUi.last = key;
   }
