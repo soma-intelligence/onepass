@@ -143,10 +143,21 @@ fn frozen_account_refuses_a_wrong_password() {
 }
 
 /// Writes a new fixture. Run once, by hand, and never again: the point of
-/// the fixture is that it does not change.
+/// the fixture is that it does not change. Does nothing unless
+/// `ONEPASS_REGEN_FIXTURE=1` (so `cargo test -- --ignored` leaves it
+/// alone), and refuses to overwrite an existing fixture: delete it first,
+/// knowingly.
 #[test]
 #[ignore = "generates the fixture; never rerun"]
 fn generate_fixture() {
+    if std::env::var("ONEPASS_REGEN_FIXTURE").as_deref() != Ok("1") {
+        eprintln!("skipped: set ONEPASS_REGEN_FIXTURE=1 to write a new fixture");
+        return;
+    }
+    assert!(
+        !dir().join("params.bin").exists(),
+        "the fixture exists: it must never change; delete it first to regenerate"
+    );
     let password = "Frozen fixture, Lucie Martin";
     let kdf = KdfParams {
         m_kib: KDF.0,
