@@ -2160,16 +2160,6 @@
         }
       }
     },
-    "Code source ouvert. Ton coffre est chiffré sur ce Mac avant d'aller dans iCloud. Personne d'autre, ni nous ni Apple, ne peut le lire." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open source. Your vault is encrypted on this Mac before it goes to iCloud. No one else, not us and not Apple, can read it."
-          }
-        }
-      }
-    },
     "Code à usage unique" : {
       "localizations" : {
         "en" : {
