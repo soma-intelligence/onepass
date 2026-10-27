@@ -31,4 +31,11 @@ describe("discoverFormPages", () => {
     const urls = discoverFormPages({ url: "https://www.a.example/", html }, undefined, lexicon);
     expect(urls[0]).toBe("https://accounts.a.example/start");
   });
+  it("malformed percent sequences do not throw", () => {
+    const sitemap = "<urlset><url><loc>https://a.example/%zz/login</loc></url></urlset>";
+    let urls: string[] = [];
+    expect(() => { urls = discoverFormPages({ url: "https://a.example/", html: '<a href="/%zz">Sign in</a>' }, sitemap, lexicon); }).not.toThrow();
+    expect(urls.length).toBeLessThanOrEqual(6);
+    expect(urls).toContain("https://a.example/%zz");
+  });
 });
