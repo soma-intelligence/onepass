@@ -6,17 +6,23 @@ export type Category = "login" | "signup" | "checkout" | "address" | "identity";
 export type Visibility = "visible" | "display_none" | "offscreen" | "opacity" | "zero_size";
 export type FormStep = "identifier" | "password" | "both" | "code" | "other";
 
+export type SampleSource = "rendered" | "commoncrawl" | "recorded";
+
 export interface SampleField {
   tag: string; type?: string; name?: string; id?: string; autocomplete?: string; inputmode?: string;
   maxlength?: number; hasPattern: boolean; required: boolean; label?: string;
+  placeholder?: string; ariaLabel?: string;
+  before?: string; after?: string;                          // neighbour text, 40 characters at most each
+  index?: number; depth?: number; siblings?: number;        // optional: extractor 1 samples stay valid
   visibility: Visibility; role: Role | "unknown";
 }
 export interface SampleForm { step: FormStep; fields: SampleField[]; buttons: string[]; }
 
 export interface Sample {
-  source_url: string; host: string; category: Category; captured_at: string; extractor: 1;
+  source_url: string; host: string; category: Category; captured_at: string; extractor: 1 | 2;
+  source?: SampleSource;                                     // absent = "rendered"
   status: "ok" | "skipped: robots" | "skipped: duplicate host" | `error: ${string}`;
-  lang?: Lang; forms?: SampleForm[]; iframes?: { origin: string; sameSite: boolean }[];
+  lang?: Lang; forms?: SampleForm[]; steps?: SampleForm[][]; framework?: "react" | "vue" | "angular" | "other"; iframes?: { origin: string; sameSite: boolean }[];
   shadowFields?: number; webauthnCalls?: ("get" | "create")[]; providerButtons?: ProviderId[];
 }
 
