@@ -225,22 +225,34 @@ struct PhoneTabsView: View {
 /// same sheet. Saving shows the new item in the visible tab; "Annuler" closes the sheet.
 struct PhoneNewItemSheet: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack {
-            if let draft = model.newItemDraft {
-                ItemEditorView(draft: draft, isNew: true) { saved in
-                    model.finishNewItem(saved)
+            // The editor comes in from the trailing edge as a pushed screen would, the picker leaves
+            // to the leading edge: the sheet reads as one step forward.
+            ZStack {
+                if let draft = model.newItemDraft {
+                    ItemEditorView(draft: draft, isNew: true) { saved in
+                        model.finishNewItem(saved)
+                    }
+                    .id(draft.item.id)
+                    .transition(stepTransition)
+                } else {
+                    // "Que veux-tu ajouter ?", as on the Mac: the editor then takes its place here.
+                    NewItemSheet(inPhoneSheet: true)
+                        .toolbar(.hidden, for: .navigationBar)
+                        .transition(stepTransition)
                 }
-                .id(draft.item.id)
-            } else {
-                // "Que veux-tu ajouter ?", as on the Mac: the editor then takes its place here.
-                NewItemSheet(inPhoneSheet: true)
-                    .toolbar(.hidden, for: .navigationBar)
             }
+            .animation(Motion.fold(reduceMotion: reduceMotion), value: model.newItemDraft?.item.id)
         }
         // ⌘L with a dirty new item: the confirmation shows over the sheet.
         .discardConfirmation()
+    }
+
+    private var stepTransition: AnyTransition {
+        reduceMotion ? .opacity : .push(from: .trailing)
     }
 }
 #endif
