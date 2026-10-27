@@ -48,7 +48,9 @@ struct WatchtowerTab: View {
                     }
                     let clear = WatchtowerCard.all.filter { !Self.isFlagged($0, in: report) }
                     if !clear.isEmpty {
-                        ClearChecksCard(cards: clear, report: report, checkBreaches: watchtower.checkBreaches)
+                        ClearChecksCard(
+                            cards: clear, report: report, checkBreaches: watchtower.checkBreaches,
+                            breachCatalog: watchtower.breachCatalogUsed)
                     }
                 }
                 BreachSettingCard()
@@ -248,6 +250,7 @@ private struct ClearChecksCard: View {
     let cards: [WatchtowerCard]
     let report: FfiWatchtowerReport
     let checkBreaches: Bool
+    let breachCatalog: Bool
 
     var body: some View {
         EditorCard {
@@ -286,20 +289,7 @@ private struct ClearChecksCard: View {
 
     /// Why a check has no figure: its data source did not run (same words as the Mac cards).
     private func note(_ card: WatchtowerCard) -> String? {
-        switch card.source {
-        case .local:
-            return nil
-        case .breaches:
-            switch report.pwned {
-            case .disabled: return String(localized: "Vérification des fuites désactivée.")
-            case .unavailable: return checkBreaches ? String(localized: "En attente du réseau.") : nil
-            case .checked, .partial: return nil
-            }
-        case .sites:
-            return report.sitesChecked ? nil
-                : checkBreaches ? String(localized: "Catalogue des sites pas encore téléchargé.")
-                : String(localized: "Active « Vérifier les fuites » pour télécharger le catalogue des sites.")
-        }
+        card.unavailableNote(report: report, checkBreaches: checkBreaches, breachCatalog: breachCatalog)
     }
 }
 
