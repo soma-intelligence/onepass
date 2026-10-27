@@ -560,6 +560,16 @@
         }
       }
     },
+    "2 km" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2 km"
+          }
+        }
+      }
+    },
     "Abandonner" : {
       "localizations" : {
         "en" : {
@@ -1270,6 +1280,16 @@
         }
       }
     },
+    "Aucun élément concerné pour l'instant." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No item affected for now."
+          }
+        }
+      }
+    },
     "Aucun élément dans cette catégorie" : {
       "localizations" : {
         "en" : {
@@ -1486,6 +1506,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Good"
+          }
+        }
+      }
+    },
+    "Bonjour %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hi %@"
           }
         }
       }
@@ -6370,6 +6400,16 @@
         }
       }
     },
+    "Rien à signaler" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing to report"
+          }
+        }
+      }
+    },
     "Rose" : {
       "localizations" : {
         "en" : {
@@ -8120,6 +8160,16 @@
         }
       }
     },
+    "catégories" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "categories"
+          }
+        }
+      }
+    },
     "ce lieu" : {
       "localizations" : {
         "en" : {
@@ -8156,6 +8206,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SSH keys"
+          }
+        }
+      }
+    },
+    "coffres" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vaults"
           }
         }
       }
@@ -8206,6 +8266,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld seconds left"
+          }
+        }
+      }
+    },
+    "favoris" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "favorites"
           }
         }
       }
@@ -8426,6 +8496,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "replaced %@"
+          }
+        }
+      }
+    },
+    "récents" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "recents"
           }
         }
       }

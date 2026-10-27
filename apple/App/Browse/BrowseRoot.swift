@@ -15,7 +15,8 @@ struct BrowseRoot: View {
         @Bindable var model = model
         return layout
             #if os(iOS) || os(visionOS)
-            .sheet(isPresented: $model.showSettings) {
+            // The iPhone tabs show Réglages as a tab (`PhoneTabsView`), never as this sheet.
+            .sheet(isPresented: settingsSheetShown) {
                 SettingsView()
             }
             #endif
@@ -64,7 +65,11 @@ struct BrowseRoot: View {
                 }
             }
             .animation(.snappy, value: model.toast)
-            .simultaneousGesture(TapGesture().onEnded { model.session.noteActivity() })
+            // Not over the iPhone tabs: on iOS 27 this tap gesture swallows the taps of the navigation
+            // links below it (rows, Réglages pages); the tabs note activity on navigation instead.
+            .simultaneousGesture(
+                TapGesture().onEnded { model.session.noteActivity() },
+                including: handlesRevealInTabs ? .subviews : .all)
     }
 
     @ViewBuilder private var layout: some View {
@@ -98,6 +103,12 @@ struct BrowseRoot: View {
         #else
         false
         #endif
+    }
+
+    private var settingsSheetShown: Binding<Bool> {
+        Binding(
+            get: { model.showSettings && !handlesRevealInTabs },
+            set: { model.showSettings = $0 })
     }
 
     private var phoneNewItemShown: Bool {

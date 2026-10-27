@@ -33,54 +33,69 @@ struct PasskeyRegistrationView: View {
     }
 
     var body: some View {
-        AutoFillScaffold(title: Text("Enregistrer une passkey pour \(registration.rpID)"), model: model) {
-            Form {
-                Section {
-                    LabeledContent("Site") { Text(verbatim: registration.rpID) }
-                    LabeledContent("Identifiant") { Text(verbatim: registration.userName) }
-                }
-                if !suggestions.isEmpty {
-                    Section {
+        AutoFillScaffold(title: Text("Nouvelle passkey"), model: model) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    AutoFillHeader(
+                        type: .login, iconTitle: registration.rpID, url: "https://\(registration.rpID)",
+                        title: Text("Enregistrer une passkey pour \(registration.rpID)"),
+                        subtitle: registration.userName)
+                        .padding(.bottom, 14)
+                    AutoFillLabel("ajouter à")
+                    AutoFillCardRows {
                         ForEach(suggestions, id: \.key) { candidate in
                             choice(.item(vaultID: candidate.vaultId, itemID: candidate.itemId)) {
-                                HStack(spacing: 12) {
-                                    ItemIcon(type: .login, title: candidate.title, siteIcon: nil, size: 28)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Ajouter à \(candidate.title)")
-                                        if !candidate.user.isEmpty {
-                                            Text(verbatim: candidate.user).font(.subheadline).foregroundStyle(.secondary)
-                                        }
-                                    }
+                                AutoFillRow(
+                                    type: .login, title: String(localized: "Ajouter à \(candidate.title)"),
+                                    detail: candidate.user, url: candidate.url
+                                ) {
+                                    AutoFillChoiceMark(selected: target == .item(vaultID: candidate.vaultId, itemID: candidate.itemId))
                                 }
                             }
                             .accessibilityIdentifier(autofillIdentifier("candidate", candidate.title))
                         }
-                    } header: {
-                        Text("Éléments existants")
+                        choice(.newItem) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Theme.accent)
+                                    .frame(width: 36, height: 36)
+                                    .background(Theme.accent.opacity(0.12), in: .rect(cornerRadius: 9, style: .continuous))
+                                Text("Nouvel élément")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Spacer(minLength: 4)
+                                AutoFillChoiceMark(selected: target == .newItem)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .frame(minHeight: 56)
+                        }
+                        .accessibilityIdentifier("autofill.passkey.new")
+                        if target == .newItem {
+                            VaultPicker(vaults: session.vaults, selection: $vaultID)
+                        }
                     }
-                }
-                Section {
-                    choice(.newItem) {
-                        Label("Nouvel élément", systemImage: "plus.circle")
-                    }
-                    .accessibilityIdentifier("autofill.passkey.new")
-                    if target == .newItem {
-                        VaultPicker(vaults: session.vaults, selection: $vaultID)
-                    }
-                }
-                Section {
+                    Text("La passkey reste dans ton coffre OnePass, chiffrée sur tes appareils.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.top, 2)
                     SessionErrorText(session: session)
-                    Button {
+                        .padding(.horizontal, 6)
+                    AutoFillPrimaryButton {
                         register()
                     } label: {
-                        Text("Enregistrer la passkey").frame(maxWidth: .infinity)
+                        if busy { ProgressView() } else { Text("Enregistrer la passkey") }
                     }
-                    .buttonStyle(.borderedProminent)
                     .disabled(busy || !canRegister)
+                    .padding(.top, 14)
                     .accessibilityIdentifier("autofill.passkey.register")
                 }
+                .animation(.snappy, value: target)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .formStyle(.grouped)
         }
     }
 
@@ -88,16 +103,9 @@ struct PasskeyRegistrationView: View {
         Button {
             target = value
         } label: {
-            HStack {
-                label()
-                Spacer(minLength: 0)
-                if target == value {
-                    Image(systemName: "checkmark").foregroundStyle(Theme.accent)
-                }
-            }
-            .contentShape(Rectangle())
+            label()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AutoFillRowStyle())
         .accessibilityAddTraits(target == value ? .isSelected : [])
     }
 
@@ -126,22 +134,35 @@ struct PasskeyRegistrationView: View {
     }
 }
 
-/// The visible vaults with their badge.
+/// The visible vaults with their badge, as a row of a card.
 struct VaultPicker: View {
     let vaults: [FfiVault]
     @Binding var selection: String
 
+    private var current: FfiVault? { vaults.first { $0.id == selection } }
+
     var body: some View {
-        Picker("Coffre", selection: $selection) {
-            ForEach(vaults, id: \.id) { vault in
-                Label {
-                    Text(verbatim: vault.meta.name)
-                } icon: {
-                    VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 20)
+        HStack(spacing: 12) {
+            Text("Coffre")
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Picker("Coffre", selection: $selection) {
+                ForEach(vaults, id: \.id) { vault in
+                    Label {
+                        Text(verbatim: vault.meta.name)
+                    } icon: {
+                        VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 20)
+                    }
+                    .tag(vault.id)
                 }
-                .tag(vault.id)
             }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("autofill.vault")
         }
-        .accessibilityIdentifier("autofill.vault")
+        .padding(.leading, 16)
+        .padding(.trailing, 8)
+        .padding(.vertical, 6)
+        .frame(minHeight: 48)
     }
 }

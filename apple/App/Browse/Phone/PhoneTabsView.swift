@@ -8,6 +8,8 @@ import VaultKit
 enum PhoneRoute: Hashable {
     case list(ItemFilter)
     case item(ItemRef)
+    /// The items flagged by a Watchtower card.
+    case watchtower(title: String, itemIDs: Set<String>)
 
     var itemRef: ItemRef? {
         if case .item(let ref) = self { return ref }
@@ -16,12 +18,17 @@ enum PhoneRoute: Hashable {
 }
 
 enum PhoneTab: String, Hashable {
-    case home, items, watchtower, search
+    case home, items, watchtower, settings, search
+}
+
+extension EnvironmentValues {
+    /// Switches the iPhone tab bar to a tab (home tiles, the account menu's Réglages).
+    @Entry var openPhoneTab: @MainActor (PhoneTab) -> Void = { _ in }
 }
 
 /// iPhone, and iPad in compact width (spec 6.2, mockups `PhoneHome`, `PhoneItems`, `PhoneSearch`):
-/// Liquid Glass tab bar with Accueil, Éléments, Watchtower and the search tab (role `.search`),
-/// each tab in its own navigation stack. The item shown on top of the visible tab's stack is
+/// Liquid Glass tab bar with Accueil, Éléments, Watchtower, Réglages and the search tab (role
+/// `.search`), each tab in its own navigation stack. The item shown on top of the visible tab's stack is
 /// `AppModel.selectedItem`, so the detail's own actions (trash, move, save under a new vault)
 /// pop or follow it here. The tab bar hides while an editor is open.
 struct PhoneTabsView: View {
@@ -47,6 +54,11 @@ struct PhoneTabsView: View {
                 stack(.watchtower) { WatchtowerTab() }
             }
             .accessibilityIdentifier("tab.watchtower")
+            // The settings keep their own stack (pages pushed inside, no "OK").
+            Tab("Réglages", systemImage: "gearshape.fill", value: PhoneTab.settings) {
+                SettingsView(inTab: true)
+            }
+            .accessibilityIdentifier("tab.settings")
             Tab("Rechercher", systemImage: "magnifyingglass", value: PhoneTab.search, role: .search) {
                 stack(.search) { SearchTab(query: $searchQuery, isSearching: $searching) }
             }
@@ -56,8 +68,15 @@ struct PhoneTabsView: View {
         // search field of the tab bar (a `searchable` inside the tab showed no field at all).
         .searchable(text: $searchQuery, isPresented: $searching, prompt: Text("Titre, site, identifiant, tag"))
         .tabBarMinimizeBehavior(.onScrollDown)
+        .environment(\.openPhoneTab) { tab = $0 }
         .sheet(isPresented: newItemShown) {
             PhoneNewItemSheet()
+        }
+        // Réglages is a tab here: a request for the settings (a command, a capture) opens it.
+        .onChange(of: model.showSettings, initial: true) { _, shown in
+            guard shown else { return }
+            model.showSettings = false
+            tab = .settings
         }
         // The top of the visible stack is the selection: a tab switch selects that tab's item.
         .onChange(of: tab) { _, newTab in
@@ -65,7 +84,10 @@ struct PhoneTabsView: View {
             if newTab == .search, openSearchOnSelect, paths[.search]?.isEmpty ?? true { searching = true }
             let ref = paths[newTab]?.last?.itemRef
             if model.selectedItem != ref { model.perform(.select(ref)) }
+            model.session.noteActivity()
         }
+        // Moving in a tab counts as activity (no tap gesture over the tabs, see `BrowseRoot`).
+        .onChange(of: paths) { model.session.noteActivity() }
         // The detail cleared or moved the selection (trash, move, new vault on save), or a new
         // item was saved: the visible stack follows.
         .onChange(of: model.selectedItem) { old, new in
@@ -103,6 +125,8 @@ struct PhoneTabsView: View {
                     switch route {
                     case .list(let filter):
                         CategoryListView(filter: filter)
+                    case .watchtower(let title, let itemIDs):
+                        WatchtowerItemsList(title: title, itemIDs: itemIDs)
                     case .item(let ref):
                         ItemDetailView(ref: ref)
                             .id(ref)
@@ -164,8 +188,9 @@ struct PhoneTabsView: View {
     }
 
     #if DEBUG
-    /// Captures: `-OnePassDemoTab items|watchtower|search` opens that tab, `-OnePassDemoQuery <text>`
-    /// fills the search. Debug builds only.
+    /// Captures: `-OnePassDemoTab items|watchtower|settings|search` opens that tab,
+    /// `-OnePassDemoQuery <text>` fills the search, `-OnePassDemoNewItem YES` opens the add sheet,
+    /// `-OnePassDemoList <vault|category|tag|archive|trash>` pushes a list in Éléments. Debug builds only.
     private func applyDemoArguments() {
         let defaults = UserDefaults.standard
         if let name = defaults.string(forKey: "OnePassDemoTab"), let demoTab = PhoneTab(rawValue: name) {
@@ -176,12 +201,28 @@ struct PhoneTabsView: View {
             searchQuery = query
             searching = true
         }
+        if defaults.bool(forKey: "OnePassDemoNewItem") { model.showNewItemPicker = true }
+        if let list = defaults.string(forKey: "OnePassDemoList") {
+            let filter: ItemFilter? = switch list {
+            case "archive": .archive
+            case "trash": .trash
+            case "favorites": .favorites
+            case "all": .all
+            case "category": model.session.summaries.first.map { .category($0.itemType) }
+            case "tag": model.session.counts().byTag.keys.sorted().first.map { .tag($0) }
+            default: model.session.vaults.first.map { .vault($0.id) }
+            }
+            if let filter {
+                tab = .items
+                paths[.items] = [.list(filter)]
+            }
+        }
     }
     #endif
 }
 
-/// The new item flow on iPhone: the 26 types grouped (`NewItemMenu`), then the editor in the same
-/// sheet. Saving shows the new item in the visible tab; "Annuler" closes the sheet.
+/// The new item flow on iPhone: "Que veux-tu ajouter ?" (`NewItemSheet`), then the editor in the
+/// same sheet. Saving shows the new item in the visible tab; "Annuler" closes the sheet.
 struct PhoneNewItemSheet: View {
     @Environment(AppModel.self) private var model
 
@@ -193,20 +234,9 @@ struct PhoneNewItemSheet: View {
                 }
                 .id(draft.item.id)
             } else {
-                List {
-                    NewItemMenu { type in
-                        model.perform(.newItem(type))
-                        model.showNewItemPicker = false
-                    }
-                }
-                .navigationTitle("Nouvel élément")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Annuler") { model.showNewItemPicker = false }
-                            .accessibilityIdentifier("newItem.cancel")
-                    }
-                }
+                // "Que veux-tu ajouter ?", as on the Mac: the editor then takes its place here.
+                NewItemSheet(inPhoneSheet: true)
+                    .toolbar(.hidden, for: .navigationBar)
             }
         }
         // ⌘L with a dirty new item: the confirmation shows over the sheet.
