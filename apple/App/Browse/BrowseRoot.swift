@@ -16,7 +16,7 @@ struct BrowseRoot: View {
         @Bindable var model = model
         return layout
             #if os(iOS) || os(visionOS)
-            // The iPhone tabs show Réglages as a tab (`PhoneTabsView`), never as this sheet.
+            // Réglages: a sheet everywhere, opened on iPhone from the account menu.
             .sheet(isPresented: settingsSheetShown) {
                 SettingsView()
             }
@@ -126,7 +126,8 @@ struct BrowseRoot: View {
 
     private var settingsSheetShown: Binding<Bool> {
         Binding(
-            get: { model.showSettings && !handlesRevealInTabs },
+            // iPhone tabs too: Réglages left the tab bar for the account menu.
+            get: { model.showSettings },
             set: { model.showSettings = $0 })
     }
 

@@ -73,22 +73,18 @@ final class AutoFillUITests: XCTestCase {
             attachScreenshot("status-not-refreshed")
             print("Simulator limit: autofill.status is \(String(describing: status.value)) while the system settings show OnePass on")
         }
-        // Back to the settings list, then to Accueil (Réglages is a tab on iPhone, a sheet with
-        // "OK" elsewhere).
+        // Back to the settings list, closed with "OK" (Réglages is a sheet, opened from the
+        // account menu), then to the root of Accueil.
         let back = onePass.navigationBars["Remplissage automatique"].buttons.firstMatch
         if back.exists { tap(back, in: onePass) }
-        let done = onePass.buttons["settings.done"]
-        if done.exists {
-            tap(done, in: onePass)
-        } else {
-            tap(tabButton(onePass, id: "tab.home", label: "Accueil"), in: onePass)
-            // Accueil still shows the first Login: back to its root, where "Nouvel élément" is.
-            let back = onePass.navigationBars.buttons.element(boundBy: 0)
-            var pops = 0
-            while !onePass.buttons["items.new"].waitForExistence(timeout: 2), back.exists, pops < 4 {
-                back.tap()
-                pops += 1
-            }
+        tap(onePass.buttons["settings.done"], in: onePass)
+        tap(tabButton(onePass, id: "tab.home", label: "Accueil"), in: onePass)
+        // Accueil may still show the first Login: back to its root, where "Nouvel élément" is.
+        let pop = onePass.navigationBars.buttons.element(boundBy: 0)
+        var pops = 0
+        while !onePass.buttons["items.new"].waitForExistence(timeout: 2), pop.exists, pops < 4 {
+            pop.tap()
+            pops += 1
         }
 
         // Second Login, OnePass now the provider: no "Save Password?" sheet (spec 7). Limit: an
@@ -179,8 +175,19 @@ final class AutoFillUITests: XCTestCase {
     }
 
     private func openAutoFillSettings() {
-        // iPhone: Réglages is a tab.
-        tap(tabButton(onePass, id: "tab.settings", label: "Réglages"), in: onePass)
+        // iPhone: Réglages is in the account menu, at the root of Accueil.
+        tap(tabButton(onePass, id: "tab.home", label: "Accueil"), in: onePass)
+        let menu = onePass.descendants(matching: .any)["account.menu"].firstMatch
+        let pop = onePass.navigationBars.buttons.element(boundBy: 0)
+        var pops = 0
+        while !menu.waitForExistence(timeout: 2), pop.exists, pops < 4 {
+            pop.tap()
+            pops += 1
+        }
+        tap(menu, in: onePass)
+        // Menu items keep their label in the accessibility tree, not always their identifier.
+        let settingsItem = onePass.descendants(matching: .any)["account.settings"].firstMatch
+        tap(settingsItem.waitForExistence(timeout: 2) ? settingsItem : onePass.buttons["Réglages"].firstMatch, in: onePass)
         // A tap that lands while the sheet is still sliding up does not push the page: tap again.
         let row = onePass.descendants(matching: .any)["settings.autofill"].firstMatch
         let status = onePass.descendants(matching: .any)["autofill.status"].firstMatch
