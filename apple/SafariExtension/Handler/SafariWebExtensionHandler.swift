@@ -4,7 +4,8 @@ import SafariServices
 
 /// Receives each `browser.runtime.sendNativeMessage` of the OnePass Safari
 /// extension (`extension/src/background/safari.ts`) and relays it to the
-/// bridge host. Safari routes only this app's own extension here; the bridge
+/// bridge host: the OnePass app's socket in signed builds, the development
+/// host in Debug (`BridgeHost.launcher`). Safari routes only this app's own extension here; the bridge
 /// pairing and session (spec 6.4 and 6.5) authenticate both ends on top.
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     /// One hub for the life of the extension process: host processes (and the
