@@ -7,7 +7,9 @@ mod rebase;
 mod store;
 
 pub use rebase::RebaseReport;
-pub use store::{AccountState, IgnoredDeletion, MAX_IGNORED_DELETIONS, SyncStore};
+pub use store::{
+    AccountState, DroppedVaultWrites, IgnoredDeletion, MAX_IGNORED_DELETIONS, SyncStore,
+};
 
 use crate::store::RecordKind;
 use crate::{Id, IntegrityError};

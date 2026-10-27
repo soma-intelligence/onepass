@@ -7,6 +7,7 @@ mod sqlite;
 pub use memory::MemoryStore;
 pub use sqlite::SqliteStore;
 
+use crate::chain::ChainState;
 use crate::{Error, Id, IntegrityError, Result};
 
 /// What a record holds. The numeric codes are the on-disk encoding: append
@@ -21,6 +22,10 @@ pub enum RecordKind {
     Manifest,
     /// The account's signed restore epoch (one record, id = account id).
     RestoreEpoch,
+    /// The signed device list, id = account id, version = its seq.
+    DeviceList,
+    /// The signed vault list, id = account id, version = its seq.
+    VaultList,
 }
 
 impl RecordKind {
@@ -33,6 +38,8 @@ impl RecordKind {
             Self::Item => 5,
             Self::Manifest => 6,
             Self::RestoreEpoch => 7,
+            Self::DeviceList => 8,
+            Self::VaultList => 9,
         }
     }
 
@@ -45,6 +52,8 @@ impl RecordKind {
             5 => Self::Item,
             6 => Self::Manifest,
             7 => Self::RestoreEpoch,
+            8 => Self::DeviceList,
+            9 => Self::VaultList,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -116,6 +125,71 @@ pub trait RecordStore {
     /// sync health (`crate::sync::VaultSyncHealth`). The default ignores it.
     fn vault_event(&mut self, _vault: Id, _event: VaultEvent) -> Result<()> {
         Ok(())
+    }
+
+    /// Write every record only if the stored record with its key has the
+    /// version paired with it (`None`: no such record), all or nothing:
+    /// on a conflict nothing is written (`Error::Conflict`). The default
+    /// checks every version, then puts in order, which is atomic only for a
+    /// store whose `put` cannot fail (in memory); a persistent store
+    /// overrides it with one transaction (`SqliteStore`, `SyncStore`).
+    fn put_all_if_version(&mut self, writes: Vec<(Record, Option<u64>)>) -> Result<()> {
+        for (r, expected) in &writes {
+            if self.get(r.kind, r.id)?.map(|c| c.version) != *expected {
+                return Err(Error::Conflict);
+            }
+        }
+        for (r, _) in writes {
+            self.put(r)?;
+        }
+        Ok(())
+    }
+
+    /// `put_all_if_version`, then delete every `(kind, id)` of `deletes` in
+    /// order, all or nothing where the store can: on a conflict nothing is
+    /// written or deleted (`Error::Conflict`). The default writes then
+    /// deletes, which is atomic only for a store whose `put` and `delete`
+    /// cannot fail (in memory); a persistent store overrides it with one
+    /// transaction (`SqliteStore`, `SyncStore`). A deletion the store
+    /// refuses (a signed list record) fails the whole call there.
+    fn put_all_if_version_and_delete(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+    ) -> Result<()> {
+        self.put_all_if_version(writes)?;
+        for (kind, id) in deletes {
+            self.delete(kind, id)?;
+        }
+        Ok(())
+    }
+
+    /// The pinned chain state this store keeps for the device, read by the
+    /// `Repository` unlock functions. Only `SyncStore` persists one (meta key
+    /// `chain`); other stores give the default, so each session pins on
+    /// first use.
+    fn chain_state(&self) -> Result<ChainState> {
+        Ok(ChainState::default())
+    }
+
+    /// Whether `chain_state` gives back, in a later session, the chain state
+    /// saved with `put_all_if_version_with_chain` (only `SyncStore`). A
+    /// device registers itself in the device list only on such a store: its
+    /// id must outlive the session.
+    fn persists_chain(&self) -> bool {
+        false
+    }
+
+    /// `put_all_if_version`, and on a store that persists the chain state,
+    /// save `chain` in the same transaction (all or nothing). Other stores
+    /// only write the records.
+    fn put_all_if_version_with_chain(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: &ChainState,
+    ) -> Result<()> {
+        let _ = chain;
+        self.put_all_if_version(writes)
     }
 }
 
@@ -222,17 +296,25 @@ mod tests {
             RecordKind::Item,
             RecordKind::Manifest,
             RecordKind::RestoreEpoch,
+            RecordKind::DeviceList,
+            RecordKind::VaultList,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
         // Frozen codes: the on-disk and CloudKit encoding.
         assert_eq!(RecordKind::RestoreEpoch.code(), 7);
+        assert_eq!(RecordKind::DeviceList.code(), 8);
+        assert_eq!(RecordKind::VaultList.code(), 9);
         assert_eq!(
-            RecordKind::from_code(8).unwrap_err(),
+            RecordKind::from_code(10).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
         assert_eq!(
             RecordKind::from_code(0).unwrap_err(),
+            Error::InvalidFormat("record kind")
+        );
+        assert_eq!(
+            RecordKind::from_code(u8::MAX).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
     }

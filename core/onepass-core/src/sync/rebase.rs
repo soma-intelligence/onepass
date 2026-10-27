@@ -24,6 +24,13 @@
 //! for that vault (its signature and vault key are still checked). If the
 //! server manifest is exactly the local one, it is simply adopted.
 //!
+//! The signed lists (device list, vault list) are rebased the same way
+//! (`SyncStore::lists_needing_rebase`): the server list must chain to the
+//! ancestor the local list was built on, then the local list is rebuilt as
+//! the union of both (`lists::rebase_entries`), signed at the server's seq
+//! plus one and chained to it. When the server list already holds every
+//! local change, it is simply accepted and nothing is written.
+//!
 //! One vault's rebase is one SQLite transaction (`SyncStore::begin_batch`):
 //! dropping the pending rows, the replay and the device state with the new
 //! last seen manifest commit together. A failure or a crash leaves the
@@ -60,7 +67,10 @@
 
 use std::collections::BTreeMap;
 
+use crate::chain::Seen;
+use crate::devices::DeviceEntry;
 use crate::epoch::{EpochReason, RestoreEpoch};
+use crate::lists::{AccountList, Stored, open_record, rebase_entries};
 use crate::manifest::{
     Manifest, ManifestEntry, SignedManifest, manifest_hash, record_hash, verify_manifest,
 };
@@ -69,6 +79,7 @@ use crate::repo::{Repository, Use, seen, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
 use crate::sync::SyncStore;
 use crate::vault::{ItemRecord, Vault};
+use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
 
 /// A local item write to replay: the item and the hash of its local record.
@@ -174,6 +185,7 @@ impl Repository<SyncStore> {
     /// anything is discarded: the local writes and the device state stay.
     pub fn issue_restore_epoch_take_server(&mut self) -> Result<RestoreEpoch> {
         let device = self.device.clone();
+        let chain = self.chain.clone();
         self.store.begin_batch()?;
         let result = self.take_server().and_then(|issued| {
             self.store.commit_batch()?;
@@ -181,6 +193,8 @@ impl Repository<SyncStore> {
         });
         if result.is_err() {
             self.device = device;
+            self.chain = chain;
+            self.lists_forced = false;
             // The original error wins; SQLite undoes an open transaction
             // when the connection closes anyway.
             let _ = self.store.rollback_batch();
@@ -191,6 +205,9 @@ impl Repository<SyncStore> {
     fn take_server(&mut self) -> Result<RestoreEpoch> {
         self.store.discard_local_changes()?;
         self.replace_last_seen(BTreeMap::new());
+        // The pending lists went with the other local writes: the server's
+        // lists are taken like a first use, as the vaults are.
+        self.take_server_lists()?;
         let stored = self.stored_epoch_number()?;
         let vaults = self.open_vaults()?;
         let issued = self.issue_epoch(EpochReason::TakeServer, stored, vaults, false)?;
@@ -198,17 +215,21 @@ impl Repository<SyncStore> {
         Ok(issued)
     }
 
-    /// Save the device state in the store, merged with what the store
-    /// already holds: another process on the same file (the AutoFill
-    /// extension) may have seen newer manifests, and this one must not
-    /// rewind them. Per vault the larger `seq` wins, and the same `seq`
-    /// with another hash is refused (`ManifestRollback`, nothing written).
-    /// The pin is this process's, its KDF floor raised to the stored one
-    /// when both pin the same account. The merged state replaces
-    /// `self.device`. Read, merge and write run in one transaction (a
-    /// savepoint inside a rebase batch). The accepted restore epoch is the
-    /// larger of the two, except right after this process dropped a pending
-    /// epoch (`epoch_rewound`): then the in-memory one stands.
+    /// Save the device state and the chain state in the store, merged with
+    /// what the store already holds: another process on the same file (the
+    /// AutoFill extension) may have seen newer manifests or lists, and this
+    /// one must not rewind them. Per vault the larger `seq` wins, and the
+    /// same `seq` with another hash is refused (`ManifestRollback`, nothing
+    /// written). The pin is this process's, its KDF floor raised to the
+    /// stored one when both pin the same account. The chain state merges by
+    /// `SyncStore::merge_chain` (larger list seq, larger params epoch, a
+    /// device id that never changes). The merged states replace
+    /// `self.device` and `self.chain`. Read, merge and write run in one
+    /// transaction (a savepoint inside a rebase batch). The accepted restore
+    /// epoch is the larger of the two, except right after this process
+    /// dropped a pending epoch (`epoch_rewound`): then the in-memory one
+    /// stands. The vaults the signed vault list marks deleted leave
+    /// `last_seen` first, for good (`dropped`).
     pub fn persist_device_state(&mut self) -> Result<()> {
         self.persist_device_state_forcing(&[])
     }
@@ -216,25 +237,40 @@ impl Repository<SyncStore> {
     /// `persist_device_state`, except that the vaults in `force` keep the
     /// in-memory entry whatever is stored (a rebase renumbers them).
     ///
-    /// The vaults dropped on purpose since the last persist (`dropped`,
-    /// Travel Mode) are forced too: the stored entry must not come back.
+    /// The vaults dropped on purpose since the last persist (`dropped`:
+    /// Travel Mode, a restore epoch, a deleted vault) are forced too: the
+    /// stored entry must not come back. After a list rebase or a take of
+    /// the server's lists (`lists_forced`), the in-memory lists seen stand.
     fn persist_device_state_forcing(&mut self, force: &[Id]) -> Result<()> {
+        self.forget_deleted_vaults();
         let mut forced: Vec<Id> = force.to_vec();
         forced.extend(self.dropped.iter().copied());
-        self.device = self
-            .store
-            .merge_device_state(&self.device, &forced, self.epoch_rewound)?;
+        let (device, chain) = self.store.merge_device_state(
+            &self.device,
+            &self.chain,
+            &forced,
+            self.epoch_rewound,
+            self.lists_forced,
+        )?;
+        self.device = device;
+        self.chain = chain;
         self.dropped.clear();
         self.epoch_rewound = false;
+        self.lists_forced = false;
         Ok(())
     }
 
-    /// Rebase every held vault (see the module doc) and return their ids.
-    /// Each vault is tried, in one transaction with the device state; a
-    /// failing vault does not stop the others. The device state is
-    /// persisted again at the end.
+    /// Rebase every held signed list, then drop the pending writes into the
+    /// vaults the signed vault list marks deleted (spec 4.5: a write into a
+    /// vault deleted elsewhere is abandoned, and logged in
+    /// `SyncStore::dropped_vault_writes`), then rebase every held vault (see
+    /// the module doc) and return their ids. Each list and each vault is
+    /// tried, in one transaction with the device state; a failing one does
+    /// not stop the others. The device state is persisted again at the end.
     ///
-    /// Errors, the first one met after trying every vault: a local
+    /// Errors, the first one met after trying every list and vault (a list
+    /// that does not chain to its ancestor is `DeviceListRollback` or
+    /// `VaultListRollback`): a local
     /// manifest that does not descend from its ancestor, or a server
     /// manifest that does not chain to the ancestor, is `ManifestRollback`
     /// (an alert, `crate::sync::VaultSyncHealth`); then any error of
@@ -243,8 +279,8 @@ impl Repository<SyncStore> {
     /// not an error). A vault in error keeps its pending writes and stays
     /// held; the others stay rebased.
     ///
-    /// Before any vault: a local restore epoch that cannot ship (see the
-    /// module doc) is dropped and the device goes back to the epoch it had
+    /// After the lists and the dropped writes, before any vault: a local
+    /// restore epoch that cannot ship (see the module doc) is dropped and the device goes back to the epoch it had
     /// before issuing it; then the stored epoch is checked and applied (its
     /// errors stop the rebase). The dropped epoch is `Error::Conflict`,
     /// returned after every vault was tried, before any vault error.
@@ -263,6 +299,19 @@ impl Repository<SyncStore> {
     /// of either one. `Err` only for what stops the rebase before any vault
     /// (the stored epoch's rules, the store).
     pub fn rebase_report(&mut self) -> Result<RebaseReport> {
+        let mut first_error = None;
+        for (kind, _) in self.store.lists_needing_rebase()? {
+            let result = match kind {
+                RecordKind::DeviceList => self.rebase_list::<DeviceEntry>(),
+                _ => self.rebase_list::<VaultListEntry>(),
+            };
+            if let Err(e) = result {
+                first_error.get_or_insert(e);
+            }
+        }
+        if let Err(e) = self.drop_deleted_vault_writes() {
+            first_error.get_or_insert(e);
+        }
         let held = self.store.vaults_needing_rebase()?;
         let pending_epoch = self.store.pending_epoch()?;
         let lost_epoch = pending_epoch.is_some() && (self.store.epoch_held()? || !held.is_empty());
@@ -278,7 +327,6 @@ impl Repository<SyncStore> {
         }
         let epoch = self.sync_epoch()?;
         let mut rebased = Vec::new();
-        let mut first_error = None;
         // From here on, an error (the store's included) goes into the
         // report with the vaults already rebased: they changed either way.
         for v in held {
@@ -334,6 +382,20 @@ impl Repository<SyncStore> {
         }
     }
 
+    /// Drop the pending writes into every vault the verified vault list
+    /// marks deleted (`SyncStore::drop_pending_vault_writes`, logged there),
+    /// and forget those vaults' last manifest seen.
+    fn drop_deleted_vault_writes(&mut self) -> Result<()> {
+        let Some(list) = self.read_list::<VaultListEntry>()? else {
+            return Ok(());
+        };
+        for e in list.body.entries.iter().filter(|e| e.deleted_at.is_some()) {
+            self.store.drop_pending_vault_writes(e.vault_id)?;
+            self.forget_vault(e.vault_id);
+        }
+        Ok(())
+    }
+
     fn rebase_vault(&mut self, v: Id, epoch: Option<&RestoreEpoch>) -> Result<()> {
         let vault = self.open_vault(v)?;
         let plan = self.plan(&vault)?;
@@ -357,6 +419,64 @@ impl Repository<SyncStore> {
             // The original error wins. If the rollback fails too, SQLite
             // undoes the open transaction when the connection closes, and
             // the next batch on it is refused ("batch already open").
+            let _ = self.store.rollback_batch();
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    /// Rebuild the held local list of this kind over the server's (see the
+    /// module doc), in one transaction with the device state. The server
+    /// list must chain to the ancestor (`DeviceListRollback`,
+    /// `VaultListRollback`). On failure the local list stays pending and
+    /// held, and the chain state is as it was.
+    fn rebase_list<E: AccountList>(&mut self) -> Result<()> {
+        let id = self.account.params.account_id;
+        let local = self.store.get(E::KIND, id)?.ok_or(Error::NotFound)?;
+        let local: crate::lists::ListBody<E> = open_record(&self.account, &local, None)?;
+        let ancestor = match self.store.ancestor_record(E::KIND, id)? {
+            Some(rec) => Some(open_record::<E>(&self.account, &rec, None)?),
+            None => None,
+        };
+        let server = self
+            .store
+            .base_record(E::KIND, id)?
+            .ok_or(Error::NotFound)?;
+        let after: Option<Seen> = ancestor.as_ref().map(|a| a.seen());
+        let server = Stored {
+            version: server.version,
+            body: open_record::<E>(&self.account, &server, after.as_ref())?,
+        };
+        let entries = rebase_entries(
+            ancestor.as_ref().map(|a| a.entries.as_slice()),
+            &local.entries,
+            &server.body.entries,
+        );
+        let previous = self.chain.clone();
+        let forced = self.lists_forced;
+        self.store.begin_batch()?;
+        let result = self
+            .store
+            .drop_pending_record(E::KIND, id)
+            .and_then(|()| {
+                if entries == server.body.entries {
+                    E::set_seen(&mut self.chain, server.body.seen());
+                    Ok(())
+                } else {
+                    self.write_list(Some(&server), entries)
+                }
+            })
+            .and_then(|()| {
+                // The rebase renumbers this list: a pin of the abandoned
+                // local list stored earlier (same seq, another hash) must
+                // not refuse the merge.
+                self.lists_forced = true;
+                self.persist_device_state()
+            })
+            .and_then(|()| self.store.commit_batch());
+        if let Err(e) = result {
+            self.chain = previous;
+            self.lists_forced = forced;
             let _ = self.store.rollback_batch();
             return Err(e);
         }

@@ -4,11 +4,14 @@
 
 use std::path::Path;
 
+use onepass_core::chain::ChainState;
 use onepass_core::crypto::{KdfParams, SecretKey, random_array};
+use onepass_core::devices::{DeviceKind, DeviceMode};
 use onepass_core::model::{FieldValue, Item, ItemType, new_item};
 use onepass_core::repo::Repository;
 use onepass_core::store::{MemoryStore, RecordKind, RecordStore};
 use onepass_core::sync::SyncStore;
+use onepass_core::vault::VaultMeta;
 use onepass_core::{Error, Id, IntegrityError, Result};
 
 const PASSWORD: &str = "Projet Atlas, Camille Durand";
@@ -224,4 +227,110 @@ fn merge_keeps_the_higher_kdf_floor() {
     b.persist_device_state().unwrap();
     let again = &b.device_state().pinned.as_ref().unwrap().kdf_floor;
     assert_eq!((again.m_kib, again.t), (raised_floor.m_kib, raised_floor.t));
+}
+
+fn vault_meta(name: &str) -> VaultMeta {
+    VaultMeta {
+        name: name.into(),
+        icon: "key".into(),
+        color: "blue".into(),
+        travel_safe: false,
+        mcp_access: false,
+    }
+}
+
+/// A deleted vault (signed vault list) stays forgotten: the other process,
+/// which read it before the deletion, neither brings its entry back into
+/// the stored `last_seen` nor reports it missing.
+#[test]
+fn merge_does_not_resurrect_a_deleted_vault() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("onepass.sqlite");
+    let store = SyncStore::open(&path).unwrap();
+    let (mut a, sk) = Repository::create_account(store, PASSWORD, kdf()).unwrap();
+    let travail = a.create_vault(vault_meta("Travail")).unwrap();
+    a.persist_device_state().unwrap();
+    let mut b = unlock(&path, &sk);
+    b.items(&travail).unwrap();
+    assert!(b.device_state().last_seen.contains_key(&travail.id));
+
+    a.delete_vault(&travail).unwrap();
+    a.persist_device_state().unwrap();
+    b.persist_device_state().unwrap();
+
+    let stored = SyncStore::open(&path).unwrap().device_state().unwrap();
+    assert!(!stored.last_seen.contains_key(&travail.id));
+    assert!(!b.device_state().last_seen.contains_key(&travail.id));
+    assert_eq!(b.vaults().unwrap().len(), 1);
+    // A later persist of either process keeps it out.
+    a.persist_device_state().unwrap();
+    let stored = SyncStore::open(&path).unwrap().device_state().unwrap();
+    assert!(!stored.last_seen.contains_key(&travail.id));
+}
+
+/// The vault list pin of the chain state never goes back: a process that
+/// unlocked before the other wrote a newer list persists its older pin,
+/// and the stored one stays, so a later session still refuses a store that
+/// serves the older list.
+#[test]
+fn merge_never_rewinds_the_vault_list_pin() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("onepass.sqlite");
+    let store = SyncStore::open(&path).unwrap();
+    let (mut a, sk) = Repository::create_account(store, PASSWORD, kdf()).unwrap();
+    a.persist_device_state().unwrap();
+    let mut b = unlock(&path, &sk);
+    let old = b.chain().vault_list.unwrap();
+
+    a.create_vault(vault_meta("Travail")).unwrap();
+    a.persist_device_state().unwrap();
+    let new = a.chain().vault_list.unwrap();
+    assert!(new.seq > old.seq);
+    b.persist_device_state().unwrap();
+
+    let stored = SyncStore::open(&path).unwrap().chain_state().unwrap();
+    assert_eq!(stored.vault_list, Some(new));
+    assert_eq!(b.chain().vault_list, Some(new));
+    assert_eq!(b.vaults().unwrap().len(), 2);
+}
+
+/// Two processes of one device that were both unlocked before it had an id
+/// (an account from before the device list): the second to register finds
+/// the id the first one saved, instead of listing the device twice.
+#[test]
+fn two_processes_register_one_device_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("onepass.sqlite");
+    let store = SyncStore::open(&path).unwrap();
+    let (mut a, sk) = Repository::create_account(store, PASSWORD, kdf()).unwrap();
+    a.persist_device_state().unwrap();
+    let creator = a.this_device_id().unwrap();
+    drop(a);
+    // Forget the id, as on a device that never registered.
+    let store = SyncStore::open(&path).unwrap();
+    let chain = ChainState {
+        device_id: None,
+        ..store.chain_state().unwrap()
+    };
+    store.set_chain_state(&chain).unwrap();
+
+    let mut a = unlock(&path, &sk);
+    let mut b = unlock(&path, &sk);
+    assert_eq!(a.this_device_id(), None);
+    assert_eq!(b.this_device_id(), None);
+    let id = a
+        .register_this_device("Mac de Camille", DeviceKind::Mac, DeviceMode::Personal)
+        .unwrap();
+    assert_ne!(id, creator);
+    let again = b
+        .register_this_device("Mac de Camille", DeviceKind::Mac, DeviceMode::Personal)
+        .unwrap();
+    assert_eq!(again, id);
+    let ids: Vec<Id> = b.devices().unwrap().iter().map(|d| d.device_id).collect();
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&creator) && ids.contains(&id));
+    b.persist_device_state().unwrap();
+    a.persist_device_state().unwrap();
+    let stored = SyncStore::open(&path).unwrap().chain_state().unwrap();
+    assert_eq!(stored.device_id, Some(id));
 }

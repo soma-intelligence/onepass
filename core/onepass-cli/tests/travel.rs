@@ -214,7 +214,11 @@ fn travel_off_without_state_needs_flag() {
     let o = run(d, &["travel", "off", "--upstream", &up]);
     assert_ne!(o.code, 0);
     assert!(o.stderr.contains("--accept-unpinned"), "{}", o.stderr);
-    assert!(!items(d).contains("BankLogin"));
+    // Without travel.bin the hidden vault is still expected (signed vault
+    // list): reading fails closed instead of showing a partial account.
+    let listed = run(d, &["item", "list"]);
+    assert_eq!(listed.code, 3, "{}", listed.stderr);
+    assert!(!listed.stdout.contains("BankLogin"));
     ok(
         d,
         &["travel", "off", "--upstream", &up, "--accept-unpinned"],
