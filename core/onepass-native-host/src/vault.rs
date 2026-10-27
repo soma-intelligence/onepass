@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::config::HostError;
+use crate::log::Log;
 use crate::pairings::write_atomic;
 
 const DEVICE_FILE: &str = "device.bin";
@@ -39,15 +40,27 @@ const LOCK_FILE: &str = "lock";
 
 /// Opens the repository on `unlock` when it is not open yet.
 pub type Opener<S> = Box<dyn FnMut() -> Option<Repository<S>> + Send>;
-/// Called after each successful `save`, still under the data directory
-/// lock (the dev source rewrites `device.bin`, the fixture source its
-/// cache). An error makes the `save` reply `internal`.
-pub type AfterSave<S> = Box<dyn FnMut(&Repository<S>) -> Result<(), HostError> + Send>;
-/// Called before each read and each write, under the data directory lock:
-/// returns the repository to use instead of the current one (the dev
-/// source rebuilds it on the device state of disk merged with its own).
-/// An error makes the request reply `internal` and keeps the current one.
-pub type Refresh<S> = Box<dyn FnMut(&Repository<S>) -> Result<Repository<S>, HostError> + Send>;
+/// Persists what a request changed, still under the data directory lock:
+/// set with `set_after_save` (after each successful `save`) and with
+/// `set_after_read` (after each `items`, even a failed one). The dev source
+/// rewrites `device.bin`, the fixture source its cache (writes only). An
+/// error makes the request reply `internal`.
+pub type Persist<S> = Box<dyn FnMut(&Repository<S>) -> Result<(), HostError> + Send>;
+/// Called before each `items` and each `save`, under the data directory
+/// lock, with the device state of the current repository: returns the
+/// repository to use instead (the dev source rebuilds it on the device
+/// state of disk merged with this one). The current repository is dropped
+/// first, so its store is closed before the new one opens (two connections
+/// of one process to a replaced SQLite file share stale WAL state). An
+/// error makes the request reply `internal` and leaves the vault locked:
+/// `unlock` opens it again (each request persisted its state before).
+///
+/// Accepted limits: `status` and `vaults` do not refresh, so their check
+/// of known vaults uses the last seen manifests of this process, which may
+/// lag `device.bin` (they never write it, so nothing regresses); and a
+/// `save` that fails after its refresh does not persist the merged state,
+/// the next request does.
+pub type Refresh<S> = Box<dyn FnMut(&DeviceState) -> Result<Repository<S>, HostError> + Send>;
 
 /// A `VaultAccess` over a repository, with a simulated lock state.
 pub struct RepoVault<S: RecordStore> {
@@ -60,13 +73,16 @@ pub struct RepoVault<S: RecordStore> {
     /// Display colors that replace the stored vault color.
     colors: HashMap<Id, String>,
     opener: Option<Opener<S>>,
-    after_save: Option<AfterSave<S>>,
+    after_save: Option<Persist<S>>,
     /// Like `after_save`, after each `items` (reads move the last seen
     /// manifests too), even when the read failed.
-    after_read: Option<AfterSave<S>>,
+    after_read: Option<Persist<S>>,
     refresh: Option<Refresh<S>>,
     /// Lock file of the CLI data directory, held during each store access.
     lock_path: Option<PathBuf>,
+    /// Journal for the cause of a failed request (the reply only says
+    /// `internal`). Error messages of the core carry no data.
+    log: Option<Log>,
 }
 
 fn bridge_error(e: Error) -> BridgeError {
@@ -78,6 +94,7 @@ fn bridge_error(e: Error) -> BridgeError {
 }
 
 const LOCKED: BridgeError = BridgeError::App(AppErrorCode::Locked);
+const INTERNAL: BridgeError = BridgeError::App(AppErrorCode::Internal);
 
 impl<S: RecordStore> RepoVault<S> {
     pub fn new(repo: Option<Repository<S>>, account: &str) -> Self {
@@ -93,6 +110,7 @@ impl<S: RecordStore> RepoVault<S> {
             after_read: None,
             refresh: None,
             lock_path: None,
+            log: None,
         }
     }
 
@@ -122,11 +140,11 @@ impl<S: RecordStore> RepoVault<S> {
         self.opener = Some(opener);
     }
 
-    pub fn set_after_save(&mut self, f: AfterSave<S>) {
+    pub fn set_after_save(&mut self, f: Persist<S>) {
         self.after_save = Some(f);
     }
 
-    pub fn set_after_read(&mut self, f: AfterSave<S>) {
+    pub fn set_after_read(&mut self, f: Persist<S>) {
         self.after_read = Some(f);
     }
 
@@ -137,27 +155,61 @@ impl<S: RecordStore> RepoVault<S> {
     /// Replace the repository through the `refresh` hook, if any. The
     /// caller holds the data directory lock.
     fn refresh_repo(&mut self) -> Result<(), BridgeError> {
-        if let (Some(f), Some(repo)) = (self.refresh.as_mut(), self.repo.as_ref()) {
-            let fresh = f(repo).map_err(|_| BridgeError::App(AppErrorCode::Internal))?;
-            self.repo = Some(fresh);
+        if self.refresh.is_none() {
+            return Ok(());
         }
-        Ok(())
+        let Some(old) = self.repo.take() else {
+            return Ok(());
+        };
+        let seen = old.device_state().clone();
+        drop(old);
+        let fresh = match self.refresh.as_mut() {
+            Some(f) => f(&seen),
+            None => return Ok(()),
+        };
+        match fresh {
+            Ok(repo) => {
+                self.repo = Some(repo);
+                Ok(())
+            }
+            Err(e) => Err(self.fail("vault refresh", &e, INTERNAL)),
+        }
     }
 
     fn read_items(&mut self) -> onepass_bridge::Result<Vec<(VaultInfo, Item)>> {
         let repo = self.repo.as_mut().ok_or(LOCKED)?;
-        let vaults = repo.vaults().map_err(bridge_error)?;
+        let read = repo.vaults().and_then(|vaults| {
+            let mut infos = Vec::new();
+            for v in &vaults {
+                infos.push(repo.items(v)?);
+            }
+            Ok((vaults, infos))
+        });
+        let (vaults, infos) = read.map_err(|e| self.core_fail("vault read", e))?;
         let mut out = Vec::new();
-        let mut infos = Vec::new();
-        for v in &vaults {
-            let items = repo.items(v).map_err(bridge_error)?;
-            infos.push((v.id, items));
-        }
-        for (v, (_, items)) in vaults.iter().zip(infos) {
+        for (v, items) in vaults.iter().zip(infos) {
             let info = self.info(v);
             out.extend(items.into_iter().map(|i| (info.clone(), i)));
         }
         Ok(out)
+    }
+
+    pub fn set_log(&mut self, log: Log) {
+        self.log = Some(log);
+    }
+
+    /// Journal that `what` failed with `cause`, then return `err`.
+    fn fail(&self, what: &str, cause: &dyn std::fmt::Display, err: BridgeError) -> BridgeError {
+        if let Some(log) = &self.log {
+            log.line(&format!("{what} failed: {cause}"));
+        }
+        err
+    }
+
+    /// Like `bridge_error`, journaling the cause.
+    fn core_fail(&self, what: &str, e: Error) -> BridgeError {
+        let msg = e.to_string();
+        self.fail(what, &msg, bridge_error(e))
     }
 
     pub fn set_lock_path(&mut self, path: PathBuf) {
@@ -239,11 +291,11 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
         // Persisted whatever the result, as the CLI does: a vault read
         // before a failure still moved its last seen manifest.
         let saved = match (self.after_read.as_mut(), self.repo.as_ref()) {
-            (Some(f), Some(repo)) => f(repo).map_err(|_| BridgeError::App(AppErrorCode::Internal)),
+            (Some(f), Some(repo)) => f(repo),
             _ => Ok(()),
         };
         let out = result?;
-        saved?;
+        saved.map_err(|e| self.fail("device state save", &e, INTERNAL))?;
         Ok(out)
     }
 
@@ -254,18 +306,25 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
         let _g = self.guard()?;
         self.refresh_repo()?;
         let repo = self.repo.as_mut().ok_or(LOCKED)?;
-        let vaults = repo.vaults().map_err(bridge_error)?;
-        let vault = vaults
-            .iter()
-            .find(|v| v.id == vault_id)
-            .ok_or(BridgeError::App(AppErrorCode::NotFound))?;
-        let mut item = item;
-        item.vault_id = vault_id;
-        repo.save_item(vault, item).map_err(bridge_error)?;
-        if let Some(f) = self.after_save.as_mut() {
-            f(repo).map_err(|_| BridgeError::App(AppErrorCode::Internal))?;
+        let written = repo.vaults().and_then(|vaults| {
+            let Some(vault) = vaults.iter().find(|v| v.id == vault_id) else {
+                return Ok(false);
+            };
+            let mut item = item;
+            item.vault_id = vault_id;
+            repo.save_item(vault, item)?;
+            Ok(true)
+        });
+        match written {
+            Ok(true) => {}
+            Ok(false) => return Err(BridgeError::App(AppErrorCode::NotFound)),
+            Err(e) => return Err(self.core_fail("vault write", e)),
         }
-        Ok(())
+        let saved = match (self.after_save.as_mut(), self.repo.as_ref()) {
+            (Some(f), Some(repo)) => f(repo),
+            _ => Ok(()),
+        };
+        saved.map_err(|e| self.fail("device state save", &e, INTERNAL))
     }
 
     fn approve_reprompt(&mut self, _item_id: Id) -> bool {
@@ -290,15 +349,25 @@ struct DeviceRef<'a> {
     state: &'a DeviceState,
 }
 
-/// Merge two device states: the pinned account of `base` (of `other` when
-/// `base` pinned none), and per vault the last seen manifest with the
-/// higher seq. At the same seq the entry of `base` stays; a different hash
-/// there means two histories of the vault (a fork): refused with
-/// `ManifestRollback`, as the core refuses it, rather than choosing one.
+/// Merge two device states. The pinned account: the one of `base` (of
+/// `other` when `base` pinned none) with its KDF floor raised to the floor
+/// of `other`; pins of two different accounts (id or identity key) are
+/// refused with `WrongContext`, like a fork. Per vault, the last seen
+/// manifest with the higher seq. At the same seq the entry of `base`
+/// stays; a different hash there means two histories of the vault (a
+/// fork): refused with `ManifestRollback`, as the core refuses it, rather
+/// than choosing one.
 pub fn merge_device(base: &DeviceState, other: &DeviceState) -> Result<DeviceState, Error> {
     let mut out = base.clone();
-    if out.pinned.is_none() {
-        out.pinned = other.pinned.clone();
+    match (&mut out.pinned, &other.pinned) {
+        (Some(mine), Some(theirs)) => {
+            if mine.account_id != theirs.account_id || mine.identity_pub != theirs.identity_pub {
+                return Err(IntegrityError::WrongContext.into());
+            }
+            mine.raise_floor(&theirs.kdf_floor);
+        }
+        (None, Some(theirs)) => out.pinned = Some(theirs.clone()),
+        _ => {}
     }
     for (id, seen) in &other.last_seen {
         match out.last_seen.get(id) {
@@ -381,11 +450,7 @@ pub fn open_dev(dir: &Path, password: &str) -> Result<(Repository<SqliteStore>, 
     }
     let _lock = lock_file(&dir.join(LOCK_FILE))
         .map_err(|e| HostError::new(format!("cannot lock the vault directory: {}", e.kind())))?;
-    let bytes = Zeroizing::new(
-        fs::read(&device).map_err(|e| HostError::new(format!("device.bin: {}", e.kind())))?,
-    );
-    let file: DeviceFile =
-        postcard::from_bytes(&bytes).map_err(|_| HostError::new("device.bin is unreadable"))?;
+    let (_, file) = read_device(&device)?;
     let key = SecretKey::parse(&file.secret_key)
         .map_err(|_| HostError::new("device.bin holds an invalid key"))?;
     let store = SqliteStore::open(&store_path)
@@ -461,16 +526,17 @@ pub fn load_dev(dir: PathBuf, unlocked: bool, log: &crate::log::Log) -> DevVault
         persist_device(&device_dir, repo.device_state())
     }));
     let device_dir = dir.clone();
-    v.set_refresh(Box::new(move |repo| {
+    v.set_refresh(Box::new(move |seen| {
         let slot = auk
             .lock()
             .map_err(|_| HostError::new("account key unavailable"))?;
         let key = slot
             .as_ref()
             .ok_or_else(|| HostError::new("account key unavailable"))?;
-        reopen_dev(&device_dir, key, repo.device_state())
+        reopen_dev(&device_dir, key, seen)
     }));
     v.set_lock_path(dir.join(LOCK_FILE));
+    v.set_log(log.clone());
     v
 }
 
@@ -513,6 +579,37 @@ mod tests {
         assert!(matches!(
             merge_device(&state(&[(a, 3, 1)]), &state(&[(a, 3, 2)])),
             Err(Error::Integrity(IntegrityError::ManifestRollback))
+        ));
+    }
+
+    /// The device state pinned by a fresh account (dev KDF floor).
+    fn pinned_state() -> DeviceState {
+        use onepass_core::crypto::{DEV_KDF_FLOOR, KdfParams};
+        use onepass_core::store::MemoryStore;
+        let mut kdf = KdfParams::new_default().unwrap();
+        (kdf.m_kib, kdf.t, kdf.p) = DEV_KDF_FLOOR;
+        let (repo, _) = Repository::create_account(MemoryStore::default(), "pw", kdf).unwrap();
+        let state = repo.device_state().clone();
+        assert!(state.pinned.is_some());
+        state
+    }
+
+    #[test]
+    fn merge_raises_the_pin_floor_and_refuses_another_account() {
+        let mine = pinned_state();
+        let mut stronger = mine.clone();
+        stronger.pinned.as_mut().unwrap().kdf_floor.t += 1;
+        let merged = merge_device(&mine, &stronger).unwrap();
+        assert_eq!(merged.pinned, stronger.pinned);
+        assert_eq!(
+            merge_device(&DeviceState::default(), &mine).unwrap().pinned,
+            mine.pinned
+        );
+
+        let other = pinned_state();
+        assert!(matches!(
+            merge_device(&mine, &other),
+            Err(Error::Integrity(IntegrityError::WrongContext))
         ));
     }
 }

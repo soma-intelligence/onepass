@@ -757,6 +757,27 @@ fn add_note(
     vault.id
 }
 
+/// Fold the WAL of `vault.sqlite` into the file (another connection may be
+/// open, but idle).
+fn fold_wal(dir: &Path) {
+    let store = onepass_core::store::SqliteStore::open(&dir.join("vault.sqlite")).unwrap();
+    store.compact().unwrap();
+}
+
+/// A consistent copy of `vault.sqlite`: the WAL folded in first.
+fn store_snapshot(dir: &Path) -> Vec<u8> {
+    fold_wal(dir);
+    fs::read(dir.join("vault.sqlite")).unwrap()
+}
+
+/// Put `snapshot` back as `vault.sqlite`, without the WAL of later writes.
+fn store_restore(dir: &Path, snapshot: &[u8]) {
+    for suffix in ["-wal", "-shm"] {
+        let _ = fs::remove_file(dir.join(format!("vault.sqlite{suffix}")));
+    }
+    fs::write(dir.join("vault.sqlite"), snapshot).unwrap();
+}
+
 fn seen_seq(dir: &Path, vault: onepass_core::Id) -> u64 {
     device_bin(dir).state.last_seen[&vault].seq
 }
@@ -830,7 +851,7 @@ fn dev_host_never_regresses_a_cli_advance() {
 #[test]
 fn dev_rollback_after_a_host_read_is_refused() {
     let (env, rec) = dev_env();
-    let old_store = fs::read(env.data.join("vault.sqlite")).unwrap();
+    let old_store = store_snapshot(&env.data);
     // The store moves ahead of device.bin; only the host sees it.
     cli_style(&env.data, false, |repo| add_note(repo, 0, "Atlas Two"));
 
@@ -840,10 +861,7 @@ fn dev_rollback_after_a_host_read_is_refused() {
     assert!(host.wait().success());
 
     // Roll vault.sqlite back to before that write.
-    for suffix in ["-wal", "-shm"] {
-        let _ = fs::remove_file(env.data.join(format!("vault.sqlite{suffix}")));
-    }
-    fs::write(env.data.join("vault.sqlite"), old_store).unwrap();
+    store_restore(&env.data, &old_store);
     let (mut host, mut ch) = dev_session(&env, &rec);
     let status = request(&mut host, &mut ch, json!({"id": 1, "op": "status"}));
     let list = list_atlas(&mut host, &mut ch, 2);
@@ -852,4 +870,40 @@ fn dev_rollback_after_a_host_read_is_refused() {
         "rollback went unnoticed: {status} {list}"
     );
     assert!(host.wait().success());
+    // Refused for the rollback, not for a damaged store.
+    assert!(
+        log_text(&env).contains("manifest rollback detected"),
+        "{}",
+        log_text(&env)
+    );
+}
+
+#[test]
+fn dev_host_refreshes_device_state_before_each_operation() {
+    let (env, rec) = dev_env();
+    let old_store = store_snapshot(&env.data);
+
+    let (mut host, mut ch) = dev_session(&env, &rec);
+    let status = request(&mut host, &mut ch, json!({"id": 1, "op": "status"}));
+    assert_eq!(status["ok"]["locked"], false, "{status}");
+
+    // While the host is open, the CLI accepts a newer manifest and persists
+    // it, then vault.sqlite is rolled back under both.
+    cli_style(&env.data, true, |repo| add_note(repo, 0, "Atlas Two"));
+    // The host still holds a connection, so the CLI write stays in the WAL;
+    // fold it so the restore below really drops it.
+    fold_wal(&env.data);
+    store_restore(&env.data, &old_store);
+
+    let list = list_atlas(&mut host, &mut ch, 2);
+    assert_eq!(
+        list["err"]["code"], "internal",
+        "rollback went unnoticed: {list}"
+    );
+    assert!(host.wait().success());
+    assert!(
+        log_text(&env).contains("manifest rollback detected"),
+        "{}",
+        log_text(&env)
+    );
 }
