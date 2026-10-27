@@ -15,6 +15,7 @@ pub mod import;
 pub mod lists;
 pub mod manifest;
 pub mod model;
+pub mod pairing;
 pub mod reference;
 pub mod repo;
 pub mod store;

@@ -153,7 +153,7 @@ fn invalid(field: &str, reason: &'static str) -> Error {
 }
 
 /// A name of 1 to `MAX_DEVICE_NAME_CHARS` characters, not only spaces.
-fn check_name(name: &str) -> Result<()> {
+pub(crate) fn check_name(name: &str) -> Result<()> {
     if name.trim().is_empty() {
         return Err(invalid("device name", "empty"));
     }

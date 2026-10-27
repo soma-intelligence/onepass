@@ -532,6 +532,24 @@ impl SyncStore {
         self.read(pending_changes_in)
     }
 
+    /// Every `base` row, ordered by kind then id: the store as the server
+    /// sees it, never a `pending` write. The pairing snapshot (spec 5.1).
+    pub fn export_records(&self) -> Result<Vec<Record>> {
+        self.read(|conn| {
+            let mut stmt = conn
+                .prepare("SELECT kind, id, version, data FROM base ORDER BY kind, id")
+                .map_err(store_err)?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+                .map_err(store_err)?;
+            rows.map(|row| {
+                let (k, id, v, d) = row.map_err(store_err)?;
+                decode_row(k, id, v, d)
+            })
+            .collect()
+        })
+    }
+
     /// The server confirmed `(kind, id, version)`. If the pending row has
     /// exactly that version it moves to `base` with `server_meta` (a pending
     /// deletion removes the `base` row); any other version changes nothing.
