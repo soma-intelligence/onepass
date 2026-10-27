@@ -53,6 +53,11 @@ required-features = ["dev-fast-kdf"]
 name = "travel"
 required-features = ["dev-fast-kdf"]
 
+# A frozen account at the dev KDF floor (tests/fixtures/frozen-account).
+[[test]]
+name = "frozen_account"
+required-features = ["dev-fast-kdf"]
+
 [dev-dependencies]
 time = { version = "0.3", features = ["macros"] }
 proptest = "1.12"
