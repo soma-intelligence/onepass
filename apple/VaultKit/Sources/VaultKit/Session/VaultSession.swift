@@ -753,7 +753,8 @@ public final class VaultSession {
     /// "À proximité": active items of visible vaults with a place within `radius` meters of
     /// `origin`, closest first. Only items new or modified since the last call are decrypted (one
     /// core call for all of them); the rest comes from the in-memory index. An item that cannot be
-    /// read is left out until it changes (its detail reports the error when opened).
+    /// read is left out and read again next time: a passing error (a sync applying) never hides it
+    /// for good (its detail reports a lasting error when opened).
     public func nearbyItems(from origin: GeoPoint, within radius: Double = LocationIndex.nearbyRadius) async throws
         -> [NearbyItem]
     {
@@ -765,9 +766,9 @@ public final class VaultSession {
                 // Taken before reading: an edit landing during the read keeps the entry stale.
                 let readAt = Int64(Date().timeIntervalSince1970.rounded(.down))
                 for (vaultID, itemID, updatedAt) in stale {
-                    let item = try? session.item(vaultId: vaultID, itemId: itemID)
+                    guard let item = try? session.item(vaultId: vaultID, itemId: itemID) else { continue }
                     out[itemID] = LocationIndex.Entry(
-                        updatedAt: updatedAt, points: item.map(LocationIndex.points(of:)) ?? [], readAt: readAt)
+                        updatedAt: updatedAt, points: LocationIndex.points(of: item), readAt: readAt)
                 }
                 return out
             }
