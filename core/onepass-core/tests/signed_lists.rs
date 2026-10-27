@@ -7,11 +7,11 @@
 mod common;
 
 use common::*;
-use onepass_core::chain::ChainState;
 use onepass_core::crypto::HybridSigningKey;
+use onepass_core::crypto::SecretKey;
 use onepass_core::devices::{DEFAULT_DEVICE_NAME, DeviceEntry, DeviceKind, DeviceMode};
 use onepass_core::manifest::{Manifest, sign_manifest};
-use onepass_core::store::{Record, RecordKind, RecordStore};
+use onepass_core::store::{MemoryStore, Record, RecordKind, RecordStore, SqliteStore};
 use onepass_core::vault::{Vault, VaultMeta};
 use onepass_core::{Error, Id, IntegrityError, Result};
 
@@ -91,6 +91,12 @@ fn new_account_has_both_lists() {
     assert_eq!(devices[0].kind, DeviceKind::Phone);
     assert_eq!(list_version(&mut a, RecordKind::DeviceList), 2);
 
+    // A public session never registers.
+    assert!(matches!(
+        a.repo()
+            .register_this_device("Ordinateur", DeviceKind::Mac, DeviceMode::Public),
+        Err(Error::Validation(_))
+    ));
     // A new vault is listed in the same write.
     let travail = a.repo().create_vault(meta("Travail")).unwrap();
     assert!(vault_ids(&mut a).contains(&travail.id));
@@ -102,50 +108,206 @@ fn migration_creates_lists_once() {
     let (mut a, sk) = Device::create();
     let travail = a.repo().create_vault(meta("Travail")).unwrap().id;
     let personal = a.vault_named("Personnel").id;
-    let id = account_id(&mut a);
     a.lock();
-    // A milestone 2 store: no lists, and a chain state that never saw any.
-    let mut store = a.store();
-    store.delete(RecordKind::DeviceList, id).unwrap();
-    store.delete(RecordKind::VaultList, id).unwrap();
-    store
-        .set_chain_state(&ChainState {
-            params_epoch: 1,
-            ..ChainState::default()
-        })
-        .unwrap();
+    // A milestone 2 device: the same records without the lists, and a
+    // chain state that never saw any.
+    let mut m2 = Device::empty();
+    let mut store = m2.store();
+    let source = a.store();
+    for kind in [
+        RecordKind::AccountParams,
+        RecordKind::Keyset,
+        RecordKind::VaultKey,
+        RecordKind::VaultMeta,
+        RecordKind::Item,
+        RecordKind::Manifest,
+    ] {
+        for r in source.list(kind).unwrap() {
+            store.put(r).unwrap();
+        }
+    }
 
-    a.unlock(&sk);
-    assert_eq!(a.repo().this_device_id(), None);
+    m2.unlock(&sk);
+    assert_eq!(m2.repo().this_device_id(), None);
     // Reading the vaults never fails because a list is missing.
-    assert_eq!(a.repo().vaults().unwrap().len(), 2);
-    let devices = a.repo().devices().unwrap();
-    let me = a.repo().this_device_id().unwrap();
+    assert_eq!(m2.repo().vaults().unwrap().len(), 2);
+    let devices = m2.repo().devices().unwrap();
+    let me = m2.repo().this_device_id().unwrap();
     assert_eq!(devices.len(), 1);
     assert_eq!(devices[0].device_id, me);
     let mut expected = vec![personal, travail];
     expected.sort();
-    assert_eq!(vault_ids(&mut a), expected);
-    assert_eq!(list_version(&mut a, RecordKind::DeviceList), 1);
-    assert_eq!(list_version(&mut a, RecordKind::VaultList), 1);
+    assert_eq!(vault_ids(&mut m2), expected);
+    assert_eq!(list_version(&mut m2, RecordKind::DeviceList), 1);
+    assert_eq!(list_version(&mut m2, RecordKind::VaultList), 1);
 
     // Once: the next session finds them and writes nothing.
-    a.lock();
-    a.unlock(&sk);
-    assert_eq!(a.repo().devices().unwrap(), devices);
-    assert_eq!(vault_ids(&mut a), expected);
-    assert_eq!(list_version(&mut a, RecordKind::DeviceList), 1);
-    assert_eq!(list_version(&mut a, RecordKind::VaultList), 1);
+    m2.lock();
+    m2.unlock(&sk);
+    assert_eq!(m2.repo().this_device_id(), Some(me));
+    assert_eq!(m2.repo().devices().unwrap(), devices);
+    assert_eq!(vault_ids(&mut m2), expected);
+    assert_eq!(list_version(&mut m2, RecordKind::DeviceList), 1);
+    assert_eq!(list_version(&mut m2, RecordKind::VaultList), 1);
+}
 
-    // A list removed after this device saw one is a rollback, not a
-    // migration.
+#[test]
+fn migration_on_first_vault_creation() {
+    let (mut a, sk) = Device::create();
     a.lock();
-    a.store().delete(RecordKind::VaultList, id).unwrap();
-    a.unlock(&sk);
-    assert_eq!(
-        integrity(a.repo().vaults()),
-        IntegrityError::VaultListRollback
+    let mut m2 = Device::empty();
+    let mut store = m2.store();
+    let source = a.store();
+    for kind in [
+        RecordKind::AccountParams,
+        RecordKind::Keyset,
+        RecordKind::VaultKey,
+        RecordKind::VaultMeta,
+        RecordKind::Manifest,
+    ] {
+        for r in source.list(kind).unwrap() {
+            store.put(r).unwrap();
+        }
+    }
+    m2.unlock(&sk);
+    let travail = m2.repo().create_vault(meta("Travail")).unwrap().id;
+    let personal = m2.vault_named("Personnel").id;
+    let ids = vault_ids(&mut m2);
+    assert!(ids.contains(&travail) && ids.contains(&personal));
+    assert_eq!(m2.repo().devices().unwrap().len(), 1);
+}
+
+#[test]
+fn device_id_survives_a_cut_before_persist() {
+    let mut server = Server::default();
+    let (mut a, sk) = Device::create();
+    sync(&mut server, &mut a).unwrap();
+    let mut b = Device::empty();
+    pull(&server, &mut b);
+    b.unlock(&sk);
+    b.repo().devices().unwrap();
+    let id = b.repo().this_device_id().unwrap();
+    // Killed before `persist_device_state`.
+    b.repo = None;
+    b.unlock(&sk);
+    assert_eq!(b.repo().this_device_id(), Some(id));
+    let devices = b.repo().devices().unwrap();
+    assert_eq!(devices.len(), 2);
+    assert!(devices.iter().any(|d| d.device_id == id));
+}
+
+#[test]
+fn list_records_cannot_be_deleted_locally() {
+    let (mut a, _sk) = Device::create();
+    let id = account_id(&mut a);
+    for kind in [RecordKind::DeviceList, RecordKind::VaultList] {
+        assert_eq!(
+            a.repo().store_mut().delete(kind, id),
+            Err(Error::InvalidFormat("list record deletion"))
+        );
+        assert!(a.repo().store().get(kind, id).unwrap().is_some());
+    }
+    assert!(
+        a.store()
+            .pending_changes()
+            .unwrap()
+            .iter()
+            .all(|c| c.data.is_some())
     );
+    let dir = tempfile::tempdir().unwrap();
+    let mut sqlite = SqliteStore::open(&dir.path().join("s.sqlite")).unwrap();
+    let rec = a
+        .repo()
+        .store()
+        .get(RecordKind::VaultList, id)
+        .unwrap()
+        .unwrap();
+    sqlite.put(rec.clone()).unwrap();
+    assert_eq!(
+        sqlite.delete(RecordKind::VaultList, id),
+        Err(Error::InvalidFormat("list record deletion"))
+    );
+    assert_eq!(sqlite.get(RecordKind::VaultList, id).unwrap(), Some(rec));
+}
+
+/// A device with "Personnel" (not travel safe) and "Voyage" (travel safe),
+/// and an upstream holding a copy of every record.
+fn travelling() -> (Device, SecretKey, MemoryStore, Id) {
+    let (mut a, sk) = Device::create();
+    let mut voyage = meta("Voyage");
+    voyage.travel_safe = true;
+    a.repo().create_vault(voyage).unwrap();
+    let personal = a.vault_named("Personnel").id;
+    let mut upstream = MemoryStore::new();
+    for kind in [
+        RecordKind::AccountParams,
+        RecordKind::Keyset,
+        RecordKind::VaultKey,
+        RecordKind::VaultMeta,
+        RecordKind::Item,
+        RecordKind::Manifest,
+        RecordKind::DeviceList,
+        RecordKind::VaultList,
+    ] {
+        for r in a.repo().store().list(kind).unwrap() {
+            upstream.put(r).unwrap();
+        }
+    }
+    (a, sk, upstream, personal)
+}
+
+#[test]
+fn travel_keeps_vault_list_and_pin() {
+    let (mut a, _sk, upstream, personal) = travelling();
+    let list_before = vault_ids(&mut a);
+    let version = list_version(&mut a, RecordKind::VaultList);
+    let pin = a.repo().chain().vault_list;
+
+    let state = a.repo().enter_travel(&upstream).unwrap();
+    assert!(state.parked.contains_key(&personal));
+    let names: Vec<String> = a
+        .repo()
+        .vaults()
+        .unwrap()
+        .into_iter()
+        .map(|v| v.meta.name)
+        .collect();
+    assert_eq!(names, vec!["Voyage".to_string()]);
+    assert_eq!(vault_ids(&mut a), list_before);
+    assert_eq!(list_version(&mut a, RecordKind::VaultList), version);
+    assert_eq!(a.repo().chain().vault_list, pin);
+    // No list deletion on its way to the server.
+    assert!(
+        a.store()
+            .pending_changes()
+            .unwrap()
+            .iter()
+            .all(
+                |c| !matches!(c.kind, RecordKind::DeviceList | RecordKind::VaultList)
+                    || c.data.is_some()
+            )
+    );
+
+    a.repo().exit_travel(&upstream, &state).unwrap();
+    assert_eq!(a.repo().vaults().unwrap().len(), 2);
+    assert_eq!(vault_ids(&mut a), list_before);
+    assert_eq!(list_version(&mut a, RecordKind::VaultList), version);
+    assert_eq!(a.repo().chain().vault_list, pin);
+}
+
+#[test]
+fn travel_without_resume_reports_missing() {
+    let (mut a, sk, upstream, _personal) = travelling();
+    let state = a.repo().enter_travel(&upstream).unwrap();
+    // A later session that does not resume the Travel Mode.
+    a.lock();
+    a.unlock(&sk);
+    assert_eq!(integrity(a.repo().vaults()), IntegrityError::VaultMissing);
+    // Resumed, the hidden vault is not expected; the exit brings it back.
+    a.repo().resume_travel(&state);
+    assert_eq!(a.repo().vaults().unwrap().len(), 1);
+    a.repo().exit_travel(&upstream, &state).unwrap();
+    assert_eq!(a.repo().vaults().unwrap().len(), 2);
 }
 
 #[test]

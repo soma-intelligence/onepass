@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use onepass_core::Error;
 use onepass_core::crypto::{KdfParams, SecretKey};
+use onepass_core::repo::travel::SEALED_TRAVEL_STATE_LEN;
 use onepass_core::repo::{DeviceState, Repository};
 use onepass_core::store::SqliteStore;
 use serde::{Deserialize, Serialize};
@@ -341,7 +342,8 @@ impl Session {
         let key = SecretKey::parse(&file.secret_key)?;
         let store = stored(SqliteStore::open(&ctx.store_path()))?;
         harden(ctx)?;
-        let repo = stored(Repository::unlock(store, password, &key, file.state))?;
+        let mut repo = stored(Repository::unlock(store, password, &key, file.state))?;
+        resume_travel(ctx, &mut repo);
         Ok(Session {
             repo,
             secret_key: file.secret_key,
@@ -375,6 +377,23 @@ impl Session {
         };
         fs::File::open(dir)?.sync_all()?;
         Ok(())
+    }
+}
+
+/// While Travel Mode is on, tell the repository which vaults are hidden on
+/// purpose (`Repository::resume_travel`), so the signed vault list does not
+/// report them missing. A `travel.bin` that does not open is left to the
+/// travel commands: without it the hidden vaults stay expected, and reading
+/// the vaults fails (`VaultMissing`) rather than accepting their absence.
+fn resume_travel(ctx: &Ctx, repo: &mut Repository<SqliteStore>) {
+    let Ok(bytes) = fs::read(ctx.travel_path()).map(Zeroizing::new) else {
+        return;
+    };
+    if bytes.len() != SEALED_TRAVEL_STATE_LEN {
+        return;
+    }
+    if let Ok(state) = repo.open_travel_state(&bytes) {
+        repo.resume_travel(&state);
     }
 }
 

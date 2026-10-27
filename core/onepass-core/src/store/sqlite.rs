@@ -147,7 +147,12 @@ impl RecordStore for SqliteStore {
         rows.map(|row| decode(row.map_err(store_err)?)).collect()
     }
 
+    /// A signed list record is never deleted (spec 4.2: the lists only
+    /// grow): `InvalidFormat("list record deletion")`, nothing written.
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
+        if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+            return Err(Error::InvalidFormat("list record deletion"));
+        }
         self.conn
             .execute(
                 "DELETE FROM records WHERE kind = ?1 AND id = ?2",

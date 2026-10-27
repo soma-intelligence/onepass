@@ -635,12 +635,12 @@ fn hide_vault() {
         integrity(open(attack.clone()).vaults()),
         IntegrityError::VaultMissing
     );
-    // A device that never read it cannot tell (signed vault list: M2).
+    // A device that never read it tells too: the signed vault list lists
+    // it (milestone 2b).
     let mut device = f.device.clone();
     device.last_seen.remove(&f.vault_b);
     let repo = unlock(attack, device).unwrap();
-    let ids: Vec<Id> = repo.vaults().unwrap().iter().map(|v| v.id).collect();
-    assert_eq!(ids, vec![f.vault_a]);
+    assert_eq!(integrity(repo.vaults()), IntegrityError::VaultMissing);
 }
 
 #[test]

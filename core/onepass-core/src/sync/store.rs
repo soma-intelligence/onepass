@@ -1299,7 +1299,41 @@ impl RecordStore for SyncStore {
         SyncStore::chain_state(self)
     }
 
+    fn persists_chain(&self) -> bool {
+        true
+    }
+
+    /// The writes and the chain state in one transaction (or one savepoint
+    /// of the open batch).
+    fn put_all_if_version_with_chain(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: &ChainState,
+    ) -> Result<()> {
+        for (r, _) in &writes {
+            check_size(&r.data)?;
+        }
+        let tx = self.write_tx()?;
+        for (r, expected) in &writes {
+            if effective_version(&tx, r.kind, r.id)? != *expected {
+                return Err(Error::Conflict);
+            }
+            write_pending(&tx, r)?;
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+            params![CHAIN_STATE_KEY, chain.encode()],
+        )
+        .map_err(store_err)?;
+        tx.commit()
+    }
+
+    /// A signed list record is never deleted (spec 4.2: the lists only
+    /// grow): `InvalidFormat("list record deletion")`, nothing written.
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
+        if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+            return Err(Error::InvalidFormat("list record deletion"));
+        }
         let tx = self.write_tx()?;
         let base_row: Option<(i64, Option<Vec<u8>>)> = tx
             .query_row(

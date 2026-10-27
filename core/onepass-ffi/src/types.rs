@@ -383,7 +383,7 @@ pub struct FfiRecordChange {
     pub data: Option<Vec<u8>>,
 }
 
-/// A remote deletion the store refused: record kind code (1 to 6), record id
+/// A remote deletion the store refused: record kind code (1 to 8), record id
 /// (32 hex characters) and the time it was refused (Unix seconds).
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FfiIgnoredDeletion {

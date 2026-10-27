@@ -4,10 +4,19 @@
 //! It is a monotone list (`lists`): an entry is never removed, a revoked
 //! device stays revoked. The lists are kept up to date lazily: the first
 //! call that may write (`devices`, `vault_list`, `register_this_device`,
-//! the edits, `is_this_device_revoked`) creates a missing list (an account
-//! from before milestone 2b), registers this device if it is not listed
-//! yet, and adopts the unlisted vaults (`vaultlist`). Reading never fails
-//! because a list was never written; a revoked device writes nothing.
+//! the edits, `is_this_device_revoked`, and `create_vault` on an account
+//! without a vault list) creates a missing list (an account from before
+//! milestone 2b), registers this device if it is not listed yet, and adopts
+//! the unlisted vaults (`vaultlist`). Reading never fails because a list was
+//! never written; a revoked device writes nothing.
+//!
+//! This device's id lives in the chain state. It is written in the same
+//! transaction as the list that first lists it
+//! (`RecordStore::put_all_if_version_with_chain`), so a cut never leaves an
+//! entry nobody holds. A store that does not keep the chain state between
+//! sessions (`RecordStore::persists_chain`: memory, plain SQLite) never
+//! registers a device: there `register_this_device` is refused and the
+//! device list is only read and edited.
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -59,9 +68,16 @@ pub struct DeviceEntry {
 }
 
 impl DeviceEntry {
-    /// The fields an edit changes, as one comparable value.
-    fn editable(&self) -> (&str, DeviceKind, DeviceMode, Option<Id>) {
-        (&self.name, self.kind, self.mode, self.added_by)
+    /// The fields an edit changes, as one comparable value. A real name
+    /// ranks above the default one, whatever their spelling.
+    fn editable(&self) -> (bool, &str, DeviceKind, DeviceMode, Option<Id>) {
+        (
+            self.name != DEFAULT_DEVICE_NAME,
+            &self.name,
+            self.kind,
+            self.mode,
+            self.added_by,
+        )
     }
 
     /// `self`'s editable fields with the forward steps of both.
@@ -88,8 +104,9 @@ impl MonotoneEntry for DeviceEntry {
     }
 
     /// Revocation wins, the earliest dates are kept; the editable fields
-    /// come from the larger of the two (by name, kind, mode, then
-    /// `added_by`), so the merge is commutative.
+    /// come from the larger of the two (a real name before the default one,
+    /// then by name, kind, mode and `added_by`), so the merge is
+    /// commutative.
     fn merge(&self, other: &Self) -> Self {
         if self.editable() >= other.editable() {
             self.with_monotone_of(other)
@@ -150,6 +167,14 @@ fn revoked() -> Error {
     invalid("device", "revoked")
 }
 
+/// A public session adds nothing to the list (architecture spec 4.10).
+fn check_mode(mode: DeviceMode) -> Result<()> {
+    match mode {
+        DeviceMode::Public => Err(invalid("device mode", "public")),
+        DeviceMode::Personal | DeviceMode::Shared => Ok(()),
+    }
+}
+
 /// A device entry registered by the device itself.
 pub(crate) fn self_entry(device_id: Id, me: Option<&Registration<'_>>, at: i64) -> DeviceEntry {
     DeviceEntry {
@@ -175,9 +200,11 @@ impl<S: RecordStore> Repository<S> {
     ///   vaults do not verify (`vaults()` fails), the vault list is left
     ///   alone: `vaults()` reports the fault.
     ///
-    /// This device gets an id in the chain state on its first call. A
-    /// device the list marks revoked writes nothing. The lists read are
-    /// remembered as accepted (`ChainState`).
+    /// This device gets an id in the chain state on its first call, saved
+    /// with the list write; on a store that does not persist the chain
+    /// state the device part is skipped (see the module doc). A device the
+    /// list marks revoked writes nothing. The lists read are remembered as
+    /// accepted (`ChainState`).
     pub(crate) fn maintain_lists(&mut self, me: Option<&Registration<'_>>) -> Result<()> {
         let devices = self.read_list::<DeviceEntry>()?;
         let vault_list = self.read_list::<VaultListEntry>()?;
@@ -187,16 +214,25 @@ impl<S: RecordStore> Repository<S> {
         if let Some(v) = &vault_list {
             self.chain.vault_list = Some(v.body.seen());
         }
-        let my_id = *self.chain.device_id.get_or_insert_with(Id::new);
-        let mine = devices.as_ref().and_then(|d| d.body.entry(my_id));
+        let registers = self.store.persists_chain();
+        let mut chain = self.chain.clone();
+        let my_id = if registers {
+            Some(*chain.device_id.get_or_insert_with(Id::new))
+        } else {
+            chain.device_id
+        };
+        let mine = my_id.and_then(|id| devices.as_ref().and_then(|d| d.body.entry(id)));
         if mine.is_some_and(|e| e.revoked_at.is_some()) {
             return Ok(());
         }
         let at = now();
 
-        let wanted = match (mine, me) {
-            (None, _) => Some(self_entry(my_id, me, at)),
-            (Some(e), Some(r)) if (e.name.as_str(), e.kind, e.mode) != (r.name, r.kind, r.mode) => {
+        let wanted = match (my_id.filter(|_| registers), mine, me) {
+            (None, _, _) => None,
+            (Some(my_id), None, _) => Some(self_entry(my_id, me, at)),
+            (Some(_), Some(e), Some(r))
+                if (e.name.as_str(), e.kind, e.mode) != (r.name, r.kind, r.mode) =>
+            {
                 Some(DeviceEntry {
                     name: r.name.to_owned(),
                     kind: r.kind,
@@ -213,7 +249,7 @@ impl<S: RecordStore> Repository<S> {
                 .as_ref()
                 .map(|d| d.body.entries.clone())
                 .unwrap_or_default();
-            entries.retain(|e| e.device_id != my_id);
+            entries.retain(|e| e.device_id != entry.device_id);
             entries.push(entry);
             let (rec, expected, body) = self.list_write(devices.as_ref(), entries)?;
             writes.push((rec, expected));
@@ -247,13 +283,15 @@ impl<S: RecordStore> Repository<S> {
         if writes.is_empty() {
             return Ok(());
         }
-        self.store.put_all_if_version(writes)?;
         if let Some(b) = device_body {
-            self.chain.device_list = Some(b.seen());
+            chain.device_list = Some(b.seen());
         }
         if let Some(b) = vault_body {
-            self.chain.vault_list = Some(b.seen());
+            chain.vault_list = Some(b.seen());
         }
+        // The device id (new or not) goes with the list that carries it.
+        self.store.put_all_if_version_with_chain(writes, &chain)?;
+        self.chain = chain;
         Ok(())
     }
 
@@ -277,6 +315,9 @@ impl<S: RecordStore> Repository<S> {
     /// name has 1 to `MAX_DEVICE_NAME_CHARS` characters
     /// (`Validation("device name")`). A device the list marks revoked is
     /// refused (`Validation("device")`): a revoked id never registers again.
+    /// A public session never registers (`Validation("device mode")`), and
+    /// a store that does not persist the chain state cannot hold the id
+    /// (`InvalidFormat("device registration needs a sync store")`).
     pub fn register_this_device(
         &mut self,
         name: &str,
@@ -284,6 +325,12 @@ impl<S: RecordStore> Repository<S> {
         mode: DeviceMode,
     ) -> Result<Id> {
         check_name(name)?;
+        check_mode(mode)?;
+        if !self.store.persists_chain() {
+            return Err(Error::InvalidFormat(
+                "device registration needs a sync store",
+            ));
+        }
         self.maintain_lists(Some(&Registration { name, kind, mode }))?;
         if self.is_revoked_here()? {
             return Err(revoked());
@@ -292,10 +339,15 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// Add a device (pairing): its id must not be listed yet
-    /// (`Validation("device")`), its name valid. Refused on a revoked
+    /// (`Validation("device")`), its name valid, its mode personal or
+    /// shared, and it must not be revoked already. Refused on a revoked
     /// device.
     pub fn add_device(&mut self, entry: DeviceEntry) -> Result<()> {
         check_name(&entry.name)?;
+        check_mode(entry.mode)?;
+        if entry.revoked_at.is_some() {
+            return Err(revoked());
+        }
         self.edit_devices(|entries| {
             if entries.iter().any(|e| e.device_id == entry.device_id) {
                 return Err(invalid("device", "already listed"));
@@ -421,6 +473,50 @@ mod tests {
         let m = renamed.merge_preferring(&b);
         assert_eq!(m.name, "Nouveau nom");
         assert_eq!(m.revoked_at, Some(300));
+    }
+
+    #[test]
+    fn no_registration_without_a_persisted_chain() {
+        use crate::crypto::{KdfParams, random_array};
+        use crate::store::MemoryStore;
+        use crate::{Error, IntegrityError};
+
+        let kdf = KdfParams {
+            m_kib: 8192,
+            t: 1,
+            p: 1,
+            salt: random_array().unwrap(),
+        };
+        let (mut repo, _) = Repository::create_account(MemoryStore::new(), "pw", kdf).unwrap();
+        // No id that could not outlive the session: no entry, no ghost.
+        assert_eq!(repo.this_device_id(), None);
+        assert_eq!(repo.devices().unwrap(), vec![]);
+        assert_eq!(repo.this_device_id(), None);
+        assert_eq!(
+            repo.register_this_device("Mac", DeviceKind::Mac, DeviceMode::Personal),
+            Err(Error::InvalidFormat(
+                "device registration needs a sync store"
+            ))
+        );
+        assert!(!repo.is_this_device_revoked().unwrap());
+        assert_eq!(repo.vault_list().unwrap().len(), 1);
+
+        // A list removed after this session accepted one is a rollback, not
+        // a migration.
+        let id = repo.account.params.account_id;
+        repo.store.delete(RecordKind::VaultList, id).unwrap();
+        assert_eq!(
+            repo.vaults().unwrap_err(),
+            Error::Integrity(IntegrityError::VaultListRollback)
+        );
+    }
+
+    #[test]
+    fn default_name_never_wins_a_merge() {
+        let default = dev(1, DEFAULT_DEVICE_NAME);
+        let real = dev(1, "Aaron");
+        assert_eq!(default.merge(&real).name, "Aaron");
+        assert_eq!(real.merge(&default).name, "Aaron");
     }
 
     #[test]

@@ -101,6 +101,26 @@ pub trait RecordStore {
     fn chain_state(&self) -> Result<ChainState> {
         Ok(ChainState::default())
     }
+
+    /// Whether `chain_state` gives back, in a later session, the chain state
+    /// saved with `put_all_if_version_with_chain` (only `SyncStore`). A
+    /// device registers itself in the device list only on such a store: its
+    /// id must outlive the session.
+    fn persists_chain(&self) -> bool {
+        false
+    }
+
+    /// `put_all_if_version`, and on a store that persists the chain state,
+    /// save `chain` in the same transaction (all or nothing). Other stores
+    /// only write the records.
+    fn put_all_if_version_with_chain(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: &ChainState,
+    ) -> Result<()> {
+        let _ = chain;
+        self.put_all_if_version(writes)
+    }
 }
 
 /// Shared behavior checks, run against every store.

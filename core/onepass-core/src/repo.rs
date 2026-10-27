@@ -33,7 +33,7 @@
 //! another hash (a race loser stopped before deleting its record). Served
 //! instead of the current record, both stay errors.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -91,6 +91,10 @@ pub struct Repository<S: RecordStore> {
     /// The pinned chain state (`chain`): read from the store at unlock,
     /// persisted with the device state by a `SyncStore`.
     pub(crate) chain: ChainState,
+    /// Vaults parked by the Travel Mode (`enter_travel`, `resume_travel`):
+    /// absent on purpose, so `vaults()` does not expect them although the
+    /// vault list does. In memory only.
+    pub(crate) travel_parked: BTreeSet<Id>,
 }
 
 /// The verified content of a vault.
@@ -198,9 +202,12 @@ fn personal() -> VaultMeta {
 
 impl<S: RecordStore> Repository<S> {
     /// Create an account in an empty store, in one write
-    /// (`RecordStore::put_all_if_version`): params, keyset, the device list
-    /// with this device (named `devices::DEFAULT_DEVICE_NAME` until
-    /// `register_this_device`), the vault list, and the "Personnel" vault.
+    /// (`RecordStore::put_all_if_version_with_chain`, with the chain state
+    /// where the store keeps one): params, keyset, the device list with this
+    /// device (named `devices::DEFAULT_DEVICE_NAME` until
+    /// `register_this_device`; empty on a store that does not persist the
+    /// chain state, see `devices`), the vault list, and the "Personnel"
+    /// vault.
     /// The device pins the new account.
     pub fn create_account(
         store: S,
@@ -217,7 +224,9 @@ impl<S: RecordStore> Repository<S> {
             keyset_record,
         } = Account::create_with_params(password, kdf)?;
         let id = account.params.account_id;
-        let device_id = Id::new();
+        // Only a store that keeps the chain state can hold this device's id
+        // (see `devices`): elsewhere the device list starts empty.
+        let device_id = store.persists_chain().then(Id::new);
         let at = now();
         let (vault, envelope, meta_blob) = Vault::create(&account, personal())?;
         let device = DeviceState {
@@ -226,7 +235,7 @@ impl<S: RecordStore> Repository<S> {
         };
         let chain = ChainState {
             params_epoch: account.params.epoch,
-            device_id: Some(device_id),
+            device_id,
             ..ChainState::default()
         };
         let mut repo = Repository {
@@ -234,9 +243,11 @@ impl<S: RecordStore> Repository<S> {
             account,
             device,
             chain,
+            travel_parked: BTreeSet::new(),
         };
         let (manifest, seen) = repo.manifest_record(&vault, None, vec![])?;
-        let devices = ListBody::next(None, id, vec![self_entry(device_id, None, at)])?;
+        let me = device_id.map(|d| self_entry(d, None, at));
+        let devices = ListBody::next(None, id, me.into_iter().collect())?;
         let vaults = ListBody::next(
             None,
             id,
@@ -246,7 +257,8 @@ impl<S: RecordStore> Repository<S> {
                 deleted_at: None,
             }],
         )?;
-        let (device_seen, vault_seen) = (devices.seen(), vaults.seen());
+        repo.chain.device_list = Some(devices.seen());
+        repo.chain.vault_list = Some(vaults.seen());
         let record = |kind, id, data| Record {
             id,
             kind,
@@ -262,10 +274,9 @@ impl<S: RecordStore> Repository<S> {
             record(RecordKind::VaultMeta, vault.id, meta_blob),
             record(RecordKind::VaultKey, vault.id, envelope),
         ];
+        let writes = writes.into_iter().map(|r| (r, None)).collect();
         repo.store
-            .put_all_if_version(writes.into_iter().map(|r| (r, None)).collect())?;
-        repo.chain.device_list = Some(device_seen);
-        repo.chain.vault_list = Some(vault_seen);
+            .put_all_if_version_with_chain(writes, &repo.chain)?;
         repo.device.last_seen.insert(vault.id, seen);
         Ok((repo, secret_key))
     }
@@ -346,6 +357,7 @@ impl<S: RecordStore> Repository<S> {
             account,
             device,
             chain,
+            travel_parked: BTreeSet::new(),
         })
     }
 
@@ -467,7 +479,9 @@ impl<S: RecordStore> Repository<S> {
     /// (`VaultMissing`). A vault it marks deleted is neither expected nor
     /// returned. A valid vault it does not list is returned (adopted into
     /// the list later). No list yet (an account from before the list) means
-    /// no list check.
+    /// no list check. A vault parked by the Travel Mode (`enter_travel`, or
+    /// `resume_travel` in a later session) is not expected either: a
+    /// session that forgets `resume_travel` gets `VaultMissing`.
     pub fn vaults(&self) -> Result<Vec<Vault>> {
         let list = self.read_list::<VaultListEntry>()?;
         let entries: &[VaultListEntry] = list.as_ref().map_or(&[], |l| &l.body.entries);
@@ -496,7 +510,8 @@ impl<S: RecordStore> Repository<S> {
                 .map(|e| e.vault_id),
         );
         for id in expected {
-            if !deleted(id) && !out.iter().any(|v| v.id == id) {
+            let parked = self.travel_parked.contains(&id);
+            if !deleted(id) && !parked && !out.iter().any(|v| v.id == id) {
                 return Err(IntegrityError::VaultMissing.into());
             }
         }
@@ -509,11 +524,17 @@ impl<S: RecordStore> Repository<S> {
     /// key envelope and, when the account has a vault list, the next list
     /// with the new vault go in one write
     /// (`RecordStore::put_all_if_version`, the key after the manifest and
-    /// meta); the device remembers the manifest once it is written. Without
-    /// a vault list (an account from before it), the vault is adopted into
-    /// the list when it is created (see `devices`). A list changed by
+    /// meta); the device remembers the manifest once it is written. On an
+    /// account without a vault list (from before it), the lists are first
+    /// brought up to date (`devices`, migration), so the new vault is
+    /// listed too; if the vaults do not verify, no list is created and the
+    /// vault waits for adoption. A list changed by
     /// another writer meanwhile is `Error::Conflict`, and nothing is written.
     pub fn create_vault(&mut self, meta: VaultMeta) -> Result<Vault> {
+        if self.read_list::<VaultListEntry>()?.is_none() {
+            // An account from before the lists: migrate on this first write.
+            self.maintain_lists(None)?;
+        }
         let list = self.read_list::<VaultListEntry>()?;
         let (vault, envelope, meta_blob) = Vault::create(&self.account, meta)?;
         let (manifest, seen) = self.manifest_record(&vault, None, vec![])?;
@@ -1358,9 +1379,10 @@ mod tests {
         let key = repo.store.get(RecordKind::VaultKey, w.id).unwrap().unwrap();
         repo.store.delete(RecordKind::VaultKey, w.id).unwrap();
         assert_eq!(integrity(repo.vaults()), IntegrityError::VaultMissing);
-        // A device that never saw it cannot tell (signed vault list: M2).
+        // A device that never saw it tells too: the signed vault list
+        // lists it.
         repo.device.last_seen.remove(&w.id);
-        assert_eq!(repo.vaults().unwrap().len(), 1);
+        assert_eq!(integrity(repo.vaults()), IntegrityError::VaultMissing);
         repo.store.put(key).unwrap();
         assert_eq!(repo.vaults().unwrap().len(), 2);
     }
