@@ -11,6 +11,7 @@ mod rules;
 mod session;
 pub mod timeline;
 mod types;
+pub mod watchtower;
 
 use std::path::Path;
 use std::sync::Arc;
