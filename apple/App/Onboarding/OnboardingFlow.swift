@@ -218,9 +218,11 @@ final class OnboardingModel {
             return
         }
         busyMessage = String(localized: "Création du coffre...")
-        // Submitted: both fields are emptied now, whatever the outcome. The local copy lives for the
-        // call only (`String`, R5; Part B passes bytes to the core).
+        // Submitted: both fields are emptied now, whatever the outcome. The password lives on in a
+        // buffer wiped after the call (and copied for the biometric step only); it crosses the FFI
+        // as bytes.
         let typed = credentials.submitCreation()
+        defer { typed.wipe() }
         do {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
             let key = try await session.createAccount(password: typed, displayName: name, mode: mode)
@@ -236,7 +238,7 @@ final class OnboardingModel {
         busyMessage = String(localized: "Activation de \(biometryName)...")
         defer { busyMessage = nil }
         model.settings.allowWatchUnlock = allowWatch
-        guard let typed = credentials.enrollmentPassword?.string() else {
+        guard let typed = credentials.enrollmentPassword else {
             errorMessage = VaultError.passwordRequired.localizedMessage
             return
         }
@@ -281,6 +283,7 @@ final class OnboardingModel {
         // is kept after a failure (a typo or a wrong password), so the long key need not be typed
         // again, and emptied on success.
         let typedPassword = credentials.submitRestore()
+        defer { typedPassword.wipe() }
         do {
             try await session.restore(secretKey: restoreKey, password: typedPassword)
         } catch {

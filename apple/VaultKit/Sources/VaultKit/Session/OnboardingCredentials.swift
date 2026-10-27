@@ -5,7 +5,8 @@ import Foundation
 /// Secret Key and, when the biometric step follows, the master password stay in wipeable buffers
 /// until `clear()` (end of the onboarding, or lock).
 ///
-/// The typed fields are `String` (SwiftUI text fields need one) and cannot be wiped (R5).
+/// The typed fields are `String` (SwiftUI text fields need one) and cannot be wiped (R5); what is
+/// submitted goes into a wipeable buffer at once and crosses the FFI as bytes.
 public struct OnboardingCredentials {
     public var password = ""
     public var confirmation = ""
@@ -18,32 +19,33 @@ public struct OnboardingCredentials {
 
     public init() {}
 
-    /// Account creation submitted: both fields are emptied now, the typed password is returned for
-    /// the call (keep it in a local only).
-    public mutating func submitCreation() -> String {
-        let typed = password
+    /// Account creation submitted: both fields are emptied now, the typed password is returned in a
+    /// buffer the caller owns (and wipes after the call).
+    public mutating func submitCreation() -> SecretBytes {
+        let typed = SecretBytes(utf8: password)
         password = ""
         confirmation = ""
         return typed
     }
 
-    /// The account exists. The password is kept only when the biometric step will ask for it.
-    public mutating func accountCreated(secretKey: String, password: String, keepPasswordForBiometrics: Bool) {
+    /// The account exists: the Secret Key buffer is taken over (the caller drops its reference). The
+    /// password is copied only when the biometric step will ask for it.
+    public mutating func accountCreated(secretKey: SecretBytes, password: SecretBytes, keepPasswordForBiometrics: Bool) {
         self.secretKey?.wipe()
-        self.secretKey = SecretBytes(utf8: secretKey)
+        self.secretKey = secretKey
         keepForEnrollment(password, keepPasswordForBiometrics)
     }
 
     /// Restore submitted: the password field is emptied now; the Secret Key field stays until
     /// `restored` (after a typo or a wrong password, the long key need not be typed again).
-    public mutating func submitRestore() -> String {
-        let typed = restorePassword
+    public mutating func submitRestore() -> SecretBytes {
+        let typed = SecretBytes(utf8: restorePassword)
         restorePassword = ""
         return typed
     }
 
     /// The restore unlocked: the Secret Key field is emptied.
-    public mutating func restored(password: String, keepPasswordForBiometrics: Bool) {
+    public mutating func restored(password: SecretBytes, keepPasswordForBiometrics: Bool) {
         restoreKey = ""
         keepForEnrollment(password, keepPasswordForBiometrics)
     }
@@ -60,8 +62,8 @@ public struct OnboardingCredentials {
         enrollmentPassword = nil
     }
 
-    private mutating func keepForEnrollment(_ password: String, _ keep: Bool) {
+    private mutating func keepForEnrollment(_ password: SecretBytes, _ keep: Bool) {
         enrollmentPassword?.wipe()
-        enrollmentPassword = keep ? SecretBytes(utf8: password) : nil
+        enrollmentPassword = keep ? password.withUnsafeBytes { SecretBytes(copying: $0) } : nil
     }
 }

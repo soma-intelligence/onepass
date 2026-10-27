@@ -137,7 +137,7 @@ struct SecuritySettings: View {
         }
     }
 
-    private func confirm(_ prompt: Prompt, password: String) async throws {
+    private func confirm(_ prompt: Prompt, password: SecretBytes) async throws {
         switch prompt {
         case .enableBiometrics:
             try await session.enrollBiometrics(password: password)
@@ -232,12 +232,13 @@ struct PasswordPromptSheet: View {
     @Environment(\.dismiss) private var dismiss
     let title: LocalizedStringKey
     let footer: LocalizedStringKey
-    let submit: (String) async throws -> Void
+    /// Gets the typed password in a wipeable buffer, wiped once `submit` returns.
+    let submit: (SecretBytes) async throws -> Void
 
     init(
         title: LocalizedStringKey,
         footer: LocalizedStringKey = "Le mot de passe maître est demandé pour changer ce réglage.",
-        submit: @escaping (String) async throws -> Void
+        submit: @escaping (SecretBytes) async throws -> Void
     ) {
         self.title = title
         self.footer = footer
@@ -296,11 +297,14 @@ struct PasswordPromptSheet: View {
         guard !password.isEmpty, !busy else { return }
         busy = true
         errorMessage = nil
-        // Emptied on submission (success or not): the local copy lives for the call only (R5).
-        let value = password
+        // Emptied on submission (success or not): the password lives on in a wiped buffer only (R5).
+        let value = SecretBytes(utf8: password)
         password = ""
         Task {
-            defer { busy = false }
+            defer {
+                value.wipe()
+                busy = false
+            }
             do {
                 try await submit(value)
                 dismiss()

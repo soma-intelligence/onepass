@@ -220,9 +220,23 @@ public final class VaultSession {
 
     // MARK: - Account creation and unlock
 
-    /// Creates the account and its "Personnel" vault, stores the Secret Key in the keychain and
-    /// unlocks. Returns the Secret Key in display form, to show once and put in the Emergency Kit.
+    /// `createAccount(password:displayName:mode:)` with a typed `String` (tests, debug data). The app
+    /// passes `SecretBytes`.
     public func createAccount(password: String, displayName: String, mode: DeviceMode) async throws -> String {
+        let bytes = SecretBytes(utf8: password)
+        defer { bytes.wipe() }
+        let secretKey = try await createAccount(password: bytes, displayName: displayName, mode: mode)
+        defer { secretKey.wipe() }
+        return secretKey.string() ?? ""
+    }
+
+    /// Creates the account and its "Personnel" vault, stores the Secret Key in the keychain and
+    /// unlocks. Returns the Secret Key in display form (the caller wipes it), to show once and put in
+    /// the Emergency Kit. The password crosses the FFI as bytes (`create_account_bytes`); the caller
+    /// wipes `password`.
+    public func createAccount(password: SecretBytes, displayName: String, mode: DeviceMode) async throws
+        -> SecretBytes
+    {
         if session != nil || state == .locked { throw fail(.accountExists) }
         let path = dbPath
         let kdf = environment.accountKdf
@@ -231,16 +245,22 @@ public final class VaultSession {
         do {
             created = try await background {
                 if try hasAccount(dbPath: path) { throw VaultError.accountExists }
-                let account = try kdf.map { try createAccountWithKdf(dbPath: path, password: password, kdf: $0) }
-                    ?? OnePassCore.createAccount(dbPath: path, password: password)
+                let account = try password.withData { bytes in
+                    try kdf.map { try createAccountWithKdfBytes(dbPath: path, password: bytes, kdf: $0) }
+                        ?? createAccountBytes(dbPath: path, password: bytes)
+                }
+                // The core hands the Secret Key back as a `String` (UniFFI lift): copied into a wipeable
+                // buffer at once, the `String` dies with this closure (R5).
+                let secretKey = SecretBytes(utf8: account.secretKey)
                 do {
                     if try account.session.vaults().isEmpty {
                         _ = try account.session.createVault(meta: Self.personalVault)
                     }
                     return Created(
-                        session: account.session, secretKey: account.secretKey, accountID: account.accountId,
+                        session: account.session, secretKey: secretKey, accountID: account.accountId,
                         snapshot: try Self.load(account.session, purge: false))
                 } catch {
+                    secretKey.wipe()
                     account.session.lock()
                     throw error
                 }
@@ -266,6 +286,7 @@ public final class VaultSession {
             } catch {
                 Self.log.error("store not reset after an undone account creation")
             }
+            created.secretKey.wipe()
             evaluateStoredAccount()
             throw fail(.other(Self.secretKeyNotStoredOnCreate))
         }
@@ -285,8 +306,16 @@ public final class VaultSession {
         return created.secretKey
     }
 
-    /// Master password unlock. The password is passed as typed (never trimmed): the core normalizes it.
+    /// `unlock(password:)` with a typed `String` (tests, debug data). The app passes `SecretBytes`.
     public func unlock(password: String) async throws {
+        let bytes = SecretBytes(utf8: password)
+        defer { bytes.wipe() }
+        try await unlock(password: bytes)
+    }
+
+    /// Master password unlock. The password is passed as typed (never trimmed): the core normalizes it.
+    /// The caller wipes `password`.
+    public func unlock(password: SecretBytes) async throws {
         if state == .unlocked { return }
         try checkLockout()
         let stored = try loadSecretKey()
@@ -294,9 +323,18 @@ public final class VaultSession {
         try await passwordUnlock(password: password, secretKey: stored.secretKey, storeSecretKey: false)
     }
 
-    /// New device (or wiped keychain) with a store that already holds the account:
-    /// Secret Key typed from the Emergency Kit plus master password.
+    /// `restore(secretKey:password:)` with a typed `String` password (tests).
     public func restore(secretKey: String, password: String) async throws {
+        let bytes = SecretBytes(utf8: password)
+        defer { bytes.wipe() }
+        try await restore(secretKey: secretKey, password: bytes)
+    }
+
+    /// New device (or wiped keychain) with a store that already holds the account:
+    /// Secret Key typed from the Emergency Kit plus master password. The typed Secret Key is a
+    /// `String` (text field, and `normalize_secret_key` takes and returns one): its normalized form goes
+    /// into a wipeable buffer at once.
+    public func restore(secretKey: String, password: SecretBytes) async throws {
         if state == .unlocked { return }
         try checkLockout()
         let normalized: SecretBytes
@@ -309,9 +347,9 @@ public final class VaultSession {
         try await passwordUnlock(password: password, secretKey: normalized, storeSecretKey: true)
     }
 
-    /// The Secret Key stays in `secretKey` (wiped by the caller); it becomes a `String` only inside
-    /// the core call, for as long as that call lasts (R5; Part B passes the bytes).
-    private func passwordUnlock(password: String, secretKey: SecretBytes, storeSecretKey: Bool) async throws {
+    /// The password and the Secret Key stay in their buffers (wiped by the caller) and cross the FFI as
+    /// temporary `Data` copies wiped when the call returns (`unlock_with_password_bytes`).
+    private func passwordUnlock(password: SecretBytes, secretKey: SecretBytes, storeSecretKey: Bool) async throws {
         try beginPasswordCheck()
         defer { passwordCheckInFlight = false }
         let path = dbPath
@@ -319,8 +357,9 @@ public final class VaultSession {
         let opened: Opened
         do {
             opened = try await background {
-                guard let key = secretKey.string() else { throw VaultError.other(Self.unreadableSecretKey) }
-                var unlocked = try unlockWithPassword(dbPath: path, password: password, secretKey: key)
+                var unlocked = try Self.withBytes(password, secretKey) { password, secretKey in
+                    try unlockWithPasswordBytes(dbPath: path, password: password, secretKey: secretKey)
+                }
                 let auk = SecretBytes(taking: &unlocked.auk)
                 do {
                     return Opened(
@@ -429,8 +468,16 @@ public final class VaultSession {
         install(opened.session, opened.snapshot)
     }
 
-    /// Checks the master password, then wraps the AUK with the Secure Enclave. Personal mode only.
+    /// `enrollBiometrics(password:)` with a typed `String` (tests).
     public func enrollBiometrics(password: String) async throws {
+        let bytes = SecretBytes(utf8: password)
+        defer { bytes.wipe() }
+        try await enrollBiometrics(password: bytes)
+    }
+
+    /// Checks the master password, then wraps the AUK with the Secure Enclave. Personal mode only.
+    /// The caller wipes `password`.
+    public func enrollBiometrics(password: SecretBytes) async throws {
         guard settings.deviceMode.biometricsAllowed, biometrics.isAvailable else {
             throw fail(.biometricsUnavailable)
         }
@@ -445,8 +492,9 @@ public final class VaultSession {
             // `verify_password` never writes the device state: the live session may be moving
             // `last_seen` forward meanwhile (Settings while unlocked).
             auk = try await background {
-                guard let key = secretKey.string() else { throw VaultError.other(Self.unreadableSecretKey) }
-                var bytes = try verifyPassword(dbPath: path, password: password, secretKey: key)
+                var bytes = try Self.withBytes(password, secretKey) { password, secretKey in
+                    try verifyPasswordBytes(dbPath: path, password: password, secretKey: secretKey)
+                }
                 return SecretBytes(taking: &bytes)
             }
         } catch {
@@ -687,10 +735,17 @@ public final class VaultSession {
         return true
     }
 
+    /// `verifyMasterPassword(_:)` with a typed `String` (tests).
+    public func verifyMasterPassword(_ password: String) async throws {
+        let bytes = SecretBytes(utf8: password)
+        defer { bytes.wipe() }
+        try await verifyMasterPassword(bytes)
+    }
+
     /// Checks the master password without touching the open session (`verify_password`: no session,
     /// no device state written, so a save meanwhile keeps its newer `last_seen` on disk). Counts toward
-    /// the failure throttle like an unlock.
-    public func verifyMasterPassword(_ password: String) async throws {
+    /// the failure throttle like an unlock. The caller wipes `password`.
+    public func verifyMasterPassword(_ password: SecretBytes) async throws {
         guard state == .unlocked else { throw fail(.passwordRequired) }
         try checkLockout()
         let secretKey = try loadSecretKey().secretKey
@@ -701,8 +756,9 @@ public final class VaultSession {
         let gen = generation
         do {
             try await background {
-                guard let key = secretKey.string() else { throw VaultError.other(Self.unreadableSecretKey) }
-                var auk = try verifyPassword(dbPath: path, password: password, secretKey: key)
+                var auk = try Self.withBytes(password, secretKey) { password, secretKey in
+                    try verifyPasswordBytes(dbPath: path, password: password, secretKey: secretKey)
+                }
                 SecretBytes(taking: &auk).wipe()
             }
         } catch {
@@ -734,9 +790,16 @@ public final class VaultSession {
 
     private struct Created: Sendable {
         var session: Session
-        var secretKey: String
+        let secretKey: SecretBytes
         var accountID: String
         var snapshot: Snapshot
+    }
+
+    /// Both secrets as temporary `Data` copies, wiped when `body` returns (`SecretBytes.withData`).
+    nonisolated private static func withBytes<T>(
+        _ first: SecretBytes, _ second: SecretBytes, _ body: (Data, Data) throws -> T
+    ) rethrows -> T {
+        try first.withData { a in try second.withData { b in try body(a, b) } }
     }
 
     nonisolated private static func load(_ session: Session, purge: Bool) throws -> Snapshot {
@@ -769,7 +832,6 @@ public final class VaultSession {
         return generation
     }
 
-    nonisolated static let unreadableSecretKey = "La Secret Key de cet appareil est illisible."
     nonisolated static let secretKeyNotStoredOnCreate =
         "Impossible de ranger la Secret Key dans le trousseau de cet appareil. Le coffre n'a pas été créé."
     nonisolated static let secretKeyNotStoredOnRestore =

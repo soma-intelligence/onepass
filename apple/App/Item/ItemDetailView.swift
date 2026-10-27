@@ -270,11 +270,14 @@ struct ItemDetailView: View {
     private func verifyPassword() {
         guard !password.isEmpty, !checking else { return }
         checking = true
-        // Emptied on submission (success or not): the local copy lives for the call only (R5).
-        let typed = password
+        // Emptied on submission (success or not): the password lives on in a wiped buffer only (R5).
+        let typed = SecretBytes(utf8: password)
         password = ""
         Task {
-            defer { checking = false }
+            defer {
+                typed.wipe()
+                checking = false
+            }
             do {
                 try await session.verifyMasterPassword(typed)
                 unlockReprompt()

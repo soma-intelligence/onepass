@@ -211,12 +211,14 @@ struct LockView: View {
 
     /// The password is passed as typed, never trimmed (the core normalizes it). The field is emptied
     /// on submission, before the check runs, so the view state never outlives it (success or not);
-    /// the local copy lives for the call only (`String`, R5).
+    /// the password goes into a wipeable buffer at once and crosses the FFI as bytes (the field's own
+    /// `String` cannot be wiped, R5).
     private func unlockWithPassword() async {
         guard !password.isEmpty, !unlocking, !lockedOut else { return }
         message = nil
-        let typed = password
+        let typed = SecretBytes(utf8: password)
         password = ""
+        defer { typed.wipe() }
         do {
             try await session.unlock(password: typed)
         } catch {
