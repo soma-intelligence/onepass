@@ -178,6 +178,16 @@
         }
       }
     },
+    "%@, utilisé %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, used %2$@"
+          }
+        }
+      }
+    },
     "%lld" : {
       "localizations" : {
         "en" : {
@@ -1140,6 +1150,26 @@
         }
       }
     },
+    "Approuve seulement si l'extension affiche exactement ce code." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approve only if the extension shows exactly this code."
+          }
+        }
+      }
+    },
+    "Approuver" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approve"
+          }
+        }
+      }
+    },
     "Après l'enregistrement, tu ne pourras plus te connecter à ce site avec cette passkey. Le site la garde dans ton compte : supprime-la aussi dans ses réglages." : {
       "localizations" : {
         "en" : {
@@ -1196,6 +1226,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Archived: no longer shows in lists or suggestions."
+          }
+        }
+      }
+    },
+    "Associer un navigateur" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair a browser"
           }
         }
       }
@@ -1286,6 +1326,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No passwords to analyze yet."
+          }
+        }
+      }
+    },
+    "Aucun navigateur associé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No paired browser."
           }
         }
       }
@@ -2146,6 +2196,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Account Keys"
+          }
+        }
+      }
+    },
+    "Code %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code %@"
           }
         }
       }
@@ -4060,6 +4120,16 @@
         }
       }
     },
+    "Indisponible dans cette version de OnePass." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not available in this build of OnePass."
+          }
+        }
+      }
+    },
     "Installe OnePass sur ton Apple Watch" : {
       "localizations" : {
         "en" : {
@@ -4666,6 +4736,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The data received from iCloud was refused. Your changes stay on this device but no longer sync for this vault."
+          }
+        }
+      }
+    },
+    "Les extensions OnePass de Safari, Chrome et Firefox remplissent depuis le coffre ouvert dans cette app. Verrouiller OnePass les verrouille aussi." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The OnePass extensions for Safari, Chrome and Firefox fill from the vault open in this app. Locking OnePass locks them too."
           }
         }
       }
@@ -5530,6 +5610,16 @@
         }
       }
     },
+    "Oublier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget"
+          }
+        }
+      }
+    },
     "Oui" : {
       "localizations" : {
         "en" : {
@@ -6216,6 +6306,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Required Again Every 14 Days"
+          }
+        }
+      }
+    },
+    "Refuser" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refuse"
           }
         }
       }
@@ -7426,6 +7526,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your first name (shown only on your devices)"
+          }
+        }
+      }
+    },
+    "Touch ID est demandé. Sans Touch ID activé dans OnePass, l'association est refusée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touch ID is required. Without Touch ID turned on in OnePass, pairing is refused."
           }
         }
       }
@@ -8666,6 +8776,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@” created"
+          }
+        }
+      }
+    },
+    "« %@ » dans %@ demande l'accès à ton coffre." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%1$@” in %2$@ asks for access to your vault."
           }
         }
       }
