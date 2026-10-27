@@ -8,6 +8,7 @@
 pub use std::collections::BTreeMap;
 pub use std::path::PathBuf;
 
+pub use onepass_core::account::Auk;
 pub use onepass_core::crypto::{KdfParams, SecretKey, random_array};
 pub use onepass_core::model::{FieldValue, Item, ItemType, new_item};
 pub use onepass_core::repo::{Repository, split_item_record};
@@ -477,4 +478,36 @@ pub fn meta(name: &str) -> VaultMeta {
         travel_safe: false,
         mcp_access: false,
     }
+}
+impl Device {
+    /// Unlock with `password` as the apps do (device state and chain state
+    /// from the store), persist, and hand back the Account Unlock Key.
+    pub fn try_unlock(&mut self, password: &str, sk: &SecretKey) -> Result<Auk> {
+        let store = self.store();
+        let state = store.device_state()?;
+        let (repo, auk) = Repository::unlock_exporting_auk(store, password, sk, state)?;
+        self.repo = Some(repo);
+        self.repo().persist_device_state()?;
+        Ok(auk)
+    }
+
+    /// Unlock with a kept Account Unlock Key, then persist.
+    pub fn try_unlock_with_auk(&mut self, auk: &Auk) -> Result<()> {
+        let store = self.store();
+        let state = store.device_state()?;
+        self.repo = Some(Repository::unlock_with_auk(store, auk, state)?);
+        self.repo().persist_device_state()
+    }
+}
+
+/// Fetch the changes after the cursor that `keep` lets through, stage them
+/// and commit at once (a torn fetch when `keep` drops some).
+pub fn pull_only(server: &Server, dev: &mut Device, keep: impl Fn(&RemoteChange) -> bool) {
+    let (changes, cursor) = server.changes_since(dev.cursor);
+    let mut store = dev.store();
+    for c in changes.into_iter().filter(|c| keep(c)) {
+        store.stage_remote(c).unwrap();
+    }
+    store.commit_remote().unwrap();
+    dev.cursor = cursor;
 }

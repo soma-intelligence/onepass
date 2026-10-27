@@ -21,8 +21,13 @@
 //! records are deleted and the device state is restored, so the
 //! `TravelState` stays valid.
 //!
-//! Neither direction touches the account (params, keyset) or the
-//! `travel_safe` vaults.
+//! Neither direction touches the account (params, keyset), the signed
+//! device and vault lists or the `travel_safe` vaults. The vault list still
+//! lists the hidden vaults as live: the repository remembers them as parked
+//! (in memory), so `vaults()` does not expect them. A later session on a
+//! travelling device must call `resume_travel` with the `TravelState`;
+//! otherwise `vaults()` reports them missing (`VaultMissing`), it never
+//! silently accepts their absence.
 //!
 //! Records of a vault: `VaultKey`, `VaultMeta` and `Manifest` with id = the
 //! vault id, and the `Item` records whose prefix (`split_item_record`) is the
@@ -190,12 +195,21 @@ impl<S: RecordStore> Repository<S> {
         for (id, seen, _) in plan {
             self.device.last_seen.remove(&id);
             self.dropped.insert(id);
+            self.travel_parked.insert(id);
             parked.insert(id, seen);
         }
         Ok(TravelState {
             parked,
             entered_at: OffsetDateTime::now_utc().unix_timestamp(),
         })
+    }
+
+    /// Resume the Travel Mode in a new session: the vaults of `state` are
+    /// parked, so `vaults()` does not expect them although the vault list
+    /// lists them. Nothing is read or written. `state` comes from
+    /// `open_travel_state`, which verifies it.
+    pub fn resume_travel(&mut self, state: &TravelState) {
+        self.travel_parked.extend(state.parked.keys().copied());
     }
 
     /// Bring the parked vaults back from `upstream` and verify them as in
@@ -334,6 +348,10 @@ impl<S: RecordStore> Repository<S> {
                 }
             }
             rollback?;
+        } else {
+            for v in vaults {
+                self.travel_parked.remove(&v.id);
+            }
         }
         result
     }

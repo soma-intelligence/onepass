@@ -1,7 +1,7 @@
 import Foundation
 
 /// Name of a record on the server: `"<kind code>.<id hex>"`, for example `"5.00112233445566778899aabbccddeeff"`.
-/// The kind is the core record kind code (1 to 6), the id its 32 lowercase hex characters.
+/// The kind is the core record kind code (1 to 9), the id its 32 lowercase hex characters.
 public struct RecordName: Hashable, Sendable, CustomStringConvertible {
     public var kind: UInt8
     public var id: String
