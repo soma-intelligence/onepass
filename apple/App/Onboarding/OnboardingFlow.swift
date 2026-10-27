@@ -747,11 +747,6 @@ private struct StepRail: View {
                 .accessibilityAddTraits(index == current ? .isSelected : [])
             }
             Spacer()
-            Text("Code source ouvert. Ton coffre est chiffré sur ce Mac avant d'aller dans iCloud. Personne d'autre, ni nous ni Apple, ne peut le lire.")
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
         }
         .padding(.horizontal, 10)
         .padding(.top, 8)
