@@ -201,7 +201,7 @@ extension AppModel {
                 }
                 // Simulated Secure Enclave (memory only): the lock screen offers biometric unlock.
                 if defaults.bool(forKey: "OnePassDemoBiometricOffer") {
-                    offerBiometrics(password: DemoData.password)
+                    offerBiometrics(password: SecretBytes(utf8: DemoData.password))
                 } else if defaults.object(forKey: "OnePassDemoBiometrics") == nil
                     || defaults.bool(forKey: "OnePassDemoBiometrics")
                 {

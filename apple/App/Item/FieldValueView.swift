@@ -13,10 +13,17 @@ extension String {
 }
 
 /// One non-empty field in the detail view, drawn for its kind as rows of a card. Secrets are masked
-/// (30 s re-mask); copies go through the session clipboard (90 s, local only, concealed).
+/// (30 s re-mask, masked again on lock and when the scene leaves the foreground, kept masked while
+/// the screen is captured on iOS and visionOS); copies go through the session clipboard (90 s,
+/// local only, concealed).
 struct FieldValueView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
+    #if os(iOS) || os(visionOS)
+    @Environment(\.isSceneCaptured) private var captured
+    #else
+    private let captured = false
+    #endif
     let field: FfiField
     /// Type of the item the field belongs to (card number badge), nil when unknown.
     var itemType: FfiItemType?
@@ -35,7 +42,7 @@ struct FieldValueView: View {
     var body: some View {
         switch field.value {
         case .otp(let secret):
-            TotpFieldView(field: field) { code in copy(code, concealed: true) }
+            TotpFieldView(field: field, captured: captured) { code in copy(code, concealed: true) }
                 .id(secret)
                 .privacySensitive()
         case .password(let value):
@@ -110,6 +117,7 @@ struct FieldValueView: View {
             copyIdentifier: copyIdentifier ?? "field.copy.\(field.id)",
             // "Afficher en grand" for passwords (barcodes have their own row).
             allowsLarge: allowsLarge ?? (field.kind == .password),
+            concealToken: session.concealGeneration, captured: captured,
             onCopy: { copy(value, concealed: secret) },
             onReveal: onReveal,
             accessory: accessory)
@@ -325,7 +333,9 @@ private struct CopyAccessibilityAction: ViewModifier {
 }
 
 /// A text value in a detail card, masked when secret. Menu: Révéler / Masquer, Afficher en grand.
-/// A revealed secret is masked again after 30 s and when the row goes away.
+/// A revealed secret is masked again after 30 s, when the row goes away, and whenever `concealToken`
+/// changes (the session bumps it on lock and when the scene leaves the foreground). While `captured`
+/// (screen recording, mirroring, AirPlay) a secret is drawn as bullets, and a revealed one is masked again.
 struct ValueRow<Accessory: View>: View {
     let label: String
     let value: String
@@ -333,6 +343,8 @@ struct ValueRow<Accessory: View>: View {
     let monospaced: Bool
     let copyIdentifier: String?
     let allowsLarge: Bool
+    let concealToken: Int
+    let captured: Bool
     let onCopy: () -> Void
     let onReveal: ((Bool) -> Void)?
     let accessory: Accessory
@@ -344,7 +356,8 @@ struct ValueRow<Accessory: View>: View {
 
     init(
         label: String, value: String, isSecret: Bool, monospaced: Bool, copyIdentifier: String?,
-        allowsLarge: Bool, onCopy: @escaping () -> Void, onReveal: ((Bool) -> Void)?,
+        allowsLarge: Bool, concealToken: Int = 0, captured: Bool = false,
+        onCopy: @escaping () -> Void, onReveal: ((Bool) -> Void)?,
         @ViewBuilder accessory: () -> Accessory
     ) {
         self.label = label
@@ -353,12 +366,14 @@ struct ValueRow<Accessory: View>: View {
         self.monospaced = monospaced
         self.copyIdentifier = copyIdentifier
         self.allowsLarge = allowsLarge
+        self.concealToken = concealToken
+        self.captured = captured
         self.onCopy = onCopy
         self.onReveal = onReveal
         self.accessory = accessory()
     }
 
-    private var hidden: Bool { isSecret && !revealed }
+    private var hidden: Bool { isSecret && (!revealed || captured) }
 
     var body: some View {
         DetailRow(
@@ -387,6 +402,9 @@ struct ValueRow<Accessory: View>: View {
             if !Task.isCancelled, revealed, Date().timeIntervalSince(at) >= autoHideAfter { setRevealed(false) }
         }
         .onDisappear { if revealed { setRevealed(false) } }
+        .onChange(of: concealToken) { if revealed { setRevealed(false) } }
+        // Captured: masked now, and still masked once the capture ends.
+        .onChange(of: captured) { _, now in if now, revealed { setRevealed(false) } }
         .sheet(isPresented: Binding(get: { large && !hidden }, set: { large = $0 })) {
             VStack(spacing: 16) {
                 Text(label).font(.headline)

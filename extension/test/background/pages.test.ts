@@ -322,6 +322,37 @@ describe("save prompt", () => {
     expect(await bg.neverSave.has("atlas-cloud.test")).toBe(true);
   });
 
+  it("the password is blanked as soon as the prompt is saved", async () => {
+    const { ext, bg } = await setup();
+    const token = await bg.saves.open(pending);
+    const ui = uiSender(`save.html#${token}`, 7);
+    const rec = await bg.saves.tokens.resolve(token, { tabId: 7 } as never);
+    expect(rec?.password).toBe("typed-Secret-1");
+    expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, ui)).toEqual({ ok: {} });
+    expect(rec?.password).toBe("");
+  });
+
+  it("the password is blanked when an expired record is dropped on resolve", async () => {
+    const { bg, clock } = await setup();
+    const token = await bg.saves.open(pending);
+    const rec = await bg.saves.tokens.resolve(token, { tabId: 7 } as never);
+    clock.t += SAVE_TTL_MS + 1;
+    expect(await bg.saves.tokens.resolve(token, { tabId: 7 } as never)).toBeNull();
+    expect(rec?.password).toBe("");
+  });
+
+  it("the password is blanked as soon as the prompt is dismissed or closed", async () => {
+    const { ext, bg } = await setup();
+    const token = await bg.saves.open(pending);
+    const rec = await bg.saves.tokens.resolve(token, { tabId: 7 } as never);
+    await ext.send({ type: "save_decide", token, decision: "dismiss" }, uiSender("save.html", 7));
+    expect(rec?.password).toBe("");
+    const t2 = await bg.saves.open(pending);
+    const rec2 = await bg.saves.tokens.resolve(t2, { tabId: 7 } as never);
+    await ext.send({ type: "save_close", token: t2 }, uiSender("save.html", 7));
+    expect(rec2?.password).toBe("");
+  });
+
   it("dismiss removes the frame; the prompt expires after 2 minutes", async () => {
     const { ext, bg, clock } = await setup();
     let token = await bg.saves.open(pending);

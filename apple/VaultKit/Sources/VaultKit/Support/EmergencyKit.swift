@@ -13,8 +13,10 @@ public enum EmergencyKitError: Error, Equatable {
     case renderFailed
 }
 
-/// The Emergency Kit: a one page A4 PDF with the Secret Key in clear, a QR code of it, the
-/// account identifier and instructions in French. Built on device with CoreGraphics,
+/// The Emergency Kit: a one page A4 PDF opening with the warning that the kit plus the master
+/// password give full access, then the Secret Key in clear, a QR code of it, the account
+/// identifier and instructions in French (print it, keep the sheet offline, never photograph it
+/// or store it in the cloud). Built on device with CoreGraphics,
 /// CoreText and CoreImage only (no UIKit or AppKit), so it works on iOS and macOS. Nothing
 /// is written to disk here: the caller owns the bytes.
 public enum EmergencyKit {
@@ -123,9 +125,15 @@ public enum EmergencyKit {
         let title = CTFontCreateWithName("Helvetica-Bold" as CFString, 24, nil)
         let heading = CTFontCreateWithName("Helvetica-Bold" as CFString, 14, nil)
         let body = CTFontCreateWithName("Helvetica" as CFString, 11, nil)
+        let strong = CTFontCreateWithName("Helvetica-Bold" as CFString, 11, nil)
         let mono = CTFontCreateWithName("Courier-Bold" as CFString, 11, nil)
 
         y = text(String(localized: "Emergency Kit OnePass", bundle: VaultKitStrings.bundle), font: title, top: y) - 10
+        y = text(
+            String(
+                localized: "Ce kit plus ton mot de passe maître donnent un accès complet à ton coffre. Imprime-le et range la feuille hors ligne. Ne le photographie jamais et ne le stocke jamais dans le cloud.",
+                bundle: VaultKitStrings.bundle),
+            font: strong, top: y) - 12
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: VaultKitStrings.bundle.preferredLocalizations.first ?? "fr")
         formatter.dateStyle = .long
@@ -157,7 +165,9 @@ public enum EmergencyKit {
 
         y = text(String(localized: "Ton mot de passe maître", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
         y = text(
-            String(localized: "Ne l'imprime pas. Si tu veux le garder sur papier, écris-le à la main sur la ligne ci-dessous.", bundle: VaultKitStrings.bundle),
+            String(
+                localized: "Il n'est pas imprimé sur ce kit. Si tu choisis de le garder sur papier, écris-le à la main sur la ligne ci-dessous, jamais dans un fichier ni une photo.",
+                bundle: VaultKitStrings.bundle),
             font: body, top: y) - 30
         context.setStrokeColor(CGColor(gray: 0, alpha: 1))
         context.setLineWidth(0.8)
@@ -169,7 +179,7 @@ public enum EmergencyKit {
         y = text(String(localized: "En cas de perte", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
         let lines = [
             String(localized: "Sans ton mot de passe maître et ta Secret Key, personne ne peut ouvrir ton coffre, pas même nous. Il n'existe aucun moyen de les récupérer.", bundle: VaultKitStrings.bundle),
-            String(localized: "Range cette page hors ligne, dans un endroit sûr (coffre, tiroir fermé à clé).", bundle: VaultKitStrings.bundle),
+            String(localized: "Imprime ce kit et range la feuille hors ligne, dans un endroit sûr (coffre, tiroir fermé à clé). Ne la photographie jamais et ne la stocke jamais dans le cloud (iCloud Drive, Photos, messageries).", bundle: VaultKitStrings.bundle),
             String(localized: "Pour ajouter un nouvel appareil, ouvre OnePass, choisis « J'ai mon Emergency Kit », puis saisis ou scanne la Secret Key et entre ton mot de passe maître.", bundle: VaultKitStrings.bundle),
             String(localized: "Si tu penses que cette page a été vue par quelqu'un d'autre, crée un nouveau compte et déplace tes données.", bundle: VaultKitStrings.bundle),
         ]

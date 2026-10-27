@@ -1360,6 +1360,16 @@
         }
       }
     },
+    "Aucune imprimante n'est disponible sur cet appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No printer is available on this device."
+          }
+        }
+      }
+    },
     "Aucune passkey : elle s'ajoute quand un site t'en fait créer une" : {
       "localizations" : {
         "en" : {
@@ -1560,6 +1570,16 @@
         }
       }
     },
+    "Capture d'écran de ta Secret Key" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screenshot of your Secret Key"
+          }
+        }
+      }
+    },
     "Caractères" : {
       "localizations" : {
         "en" : {
@@ -1660,6 +1680,16 @@
         }
       }
     },
+    "Ce kit plus ton mot de passe maître donnent un accès complet à ton coffre. Imprime-le et range la feuille hors ligne ; ne le photographie pas." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This kit plus your master password give full access to your vault. Print it and keep the sheet offline; never take a photo of it."
+          }
+        }
+      }
+    },
     "Ce que voit le système" : {
       "localizations" : {
         "en" : {
@@ -1710,6 +1740,16 @@
         }
       }
     },
+    "Cet appareil adopte ce qu'iCloud contient. Une restauration signée est enregistrée, et la détection reste active." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device takes what iCloud holds. A signed restore is recorded, and detection stays on."
+          }
+        }
+      }
+    },
     "Cet appareil est maintenant connecté à un autre compte iCloud que celui avec lequel ton coffre se synchronisait. Par sécurité, OnePass ne lit et n'envoie plus rien vers iCloud : ton coffre reste intact sur cet appareil. Reconnecte-toi au compte iCloud d'origine dans Réglages pour reprendre la synchronisation, ou utilise ce compte : OnePass vérifie d'abord qu'il ne contient pas un autre coffre." : {
       "localizations" : {
         "en" : {
@@ -1740,6 +1780,16 @@
         }
       }
     },
+    "Cet emplacement est synchronisé dans le cloud" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This location syncs to the cloud"
+          }
+        }
+      }
+    },
     "Cet élément demande une confirmation avant d'afficher son contenu." : {
       "localizations" : {
         "en" : {
@@ -1766,6 +1816,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This can't be undone."
+          }
+        }
+      }
+    },
+    "Cette capture contient ta Secret Key. Supprime-la de Photos, puis de l'album Supprimés récemment : Photos et iCloud peuvent la copier hors de cet appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This screenshot contains your Secret Key. Delete it from Photos, then from the Recently Deleted album: Photos and iCloud can copy it off this device."
           }
         }
       }
@@ -1950,12 +2010,42 @@
         }
       }
     },
+    "Choisis un emplacement hors ligne, par exemple une clé USB." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an offline location, such as a USB drive."
+          }
+        }
+      }
+    },
+    "Choisis un emplacement hors ligne, par exemple une clé USB. iCloud Drive et les autres clouds synchronisent la Secret Key hors de ce Mac." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an offline location, such as a USB drive. iCloud Drive and other clouds sync the Secret Key off this Mac."
+          }
+        }
+      }
+    },
     "Choisis un élément dans la liste." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose an item from the list."
+          }
+        }
+      }
+    },
+    "Choisis une phrase longue que tu n'utilises nulle part ailleurs, par exemple plusieurs mots. OnePass refuse une phrase trop facile à deviner." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a long passphrase you don't use anywhere else, several words for example. OnePass refuses a passphrase that is too easy to guess."
           }
         }
       }
@@ -2246,6 +2336,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confirm Before Showing"
+          }
+        }
+      }
+    },
+    "Confirmer la phrase de passe" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm the passphrase"
           }
         }
       }
@@ -3100,6 +3200,16 @@
         }
       }
     },
+    "En attente d'iCloud" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for iCloud"
+          }
+        }
+      }
+    },
     "En attente de la première synchronisation" : {
       "localizations" : {
         "en" : {
@@ -3150,12 +3260,42 @@
         }
       }
     },
-    "Enregistrer l'Emergency Kit (PDF)" : {
+    "Enregistrer l'Emergency Kit dans un fichier ?" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save Emergency Kit (PDF)"
+            "value" : "Save the Emergency Kit to a file?"
+          }
+        }
+      }
+    },
+    "Enregistrer la sauvegarde dans un fichier ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save the backup to a file?"
+          }
+        }
+      }
+    },
+    "Enregistrer quand même" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save Anyway"
+          }
+        }
+      }
+    },
+    "Enregistrer un fichier…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save a File…"
           }
         }
       }
@@ -3236,6 +3376,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Export from %@"
+          }
+        }
+      }
+    },
+    "Exporter" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export"
+          }
+        }
+      }
+    },
+    "Exporter d'abord" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export First"
+          }
+        }
+      }
+    },
+    "Exporter une sauvegarde chiffrée" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export an Encrypted Backup"
+          }
+        }
+      }
+    },
+    "Exporter une sauvegarde chiffrée garde une copie de ce que cet appareil contient. Garder la version de cet appareil la renvoie vers iCloud ; prendre la version d'iCloud l'abandonne au profit de ce qu'iCloud contient. Les deux enregistrent une restauration signée par ton compte et la détection reste active ensuite." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting an encrypted backup keeps a copy of what this device holds. Keeping this device's version sends it back to iCloud; taking iCloud's version drops it in favor of what iCloud holds. Both record a restore signed by your account, and detection stays on afterward."
           }
         }
       }
@@ -3430,12 +3610,42 @@
         }
       }
     },
+    "Garde aussi ta phrase de passe : sans elle ni ton compte, la sauvegarde ne s'ouvre pas." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep your passphrase too: without it or your account, the backup won't open."
+          }
+        }
+      }
+    },
     "Garde tes clés SSH dans un coffre, connecte-toi à tes serveurs et signe tes commits Git, avec une approbation à chaque usage." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keep your SSH keys in a vault, connect to your servers and sign your Git commits, with an approval for each use."
+          }
+        }
+      }
+    },
+    "Garder cette version" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep This Version"
+          }
+        }
+      }
+    },
+    "Garder la version de cet appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep This Device's Version"
           }
         }
       }
@@ -3800,6 +4010,16 @@
         }
       }
     },
+    "Imprimer le kit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Print the Kit"
+          }
+        }
+      }
+    },
     "Inchangés depuis plus d'un an. Pense à les renouveler." : {
       "localizations" : {
         "en" : {
@@ -3870,6 +4090,16 @@
         }
       }
     },
+    "Je comprends que les changements non exportés seront perdus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I understand that changes not exported will be lost"
+          }
+        }
+      }
+    },
     "Je l'ai rangée hors ligne" : {
       "localizations" : {
         "en" : {
@@ -3886,6 +4116,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Games"
+          }
+        }
+      }
+    },
+    "L'Emergency Kit n'a pas pu être enregistré." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Emergency Kit couldn't be saved."
           }
         }
       }
@@ -3990,6 +4230,16 @@
         }
       }
     },
+    "La copie vérifiée de cet appareil remplace celle d'iCloud. Tes autres appareils la reçoivent ensuite. Une restauration signée est enregistrée, et la détection reste active." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device's verified copy replaces iCloud's. Your other devices receive it next. A signed restore is recorded, and detection stays on."
+          }
+        }
+      }
+    },
     "La génération de clés arrive au jalon 7." : {
       "localizations" : {
         "en" : {
@@ -4040,12 +4290,42 @@
         }
       }
     },
+    "La sauvegarde n'a pas pu être enregistrée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The backup couldn't be saved."
+          }
+        }
+      }
+    },
+    "La sauvegarde n'a pas pu être préparée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The backup couldn't be prepared."
+          }
+        }
+      }
+    },
     "La suppression d'un coffre arrive dans une prochaine version." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deleting a vault is coming in a future version."
+          }
+        }
+      }
+    },
+    "La synchronisation continue en arrière-plan. Tu peux fermer cette fenêtre." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync continues in the background. You can close this window."
           }
         }
       }
@@ -4160,12 +4440,42 @@
         }
       }
     },
+    "Le fichier contient tout ton coffre, chiffré avec la phrase de passe que tu viens de choisir. Range-le hors ligne, par exemple sur une clé USB : iCloud Drive, les messageries et les autres clouds en gardent une copie ailleurs." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file holds your whole vault, encrypted with the passphrase you just chose. Keep it offline, on a USB drive for example: iCloud Drive, messaging apps and other clouds keep a copy elsewhere."
+          }
+        }
+      }
+    },
     "Le fichier est lu sur cet appareil, jamais envoyé ni gardé. Supprime l'export une fois l'import fait : il contient tes mots de passe en clair." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "The file is read on this device, never sent or kept. Delete the export once the import is done, because it contains your passwords in plain text."
+          }
+        }
+      }
+    },
+    "Le fichier sera copié sur les serveurs de ce service et sur tes autres appareils. Avec ton mot de passe maître, il donne un accès complet à ton coffre." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file will be copied to this service's servers and to your other devices. Together with your master password, it gives full access to your vault."
+          }
+        }
+      }
+    },
+    "Le fichier sera copié sur les serveurs de ce service et sur tes autres appareils. Il reste chiffré, mais sa sécurité ne tient plus qu'à ta phrase de passe." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file will be copied to this service's servers and to your other devices. It stays encrypted, but its security then rests on your passphrase alone."
           }
         }
       }
@@ -4186,6 +4496,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your master password is required to change this setting."
+          }
+        }
+      }
+    },
+    "Le mot de passe maître est demandé pour choisir la version de ton coffre." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your master password is required to choose your vault's version."
           }
         }
       }
@@ -4250,12 +4570,32 @@
         }
       }
     },
+    "Les changements faits sur cet appareil et pas encore envoyés à iCloud seront perdus s'ils n'ont pas été exportés." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes made on this device and not yet sent to iCloud will be lost unless they were exported."
+          }
+        }
+      }
+    },
     "Les coffres décochés restent chiffrés et n'apparaissent pas sur cet appareil. Au moins un coffre reste visible." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unchecked vaults stay encrypted and don't appear on this device. At least one vault stays visible."
+          }
+        }
+      }
+    },
+    "Les deux phrases de passe ne correspondent pas." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The two passphrases don't match."
           }
         }
       }
@@ -5030,12 +5370,12 @@
         }
       }
     },
-    "OnePass est open source (GPL-3.0)" : {
+    "OnePass est open source (AGPL-3.0)" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass Is Open Source (GPL-3.0)"
+            "value" : "OnePass Is Open Source (AGPL-3.0)"
           }
         }
       }
@@ -5460,6 +5800,16 @@
         }
       }
     },
+    "Phrase de passe de la sauvegarde" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup Passphrase"
+          }
+        }
+      }
+    },
     "Pièce jointe ajoutée : %@" : {
       "localizations" : {
         "en" : {
@@ -5530,6 +5880,16 @@
         }
       }
     },
+    "Pour en sortir sans rien perdre, exporte d'abord ce que cet appareil contient, puis choisis la version à garder. Chaque action demande ton mot de passe maître." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To get out of this without losing anything, first export what this device holds, then choose the version to keep. Each action asks for your master password."
+          }
+        }
+      }
+    },
     "Pour signer tes commits Git avec cette clé :" : {
       "localizations" : {
         "en" : {
@@ -5556,6 +5916,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "New to OnePass"
+          }
+        }
+      }
+    },
+    "Prendre la version d'iCloud" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take iCloud's Version"
           }
         }
       }
@@ -6230,6 +6600,16 @@
         }
       }
     },
+    "Réparé : iCloud sert de nouveau la même version que cet appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fixed: iCloud serves the same version as this device again."
+          }
+        }
+      }
+    },
     "Réseaux Wi-Fi (codes QR)" : {
       "localizations" : {
         "en" : {
@@ -6300,6 +6680,36 @@
         }
       }
     },
+    "Sauvegarde chiffrée" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encrypted Backup"
+          }
+        }
+      }
+    },
+    "Sauvegarde enregistrée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup saved."
+          }
+        }
+      }
+    },
+    "Sauvegarde prête." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup ready."
+          }
+        }
+      }
+    },
     "Scanne ce code avec l'appareil photo d'un téléphone pour te connecter sans taper le mot de passe." : {
       "localizations" : {
         "en" : {
@@ -6366,6 +6776,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Secret Key"
+          }
+        }
+      }
+    },
+    "Secret Key masquée pendant l'enregistrement ou la recopie de l'écran" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Secret Key hidden while the screen is recorded or mirrored"
           }
         }
       }
@@ -6636,6 +7056,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sync Off: Local Build Without iCloud"
+          }
+        }
+      }
+    },
+    "Synchronisation en attente d'iCloud" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync waiting for iCloud"
           }
         }
       }
@@ -7160,12 +7590,42 @@
         }
       }
     },
+    "Un fichier peut quitter cet appareil sans que tu le voies : iCloud Drive, Photos, les messageries et les captures d'écran synchronisent la Secret Key ailleurs. Préfère l'impression, ou enregistre sur un support hors ligne que tu ranges en lieu sûr." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A file can leave this device without you noticing: iCloud Drive, Photos, messaging apps and screenshots sync the Secret Key elsewhere. Prefer printing, or save to offline media you keep somewhere safe."
+          }
+        }
+      }
+    },
+    "Un fichier peut quitter cet appareil sans que tu le voies : iCloud Drive, Photos, les messageries et les captures d'écran synchronisent la Secret Key ailleurs. Préfère l'impression, ou enregistre sur une clé USB que tu ranges hors ligne." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A file can leave this device without you noticing: iCloud Drive, Photos, messaging apps and screenshots sync the Secret Key elsewhere. Prefer printing, or save to a USB drive you keep offline."
+          }
+        }
+      }
+    },
     "Un même mot de passe sur plusieurs comptes : une seule fuite suffit à tous les ouvrir." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "One password on several accounts: a single breach opens them all."
+          }
+        }
+      }
+    },
+    "Une archive OnePass chiffrée de tout ce que cet appareil contient, coffres et éléments à la corbeille compris. Elle s'ouvre avec la phrase de passe choisie ici ou avec ton compte." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An encrypted OnePass archive of everything this device holds, vaults and items in the trash included. It opens with the passphrase chosen here or with your account."
           }
         }
       }
@@ -7436,6 +7896,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "View MCP Server"
+          }
+        }
+      }
+    },
+    "Voir les solutions" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "See Solutions"
           }
         }
       }
@@ -7826,6 +8296,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud asked to delete these items, which no OnePass device ever does. OnePass refused and kept them on this device. One or two entries can come from an iCloud glitch. Many repeated entries are a reason to check your vault from another device."
+          }
+        }
+      }
+    },
+    "iCloud sert encore une version plus ancienne que celle de cet appareil. OnePass continue avec sa copie vérifiée et la renvoie ; rien n'est à faire." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud still serves an older version than this device's. OnePass carries on with its verified copy and sends it again; there's nothing to do."
           }
         }
       }

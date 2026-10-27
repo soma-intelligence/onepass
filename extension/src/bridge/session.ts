@@ -50,20 +50,24 @@ export class ExtPending {
     const sessionId = fromB64(welcome.session_id);
     const mac = fromB64(welcome.mac);
     const ssE = await decapsulate(kem.secret, ct);
-    const tr = new Transcript(TRANSCRIPT_LABEL);
-    for (const f of [this.pairingId, kem.public, this.nonce, ct, nH, sessionId]) tr.push(f);
-    const t = await tr.hash();
-    const ikm = concat(ssE, this.pairingKey);
+    let ikm: Uint8Array | undefined;
+    let e2h: Uint8Array | undefined;
+    let h2e: Uint8Array | undefined;
+    let ok = false;
     try {
-      const keys: SessionVectorKeys = {
-        transcriptHash: t,
-        e2h: await expand(t, ikm, E2H_LABEL),
-        h2e: await expand(t, ikm, H2E_LABEL),
-        confirm: await expand(t, ikm, CONFIRM_LABEL),
-      };
+      const tr = new Transcript(TRANSCRIPT_LABEL);
+      for (const f of [this.pairingId, kem.public, this.nonce, ct, nH, sessionId]) tr.push(f);
+      const t = await tr.hash();
+      ikm = concat(ssE, this.pairingKey);
+      e2h = await expand(t, ikm, E2H_LABEL);
+      h2e = await expand(t, ikm, H2E_LABEL);
+      const keys: SessionVectorKeys = { transcriptHash: t, e2h, h2e, confirm: await expand(t, ikm, CONFIRM_LABEL) };
+      ok = true;
       return { keys, sessionId, mac };
     } finally {
       wipe(ssE, ikm);
+      // A half derived set of keys never survives a failure.
+      if (!ok) wipe(e2h, h2e);
     }
   }
 

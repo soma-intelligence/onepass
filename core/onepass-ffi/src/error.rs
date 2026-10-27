@@ -53,6 +53,10 @@ pub(crate) fn integrity_kind(e: IntegrityError) -> &'static str {
         IntegrityError::WrongKind => "wrong_kind",
         IntegrityError::WrongContext => "wrong_context",
         IntegrityError::VaultMissing => "vault_missing",
+        IntegrityError::EpochRollback => "epoch_rollback",
+        IntegrityError::ParamsRollback => "params_rollback",
+        IntegrityError::DeviceListRollback => "device_list_rollback",
+        IntegrityError::VaultListRollback => "vault_list_rollback",
     }
 }
 
@@ -102,6 +106,13 @@ mod tests {
             e,
             OnePassError::Integrity {
                 kind: "manifest_rollback".into()
+            }
+        );
+        let e: OnePassError = Error::Integrity(IntegrityError::EpochRollback).into();
+        assert_eq!(
+            e,
+            OnePassError::Integrity {
+                kind: "epoch_rollback".into()
             }
         );
     }

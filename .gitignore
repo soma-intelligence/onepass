@@ -13,3 +13,6 @@ apple/DerivedData/
 
 # Autofill lab run output
 extension/lab/out/
+
+# ProVerif (formal/run.sh logs and intermediate files)
+formal/out/

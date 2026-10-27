@@ -49,6 +49,8 @@ export interface SubmitOptions {
   latest: () => PageAnalysis | null;
   /** A fresh analysis (for chain actions). */
   analyze: () => PageAnalysis;
+  /** Where form `ref` is in `a`: itself, or the copy a re-render put in its place. */
+  resolve: (ref: string, a: PageAnalysis) => FormInfo | null;
   onCredentials: (c: Extract<CsToBg, { type: "submitted_credentials" }>) => void;
 }
 
@@ -229,8 +231,9 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       return true;
     },
     submitForm(formRef) {
-      const container = refs.get(formRef);
-      const f = opts.analyze().forms.find((x) => x.ref === formRef);
+      // A form the page re-rendered since the chain saw it: its copy.
+      const f = opts.resolve(formRef, opts.analyze());
+      const container = f ? refs.get(f.ref) : null;
       if (!container || !f) return false;
       const button = f.submitRef !== undefined ? refs.get(f.submitRef) : null;
       if (button instanceof HTMLElement && isRendered(button, geometry)) {

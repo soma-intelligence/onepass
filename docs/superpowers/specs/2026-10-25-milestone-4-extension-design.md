@@ -340,7 +340,7 @@ Jetons de la maquette : police système (`-apple-system`, `SF Pro Text`), accent
 - Sources du coffre :
   - `dev` : le dossier de la CLI de développement (`~/.onepass-dev`), déverrouillé au démarrage avec le mot de passe de `ONEPASS_PASSWORD` si `ONEPASS_DEV_ALLOW_ENV_PASSWORD=1`, comme la CLI ;
   - `fixture` : un fichier JSON d'items fictifs, chargé dans un vrai `Repository` sur un `MemoryStore` avec des paramètres Argon2 rapides (build debug uniquement, comme `dev-fast-kdf`). Les tests de bout en bout l'utilisent : ils exercent le vrai chiffrement, les vrais manifestes et le vrai modèle.
-- Approbation d'appairage : `auto` (tests ; l'hôte écrit quand même le code dans son journal pour que le test le compare à celui de l'extension) ou `file` (l'hôte écrit `pending-pairing.json` avec le code, et attend que `onepass-native-host approve <code>` crée le fichier d'approbation).
+- Approbation d'appairage : `auto` (tests, build debug uniquement : un build release le refuse, car approuver sans comparer les codes laisse n'importe quel processus local s'appairer ; l'hôte écrit quand même le code dans son journal pour que le test le compare à celui de l'extension) ou `file` (l'hôte écrit `pending-pairing.json` avec le code, et attend que `onepass-native-host approve <code>` crée le fichier d'approbation).
 - Bannière `DEV MODE` dans le journal (`stderr` est ignoré par Chrome, l'hôte écrit aussi dans `<data-dir>/native-host.log`, sans aucun secret).
 - Script `extension/scripts/install-dev-host.mjs` : écrit le manifeste d'hôte pour Chrome, Chromium et Firefox de l'utilisateur, ou dans un dossier de profil donné (tests).
 

@@ -7,6 +7,7 @@ import { classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate } fr
 import { AUTOCOMPLETE_SCORE, normalizeText } from "./lexicon";
 import { buttonLabel, detectAccountChooser, detectProviderButtons, providerOfButton } from "./provider";
 import type { RefRegistry } from "./refs";
+import { ownText } from "./text";
 import { domGeometry, type Geometry, isRendered, isVisible } from "./visibility";
 
 /** Most form controls inspected per page (hostile pages may create thousands). */
@@ -19,9 +20,25 @@ const SPLIT_OTP_MAX = 8;
 /** Longest button label considered a "Next" / "Sign in" button. */
 const MAX_NEXT_LABEL = 40;
 
-/** Labels of buttons that move a sign-in forward (French and English). */
+/** Labels of buttons that move a sign-in forward (French, English, German, Spanish, Italian, Portuguese, Dutch). */
 const NEXT_TEXT =
-  /\b(next|continue|continuer|suivant|sign in|log in|login|se connecter|connexion|valider|verify|verifier)\b/;
+  /\b(next|continue|continuer|suivant|suivante|etape suivante|sign in|log in|login|se connecter|connexion|valider|verify|verifier|weiter|fortfahren|anmelden|einloggen|bestatigen|siguiente|continuar|iniciar sesion|acceder|entrar|verificar|avanti|continua|prosegui|accedi|verifica|proximo|seguinte|iniciar sessao|volgende|doorgaan|verder|inloggen|aanmelden)\b/;
+
+/**
+ * Words that make a page or a button a sign-in one. An identifier-only step
+ * needs one of them (or a "forgot password" link, or a field read as a user
+ * name) so that a newsletter or search box with a "Continue" button is not
+ * taken for a login.
+ */
+const SIGN_IN_TEXT =
+  /\b(sign ?in|signin|log ?in|login|logon|auth|authenticate|authentication|authentifi\w*|authorize|oauth|sso|connexion|se connecter|identifi\w*|anmelden|anmeldung|einloggen|iniciar sesion|acceder|accedi|accesso|entrar|iniciar sessao|inloggen|aanmelden)\b/;
+/** "Forgot password" wording, matched on link texts. */
+const FORGOT_TEXT =
+  /\b(forgot|forgotten|mot de passe oublie|passwort vergessen|kennwort vergessen|olvidaste|olvido|password dimenticata|esqueceu|esqueci|wachtwoord vergeten)\b/;
+/** Links read for the "forgot password" wording. */
+const MAX_FORGOT_LINKS = 300;
+/** Headings read for sign-in wording. */
+const MAX_HEADINGS = 5;
 
 /**
  * Controls that may submit a group. Links that navigate are excluded in the
@@ -236,6 +253,21 @@ function mergeSplitOtp(fields: Classified[], refs: RefRegistry): FieldInfo[] {
   return out;
 }
 
+/**
+ * An ambiguous "security code" is a card code only next to another card field
+ * (number, name, expiry); alone it is read again as a one-time code.
+ * Accepted limit: a card code alone in its own frame (hosted card fields)
+ * without `autocomplete="cc-csc"` reads as a one-time code.
+ */
+function resolveSecurityCodes(fields: Classified[]): void {
+  if (fields.some((f) => CARD.has(f.role) && f.role !== "cc_csc")) return;
+  for (const f of fields) {
+    if (f.role !== "cc_csc" || f.direct || f.cell) continue;
+    const { role } = classifyField(f.el, false);
+    if (role !== "unknown") f.role = role;
+  }
+}
+
 /** Roles of unlabelled password fields, by how many there are in the group. */
 const UNLABELLED_PASSWORDS: Readonly<Record<number, readonly FieldRole[]>> = {
   2: ["new_password", "confirm_password"],
@@ -269,7 +301,10 @@ function count(roles: FieldRole[], set: ReadonlySet<FieldRole>): number {
   return roles.filter((r) => set.has(r)).length;
 }
 
-/** Form kind from its field roles (spec 8.2), or null when it is none of them. */
+/**
+ * Form kind from its field roles (spec 8.2), or null when it is none of them.
+ * `nextButton`: the group's button moves a sign-in forward, in a sign-in context.
+ */
 export function formKind(roles: FieldRole[], nextButton: boolean): FormKind | null {
   const has = (r: FieldRole) => roles.includes(r);
   const ident = count(roles, IDENTIFIERS) > 0;
@@ -288,13 +323,41 @@ export function formKind(roles: FieldRole[], nextButton: boolean): FormKind | nu
   return null;
 }
 
+/** Page-level sign-in wording: title, URL, first headings or a "forgot password" link. */
+function signInPage(doc: Document, url: string): boolean {
+  const headings = Array.from(doc.querySelectorAll("h1, h2"))
+    .slice(0, MAX_HEADINGS)
+    .map((h) => ownText(h, 100));
+  const texts = [doc.title, url, ...headings];
+  if (texts.some((t) => SIGN_IN_TEXT.test(normalizeText(t)))) return true;
+  return Array.from(doc.querySelectorAll("a"))
+    .slice(0, MAX_FORGOT_LINKS)
+    .some((a) => FORGOT_TEXT.test(normalizeText(ownText(a, 100))));
+}
+
+/**
+ * A lone identifier with a "Next" style button is a sign-in step only in a
+ * sign-in context: a field read as a user name, a sign-in button label, or a
+ * sign-in page (computed lazily, once per document).
+ */
+function identifierStep(fields: Classified[], submit: Element, page: () => boolean): boolean {
+  if (fields.some((f) => f.role === "username")) return true;
+  if (SIGN_IN_TEXT.test(normalizeText(buttonLabel(submit)))) return true;
+  return page();
+}
+
 function documentOrder(a: Element, b: Element): number {
   if (a === b) return 0;
   return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
 }
 
-/** Classified forms and field groups of the document, in document order. */
-export function detectForms(doc: Document, refs: RefRegistry, geometry: Geometry = domGeometry): FormInfo[] {
+/** Classified forms and field groups of the document, in document order. `url` defaults to `doc.URL`. */
+export function detectForms(
+  doc: Document,
+  refs: RefRegistry,
+  geometry: Geometry = domGeometry,
+  url: string = doc.URL,
+): FormInfo[] {
   const visible: FieldElement[] = [];
   for (const el of Array.from(doc.querySelectorAll(FIELD_SELECTOR)).slice(0, MAX_FIELDS)) {
     if (isFieldCandidate(el) && isVisible(el, geometry)) visible.push(el);
@@ -325,14 +388,17 @@ export function detectForms(doc: Document, refs: RefRegistry, geometry: Geometry
   ];
   groups.sort((a, b) => documentOrder(a.group.fields[0]!.el, b.group.fields[0]!.el));
 
+  let page: boolean | undefined;
+  const isSignInPage = () => (page ??= signInPage(doc, url));
   const out: FormInfo[] = [];
   for (const { group, isForm } of groups) {
     group.fields.sort((a, b) => documentOrder(a.el, b.el));
+    resolveSecurityCodes(group.fields);
     resolvePasswords(group.fields);
     const submit = findSubmit(group, buttons, isForm);
     const kind = formKind(
       group.fields.map((f) => f.role),
-      submit !== undefined && isNextLabel(submit),
+      submit !== undefined && isNextLabel(submit) && identifierStep(group.fields, submit, isSignInPage),
     );
     if (kind === null) continue;
     const info: FormInfo = { ref: refs.refFor(group.container), kind, fields: mergeSplitOtp(group.fields, refs) };
@@ -361,7 +427,7 @@ export function analyzeDocument(doc: Document, refs: RefRegistry, opts: AnalyzeO
   const onProvider = host !== null && providerForHost(host) !== null;
   return {
     url,
-    forms: detectForms(doc, refs, geometry),
+    forms: detectForms(doc, refs, geometry, url),
     captcha: detectCaptcha(doc, geometry),
     push: detectPush(doc),
     providerButtons: detectProviderButtons(doc, refs, geometry),

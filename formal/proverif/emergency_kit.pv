@@ -1,0 +1,183 @@
+(* formal-lib: account_core.pvl *)
+(* OnePass formal model: restoring an account on a new device with the
+   Emergency Kit. Processes CreateAccount, CreateVault and Device come from
+   account_core.pvl; RestoreDevice below is the first unlock of a device
+   that pinned nothing yet (trust on first use).
+
+   Sources:
+   - apple/App/Root/AppModel.swift: recoverWithEmergencyKit (account missing:
+     store and pin cleared by resetForRecovery, then the restore onboarding);
+   - apple/App/Onboarding/OnboardingFlow.swift: restore (account found in the
+     store, then VaultSession.restore(secretKey:password:));
+   - apple/App/Onboarding/SecretKeyScanner.swift and
+     apple/VaultKit/Sources/VaultKit/Support/EmergencyKit.swift: parsePayload
+     (the QR code carries the Secret Key only);
+   - apple/VaultKit/Sources/VaultKit/Session/VaultSession.swift: restore,
+     passwordUnlock (Secret Key stored in the Keychain after the unlock);
+   - core/onepass-ffi/src/lib.rs: unlock_with_password (device state read
+     from the store, Repository::unlock_exporting_auk, persist_device_state);
+   - core/onepass-core/src/repo.rs: unlock_exporting_auk, finish_unlock
+     (pinned = None: the account just unlocked is pinned);
+   - core/onepass-core/src/account.rs: verify_params (pinned = None: only the
+     self-signature, the floor and the ceiling), open_keyset.
+
+   Channels. The storage (params, keyset, vault envelopes, manifests, items)
+   is the public channel c, hostile during the restore. The Secret Key goes
+   from the kit to the device by QR scan or typing, and the password is typed
+   on the device: both are private user-to-device inputs, modeled as process
+   parameters (a private channel the attacker never reads).
+
+   Four users, each with a restoring device (replicated: any number of
+   restore attempts):
+   - acct_main / restore_main: an honest account with vaults and items, Secret
+     Key and password secret (P16, P18, weak password);
+   - acct_kit_lost / restore_kit_lost: the kit is lost, its Secret Key is
+     public, the password is not (P17);
+   - acct_kit_pw / restore_kit_pw: the kit is lost with the master password
+     handwritten on it (the kit has a line for it, EmergencyKit.swift), or the
+     password was recovered offline after P17's weak secret failure: both
+     factors public (documented limit, P18 attack);
+   - restore_no_keyset: a device restoring with a public Secret Key against a
+     storage that never held the real account (no honest keyset anywhere): it
+     isolates what the attacker learns from a device that derives an AUK from
+     the attacker's salt.
+
+   Abstraction: after the first unlock pins the account (event Pinned), the
+   restored device continues as account_core.pvl's pinned Device, which reads
+   the account records again from the storage. The code keeps the account it
+   just unlocked; the storage can serve the same records again, and the pin
+   admits only params signed by the pinned identity for the pinned account id,
+   so the reachable states are the same or more (sound for secrecy and
+   non-injective correspondence). *)
+
+(* Tags: the accounts created by the users (CreateAccount) ... *)
+const acct_kit_lost: bitstring.
+const acct_kit_pw: bitstring.
+(* ... and their restoring devices. *)
+const restore_main: bitstring.
+const restore_kit_lost: bitstring.
+const restore_kit_pw: bitstring.
+const restore_no_keyset: bitstring.
+
+free pw_main: password [private].
+free pw_kit_lost: password [private].
+free pw_kit_pw: password [private].
+free pw_no_keyset: password [private].
+
+(* Sanity: the restoring device derived an AUK (tag). *)
+event AukDerived(bitstring).
+(* Trust on first use: tag of the restoring device, account_id, identity_pub. *)
+event Pinned(bitstring, bitstring, pkey).
+
+(* ------------------------------------------------------------------ *)
+(* First unlock on a new device, Secret Key from the kit.              *)
+(* core/onepass-ffi/src/lib.rs: unlock_with_password (store.device_state() *)
+(* has pinned = None after resetForRecovery or on a new device);        *)
+(* core/onepass-core/src/repo.rs: unlock_exporting_auk, account_records,  *)
+(* finish_unlock; core/onepass-core/src/account.rs: verify_params with   *)
+(* pinned = None, open_keyset; crypto/kdf.rs: derive_auk.                *)
+(* ------------------------------------------------------------------ *)
+let RestoreDevice(rtag: bitstring, pw: password, sk_acct: key) =
+  (* repo.rs: account_records, read from the hostile storage *)
+  in(c, (params: bitstring, keyset_blob: bitstring));
+  (* account.rs: AccountParams::decode *)
+  let (acct_id: bitstring, salt: bitstring, id_pub: pkey, spub: pkey,
+       pkm: mlkem_pk, pkx: x25519_pk, psig: bitstring) = params in
+  (* account.rs: verify_params step 1, self-signature under the contained
+     identity_pub. No pin: any account id and identity pass. Steps 2 and 3
+     (floor, ceiling) not modeled. *)
+  if verify_dom(id_pub, dom_account_params,
+                params_message(acct_id, salt, spub, pkm, pkx), psig) = true then
+  (* kdf.rs: derive_auk with the salt chosen by the storage. Nothing derived
+     from the AUK leaves the device: on failure the code returns
+     WrongPassword (account.rs: open_keyset, Commitment stage). *)
+  let auk = derive_auk(pw, sk_acct, salt) in
+  event AukDerived(rtag);
+  (* account.rs: open_keyset, steps 4 and 5 *)
+  let (skm: seed, skx: seed, ssk: skey, isk: skey) =
+    aead_open(auk, keyset_aad(acct_id), keyset_blob) in
+  if kem_pk_m(skm) = pkm then
+  if kem_pk_x(skx) = pkx then
+  if pk(ssk) = spub then
+  if pk(isk) = id_pub then
+  (* repo.rs: finish_unlock, `None => device.pinned = Some(pin(&account))`;
+     lib.rs: persist_device_state *)
+  event Pinned(rtag, acct_id, id_pub);
+  (* The restored device as a pinned device: vault listing, item read, item
+     write (account_core.pvl: Device). *)
+  Device(rtag, pw, sk_acct, acct_id, id_pub).
+
+(* P16: the real account's vault keys and items stay secret while the storage
+   is hostile during the restore, including items the restored device writes. *)
+query s: pkey, v: bitstring, k: key;
+  event(VaultCreated(acct_main, s, v, k)) && attacker(k).
+query m: bitstring; event(ItemSealed(acct_main, m)) && attacker(m).
+query m: bitstring; event(ItemSealed(restore_main, m)) && attacker(m).
+(* P16: the restored device accepts only the real account's vault keys and
+   shows only the real account's items (created there, or written by one of
+   the user's devices). *)
+query s: pkey, v: bitstring, k: key;
+  event(VaultAccepted(restore_main, s, v, k)) ==> event(VaultCreated(acct_main, s, v, k)).
+query v: bitstring, i: bitstring, m: bitstring;
+  event(ItemRead(restore_main, v, i, m)) ==>
+    event(ItemSealed(acct_main, m)) || event(ItemSealed(restore_main, m)).
+(* P18: at first use the device pins only the user's own account: the keyset
+   must open under the AUK of the user's password and Secret Key. *)
+query a: bitstring, i: pkey;
+  event(Pinned(restore_main, a, i)) ==> event(AccountOwned(acct_main, a, i)).
+(* Weak password: no offline test, though the storage chooses the salt the
+   device derives from. *)
+weaksecret pw_main.
+
+(* P17: kit lost (Secret Key public), password not: items, written items and
+   the AUK stay secret, and the device still pins only the user's account. *)
+query m: bitstring; event(ItemSealed(acct_kit_lost, m)) && attacker(m).
+query m: bitstring; event(ItemSealed(restore_kit_lost, m)) && attacker(m).
+query k: key; event(AukCreated(acct_kit_lost, k)) && attacker(k).
+query a: bitstring, i: pkey;
+  event(Pinned(restore_kit_lost, a, i)) ==> event(AccountOwned(acct_kit_lost, a, i)).
+(* Documented limit (F-03, as account.pv's pw_sk_leaked): with the Secret Key
+   public, the real keyset is a password verifier, so the password falls to an
+   offline dictionary attack. P17 holds only for a strong password. *)
+weaksecret pw_kit_lost.
+(* With the Secret Key public but no real keyset in the storage, the device's
+   derivation from an attacker salt gives no offline test either (only online
+   guesses, one per restore attempt by the user). *)
+weaksecret pw_no_keyset.
+
+(* Documented limit (F-03, P18): once both factors are known (kit lost with
+   the handwritten password, or SK leaked and password guessed offline), a
+   hostile storage at first use makes the device pin an account of the
+   attacker, and the user sees the attacker's vault and items. *)
+query a: bitstring, i: pkey;
+  event(Pinned(restore_kit_pw, a, i)) ==> event(AccountOwned(acct_kit_pw, a, i)).
+query v: bitstring, i: bitstring, m: bitstring;
+  event(ItemRead(restore_kit_pw, v, i, m)) ==>
+    event(ItemSealed(acct_kit_pw, m)) || event(ItemSealed(restore_kit_pw, m)).
+
+(* Sanity (expected false): restore pins, lists a vault, reads and writes an
+   item; the kit-lost restore pins; the no-keyset device derives an AUK. *)
+query a: bitstring, i: pkey; event(Pinned(restore_main, a, i)).
+query s: pkey, v: bitstring, k: key; event(VaultAccepted(restore_main, s, v, k)).
+query v: bitstring, i: bitstring, m: bitstring; event(ItemRead(restore_main, v, i, m)).
+query v: bitstring, m: bitstring; event(ItemWritten(restore_main, v, m)).
+query a: bitstring, i: pkey; event(Pinned(restore_kit_lost, a, i)).
+query event(AukDerived(restore_no_keyset)).
+
+process
+  new sk_main: key; new skm_main: seed; new skx_main: seed;
+  new sk_b: key; new skm_b: seed; new skx_b: seed;
+  new sk_c: key; new skm_c: seed; new skx_c: seed;
+  new sk_d: key;
+  (* Kit lost: Secret Key public (b, d); kit with the password (c). *)
+  out(c, sk_b);
+  out(c, sk_c);
+  out(c, pw_kit_pw);
+  out(c, sk_d);
+  ( CreateAccount(acct_main, pw_main, sk_main, skm_main, skx_main)
+  | CreateAccount(acct_kit_lost, pw_kit_lost, sk_b, skm_b, skx_b)
+  | CreateAccount(acct_kit_pw, pw_kit_pw, sk_c, skm_c, skx_c)
+  | ! RestoreDevice(restore_main, pw_main, sk_main)
+  | ! RestoreDevice(restore_kit_lost, pw_kit_lost, sk_b)
+  | ! RestoreDevice(restore_kit_pw, pw_kit_pw, sk_c)
+  | ! RestoreDevice(restore_no_keyset, pw_no_keyset, sk_d) )

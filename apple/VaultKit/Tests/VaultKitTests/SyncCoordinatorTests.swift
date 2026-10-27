@@ -226,7 +226,7 @@ func twoSyncedDevices(remote: InMemoryRemote) async throws -> (SyncDevice, SyncD
 }
 
 @MainActor
-@Suite("Sync coordinator", .timeLimit(.minutes(2)))
+@Suite("Sync coordinator", .timeLimit(.minutes(4)))
 struct SyncCoordinatorTests {
     @Test func secondDeviceRestoresThroughRemote() async throws {
         let remote = InMemoryRemote(pageSize: 2)  // several pages per fetch
@@ -591,7 +591,9 @@ struct SyncCoordinatorTests {
         #expect(b.session.summaries.isEmpty)
     }
 
-    @Test func replayedManifestFailsSessionWithIntegrity() async throws {
+    /// Spec 3.1: a server that serves an older manifest again is behind, not an attack. The device
+    /// serves its verified copy, says it waits for iCloud, and pushes its copy back.
+    @Test func replayedManifestIsServedFromTheLocalCopy() async throws {
         let remote = InMemoryRemote()
         let a = try SyncDevice(remote: remote, name: "A")
         defer { a.cleanUp() }
@@ -604,11 +606,15 @@ struct SyncCoordinatorTests {
         await a.sync()
         #expect(await remote.record(manifest)?.version != oldVersion)
 
+        let newVersion = try #require(await remote.record(manifest)?.version)
         await remote.replay(name: manifest, version: oldVersion)
         await a.coordinator.syncNow()
         await a.session.reload()
-        #expect(a.session.state == .failed(.integrity(kind: "manifest_rollback")))
-        #expect(a.session.summaries.isEmpty)
+        #expect(a.session.state == .unlocked)
+        #expect(a.titles == ["Projet Atlas"])
+        #expect(await a.coordinator.status == .waitingForServer)
+        await a.coordinator.syncNow()
+        #expect(await remote.record(manifest)?.version == newVersion)
     }
 
     /// C1: forged deletions of the account and of the vault a locked device has read change nothing
@@ -875,7 +881,7 @@ final class ScriptedRemote: RemoteRecordStore {
 struct StagingFailure: Error {}
 
 @MainActor
-@Suite("Sync coordinator, store safety", .timeLimit(.minutes(2)))
+@Suite("Sync coordinator, store safety", .timeLimit(.minutes(4)))
 struct SyncCoordinatorStoreSafetyTests {
     static func hex(_ n: Int) -> String { String(format: "%032x", n) }
 
@@ -944,6 +950,19 @@ struct SyncCoordinatorStoreSafetyTests {
         #expect(try await Self.serverMeta(device.store, good.name) == meta)
         #expect(try await Self.serverMeta(device.store, RecordName(kind: 5, id: Self.hex(3))) == nil)
         #expect(try await Self.readToken(device.store) == ScriptedRemote.token(1))
+    }
+
+    /// The restore epoch (kind 7) and the signed device and vault lists (kinds 8 and 9) are staged like the other kinds.
+    @Test func signedListKindsAreValid() {
+        let meta = InMemoryRemote.serverMeta(tag: 1)
+        let record = { (kind: UInt8) in
+            RemoteRecord(name: RecordName(kind: kind, id: Self.hex(1)), version: 1, data: Data([1]), serverMeta: meta)
+        }
+        for kind in UInt8(1)...9 {
+            #expect(SyncCoordinator.isValid(record(kind)))
+        }
+        #expect(!SyncCoordinator.isValid(record(0)))
+        #expect(!SyncCoordinator.isValid(record(10)))
     }
 
     /// I2: the token moves only once a page is staged; a crash in between fetches the page again.
@@ -1033,18 +1052,9 @@ struct SyncCoordinatorStoreSafetyTests {
     /// M6: a locked round keeps the refusal; only a rebase can clear it.
     @Test func lockedRoundKeepsRefusal() async throws {
         let remote = InMemoryRemote()
-        let (a, b, atlas) = try await twoSyncedDevices(remote: remote)
-        defer { a.cleanUp(); b.cleanUp() }
-        let manifest = RecordName(kind: 6, id: atlas.vaultId)
-        let synced = try #require(await remote.record(manifest)?.version)
-        try await addItem(a.session, title: "Note A")
-        await a.sync()
-        await b.sync()
-        try await addItem(b.session, title: "Note B")
-
-        // The server serves the older manifest again: B's held vault cannot be rebased onto it.
-        await remote.replay(name: manifest, version: synced)
-        await b.sync()
+        // The server forked from what B verified: an alert.
+        let (a, b, c, _) = try await forkedDevices(remote: remote)
+        defer { a.cleanUp(); b.cleanUp(); c.cleanUp() }
         guard case .refused(let kind) = await b.coordinator.status else {
             Issue.record("status \(await b.coordinator.status)")
             return

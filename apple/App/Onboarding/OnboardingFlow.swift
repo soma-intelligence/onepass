@@ -13,7 +13,9 @@ enum OnboardingPath: Sendable {
 }
 
 /// The onboarding state machine (spec 7): create an account, or restore one with the Emergency Kit.
-/// The master password stays in memory only until the last step (biometric enrollment needs it).
+/// The typed fields are emptied as soon as they are submitted. When the biometric step follows, the
+/// master password then stays in a wipeable buffer until the last step, as does the new Secret Key
+/// (shown once and put in the Emergency Kit); both are wiped at the end or on lock.
 @MainActor
 @Observable
 final class OnboardingModel {
@@ -24,15 +26,29 @@ final class OnboardingModel {
 
     var mode: DeviceMode = .personal
     var displayName = ""
-    var password = ""
-    var confirmation = ""
-    private(set) var secretKey: String?
+    /// Typed fields and the kept secrets (`OnboardingCredentials`: emptied on submit, wiped on
+    /// `clear()`).
+    private var credentials = OnboardingCredentials()
+    var password: String {
+        get { credentials.password }
+        set { credentials.password = newValue }
+    }
+    var confirmation: String {
+        get { credentials.confirmation }
+        set { credentials.confirmation = newValue }
+    }
     var kitStoredOffline = false
     var allowWatch = false
     private(set) var biometricsEnabled = false
 
-    var restoreKey = ""
-    var restorePassword = ""
+    var restoreKey: String {
+        get { credentials.restoreKey }
+        set { credentials.restoreKey = newValue }
+    }
+    var restorePassword: String {
+        get { credentials.restorePassword }
+        set { credentials.restorePassword = newValue }
+    }
 
     private(set) var busyMessage: String?
     var errorMessage: String?
@@ -129,6 +145,9 @@ final class OnboardingModel {
 
     var passwordBits: Double { PasswordStrength.estimatedBits(password) }
 
+    /// The Secret Key in display form, decoded on each read (never stored as a `String`).
+    var secretKey: String? { credentials.secretKey?.string() }
+
     var confirmationMismatch: Bool { !confirmation.isEmpty && confirmation != password }
 
     /// "Continuer" once the password reaches the master password gate (five random words pass,
@@ -137,8 +156,10 @@ final class OnboardingModel {
         PasswordStrength.acceptsMasterPassword(password) && password == confirmation
     }
 
-    /// Shown under "Générer" so it can be written down; cleared with the password.
-    private(set) var generatedPassword: String?
+    /// Shown under "Générer" so it can be written down, decoded on each read (kept in a wipeable
+    /// buffer, never as a stored `String`); cleared with the password.
+    var generatedPassword: String? { generated?.string() }
+    private var generated: SecretBytes?
 
     /// "Générer": five French words drawn at random, put in both fields.
     func generateMasterPassword() {
@@ -147,7 +168,13 @@ final class OnboardingModel {
         }
         password = value
         confirmation = value
-        generatedPassword = value
+        generated?.wipe()
+        generated = SecretBytes(utf8: value)
+    }
+
+    private func clearGeneratedPassword() {
+        generated?.wipe()
+        generated = nil
     }
 
     var primaryLabel: String? {
@@ -217,12 +244,17 @@ final class OnboardingModel {
             return
         }
         busyMessage = String(localized: "Création du coffre...")
+        // Submitted: both fields are emptied now, whatever the outcome. The password lives on in a
+        // buffer wiped after the call (and copied for the biometric step only); it crosses the FFI
+        // as bytes.
+        let typed = credentials.submitCreation()
+        defer { typed.wipe() }
+        clearGeneratedPassword()
         do {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-            secretKey = try await session.createAccount(password: password, displayName: name, mode: mode)
-            // The password stays in memory for the biometric enrollment; its shown copy goes now.
-            confirmation = ""
-            generatedPassword = nil
+            let key = try await session.createAccount(password: typed, displayName: name, mode: mode)
+            // The password is kept only when the biometric step follows.
+            credentials.accountCreated(secretKey: key, password: typed, keepPasswordForBiometrics: biometricsOffered)
             advance()
         } catch {
             errorMessage = VaultError(error).localizedMessage
@@ -233,9 +265,13 @@ final class OnboardingModel {
         busyMessage = String(localized: "Activation de \(biometryName)...")
         defer { busyMessage = nil }
         model.settings.allowWatchUnlock = allowWatch
+        guard let typed = credentials.enrollmentPassword else {
+            errorMessage = VaultError.passwordRequired.localizedMessage
+            return
+        }
         do {
             // Master password check, Secure Enclave key, then one Touch ID or Face ID check.
-            try await model.enableBiometrics(password: password)
+            try await model.enableBiometrics(password: typed)
             model.markBiometricOfferAnswered()
             biometricsEnabled = true
             advance()
@@ -272,20 +308,23 @@ final class OnboardingModel {
             return
         }
         busyMessage = String(localized: "Déverrouillage...")
+        // The password field is emptied on submission, whatever the outcome. The Secret Key field
+        // is kept after a failure (a typo or a wrong password), so the long key need not be typed
+        // again, and emptied on success.
+        let typedPassword = credentials.submitRestore()
+        defer { typedPassword.wipe() }
         do {
-            try await session.restore(secretKey: restoreKey, password: restorePassword)
+            try await session.restore(secretKey: restoreKey, password: typedPassword)
         } catch {
             errorMessage = VaultError(error).restoreMessage
             return
         }
+        credentials.restored(password: typedPassword, keepPasswordForBiometrics: biometricsOffered)
         if !restoreOnly { session.setDeviceMode(mode) }
         #if os(macOS)
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty { model.settings.displayName = name }
         #endif
-        password = restorePassword
-        restorePassword = ""
-        restoreKey = ""
         advance()
     }
 
@@ -309,59 +348,87 @@ final class OnboardingModel {
     /// deleted and the lock screen replaces the onboarding. The Secret Key stays in the keychain.
     func sessionLocked() {
         deleteKit()
-        password = ""
-        confirmation = ""
-        generatedPassword = nil
-        restorePassword = ""
-        restoreKey = ""
-        secretKey = nil
+        credentials.clear()
+        clearGeneratedPassword()
         errorMessage = nil
         model.onboardingInProgress = false
     }
 
     private func finish() {
-        password = ""
-        confirmation = ""
-        generatedPassword = nil
-        restorePassword = ""
-        secretKey = nil
+        credentials.clear()
+        clearGeneratedPassword()
         model.onboardingInProgress = false
     }
 
     // MARK: - Emergency Kit
 
-    /// The PDF in a fresh temporary folder (`NSFileProtectionComplete` on iOS), deleted by
-    /// `deleteKit()` when the step disappears.
-    @ObservationIgnored private var kitFolder: URL?
+    /// The PDF bytes, built when the step appears and printed from memory (spec 4). A file is
+    /// written only when the user goes past the save warning: on iOS and visionOS a temporary
+    /// copy for the share sheet (`EmergencyKitFile`: excluded from backups, complete protection),
+    /// on Mac the destination chosen in the save panel. `deleteKit()` drops both.
+    private(set) var kitData: Data?
     private(set) var kitURL: URL?
 
     func prepareKit() {
-        guard kitURL == nil, let secretKey, let accountID = model.settings.accountID else { return }
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("kit-\(UUID().uuidString)", isDirectory: true)
+        guard kitData == nil, let secretKey, let accountID = model.settings.accountID else { return }
         do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let data = try EmergencyKit.pdf(
+            kitData = try EmergencyKit.pdf(
                 secretKey: secretKey, accountID: accountID,
                 displayName: model.settings.displayName, createdAt: Date())
-            let url = folder.appendingPathComponent("Emergency Kit OnePass.pdf")
-            #if os(iOS) || os(visionOS)
-            try data.write(to: url, options: [.atomic, .completeFileProtection])
-            #else
-            try data.write(to: url, options: .atomic)
-            #endif
-            kitFolder = folder
-            kitURL = url
         } catch {
-            try? FileManager.default.removeItem(at: folder)
             errorMessage = String(localized: "L'Emergency Kit n'a pas pu être préparé.")
         }
     }
 
-    func deleteKit() {
-        if let kitFolder { try? FileManager.default.removeItem(at: kitFolder) }
-        kitFolder = nil
+    /// "Imprimer le kit": the system print panel, from memory.
+    func printKit() {
+        prepareKit()
+        guard let kitData else { return }
+        if !KitPrinter.print(kitData) {
+            errorMessage = String(localized: "Aucune imprimante n'est disponible sur cet appareil.")
+        }
+    }
+
+    /// The temporary kit file for the share sheet, written on first use.
+    func kitFileForSharing() -> URL? {
+        if let kitURL { return kitURL }
+        prepareKit()
+        guard let kitData else { return nil }
+        do {
+            kitURL = try EmergencyKitFile.write(kitData, under: FileManager.default.temporaryDirectory)
+        } catch {
+            errorMessage = String(localized: "L'Emergency Kit n'a pas pu être préparé.")
+        }
+        return kitURL
+    }
+
+    /// The share sheet closed: the temporary copy goes away (the PDF stays in memory for printing).
+    func sharingFinished() {
+        if let kitURL { EmergencyKitFile.remove(kitURL, under: FileManager.default.temporaryDirectory) }
         kitURL = nil
+    }
+
+    /// Mac: writes the kit to the destination the user chose in the save panel.
+    func saveKit(to url: URL) {
+        prepareKit()
+        guard let kitData else { return }
+        do {
+            try kitData.write(to: url, options: .atomic)
+        } catch {
+            errorMessage = String(localized: "L'Emergency Kit n'a pas pu être enregistré.")
+        }
+    }
+
+    /// Drops the temporary file and wipes the PDF bytes (they hold the Secret Key in clear).
+    func deleteKit() {
+        sharingFinished()
+        guard var bytes = kitData else { return }
+        kitData = nil
+        // Our copy is now the only reference, so the wipe happens in place.
+        bytes.withUnsafeMutableBytes { buffer in
+            guard let base = buffer.baseAddress else { return }
+            _ = memset_s(base, buffer.count, 0, buffer.count)
+        }
     }
 
     // MARK: - Texts

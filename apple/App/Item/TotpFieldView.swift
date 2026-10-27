@@ -45,8 +45,10 @@ struct TotpCodeView: View {
 }
 
 /// Detail row of a one-time code field: label, live code with its countdown pill, Copier (the code).
+/// While the screen is captured (iOS, visionOS) the code is drawn as bullets; Copier still works.
 struct TotpFieldView: View {
     let field: FfiField
+    var captured = false
     let onCopy: (String) -> Void
 
     var body: some View {
@@ -54,7 +56,14 @@ struct TotpFieldView: View {
             label: field.displayLabel.detailLabelCase, copyIdentifier: "field.copy.\(field.id)",
             copyLabel: Text("Copier le code"), onCopy: copyCurrent, showsMenu: false
         ) {
-            TotpCodeView(secret: field.value.text)
+            if captured {
+                Text(verbatim: FieldRow.mask)
+                    .font(.title3.monospacedDigit())
+                    .accessibilityLabel(Text("Code à usage unique"))
+                    .accessibilityValue(Text("masqué"))
+            } else {
+                TotpCodeView(secret: field.value.text)
+            }
         } accessory: {
             EmptyView()
         } menu: {

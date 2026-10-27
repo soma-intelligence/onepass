@@ -112,8 +112,16 @@ public final class AutoFillModel {
         }
     }
 
-    /// Master password. A wrong password stays on `locked` (error and failure counter in the session).
+    /// `unlock(password:)` with a typed `String` (tests). The extension passes `SecretBytes`.
     public func unlock(password: String) async {
+        let bytes = SecretBytes(utf8: password)
+        defer { bytes.wipe() }
+        await unlock(password: bytes)
+    }
+
+    /// Master password. A wrong password stays on `locked` (error and failure counter in the session).
+    /// The caller wipes `password`.
+    public func unlock(password: SecretBytes) async {
         guard !isFinished, screen == .locked else { return }
         try? await session.unlock(password: password)
         await afterUnlockAttempt()

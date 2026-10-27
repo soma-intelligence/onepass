@@ -100,7 +100,7 @@ struct SettingsView: View {
                 Section {
                     row(.about)
                 } footer: {
-                    if !inTab { Text("OnePass est open source (GPL-3.0)") }
+                    if !inTab { Text("OnePass est open source (AGPL-3.0)") }
                 }
                 if inTab {
                     Section {
@@ -115,7 +115,7 @@ struct SettingsView: View {
                         }
                         .accessibilityIdentifier("settings.lock")
                     } footer: {
-                        Text("OnePass est open source (GPL-3.0)")
+                        Text("OnePass est open source (AGPL-3.0)")
                     }
                 }
             }

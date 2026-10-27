@@ -7,7 +7,12 @@
 // still of the classified role are written: the form is analysed again at
 // fill time, so a field the page hid or moved since the last analysis is
 // skipped. Nothing else is ever written.
-import type { FieldInfo, FieldRole, PageAnalysis } from "../shared/messages";
+//
+// Re-rendered forms (spec B2): a ref that died during the fill (the page
+// replaced the form or the field) is resolved again in a fresh analysis, to
+// the copy of the same form (`FormLineage`) and the field of the same role
+// and rank. A written field replaced by an empty copy is filled once more.
+import type { FieldInfo, FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
 import { type FieldElement, isFieldCandidate } from "./detect/fields";
 import { normalizeText } from "./detect/lexicon";
 import type { RefRegistry } from "./detect/refs";
@@ -126,11 +131,26 @@ export interface FillerOptions {
   geometry: Geometry;
   /** A fresh analysis of the document (same ref registry). */
   analyze: () => PageAnalysis;
+  /** Where form `ref` is in `a`: itself, or the copy a re-render put in its place. */
+  resolve: (ref: string, a: PageAnalysis) => FormInfo | null;
 }
 
 export interface Filler {
   /** Fills the fields of `formRef`; returns how many controls were written. */
   fillForm(formRef: string, values: Partial<Record<FieldRole, string>>): number;
+}
+
+/** A field of the target form: its role and rank among the fields of that role. */
+interface Slot {
+  role: FieldRole;
+  nth: number;
+}
+
+interface Written {
+  slot: Slot;
+  part: number | undefined;
+  el: FieldElement;
+  value: string;
 }
 
 export function createFiller(opts: FillerOptions): Filler {
@@ -144,33 +164,72 @@ export function createFiller(opts: FillerOptions): Filler {
     return isVisible(el, geometry) ? el : null;
   };
 
-  const fillField = (f: FieldInfo, v: string, container: Element): number => {
-    if (f.parts && f.parts.length > 0) {
-      // Split code: one character per cell, in order.
-      const chars = Array.from(v);
-      let n = 0;
-      f.parts.forEach((ref, i) => {
-        const c = chars[i];
-        const el = usable(ref, container);
-        if (c !== undefined && el && write(el, c, f.role)) n++;
-      });
-      return n;
-    }
-    const el = usable(f.ref, container);
-    return el && write(el, v, f.role) ? 1 : 0;
-  };
+  const fieldAt = (form: FormInfo, slot: Slot): FieldInfo | undefined => form.fields.filter((x) => x.role === slot.role)[slot.nth];
 
   return {
     fillForm(formRef, values) {
-      const container = refs.get(formRef);
-      if (!container) return 0;
-      const form = opts.analyze().forms.find((f) => f.ref === formRef);
-      if (!form) return 0;
-      let n = 0;
+      const first = opts.resolve(formRef, opts.analyze());
+      if (!first) return 0;
+      let form: FormInfo = first;
+
+      // Spec B2: a page may re-render the form while it is filled (on the
+      // first `input`, say). A dead ref is then looked up again in a fresh
+      // analysis: the same form (its re-rendered copy), the same role.
+      const lookup = (slot: Slot, part: number | undefined): { el: FieldElement | null; dead: boolean } => {
+        const container = refs.get(form.ref);
+        const fi = fieldAt(form, slot);
+        if (!container || !fi) return { el: null, dead: true };
+        const ref = part === undefined ? fi.ref : fi.parts?.[part];
+        if (ref === undefined) return { el: null, dead: false };
+        if (!refs.get(ref)) return { el: null, dead: true };
+        return { el: usable(ref, container), dead: false };
+      };
+      const target = (slot: Slot, part: number | undefined): FieldElement | null => {
+        const r = lookup(slot, part);
+        if (!r.dead) return r.el;
+        const again = opts.resolve(form.ref, opts.analyze());
+        if (!again) return null;
+        form = again;
+        return lookup(slot, part).el;
+      };
+
+      const written: Written[] = [];
+      const put = (slot: Slot, part: number | undefined, value: string): boolean => {
+        const el = target(slot, part);
+        if (!el || !write(el, value, slot.role)) return false;
+        written.push({ slot, part, el, value });
+        return true;
+      };
+
+      const seen = new Map<FieldRole, number>();
+      const slots: { slot: Slot; field: FieldInfo }[] = [];
       for (const f of form.fields) {
-        const v = values[f.role];
+        const nth = seen.get(f.role) ?? 0;
+        seen.set(f.role, nth + 1);
+        slots.push({ slot: { role: f.role, nth }, field: f });
+      }
+      let n = 0;
+      for (const { slot, field } of slots) {
+        const v = values[slot.role];
         if (typeof v !== "string" || v === "") continue;
-        n += fillField(f, v, container);
+        if (field.parts && field.parts.length > 0) {
+          // Split code: one character per cell, in order.
+          const chars = Array.from(v);
+          for (let i = 0; i < field.parts.length; i++) {
+            const c = chars[i];
+            if (c !== undefined && put(slot, i, c)) n++;
+          }
+        } else if (put(slot, undefined, v)) {
+          n++;
+        }
+      }
+
+      // A written control the page replaced by an empty copy gets its value
+      // again, once: a page that re-renders on every input is not chased.
+      for (const w of written.splice(0)) {
+        if (w.el.isConnected) continue;
+        const el = target(w.slot, w.part);
+        if (el && nativeValue(el) === "") write(el, w.value, w.slot.role);
       }
       return n;
     },

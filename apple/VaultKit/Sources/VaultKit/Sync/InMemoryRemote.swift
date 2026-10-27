@@ -38,6 +38,15 @@ public actor InMemoryRemote: RemoteRecordStore {
     private var tokenExpired = false
     private var brokenToken = false
     private var changeCount: UInt64 = 0
+    /// Fetch pages still served before the next fetch throws `offline` (once).
+    private var fetchPagesBeforeFailure: Int?
+    /// Saved batches still accepted before the next send throws `offline` (once).
+    private var sendsBeforeFailure: Int?
+    /// Every send throws `offline` (fetches still work).
+    private var sendsOffline = false
+    /// Runs once after the next saved batch, before `send` returns (another device acting between two
+    /// batches of one round).
+    private var afterSave: (@Sendable () async -> Void)?
     /// Identity switched in once the next fetch has served its last page (and whether the switch is
     /// announced through `accountChangeCount`, like `CKAccountChanged`).
     private var identityAfterFetch: (identity: String?, announce: Bool)?
@@ -70,6 +79,10 @@ public actor InMemoryRemote: RemoteRecordStore {
 
     public func fetchChanges(since token: Data?) async throws -> RemoteBatch {
         try checkFailure()
+        if let pages = fetchPagesBeforeFailure {
+            fetchPagesBeforeFailure = pages > 0 ? pages - 1 : nil
+            if pages == 0 { throw RemoteStoreError.offline }
+        }
         var cursor = Self.decode(token) ?? 0
         var restarted = false
         if tokenExpired, token != nil {
@@ -102,6 +115,20 @@ public actor InMemoryRemote: RemoteRecordStore {
 
     public func send(_ changes: [RemoteRecord]) async throws -> [SendResult] {
         try checkFailure()
+        if sendsOffline { throw RemoteStoreError.offline }
+        if let sends = sendsBeforeFailure {
+            sendsBeforeFailure = sends > 0 ? sends - 1 : nil
+            if sends == 0 { throw RemoteStoreError.offline }
+        }
+        let results = try save(changes)
+        if results.contains(where: { if case .saved = $0 { true } else { false } }), let hook = afterSave {
+            afterSave = nil
+            await hook()
+        }
+        return results
+    }
+
+    private func save(_ changes: [RemoteRecord]) throws -> [SendResult] {
         guard changes.count <= maxBatchRecords, changes.reduce(0, { $0 + $1.batchBytes }) <= maxBatchBytes else {
             throw RemoteStoreError.other(String(localized: "Lot trop volumineux pour le serveur.", bundle: VaultKitStrings.bundle))
         }
@@ -258,6 +285,27 @@ public actor InMemoryRemote: RemoteRecordStore {
     /// through `accountChangeCount()` (CloudKit posts `CKAccountChanged`).
     public func changeIdentityAfterNextFetch(to identity: String?, announce: Bool) {
         identityAfterFetch = (identity, announce)
+    }
+
+    /// The fetch that follows `pages` served pages throws `offline`, once (a fetch cut between two pages).
+    public func failFetch(afterPages pages: Int) {
+        fetchPagesBeforeFailure = max(0, pages)
+    }
+
+    /// The send that follows `batches` sends throws `offline`, once (a round cut between two batches).
+    public func failSend(afterBatches batches: Int) {
+        sendsBeforeFailure = max(0, batches)
+    }
+
+    /// While set, every send throws `offline` and fetches still work (a device that can read but not
+    /// write, or a round held back while another device writes).
+    public func setSendsOffline(_ offline: Bool) {
+        sendsOffline = offline
+    }
+
+    /// Runs `hook` once, after the next batch that saves something and before that send returns.
+    public func afterNextSave(_ hook: @escaping @Sendable () async -> Void) {
+        afterSave = hook
     }
 
     /// Serves one page that announces more pages without a token (a broken remote), once.

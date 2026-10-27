@@ -204,9 +204,9 @@ export class Session {
 
   private async connect(generation: number): Promise<BridgeLike> {
     const record = await this.deps.store.getPairing();
-    if (generation !== this.generation) throw SUPERSEDED;
-    if (!record) throw new BgError("unpaired");
     try {
+      if (generation !== this.generation) throw SUPERSEDED;
+      if (!record) throw new BgError("unpaired");
       for (let attempt = 0; ; attempt++) {
         if (generation !== this.generation) throw SUPERSEDED;
         let client: BridgeLike | undefined;
@@ -231,7 +231,7 @@ export class Session {
         return client;
       }
     } finally {
-      wipe(record.key);
+      wipe(record?.key);
     }
   }
 }

@@ -1,0 +1,63 @@
+(* formal-lib: account_core.pvl *)
+(* OnePass formal model: account creation and unlock (2SKD), signed
+   params and device pin, keyset sealed by the AUK, vault key envelope
+   (hybrid KEM), item keys and item content. Processes: account_core.pvl.
+
+   Three accounts run side by side, each with its own pinned devices:
+   - acct_main: nothing leaks (P1, P3, P4, P5, sanity);
+   - acct_sk_leaked: its Secret Key is public (P2, first case);
+   - acct_pw_leaked: its password is public (P2, second case). *)
+
+free pw_main: password [private].
+free pw_sk_leaked: password [private].
+free pw_pw_leaked: password [private].
+
+(* P1: the vault keys and item contents of the main account stay secret
+   against a hostile storage (including items the device writes). *)
+query s: pkey, v: bitstring, k: key;
+  event(VaultCreated(acct_main, s, v, k)) && attacker(k).
+query m: bitstring; event(ItemSealed(acct_main, m)) && attacker(m).
+
+(* P2: the AUK stays secret when the attacker has the Secret Key but not
+   the password, or the password but not the Secret Key. Also checked for
+   the main account. *)
+query k: key; event(AukCreated(acct_sk_leaked, k)) && attacker(k).
+query k: key; event(AukCreated(acct_pw_leaked, k)) && attacker(k).
+query k: key; event(AukCreated(acct_main, k)) && attacker(k).
+
+(* P3: without the Secret Key, the password resists an offline dictionary
+   attack. *)
+weaksecret pw_main.
+(* Documented limit (F-03, spec section 3): with the Secret Key leaked, the
+   keyset blob is a password verifier, so the password falls to an offline
+   dictionary attack. P2 above holds only for a strong password. *)
+weaksecret pw_sk_leaked.
+
+(* P4: a pinned device accepts only params signed by the pinned identity. *)
+query i: pkey, a: bitstring, sa: bitstring, s: pkey, pm: mlkem_pk, px: x25519_pk;
+  event(ParamsAccepted(i, a, sa, s, pm, px)) ==> event(ParamsSigned(i, a, sa, s, pm, px)).
+
+(* P5: a vault key substituted by the storage is never accepted: every vault
+   key a device accepts is one the account created for that vault id. *)
+query t: bitstring, s: pkey, v: bitstring, k: key;
+  event(VaultAccepted(t, s, v, k)) ==> event(VaultCreated(t, s, v, k)).
+
+(* Sanity (expected false): each main path goes through: unlock (each
+   account), a vault listed, an item read, an item written by a device. *)
+query event(Unlocked(acct_main)).
+query event(Unlocked(acct_sk_leaked)).
+query event(Unlocked(acct_pw_leaked)).
+query s: pkey, v: bitstring, k: key; event(VaultAccepted(acct_main, s, v, k)).
+query v: bitstring, i: bitstring, m: bitstring; event(ItemRead(acct_main, v, i, m)).
+query v: bitstring, m: bitstring; event(ItemWritten(acct_main, v, m)).
+
+process
+  new sk_main: key; new skm_main: seed; new skx_main: seed;
+  new sk_a: key; new skm_a: seed; new skx_a: seed;
+  new sk_b: key; new skm_b: seed; new skx_b: seed;
+  (* P2 cases: one secret of each extra account is public. *)
+  out(c, sk_a);
+  out(c, pw_pw_leaked);
+  ( CreateAccount(acct_main, pw_main, sk_main, skm_main, skx_main)
+  | CreateAccount(acct_sk_leaked, pw_sk_leaked, sk_a, skm_a, skx_a)
+  | CreateAccount(acct_pw_leaked, pw_pw_leaked, sk_b, skm_b, skx_b) )

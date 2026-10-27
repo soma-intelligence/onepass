@@ -123,7 +123,10 @@ final class AppModel {
     /// One automatic biometric attempt per app activation, whatever the number of windows.
     @ObservationIgnored private var autoBiometricsPending = true
     /// "Utiliser Touch ID pour déverrouiller ?" after a password unlock (once per account and device).
-    var biometricOffer: BiometricOffer?
+    /// Replacing or dropping it wipes the password it holds.
+    var biometricOffer: BiometricOffer? {
+        didSet { if oldValue?.id != biometricOffer?.id { oldValue?.password.wipe() } }
+    }
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "app")
 
@@ -403,7 +406,7 @@ final class AppModel {
     /// Turns biometric unlock on: checks the master password and wraps the key with the Secure
     /// Enclave (`enrollBiometrics`), then asks for Touch ID, Face ID or the Watch once, so the
     /// user knows it works. A refused or cancelled check turns it back off.
-    func enableBiometrics(password: String) async throws {
+    func enableBiometrics(password: SecretBytes) async throws {
         try await session.enrollBiometrics(password: password)
         guard await confirmBiometry() else {
             session.disableBiometrics()
@@ -437,21 +440,29 @@ final class AppModel {
         return !Self.browseDefaults.bool(forKey: Self.biometricOfferKey(accountID))
     }
 
-    /// Right after a password unlock: keeps the typed password until the offer is answered (the
-    /// onboarding keeps it the same way until its biometric step).
-    func offerBiometrics(password: String) {
+    /// Right after a password unlock: keeps the typed password, in a wipeable buffer the offer owns,
+    /// until the offer is answered or the app locks (the onboarding keeps it the same way until its
+    /// biometric step).
+    func offerBiometrics(password: SecretBytes) {
         biometricOffer = BiometricOffer(password: password)
     }
 
     /// "Activer" or "Plus tard": either way the offer is not made again on this device.
     func answerBiometricOffer(accept: Bool) {
         guard let offer = biometricOffer else { return }
+        guard accept else {
+            biometricOffer = nil
+            markBiometricOfferAnswered()
+            return
+        }
+        // Taken out of the offer first (dropping the offer wipes its buffer): wiped once enrolled.
+        let password = offer.password.withUnsafeBytes { SecretBytes(copying: $0) }
         biometricOffer = nil
         markBiometricOfferAnswered()
-        guard accept else { return }
         Task {
+            defer { password.wipe() }
             do {
-                try await enableBiometrics(password: offer.password)
+                try await enableBiometrics(password: password)
                 showToast(String(localized: "\(OnboardingModel.biometryName) activé"))
             } catch {
                 showToast(VaultError(error).localizedMessage, kind: .error)
@@ -475,13 +486,11 @@ final class AppModel {
         return await remote.accountAvailable()
     }
 
-    /// Emergency Kit PDFs left in the temporary folder by a previous run (killed during the step).
+    /// Emergency Kit PDFs and encrypted backups left in the temporary folder by a previous run
+    /// (killed while the share sheet was open).
     private static func sweepEmergencyKits() {
-        let tmp = FileManager.default.temporaryDirectory
-        let entries = (try? FileManager.default.contentsOfDirectory(atPath: tmp.path)) ?? []
-        for name in entries where name.hasPrefix("kit-") {
-            try? FileManager.default.removeItem(at: tmp.appendingPathComponent(name, isDirectory: true))
-        }
+        EmergencyKitFile.sweep(in: FileManager.default.temporaryDirectory)
+        EncryptedBackupFile.sweep(in: FileManager.default.temporaryDirectory)
     }
 
     /// Spec 7: the creation is refused when this iCloud already holds an account (ruling R13).
@@ -507,6 +516,32 @@ final class AppModel {
         await coordinator?.refetchFromScratch()
         await session.reload()
         if case .failed = session.state { await session.refresh() }
+    }
+
+    // MARK: - Safe exits (spec 3.3)
+
+    /// "Exporter une sauvegarde chiffrée": the archive bytes (the caller saves them through the
+    /// warning-first save flow). Both buffers are wiped here.
+    func exportEncryptedBackup(password: SecretBytes, passphrase: SecretBytes) async throws -> Data {
+        defer {
+            password.wipe()
+            passphrase.wipe()
+        }
+        return try await session.exportEncryptedBackup(password: password, passphrase: passphrase)
+    }
+
+    /// "Garder la version de cet appareil" or "Prendre la version d'iCloud", master password checked.
+    /// The coordinator follows the epoch: `syncStatus` stays `.waitingForServer` until every vault is
+    /// `Ok` (`safeExitSettled`). The buffer is wiped here.
+    func runSafeExit(_ exit: SafeExit, password: SecretBytes) async throws {
+        defer { password.wipe() }
+        try await session.runSafeExit(exit, password: password)
+    }
+
+    /// The safe exit converged: the coordinator reports idle (every vault `Ok`), never before.
+    var safeExitSettled: Bool {
+        if case .idle = syncStatus { return true }
+        return !cloudKitEnabled && session.state == .unlocked
     }
 
     // MARK: - Account missing
@@ -1058,10 +1093,11 @@ enum DebugReset {
 }
 #endif
 
-/// The first-unlock biometric offer, with the password just typed (needed to wrap the key).
+/// The first-unlock biometric offer, with the password just typed (needed to wrap the key), in a
+/// wipeable buffer (`AppModel.biometricOffer` wipes it when the offer goes away).
 struct BiometricOffer: Identifiable {
     let id = UUID()
-    let password: String
+    let password: SecretBytes
 }
 
 /// The full pages of the main window besides the items (sidebar rows above the vaults).

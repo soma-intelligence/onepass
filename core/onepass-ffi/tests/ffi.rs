@@ -1367,6 +1367,509 @@ fn ignored_deletions_are_listed_and_cleared() {
     fx.session.lock();
 }
 
+// ---- security hardening: epochs, sync health, export, byte secrets ------
+
+const BACKUP_PASSPHRASE: &str = "orbite-velours-cascade-lanterne-92";
+
+/// A server as the app's sync coordinator sees it: the last pushed version
+/// of every record (`None`: deleted).
+type Server = std::collections::BTreeMap<(u8, String), (u64, Option<Vec<u8>>)>;
+
+fn push(handle: &SyncStoreHandle, server: &mut Server) {
+    for c in handle.pending_changes().unwrap() {
+        server.insert((c.kind, c.id.clone()), (c.version, c.data.clone()));
+        handle.mark_pushed(c.kind, c.id, c.version, None).unwrap();
+    }
+}
+
+fn pull(handle: &SyncStoreHandle, server: &Server) {
+    for ((kind, id), (version, data)) in server {
+        handle
+            .stage_remote(FfiRemoteRecord {
+                kind: *kind,
+                id: id.clone(),
+                version: *version,
+                data: data.clone(),
+                server_meta: None,
+            })
+            .unwrap();
+    }
+    handle.commit_remote().unwrap();
+}
+
+/// A device in sync with its server, then a login saved and pushed, then
+/// the server gone back to the state before the login (its manifest
+/// rewound, the login's record deleted). Returns the server before the
+/// rollback, the rolled back one, and the handle.
+fn rolled_back_server(fx: &Fixture) -> (Server, Server, Arc<SyncStoreHandle>) {
+    let handle = open_sync_store(fx.path.clone()).unwrap();
+    let mut server = Server::new();
+    push(&handle, &mut server);
+    pull(&handle, &server);
+    let old = server.clone();
+    saved_login(fx, "pw-rollback");
+    push(&handle, &mut server);
+    pull(&handle, &server);
+    let mut rolled = old.clone();
+    for ((kind, id), (version, _)) in &server {
+        if !old.contains_key(&(*kind, id.clone())) {
+            rolled.insert((*kind, id.clone()), (version + 1, None));
+        }
+    }
+    pull(&handle, &rolled);
+    (server, rolled, handle)
+}
+
+fn health_of(fx: &Fixture) -> FfiHealthState {
+    let health = fx.session.sync_health().unwrap();
+    assert_eq!(health.len(), 1);
+    assert_eq!(health[0].vault_id, fx.vault_id);
+    health[0].state.clone()
+}
+
+fn titles(fx: &Fixture) -> Vec<String> {
+    fx.session
+        .item_summaries()
+        .unwrap()
+        .into_iter()
+        .map(|s| s.title)
+        .collect()
+}
+
+/// Full sync rounds (push, fetch, end of round) against an honest server
+/// until the vault is `Ok`; fails on an alert or after 10 rounds.
+fn sync_rounds_until_ok(fx: &Fixture, handle: &SyncStoreHandle, server: &mut Server) {
+    for round in 0..10 {
+        push(handle, server);
+        pull(handle, server);
+        fx.session.rebase_all().unwrap();
+        fx.session.note_sync_round(1_700_000_000 + round).unwrap();
+        match health_of(fx) {
+            FfiHealthState::Ok => return,
+            FfiHealthState::Alert { kind } => panic!("alert {kind}"),
+            FfiHealthState::ServerBehind { .. } => {}
+        }
+    }
+    panic!("still behind after 10 rounds");
+}
+
+#[test]
+fn issue_restore_epoch_counts_up_and_is_remembered() {
+    let fx = fixture();
+    assert_eq!(fx.session.restore_epoch(), None);
+    assert_eq!(
+        fx.session
+            .issue_restore_epoch(FfiEpochReason::Restore)
+            .unwrap(),
+        1
+    );
+    assert_eq!(fx.session.restore_epoch(), Some(1));
+    assert_eq!(
+        fx.session
+            .issue_restore_epoch(FfiEpochReason::Restore)
+            .unwrap(),
+        2
+    );
+    // The epoch record waits for the push, with the vault's manifest.
+    let handle = open_sync_store(fx.path.clone()).unwrap();
+    assert!(
+        handle
+            .pending_changes()
+            .unwrap()
+            .iter()
+            .any(|c| c.kind == 7)
+    );
+    fx.session.lock();
+    let again =
+        unlock_with_password(fx.path.clone(), PASSWORD.into(), fx.secret_key.clone()).unwrap();
+    assert_eq!(again.session.restore_epoch(), Some(2));
+    assert_eq!(again.session.restore_epoch(), Some(2));
+    again.session.lock();
+    assert_eq!(again.session.restore_epoch(), None);
+    assert_eq!(
+        again
+            .session
+            .issue_restore_epoch(FfiEpochReason::Restore)
+            .unwrap_err(),
+        OnePassError::Locked
+    );
+}
+
+#[test]
+fn sync_health_lists_every_vault_ok_and_note_sync_round_keeps_it() {
+    let fx = fixture();
+    assert_eq!(health_of(&fx), FfiHealthState::Ok);
+    let second = fx
+        .session
+        .create_vault(FfiVaultMeta {
+            name: "Famille".into(),
+            icon: "folder".into(),
+            color: "#336699".into(),
+            travel_safe: true,
+            mcp_access: false,
+        })
+        .unwrap();
+    let health = fx.session.sync_health().unwrap();
+    assert_eq!(health.len(), 2);
+    assert!(health.iter().all(|h| h.state == FfiHealthState::Ok));
+    assert!(health.iter().any(|h| h.vault_id == second.id));
+    let mut ids: Vec<String> = health.iter().map(|h| h.vault_id.clone()).collect();
+    ids.sort();
+    assert_eq!(
+        ids,
+        health
+            .iter()
+            .map(|h| h.vault_id.clone())
+            .collect::<Vec<_>>()
+    );
+    fx.session.note_sync_round(1_700_000_000).unwrap();
+    assert!(
+        fx.session
+            .sync_health()
+            .unwrap()
+            .iter()
+            .all(|h| h.state == FfiHealthState::Ok)
+    );
+}
+
+#[test]
+fn server_rollback_is_server_behind_then_counted_by_rounds() {
+    let fx = fixture();
+    let (_, _, _handle) = rolled_back_server(&fx);
+    // The device serves its own copy: the login is still there.
+    assert!(titles(&fx).contains(&"Exemple".to_string()));
+    assert!(matches!(
+        health_of(&fx),
+        FfiHealthState::ServerBehind { .. }
+    ));
+    fx.session.note_sync_round(1_700_000_000).unwrap();
+    assert_eq!(
+        health_of(&fx),
+        FfiHealthState::ServerBehind {
+            since: 1_700_000_000,
+            rounds: 1
+        }
+    );
+}
+
+#[test]
+fn keep_this_device_after_a_server_rollback_issues_an_epoch_and_heals() {
+    let fx = fixture();
+    let (_, mut rolled, handle) = rolled_back_server(&fx);
+    assert!(titles(&fx).contains(&"Exemple".to_string()));
+    assert!(matches!(
+        health_of(&fx),
+        FfiHealthState::ServerBehind { .. }
+    ));
+    let epoch = fx.session.keep_this_device().unwrap();
+    assert_eq!(epoch, 1);
+    assert_eq!(fx.session.restore_epoch(), Some(1));
+    // The copy goes to the server, which serves it back: the vault is `Ok`
+    // again after a few clean rounds (never an alert on the way).
+    sync_rounds_until_ok(&fx, &handle, &mut rolled);
+    assert!(titles(&fx).contains(&"Exemple".to_string()));
+    assert!(handle.pending_changes().unwrap().is_empty());
+}
+
+#[test]
+fn take_server_after_a_server_rollback_drops_the_local_copy() {
+    let fx = fixture();
+    let (_, mut rolled, handle) = rolled_back_server(&fx);
+    assert!(titles(&fx).contains(&"Exemple".to_string()));
+    assert!(matches!(
+        health_of(&fx),
+        FfiHealthState::ServerBehind { .. }
+    ));
+    let epoch = fx.session.take_server().unwrap();
+    assert_eq!(epoch, 1);
+    assert_eq!(fx.session.restore_epoch(), Some(1));
+    assert!(!titles(&fx).contains(&"Exemple".to_string()));
+    sync_rounds_until_ok(&fx, &handle, &mut rolled);
+    assert!(!titles(&fx).contains(&"Exemple".to_string()));
+}
+
+#[test]
+fn rebase_with_report_reports_nothing_on_a_clean_store() {
+    let fx = fixture();
+    saved_login(&fx, "pw-report");
+    let report = fx.session.rebase_with_report().unwrap();
+    assert_eq!(
+        report,
+        FfiRebaseReport {
+            rebased: Vec::new(),
+            conflict: false,
+            error: None,
+        }
+    );
+    assert!(fx.session.rebase_all().unwrap().is_empty());
+}
+
+#[test]
+fn rebase_with_report_lists_a_rebased_vault() {
+    // Device A and its server.
+    let fx = fixture();
+    let a = open_sync_store(fx.path.clone()).unwrap();
+    let mut server = Server::new();
+    push(&a, &mut server);
+    pull(&a, &server);
+    // Device B: a second store filled from the server, then unlocked.
+    let dir_b = TempDir::new().unwrap();
+    let path_b = db_path(dir_b.path());
+    let b = open_sync_store(path_b.clone()).unwrap();
+    pull(&b, &server);
+    let device_b = unlock_with_password(path_b, PASSWORD.into(), fx.secret_key.clone()).unwrap();
+    // B writes and pushes; A writes offline, then fetches B's write.
+    let mut item = device_b
+        .session
+        .new_item(fx.vault_id.clone(), FfiItemType::Login, "Depuis B".into())
+        .unwrap();
+    set_username(&mut item, "camille@exemple.fr");
+    set_password(&mut item, "pw-device-b");
+    device_b.session.save_item(item).unwrap();
+    push(&b, &mut server);
+    saved_login(&fx, "pw-device-a");
+    pull(&a, &server);
+
+    let report = fx.session.rebase_with_report().unwrap();
+    assert_eq!(
+        report,
+        FfiRebaseReport {
+            rebased: vec![fx.vault_id.clone()],
+            conflict: false,
+            error: None,
+        }
+    );
+    let mut seen = titles(&fx);
+    seen.sort();
+    assert_eq!(seen, vec!["Depuis B".to_string(), "Exemple".to_string()]);
+}
+
+fn export_fast(fx: &Fixture, passphrase: &str) -> Result<Vec<u8>, OnePassError> {
+    fx.session
+        .export_encrypted_backup_with_kdf(passphrase.as_bytes().to_vec(), FAST)
+}
+
+#[test]
+fn export_encrypted_backup_opens_with_the_passphrase_and_the_account() {
+    use onepass_core::archive::{self, ArchiveKind, Unlock};
+    let fx = fixture();
+    let saved = saved_login(&fx, "pw-export");
+    let bytes = export_fast(&fx, BACKUP_PASSPHRASE).unwrap();
+
+    let info = archive::inspect(&bytes).unwrap();
+    assert_eq!(info.kind, ArchiveKind::Backup);
+    assert!(info.passphrase && info.signed);
+    assert_eq!(
+        info.account.map(|a| a.to_string().replace('-', "")),
+        Some(fx.session.account_id())
+    );
+
+    let check = |contents: archive::Contents| {
+        assert_eq!(contents.kind, ArchiveKind::Backup);
+        assert_eq!(contents.vaults.len(), 1);
+        let items = &contents.vaults[0].items;
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, saved.title);
+    };
+    check(archive::open(&bytes, Unlock::Passphrase(BACKUP_PASSPHRASE)).unwrap());
+    assert!(archive::open(&bytes, Unlock::Passphrase("mauvaise-phrase")).is_err());
+
+    let store = onepass_core::sync::SyncStore::open(Path::new(&fx.path)).unwrap();
+    let device = store.device_state().unwrap();
+    let secret_key = onepass_core::crypto::SecretKey::parse(&fx.secret_key).unwrap();
+    let repo =
+        onepass_core::repo::Repository::unlock(store, PASSWORD, &secret_key, device).unwrap();
+    check(archive::open(&bytes, Unlock::Account(repo.account())).unwrap());
+}
+
+#[test]
+fn export_encrypted_backup_refuses_weak_or_invalid_passphrases() {
+    let fx = fixture();
+    let weak = OnePassError::Validation {
+        field: "passphrase".into(),
+        reason: "too weak".into(),
+    };
+    // At the production floor: refused before Argon2id runs.
+    assert_eq!(
+        fx.session
+            .export_encrypted_backup(b"azerty".to_vec())
+            .unwrap_err(),
+        weak
+    );
+    assert_eq!(
+        fx.session
+            .export_encrypted_backup(vec![0xff, 0xfe, 0x41])
+            .unwrap_err(),
+        OnePassError::InvalidInput {
+            what: "passphrase".into()
+        }
+    );
+    assert_eq!(export_fast(&fx, "azerty").unwrap_err(), weak);
+    let weak_kdf = FfiKdfParams {
+        m_kib: 1024,
+        t: 1,
+        p: 1,
+    };
+    assert_eq!(
+        fx.session
+            .export_encrypted_backup_with_kdf(BACKUP_PASSPHRASE.as_bytes().to_vec(), weak_kdf)
+            .unwrap_err(),
+        OnePassError::InvalidInput {
+            what: "kdf params".into()
+        }
+    );
+    fx.session.lock();
+    assert_eq!(
+        export_fast(&fx, BACKUP_PASSPHRASE).unwrap_err(),
+        OnePassError::Locked
+    );
+}
+
+#[test]
+fn byte_variants_match_the_string_versions() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(dir.path());
+    let created =
+        create_account_with_kdf_bytes(path.clone(), PASSWORD.as_bytes().to_vec(), FAST).unwrap();
+    let account_id = created.account_id.clone();
+    created.session.lock();
+
+    let by_string =
+        unlock_with_password(path.clone(), PASSWORD.into(), created.secret_key.clone()).unwrap();
+    by_string.session.lock();
+    let by_bytes = unlock_with_password_bytes(
+        path.clone(),
+        PASSWORD.as_bytes().to_vec(),
+        created.secret_key.as_bytes().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(by_bytes.auk, by_string.auk);
+    assert_eq!(by_bytes.session.account_id(), account_id);
+    by_bytes.session.lock();
+
+    let verified = verify_password_bytes(
+        path.clone(),
+        PASSWORD.as_bytes().to_vec(),
+        created.secret_key.as_bytes().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(
+        verified,
+        verify_password(path.clone(), PASSWORD.into(), created.secret_key.clone()).unwrap()
+    );
+
+    // Same errors as the String versions.
+    assert_eq!(
+        unlock_with_password_bytes(
+            path.clone(),
+            b"mauvais".to_vec(),
+            created.secret_key.as_bytes().to_vec()
+        )
+        .err(),
+        Some(OnePassError::WrongPassword)
+    );
+    assert_eq!(
+        verify_password_bytes(
+            path.clone(),
+            b"mauvais".to_vec(),
+            created.secret_key.as_bytes().to_vec()
+        ),
+        Err(OnePassError::WrongPassword)
+    );
+    assert_eq!(
+        create_account_with_kdf_bytes(path.clone(), b"autre".to_vec(), FAST)
+            .err()
+            .unwrap(),
+        OnePassError::InvalidInput {
+            what: "account exists".into()
+        }
+    );
+    assert_eq!(
+        create_account_bytes(path.clone(), b"autre".to_vec())
+            .err()
+            .unwrap(),
+        OnePassError::InvalidInput {
+            what: "account exists".into()
+        }
+    );
+}
+
+#[test]
+fn byte_variants_refuse_invalid_utf8() {
+    let fx = fixture();
+    fx.session.lock();
+    let bad = vec![0xc3, 0x28];
+    let password = OnePassError::InvalidInput {
+        what: "password".into(),
+    };
+    // A non-ASCII typed Secret Key gets the same error.
+    let key_err = normalize_secret_key("é".into()).unwrap_err();
+    assert_eq!(
+        key_err,
+        OnePassError::InvalidInput {
+            what: "secret key checksum".into()
+        }
+    );
+    assert_eq!(
+        unlock_with_password_bytes(
+            fx.path.clone(),
+            bad.clone(),
+            fx.secret_key.clone().into_bytes()
+        )
+        .err(),
+        Some(password.clone())
+    );
+    assert_eq!(
+        unlock_with_password_bytes(fx.path.clone(), PASSWORD.as_bytes().to_vec(), bad.clone())
+            .err(),
+        Some(key_err.clone())
+    );
+    assert_eq!(
+        verify_password_bytes(
+            fx.path.clone(),
+            bad.clone(),
+            fx.secret_key.clone().into_bytes()
+        ),
+        Err(password.clone())
+    );
+    assert_eq!(
+        verify_password_bytes(fx.path.clone(), PASSWORD.as_bytes().to_vec(), bad.clone()),
+        Err(key_err)
+    );
+    let dir = TempDir::new().unwrap();
+    assert_eq!(
+        create_account_bytes(db_path(dir.path()), bad.clone()).err(),
+        Some(password.clone())
+    );
+    assert_eq!(
+        create_account_with_kdf_bytes(db_path(dir.path()), bad, FAST).err(),
+        Some(password)
+    );
+    assert!(!has_account(db_path(dir.path())).unwrap());
+}
+
+#[test]
+fn keep_needed_and_reset_sync_health() {
+    let fx = fixture();
+    assert!(!fx.session.keep_needed().unwrap());
+    // The server went back: keeping this device's copy is useful.
+    let (_, _, _handle) = rolled_back_server(&fx);
+    assert!(titles(&fx).contains(&"Exemple".to_string()));
+    assert!(matches!(
+        health_of(&fx),
+        FfiHealthState::ServerBehind { .. }
+    ));
+    assert!(fx.session.keep_needed().unwrap());
+    // Forgetting the health discards nothing: the copy is still served
+    // (and queued again for the server), the next rounds recount.
+    fx.session.reset_sync_health().unwrap();
+    assert_eq!(health_of(&fx), FfiHealthState::Ok);
+    assert!(titles(&fx).contains(&"Exemple".to_string()));
+    fx.session.lock();
+    assert_eq!(fx.session.keep_needed(), Err(OnePassError::Locked));
+    assert_eq!(fx.session.reset_sync_health(), Err(OnePassError::Locked));
+}
+
 #[test]
 fn import_items_into_vault_with_new_ids_and_folder_tags() {
     let fx = fixture();

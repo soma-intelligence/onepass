@@ -224,21 +224,23 @@ export class ExtPairing {
       const pkH = fromB64(offer.pk);
       const nH = fromB64(offer.n);
       const { ct, ss } = await encaps(pkH);
-      const tr = new Transcript(TRANSCRIPT_LABEL);
-      for (const f of [utf8(this.extName), utf8(this.browser), this.commit, pairingId, pkH, nH, kem.public, nonce, ct]) {
-        tr.push(f);
-      }
-      const t = await tr.hash();
+      let codeKey: Uint8Array | undefined;
+      let pairingKey: Uint8Array | undefined;
+      let confirm: Uint8Array | undefined;
+      let ok = false;
       try {
-        const codeKey = await expand(t, ss, SAS_LABEL);
+        const tr = new Transcript(TRANSCRIPT_LABEL);
+        for (const f of [utf8(this.extName), utf8(this.browser), this.commit, pairingId, pkH, nH, kem.public, nonce, ct]) {
+          tr.push(f);
+        }
+        const t = await tr.hash();
+        codeKey = await expand(t, ss, SAS_LABEL);
         const code = sas(codeKey);
-        wipe(codeKey);
-        const keys: Keys = {
-          t,
-          pairingKey: await expand(t, ss, PAIRING_KEY_LABEL),
-          confirm: await expand(t, ss, CONFIRM_LABEL),
-        };
+        pairingKey = await expand(t, ss, PAIRING_KEY_LABEL);
+        confirm = await expand(t, ss, CONFIRM_LABEL);
+        const keys: Keys = { t, pairingKey, confirm };
         this.state = { s: "await_done", pairingId, keys };
+        ok = true;
         const reveal: PairRevealEnvelope = {
           v: 1,
           t: "pair_reveal",
@@ -248,11 +250,14 @@ export class ExtPairing {
         };
         return { reveal, sas: code };
       } finally {
-        wipe(ss);
+        wipe(ss, codeKey);
+        // A half derived set of keys never survives a failure.
+        if (!ok) wipe(pairingKey, confirm);
       }
     } finally {
-      // The ephemeral secret is single use.
+      // The ephemeral secret and the nonce are single use.
       wipeKem(kem);
+      wipe(nonce);
     }
   }
 
@@ -283,14 +288,19 @@ export class ExtPairing {
       this.abort();
       throw new BridgeError("bad_frame", "pairing not verified");
     }
+    let ok = false;
     try {
       const mac = await hmac(st.keys.confirm, "ext", st.keys.t);
-      return {
-        confirm: { v: 1, t: "pair_confirm", mac: toB64(mac) },
+      const out = {
+        confirm: { v: 1 as const, t: "pair_confirm" as const, mac: toB64(mac) },
         record: { pairingId: st.pairingId, key: st.keys.pairingKey, createdAt: this.now() },
       };
+      ok = true;
+      return out;
     } finally {
       wipe(st.keys.confirm);
+      // On failure the pairing key is not handed out: wipe it here.
+      if (!ok) wipe(st.keys.pairingKey);
     }
   }
 }

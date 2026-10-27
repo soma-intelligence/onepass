@@ -390,7 +390,7 @@ Calculs locaux dans `core`.
   - `extension/` : TypeScript, Manifest V3.
   - `formal/` : modèles Tamarin.
   - `docs/` : livre blanc sécurité, specs, plans.
-- Licence : GPL-3.0 pour les clients, AGPL-3.0 pour le futur serveur, CLA pour les contributeurs (nécessaire pour publier sur l'App Store).
+- Licence : GPL-3.0 pour les clients, AGPL-3.0 pour le futur serveur, CLA pour les contributeurs (nécessaire pour publier sur l'App Store). Décision du 2026-10-26 : AGPL-3.0-or-later pour tout le dépôt, avec un CLA.
 - Bundle ID racine : `me.somalabs.onepass`.
 - Mac distribué en deux versions : Mac App Store et téléchargement direct notarisé (import Wi-Fi par trousseau, agent SSH sans contraintes de sandbox).
 - Interface : style iOS 26 natif (Liquid Glass), package de design SwiftUI partagé, sobre et neutre. Accessibilité : Dynamic Type, VoiceOver, contraste élevé, mode sombre.

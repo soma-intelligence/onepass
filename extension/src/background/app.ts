@@ -57,6 +57,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     start: (...a) => (chainRef.current ? chainRef.current.start(...a) : Promise.resolve()),
     stop: (t) => (chainRef.current ? chainRef.current.stop(t) : Promise.resolve()),
     state: (t) => (chainRef.current ? chainRef.current.state(t) : Promise.resolve(null)),
+    closed: (t, o, d) => chainRef.current?.closed?.(t, o, d) ?? Promise.resolve(),
   };
   const overlays = new Overlays({ ext, area: store.session, session, chain: lateChain, ...(opts.now ? { now: opts.now } : {}) });
   const runner = opts.chain
@@ -92,6 +93,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     chainRunning,
     ...(opts.now ? { now: opts.now } : {}),
   });
+  session.onLocked(() => saveFlow.clearGenerated());
   const popup = new PopupBackend({
     ext,
     area: store.session,
@@ -99,6 +101,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     pairing,
     filler,
     analyses,
+    onLock: () => saveFlow.clearGenerated(),
     onGenerated: (tabId, origin, password) => saveFlow.rememberGenerated(tabId, origin, password),
     ...(opts.now ? { now: opts.now } : {}),
   });

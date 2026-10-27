@@ -152,7 +152,7 @@ fn archive_passphrase(generated: bool) -> Result<(Zeroizing<String>, bool), CliE
         }))?;
         return Ok((p, true));
     }
-    let from_env = env_secrets_allowed() && std::env::var_os(ARCHIVE_PASSPHRASE_ENV).is_some();
+    let from_env = env_secrets_allowed()? && std::env::var_os(ARCHIVE_PASSPHRASE_ENV).is_some();
     let p = read_secret("Archive passphrase: ", ARCHIVE_PASSPHRASE_ENV)?;
     if !from_env {
         let again = read_secret("Repeat the archive passphrase: ", ARCHIVE_PASSPHRASE_ENV)?;

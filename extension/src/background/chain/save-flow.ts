@@ -93,7 +93,15 @@ export class SaveFlow {
   rememberGenerated(tabId: number, origin: string, password: string): void {
     const site = parseOrigin(origin)?.site;
     if (!site || password === "") return;
+    const prev = this.generated.get(tabId);
+    if (prev) prev.password = "";
     this.generated.set(tabId, { site, password, at: this.now() });
+  }
+
+  /** The vault locked: forget every generated password still waiting for a submission. */
+  clearGenerated(): void {
+    for (const g of this.generated.values()) g.password = "";
+    this.generated.clear();
   }
 
   private takeGenerated(tabId: number, origin: string, password: string): boolean {

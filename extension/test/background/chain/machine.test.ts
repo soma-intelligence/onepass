@@ -1,5 +1,5 @@
 // The sign-in chain state machine (spec 8.6, 8.7): pure, driven by page
-// analyses of the top frame, navigations, load completion and the clock.
+// analyses (top frame, or a child frame of the same origin), navigations, load completion and the clock.
 import { describe, expect, it } from "vitest";
 import type { Summary } from "../../../src/bridge/client";
 import {
@@ -17,6 +17,7 @@ import {
   startChain,
   step,
   stopChain,
+  submitMissed,
   tick,
 } from "../../../src/background/chain/machine";
 import type { FormInfo, PageAnalysis } from "../../../src/shared/messages";
@@ -351,6 +352,87 @@ describe("stop reasons", () => {
   });
 });
 
+describe("late fields and re-rendered forms (B1, B2)", () => {
+  it("unknown_deadline_restarts_on_new_analysis", () => {
+    let s = navigated(start(), `${SITE}/next`, T0 + 50);
+    s = settled(step(s, page([]), SITE, T0 + 100).state, T0 + 200);
+    // The page changed (still nothing to act on) 3 s after it loaded.
+    s = step(s, page([], { providerButtons: [] }, `${SITE}/next#ready`), SITE, T0 + 3200).state;
+    expect(tick(s, T0 + 200 + UNKNOWN_MS).actions).toEqual([]);
+    expect(nextDue(s)).toBe(T0 + 3200 + UNKNOWN_MS);
+    expect(tick(s, T0 + 3200 + UNKNOWN_MS).actions).toEqual([{ type: "stop", reason: "unknown" }]);
+  });
+
+  it("a sign-in form built late on the next page is filled, not taken for done", () => {
+    let s = step(start(), page([userOnly()]), SITE, T0 + 100).state;
+    s = navigated(s, `${SITE}/password`, T0 + 300);
+    s = settled(s, T0 + 400);
+    s = step(s, page([], {}, `${SITE}/password`), SITE, T0 + 450).state;
+    expect(tick(s, T0 + 450 + DONE_SETTLE_MS).state.status).toBe("running");
+    // The form shows up 2.5 s after the load.
+    const r = step(s, page([passOnly()], {}, `${SITE}/password`), SITE, T0 + 2900);
+    expect(types(r.actions)).toEqual(["fill", "submit"]);
+  });
+
+  it("back on the site without a form: done once the late-field window passed", () => {
+    let s = step(start(), page([loginForm()]), SITE, T0 + 100).state;
+    s = navigated(s, `${SITE}/home`, T0 + 300);
+    s = settled(s, T0 + 400);
+    s = step(s, page([], {}, `${SITE}/home`), SITE, T0 + 450).state;
+    expect(nextDue(s)).toBe(T0 + 400 + UNKNOWN_MS);
+    expect(tick(s, T0 + 400 + UNKNOWN_MS).actions).toEqual([{ type: "done" }]);
+  });
+
+  it("rerender_same_step_is_not_repeat_before_submit", () => {
+    const r1 = step(start(), page([userOnly("f1")]), SITE, T0 + 100);
+    expect(types(r1.actions)).toEqual(["fill", "submit"]);
+    // The submit did not reach the form: the page had re-rendered it.
+    let s = submitMissed(r1.state);
+    // The same step, re-rendered (new refs), same document: submit the copy, no new fill.
+    const r2 = step(s, page([userOnly("f9")]), SITE, T0 + 400);
+    expect(r2.actions).toEqual([{ type: "submit", formRef: "f9" }]);
+    s = r2.state;
+    expect(s.status).toBe("running");
+    // Once only: a later copy of that step is a re-analysis, then repeat if it stays.
+    expect(step(s, page([userOnly("f10")]), SITE, T0 + 600).actions).toEqual([]);
+    expect(tick(s, T0 + 400 + REPEAT_MS).actions).toEqual([{ type: "stop", reason: "repeat" }]);
+  });
+
+  it("a missed submit on a page that does not change ends in repeat", () => {
+    const s = submitMissed(step(start(), page([userOnly("f1")]), SITE, T0 + 100).state);
+    expect(nextDue(s)).toBe(T0 + 100 + REPEAT_MS);
+    expect(tick(s, T0 + 100 + REPEAT_MS).actions).toEqual([{ type: "stop", reason: "repeat" }]);
+  });
+
+  it("the retry on the copy missing too is not retried again: repeat", () => {
+    let s = submitMissed(step(start(), page([userOnly("f1")]), SITE, T0 + 100).state);
+    const r2 = step(s, page([userOnly("f9")]), SITE, T0 + 400);
+    expect(r2.actions).toEqual([{ type: "submit", formRef: "f9" }]);
+    s = submitMissed(r2.state);
+    expect(s).toBe(r2.state);
+    expect(step(s, page([userOnly("f10")]), SITE, T0 + 700).actions).toEqual([]);
+    expect(tick(s, T0 + 400 + REPEAT_MS).actions).toEqual([{ type: "stop", reason: "repeat" }]);
+    // Persisted: the retry mark survives a worker restart.
+    expect(parseChainState(JSON.parse(JSON.stringify(s)))?.steps.at(-1)?.retried).toBe(true);
+  });
+
+  it("a busy page after sign-in (changing analyses) still reaches done", () => {
+    let s = step(start(), page([loginForm()]), SITE, T0 + 100).state;
+    s = navigated(s, `${SITE}/home`, T0 + 300);
+    s = settled(s, T0 + 400);
+    for (let i = 0; i < 20; i++) s = step(s, page([], {}, `${SITE}/home#t${i}`), SITE, T0 + 450 + i * 500).state;
+    expect(tick(s, T0 + 400 + UNKNOWN_MS).actions).toEqual([{ type: "done" }]);
+  });
+
+  it("a re-render before submit with auto-submit off acts on nothing and never repeats", () => {
+    const st = start(summary("it_01"), { autoSubmit: false });
+    const s = step(st, page([loginForm("f1")]), SITE, T0 + 100).state;
+    const r = step(s, page([loginForm("f9")]), SITE, T0 + 400);
+    expect(r.actions).toEqual([]);
+    expect(tick(r.state, T0 + 400 + REPEAT_MS * 3).state.status).toBe("running");
+  });
+});
+
 describe("auto-submit off", () => {
   it("fills without submitting", () => {
     const r = step(start(summary("it_01"), { autoSubmit: false }), page([loginForm()]), SITE, T0 + 100);
@@ -368,6 +450,14 @@ describe("resume from serialized state", () => {
     // And the next page still works.
     const s = navigated(r2.state, `${SITE}/home`, T0 + 2500);
     expect(step(s, page([], {}, `${SITE}/home`), SITE, T0 + 2600).state.status).toBe("running");
+  });
+
+  it("a step in a same-origin child frame records that frame, through a round trip", () => {
+    const r = step(start(), page([loginForm()], {}, `${SITE}/frame`), SITE, T0 + 100, 3);
+    expect(r.state.steps.at(-1)?.frameId).toBe(3);
+    expect(parseChainState(JSON.parse(JSON.stringify(r.state)))?.steps.at(-1)?.frameId).toBe(3);
+    // The top frame's steps carry none.
+    expect(step(start(), page([loginForm()]), SITE, T0 + 100).state.steps.at(-1)).not.toHaveProperty("frameId");
   });
 
   it("rejects malformed states", () => {

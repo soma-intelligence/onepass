@@ -3,7 +3,9 @@
 //! (`totp`), `reveal_secret` (`reveal`), and `generate_password`
 //! (`allow_generate`).
 //!
-//! Order of the checks, always: arguments, visibility, scope, approval,
+//! Order of the checks, always: arguments, pairing, visibility, scope,
+//! then [`McpTools::approve`] (audit log usable, rate limits, grants,
+//! prompt), strong authentication for `reveal_secret` and `totp_code`,
 //! action. Every reference is located (vault, live item, field) before
 //! anyone is asked, and no value is read before the user approves: a
 //! request the policy refuses never reaches the approver.
@@ -15,6 +17,8 @@ use crate::port::{PortError, VaultInfo, VaultPort};
 use crate::protocol::ClientInfo;
 use crate::runner::{self, RunRequest};
 use crate::template::{render_template, template_refs};
+use data_encoding::HEXLOWER;
+use onepass_core::Id;
 use onepass_core::generator::{
     CharsetOptions, PassphraseOptions, Recipe, Wordlist, entropy_bits, generate,
 };
@@ -23,7 +27,11 @@ use onepass_core::model::{
 };
 use onepass_core::reference::{SecretRef, otp_field_of};
 use onepass_core::totp::{TotpConfig, parse_otpauth, seconds_remaining, totp_from_secret};
-use onepass_guard::{ApprovalRequest, Decision, Surface, Target, sanitize_for_display};
+use onepass_guard::{
+    Admit, ApprovalRequest, Decision, GrantCheck, GrantRequest, Kind, MAX_GRANT_TTL,
+    OUTCOME_GRANT_EXPIRED, OUTCOME_GRANT_REVOKED, StrongOutcome, Surface, Target, decision_label,
+    sanitize_for_display,
+};
 use serde_json::{Map, Value, json};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
@@ -86,6 +94,11 @@ impl Located {
     fn field(&self) -> Result<&Field, Refusal> {
         field_of(&self.item, &self.r)
     }
+}
+
+/// Tools whose prompt is followed by strong authentication.
+fn needs_strong(action: &str) -> bool {
+    matches!(action, "reveal_secret" | "totp_code")
 }
 
 fn invalid(m: &str) -> Refusal {
@@ -239,11 +252,55 @@ impl<P: VaultPort> McpTools<P> {
         })
     }
 
-    /// Asks the user, unless `key` names a request already allowed for the
-    /// session (only when `remember_allowed`). Sets the decision label.
-    ///
-    /// First of all the audit log must be appendable: a secret action is
-    /// never performed when it could not be logged (fail closed).
+    /// The vault every located reference is in, when there is only one.
+    fn single_vault(located: &[Located]) -> Option<Id> {
+        let first = located.first()?.vault.id;
+        located.iter().all(|l| l.vault.id == first).then_some(first)
+    }
+
+    /// The grant key of a request: a digest of the client id and the
+    /// canonical request (`material`), so the grants file holds no request
+    /// data and a grant never covers another client.
+    fn grant_key(&self, material: &str) -> String {
+        let canonical = json!([self.client.client_id, material]).to_string();
+        let d = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, canonical.as_bytes());
+        HEXLOWER.encode(d.as_ref())
+    }
+
+    /// Counts a request of `kind` for the client, or refuses it (rate limit,
+    /// cooling down after repeated denials, told once on the terminal).
+    fn admit(&mut self, kind: Kind) -> Result<(), Refusal> {
+        match self
+            .throttle
+            .admit(&*self.clock, &self.client.client_id, kind)
+        {
+            Admit::Ok => Ok(()),
+            Admit::RateLimited => Err(Refusal::RateLimited),
+            Admit::CoolingDown {
+                until,
+                first_notice,
+            } => {
+                if first_notice {
+                    let left = until.saturating_duration_since(self.clock.monotonic());
+                    eprintln!(
+                        "onepass mcp: {} refused for {} min after repeated denials",
+                        sanitize_for_display(&self.client.label),
+                        left.as_secs().div_ceil(60)
+                    );
+                }
+                Err(Refusal::CoolingDown)
+            }
+        }
+    }
+
+    /// Approves a secret request, in this order: the audit log must be
+    /// appendable (a secret action is never performed when it could not be
+    /// logged), the secret rate limit, then a live grant for exactly this
+    /// request and client (only when `remember_allowed`), else the prompt
+    /// rate limit and the prompt (identical pending prompts are coalesced).
+    /// An expired or revoked grant is logged, then the user is asked again.
+    /// `AllowFor` records a grant in the signed grants file. Sets the
+    /// decision label.
     #[allow(clippy::too_many_arguments)]
     fn approve(
         &mut self,
@@ -253,38 +310,133 @@ impl<P: VaultPort> McpTools<P> {
         targets: Vec<Target>,
         remember_allowed: bool,
         key: Option<String>,
+        vault_id: Option<Id>,
         call: &mut Call,
     ) -> Result<(), Refusal> {
         if self.audit.ready().is_err() {
             return Err(Refusal::AuditUnusable);
         }
-        let key = key.filter(|_| remember_allowed);
-        if key.as_ref().is_some_and(|k| self.grants.contains(k)) {
-            call.decision = "remembered";
-            return Ok(());
+        self.admit(Kind::Secret)?;
+        let key = key.filter(|_| remember_allowed).map(|k| self.grant_key(&k));
+        if let Some(k) = &key {
+            let check = self.grants.lock().unwrap_or_else(|e| e.into_inner()).check(
+                &*self.grants_signer,
+                &*self.clock,
+                &self.client.client_id,
+                Surface::Mcp,
+                action,
+                k,
+            );
+            match check {
+                GrantCheck::Valid(_) => {
+                    call.decision = "remembered";
+                    return Ok(());
+                }
+                GrantCheck::Expired => self.record(client, action, call, OUTCOME_GRANT_EXPIRED),
+                GrantCheck::Revoked => self.record(client, action, call, OUTCOME_GRANT_REVOKED),
+                GrantCheck::None => {}
+            }
         }
+        self.admit(Kind::Prompt)?;
+        // Coalescing key: the grant key, else the request as shown.
+        let gate_key = match &key {
+            Some(k) => k.clone(),
+            None => {
+                let shown: Vec<Value> = targets
+                    .iter()
+                    .map(|t| json!([t.vault, t.item, t.field]))
+                    .collect();
+                self.grant_key(&json!([action, details, shown]).to_string())
+            }
+        };
+        let declared = &client.name;
+        let who = if self.client.signed {
+            format!("{} (declared: {declared})", self.client.label)
+        } else {
+            format!("{} (unsigned, declared: {declared})", self.client.label)
+        };
         let req = ApprovalRequest {
             surface: Surface::Mcp,
-            client: client.name.clone(),
+            client: who,
+            // Only a paired client reaches a prompt: its label is verified.
+            client_verified: true,
             action: action.to_owned(),
             details,
             targets,
             remember_allowed,
         };
-        match self.approver.approve(&req) {
+        let gated = self.gate.approve(&self.client.client_id, &gate_key, &req);
+        // A prompt allowed for a tool that also needs strong authentication
+        // ends the run of denials only once strong authentication succeeds
+        // (see `strong_auth`): a client cannot reset it by having the user
+        // approve a prompt and then fail Touch ID.
+        let strong_follows = needs_strong(action) && gated.decision != Decision::Deny;
+        if !gated.joined && !strong_follows {
+            self.throttle.record_decision(
+                &*self.clock,
+                &self.client.client_id,
+                gated.decision == Decision::Deny,
+            );
+        }
+        let label = |l: &'static str| if gated.joined { "joined" } else { l };
+        match gated.decision {
             Decision::Deny => {
-                call.decision = "denied";
+                call.decision = label("denied");
                 Err(Refusal::Denied)
             }
-            Decision::AllowForSession if key.is_some() => {
-                call.decision = "session";
-                self.grants.extend(key);
+            Decision::AllowFor(d) if key.is_some() => {
+                let d = d.min(MAX_GRANT_TTL);
+                call.decision = label(decision_label(&Decision::AllowFor(d)));
+                let req = GrantRequest {
+                    client_id: self.client.client_id.clone(),
+                    surface: Surface::Mcp,
+                    action: action.to_owned(),
+                    key: key.unwrap_or_default(),
+                    vault_id: vault_id.map(|v| v.to_string()),
+                };
+                let added = self.grants.lock().unwrap_or_else(|e| e.into_inner()).add(
+                    &*self.grants_signer,
+                    &*self.clock,
+                    req,
+                    d,
+                );
+                // The user allowed this request: it goes ahead even if the
+                // grant could not be stored (the next one asks again).
+                if let Err(err) = added {
+                    eprintln!("onepass mcp: grant not recorded: {err}");
+                }
                 Ok(())
             }
-            Decision::AllowOnce | Decision::AllowForSession => {
-                call.decision = "once";
+            Decision::AllowOnce | Decision::AllowFor(_) => {
+                call.decision = label("once");
                 Ok(())
             }
+        }
+    }
+
+    /// Strong authentication (spec 4.4) after the prompt, for the tools
+    /// that return a value. The reason names the client and the target. A
+    /// failed authentication counts as a user denial (toward the cooling
+    /// down period), a success ends the run of denials; `Unavailable` (no
+    /// method could run) counts as neither.
+    fn strong_auth(&mut self, action: &str, l: &Located) -> Result<(), Refusal> {
+        let reason = sanitize_for_display(&format!(
+            "{action} for {}: {}",
+            self.client.label,
+            l.shown()
+        ));
+        let outcome = self.strong.verify(&reason);
+        let (clock, id) = (&*self.clock, &self.client.client_id);
+        match outcome {
+            StrongOutcome::Verified => {
+                self.throttle.record_decision(clock, id, false);
+                Ok(())
+            }
+            StrongOutcome::Denied => {
+                self.throttle.record_decision(clock, id, true);
+                Err(Refusal::StrongAuthFailed)
+            }
+            StrongOutcome::Unavailable => Err(Refusal::StrongAuthFailed),
         }
     }
 
@@ -371,6 +523,7 @@ impl<P: VaultPort> McpTools<P> {
             located.iter().map(Located::target).collect(),
             remember,
             Some(key.to_string()),
+            Self::single_vault(&located),
             call,
         )?;
 
@@ -492,6 +645,7 @@ impl<P: VaultPort> McpTools<P> {
             located.iter().map(Located::target).collect(),
             remember,
             Some(key.to_string()),
+            Self::single_vault(&located),
             call,
         )?;
 
@@ -564,6 +718,7 @@ impl<P: VaultPort> McpTools<P> {
             vec![target],
             false,
             None,
+            Some(vault.id),
             call,
         )?;
 
@@ -624,7 +779,8 @@ impl<P: VaultPort> McpTools<P> {
         Ok(json!({"password": password.as_str(), "entropy_bits": bits}))
     }
 
-    /// `totp_code {reference}`: approved on every call, never remembered.
+    /// `totp_code {reference}`: approved on every call, never remembered,
+    /// then strong authentication.
     pub(super) fn totp_code(
         &mut self,
         client: &ClientInfo,
@@ -651,8 +807,10 @@ impl<P: VaultPort> McpTools<P> {
             vec![l.target()],
             false,
             None,
+            Some(l.vault.id),
             call,
         )?;
+        self.strong_auth("totp_code", &l)?;
         let code = self.read_value(&l.vault, &l.r)?;
         Ok(json!({
             "code": code.as_str(),
@@ -661,7 +819,8 @@ impl<P: VaultPort> McpTools<P> {
     }
 
     /// `reveal_secret {reference}`: approved on every call, never
-    /// remembered. The value comes back as untrusted vault data.
+    /// remembered, then strong authentication. The value comes back as
+    /// untrusted vault data.
     pub(super) fn reveal_secret(
         &mut self,
         client: &ClientInfo,
@@ -677,8 +836,10 @@ impl<P: VaultPort> McpTools<P> {
             vec![l.target()],
             false,
             None,
+            Some(l.vault.id),
             call,
         )?;
+        self.strong_auth("reveal_secret", &l)?;
         let value = self.read_value(&l.vault, &l.r)?;
         Ok(super::untrusted(json!({"value": value.as_str()})))
     }

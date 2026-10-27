@@ -153,6 +153,7 @@ fn push(ctx: &Ctx, upstream: &Path) -> Result<(), CliError> {
             RecordKind::VaultMeta,
             RecordKind::Item,
             RecordKind::Manifest,
+            RecordKind::RestoreEpoch,
         ] {
             for r in stored(local.list(kind))? {
                 stored(up.put(r))?;

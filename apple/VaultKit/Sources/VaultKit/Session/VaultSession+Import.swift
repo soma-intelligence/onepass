@@ -38,7 +38,8 @@ extension VaultSession {
     }
 
     /// Overwrites the bytes of an export buffer once it is no longer needed.
+    /// In place when it is the only reference; copies made by the bindings are out of reach (R5).
     nonisolated public static func wipeImportBuffer(_ data: inout Data) {
-        wipe(&data)
+        data.withUnsafeMutableBytes { SecretBytes.zero($0) }
     }
 }

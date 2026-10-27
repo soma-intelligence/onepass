@@ -7,7 +7,12 @@
 //! - signed manifest (`Manifest`), id = vault id, version = seq,
 //!   data = `postcard(SignedManifest)`;
 //! - item records (`Item`), id = a fresh blob id per written version,
-//!   version = item version, data = `vault_id (16 bytes) || postcard(ItemRecord)`.
+//!   version = item version, data = `vault_id (16 bytes) || postcard(ItemRecord)`;
+//! - signed device list (`DeviceList`) and vault list (`VaultList`), id =
+//!   account id, version = seq (see `lists`, `devices`, `vaultlist`).
+//!
+//! - restore epoch (`RestoreEpoch`), id = account id, version = epoch,
+//!   data = `postcard(SignedRestoreEpoch)` (see `crate::epoch`).
 //!
 //! Item versions get their own blob ids so that writing a new version never
 //! overwrites the one the current manifest lists. Writes go record first,
@@ -32,21 +37,28 @@
 //! instead of the current record, both stay errors.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
 
+use aws_lc_rs::digest::{SHA256, digest};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::account::{Account, Auk, NewAccount, PinnedAccount};
+use crate::account::{Account, Auk, NewAccount, PinnedAccount, Rekeyed};
+use crate::chain::ChainState;
+use crate::devices::{DeviceEntry, now, self_entry};
+use crate::lists::{ListBody, list_record};
+use crate::vaultlist::VaultListEntry;
 use zeroize::Zeroizing;
 
 use crate::crypto::{Aad, BlobKind, KdfParams, SecretKey, seal};
+use crate::epoch::{EpochReason, RestoreEpoch, SignedRestoreEpoch};
 use crate::manifest::{
     Manifest, ManifestEntry, SeenManifest, SignedManifest, check_records, manifest_hash,
     record_hash, sign_manifest, verify_manifest,
 };
 use crate::model::Item;
 use crate::model::events::EventKind;
-use crate::store::{Record, RecordKind, RecordStore};
+use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -54,25 +66,90 @@ mod local;
 pub mod travel;
 
 /// What a device keeps between sessions: the account pinned at first
-/// unlock, and the last manifest accepted for each vault.
+/// unlock, the last manifest accepted for each vault, and the restore epoch
+/// it last accepted (0 before any).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeviceState {
     pub pinned: Option<PinnedAccount>,
     pub last_seen: BTreeMap<Id, SeenManifest>,
+    pub epoch: u64,
+}
+
+/// Header of the versioned `DeviceState` encoding, followed by the version.
+const DEVICE_STATE_MAGIC: &[u8; 3] = b"ODS";
+
+/// The version 1 layout (headerless postcard), still read and migrated.
+///
+/// Its first byte is the postcard tag of `pinned: Option<_>`, always 0 or 1,
+/// never `b'O'` (0x4F): a version 1 encoding cannot be taken for the header.
+#[derive(Deserialize)]
+struct DeviceStateV1 {
+    pinned: Option<PinnedAccount>,
+    last_seen: BTreeMap<Id, SeenManifest>,
+}
+
+/// The version 2 body, borrowed for encoding.
+#[derive(Serialize)]
+struct DeviceStateV2Ref<'a> {
+    pinned: &'a Option<PinnedAccount>,
+    last_seen: &'a BTreeMap<Id, SeenManifest>,
+    epoch: u64,
+}
+
+#[derive(Deserialize)]
+struct DeviceStateV2 {
+    pinned: Option<PinnedAccount>,
+    last_seen: BTreeMap<Id, SeenManifest>,
+    epoch: u64,
+}
+
+fn decode_whole<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T> {
+    match postcard::take_from_bytes::<T>(bytes) {
+        Ok((value, [])) => Ok(value),
+        _ => Err(Error::InvalidFormat("device state")),
+    }
 }
 
 impl DeviceState {
-    /// Postcard encoding, for the device to persist between sessions.
+    /// Versioned encoding, for the device to persist between sessions:
+    /// `b"ODS" || DEVICE_STATE_VERSION || postcard { pinned, last_seen, epoch }`.
     pub fn encode(&self) -> Vec<u8> {
+        let body = DeviceStateV2Ref {
+            pinned: &self.pinned,
+            last_seen: &self.last_seen,
+            epoch: self.epoch,
+        };
+        let mut out = DEVICE_STATE_MAGIC.to_vec();
+        out.push(crate::format::DEVICE_STATE_VERSION);
         // Plain data (options, maps of ids and hashes): encoding cannot fail.
-        postcard::to_allocvec(self).expect("device state encodes")
+        postcard::to_extend(&body, out).expect("device state encodes")
     }
 
-    /// Decode what `encode` wrote: the whole buffer, trailing bytes refused
-    /// (`InvalidFormat("device state")`).
+    /// Decode what `encode` wrote, or the headerless version 1 encoding
+    /// (migrated with `epoch = 0`): the whole buffer, trailing bytes refused
+    /// (`InvalidFormat("device state")`). A version newer than this build's
+    /// is `InvalidFormat("device state from a newer version")`.
     pub fn decode(bytes: &[u8]) -> Result<DeviceState> {
-        match postcard::take_from_bytes::<DeviceState>(bytes) {
-            Ok((state, [])) => Ok(state),
+        let Some(rest) = bytes.strip_prefix(DEVICE_STATE_MAGIC) else {
+            let v1: DeviceStateV1 = decode_whole(bytes)?;
+            return Ok(DeviceState {
+                pinned: v1.pinned,
+                last_seen: v1.last_seen,
+                epoch: 0,
+            });
+        };
+        match rest.split_first() {
+            Some((&crate::format::DEVICE_STATE_VERSION, body)) => {
+                let v2: DeviceStateV2 = decode_whole(body)?;
+                Ok(DeviceState {
+                    pinned: v2.pinned,
+                    last_seen: v2.last_seen,
+                    epoch: v2.epoch,
+                })
+            }
+            Some((&v, _)) if v > crate::format::DEVICE_STATE_VERSION => {
+                Err(Error::InvalidFormat("device state from a newer version"))
+            }
             _ => Err(Error::InvalidFormat("device state")),
         }
     }
@@ -83,11 +160,63 @@ pub struct Repository<S: RecordStore> {
     pub(crate) store: S,
     pub(crate) account: Account,
     pub(crate) device: DeviceState,
-    /// Vaults whose `last_seen` entry was removed on purpose (Travel Mode
-    /// parks them) since the device state was last persisted: a merging
+    /// Vaults whose `last_seen` entry was removed or replaced on purpose
+    /// (Travel Mode parks them, a restore epoch replaces the map with its
+    /// heads) since the device state was last persisted: a merging
     /// persist (`Repository<SyncStore>::persist_device_state`) must not take
     /// the stored entry back for them.
     pub(crate) dropped: BTreeSet<Id>,
+    /// The accepted restore epoch was taken back on purpose (a pending
+    /// epoch that could not ship was dropped) since the device state was
+    /// last persisted: a merging persist keeps the in-memory epoch instead
+    /// of the larger of it and the stored one.
+    pub(crate) epoch_rewound: bool,
+    /// The last restore epoch record verified, keyed by its version and
+    /// data, so that a read does not verify the same signature again.
+    epoch_cache: Mutex<Option<(u64, Vec<u8>, StoredEpoch)>>,
+    /// The pinned chain state (`chain`): read from the store at unlock,
+    /// persisted with the device state by a `SyncStore`.
+    pub(crate) chain: ChainState,
+    /// Vaults parked by the Travel Mode (`enter_travel`, `resume_travel`):
+    /// absent on purpose, so `vaults()` does not expect them although the
+    /// vault list does. In memory only.
+    pub(crate) travel_parked: BTreeSet<Id>,
+    /// The lists seen in `chain` were set back on purpose since the state
+    /// was last persisted (a list rebase renumbered them, or the owner took
+    /// the server's lists): a merging persist keeps the in-memory ones
+    /// instead of refusing a fork with the stored ones.
+    pub(crate) lists_forced: bool,
+}
+
+/// A restore epoch record, verified, and the SHA-256 of its data.
+#[derive(Clone)]
+struct StoredEpoch {
+    epoch: RestoreEpoch,
+    hash: [u8; 32],
+}
+
+/// What a vault is loaded for (`Repository::served`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Use {
+    Read,
+    /// A write follows: the copy served must also be the visible one.
+    Write,
+    /// The owner keeps this device's copy (`KeepThisDevice`), even over a
+    /// server manifest that forks from it.
+    Keep,
+}
+
+/// A vault's verified copy rebuilt from the visible rows and the rows the
+/// store kept (`RecordStore::kept_rows`).
+pub(crate) struct LocalCopy {
+    /// The manifest record.
+    record: Record,
+    loaded: Loaded,
+    /// Listed records that only the kept rows still hold.
+    restore: Vec<Record>,
+    /// Visible item records of the vault the manifest does not list (each
+    /// opens under the vault key).
+    unlisted: Vec<Id>,
 }
 
 /// The verified content of a vault.
@@ -183,6 +312,32 @@ fn account_records<S: RecordStore>(store: &S) -> Result<(Record, Record)> {
     Ok((params, keyset))
 }
 
+/// Manifests re-signed by epoch `e` start at seq `e * 2^32`, above every
+/// seq written before it (fewer than 2^32 writes per vault and epoch): a
+/// manifest from before the epoch can never pass for a later one, even
+/// across a gap that `verify_manifest` cannot chain.
+const EPOCH_SEQ_STRIDE: u64 = 1 << 32;
+
+fn epoch_floor(epoch: u64) -> Result<u64> {
+    epoch
+        .checked_mul(EPOCH_SEQ_STRIDE)
+        .ok_or(Error::InvalidFormat("restore epoch"))
+}
+
+/// The epoch rules against the epoch this device accepted
+/// (`device_epoch`, 0 for none): whether `stored` is newer and must be
+/// applied. No record while the device accepted one, or an older one, is
+/// `EpochRollback`.
+fn newer_epoch(device_epoch: u64, stored: Option<&RestoreEpoch>) -> Result<bool> {
+    match stored {
+        None if device_epoch == 0 => Ok(false),
+        None => Err(IntegrityError::EpochRollback.into()),
+        Some(e) if e.epoch > device_epoch => Ok(true),
+        Some(e) if e.epoch == device_epoch => Ok(false),
+        Some(_) => Err(IntegrityError::EpochRollback.into()),
+    }
+}
+
 fn personal() -> VaultMeta {
     VaultMeta {
         name: "Personnel".into(),
@@ -194,10 +349,16 @@ fn personal() -> VaultMeta {
 }
 
 impl<S: RecordStore> Repository<S> {
-    /// Create an account in an empty store: params, keyset, then the
-    /// "Personnel" vault. The device pins the new account.
+    /// Create an account in an empty store, in one write
+    /// (`RecordStore::put_all_if_version_with_chain`, with the chain state
+    /// where the store keeps one): params, keyset, the device list with this
+    /// device (named `devices::DEFAULT_DEVICE_NAME` until
+    /// `register_this_device`; empty on a store that does not persist the
+    /// chain state, see `devices`), the vault list, and the "Personnel"
+    /// vault.
+    /// The device pins the new account.
     pub fn create_account(
-        mut store: S,
+        store: S,
         password: &str,
         kdf: KdfParams,
     ) -> Result<(Repository<S>, SecretKey)> {
@@ -211,28 +372,65 @@ impl<S: RecordStore> Repository<S> {
             keyset_record,
         } = Account::create_with_params(password, kdf)?;
         let id = account.params.account_id;
-        for (kind, data) in [
-            (RecordKind::AccountParams, params_record),
-            (RecordKind::Keyset, keyset_record),
-        ] {
-            store.put(Record {
-                id,
-                kind,
-                version: 1,
-                data,
-            })?;
-        }
+        // Only a store that keeps the chain state can hold this device's id
+        // (see `devices`): elsewhere the device list starts empty.
+        let device_id = store.persists_chain().then(Id::new);
+        let at = now();
+        let (vault, envelope, meta_blob) = Vault::create(&account, personal())?;
         let device = DeviceState {
             pinned: Some(pin(&account)),
             last_seen: BTreeMap::new(),
+            epoch: 0,
+        };
+        let chain = ChainState {
+            params_epoch: account.params.epoch,
+            device_id,
+            ..ChainState::default()
         };
         let mut repo = Repository {
             store,
             account,
             device,
             dropped: BTreeSet::new(),
+            epoch_rewound: false,
+            epoch_cache: Mutex::new(None),
+            chain,
+            travel_parked: BTreeSet::new(),
+            lists_forced: false,
         };
-        repo.create_vault(personal())?;
+        let (manifest, seen) = repo.manifest_record(&vault, None, vec![])?;
+        let me = device_id.map(|d| self_entry(d, None, at));
+        let devices = ListBody::next(None, id, me.into_iter().collect())?;
+        let vaults = ListBody::next(
+            None,
+            id,
+            vec![VaultListEntry {
+                vault_id: vault.id,
+                created_at: at,
+                deleted_at: None,
+            }],
+        )?;
+        repo.chain.device_list = Some(devices.seen());
+        repo.chain.vault_list = Some(vaults.seen());
+        let record = |kind, id, data| Record {
+            id,
+            kind,
+            version: 1,
+            data,
+        };
+        let writes = vec![
+            record(RecordKind::AccountParams, id, params_record),
+            record(RecordKind::Keyset, id, keyset_record),
+            list_record::<DeviceEntry>(&repo.account, devices)?,
+            list_record::<VaultListEntry>(&repo.account, vaults)?,
+            manifest,
+            record(RecordKind::VaultMeta, vault.id, meta_blob),
+            record(RecordKind::VaultKey, vault.id, envelope),
+        ];
+        let writes = writes.into_iter().map(|r| (r, None)).collect();
+        repo.store
+            .put_all_if_version_with_chain(writes, &repo.chain)?;
+        repo.device.last_seen.insert(vault.id, seen);
         Ok((repo, secret_key))
     }
 
@@ -241,6 +439,11 @@ impl<S: RecordStore> Repository<S> {
     /// that pinned nothing yet, the account is pinned now (trust on first
     /// use); otherwise `Account::unlock` checks it against the pin, and the
     /// pinned KDF floor is raised to the parameters just accepted.
+    ///
+    /// The params epoch is checked against the store's chain state
+    /// (`RecordStore::chain_state`): an older epoch is
+    /// `IntegrityError::ParamsRollback`, before any derivation. The epoch
+    /// accepted is pinned (it only goes up).
     pub fn unlock(
         store: S,
         password: &str,
@@ -258,22 +461,33 @@ impl<S: RecordStore> Repository<S> {
         device: DeviceState,
     ) -> Result<(Repository<S>, Auk)> {
         let (params, keyset) = account_records(&store)?;
-        let (account, auk) = Account::unlock_exporting_auk(
+        let chain = store.chain_state()?;
+        let (account, auk) = Account::unlock_exporting_auk_at(
             password,
             secret_key,
             &params.data,
             &keyset.data,
             device.pinned.as_ref(),
+            chain.params_epoch,
         )?;
-        Ok((Self::finish_unlock(store, account, &params, device)?, auk))
+        Ok((
+            Self::finish_unlock(store, account, &params, device, chain)?,
+            auk,
+        ))
     }
 
     /// Like `unlock`, from an Account Unlock Key kept from an earlier one.
     pub fn unlock_with_auk(store: S, auk: &Auk, device: DeviceState) -> Result<Repository<S>> {
         let (params, keyset) = account_records(&store)?;
-        let account =
-            Account::unlock_with_auk(auk, &params.data, &keyset.data, device.pinned.as_ref())?;
-        Self::finish_unlock(store, account, &params, device)
+        let chain = store.chain_state()?;
+        let account = Account::unlock_with_auk_at(
+            auk,
+            &params.data,
+            &keyset.data,
+            device.pinned.as_ref(),
+            chain.params_epoch,
+        )?;
+        Self::finish_unlock(store, account, &params, device, chain)
     }
 
     fn finish_unlock(
@@ -281,6 +495,7 @@ impl<S: RecordStore> Repository<S> {
         account: Account,
         params: &Record,
         mut device: DeviceState,
+        mut chain: ChainState,
     ) -> Result<Repository<S>> {
         if account.params.account_id != params.id {
             return Err(IntegrityError::WrongContext.into());
@@ -289,12 +504,97 @@ impl<S: RecordStore> Repository<S> {
             None => device.pinned = Some(pin(&account)),
             Some(p) => p.raise_floor(&account.params.kdf),
         }
+        chain.accept_params_epoch(account.params.epoch);
         Ok(Repository {
             store,
             account,
             device,
             dropped: BTreeSet::new(),
+            epoch_rewound: false,
+            epoch_cache: Mutex::new(None),
+            chain,
+            travel_parked: BTreeSet::new(),
+            lists_forced: false,
         })
+    }
+
+    /// Change the master password (spec 2b, 3.3). The current password and
+    /// the Secret Key are checked by opening the stored params and keyset
+    /// with every unlock check (pin, pinned epoch, floors): a wrong one is
+    /// `Error::WrongPassword` and nothing is written. Then the same keys get
+    /// v2 params at the stored epoch plus one (fresh salt, costs at least the
+    /// current ones and the floor) and a keyset resealed at that epoch under
+    /// the new Account Unlock Key, which is returned (to enroll biometrics
+    /// again).
+    ///
+    /// The keyset and the params are written together
+    /// (`RecordStore::put_all_if_version`, one transaction in a persistent
+    /// store), each conditional on the version just read: a lost race is
+    /// `Error::Conflict`, and on any error the previous pair stays as it
+    /// was. Then the new epoch is pinned and the session goes on with the
+    /// new params (same keys: vault keys, manifests and pending writes of
+    /// other devices stay valid). With a `SyncStore` the chain state is
+    /// saved by the next `persist_device_state`, which the caller runs right
+    /// after.
+    pub fn change_password(
+        &mut self,
+        current: &str,
+        secret_key: &SecretKey,
+        new: &str,
+    ) -> Result<Auk> {
+        let (params, keyset) = account_records(&self.store)?;
+        if params.id != self.account.params.account_id {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        let (stored, _) = Account::unlock_exporting_auk_at(
+            current,
+            secret_key,
+            &params.data,
+            &keyset.data,
+            self.device.pinned.as_ref(),
+            self.chain.params_epoch,
+        )?;
+        let Rekeyed {
+            account,
+            auk,
+            params_record,
+            keyset_record,
+        } = stored.rekey(secret_key, new)?;
+        let id = params.id;
+        let next = |r: &Record| r.version.checked_add(1).ok_or(Error::Conflict);
+        // Both records in one atomic write: a conflict, a store failure or
+        // a crash leaves the previous pair as it was.
+        self.store.put_all_if_version(vec![
+            (
+                Record {
+                    id,
+                    kind: RecordKind::Keyset,
+                    version: next(&keyset)?,
+                    data: keyset_record,
+                },
+                Some(keyset.version),
+            ),
+            (
+                Record {
+                    id,
+                    kind: RecordKind::AccountParams,
+                    version: next(&params)?,
+                    data: params_record,
+                },
+                Some(params.version),
+            ),
+        ])?;
+        if let Some(p) = &mut self.device.pinned {
+            p.raise_floor(&account.params.kdf);
+        }
+        self.chain.accept_params_epoch(account.params.epoch);
+        self.account = account;
+        Ok(auk)
+    }
+
+    /// The pinned chain state, to persist with the device state.
+    pub fn chain(&self) -> &ChainState {
+        &self.chain
     }
 
     /// The underlying record store, for the sync layer.
@@ -328,11 +628,64 @@ impl<S: RecordStore> Repository<S> {
     /// `InvalidFormat("vault meta")`; a vault without a manifest is
     /// `ManifestMissingItem`; a vault this device already read
     /// (`DeviceState::last_seen`) whose key record is gone is
-    /// `VaultMissing`. The vault list itself is not signed in M1: a store
-    /// can still hide a vault from a device that never read it.
+    /// `VaultMissing`.
+    ///
+    /// The signed vault list (`vaultlist`), when there is one, is verified
+    /// against the one last accepted (`VaultListRollback`), and every live
+    /// vault it lists must be present, even one this device never read
+    /// (`VaultMissing`). A vault it marks deleted is neither expected nor
+    /// returned. A valid vault it does not list is returned (adopted into
+    /// the list later). No list yet (an account from before the list) means
+    /// no list check. A vault parked by the Travel Mode (`enter_travel`, or
+    /// `resume_travel` in a later session) is not expected either: a
+    /// session that forgets `resume_travel` gets `VaultMissing`.
+    ///
+    /// The restore epoch is checked first (`sync_epoch`), without being
+    /// applied (this takes `&self`): a newer epoch's heads stand for the
+    /// vaults already read; its errors come before any vault's. A head of a
+    /// vault the vault list marks deleted is not expected either: the
+    /// deletion wins over an epoch that still named the vault (issued
+    /// before it reached the issuing device).
     pub fn vaults(&self) -> Result<Vec<Vault>> {
+        let stored = self.stored_epoch()?;
+        let newer = self.epoch_rule(stored.as_ref())?;
+        let known = match &stored {
+            Some(s) if newer => &s.epoch.heads,
+            _ => &self.device.last_seen,
+        };
+        let list = self.read_list::<VaultListEntry>()?;
+        let entries: &[VaultListEntry] = list.as_ref().map_or(&[], |l| &l.body.entries);
+        let out = self.open_listed_vaults(entries)?;
+        let expected = known.keys().copied().chain(
+            entries
+                .iter()
+                .filter(|e| e.deleted_at.is_none())
+                .map(|e| e.vault_id),
+        );
+        for id in expected {
+            let parked = self.travel_parked.contains(&id);
+            if !listed_deleted(entries, id) && !parked && !out.iter().any(|v| v.id == id) {
+                return Err(IntegrityError::VaultMissing.into());
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every vault whose key, meta and manifest open (see `vaults`), sorted
+    /// by id, without the epoch and `VaultMissing` checks. The vault list is
+    /// still verified, and the vaults it marks deleted are left out.
+    pub(crate) fn open_vaults(&self) -> Result<Vec<Vault>> {
+        let list = self.read_list::<VaultListEntry>()?;
+        self.open_listed_vaults(list.as_ref().map_or(&[], |l| &l.body.entries))
+    }
+
+    /// `open_vaults` over the vault list `entries`, already verified.
+    fn open_listed_vaults(&self, entries: &[VaultListEntry]) -> Result<Vec<Vault>> {
         let mut out = Vec::new();
         for key in self.store.list(RecordKind::VaultKey)? {
+            if listed_deleted(entries, key.id) {
+                continue;
+            }
             let meta = self
                 .store
                 .get(RecordKind::VaultMeta, key.id)?
@@ -341,38 +694,352 @@ impl<S: RecordStore> Repository<S> {
             self.read_manifest(&vault, None)?;
             out.push(vault);
         }
-        if self
-            .device
-            .last_seen
-            .keys()
-            .any(|id| !out.iter().any(|v| v.id == *id))
-        {
-            return Err(IntegrityError::VaultMissing.into());
-        }
         out.sort_by_key(|v| v.id);
         Ok(out)
     }
 
+    /// The epoch this device accepted last, `None` before any.
+    pub fn restore_epoch(&self) -> Option<u64> {
+        (self.device.epoch > 0).then_some(self.device.epoch)
+    }
+
+    /// The account's restore epoch record, decoded and verified under the
+    /// pinned account's signing key, or `None` if there is none. A record
+    /// whose version is not its epoch is `EpochRollback`. The verification
+    /// of the same record (version and data) is cached.
+    fn stored_epoch(&self) -> Result<Option<StoredEpoch>> {
+        let id = self.account.params.account_id;
+        let Some(rec) = self.store.get(RecordKind::RestoreEpoch, id)? else {
+            return Ok(None);
+        };
+        let mut cache = self
+            .epoch_cache
+            .lock()
+            .map_err(|_| Error::Store("epoch cache".into()))?;
+        if let Some((version, data, stored)) = cache.as_ref()
+            && *version == rec.version
+            && *data == rec.data
+        {
+            return Ok(Some(stored.clone()));
+        }
+        let signed = SignedRestoreEpoch::decode(&rec.data)?;
+        let epoch = signed.verify(id, &self.account.params.signing_pub)?;
+        if rec.version != epoch.epoch {
+            return Err(IntegrityError::EpochRollback.into());
+        }
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(digest(&SHA256, &rec.data).as_ref());
+        let stored = StoredEpoch {
+            epoch: signed.epoch,
+            hash,
+        };
+        *cache = Some((rec.version, rec.data, stored.clone()));
+        Ok(Some(stored))
+    }
+
+    /// `newer_epoch`, plus the fork check: a record with the very epoch
+    /// this device accepted, but not the record it accepted (its hash,
+    /// kept by the store as `restore_epoch_mark`), is `EpochRollback`.
+    /// Stores that keep no mark skip that check.
+    fn epoch_rule(&self, stored: Option<&StoredEpoch>) -> Result<bool> {
+        let newer = newer_epoch(self.device.epoch, stored.map(|s| &s.epoch))?;
+        if let Some(s) = stored
+            && !newer
+            && let Some((epoch, hash)) = self.store.restore_epoch_mark()?
+            && epoch == s.epoch.epoch
+            && hash != s.hash
+        {
+            return Err(IntegrityError::EpochRollback.into());
+        }
+        Ok(newer)
+    }
+
+    /// The restore epoch rules, the one place they are applied (before
+    /// `items`, every write and the rebase; `vaults` checks them without
+    /// applying):
+    /// 1. no record and no epoch accepted: nothing changes;
+    /// 2. a valid record newer than the epoch accepted: `last_seen` is
+    ///    replaced by its heads (vaults outside them are forgotten) and its
+    ///    epoch is accepted; the usual checks follow;
+    /// 3. the same epoch: nothing changes, unless it is another record
+    ///    than the one accepted (a fork, see `epoch_rule`);
+    /// 4. an older epoch, or none while one was accepted, is
+    ///    `EpochRollback`; a bad signature `Signature`; another account
+    ///    `EpochRollback`; an undecodable record `InvalidFormat`.
+    ///
+    /// The record accepted is remembered by the store
+    /// (`set_restore_epoch_mark`). Returns the stored epoch, verified.
+    pub(crate) fn sync_epoch(&mut self) -> Result<Option<RestoreEpoch>> {
+        let stored = self.stored_epoch()?;
+        let newer = self.epoch_rule(stored.as_ref())?;
+        let Some(s) = stored else {
+            return Ok(None);
+        };
+        if newer {
+            self.replace_last_seen(s.epoch.heads.clone());
+            // A head of a vault the vault list marks deleted is not
+            // remembered: the deletion wins (see `vaults`).
+            self.forget_deleted_vaults();
+            self.device.epoch = s.epoch.epoch;
+            for vault in s.epoch.heads.keys() {
+                self.store.vault_event(*vault, VaultEvent::EpochAccepted)?;
+            }
+        }
+        if self.store.restore_epoch_mark()? != Some((s.epoch.epoch, s.hash)) {
+            self.store.set_restore_epoch_mark(s.epoch.epoch, s.hash)?;
+        }
+        Ok(Some(s.epoch))
+    }
+
+    /// Mark that the account was deliberately set back (a restore, or a
+    /// choice after an alert), so that the other devices accept its current
+    /// state instead of reporting a rollback.
+    ///
+    /// The epoch is `max(epoch accepted, epoch stored) + 1`. Every vault is
+    /// loaded and checked like `items`, then its manifest is signed again,
+    /// same entries, at `seq = max(seq + 1, epoch * 2^32)`: no manifest
+    /// from before the epoch can follow it. Those manifests are the heads.
+    /// The signed epoch record is written last, conditionally on the stored
+    /// one (`put_if_version`): another device's epoch written meanwhile is
+    /// `Error::Conflict` (sync, then retry). The device then accepts the
+    /// epoch and its heads.
+    ///
+    /// Strict: the stored epoch and every vault must pass the usual checks.
+    /// Over a sync store, an epoch whose heads cannot all reach the server
+    /// (a vault held for rebase) is dropped by the rebase with
+    /// `Error::Conflict`, to be issued again; see also
+    /// `issue_restore_epoch_from_local`.
+    ///
+    /// Errors: those of `sync_epoch`, `vaults`, the loads and the writes.
+    /// The manifests already re-signed when a later step fails are valid
+    /// successors and stay.
+    pub fn issue_restore_epoch(&mut self, reason: EpochReason) -> Result<RestoreEpoch> {
+        let stored = self.sync_epoch()?.map(|e| e.epoch);
+        let vaults = self.vaults()?;
+        self.issue_epoch(reason, stored, vaults, false)
+    }
+
+    /// The epoch number stored, its signature verified, without the epoch
+    /// rules (`sync_epoch`): for the owner's explicit choice of the
+    /// server's state (`issue_restore_epoch_take_server`).
+    pub(crate) fn stored_epoch_number(&self) -> Result<Option<u64>> {
+        Ok(self.stored_epoch()?.map(|s| s.epoch.epoch))
+    }
+
+    /// `issue_restore_epoch` over `vaults`, `stored` being the epoch the
+    /// record holds now. `local`: each head is the copy this device serves
+    /// (`served` with `Use::Keep`) instead of the strictly loaded one.
+    pub(crate) fn issue_epoch(
+        &mut self,
+        reason: EpochReason,
+        stored: Option<u64>,
+        vaults: Vec<Vault>,
+        local: bool,
+    ) -> Result<RestoreEpoch> {
+        let epoch = self
+            .device
+            .epoch
+            .max(stored.unwrap_or(0))
+            .checked_add(1)
+            .ok_or(Error::InvalidFormat("restore epoch"))?;
+        let floor = epoch_floor(epoch)?;
+        let mut heads = BTreeMap::new();
+        for vault in vaults {
+            let loaded = if local {
+                self.served(&vault, Use::Keep)?
+            } else {
+                self.load(&vault)?
+            };
+            for (_, r) in &loaded.records {
+                vault.open_item(r)?;
+            }
+            let prev = &loaded.manifest;
+            let mut m = Manifest::next(Some(prev), vault.id, prev.entries.clone())?;
+            m.seq = m.seq.max(floor);
+            let head = self.store_manifest(&vault, &m, Some(prev.seq))?;
+            self.device.last_seen.insert(vault.id, head.clone());
+            heads.insert(vault.id, head);
+        }
+        let account_id = self.account.params.account_id;
+        let issued = RestoreEpoch {
+            account_id,
+            epoch,
+            issued_at: OffsetDateTime::now_utc().unix_timestamp(),
+            heads,
+            reason,
+        };
+        let data =
+            SignedRestoreEpoch::sign(issued.clone(), &self.account.keyset().signing)?.encode();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(digest(&SHA256, &data).as_ref());
+        self.store.put_if_version(
+            Record {
+                id: account_id,
+                kind: RecordKind::RestoreEpoch,
+                version: epoch,
+                data,
+            },
+            stored,
+        )?;
+        self.device.epoch = epoch;
+        self.replace_last_seen(issued.heads.clone());
+        self.store.set_restore_epoch_mark(epoch, hash)?;
+        Ok(issued)
+    }
+
+    /// Replace `last_seen` wholesale (an epoch's heads). Every vault of the
+    /// old or the new map joins `dropped`, so that a merging persist takes
+    /// the new map as is: a vault outside the heads stays forgotten, and no
+    /// stored entry from before the epoch comes back.
+    pub(crate) fn replace_last_seen(&mut self, heads: BTreeMap<Id, SeenManifest>) {
+        self.dropped.extend(self.device.last_seen.keys().copied());
+        self.dropped.extend(heads.keys().copied());
+        self.device.last_seen = heads;
+    }
+
     /// Create a vault with an empty signed manifest (seq 1), so that a
-    /// vault without a manifest is always a storage fault. The key envelope
-    /// is written last: until then the vault is not listed, and the device
-    /// remembers its manifest only once it is.
+    /// vault without a manifest is always a storage fault. Manifest, meta,
+    /// key envelope and, when the account has a vault list, the next list
+    /// with the new vault go in one write
+    /// (`RecordStore::put_all_if_version`, the key after the manifest and
+    /// meta); the device remembers the manifest once it is written. On an
+    /// account without a vault list (from before it), the lists are first
+    /// brought up to date (`devices`, migration), so the new vault is
+    /// listed too; if the vaults do not verify, no list is created and the
+    /// vault waits for adoption. A list changed by
+    /// another writer meanwhile is `Error::Conflict`, and nothing is written.
     pub fn create_vault(&mut self, meta: VaultMeta) -> Result<Vault> {
+        self.sync_epoch()?;
+        if self.read_list::<VaultListEntry>()?.is_none() {
+            // An account from before the lists: migrate on this first write.
+            self.maintain_lists(None)?;
+        }
+        let list = self.read_list::<VaultListEntry>()?;
         let (vault, envelope, meta_blob) = Vault::create(&self.account, meta)?;
-        let seen = self.put_manifest(&vault, None, vec![])?;
+        let (manifest, seen) = self.manifest_record(&vault, None, vec![])?;
+        let mut writes = vec![(manifest, None)];
         for (kind, data) in [
             (RecordKind::VaultMeta, meta_blob),
             (RecordKind::VaultKey, envelope),
         ] {
-            self.store.put(Record {
+            let r = Record {
                 id: vault.id,
                 kind,
                 version: 1,
                 data,
-            })?;
+            };
+            writes.push((r, None));
+        }
+        let mut list_body = None;
+        if let Some(list) = &list {
+            let mut entries = list.body.entries.clone();
+            entries.push(VaultListEntry {
+                vault_id: vault.id,
+                created_at: now(),
+                deleted_at: None,
+            });
+            let (rec, expected, body) = self.list_write(Some(list), entries)?;
+            writes.push((rec, expected));
+            list_body = Some(body);
+        }
+        self.store.put_all_if_version(writes)?;
+        if let Some(body) = list_body {
+            self.chain.vault_list = Some(body.seen());
         }
         self.device.last_seen.insert(vault.id, seen);
         Ok(vault)
+    }
+
+    /// Delete a vault (spec 4.5, ruling B8). Refused while it holds a live
+    /// or archived item (`InvalidFormat("vault not empty")`: the user
+    /// empties it first), and for the last live vault of the account
+    /// (`InvalidFormat("last vault")`). A vault that is not among `vaults()`
+    /// (already deleted, or never there) is `NotFound`; `vaults()` and the
+    /// verified load of the vault report their own faults first.
+    ///
+    /// Otherwise, in one write (`RecordStore::put_all_if_version_and_delete`):
+    /// the next vault list with the vault marked deleted, then the deletion
+    /// of its key, meta and manifest and of every item record of the vault
+    /// (the trashed items are purged with it, ignored leftovers too). The
+    /// list goes first: on a store where the write is not atomic, a cut
+    /// leaves rows of a vault the list marks deleted, which `vaults()` no
+    /// longer returns or expects. The vault leaves `last_seen`. A list
+    /// changed by another writer meanwhile is `Error::Conflict`, and nothing
+    /// is written. On an account without a vault list (from before it), the
+    /// lists are first brought up to date.
+    pub fn delete_vault(&mut self, vault: &Vault) -> Result<()> {
+        if self.read_list::<VaultListEntry>()?.is_none() {
+            self.maintain_lists(None)?;
+        }
+        if !self.vaults()?.iter().any(|v| v.id == vault.id) {
+            return Err(Error::NotFound);
+        }
+        let list = self.read_list::<VaultListEntry>()?.ok_or(Error::NotFound)?;
+        let others_live = list
+            .body
+            .entries
+            .iter()
+            .any(|e| e.vault_id != vault.id && e.deleted_at.is_none());
+        if !others_live {
+            return Err(Error::InvalidFormat("last vault"));
+        }
+        let loaded = self.load(vault)?;
+        for (_, rec) in &loaded.records {
+            if vault.open_item(rec)?.trashed_at.is_none() {
+                return Err(Error::InvalidFormat("vault not empty"));
+            }
+        }
+
+        let at = now();
+        let mut entries = list.body.entries.clone();
+        match entries.iter_mut().find(|e| e.vault_id == vault.id) {
+            Some(e) => e.deleted_at = Some(at),
+            None => entries.push(VaultListEntry {
+                vault_id: vault.id,
+                created_at: at,
+                deleted_at: Some(at),
+            }),
+        }
+        let (rec, expected, body) = self.list_write(Some(&list), entries)?;
+        let mut deletes: Vec<(RecordKind, Id)> = [
+            RecordKind::VaultKey,
+            RecordKind::VaultMeta,
+            RecordKind::Manifest,
+        ]
+        .into_iter()
+        .map(|kind| (kind, vault.id))
+        .collect();
+        for r in self.store.list(RecordKind::Item)? {
+            if split_item_record(&r.data).is_ok_and(|(prefix, _)| prefix == vault.id) {
+                deletes.push((RecordKind::Item, r.id));
+            }
+        }
+        self.store
+            .put_all_if_version_and_delete(vec![(rec, expected)], deletes)?;
+        self.chain.vault_list = Some(body.seen());
+        self.forget_vault(vault.id);
+        Ok(())
+    }
+
+    /// Forget the last manifest seen of every vault the signed vault list
+    /// marks deleted: a vault deleted (here or elsewhere) is no longer
+    /// remembered. Best effort: a list that does not verify changes nothing
+    /// here, `vaults()` reports it.
+    pub(crate) fn forget_deleted_vaults(&mut self) {
+        if let Ok(Some(list)) = self.read_list::<VaultListEntry>() {
+            for e in list.body.entries.iter().filter(|e| e.deleted_at.is_some()) {
+                self.forget_vault(e.vault_id);
+            }
+        }
+    }
+
+    /// Remove `vault` from `last_seen` on purpose: it joins `dropped`, so
+    /// that a merging persist does not take the stored entry back (a
+    /// deleted vault stays forgotten, even if another process on the file
+    /// still remembers it).
+    pub(crate) fn forget_vault(&mut self, vault: Id) {
+        self.device.last_seen.remove(&vault);
+        self.dropped.insert(vault);
     }
 
     /// Replace the display settings of a vault (name, icon, color, flags).
@@ -381,6 +1048,7 @@ impl<S: RecordStore> Repository<S> {
     /// `Error::Conflict`. The write itself is conditional on the version of
     /// the stored `VaultMeta` record, so two racing updates cannot both win.
     pub fn update_vault_meta(&mut self, vault: &Vault, meta: VaultMeta) -> Result<Vault> {
+        self.sync_epoch()?;
         let key = self
             .store
             .get(RecordKind::VaultKey, vault.id)?
@@ -422,7 +1090,8 @@ impl<S: RecordStore> Repository<S> {
     /// against the last one seen and the records against the manifest. The
     /// manifest is then remembered as the last one seen.
     pub fn items(&mut self, vault: &Vault) -> Result<Vec<Item>> {
-        let loaded = self.load(vault)?;
+        self.sync_epoch()?;
+        let loaded = self.served(vault, Use::Read)?;
         let items = loaded
             .records
             .iter()
@@ -441,7 +1110,8 @@ impl<S: RecordStore> Repository<S> {
     /// write in flight. A lost race (`Conflict`) deletes only the record
     /// this call wrote.
     pub fn save_item(&mut self, vault: &Vault, item: Item) -> Result<()> {
-        let loaded = self.load(vault)?;
+        self.sync_epoch()?;
+        let loaded = self.served(vault, Use::Write)?;
         let rec = vault.seal_item(&item, loaded.next_version(item.id)?)?;
         let old = loaded.listed(item.id).map(|(blob, _)| *blob);
         let written = self.put_item(vault.id, &rec)?;
@@ -458,7 +1128,8 @@ impl<S: RecordStore> Repository<S> {
     /// Remove an item for good: manifest without it first, then its record
     /// and its ignored leftovers.
     pub fn delete_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
-        let loaded = self.load(vault)?;
+        self.sync_epoch()?;
+        let loaded = self.served(vault, Use::Write)?;
         let (blob, _) = *loaded.listed(item_id).ok_or(Error::NotFound)?;
         let entries = loaded.entries_without(item_id);
         self.commit_manifest(vault, &loaded.manifest, entries, None)?;
@@ -495,9 +1166,10 @@ impl<S: RecordStore> Repository<S> {
         if from.id == to.id {
             return Err(Error::InvalidFormat("move to the same vault"));
         }
-        let src = self.load(from)?;
+        self.sync_epoch()?;
+        let src = self.served(from, Use::Write)?;
         let (blob, rec) = src.listed(item_id).ok_or(Error::NotFound)?.clone();
-        let dst = self.load(to)?;
+        let dst = self.served(to, Use::Write)?;
         let moved = from.move_item(to, &rec, dst.next_version(item_id)?)?;
         let replaced = dst.listed(item_id).map(|(b, _)| *b);
         let written = self.put_item(to.id, &moved)?;
@@ -523,13 +1195,208 @@ impl<S: RecordStore> Repository<S> {
         item_id: Id,
         change: impl FnOnce(&mut Item, OffsetDateTime),
     ) -> Result<()> {
-        let loaded = self.load(vault)?;
+        self.sync_epoch()?;
+        let loaded = self.served(vault, Use::Write)?;
         let (_, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
         let mut item = vault.open_item(rec)?;
         let now = OffsetDateTime::now_utc();
         change(&mut item, now);
         item.updated_at = now;
         self.save_item(vault, item)
+    }
+
+    /// The vault as this device serves it (`items` and the writes).
+    ///
+    /// The visible state (`load`) first. If it fails a check and the store
+    /// keeps the device's copy (`RecordStore::kept_rows`), the copy last
+    /// verified is served instead, when it still verifies against the last
+    /// manifest seen (`verify_manifest`) and every record it lists is
+    /// there: the server went back to an older state or serves an
+    /// incomplete one (`VaultEvent::Behind`, see
+    /// `crate::sync::VaultSyncHealth`). The store then makes that copy the
+    /// visible one again for a write, or when the server is behind it (so
+    /// that the next push restores the server's copy).
+    ///
+    /// A visible manifest that forks from the copy (same seq, other hash,
+    /// or the next seq not built on it) is an alert: the copy is still
+    /// served for reading (the owner can export it), never written over the
+    /// fork (`ManifestRollback`), except to keep it (`Use::Keep`). No
+    /// verified copy (a vault this device never read, or a copy that fails
+    /// too) is an alert and the visible state's error.
+    pub(crate) fn served(&mut self, vault: &Vault, use_: Use) -> Result<Loaded> {
+        let cause = match self.load(vault) {
+            Ok(loaded) => {
+                self.store.vault_event(vault.id, VaultEvent::Clean)?;
+                return Ok(loaded);
+            }
+            Err(Error::Integrity(e)) => e,
+            Err(e) => return Err(e),
+        };
+        let Some(kept) = self.store.kept_rows(vault.id)? else {
+            return Err(cause.into());
+        };
+        let copy = match self.local_copy(vault, &kept) {
+            Ok(copy) => copy,
+            Err(Error::Integrity(_)) => {
+                let alert = VaultEvent::Alert { seq: 0, cause };
+                self.store.vault_event(vault.id, alert)?;
+                return Err(cause.into());
+            }
+            Err(e) => return Err(e),
+        };
+        let seq = copy.loaded.manifest.seq;
+        if self.forks_from(vault, &copy)? {
+            let cause = IntegrityError::ManifestRollback;
+            self.store
+                .vault_event(vault.id, VaultEvent::Alert { seq, cause })?;
+            match use_ {
+                Use::Read => return Ok(copy.loaded),
+                Use::Write => return Err(cause.into()),
+                Use::Keep => {}
+            }
+        } else {
+            self.store
+                .vault_event(vault.id, VaultEvent::Behind { seq, cause })?;
+        }
+        self.store.keep_local_copy(
+            vault.id,
+            &copy.record,
+            &copy.restore,
+            &copy.unlisted,
+            use_ != Use::Read,
+        )?;
+        Ok(copy.loaded)
+    }
+
+    /// The device's verified copy of the vault: the newest manifest among
+    /// the visible one and the kept one that verifies against the last
+    /// manifest seen and finds every record it lists (visible rows first,
+    /// then kept ones). Another visible record of the vault must open under
+    /// the vault key (`ManifestUnexpectedItem` otherwise). No last manifest
+    /// seen: no copy (`ManifestRollback`).
+    pub(crate) fn local_copy(&self, vault: &Vault, kept: &[Record]) -> Result<LocalCopy> {
+        let last = self
+            .device
+            .last_seen
+            .get(&vault.id)
+            .ok_or(IntegrityError::ManifestRollback)?;
+        let of_vault = |r: &Record| {
+            split_item_record(&r.data)
+                .ok()
+                .filter(|(prefix, _)| *prefix == vault.id)
+                .map(|(_, body)| ItemRecord::decode(body).ok())
+        };
+        let mut visible = Vec::new();
+        for r in self.store.list(RecordKind::Item)? {
+            if let Some(item) = of_vault(&r) {
+                visible.push((r, item));
+            }
+        }
+        let held: Vec<(Record, ItemRecord)> = kept
+            .iter()
+            .filter(|r| r.kind == RecordKind::Item && !visible.iter().any(|(v, _)| v.id == r.id))
+            .filter_map(|r| Some((r.clone(), of_vault(r)??)))
+            .collect();
+        let mut candidates: Vec<Record> = Vec::new();
+        let manifests = self
+            .store
+            .get(RecordKind::Manifest, vault.id)?
+            .into_iter()
+            .chain(
+                kept.iter()
+                    .filter(|r| r.kind == RecordKind::Manifest && r.id == vault.id)
+                    .cloned(),
+            );
+        for r in manifests {
+            if !candidates.contains(&r) {
+                candidates.push(r);
+            }
+        }
+        candidates.sort_by_key(|r| std::cmp::Reverse(r.version));
+        let mut first = None;
+        for record in candidates {
+            match self.copy_from(vault, record, last, &visible, &held) {
+                Ok(copy) => return Ok(copy),
+                Err(Error::Integrity(e)) => {
+                    first.get_or_insert(e);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(first.unwrap_or(IntegrityError::ManifestMissingItem).into())
+    }
+
+    fn copy_from(
+        &self,
+        vault: &Vault,
+        record: Record,
+        last: &SeenManifest,
+        visible: &[(Record, Option<ItemRecord>)],
+        held: &[(Record, ItemRecord)],
+    ) -> Result<LocalCopy> {
+        let sm = SignedManifest::decode(&record.data)?;
+        let manifest = verify_manifest(vault, &self.account.params.signing_pub, &sm, Some(last))?;
+        let exact = |e: &ManifestEntry, i: &ItemRecord| {
+            i.item_id == e.item_id && i.version == e.version && record_hash(i) == e.record_hash
+        };
+        let mut records = Vec::new();
+        let mut restore = Vec::new();
+        let mut used = BTreeSet::new();
+        for e in &manifest.entries {
+            let found = visible
+                .iter()
+                .find(|(r, i)| !used.contains(&r.id) && i.as_ref().is_some_and(|i| exact(e, i)));
+            if let Some((r, Some(i))) = found {
+                used.insert(r.id);
+                records.push((r.id, i.clone()));
+            } else if let Some((r, i)) = held.iter().find(|(_, i)| exact(e, i)) {
+                restore.push(r.clone());
+                records.push((r.id, i.clone()));
+            } else {
+                return Err(IntegrityError::ManifestMissingItem.into());
+            }
+        }
+        let mut unlisted = Vec::new();
+        for (r, i) in visible.iter().filter(|(r, _)| !used.contains(&r.id)) {
+            let opens = i.as_ref().is_some_and(|i| vault.open_item(i).is_ok());
+            if !opens {
+                return Err(IntegrityError::ManifestUnexpectedItem.into());
+            }
+            unlisted.push(r.id);
+        }
+        records.sort_by_key(|(_, r)| r.item_id);
+        Ok(LocalCopy {
+            record,
+            loaded: Loaded {
+                manifest,
+                records,
+                ignored: Vec::new(),
+            },
+            restore,
+            unlisted,
+        })
+    }
+
+    /// Whether the visible manifest forks from the copy: the same seq with
+    /// another hash, or the next seq not built on it. An older one is the
+    /// server behind, a later one cannot be told apart (no chain).
+    fn forks_from(&self, vault: &Vault, copy: &LocalCopy) -> Result<bool> {
+        let Some(visible) = self.store.get(RecordKind::Manifest, vault.id)? else {
+            return Ok(false);
+        };
+        if visible.data == copy.record.data {
+            return Ok(false);
+        }
+        let Ok(sm) = SignedManifest::decode(&visible.data) else {
+            return Ok(false);
+        };
+        let Ok(m) = verify_manifest(vault, &self.account.params.signing_pub, &sm, None) else {
+            return Ok(false);
+        };
+        let ours = &copy.loaded.manifest;
+        let hash = manifest_hash(ours);
+        Ok((m.seq == ours.seq && manifest_hash(&m) != hash)
+            || (Some(m.seq) == ours.seq.checked_add(1) && m.prev_hash != hash))
     }
 
     /// Load and verify the manifest and item records of a vault.
@@ -667,20 +1534,55 @@ impl<S: RecordStore> Repository<S> {
         prev: Option<&Manifest>,
         entries: Vec<ManifestEntry>,
     ) -> Result<SeenManifest> {
-        let m = Manifest::next(prev, vault.id, entries)?;
-        let sm = sign_manifest(vault, &self.account.keyset().signing, &m)?;
-        let data = postcard::to_allocvec(&sm).map_err(|_| Error::InvalidFormat("manifest"))?;
-        self.store.put_if_version(
-            Record {
-                id: vault.id,
-                kind: RecordKind::Manifest,
-                version: m.seq,
-                data,
-            },
-            prev.map(|p| p.seq),
-        )?;
-        Ok(seen(&m))
+        let (rec, seen) = self.manifest_record(vault, prev, entries)?;
+        self.store.put_if_version(rec, prev.map(|p| p.seq))?;
+        Ok(seen)
     }
+
+    /// The signed record of the manifest following `prev` (or the first
+    /// one), not written.
+    fn manifest_record(
+        &self,
+        vault: &Vault,
+        prev: Option<&Manifest>,
+        entries: Vec<ManifestEntry>,
+    ) -> Result<(Record, SeenManifest)> {
+        let m = Manifest::next(prev, vault.id, entries)?;
+        Ok((self.signed_manifest(vault, &m)?, seen(&m)))
+    }
+
+    /// The signed record of `m` (record version = its seq), not written.
+    fn signed_manifest(&self, vault: &Vault, m: &Manifest) -> Result<Record> {
+        let sm = sign_manifest(vault, &self.account.keyset().signing, m)?;
+        let data = postcard::to_allocvec(&sm).map_err(|_| Error::InvalidFormat("manifest"))?;
+        Ok(Record {
+            id: vault.id,
+            kind: RecordKind::Manifest,
+            version: m.seq,
+            data,
+        })
+    }
+
+    /// Sign and store `m` (record version = its seq), only if the stored
+    /// manifest has seq `expected` (`None`: there is none). A lost race is
+    /// `Error::Conflict`.
+    fn store_manifest(
+        &mut self,
+        vault: &Vault,
+        m: &Manifest,
+        expected: Option<u64>,
+    ) -> Result<SeenManifest> {
+        let rec = self.signed_manifest(vault, m)?;
+        self.store.put_if_version(rec, expected)?;
+        Ok(seen(m))
+    }
+}
+
+/// Whether the vault list `entries` marks `vault` deleted.
+fn listed_deleted(entries: &[VaultListEntry], vault: Id) -> bool {
+    entries
+        .iter()
+        .any(|e| e.vault_id == vault && e.deleted_at.is_some())
 }
 
 /// Beside the exact current record of its item: an older version, or the
@@ -1181,9 +2083,10 @@ mod tests {
         let key = repo.store.get(RecordKind::VaultKey, w.id).unwrap().unwrap();
         repo.store.delete(RecordKind::VaultKey, w.id).unwrap();
         assert_eq!(integrity(repo.vaults()), IntegrityError::VaultMissing);
-        // A device that never saw it cannot tell (signed vault list: M2).
+        // A device that never saw it tells too: the signed vault list
+        // lists it.
         repo.device.last_seen.remove(&w.id);
-        assert_eq!(repo.vaults().unwrap().len(), 1);
+        assert_eq!(integrity(repo.vaults()), IntegrityError::VaultMissing);
         repo.store.put(key).unwrap();
         assert_eq!(repo.vaults().unwrap().len(), 2);
     }
@@ -1563,5 +2466,223 @@ mod tests {
             DeviceState::decode(&[0xFF, 0xFF]),
             Err(Error::InvalidFormat("device state"))
         );
+    }
+
+    /// The version 1 layout of `DeviceState` (headerless postcard), copied
+    /// here so the legacy bytes stay pinned whatever the struct becomes.
+    #[derive(Serialize)]
+    struct DeviceStateV1 {
+        pinned: Option<PinnedAccount>,
+        last_seen: BTreeMap<Id, SeenManifest>,
+    }
+
+    fn fixed_last_seen() -> BTreeMap<Id, SeenManifest> {
+        BTreeMap::from([(
+            Id([1; 16]),
+            SeenManifest {
+                seq: 7,
+                hash: [0xab; 32],
+            },
+        )])
+    }
+
+    fn to_hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    fn from_hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// Version 1 bytes of `{ pinned: None, last_seen: { [1; 16]: (7, [0xab; 32]) } }`.
+    const LEGACY_V1_HEX: &str = concat!(
+        "00",
+        "01",
+        "01010101010101010101010101010101",
+        "07",
+        "abababababababababababababababababababababababababababababababab",
+    );
+
+    #[test]
+    fn legacy_device_state_migrates() {
+        let v1 = DeviceStateV1 {
+            pinned: None,
+            last_seen: fixed_last_seen(),
+        };
+        let bytes = postcard::to_allocvec(&v1).unwrap();
+        assert_eq!(to_hex(&bytes), LEGACY_V1_HEX);
+        let migrated = DeviceState::decode(&from_hex(LEGACY_V1_HEX)).unwrap();
+        assert_eq!(
+            migrated,
+            DeviceState {
+                pinned: None,
+                last_seen: fixed_last_seen(),
+                epoch: 0,
+            }
+        );
+        // With a pinned account too.
+        let (mut repo, v) = fresh(MemoryStore::new());
+        repo.items(&v).unwrap();
+        let device = repo.device_state().clone();
+        let v1 = DeviceStateV1 {
+            pinned: device.pinned.clone(),
+            last_seen: device.last_seen.clone(),
+        };
+        let mut bytes = postcard::to_allocvec(&v1).unwrap();
+        let migrated = DeviceState::decode(&bytes).unwrap();
+        assert_eq!(migrated.pinned, device.pinned);
+        assert_eq!(migrated.last_seen, device.last_seen);
+        assert_eq!(migrated.epoch, 0);
+        // Trailing bytes after a legacy encoding stay refused.
+        bytes.push(0);
+        assert_eq!(
+            DeviceState::decode(&bytes),
+            Err(Error::InvalidFormat("device state"))
+        );
+    }
+
+    /// A version 1 encoding starts with the `Option` tag of `pinned`, 0 or
+    /// 1, so it can never be taken for the `b"ODS"` header (0x4F first).
+    #[test]
+    fn legacy_device_state_never_looks_like_header() {
+        let (repo, _) = fresh(MemoryStore::new());
+        for pinned in [None, repo.device_state().pinned.clone()] {
+            let bytes = postcard::to_allocvec(&DeviceStateV1 {
+                pinned,
+                last_seen: fixed_last_seen(),
+            })
+            .unwrap();
+            assert!(bytes[0] == 0 || bytes[0] == 1);
+            assert_ne!(bytes[0], b'O');
+        }
+    }
+
+    #[test]
+    fn device_state_v2_roundtrip() {
+        let (mut repo, v) = fresh(MemoryStore::new());
+        repo.items(&v).unwrap();
+        let mut device = repo.device_state().clone();
+        device.epoch = 5;
+        let mut bytes = device.encode();
+        assert_eq!(&bytes[..4], b"ODS\x02");
+        assert_eq!(&bytes[..3], b"ODS");
+        assert_eq!(bytes[3], crate::format::DEVICE_STATE_VERSION);
+        assert_eq!(DeviceState::decode(&bytes).unwrap(), device);
+        let empty = DeviceState::default();
+        assert_eq!(DeviceState::decode(&empty.encode()).unwrap(), empty);
+        bytes.push(0);
+        assert_eq!(
+            DeviceState::decode(&bytes),
+            Err(Error::InvalidFormat("device state"))
+        );
+    }
+
+    #[test]
+    fn future_device_state_refused() {
+        let body = &DeviceState::default().encode()[4..];
+        for newer in [3u8, 0xFF] {
+            let mut bytes = b"ODS".to_vec();
+            bytes.push(newer);
+            bytes.extend_from_slice(body);
+            assert_eq!(
+                DeviceState::decode(&bytes),
+                Err(Error::InvalidFormat("device state from a newer version"))
+            );
+        }
+        for bad in [0u8, 1] {
+            let mut bytes = b"ODS".to_vec();
+            bytes.push(bad);
+            bytes.extend_from_slice(body);
+            assert_eq!(
+                DeviceState::decode(&bytes),
+                Err(Error::InvalidFormat("device state"))
+            );
+        }
+        assert_eq!(
+            DeviceState::decode(b"ODS"),
+            Err(Error::InvalidFormat("device state"))
+        );
+    }
+
+    #[test]
+    fn change_password_new_works_old_fails() {
+        let (repo, sk) = Repository::create_account(MemoryStore::new(), "ancien", kdf()).unwrap();
+        let device = repo.device_state().clone();
+        let (mut repo, old_auk) =
+            Repository::unlock_exporting_auk(repo.store, "ancien", &sk, device).unwrap();
+        let v = repo.vaults().unwrap().remove(0);
+        let item = login(&v, "camille.durand@exemple.fr");
+        repo.save_item(&v, item.clone()).unwrap();
+        let before = repo.account().params.clone();
+
+        let new_auk = repo.change_password("ancien", &sk, "nouveau").unwrap();
+        let after = repo.account().params.clone();
+        assert_eq!(after.epoch, before.epoch + 1);
+        assert_eq!(repo.chain().params_epoch, after.epoch);
+        assert_ne!(after.kdf.salt, before.kdf.salt);
+        assert!(after.kdf.is_at_least(&before.kdf));
+        // Same keys: the session and the vault keep working.
+        assert_eq!(after.kem_pub, before.kem_pub);
+        assert_eq!(after.signing_pub, before.signing_pub);
+        assert_eq!(repo.items(&v).unwrap(), vec![item.clone()]);
+        assert_eq!(
+            repo.device_state().pinned.as_ref().unwrap().kdf_floor.salt,
+            after.kdf.salt
+        );
+        let device = repo.device_state().clone();
+        let store = repo.store;
+
+        assert_eq!(
+            Repository::unlock(store.clone(), "ancien", &sk, device.clone()).err(),
+            Some(Error::WrongPassword)
+        );
+        assert_eq!(
+            Repository::unlock_with_auk(store.clone(), &old_auk, device.clone()).err(),
+            Some(Error::WrongPassword)
+        );
+        let mut again =
+            Repository::unlock_with_auk(store.clone(), &new_auk, device.clone()).unwrap();
+        assert_eq!(again.items(&v).unwrap(), vec![item.clone()]);
+        let (mut again, auk) =
+            Repository::unlock_exporting_auk(store, "nouveau", &sk, device).unwrap();
+        assert_eq!(auk.as_bytes(), new_auk.as_bytes());
+        assert_eq!(again.account().params, after);
+        assert_eq!(again.items(&v).unwrap(), vec![item]);
+    }
+
+    #[test]
+    fn change_password_rejects_wrong_current() {
+        let (mut repo, sk) =
+            Repository::create_account(MemoryStore::new(), "ancien", kdf()).unwrap();
+        let params_before = repo.store.list(RecordKind::AccountParams).unwrap();
+        let keyset_before = repo.store.list(RecordKind::Keyset).unwrap();
+        assert_eq!(
+            repo.change_password("faux", &sk, "nouveau").unwrap_err(),
+            Error::WrongPassword
+        );
+        let other = SecretKey::generate().unwrap();
+        assert_eq!(
+            repo.change_password("ancien", &other, "nouveau")
+                .unwrap_err(),
+            Error::WrongPassword
+        );
+        // Nothing written, nothing pinned.
+        assert_eq!(
+            repo.store.list(RecordKind::AccountParams).unwrap(),
+            params_before
+        );
+        assert_eq!(repo.store.list(RecordKind::Keyset).unwrap(), keyset_before);
+        assert_eq!(repo.chain().params_epoch, 1);
+        assert_eq!(repo.account().params.epoch, 1);
+    }
+
+    #[test]
+    fn create_account_pins_epoch_one() {
+        let (repo, _) = Repository::create_account(MemoryStore::new(), "pw", kdf()).unwrap();
+        assert_eq!(repo.account().params.epoch, 1);
+        assert_eq!(repo.chain().params_epoch, 1);
     }
 }

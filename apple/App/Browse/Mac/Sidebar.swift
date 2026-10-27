@@ -483,6 +483,8 @@ enum TagColor {
 /// iCloud account changed.
 struct SyncStatusChip: View {
     let status: SyncStatus
+    /// A refusal opens its safe exits (spec 3.3).
+    @State private var safeExitKind: String?
 
     private var appearance: (text: String, symbol: String, color: Color)? {
         switch status {
@@ -490,12 +492,32 @@ struct SyncStatusChip: View {
         case .error: (status.label, "exclamationmark.triangle.fill", .red)
         case .refused: (status.label, "xmark.shield.fill", .red)
         case .accountChanged: (status.label, "person.crop.circle.badge.exclamationmark", .orange)
+        // Discreet: a sync state, not an error (spec 3.1).
+        case .waitingForServer: (status.label, "icloud.and.arrow.up", .secondary)
         default: nil
         }
     }
 
     var body: some View {
         if let appearance {
+            chip(appearance)
+                .contentShape(Capsule())
+                .onTapGesture {
+                    if case .refused(let kind) = status { safeExitKind = kind }
+                }
+                .accessibilityAddTraits(isRefusal ? .isButton : [])
+                .sheet(item: Binding(get: { safeExitKind.map(RefusedKind.init) }, set: { safeExitKind = $0?.kind })) {
+                    SafeExitChooserSheet(kind: $0.kind)
+                }
+        }
+    }
+
+    private var isRefusal: Bool {
+        if case .refused = status { true } else { false }
+    }
+
+    private func chip(_ appearance: (text: String, symbol: String, color: Color)) -> some View {
+        Group {
             Label {
                 Text(appearance.text).lineLimit(2)
             } icon: {

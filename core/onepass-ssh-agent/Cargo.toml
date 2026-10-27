@@ -18,9 +18,8 @@ data-encoding.workspace = true
 bcrypt-pbkdf = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
 # CRT exponents d mod (p-1) and d mod (q-1) for RSA keys imported from OpenSSH.
 crypto-bigint = { version = "0.7.10", default-features = false, features = ["alloc", "zeroize"] }
-# Peer credentials of socket clients (getpeereid, LOCAL_PEERPID, proc_pidpath,
-# SO_PEERCRED) and the effective uid. Only `peer.rs` calls into it.
-libc = "0.2.191"
+# Kernel credentials of socket clients and the effective uid.
+onepass-peer = { path = "../onepass-peer" }
 
 [dev-dependencies]
 tempfile = "3"

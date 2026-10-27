@@ -268,8 +268,7 @@ fn check_new(new: &NewKey) -> Result<(), CliError> {
 /// otherwise a masked prompt on the terminal.
 fn read_passphrase() -> Result<Zeroizing<String>, CliError> {
     let dev = cfg!(debug_assertions);
-    if dev
-        && std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").as_deref() == Ok("1")
+    if crate::session::env_secrets_allowed()?
         && let Ok(p) = std::env::var("ONEPASS_DEV_SSH_PASSPHRASE")
     {
         return Ok(Zeroizing::new(p));

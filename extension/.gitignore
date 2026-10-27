@@ -3,3 +3,4 @@ dist
 e2e/.tmp
 test-results
 playwright-report
+sbom

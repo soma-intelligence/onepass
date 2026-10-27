@@ -392,16 +392,20 @@ struct ItemDetailView: View {
     private func verifyPassword() {
         guard !password.isEmpty, !checking else { return }
         checking = true
-        let typed = password
+        // Emptied on submission (success or not): the password lives on in a wiped buffer only (R5).
+        let typed = SecretBytes(utf8: password)
+        password = ""
         Task {
-            defer { checking = false }
+            defer {
+                typed.wipe()
+                checking = false
+            }
             do {
                 try await session.verifyMasterPassword(typed)
                 unlockReprompt()
             } catch {
                 repromptError = VaultError(error).localizedMessage
             }
-            password = ""
         }
     }
 
@@ -721,8 +725,15 @@ enum WifiQR {
 
 /// "Rejoindre le réseau", like the reference: a white rounded square centered under the fields,
 /// navy QR with the item icon in its middle, and a menu on its right (Copier l'image, Afficher en
-/// grand, Imprimer). Hidden behind a tap and masked again after 30 s: it carries the password.
+/// grand, Imprimer). Hidden behind a tap and masked again after 30 s, on lock and when the scene
+/// leaves the foreground, and kept masked while the screen is captured: it carries the password.
 private struct WifiQRCard: View {
+    @Environment(AppModel.self) private var model
+    #if os(iOS) || os(visionOS)
+    @Environment(\.isSceneCaptured) private var captured
+    #else
+    private let captured = false
+    #endif
     let item: FfiItem
     let ssid: String
     let payload: String
@@ -770,11 +781,12 @@ private struct WifiQRCard: View {
             try? await Task.sleep(for: .seconds(30))
             if !Task.isCancelled { shown = false }
         }
-        .onDisappear {
-            shown = false
-            large = false
-        }
-        .sheet(isPresented: Binding(get: { large && shown }, set: { large = $0 })) {
+        .onDisappear { conceal() }
+        // Lock, or the scene left the foreground (`VaultSession.concealGeneration`).
+        .onChange(of: model.session.concealGeneration) { conceal() }
+        // Screen captured (iOS, visionOS): masked now, and still masked once the capture ends.
+        .onChange(of: captured) { _, now in if now { conceal() } }
+        .sheet(isPresented: Binding(get: { large && visible }, set: { large = $0 })) {
             VStack(spacing: 18) {
                 Text(ssid).font(.title2.weight(.semibold))
                 QRSquare(item: item, payload: payload, side: 420)
@@ -784,12 +796,20 @@ private struct WifiQRCard: View {
         }
     }
 
+    /// Shown and not captured.
+    private var visible: Bool { shown && !captured }
+
+    private func conceal() {
+        shown = false
+        large = false
+    }
+
     private var qrSquare: some View {
         ZStack {
             QRSquare(item: item, payload: payload, side: 260)
-                .blur(radius: shown ? 0 : 16)
+                .blur(radius: visible ? 0 : 16)
                 .privacySensitive()
-            if !shown {
+            if !visible {
                 Image(systemName: "eye.slash").font(.title).foregroundStyle(Color(red: 0.07, green: 0.12, blue: 0.27))
             }
         }
@@ -798,7 +818,7 @@ private struct WifiQRCard: View {
         .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { shown.toggle() } }
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel(Text("Code QR du réseau \(ssid)"))
-        .accessibilityValue(shown ? Text("affiché") : Text("masqué"))
+        .accessibilityValue(visible ? Text("affiché") : Text("masqué"))
         .accessibilityIdentifier("item.wifiQR")
     }
 

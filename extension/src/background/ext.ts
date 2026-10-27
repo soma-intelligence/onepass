@@ -46,6 +46,11 @@ export interface FrameDetails {
   documentId?: string;
 }
 
+export interface FrameNode extends FrameDetails {
+  frameId: number;
+  parentFrameId: number;
+}
+
 export interface BgExt {
   runtime: {
     id: string;
@@ -68,6 +73,8 @@ export interface BgExt {
   };
   webNavigation: {
     getFrame(details: { tabId: number; frameId: number }): Promise<FrameDetails | null>;
+    /** Every frame of a tab, with its parent (-1 for the top frame). */
+    getAllFrames(details: { tabId: number }): Promise<FrameNode[] | null>;
     onCommitted: Event<(details: { tabId: number; frameId: number; url: string }) => void>;
     /** The document of a frame finished loading. */
     onCompleted: Event<(details: { tabId: number; frameId: number; url: string }) => void>;

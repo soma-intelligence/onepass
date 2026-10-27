@@ -15,7 +15,7 @@ struct AboutSettings: View {
     var body: some View {
         Form {
             Section {
-                Text("OnePass est open source (GPL-3.0)")
+                Text("OnePass est open source (AGPL-3.0)")
                     .accessibilityIdentifier("settings.about.license")
                 LabeledContent("Version") {
                     Text(verbatim: version)

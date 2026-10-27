@@ -363,17 +363,21 @@ struct LockView: View {
 
     // MARK: - Unlock
 
-    /// The password is passed as typed, never trimmed (the core normalizes it). After the first
-    /// password unlock where biometrics could be on, the app offers them once (`AppModel`).
+    /// The password is passed as typed, never trimmed (the core normalizes it). The field is emptied
+    /// on submission, before the check runs, so the view state never outlives it (success or not);
+    /// the password goes into a wipeable buffer at once and crosses the FFI as bytes (the field's own
+    /// `String` cannot be wiped, R5). After the first password unlock where biometrics could be on,
+    /// the app offers them once (`AppModel`): the offer keeps its own wipeable copy until answered.
     private func unlockWithPassword() async {
         guard !password.isEmpty, !unlocking, !lockedOut else { return }
         message = nil
-        let typed = password
+        let typed = SecretBytes(utf8: password)
+        password = ""
+        defer { typed.wipe() }
         let offer = model.biometricOfferDue
         do {
             try await session.unlock(password: typed)
-            password = ""
-            if offer { model.offerBiometrics(password: typed) }
+            if offer { model.offerBiometrics(password: typed.withUnsafeBytes { SecretBytes(copying: $0) }) }
         } catch {
             let failure = VaultError(error)
             switch failure {
@@ -388,7 +392,6 @@ struct LockView: View {
             default:
                 message = failure.localizedMessage
             }
-            password = ""
             fieldFocused = true
         }
     }

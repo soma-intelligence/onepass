@@ -513,7 +513,7 @@ fn wrong_finish_mac_closes() {
 }
 
 /// A dev data directory in the CLI format: `device.bin` (postcard of the
-/// Secret Key and the device state) next to `vault.sqlite`.
+/// Secret Key and the versioned device state bytes) next to `vault.sqlite`.
 fn make_dev_account(dir: &Path, password: &str) {
     use onepass_core::crypto::{DEV_KDF_FLOOR, KdfParams};
     use onepass_core::model::{FieldValue, ItemType, ItemUrl, MatchRule, new_item};
@@ -523,6 +523,7 @@ fn make_dev_account(dir: &Path, password: &str) {
     #[derive(serde::Serialize)]
     struct DeviceFile<'a> {
         secret_key: &'a str,
+        #[serde(with = "onepass_core::format::device_state_bytes")]
         state: &'a DeviceState,
     }
 
@@ -603,9 +604,10 @@ fn dev_source_serves_the_cli_vault() {
 }
 
 /// `device.bin` as the CLI writes it.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 struct DeviceBin {
     secret_key: String,
+    #[serde(with = "onepass_core::format::device_state_bytes")]
     state: onepass_core::repo::DeviceState,
 }
 
@@ -686,4 +688,224 @@ fn dev_writes_persist_device_state_and_detect_rollback() {
         "rollback went unnoticed: {status} {list}"
     );
     assert!(host.wait().success());
+}
+
+const DEV_PASSWORD: &str = "correct horse battery staple";
+
+/// A dev account and a pairing, for the device state tests.
+fn dev_env() -> (Env, PairingRecord) {
+    let env = setup("auto", json!({"source": {"kind": "dev"}}));
+    make_dev_account(&env.data, DEV_PASSWORD);
+    let rec = pair(&env);
+    (env, rec)
+}
+
+/// A session over a new dev host process, unlocked by the environment.
+fn dev_session(env: &Env, rec: &PairingRecord) -> (Host, Channel) {
+    let caller = format!("chrome-extension://{EXT_ID}/");
+    let vars = [
+        ("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1"),
+        ("ONEPASS_PASSWORD", DEV_PASSWORD),
+    ];
+    let mut host = Host::spawn_with(env, &[&caller], &vars);
+    let (pending, hello) = session::ext_hello(rec).unwrap();
+    host.send(&Envelope::Hello(hello));
+    let Envelope::Welcome(welcome) = host.recv() else {
+        panic!("expected welcome")
+    };
+    let (ch, finish) = pending.on_welcome(welcome, now()).unwrap();
+    host.send(&Envelope::Finish(finish));
+    (host, ch)
+}
+
+/// Open the dev account as the CLI does (or another device syncing the
+/// store), run `f`, and rewrite `device.bin` only when `persist`.
+fn cli_style<T>(
+    dir: &Path,
+    persist: bool,
+    f: impl FnOnce(&mut onepass_core::repo::Repository<onepass_core::store::SqliteStore>) -> T,
+) -> T {
+    use onepass_core::crypto::SecretKey;
+    use onepass_core::repo::Repository;
+    use onepass_core::store::SqliteStore;
+
+    let file = device_bin(dir);
+    let key = SecretKey::parse(&file.secret_key).unwrap();
+    let store = SqliteStore::open(&dir.join("vault.sqlite")).unwrap();
+    let mut repo = Repository::unlock(store, DEV_PASSWORD, &key, file.state).unwrap();
+    let out = f(&mut repo);
+    if persist {
+        let new = DeviceBin {
+            secret_key: file.secret_key,
+            state: repo.device_state().clone(),
+        };
+        fs::write(dir.join("device.bin"), postcard::to_allocvec(&new).unwrap()).unwrap();
+    }
+    out
+}
+
+/// Save a new note in the vault at `index` (vaults sorted by id): the
+/// manifest of that vault moves one seq ahead. Returns the vault id.
+fn add_note(
+    repo: &mut onepass_core::repo::Repository<onepass_core::store::SqliteStore>,
+    index: usize,
+    title: &str,
+) -> onepass_core::Id {
+    use onepass_core::model::{FieldValue, ItemType, new_item};
+    let vault = repo.vaults().unwrap().remove(index);
+    let mut item = new_item(ItemType::SecureNote, vault.id, title);
+    item.field_mut("content").unwrap().value = FieldValue::Text("note".into());
+    repo.save_item(&vault, item).unwrap();
+    vault.id
+}
+
+/// Fold the WAL of `vault.sqlite` into the file (another connection may be
+/// open, but idle).
+fn fold_wal(dir: &Path) {
+    let store = onepass_core::store::SqliteStore::open(&dir.join("vault.sqlite")).unwrap();
+    store.compact().unwrap();
+}
+
+/// A consistent copy of `vault.sqlite`: the WAL folded in first.
+fn store_snapshot(dir: &Path) -> Vec<u8> {
+    fold_wal(dir);
+    fs::read(dir.join("vault.sqlite")).unwrap()
+}
+
+/// Put `snapshot` back as `vault.sqlite`, without the WAL of later writes.
+fn store_restore(dir: &Path, snapshot: &[u8]) {
+    for suffix in ["-wal", "-shm"] {
+        let _ = fs::remove_file(dir.join(format!("vault.sqlite{suffix}")));
+    }
+    fs::write(dir.join("vault.sqlite"), snapshot).unwrap();
+}
+
+fn seen_seq(dir: &Path, vault: onepass_core::Id) -> u64 {
+    device_bin(dir).state.last_seen[&vault].seq
+}
+
+fn list_atlas(host: &mut Host, ch: &mut Channel, id: u64) -> Value {
+    request(
+        host,
+        ch,
+        json!({"id": id, "op": "list_for_origin", "ctx": "menu", "origin": ATLAS}),
+    )
+}
+
+#[test]
+fn dev_reads_persist_device_state() {
+    let (env, rec) = dev_env();
+    // The store moves ahead of device.bin (another writer, not persisted).
+    let vault = cli_style(&env.data, false, |repo| add_note(repo, 0, "Atlas Two"));
+    let before = seen_seq(&env.data, vault);
+
+    let (mut host, mut ch) = dev_session(&env, &rec);
+    let list = list_atlas(&mut host, &mut ch, 1);
+    assert!(list["ok"]["items"].is_array(), "{list}");
+    assert!(host.wait().success());
+
+    assert_eq!(seen_seq(&env.data, vault), before + 1, "read not persisted");
+}
+
+#[test]
+fn dev_host_never_regresses_a_cli_advance() {
+    use onepass_core::vault::VaultMeta;
+    let (env, rec) = dev_env();
+    // A second vault, created and persisted by the CLI.
+    cli_style(&env.data, true, |repo| {
+        repo.create_vault(VaultMeta {
+            name: "Second".into(),
+            icon: "folder".into(),
+            color: "blue".into(),
+            travel_safe: false,
+            mcp_access: false,
+        })
+        .unwrap();
+    });
+
+    let (mut host, mut ch) = dev_session(&env, &rec);
+    let vaults = request(&mut host, &mut ch, json!({"id": 1, "op": "vaults"}));
+    let first = vaults["ok"]["vaults"][0]["id"].clone();
+    assert!(first.is_string(), "{vaults}");
+
+    // Between two host operations the CLI advances the other vault.
+    let other = cli_style(&env.data, true, |repo| add_note(repo, 1, "Elsewhere"));
+    let advanced = seen_seq(&env.data, other);
+
+    let saved = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 2, "op": "save_login", "ctx": "save_prompt", "origin": ATLAS,
+               "title": "Atlas Cloud 2", "username": "alex.ops@atlas.dev",
+               "password": "Dev-Pass-0043", "vault_id": first, "rule": "domain",
+               "tags": []}),
+    );
+    assert!(saved["ok"]["item_id"].is_string(), "{saved}");
+    assert!(host.wait().success());
+
+    assert_eq!(
+        seen_seq(&env.data, other),
+        advanced,
+        "the host regressed the last seen manifest"
+    );
+}
+
+#[test]
+fn dev_rollback_after_a_host_read_is_refused() {
+    let (env, rec) = dev_env();
+    let old_store = store_snapshot(&env.data);
+    // The store moves ahead of device.bin; only the host sees it.
+    cli_style(&env.data, false, |repo| add_note(repo, 0, "Atlas Two"));
+
+    let (mut host, mut ch) = dev_session(&env, &rec);
+    let list = list_atlas(&mut host, &mut ch, 1);
+    assert!(list["ok"]["items"].is_array(), "{list}");
+    assert!(host.wait().success());
+
+    // Roll vault.sqlite back to before that write.
+    store_restore(&env.data, &old_store);
+    let (mut host, mut ch) = dev_session(&env, &rec);
+    let status = request(&mut host, &mut ch, json!({"id": 1, "op": "status"}));
+    let list = list_atlas(&mut host, &mut ch, 2);
+    assert!(
+        status["ok"]["locked"] == true || list["err"]["code"] == "internal",
+        "rollback went unnoticed: {status} {list}"
+    );
+    assert!(host.wait().success());
+    // Refused for the rollback, not for a damaged store.
+    assert!(
+        log_text(&env).contains("manifest rollback detected"),
+        "{}",
+        log_text(&env)
+    );
+}
+
+#[test]
+fn dev_host_refreshes_device_state_before_each_operation() {
+    let (env, rec) = dev_env();
+    let old_store = store_snapshot(&env.data);
+
+    let (mut host, mut ch) = dev_session(&env, &rec);
+    let status = request(&mut host, &mut ch, json!({"id": 1, "op": "status"}));
+    assert_eq!(status["ok"]["locked"], false, "{status}");
+
+    // While the host is open, the CLI accepts a newer manifest and persists
+    // it, then vault.sqlite is rolled back under both.
+    cli_style(&env.data, true, |repo| add_note(repo, 0, "Atlas Two"));
+    // The host still holds a connection, so the CLI write stays in the WAL;
+    // fold it so the restore below really drops it.
+    fold_wal(&env.data);
+    store_restore(&env.data, &old_store);
+
+    let list = list_atlas(&mut host, &mut ch, 2);
+    assert_eq!(
+        list["err"]["code"], "internal",
+        "rollback went unnoticed: {list}"
+    );
+    assert!(host.wait().success());
+    assert!(
+        log_text(&env).contains("manifest rollback detected"),
+        "{}",
+        log_text(&env)
+    );
 }

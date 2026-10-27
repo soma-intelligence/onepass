@@ -94,6 +94,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case "is not a valid recovery phrase": String(localized: "Phrase de récupération invalide", bundle: VaultKitStrings.bundle)
         case "is not a valid national number": String(localized: "Numéro invalide", bundle: VaultKitStrings.bundle)
         case "must not be empty": String(localized: "Ne peut pas être vide", bundle: VaultKitStrings.bundle)
+        case "too weak": String(localized: "Trop facile à deviner : allonge-la ou ajoute des mots.", bundle: VaultKitStrings.bundle)
         default: String(localized: "Valeur invalide", bundle: VaultKitStrings.bundle)
         }
     }
@@ -104,6 +105,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case "passkey": String(localized: "Clé d'accès inconnue.", bundle: VaultKitStrings.bundle)
         case "date", "month", "timestamp": String(localized: "Date invalide.", bundle: VaultKitStrings.bundle)
         case "recipe": String(localized: "Réglages du générateur invalides.", bundle: VaultKitStrings.bundle)
+        case "passphrase": String(localized: "Phrase de passe illisible.", bundle: VaultKitStrings.bundle)
         default: importMessage(what) ?? String(localized: "Valeur invalide.", bundle: VaultKitStrings.bundle)
         }
     }
@@ -148,6 +150,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case "signature", "params_unsigned": String(localized: "Une signature est invalide.", bundle: VaultKitStrings.bundle)
         case "params_downgrade": String(localized: "Les paramètres de sécurité du compte ont été affaiblis.", bundle: VaultKitStrings.bundle)
         case "wrong_kind", "wrong_context": String(localized: "Un enregistrement a été déplacé ou substitué.", bundle: VaultKitStrings.bundle)
+        case "epoch_rollback": String(localized: "Une ancienne restauration du coffre a été rejouée.", bundle: VaultKitStrings.bundle)
         default: String(localized: "Le stockage ne correspond pas à ce qui était attendu.", bundle: VaultKitStrings.bundle)
         }
     }

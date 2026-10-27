@@ -21,12 +21,14 @@ use onepass_core::repo::Repository;
 use onepass_core::store::SqliteStore;
 use onepass_core::vault::Vault;
 use onepass_guard::{
-    Approver, AuditLog, AuditRecord, AuditVerification, GuardError, SignedAuditSink, TtyApprover,
-    dev_auto_approver_from_env, head_path, sanitize_for_display, verify_log,
+    Approver, AuditLog, AuditRecord, AuditVerification, ChainStrong, ClientRegistry, GrantStore,
+    GuardError, Limits, LocalAuthStrong, SignedAuditSink, StrongAuth, SystemClock, Throttle,
+    TtyApprover, dev_auto_approver_from_env, dev_strong_from_env, head_path, sanitize_for_display,
+    verify_log,
 };
 use onepass_mcp::{
-    McpTools, Narrowing, Policy, PolicyError, PortError, RepoPort, Scope, VaultInfo, VaultPort,
-    load_policy, save_policy, serve,
+    ClientContext, ClientScopes, McpGuards, McpTools, Narrowing, Policy, PolicyError, PortError,
+    RepoPort, Scope, VaultInfo, VaultPort, load_policy, mcp_client_record, save_policy, serve,
 };
 use zeroize::Zeroizing;
 
@@ -38,6 +40,7 @@ use crate::signer::{RepoSigner, SharedSigner};
 
 const POLICY_FILE: &str = "mcp-policy.json";
 const AUDIT_FILE: &str = "audit.log";
+const GRANTS_FILE: &str = "grants.json";
 
 /// `onepass mcp`: serve by default, or manage the policy and the audit log.
 #[derive(Args)]
@@ -155,6 +158,16 @@ fn load(repo: &Repository<SqliteStore>, ctx: &Ctx) -> Result<Policy, CliError> {
     .map_err(policy_error)
 }
 
+/// Client id of the transitional unidentified client of one server:
+/// `unidentified:mcp-stdio:<pid>-<16 hex>`, never shared by two servers,
+/// so a grant given to one host is never used by another.
+fn transitional_client_id(pid: u32, nonce: [u8; 8]) -> String {
+    format!(
+        "unidentified:mcp-stdio:{pid}-{}",
+        data_encoding::HEXLOWER.encode(&nonce)
+    )
+}
+
 /// The MCP vault whose id, or else name, is `key`; any other vault is
 /// reported as missing.
 fn find_mcp_vault<'a>(mcp: &'a [Vault], key: &str) -> Result<&'a Vault, CliError> {
@@ -246,7 +259,11 @@ fn audit(ctx: &Ctx, verify_only: bool) -> Result<(), CliError> {
         let verification = if path.exists() {
             verify_log(&path, &RepoSigner(&*repo)).map_err(|e| match e {
                 GuardError::Io(kind) => CliError::usage(format!("cannot read audit log: {kind}")),
-                GuardError::Format(_) | GuardError::Signature | GuardError::Tampered(_) => failed(),
+                // `Config` is not produced by `verify_log`; fail closed anyway.
+                GuardError::Format(_)
+                | GuardError::Signature
+                | GuardError::Tampered(_)
+                | GuardError::Config(_) => failed(),
             })?
         } else if head_path(&path).exists() {
             // A head without its log: the log was removed.
@@ -497,6 +514,13 @@ fn serve_stdio(
         Some(a) => Arc::new(a),
         None => Arc::new(TtyApprover::new()),
     };
+    // Strong authentication for reveal_secret and totp_code: Touch ID (or
+    // the macOS session password); never allows when it cannot run.
+    let strong: Arc<dyn StrongAuth> = match dev_strong_from_env().map_err(CliError::usage)? {
+        Some(s) => Arc::new(s),
+        None => Arc::new(ChainStrong(vec![Box::new(LocalAuthStrong::new())])),
+    };
+    let limits = Limits::from_env(Limits::mcp()).map_err(CliError::usage)?;
     let session = Rc::new(RefCell::new(LongSession::open(ctx)?));
     let policy = load(session.borrow().repo(), ctx)?;
     let mcp = session.borrow_mut().with_repo(|repo| mcp_vaults(repo))?;
@@ -528,6 +552,42 @@ fn serve_stdio(
         log,
         signer: SharedSigner(session.clone()),
     };
+    let account_id = session.borrow().repo().account_id().to_string();
+    // Transitional, until the server identifies and pairs its client: the
+    // launching client is one unidentified client (unique to this process,
+    // so no other server shares its grants) paired with every scope
+    // on every MCP vault, so the signed policy alone decides (milestone 7
+    // behavior), while grants, rate limits and strong authentication
+    // already apply.
+    let nonce = onepass_core::crypto::random_array::<8>()
+        .map_err(|_| CliError::usage("random source unavailable"))?;
+    let client = ClientContext {
+        client_id: transitional_client_id(std::process::id(), nonce),
+        label: "MCP client (unidentified)".into(),
+        signed: false,
+        hardened: None,
+    };
+    let scopes: ClientScopes = mcp
+        .iter()
+        .map(|v| (v.id.to_string(), Scope::ALL.into_iter().collect()))
+        .collect();
+    let mut registry = ClientRegistry::empty(&account_id);
+    registry.clients.push(mcp_client_record(
+        &client,
+        serde_json::Value::Null,
+        &scopes,
+        0,
+    ));
+    let grants = GrantStore::open(ctx.data_dir.join(GRANTS_FILE), &account_id);
+    let mut guards = McpGuards::new(
+        client,
+        Box::new(move || Ok(registry.clone())),
+        Arc::new(std::sync::Mutex::new(grants)),
+        Box::new(SharedSigner(session.clone())),
+        strong,
+        Arc::new(SystemClock),
+    );
+    guards.throttle = Throttle::new(limits);
     let mut tools = McpTools::new(
         LockedPort(session.clone()),
         policy,
@@ -535,6 +595,7 @@ fn serve_stdio(
         approver,
         Box::new(sink),
         Some(session.borrow().ctx().data_dir.clone()),
+        guards,
     );
     eprintln!("onepass mcp: ready ({visible} vaults)");
     let stdin = UntilTravelChange {
@@ -552,6 +613,20 @@ fn serve_stdio(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transitional_client_ids_are_per_process() {
+        let id = transitional_client_id(4242, [0xab; 8]);
+        assert_eq!(id, "unidentified:mcp-stdio:4242-abababababababab");
+        assert_ne!(
+            transitional_client_id(4242, [1; 8]),
+            transitional_client_id(4242, [2; 8])
+        );
+        assert_ne!(
+            transitional_client_id(1, [1; 8]),
+            transitional_client_id(2, [1; 8])
+        );
+    }
 
     #[test]
     fn scope_lists() {

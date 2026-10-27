@@ -14,6 +14,8 @@ export interface FillTarget {
   origin: string;
   documentId?: string;
   formRef: string;
+  /** A child frame must have exactly the top frame's origin (the chain, spec C1). */
+  sameOriginAsTop?: boolean;
 }
 
 export type FillValues = Partial<Record<FieldRole, string>>;
@@ -39,7 +41,7 @@ export class Filler {
   ) {}
 
   private async verify(t: FillTarget): Promise<void> {
-    const c = await this.frames.checkFillTarget(t.tabId, t.frameId, t.origin, t.documentId);
+    const c = await this.frames.checkFillTarget(t.tabId, t.frameId, t.origin, t.documentId, t.sameOriginAsTop ? "same_origin" : "same_site");
     if (!c.ok) throw new BgError(c.code);
   }
 

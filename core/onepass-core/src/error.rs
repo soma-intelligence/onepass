@@ -16,6 +16,17 @@ pub enum IntegrityError {
     WrongContext,
     /// A vault this device already read has no key record any more.
     VaultMissing,
+    /// The restore epoch record is older than the one this device accepted,
+    /// missing while this device accepted one, or bound to another account.
+    EpochRollback,
+    /// Account params older than the epoch this device already accepted.
+    ParamsRollback,
+    /// A device list older than the one this device already accepted, a
+    /// fork of it, or none where one was accepted.
+    DeviceListRollback,
+    /// A vault list older than the one this device already accepted, a
+    /// fork of it, or none where one was accepted.
+    VaultListRollback,
 }
 
 impl fmt::Display for IntegrityError {
@@ -33,6 +44,10 @@ impl fmt::Display for IntegrityError {
             Self::WrongKind => "record has an unexpected kind",
             Self::WrongContext => "record is bound to a different context",
             Self::VaultMissing => "a known vault is missing",
+            Self::EpochRollback => "restore epoch rolled back or hidden",
+            Self::ParamsRollback => "account parameters rollback detected",
+            Self::DeviceListRollback => "device list rollback detected",
+            Self::VaultListRollback => "vault list rollback detected",
         };
         f.write_str(s)
     }
@@ -127,6 +142,14 @@ mod tests {
         assert_eq!(
             IntegrityError::VaultMissing.to_string(),
             "a known vault is missing"
+        );
+        assert_eq!(
+            IntegrityError::EpochRollback.to_string(),
+            "restore epoch rolled back or hidden"
+        );
+        assert_eq!(
+            IntegrityError::ParamsRollback.to_string(),
+            "account parameters rollback detected"
         );
     }
 }

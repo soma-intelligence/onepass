@@ -46,10 +46,13 @@ function pair(mlkemSeed: Uint8Array, x25519Secret: Uint8Array): KemKeyPair {
     throw new BridgeError("crypto", "kem seed length");
   }
   const { publicKey, secretKey } = ml_kem1024.keygen(mlkemSeed);
-  return {
-    secret: { mlkem: secretKey, x25519: x25519Secret.slice() },
-    public: concat(publicKey, x25519.getPublicKey(x25519Secret)),
-  };
+  const secret: KemSecret = { mlkem: secretKey, x25519: x25519Secret.slice() };
+  try {
+    return { secret, public: concat(publicKey, x25519.getPublicKey(x25519Secret)) };
+  } catch (e) {
+    wipe(secret.mlkem, secret.x25519);
+    throw e;
+  }
 }
 
 /** Fresh ephemeral key pair. */
@@ -126,9 +129,10 @@ async function encaps(pk: Uint8Array, mlkemSeed: Uint8Array, eph: Uint8Array): P
     // FIPS 203 modulus check of the encapsulation key.
     throw new BridgeError("bad_frame", "kem public key");
   }
-  const ssX = x25519Agree(eph, pkX);
-  const ct = concat(ctM, x25519.getPublicKey(eph));
+  let ssX: Uint8Array | undefined;
   try {
+    ssX = x25519Agree(eph, pkX);
+    const ct = concat(ctM, x25519.getPublicKey(eph));
     return { ct, ss: await combine(ct, pkX, ssM, ssX) };
   } finally {
     wipe(ssM, ssX);
@@ -166,9 +170,10 @@ export function encapsulateDeterministic(
 export async function decapsulate(sk: KemSecret, ct: Uint8Array): Promise<Uint8Array> {
   if (ct.length !== CT_LEN) throw new BridgeError("bad_frame", "kem ciphertext length");
   const ssM = ml_kem1024.decapsulate(ct.subarray(0, MLKEM_CT_LEN), sk.mlkem);
-  const ssX = x25519Agree(sk.x25519, ct.subarray(MLKEM_CT_LEN));
-  const pkX = x25519.getPublicKey(sk.x25519);
+  let ssX: Uint8Array | undefined;
   try {
+    ssX = x25519Agree(sk.x25519, ct.subarray(MLKEM_CT_LEN));
+    const pkX = x25519.getPublicKey(sk.x25519);
     return await combine(ct, pkX, ssM, ssX);
   } finally {
     wipe(ssM, ssX);

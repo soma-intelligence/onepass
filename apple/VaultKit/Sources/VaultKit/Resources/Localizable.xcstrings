@@ -113,6 +113,22 @@
         }
       }
     },
+    "Ce kit plus ton mot de passe maître donnent un accès complet à ton coffre. Imprime-le et range la feuille hors ligne. Ne le photographie jamais et ne le stocke jamais dans le cloud." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This kit plus your master password give full access to your vault. Print it and keep the sheet offline. Never take a photo of it and never store it in the cloud."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce kit plus ton mot de passe maître donnent un accès complet à ton coffre. Imprime-le et range la feuille hors ligne. Ne le photographie jamais et ne le stocke jamais dans le cloud."
+          }
+        }
+      }
+    },
     "Cet export Bitwarden est chiffré. Refais l'export en JSON non chiffré (ou en CSV), puis réessaie." : {
       "localizations" : {
         "en" : {
@@ -545,6 +561,22 @@
         }
       }
     },
+    "Il n'est pas imprimé sur ce kit. Si tu choisis de le garder sur papier, écris-le à la main sur la ligne ci-dessous, jamais dans un fichier ni une photo." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It is not printed on this kit. If you choose to keep it on paper, write it by hand on the line below, never in a file or a photo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il n'est pas imprimé sur ce kit. Si tu choisis de le garder sur papier, écris-le à la main sur la ligne ci-dessous, jamais dans un fichier ni une photo."
+          }
+        }
+      }
+    },
     "Impossible de lire ce compte iCloud. Vérifie ta connexion puis réessaie." : {
       "localizations" : {
         "en" : {
@@ -557,6 +589,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Impossible de lire ce compte iCloud. Vérifie ta connexion puis réessaie."
+          }
+        }
+      }
+    },
+    "Impossible de ranger la Secret Key dans le trousseau de cet appareil. La connexion a été annulée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Secret Key couldn't be stored in this device's keychain. Sign-in was canceled."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de ranger la Secret Key dans le trousseau de cet appareil. La connexion a été annulée."
+          }
+        }
+      }
+    },
+    "Impossible de ranger la Secret Key dans le trousseau de cet appareil. Le coffre n'a pas été créé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Secret Key couldn't be stored in this device's keychain. The vault was not created."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de ranger la Secret Key dans le trousseau de cet appareil. Le coffre n'a pas été créé."
+          }
+        }
+      }
+    },
+    "Imprime ce kit et range la feuille hors ligne, dans un endroit sûr (coffre, tiroir fermé à clé). Ne la photographie jamais et ne la stocke jamais dans le cloud (iCloud Drive, Photos, messageries)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Print this kit and keep the sheet offline, somewhere safe (a safe, a locked drawer). Never take a photo of it and never store it in the cloud (iCloud Drive, Photos, messaging apps)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imprime ce kit et range la feuille hors ligne, dans un endroit sûr (coffre, tiroir fermé à clé). Ne la photographie jamais et ne la stocke jamais dans le cloud (iCloud Drive, Photos, messageries)."
           }
         }
       }
@@ -881,22 +961,6 @@
         }
       }
     },
-    "Ne l'imprime pas. Si tu veux le garder sur papier, écris-le à la main sur la ligne ci-dessous." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Don't print it. If you want it on paper, write it by hand on the line below."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ne l'imprime pas. Si tu veux le garder sur papier, écris-le à la main sur la ligne ci-dessous."
-          }
-        }
-      }
-    },
     "Ne peut pas être vide" : {
       "localizations" : {
         "en" : {
@@ -945,6 +1009,22 @@
         }
       }
     },
+    "Phrase de passe illisible." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unreadable passphrase."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phrase de passe illisible."
+          }
+        }
+      }
+    },
     "Phrase de récupération invalide" : {
       "localizations" : {
         "en" : {
@@ -973,22 +1053,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pour ajouter un nouvel appareil, ouvre OnePass, choisis « J'ai mon Emergency Kit », puis saisis ou scanne la Secret Key et entre ton mot de passe maître."
-          }
-        }
-      }
-    },
-    "Range cette page hors ligne, dans un endroit sûr (coffre, tiroir fermé à clé)." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keep this page offline, somewhere safe (a safe, a locked drawer)."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Range cette page hors ligne, dans un endroit sûr (coffre, tiroir fermé à clé)."
           }
         }
       }
@@ -1105,6 +1169,22 @@
         }
       }
     },
+    "Synchronisation en attente d'iCloud" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync waiting for iCloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synchronisation en attente d'iCloud"
+          }
+        }
+      }
+    },
     "Synchronisation en cours" : {
       "localizations" : {
         "en" : {
@@ -1181,6 +1261,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Trop d'essais. Réessaie après %@."
+          }
+        }
+      }
+    },
+    "Trop facile à deviner : allonge-la ou ajoute des mots." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too easy to guess: make it longer or add words."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trop facile à deviner : allonge-la ou ajoute des mots."
           }
         }
       }
@@ -1313,6 +1409,22 @@
         }
       }
     },
+    "Une ancienne restauration du coffre a été rejouée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An old restore of the vault was replayed."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une ancienne restauration du coffre a été rejouée."
+          }
+        }
+      }
+    },
     "Une erreur inattendue est survenue." : {
       "localizations" : {
         "en" : {
@@ -1341,6 +1453,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Une signature est invalide."
+          }
+        }
+      }
+    },
+    "Une vérification du mot de passe est déjà en cours." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A password check is already in progress."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une vérification du mot de passe est déjà en cours."
           }
         }
       }

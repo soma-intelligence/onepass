@@ -36,6 +36,8 @@ pub enum BlobKind {
     TravelState = 10,
     /// Watch companion payload (milestone 6).
     Companion = 11,
+    /// A frame of the pairing channel (milestone 2b, `pairing::channel`).
+    Pairing = 12,
 }
 
 /// Context a blob is bound to. Opening under any other context fails.
@@ -271,6 +273,7 @@ mod tests {
     #[test]
     fn blob_kind_companion_code() {
         assert_eq!(BlobKind::Companion as u8, 11);
+        assert_eq!(BlobKind::Pairing as u8, 12);
     }
 
     use super::*;

@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBackground } from "../../../src/background/app";
 import type { ChainRunner } from "../../../src/background/chain/driver";
-import { DONE_SETTLE_MS } from "../../../src/background/chain/machine";
+import { UNKNOWN_MS } from "../../../src/background/chain/machine";
 import { BgError } from "../../../src/background/session";
 import { MemoryPairingStore, Store } from "../../../src/background/store";
 import type { FormInfo, PageAnalysis } from "../../../src/shared/messages";
@@ -110,6 +110,13 @@ async function analyze(t: T, url: string, a: PageAnalysis, doc = "doc-1", tabId 
   await t.runner.state(tabId);
 }
 
+/** The content script of a child frame reports an analysis. */
+async function analyzeFrame(t: T, frameId: number, url: string, a: PageAnalysis, doc: string, tabId = 7) {
+  t.ext.setFrame(tabId, frameId, url, doc);
+  await t.ext.send({ type: "page_analysis", analysis: a }, csSender(url, tabId, frameId, { documentId: doc }));
+  await t.runner.state(tabId);
+}
+
 const ops = (t: T) => t.client.requests.map((r) => r.op);
 type Sent = { type: string; kind?: string; url?: string; opts: { frameId?: number; documentId?: string } } & Record<string, unknown>;
 const toTab = (t: T, type: string): Sent[] =>
@@ -140,7 +147,8 @@ describe("chain driver", () => {
     t.ext.complete(7, 0);
     await analyze(t, `${SITE}/home`, page(`${SITE}/home`), "doc-2");
     expect((await t.runner.state(7))?.status).toBe("running");
-    t.clock.t += DONE_SETTLE_MS;
+    // Done once the page had time to build a late form (spec B1).
+    t.clock.t += UNKNOWN_MS;
     const v = await t.runner.state(7);
     expect(v?.status).toBe("done");
     expect(v?.steps.map((s) => s.label)).toEqual(["Identifiant et mot de passe remplis", "Connecté"]);
@@ -171,16 +179,6 @@ describe("chain driver", () => {
     await analyze(t2, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
     expect(ops(t2)).not.toContain("fill_login");
     expect((await t2.runner.state(7))?.status).toBe("running");
-  });
-
-  it("only frame 0 analyses drive the chain", async () => {
-    const t = await setup();
-    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
-    await t.runner.start(7, "it_01");
-    t.ext.setFrame(7, 3, `${SITE}/frame`);
-    await t.ext.send({ type: "page_analysis", analysis: page(`${SITE}/frame`, [loginForm]) }, csSender(`${SITE}/frame`, 7, 3));
-    await t.runner.state(7);
-    expect(ops(t)).not.toContain("fill_login");
   });
 
   it("a commit outside the allowed domains stops the chain (domain)", async () => {
@@ -308,6 +306,26 @@ describe("chain driver", () => {
   });
 });
 
+describe("re-rendered forms (B2)", () => {
+  it("a submit that missed its re-rendered form is sent to the copy, once", async () => {
+    const t = await setup();
+    const send = t.ext.tabs.sendMessage;
+    t.ext.tabs.sendMessage = async (tabId, message, options) => {
+      await send(tabId, message, options);
+      // The form was re-rendered by the fill: the old ref is gone.
+      return (message as { type: string; ref?: string }).type === "submit" && (message as { ref?: string }).ref === "f1" ? { ok: false } : { ok: true };
+    };
+    const userOnly: FormInfo = { ref: "f1", kind: "login", fields: [{ ref: "u1", role: "email" }] };
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userOnly]));
+    await t.runner.start(7, "it_01");
+    expect(toTab(t, "fill")).toHaveLength(1);
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [{ ...userOnly, ref: "f9", fields: [{ ref: "u9", role: "email" }] }]));
+    expect(toTab(t, "submit").map((m) => m.ref)).toEqual(["f1", "f9"]);
+    expect(toTab(t, "fill")).toHaveLength(1);
+    expect((await t.runner.state(7))?.status).toBe("running");
+  });
+});
+
 describe("overlay offer", () => {
   it("on a sign-in page of a site with logins, once per document", async () => {
     const t = await setup();
@@ -319,11 +337,197 @@ describe("overlay offer", () => {
     expect(toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay")).toHaveLength(2);
   });
 
+  const overlays = (t: T) => toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay");
+  const closeOverlay = async (t: T) => {
+    const url = (overlays(t).at(-1) as { url: string }).url;
+    const token = url.slice(url.indexOf("#") + 1);
+    await t.ext.send({ type: "overlay_close", token }, uiSender(`overlay.html#${token}`, 7));
+  };
+  const userForm: FormInfo = { ref: "f1", kind: "login", fields: [{ ref: "u1", role: "email" }] };
+
+  it("overlay_offered_when_sign_in_form_appears_later", async () => {
+    let locked = true;
+    const t = await setup(
+      answerWith({
+        list_for_origin: (r) => {
+          if (locked) throw new BgError("locked");
+          return answerWith()(r);
+        },
+      }),
+    );
+    // The page loads without a form, then builds one while OnePass is locked.
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userForm]));
+    expect(overlays(t)).toHaveLength(0);
+    // Unlocked; the page then shows its password field: a new analysis, offered.
+    locked = false;
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+    expect(overlays(t)).toHaveLength(1);
+  });
+
+  it("a closed overlay stays closed for the rest of the document, whatever forms it cycles", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userForm]));
+    expect(overlays(t)).toHaveLength(1);
+    await closeOverlay(t);
+    // The same form re-rendered (new refs), then another sign-in form: not offered.
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [{ ...userForm, ref: "f7", fields: [{ ref: "u7", role: "email" }] }]));
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+    expect(overlays(t)).toHaveLength(1);
+    // A new document offers again.
+    t.ext.navigate(7, 0, `${SITE}/login`, "doc-2");
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]), "doc-2");
+    expect(overlays(t)).toHaveLength(2);
+  });
+
+  it("an offer the content script could not show is retried by the next analysis of that form", async () => {
+    const t = await setup();
+    const send = t.ext.tabs.sendMessage;
+    let refuse = true;
+    t.ext.tabs.sendMessage = async (tabId, message, options) => {
+      if (refuse && (message as { type: string }).type === "show_frame") throw new Error("no receiving end");
+      return send(tabId, message, options);
+    };
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userForm]));
+    expect(overlays(t)).toHaveLength(0);
+    refuse = false;
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [{ ...userForm, ref: "f7", fields: [{ ref: "u7", role: "email" }] }]));
+    expect(overlays(t)).toHaveLength(1);
+  });
+
   it("not without logins for the site, nor without a sign-in form", async () => {
     const t = await setup();
     await analyze(t, "https://other.test/login", page("https://other.test/login", [loginForm]));
     await analyze(t, `${SITE}/about`, page(`${SITE}/about`), "doc-2");
     expect(toTab(t, "show_frame")).toEqual([]);
+  });
+});
+
+describe("same-origin frames (C1)", () => {
+  const overlays = (t: T) => toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay");
+  const passwordForm: FormInfo = { ref: "f2", kind: "login", fields: [{ ref: "p2", role: "current_password" }] };
+
+  it("same_origin_frame_form_offers_overlay", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    await analyzeFrame(t, 3, `${SITE}/frame`, page(`${SITE}/frame`, [loginForm]), "fdoc-1");
+    // Shown in the top frame's document, never in the child frame.
+    expect(overlays(t).map((m) => m.opts)).toEqual([{ documentId: "doc-1" }]);
+    // A re-analysis of the frame does not offer again.
+    await analyzeFrame(t, 3, `${SITE}/frame`, page(`${SITE}/frame`, [loginForm]), "fdoc-1");
+    expect(overlays(t)).toHaveLength(1);
+  });
+
+  it("chain_fills_same_origin_frame", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    const userOnly: FormInfo = { ref: "f1", kind: "login", fields: [{ ref: "u1", role: "email" }] };
+    await analyzeFrame(t, 3, `${SITE}/frame`, page(`${SITE}/frame`, [userOnly]), "fdoc-1");
+    await t.runner.start(7, "it_01");
+    expect(t.client.requests.find((r) => r.op === "fill_login")).toMatchObject({ origin: SITE, fields: ["username"] });
+    expect(toTab(t, "fill").at(-1)).toMatchObject({ formRef: "f1", origin: SITE, opts: { documentId: "fdoc-1" } });
+    expect(toTab(t, "submit")).toEqual([{ type: "submit", origin: SITE, ref: "f1", opts: { documentId: "fdoc-1" } }]);
+    // A top-frame analysis without a form changes nothing while the frame holds the step.
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    expect((await t.runner.state(7))?.status).toBe("running");
+    // The frame moves to its password step: the chain follows it there.
+    t.ext.navigate(7, 3, `${SITE}/password`, "fdoc-2");
+    t.ext.complete(7, 3);
+    await analyzeFrame(t, 3, `${SITE}/password`, page(`${SITE}/password`, [passwordForm]), "fdoc-2");
+    expect(toTab(t, "fill").at(-1)).toMatchObject({ formRef: "f2", opts: { documentId: "fdoc-2" } });
+    expect(toTab(t, "submit").at(-1)).toMatchObject({ ref: "f2", opts: { documentId: "fdoc-2" } });
+    // Signed in: the frame shows the account page, no form left.
+    t.ext.navigate(7, 3, `${SITE}/home`, "fdoc-3");
+    t.ext.complete(7, 3);
+    await analyzeFrame(t, 3, `${SITE}/home`, page(`${SITE}/home`), "fdoc-3");
+    t.clock.t += UNKNOWN_MS;
+    const v = await t.runner.state(7);
+    expect(v?.status).toBe("done");
+    expect(v?.steps.map((s) => s.label)).toEqual(["Identifiant rempli", "Mot de passe rempli", "Connecté"]);
+    // The overlay stayed in the top frame.
+    expect(overlays(t).every((m) => m.opts.documentId === "doc-1")).toBe(true);
+  });
+
+  it("a provider button in the top frame does not hide the frame's password form from a password chain", async () => {
+    const t = await setup();
+    const google = { provider: "google" as const, ref: "g1" };
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [], { providerButtons: [google] }));
+    await analyzeFrame(t, 3, `${SITE}/frame`, page(`${SITE}/frame`, [loginForm]), "fdoc-1");
+    await t.runner.start(7, "it_01");
+    expect(toTab(t, "fill").at(-1)).toMatchObject({ formRef: "f1", opts: { documentId: "fdoc-1" } });
+  });
+
+  it("a frame of the site nested in a third-party frame is excluded; nested in a frame of the site, it counts", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    t.ext.setFrame(7, 5, "https://widgets.evil.test/embed", "wdoc");
+    t.ext.parents.set("7:6", 5);
+    await analyzeFrame(t, 6, `${SITE}/frame`, page(`${SITE}/frame`, [loginForm]), "fdoc-1");
+    expect(overlays(t)).toEqual([]);
+    await t.runner.start(7, "it_01");
+    expect(ops(t)).not.toContain("fill_login");
+    expect(toTab(t, "fill")).toEqual([]);
+    // The middle frame is of the site: the nested form counts.
+    const u = await setup();
+    await analyze(u, `${SITE}/login`, page(`${SITE}/login`));
+    u.ext.setFrame(7, 5, `${SITE}/shell`, "sdoc");
+    u.ext.parents.set("7:6", 5);
+    await analyzeFrame(u, 6, `${SITE}/frame`, page(`${SITE}/frame`, [loginForm]), "fdoc-1");
+    expect(overlays(u)).toHaveLength(1);
+  });
+
+  it("a frame that moves to another origin while the host answers gets no fill", async () => {
+    let t: T | null = null;
+    t = await setup(
+      answerWith({
+        fill_login: () => {
+          t?.ext.setFrame(7, 3, "https://evil.test/frame", "edoc");
+          return { username: "alex@atlas.dev", password: "Atlas-Pass-1" };
+        },
+      }),
+    );
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    await analyzeFrame(t, 3, `${SITE}/frame`, page(`${SITE}/frame`, [loginForm]), "fdoc-1");
+    await t.runner.start(7, "it_01");
+    expect(ops(t)).toContain("fill_login");
+    expect(toTab(t, "fill")).toEqual([]);
+    expect(toTab(t, "submit")).toEqual([]);
+    expect(JSON.stringify(t.ext.sentToTabs)).not.toContain("Atlas-Pass-1");
+  });
+
+  it("a frame whose document changed since its analysis is not acted on", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    await analyzeFrame(t, 3, `${SITE}/frame`, page(`${SITE}/frame`, [loginForm]), "fdoc-1");
+    // The browser now reports another document in that frame (no commit seen yet).
+    t.ext.setFrame(7, 3, `${SITE}/frame`, "fdoc-9");
+    await t.runner.start(7, "it_01");
+    expect(ops(t)).not.toContain("fill_login");
+    expect(toTab(t, "fill")).toEqual([]);
+  });
+
+  it("same_site_other_origin_frame_excluded", async () => {
+    const t = await setup();
+    const sub = "https://login.atlas-cloud.test";
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    await analyzeFrame(t, 3, `${sub}/frame`, page(`${sub}/frame`, [loginForm]), "fdoc-1");
+    expect(overlays(t)).toEqual([]);
+    await t.runner.start(7, "it_01");
+    await analyzeFrame(t, 3, `${sub}/frame`, page(`${sub}/frame`, [loginForm]), "fdoc-1");
+    expect(ops(t)).not.toContain("fill_login");
+    expect(toTab(t, "fill")).toEqual([]);
+    expect(toTab(t, "submit")).toEqual([]);
+  });
+
+  it("cross_site_frame_still_excluded", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
+    await analyzeFrame(t, 3, "https://evil.test/frame", page("https://evil.test/frame", [loginForm]), "fdoc-1");
+    expect(overlays(t)).toEqual([]);
+    await t.runner.start(7, "it_01");
+    await analyzeFrame(t, 3, "https://evil.test/frame", page("https://evil.test/frame", [loginForm]), "fdoc-1");
+    expect(ops(t)).not.toContain("fill_login");
+    expect(toTab(t, "fill")).toEqual([]);
   });
 });
 

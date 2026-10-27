@@ -5,7 +5,7 @@
 // renderer controls every message field, never `sender` (spec 3). Before
 // every fill the target frame is read again from `webNavigation` (spec 8.4).
 import { parseOrigin, sameSite } from "../shared/domain";
-import type { BgExt, FrameDetails, Sender } from "./ext";
+import type { BgExt, FrameDetails, FrameNode, Sender } from "./ext";
 
 /** A content script sender, as vouched for by the browser. */
 export interface CsContext {
@@ -70,7 +70,7 @@ export type FillRefusal = "insecure_origin" | "origin_mismatch" | "cross_site_fr
 export type FillCheck = { ok: true } | { ok: false; code: FillRefusal };
 
 export class Frames {
-  constructor(private readonly nav: Pick<BgExt["webNavigation"], "getFrame">) {}
+  constructor(private readonly nav: Pick<BgExt["webNavigation"], "getFrame" | "getAllFrames">) {}
 
   private async frame(tabId: number, frameId: number): Promise<FrameDetails | null> {
     try {
@@ -87,6 +87,30 @@ export class Frames {
     return this.frame(tabId, frameId);
   }
 
+  /**
+   * Spec C1: every frame from `frameId` up to the top frame, as the browser
+   * reports them now, has exactly `origin`. A frame of the site nested in a
+   * third-party frame does not pass. Unknown frames or a loop: false.
+   */
+  async ancestorsOfOrigin(tabId: number, frameId: number, origin: string): Promise<boolean> {
+    let all: FrameNode[] | null;
+    try {
+      all = await this.nav.getAllFrames({ tabId });
+    } catch {
+      return false;
+    }
+    if (!all) return false;
+    const byId = new Map(all.map((f) => [f.frameId, f]));
+    let id = frameId;
+    for (let hops = 0; hops <= all.length; hops++) {
+      const f = byId.get(id);
+      if (!f || parseOrigin(f.url)?.origin !== origin) return false;
+      if (id === 0) return true;
+      id = f.parentFrameId;
+    }
+    return false;
+  }
+
   /** Current origin of a frame, or null (gone, about:, data:, ...). */
   async frameOrigin(tabId: number, frameId: number): Promise<string | null> {
     const f = await this.frame(tabId, frameId);
@@ -97,12 +121,17 @@ export class Frames {
    * Spec 8.4 step 2: HTTPS, still the origin (and document, when known)
    * bound when the gesture started, and the top frame or a frame of the
    * same registrable domain as the top frame. No exception (R-10).
+   *
+   * `scope` "same_origin" (the chain, spec C1) narrows a child frame to
+   * exactly the top frame's origin: a subdomain of the same site may be
+   * another service.
    */
   async checkFillTarget(
     tabId: number,
     frameId: number,
     expectedOrigin: string,
     expectedDocumentId?: string,
+    scope: "same_site" | "same_origin" = "same_site",
   ): Promise<FillCheck> {
     const expected = parseOrigin(expectedOrigin);
     if (!expected?.https) return { ok: false, code: "insecure_origin" };
@@ -119,6 +148,7 @@ export class Frames {
       if (!top || !sameSite(top.url, f.url)) return { ok: false, code: "cross_site_frame" };
       // A secure frame inside a plain HTTP page is refused as well.
       if (parseOrigin(top.url)?.https !== true) return { ok: false, code: "insecure_origin" };
+      if (scope === "same_origin" && parseOrigin(top.url)?.origin !== current.origin) return { ok: false, code: "origin_mismatch" };
     }
     return { ok: true };
   }
