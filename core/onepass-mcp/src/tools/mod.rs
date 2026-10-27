@@ -124,7 +124,8 @@ pub(crate) struct Call {
     /// Further targets of a call that touches several items: one audit
     /// entry each, after the one of the fields above.
     pub(crate) more: Vec<(Id, Id, Option<String>)>,
-    /// Approval decision label: `"denied"`, `"once"`, `"session"`,
+    /// Approval decision label: `"denied"`, `"once"`, `"grant_5m"`,
+    /// `"grant_15m"`, `"grant_60m"` (see `onepass_guard::decision_label`),
     /// `"remembered"`, or `"policy"` when no one was asked.
     pub(crate) decision: &'static str,
 }

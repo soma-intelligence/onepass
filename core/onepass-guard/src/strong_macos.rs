@@ -38,6 +38,14 @@ pub(crate) fn classify(success: bool, error: Option<(bool, isize)>) -> StrongOut
     }
 }
 
+/// `(in LAErrorDomain, code)` of `e`.
+fn error_info(e: &NSError) -> (bool, isize) {
+    // SAFETY: `LAErrorDomain` is an immutable NSString constant exported by
+    // the framework, valid for the life of the process.
+    let domain = unsafe { LAErrorDomain };
+    (e.domain().isEqualToString(domain), e.code())
+}
+
 /// Evaluates the policy "device owner authentication" with `reason`,
 /// waiting at most `timeout` for the reply (then the evaluation is cancelled
 /// and the answer is `Denied`).
@@ -55,8 +63,9 @@ pub(crate) fn evaluate(reason: &str, timeout: Duration) -> StrongOutcome {
     let ctx = unsafe { LAContext::new() };
     // SAFETY: `ctx` is a valid context and `policy` one of the defined
     // LAPolicy values; the error out-parameter is handled by the binding.
-    if unsafe { ctx.canEvaluatePolicy_error(policy) }.is_err() {
-        return StrongOutcome::Unavailable;
+    if let Err(e) = unsafe { ctx.canEvaluatePolicy_error(policy) } {
+        // "Cannot run here" codes give Unavailable, anything else Denied.
+        return classify(false, Some(error_info(&e)));
     }
 
     // The reply runs once on a private queue; a full or closed channel only
@@ -66,12 +75,7 @@ pub(crate) fn evaluate(reason: &str, timeout: Duration) -> StrongOutcome {
         // SAFETY: LocalAuthentication passes either null or a valid NSError
         // that stays alive for the duration of this call; it is only read
         // here, never retained beyond it.
-        let error = unsafe { error.as_ref() }.map(|e| {
-            // SAFETY: `LAErrorDomain` is an immutable NSString constant
-            // exported by the framework, valid for the life of the process.
-            let domain = unsafe { LAErrorDomain };
-            (e.domain().isEqualToString(domain), e.code())
-        });
+        let error = unsafe { error.as_ref() }.map(error_info);
         let _ = tx.try_send(classify(success.as_bool(), error));
     });
     let text = NSString::from_str(&reason);

@@ -23,8 +23,9 @@ mod strong;
 mod strong_macos;
 
 pub use approval::{
-    ApprovalRequest, Approver, CHALLENGE_ALPHABET, Decision, DevAutoApprover, Surface, Target,
-    TtyApprover, challenge_code, dev_auto_approver_from_env, parse_answer, render_prompt,
+    ApprovalRequest, Approver, CHALLENGE_ALPHABET, Decision, DevAutoApprover, GRANT_CHOICES,
+    Surface, Target, TtyApprover, challenge_code, decision_label, dev_auto_approver_from_env,
+    parse_answer, render_prompt,
 };
 pub use audit::{
     AuditEntry, AuditLog, AuditRecord, AuditSink, AuditVerification, OUTCOME_CLIENT_COOLING_DOWN,
@@ -45,7 +46,7 @@ pub use grants::{
     DEFAULT_GRANT_TTL, GRANTS_DOMAIN, Grant, GrantCheck, GrantRequest, GrantStore, MAX_GRANT_TTL,
     Revoke, RevokeOutcome, RevokedGrant,
 };
-pub use limits::{Admit, Kind, Limits, PromptGate, Throttle};
+pub use limits::{Admit, Gated, Kind, LIMIT_ENV_VARS, Limits, PromptGate, Throttle};
 pub use signed::{open_config, seal_config};
 pub use strong::{
     ChainStrong, DevStrong, FallbackStrong, LOCAL_AUTH_TIMEOUT, LocalAuthStrong, StrongAuth,
@@ -54,10 +55,12 @@ pub use strong::{
 
 use std::fmt;
 
-/// Test doubles: a scripted approver and a hand-driven clock.
+/// Test doubles: a scripted approver, a hand-driven clock and a fixed
+/// strong-authentication answer.
 pub mod testing {
     pub use crate::approval::testing::*;
     pub use crate::clock::testing::FakeClock;
+    pub use crate::strong::testing::dev_strong;
 }
 
 /// Signs and verifies local data with a key owned by the caller (for example

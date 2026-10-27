@@ -297,7 +297,10 @@ fn session_grant_is_per_key_and_exe() {
     assert!(is_signature(&f.sign(KeyType::EcdsaP256, "/usr/bin/ssh")));
     assert_eq!(f.asked(), 3);
     let decisions: Vec<String> = f.audit.entries().into_iter().map(|e| e.decision).collect();
-    assert_eq!(decisions, ["session", "remembered", "session", "session"]);
+    assert_eq!(
+        decisions,
+        ["grant_5m", "remembered", "grant_5m", "grant_5m"]
+    );
 
     // An unidentified executable is never remembered.
     let mut conn = ConnState::default();

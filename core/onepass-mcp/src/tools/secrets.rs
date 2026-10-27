@@ -24,7 +24,7 @@ use onepass_core::model::{
 use onepass_core::reference::{SecretRef, otp_field_of};
 use onepass_core::totp::{TotpConfig, parse_otpauth, seconds_remaining, totp_from_secret};
 use onepass_guard::{
-    ApprovalRequest, Decision, MAX_GRANT_TTL, Surface, Target, sanitize_for_display,
+    ApprovalRequest, Decision, MAX_GRANT_TTL, Surface, Target, decision_label, sanitize_for_display,
 };
 use serde_json::{Map, Value, json};
 use std::fs::{self, OpenOptions};
@@ -281,8 +281,9 @@ impl<P: VaultPort> McpTools<P> {
                 Err(Refusal::Denied)
             }
             Decision::AllowFor(d) if key.is_some() => {
-                call.decision = "session";
-                let until = Instant::now() + d.min(MAX_GRANT_TTL);
+                let d = d.min(MAX_GRANT_TTL);
+                call.decision = decision_label(&Decision::AllowFor(d));
+                let until = Instant::now() + d;
                 self.grants.extend(key.map(|k| (k, until)));
                 Ok(())
             }

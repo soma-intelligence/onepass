@@ -157,7 +157,7 @@ fn session_grant_reused_for_identical_request() {
     }
     assert_eq!(a.calls().len(), 1);
     let decisions: Vec<String> = audit.entries().into_iter().map(|e| e.decision).collect();
-    assert_eq!(decisions, ["session", "remembered"]);
+    assert_eq!(decisions, ["grant_5m", "remembered"]);
 }
 
 #[test]
@@ -480,7 +480,7 @@ fn fill_template_session_grant_follows_the_placeholders() {
         format!("A={GITHUB_USER}")
     );
     let decisions: Vec<String> = audit.entries().into_iter().map(|e| e.decision).collect();
-    assert_eq!(decisions, ["session", "remembered", "denied"]);
+    assert_eq!(decisions, ["grant_5m", "remembered", "denied"]);
 }
 
 #[test]

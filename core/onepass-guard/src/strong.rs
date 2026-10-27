@@ -117,8 +117,9 @@ impl StrongAuth for ChainStrong {
 /// Fixed answer for end-to-end tests (debug builds only).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DevStrong {
-    /// True for `allow`, false for `deny`.
-    pub allow: bool,
+    /// True for `allow`, false for `deny`. Private: built only by
+    /// [`dev_strong_from_env`] (and `testing::dev_strong` in tests).
+    allow: bool,
 }
 
 impl StrongAuth for DevStrong {
@@ -154,6 +155,16 @@ pub(crate) fn parse_dev_strong(
 pub fn dev_strong_from_env() -> Result<Option<DevStrong>, String> {
     let value = std::env::var("ONEPASS_DEV_STRONG_AUTH").ok();
     parse_dev_strong(value.as_deref(), cfg!(debug_assertions))
+}
+
+/// Test helpers.
+pub mod testing {
+    use super::DevStrong;
+
+    /// A fixed strong-authentication answer, for tests of other crates.
+    pub fn dev_strong(allow: bool) -> DevStrong {
+        DevStrong { allow }
+    }
 }
 
 #[cfg(test)]

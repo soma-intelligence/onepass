@@ -15,7 +15,9 @@ use onepass_core::Id;
 use onepass_core::model::{FieldValue, Item, ItemType};
 use onepass_core::repo::Repository;
 use onepass_core::store::RecordStore;
-use onepass_guard::{ApprovalRequest, Approver, AuditEntry, AuditSink, Decision, Surface, Target};
+use onepass_guard::{
+    ApprovalRequest, Approver, AuditEntry, AuditSink, Decision, Surface, Target, decision_label,
+};
 use onepass_peer::effective_uid;
 use zeroize::Zeroizing;
 
@@ -466,9 +468,9 @@ impl<K: KeySource> Agent<K> {
                 }
                 Decision::AllowOnce => "once",
                 Decision::AllowFor(d) if rememberable => {
-                    self.grants
-                        .insert(grant_key, Instant::now() + d.min(self.config.remember_for));
-                    "session"
+                    let d = d.min(self.config.remember_for);
+                    self.grants.insert(grant_key, Instant::now() + d);
+                    decision_label(&Decision::AllowFor(d))
                 }
                 Decision::AllowFor(_) => "once",
             }

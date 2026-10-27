@@ -5,6 +5,7 @@
 #![allow(unsafe_code)]
 
 use crate::display::sanitize_for_display;
+use crate::grants::{DEFAULT_GRANT_TTL, MAX_GRANT_TTL};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
@@ -76,10 +77,25 @@ pub enum Decision {
 /// Durations offered at the prompt: answer suffix and duration. `s` is the
 /// default grant (5 minutes), `s60` the ceiling.
 pub const GRANT_CHOICES: [(&str, Duration); 3] = [
-    ("s", Duration::from_secs(5 * 60)),
+    ("s", DEFAULT_GRANT_TTL),
     ("s15", Duration::from_secs(15 * 60)),
-    ("s60", Duration::from_secs(60 * 60)),
+    ("s60", MAX_GRANT_TTL),
 ];
+
+/// Audit label of a decision: `denied`, `once`, or `grant_<n>m` for a grant
+/// of one of the [`GRANT_CHOICES`] durations (`grant` for any other).
+pub fn decision_label(decision: &Decision) -> &'static str {
+    match decision {
+        Decision::Deny => "denied",
+        Decision::AllowOnce => "once",
+        Decision::AllowFor(d) => match d.as_secs() {
+            300 => "grant_5m",
+            900 => "grant_15m",
+            3600 => "grant_60m",
+            _ => "grant",
+        },
+    }
+}
 
 /// Asks the user (or a stand-in) to approve a request.
 pub trait Approver: Send + Sync {
@@ -448,6 +464,23 @@ mod tests {
         assert_eq!(parse_answer("kq  s", "kq", true), Decision::Deny);
         // An empty expected code never matches.
         assert_eq!(parse_answer("", "", true), Decision::Deny);
+    }
+
+    #[test]
+    fn grant_choices_follow_the_grant_limits_and_have_labels() {
+        assert_eq!(GRANT_CHOICES[0].1, DEFAULT_GRANT_TTL);
+        assert_eq!(GRANT_CHOICES[2].1, MAX_GRANT_TTL);
+        let labels: Vec<_> = GRANT_CHOICES
+            .iter()
+            .map(|(_, d)| decision_label(&Decision::AllowFor(*d)))
+            .collect();
+        assert_eq!(labels, ["grant_5m", "grant_15m", "grant_60m"]);
+        assert_eq!(decision_label(&Decision::Deny), "denied");
+        assert_eq!(decision_label(&Decision::AllowOnce), "once");
+        assert_eq!(
+            decision_label(&Decision::AllowFor(Duration::from_secs(1))),
+            "grant"
+        );
     }
 
     #[test]
