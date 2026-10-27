@@ -122,6 +122,8 @@ final class NearbyLoader {
 
     private(set) var phase: Phase = .idle
     private(set) var items: [NearbyItem] = []
+    /// Where the last search started from (the iPhone home card's map).
+    private(set) var origin: CLLocationCoordinate2D?
 
     /// The summaries to list, the distance first in their subtitle ("à 350 m · camille@exemple.fr").
     var summaries: [FfiItemSummary] {
@@ -133,12 +135,13 @@ final class NearbyLoader {
         }
     }
 
-    func load(_ session: VaultSession) async {
+    func load(_ session: VaultSession, within radius: Double = LocationIndex.nearbyRadius) async {
         if items.isEmpty { phase = .locating }
         do {
             let location = try await LocationAccess.shared.currentLocation()
-            let origin = GeoPoint(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
-            items = try await session.nearbyItems(from: origin)
+            origin = location.coordinate
+            let point = GeoPoint(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
+            items = try await session.nearbyItems(from: point, within: radius)
             phase = .ready
         } catch let failure as LocationAccess.Failure {
             items = []

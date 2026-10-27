@@ -210,6 +210,16 @@
         }
       }
     },
+    "%lld dans un rayon de %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld within %@"
+          }
+        }
+      }
+    },
     "%lld date(s) illisible(s), gardée(s) en texte" : {
       "localizations" : {
         "en" : {
@@ -790,6 +800,16 @@
         }
       }
     },
+    "Afficher la carte" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Map"
+          }
+        }
+      }
+    },
     "Afficher le code" : {
       "localizations" : {
         "en" : {
@@ -806,6 +826,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Password"
+          }
+        }
+      }
+    },
+    "Afficher sur l'accueil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show on Home"
           }
         }
       }
@@ -2910,6 +2940,16 @@
         }
       }
     },
+    "Déplier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand"
+          }
+        }
+      }
+    },
     "Déplié" : {
       "localizations" : {
         "en" : {
@@ -4830,6 +4870,16 @@
         }
       }
     },
+    "Masquer la carte" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Map"
+          }
+        }
+      }
+    },
     "Masquer le code" : {
       "localizations" : {
         "en" : {
@@ -4996,6 +5046,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "My Account"
+          }
+        }
+      }
+    },
+    "Mon score de sécurité OnePass : %lld sur 100." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "My OnePass security score: %lld out of 100."
           }
         }
       }
@@ -5660,6 +5720,16 @@
         }
       }
     },
+    "Partager mon score" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share My Score"
+          }
+        }
+      }
+    },
     "Partager…" : {
       "localizations" : {
         "en" : {
@@ -5926,6 +5996,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Primary"
+          }
+        }
+      }
+    },
+    "Profil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profile"
           }
         }
       }
@@ -6210,6 +6290,16 @@
         }
       }
     },
+    "Replier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse"
+          }
+        }
+      }
+    },
     "Replié" : {
       "localizations" : {
         "en" : {
@@ -6366,6 +6456,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Back"
+          }
+        }
+      }
+    },
+    "Rien dans un rayon de %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing within %@"
           }
         }
       }
@@ -8606,6 +8706,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nearby"
+          }
+        }
+      }
+    },
+    "À proximité, Archive et Supprimés" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nearby, Archive and Recently Deleted"
           }
         }
       }
