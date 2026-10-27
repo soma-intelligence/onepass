@@ -135,6 +135,23 @@ impl Session {
         })
     }
 
+    /// Whether "keep this device" has anything to push over the server's
+    /// (a fork, a vault in alert, or one the server went back on): offer or
+    /// re-issue the exit only then. False while another device's newer
+    /// write is not fully served yet. A read: nothing is written.
+    pub fn keep_needed(&self) -> Result<bool, OnePassError> {
+        let guard = self.guard();
+        let repo = guard.as_ref().ok_or(OnePassError::Locked)?;
+        Ok(repo.keep_needed()?)
+    }
+
+    /// Forget the sync health of every vault, after the owner chose to:
+    /// the way out of an unreadable health map (`sync_health` failing) that
+    /// discards no data. The next rounds recount.
+    pub fn reset_sync_health(&self) -> Result<(), OnePassError> {
+        self.with(|repo| Ok(repo.reset_sync_health()?))
+    }
+
     /// The end of a sync round (after fetch, rebase and push) at `now`,
     /// Unix seconds: counts one round for every vault still behind.
     pub fn note_sync_round(&self, now: i64) -> Result<(), OnePassError> {

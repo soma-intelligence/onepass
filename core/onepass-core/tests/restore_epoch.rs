@@ -806,3 +806,64 @@ fn take_server_refused_keeps_local_writes() {
     assert_eq!(users(&b.items()), vec!["x", "z"]);
     assert_eq!(b.repo().restore_epoch(), None);
 }
+
+#[test]
+fn reissued_keep_never_erases_newer_incomplete_write() {
+    let mut server = Server::default();
+    let (mut a, mut c, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let p = items[0].vault_id;
+    let seq2 = server.get(RecordKind::Manifest, p).unwrap();
+    a.save(&login(p, "y", T0 + 1));
+    round(&mut server, &mut a, T0).unwrap();
+    round(&mut server, &mut c, T0).unwrap();
+
+    // The server goes back to seq 2; A sees it and keeps its copy.
+    server.replay(seq2);
+    pull(&server, &mut a);
+    assert_eq!(users(&a.items()), vec!["x", "y"]);
+    assert!(a.repo().keep_needed().unwrap());
+    a.repo()
+        .issue_restore_epoch_from_local(EpochReason::KeepThisDevice)
+        .unwrap();
+
+    // Before A pushes, C writes Personnel again (restoring the server's
+    // copy and adding its own record), but the server does not serve C's
+    // new record yet.
+    let z = login(p, "z", T0 + 2);
+    c.save(&z);
+    round(&mut server, &mut c, T0 + 10).unwrap();
+    let blob = server.item_blob(z.id, 1);
+    let rec = server.get(RecordKind::Item, blob).unwrap();
+    server.withhold(RecordKind::Item, blob);
+
+    // A's epoch cannot ship: withdrawn, Personnel held on A's copy.
+    assert_eq!(round(&mut server, &mut a, T0 + 20), Err(Error::Conflict));
+    assert_eq!(a.repo().restore_epoch(), None);
+    assert_eq!(a.store().vaults_needing_rebase().unwrap(), vec![p]);
+    // Nothing for "keep this device" to do: the rebase settles it.
+    assert!(!a.repo().keep_needed().unwrap());
+
+    // Re-issued anyway, it still never pushes A's copy over C's write.
+    a.repo()
+        .issue_restore_epoch_from_local(EpochReason::KeepThisDevice)
+        .unwrap();
+    assert_eq!(a.store().vaults_needing_rebase().unwrap(), vec![p]);
+    assert!(
+        outbox(&a)
+            .iter()
+            .all(|(ch, _)| ch.kind != RecordKind::Manifest && ch.kind != RecordKind::Item)
+    );
+
+    // C's record arrives: the rebase merges onto C's state, C's write
+    // survives on both devices.
+    server.replay(rec);
+    let _ = round(&mut server, &mut a, T0 + 60);
+    round(&mut server, &mut a, T0 + 70).unwrap();
+    round(&mut server, &mut c, T0 + 70).unwrap();
+    settle(&mut server, &mut [&mut a, &mut c], T0 + 120);
+    for dev in [&mut a, &mut c] {
+        assert_eq!(users(&dev.items()), vec!["x", "y", "z"]);
+        assert_eq!(health(dev, p), VaultSyncHealth::Ok);
+        assert_eq!(outbox(dev), vec![]);
+    }
+}

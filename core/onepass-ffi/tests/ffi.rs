@@ -1816,3 +1816,25 @@ fn byte_variants_refuse_invalid_utf8() {
     );
     assert!(!has_account(db_path(dir.path())).unwrap());
 }
+
+#[test]
+fn keep_needed_and_reset_sync_health() {
+    let fx = fixture();
+    assert!(!fx.session.keep_needed().unwrap());
+    // The server went back: keeping this device's copy is useful.
+    let (_, _, _handle) = rolled_back_server(&fx);
+    assert!(titles(&fx).contains(&"Exemple".to_string()));
+    assert!(matches!(
+        health_of(&fx),
+        FfiHealthState::ServerBehind { .. }
+    ));
+    assert!(fx.session.keep_needed().unwrap());
+    // Forgetting the health discards nothing: the copy is still served
+    // (and queued again for the server), the next rounds recount.
+    fx.session.reset_sync_health().unwrap();
+    assert_eq!(health_of(&fx), FfiHealthState::Ok);
+    assert!(titles(&fx).contains(&"Exemple".to_string()));
+    fx.session.lock();
+    assert_eq!(fx.session.keep_needed(), Err(OnePassError::Locked));
+    assert_eq!(fx.session.reset_sync_health(), Err(OnePassError::Locked));
+}

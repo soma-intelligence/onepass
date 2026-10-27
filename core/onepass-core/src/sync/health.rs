@@ -75,6 +75,17 @@ impl Repository<SyncStore> {
         checked
     }
 
+    /// Whether the safe exit "keep this device"
+    /// (`issue_restore_epoch_from_local`) has anything to push over the
+    /// server's: a fork, a vault in alert, or one the server went back on.
+    /// False while the only trouble is another device's newer write not
+    /// fully served yet (the rebase settles it; an epoch issued then would
+    /// be withdrawn), so the app offers or re-issues the exit only when it
+    /// is useful.
+    pub fn keep_needed(&self) -> Result<bool> {
+        self.store.keep_needed()
+    }
+
     /// Forget the sync health of every vault, after the owner chose to:
     /// each reads `Ok` until the next rounds find it behind again or in
     /// alert (a fork shows again on the next read). Discards no data: the

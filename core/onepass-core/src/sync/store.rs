@@ -985,23 +985,48 @@ impl SyncStore {
         self.read(health_in)
     }
 
-    /// The vaults whose copy "keep this device" pushes over the server's:
-    /// those in alert (a fork, or behind past the thresholds), and those
-    /// the server went back on (its `base` manifest older than the copy,
-    /// or gone). A vault behind because the server's state is newer but
-    /// incomplete is not one: another device's write is there, the vault
-    /// stays held on its copy until the rebase merges onto it.
+    /// The vaults whose copy "keep this device" pushes over the server's.
+    ///
+    /// A vault held for a rebase (`vaults_needing_rebase`: the server's
+    /// manifest moved past the one the local copy was built on) is one only
+    /// when it is a fork (`HealthEntry::fork`): otherwise another device's
+    /// newer write is there, maybe incomplete, and the vault stays held on
+    /// its copy until the rebase merges onto it. Any other vault is one when
+    /// it is in alert or when the server went back on it: its `base`
+    /// manifest is gone or older than the copy this device serves (its
+    /// pending manifest, else its kept one). The health entry's `seq` is
+    /// not used: after a first keep it is the epoch head, above any honest
+    /// server state.
     pub(crate) fn keep_targets(&self) -> Result<Vec<Id>> {
         self.read(|c| {
+            let held = held_vaults(c)?;
             let mut out = Vec::new();
             for (v, e) in health_in(c)? {
-                let older = base_manifest(c, v)?.is_none_or(|(version, _)| version < e.seq);
+                if held.contains(&v) {
+                    if e.fork {
+                        out.push(v);
+                    }
+                    continue;
+                }
+                let older = match copy_manifest_version(c, v)? {
+                    Some(copy) => base_manifest(c, v)?.is_none_or(|(version, _)| version < copy),
+                    None => false,
+                };
                 if e.alert || older {
                     out.push(v);
                 }
             }
             Ok(out)
         })
+    }
+
+    /// Whether "keep this device" has anything to do: a vault it would push
+    /// over the server's (`keep_targets`: every fork, every other vault in
+    /// alert or that the server went back on). False while the only
+    /// trouble is a newer server state still incomplete: the rebase settles
+    /// it, and an epoch issued then would be withdrawn.
+    pub(crate) fn keep_needed(&self) -> Result<bool> {
+        Ok(!self.keep_targets()?.is_empty())
     }
 
     /// Replace the entries of `vaults` by fresh ones for the copy at
@@ -1615,6 +1640,34 @@ fn base_manifest(conn: &Connection, vault: Id) -> Result<Option<(u64, Vec<u8>)>>
     .transpose()
 }
 
+/// The version of the copy of `vault` this device serves over the
+/// server's: its pending manifest, else its kept one.
+fn copy_manifest_version(conn: &Connection, vault: Id) -> Result<Option<u64>> {
+    let code = RecordKind::Manifest.code();
+    let pending: Option<i64> = conn
+        .query_row(
+            "SELECT version FROM pending WHERE kind = ?1 AND id = ?2 AND data IS NOT NULL",
+            params![code, &vault.0[..]],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(store_err)?;
+    let version = match pending {
+        Some(v) => Some(v),
+        None => conn
+            .query_row(
+                "SELECT version FROM kept WHERE kind = ?1 AND id = ?2",
+                params![code, &vault.0[..]],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(store_err)?,
+    };
+    version
+        .map(|v| u64::try_from(v).map_err(|_| Error::InvalidFormat("record version")))
+        .transpose()
+}
+
 fn has_pending_manifest(conn: &Connection, vault: Id) -> Result<bool> {
     conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM pending WHERE kind = ?1 AND id = ?2 AND data IS NOT NULL)",
@@ -1960,14 +2013,22 @@ impl RecordStore for SyncStore {
             }
             VaultEvent::CaughtUp => {
                 // The rebase verified the server's newer state: a clean
-                // round, settled like the others.
+                // round, settled like the others. The device's copy is now
+                // built on that state, so it is what the server must keep
+                // serving: an older copy's seq (or the head of an epoch
+                // that was withdrawn) no longer applies.
                 delete_kept(&tx, vault)?;
+                let base = base_manifest(&tx, vault)?.map(|(version, _)| version);
                 update_health_lenient(&tx, |map| match map.get_mut(&vault) {
-                    Some(e) if !e.clean => {
+                    Some(e) => {
+                        if let Some(version) = base {
+                            e.seq = version;
+                        }
+                        e.awaiting = false;
                         e.clean = true;
                         true
                     }
-                    _ => false,
+                    None => false,
                 })?;
             }
             VaultEvent::Alert { seq, cause } => {
