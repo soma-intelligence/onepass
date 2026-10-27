@@ -241,11 +241,11 @@ onepass/
 | M1 | Rust core, crypto, 26 item types, dev CLI | Done |
 | M2 | Apple apps, unlock, CloudKit sync | Done (real iCloud verification pending) |
 | M3 | System AutoFill, passkeys, one-time codes | Done |
-| M4 | Browser extension, encrypted native messaging | Done (Safari packaging pending) |
+| M4 | Browser extension, encrypted native messaging | Done (Safari extension in the Mac app, Debug builds only until the app serves the bridge) |
 | M5 | Watchtower, import, export, signed backups | Done in core and CLI, app UI in progress |
 | M6 | Apple Watch, Vision Pro, widgets, Shortcuts | Done |
 | M7 | MCP server, SSH agent, Travel Mode | Done in CLI |
-| M2b | QR device linking, signed device list, revocation, public computer mode | Planned |
+| M2b | QR device linking, signed device list, revocation, public computer mode | Done in core |
 | M8 | External audit, public launch | Planned |
 | Later | Self-hosted server, sharing and organizations, web app (WASM), recovery codes | Planned |
 
