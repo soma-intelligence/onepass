@@ -45,6 +45,7 @@ use crate::manifest::{
     record_hash, sign_manifest, verify_manifest,
 };
 use crate::model::Item;
+use crate::model::events::EventKind;
 use crate::store::{Record, RecordKind, RecordStore};
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
@@ -467,12 +468,20 @@ impl<S: RecordStore> Repository<S> {
 
     /// Put the item in the trash: a new version with `trashed_at` set.
     pub fn trash_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
-        self.update(vault, item_id, |item, now| item.trashed_at = Some(now))
+        self.update(vault, item_id, |item, now| {
+            item.trashed_at = Some(now);
+            item.record(now, EventKind::Trashed);
+        })
     }
 
     /// Archive the item: a new version with `archived` set.
     pub fn archive_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
-        self.update(vault, item_id, |item, _| item.archived = true)
+        self.update(vault, item_id, |item, now| {
+            if !item.archived {
+                item.record(now, EventKind::Archived);
+            }
+            item.archived = true;
+        })
     }
 
     /// Move an item to another vault: the record re-sealed for `to`
@@ -1217,12 +1226,12 @@ mod tests {
         in_b.vault_id = b.id;
         // Duplicated, never lost: both vaults load and list the item.
         assert_eq!(repo.items(&a).unwrap(), vec![item.clone()]);
-        assert_eq!(repo.items(&b).unwrap(), vec![in_b.clone()]);
+        assert_eq!(no_events(repo.items(&b).unwrap()), vec![in_b.clone()]);
 
         // Moving again heals it: the copy in `b` is replaced, `a` drops it.
         repo.move_item(item.id, &a, &b).unwrap();
         assert_eq!(repo.items(&a).unwrap(), vec![]);
-        assert_eq!(repo.items(&b).unwrap(), vec![in_b]);
+        assert_eq!(no_events(repo.items(&b).unwrap()), vec![in_b]);
         assert_eq!(repo.store.list(RecordKind::Item).unwrap().len(), 1);
     }
 
@@ -1377,7 +1386,7 @@ mod tests {
         let mut moved = winner;
         moved.vault_id = b.id;
         assert_eq!(reader.items(&a).unwrap(), vec![]);
-        assert_eq!(reader.items(&b).unwrap(), vec![moved]);
+        assert_eq!(no_events(reader.items(&b).unwrap()), vec![moved]);
         assert_eq!(reader.store.list(RecordKind::Item).unwrap().len(), 1);
     }
 
@@ -1455,6 +1464,16 @@ mod tests {
         assert_eq!(repo.store.list(RecordKind::Item).unwrap().len(), 1);
     }
 
+    /// Items without their timeline: a move records one event (its time is
+    /// the clock's).
+    fn no_events(mut items: Vec<Item>) -> Vec<Item> {
+        for i in &mut items {
+            i.events
+                .retain(|e| !matches!(e.kind, EventKind::Moved { .. }));
+        }
+        items
+    }
+
     fn vault_of<S: RecordStore>(repo: &Repository<S>, id: Id) -> Vault {
         repo.vaults()
             .unwrap()
@@ -1476,7 +1495,7 @@ mod tests {
         assert_eq!(repo.items(&a).unwrap(), vec![stay]);
         let mut expected = item.clone();
         expected.vault_id = b.id;
-        assert_eq!(repo.items(&b).unwrap(), vec![expected]);
+        assert_eq!(no_events(repo.items(&b).unwrap()), vec![expected]);
         assert_eq!(repo.store.list(RecordKind::Item).unwrap().len(), 2);
         assert_eq!(repo.move_item(item.id, &a, &b), Err(Error::NotFound));
     }

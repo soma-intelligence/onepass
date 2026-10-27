@@ -684,6 +684,7 @@ pub(crate) fn item_to_core(
         password_history: stored
             .map(|s| s.password_history.clone())
             .unwrap_or_default(),
+        events: stored.map(|s| s.events.clone()).unwrap_or_default(),
     };
     if let Some(old) = stored.and_then(password_of)
         && !old.is_empty()

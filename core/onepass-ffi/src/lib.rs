@@ -8,6 +8,7 @@ mod convert;
 mod error;
 mod rules;
 mod session;
+pub mod timeline;
 mod types;
 
 use std::path::Path;
