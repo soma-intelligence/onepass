@@ -107,6 +107,7 @@ jobs:
           - import_csv
           - import_1pux
           - import_bitwarden_json
+          - import_enpass_json
           - import_keepass_xml
           - import_cxf
           - import_text
@@ -128,8 +129,10 @@ jobs:
       - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-fuzz
+      # The prebuilt cargo-fuzz is a musl binary and defaults to its own
+      # triple, where the sanitizer can't link: name the glibc target.
       - name: Fuzz 30 s
-        run: cargo "+$NIGHTLY" fuzz run ${{ matrix.target }} -- -max_total_time=30 -rss_limit_mb=4096
+        run: cargo "+$NIGHTLY" fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} -- -max_total_time=30 -rss_limit_mb=4096
       - name: Keep the crashing input
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

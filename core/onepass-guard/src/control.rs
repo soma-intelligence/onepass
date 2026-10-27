@@ -1168,12 +1168,19 @@ mod tests {
         fs::remove_file(control.path()).unwrap();
         let took = wait_for(
             || lost_calls.load(Ordering::SeqCst) > 0,
-            Duration::from_secs(6),
+            lost_bound() + Duration::from_secs(2),
         );
         assert_eq!(lost_calls.load(Ordering::SeqCst), 1);
-        assert!(took < Duration::from_millis(3500), "{took:?}");
+        assert!(took < lost_bound(), "{took:?}");
         assert!(!control.alive());
         assert!(control.lost_flag().load(Ordering::SeqCst));
+    }
+
+    /// Worst case to notice a lost socket: the last good ping just landed,
+    /// the window runs out, the next tick waits a period and its send its
+    /// deadline. One second of slack for loaded CI runners.
+    fn lost_bound() -> Duration {
+        ALIVE_WINDOW + WATCHDOG_PERIOD + PING_SEND_DEADLINE + Duration::from_secs(1)
     }
 
     #[test]
@@ -1193,9 +1200,12 @@ mod tests {
             }
         });
         let flag = control.lost_flag();
-        let took = wait_for(|| flag.load(Ordering::SeqCst), Duration::from_secs(6));
+        let took = wait_for(
+            || flag.load(Ordering::SeqCst),
+            lost_bound() + Duration::from_secs(2),
+        );
         assert!(flag.load(Ordering::SeqCst));
-        assert!(took < Duration::from_millis(3500), "{took:?}");
+        assert!(took < lost_bound(), "{took:?}");
         assert!(!control.alive());
         // Dropping the server leaves the foreign socket alone.
         drop(control);
