@@ -82,6 +82,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "import_enpass_json"
+path = "fuzz_targets/import_enpass_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "import_bitwarden_json"
 path = "fuzz_targets/import_bitwarden_json.rs"
 test = false

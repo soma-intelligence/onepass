@@ -1335,3 +1335,48 @@ fn ignored_deletions_are_listed_and_cleared() {
     assert!(handle.ignored_deletions().unwrap().is_empty());
     fx.session.lock();
 }
+
+#[test]
+fn import_items_into_vault_with_new_ids_and_folder_tags() {
+    let fx = fixture();
+    let csv = b"folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n\
+        Personal,1,login,Mail,,,0,https://mail.example.com,alice,Pw-Invented-1,\n\
+        ,0,note,Memo,Invented body,,0,,,,\n"
+        .to_vec();
+    let format = detect_import_format("export.csv".into(), csv.clone()).unwrap();
+    assert_eq!(format, "bitwarden-csv");
+    let preview = preview_import(format.clone(), csv.clone()).unwrap();
+    assert_eq!(preview.items, 2);
+
+    let done = fx
+        .session
+        .import_items(format.clone(), csv.clone(), fx.vault_id.clone())
+        .unwrap();
+    assert_eq!(done.items, 2);
+    let again = fx
+        .session
+        .import_items(format, csv, fx.vault_id.clone())
+        .unwrap();
+    assert_eq!(again.items, 2);
+
+    let all = fx.session.item_summaries().unwrap();
+    assert_eq!(all.len(), 4, "a second import adds, never overwrites");
+    let mail: Vec<_> = all.iter().filter(|s| s.title == "Mail").collect();
+    assert_eq!(mail.len(), 2);
+    assert_ne!(mail[0].id, mail[1].id);
+    assert!(mail.iter().all(|s| s.vault_id == fx.vault_id));
+    assert_eq!(mail[0].tags, vec!["Personal".to_owned()]);
+    assert!(mail[0].favorite);
+}
+
+#[test]
+fn import_into_unknown_vault_writes_nothing() {
+    let fx = fixture();
+    let csv = b"name,url,username,password\nA,https://a.example.com,u,p\n".to_vec();
+    let other = "0".repeat(32);
+    assert_eq!(
+        fx.session.import_items("chrome-csv".into(), csv, other),
+        Err(OnePassError::NotFound)
+    );
+    assert!(fx.session.item_summaries().unwrap().is_empty());
+}

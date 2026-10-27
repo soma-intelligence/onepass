@@ -127,6 +127,26 @@ fn cases() -> Vec<(&'static str, Vec<u8>, Format)> {
             v(fixture!("onepass.csv")),
             Format::OnePassCsv,
         ),
+        (
+            "Passwords.csv",
+            v(fixture!("apple-passwords.csv")),
+            Format::SafariCsv,
+        ),
+        (
+            "nordpass.csv",
+            v(fixture!("nordpass.csv")),
+            Format::NordPassCsv,
+        ),
+        (
+            "enpass.json",
+            v(fixture!("enpass.json")),
+            Format::EnpassJson,
+        ),
+        (
+            "roboform.csv",
+            v(fixture!("roboform.csv")),
+            Format::RoboFormCsv,
+        ),
     ]
 }
 
@@ -135,6 +155,74 @@ fn detects_every_fixture() {
     for (name, bytes, want) in cases() {
         assert_eq!(detect(name, &bytes), Some(want), "{name}");
     }
+}
+
+#[test]
+fn apple_passwords_export_keeps_multiline_notes_and_otp() {
+    let imp = parse(Format::SafariCsv, fixture!("apple-passwords.csv")).unwrap();
+    assert_eq!(imp.items.len(), 2);
+    let it = &imp.items[0].item;
+    assert_eq!(it.title, "mail.example.com (alice@example.com)");
+    assert_eq!(text(it, "username"), "alice@example.com");
+    assert_eq!(text(it, "password"), "Apple-Invented-1");
+    assert_eq!(it.notes, "Recovery, by phone\nsecond line");
+    assert!(matches!(
+        it.field("totp").map(|f| &f.value),
+        Some(FieldValue::Otp(uri)) if uri.starts_with("otpauth://totp/")
+    ));
+}
+
+#[test]
+fn safari_browsing_data_zip_reads_passwords_csv() {
+    let z = zip_of(&[
+        ("Bookmarks.html", b"<html></html>"),
+        ("Passwords.csv", fixture!("apple-passwords.csv")),
+        ("History.json", b"{}"),
+    ]);
+    assert_eq!(detect("Safari Export.zip", &z), Some(Format::SafariCsv));
+    let imp = parse(Format::SafariCsv, &z).unwrap();
+    assert_eq!(imp.items.len(), 2);
+    let without = zip_of(&[("Bookmarks.html", b"<html></html>")]);
+    assert!(parse(Format::SafariCsv, &without).is_err());
+}
+
+#[test]
+fn chromium_browsers_share_the_chrome_csv() {
+    // Edge, Brave, Opera, Arc and Vivaldi write Chrome's export, with or
+    // without the `note` column.
+    for csv in [
+        &b"name,url,username,password\nA,https://a.example.com,u,p\n"[..],
+        &b"name,url,username,password,note\nA,https://a.example.com,u,p,n\n"[..],
+    ] {
+        assert_eq!(
+            detect("Microsoft Edge Passwords.csv", csv),
+            Some(Format::ChromeCsv)
+        );
+        assert_eq!(parse(Format::ChromeCsv, csv).unwrap().items.len(), 1);
+    }
+}
+
+#[test]
+fn keeper_without_header_needs_the_format_chosen() {
+    let csv = fixture!("keeper.csv");
+    assert_eq!(detect("keeper.csv", csv), None);
+    let imp = parse(Format::KeeperCsv, csv).unwrap();
+    assert_eq!(imp.items.len(), 3);
+    for it in &imp.items {
+        validate(&it.item).unwrap();
+    }
+    let with_header =
+        b"Folder,Title,Login,Password,Website Address,Notes,Shared Folder,Custom Fields\n\
+        ,Shop,bob,Pw-Invented-2,https://shop.example.org,,,\n";
+    assert_eq!(detect("x", with_header), Some(Format::KeeperCsv));
+}
+
+#[test]
+fn bitwarden_unencrypted_json_is_not_enpass() {
+    let b = br#"{"encrypted":false,"folders":[],"items":[{"type":1,"name":"A","login":{"username":"u","password":"p"}}]}"#;
+    assert_eq!(detect("x", b), Some(Format::BitwardenJson));
+    assert_eq!(detect("x", br#"{"items":[{"name":"A"}]}"#), None);
+    assert_eq!(detect("x", br#"{"items":7}"#), None);
 }
 
 #[test]
