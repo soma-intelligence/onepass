@@ -41,7 +41,12 @@ public struct EmptyState: View {
                 Button(action: action) {
                     Label(actionTitle, systemImage: "plus")
                 }
+                #if os(visionOS)
+                // No Liquid Glass button styles on visionOS: the bordered style draws on the window's glass.
+                .buttonStyle(.borderedProminent)
+                #else
                 .buttonStyle(.glassProminent)
+                #endif
                 .accessibilityIdentifier(actionIdentifier ?? "emptyState.action")
             }
         }
