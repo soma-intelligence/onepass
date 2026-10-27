@@ -1,8 +1,11 @@
 import Foundation
 
 /// Sidebar filters. Every filter except `archive` and `trash` leaves out archived and trashed items.
+/// `nearby` ("À proximité") needs the user's position: `matches` only keeps active items, the list
+/// comes from `VaultSession.nearbyItems(from:within:)`.
 public enum ItemFilter: Hashable, Sendable {
     case all, favorites
+    case nearby
     case vault(String)
     case category(FfiItemType)
     case tag(String)
@@ -11,7 +14,7 @@ public enum ItemFilter: Hashable, Sendable {
     public func matches(_ item: FfiItemSummary) -> Bool {
         let active = !item.archived && item.trashedAt == nil
         switch self {
-        case .all: return active
+        case .all, .nearby: return active
         case .favorites: return active && item.favorite
         case .vault(let id): return active && item.vaultId == id
         case .category(let type): return active && item.itemType == type
@@ -78,6 +81,8 @@ public enum EmptyListReason: Equatable, Sendable {
     case emptyCategory
     case emptyTag
     case noFavorites
+    /// "À proximité": no item with a place around the user.
+    case noNearby
     case emptyArchive
     case emptyTrash
 
@@ -91,6 +96,7 @@ public enum EmptyListReason: Equatable, Sendable {
         case .category: self = .emptyCategory
         case .tag: self = .emptyTag
         case .favorites: self = .noFavorites
+        case .nearby: self = .noNearby
         case .archive: self = .emptyArchive
         case .trash: self = .emptyTrash
         }

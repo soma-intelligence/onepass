@@ -14,11 +14,28 @@ public enum EnclaveError: Error, Equatable, Sendable {
 
 /// Secure Enclave key operations. Real implementation: `SecureEnclaveKeyring`.
 public protocol EnclaveKeyring: Sendable {
+    /// A Secure Enclave and an enrolled biometry (or an Apple Watch when allowed).
     var isAvailable: Bool { get }
+    /// The keychain accepts Secure Enclave keys from this build. False for an unsigned or ad hoc
+    /// signed build: without an application identifier the keychain refuses every key (`-34018`).
+    var canStoreKeys: Bool { get }
     func createKey(tag: String, allowWatch: Bool) throws
     func encrypt(_ data: Data, tag: String) throws -> Data
     func decrypt(_ data: Data, tag: String, prompt: String) async throws -> Data
     func deleteKey(tag: String) throws
+}
+
+extension EnclaveKeyring {
+    public var canStoreKeys: Bool { true }
+}
+
+/// Why biometric unlock can or cannot be offered on this device and build.
+public enum BiometricAvailability: Sendable, Equatable {
+    case available
+    /// No Secure Enclave, or no fingerprint, face or Watch set up in the system.
+    case noBiometry
+    /// The hardware is there but this build cannot keep a Secure Enclave key (unsigned build).
+    case keychainRefused
 }
 
 /// Wraps the 32-byte AUK with a Secure Enclave key so Face ID / Touch ID /
@@ -36,7 +53,13 @@ public final class BiometricUnlock: Sendable {
         self.policy = policy
     }
 
-    public var isAvailable: Bool { keyring.isAvailable }
+    public var availability: BiometricAvailability {
+        guard keyring.isAvailable else { return .noBiometry }
+        return keyring.canStoreKeys ? .available : .keychainRefused
+    }
+
+    /// Enrollment and biometric unlock can work: hardware, biometry set up and a usable keychain.
+    public var isAvailable: Bool { availability == .available }
 
     static func tag(_ accountID: String) -> String { "me.somalabs.onepass.auk.\(accountID)" }
     static func storeKey(_ accountID: String) -> String { "biometric.enrollment.\(accountID)" }
@@ -69,7 +92,7 @@ public final class BiometricUnlock: Sendable {
 
     /// Creates a fresh Secure Enclave key (replacing any previous one) and stores the wrapped AUK.
     public func enroll(auk: Data, accountID: String, allowWatch: Bool) throws {
-        guard keyring.isAvailable else { throw BiometricError.unavailable }
+        guard isAvailable else { throw BiometricError.unavailable }
         let tag = Self.tag(accountID)
         try? keyring.deleteKey(tag: tag)
         try keyring.createKey(tag: tag, allowWatch: allowWatch)

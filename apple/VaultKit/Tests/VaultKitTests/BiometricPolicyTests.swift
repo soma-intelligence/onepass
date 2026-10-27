@@ -92,6 +92,17 @@ struct BiometricPolicyTests {
         #expect(!unlock.isEnrolled(accountID: account))
     }
 
+    @Test func unsignedBuildKeychainHidesOption() throws {
+        let unlock = BiometricUnlock(
+            keyring: FakeEnclaveKeyring(available: true, storesKeys: false), keychain: InMemoryKeychain(),
+            clock: FakeClock())
+        #expect(unlock.availability == .keychainRefused)
+        #expect(!unlock.isAvailable)
+        #expect(throws: BiometricError.unavailable) {
+            try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        }
+    }
+
     @Test func notEnrolledRequiresPassword() async {
         let (unlock, _, _, _) = make()
         await #expect(throws: BiometricError.passwordRequired(reason: .notEnrolled)) {

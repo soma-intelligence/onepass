@@ -32,6 +32,9 @@ public final class VaultSession {
     /// an open item detail reloads, or warns its editor before a save overwrites the new version,
     /// exactly as for a remote change set.
     public private(set) var externalChangeRevision = 0
+    /// Bumped each time the summaries are replaced (unlock, write, reload): "À proximité" asks
+    /// `nearbyItems` again on it.
+    public private(set) var summariesRevision = 0
 
     /// Vaults shown in the sidebar (hidden ones left out).
     public var vaults: [FfiVault] { allVaults.filter { !hiddenVaultIDs.contains($0.id) } }
@@ -60,6 +63,8 @@ public final class VaultSession {
     @ObservationIgnored private var refusedStore: VaultError?
     /// Observes `StoreChangeNotifier`; cancelled on deinit (the extension makes one session per request).
     @ObservationIgnored private(set) var storeChangeObserver: Task<Void, Never>?
+    /// Places of the items, read once per item version (memory only, emptied on lock).
+    @ObservationIgnored private var locationIndex = LocationIndex()
 
     static let maxRecents = 20
     nonisolated static let trashRetentionDays: UInt32 = 30
@@ -604,6 +609,7 @@ public final class VaultSession {
         summaries = []
         allVaults = []
         recents = []
+        locationIndex = LocationIndex()
         autoLockTimer?.cancel()
         autoLockTimer = nil
     }
@@ -666,6 +672,34 @@ public final class VaultSession {
 
     public func counts() -> ItemCounts {
         ItemCounts(summaries.filter { !hiddenVaultIDs.contains($0.vaultId) })
+    }
+
+    /// "À proximité": active items of visible vaults with a place within `radius` meters of
+    /// `origin`, closest first. Only items new or modified since the last call are decrypted (one
+    /// core call for all of them); the rest comes from the in-memory index. An item that cannot be
+    /// read is left out until it changes (its detail reports the error when opened).
+    public func nearbyItems(from origin: GeoPoint, within radius: Double = LocationIndex.nearbyRadius) async throws
+        -> [NearbyItem]
+    {
+        let active = summaries.filter { !hiddenVaultIDs.contains($0.vaultId) && ItemFilter.nearby.matches($0) }
+        let stale = locationIndex.needsLoading(active).map { ($0.vaultId, $0.id, $0.updatedAt) }
+        if !stale.isEmpty {
+            let loaded = try await read { session in
+                var out: [String: LocationIndex.Entry] = [:]
+                // Taken before reading: an edit landing during the read keeps the entry stale.
+                let readAt = Int64(Date().timeIntervalSince1970.rounded(.down))
+                for (vaultID, itemID, updatedAt) in stale {
+                    let item = try? session.item(vaultId: vaultID, itemId: itemID)
+                    out[itemID] = LocationIndex.Entry(
+                        updatedAt: updatedAt, points: item.map(LocationIndex.points(of:)) ?? [], readAt: readAt)
+                }
+                return out
+            }
+            locationIndex.update(loaded, keeping: summaries)
+        }
+        // Summaries may have changed during the read: the current ones decide what is listed.
+        let current = summaries.filter { !hiddenVaultIDs.contains($0.vaultId) && ItemFilter.nearby.matches($0) }
+        return locationIndex.nearby(current, from: origin, within: radius)
     }
 
     // MARK: - Items
@@ -1003,6 +1037,7 @@ public final class VaultSession {
     private func apply(_ snapshot: Snapshot) {
         allVaults = snapshot.vaults
         summaries = snapshot.summaries
+        summariesRevision &+= 1
         let known = Set(snapshot.summaries.map(\.id))
         recents.removeAll { !known.contains($0) }
     }
@@ -1086,7 +1121,7 @@ public final class VaultSession {
 
     /// Runs a write, reloads the lists, tells the sync layer.
     @discardableResult
-    private func write<T: Sendable>(_ op: @escaping @Sendable (Session) throws -> T) async throws -> T {
+    func write<T: Sendable>(_ op: @escaping @Sendable (Session) throws -> T) async throws -> T {
         guard let session else { throw fail(.passwordRequired) }
         let gen = generation
         noteActivity()
