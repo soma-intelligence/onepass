@@ -8,6 +8,7 @@
 mod autofill;
 mod companion;
 mod convert;
+mod developer;
 mod error;
 mod hardening;
 mod import;
@@ -32,6 +33,7 @@ use zeroize::Zeroizing;
 
 pub use companion::*;
 use convert::{sections_to_ffi, type_label};
+pub use developer::*;
 pub use error::OnePassError;
 use error::invalid;
 pub use hardening::*;

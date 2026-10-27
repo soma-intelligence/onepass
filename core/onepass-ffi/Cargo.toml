@@ -17,6 +17,15 @@ required-features = ["bindgen"]
 
 [dependencies]
 onepass-core = { path = "../onepass-core" }
+# Milestone 7 in the apps: the SSH agent and the MCP server served by the
+# app, with the hardened guards (approvals, grants, registry, audit log).
+onepass-guard = { path = "../onepass-guard" }
+onepass-mcp = { path = "../onepass-mcp" }
+onepass-peer = { path = "../onepass-peer" }
+onepass-ssh-agent = { path = "../onepass-ssh-agent" }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+serde_json.workspace = true
+data-encoding.workspace = true
 uniffi = { version = "=0.32.2" }
 zeroize.workspace = true
 time = { version = "0.3", default-features = false, features = ["std"] }
