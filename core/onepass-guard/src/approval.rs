@@ -50,8 +50,12 @@ pub struct Target {
 pub struct ApprovalRequest {
     /// Requesting surface.
     pub surface: Surface,
-    /// Client name as declared by the agent (untrusted).
+    /// Client name as declared by the agent (untrusted), or a label of a
+    /// verified client when `client_verified`.
     pub client: String,
+    /// True when `client` names a verified, paired client identity; false
+    /// shows it as declared and unverified.
+    pub client_verified: bool,
     /// Action name.
     pub action: String,
     /// Non-secret detail lines (label, value).
@@ -135,10 +139,14 @@ pub fn render_prompt(req: &ApprovalRequest, code: &str) -> String {
         "\nOnePass approval request ({})\n",
         req.surface.label()
     ));
-    out.push_str(&format!(
-        "  client: {} (declared, unverified)\n",
-        s(&req.client)
-    ));
+    if req.client_verified {
+        out.push_str(&format!("  client: {}\n", s(&req.client)));
+    } else {
+        out.push_str(&format!(
+            "  client: {} (declared, unverified)\n",
+            s(&req.client)
+        ));
+    }
     out.push_str(&format!("  action: {}\n", s(&req.action)));
     for (label, value) in &req.details {
         out.push_str(&format!("  {}: {}\n", s(label), s(value)));
@@ -410,6 +418,7 @@ mod tests {
     fn req(remember_allowed: bool) -> ApprovalRequest {
         ApprovalRequest {
             surface: Surface::Mcp,
+            client_verified: false,
             client: "evil\x1b[2Jclient\r".into(),
             action: "run_with_secrets\x1b]0;x\x07".into(),
             details: vec![("command".into(), "sh -c 'echo \x1b[31mhi'".into())],
@@ -420,6 +429,20 @@ mod tests {
             }],
             remember_allowed,
         }
+    }
+
+    #[test]
+    fn verified_client_is_not_shown_as_declared() {
+        let mut r = req(false);
+        assert!(render_prompt(&r, "ab").contains("(declared, unverified)"));
+        r.client_verified = true;
+        r.client = "Example Agent (declared: x)".into();
+        let text = render_prompt(&r, "ab");
+        assert!(
+            text.contains("  client: Example Agent (declared: x)\n"),
+            "{text}"
+        );
+        assert!(!text.contains("unverified"), "{text}");
     }
 
     #[test]

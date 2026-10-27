@@ -625,6 +625,7 @@ mod tests {
     fn req() -> ApprovalRequest {
         ApprovalRequest {
             surface: Surface::Mcp,
+            client_verified: false,
             client: "c".into(),
             action: "run_with_secrets".into(),
             details: vec![],

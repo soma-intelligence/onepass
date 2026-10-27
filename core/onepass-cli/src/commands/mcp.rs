@@ -158,6 +158,16 @@ fn load(repo: &Repository<SqliteStore>, ctx: &Ctx) -> Result<Policy, CliError> {
     .map_err(policy_error)
 }
 
+/// Client id of the transitional unidentified client of one server:
+/// `unidentified:mcp-stdio:<pid>-<16 hex>`, never shared by two servers,
+/// so a grant given to one host is never used by another.
+fn transitional_client_id(pid: u32, nonce: [u8; 8]) -> String {
+    format!(
+        "unidentified:mcp-stdio:{pid}-{}",
+        data_encoding::HEXLOWER.encode(&nonce)
+    )
+}
+
 /// The MCP vault whose id, or else name, is `key`; any other vault is
 /// reported as missing.
 fn find_mcp_vault<'a>(mcp: &'a [Vault], key: &str) -> Result<&'a Vault, CliError> {
@@ -544,12 +554,15 @@ fn serve_stdio(
     };
     let account_id = session.borrow().repo().account_id().to_string();
     // Transitional, until the server identifies and pairs its client: the
-    // launching client is one unidentified client paired with every scope
+    // launching client is one unidentified client (unique to this process,
+    // so no other server shares its grants) paired with every scope
     // on every MCP vault, so the signed policy alone decides (milestone 7
     // behavior), while grants, rate limits and strong authentication
     // already apply.
+    let nonce = onepass_core::crypto::random_array::<8>()
+        .map_err(|_| CliError::usage("random source unavailable"))?;
     let client = ClientContext {
-        client_id: "unidentified:mcp-stdio".into(),
+        client_id: transitional_client_id(std::process::id(), nonce),
         label: "MCP client (unidentified)".into(),
         signed: false,
         hardened: None,
@@ -600,6 +613,20 @@ fn serve_stdio(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transitional_client_ids_are_per_process() {
+        let id = transitional_client_id(4242, [0xab; 8]);
+        assert_eq!(id, "unidentified:mcp-stdio:4242-abababababababab");
+        assert_ne!(
+            transitional_client_id(4242, [1; 8]),
+            transitional_client_id(4242, [2; 8])
+        );
+        assert_ne!(
+            transitional_client_id(1, [1; 8]),
+            transitional_client_id(2, [1; 8])
+        );
+    }
 
     #[test]
     fn scope_lists() {

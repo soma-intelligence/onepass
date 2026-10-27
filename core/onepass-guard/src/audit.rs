@@ -47,6 +47,9 @@ pub const OUTCOME_GRANT_REVOKED: &str = "grant_revoked";
 pub const OUTCOME_STRONG_AUTH_FAILED: &str = "strong_auth_failed";
 /// Outcome: an SSH signature for a host the connection is not bound to.
 pub const OUTCOME_HOST_NOT_BOUND: &str = "host_not_bound";
+/// Outcome: the client registry could not be trusted (bad signature,
+/// replayed, unreadable): refused without a prompt.
+pub const OUTCOME_REGISTRY_UNUSABLE: &str = "registry_unusable";
 
 /// What happened, with opaque ids only: no secret values and no titles.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -941,5 +944,6 @@ mod tests {
         assert_eq!(OUTCOME_GRANT_REVOKED, "grant_revoked");
         assert_eq!(OUTCOME_STRONG_AUTH_FAILED, "strong_auth_failed");
         assert_eq!(OUTCOME_HOST_NOT_BOUND, "host_not_bound");
+        assert_eq!(OUTCOME_REGISTRY_UNUSABLE, "registry_unusable");
     }
 }

@@ -96,6 +96,11 @@ impl Located {
     }
 }
 
+/// Tools whose prompt is followed by strong authentication.
+fn needs_strong(action: &str) -> bool {
+    matches!(action, "reveal_secret" | "totp_code")
+}
+
 fn invalid(m: &str) -> Refusal {
     Refusal::Invalid(m.to_owned())
 }
@@ -353,13 +358,20 @@ impl<P: VaultPort> McpTools<P> {
         let req = ApprovalRequest {
             surface: Surface::Mcp,
             client: who,
+            // Only a paired client reaches a prompt: its label is verified.
+            client_verified: true,
             action: action.to_owned(),
             details,
             targets,
             remember_allowed,
         };
         let gated = self.gate.approve(&self.client.client_id, &gate_key, &req);
-        if !gated.joined {
+        // A prompt allowed for a tool that also needs strong authentication
+        // ends the run of denials only once strong authentication succeeds
+        // (see `strong_auth`): a client cannot reset it by having the user
+        // approve a prompt and then fail Touch ID.
+        let strong_follows = needs_strong(action) && gated.decision != Decision::Deny;
+        if !gated.joined && !strong_follows {
             self.throttle.record_decision(
                 &*self.clock,
                 &self.client.client_id,
@@ -403,16 +415,28 @@ impl<P: VaultPort> McpTools<P> {
     }
 
     /// Strong authentication (spec 4.4) after the prompt, for the tools
-    /// that return a value. The reason names the client and the target.
-    fn strong_auth(&self, action: &str, l: &Located) -> Result<(), Refusal> {
+    /// that return a value. The reason names the client and the target. A
+    /// failed authentication counts as a user denial (toward the cooling
+    /// down period), a success ends the run of denials; `Unavailable` (no
+    /// method could run) counts as neither.
+    fn strong_auth(&mut self, action: &str, l: &Located) -> Result<(), Refusal> {
         let reason = sanitize_for_display(&format!(
             "{action} for {}: {}",
             self.client.label,
             l.shown()
         ));
-        match self.strong.verify(&reason) {
-            StrongOutcome::Verified => Ok(()),
-            StrongOutcome::Denied | StrongOutcome::Unavailable => Err(Refusal::StrongAuthFailed),
+        let outcome = self.strong.verify(&reason);
+        let (clock, id) = (&*self.clock, &self.client.client_id);
+        match outcome {
+            StrongOutcome::Verified => {
+                self.throttle.record_decision(clock, id, false);
+                Ok(())
+            }
+            StrongOutcome::Denied => {
+                self.throttle.record_decision(clock, id, true);
+                Err(Refusal::StrongAuthFailed)
+            }
+            StrongOutcome::Unavailable => Err(Refusal::StrongAuthFailed),
         }
     }
 

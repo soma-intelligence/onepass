@@ -27,13 +27,15 @@ use onepass_core::reference::{SecretRef, parse_ref};
 use onepass_guard::{
     ApprovalRequest, Approver, AuditEntry, AuditSink, Clock, Decision, GrantStore, LocalSigner,
     OUTCOME_CLIENT_COOLING_DOWN, OUTCOME_NOT_PAIRED, OUTCOME_RATE_LIMITED,
-    OUTCOME_STRONG_AUTH_FAILED, PromptGate, StrongAuth, Surface, Throttle,
+    OUTCOME_REGISTRY_UNUSABLE, OUTCOME_STRONG_AUTH_FAILED, PromptGate, StrongAuth, Surface,
+    Throttle,
 };
 use serde_json::{Map, Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use zeroize::Zeroizing;
 
 /// Placed next to every piece of vault data a tool returns.
@@ -119,7 +121,8 @@ impl Refusal {
     /// The audit outcome of this refusal.
     pub(crate) fn outcome(&self) -> &'static str {
         match self {
-            Refusal::NotPaired | Refusal::RegistryUnusable => OUTCOME_NOT_PAIRED,
+            Refusal::NotPaired => OUTCOME_NOT_PAIRED,
+            Refusal::RegistryUnusable => OUTCOME_REGISTRY_UNUSABLE,
             Refusal::RateLimited => OUTCOME_RATE_LIMITED,
             Refusal::CoolingDown => OUTCOME_CLIENT_COOLING_DOWN,
             Refusal::StrongAuthFailed => OUTCOME_STRONG_AUTH_FAILED,
@@ -273,7 +276,14 @@ pub struct McpTools<P: VaultPort> {
     client_scopes: Option<ClientScopes>,
     /// Vaults quarantined after an integrity failure (spec section 8).
     quarantined: BTreeSet<Id>,
+    /// When the last refusals before pairing (unpaired client, unusable
+    /// registry) were audited, within the last minute.
+    unpaired_audited: VecDeque<Instant>,
 }
+
+/// Most audit entries per minute for refusals before pairing: an unpaired
+/// client looping on calls must not flood the log (it is still refused).
+pub(crate) const MAX_UNPAIRED_AUDIT_PER_MIN: usize = 6;
 
 impl<P: VaultPort> McpTools<P> {
     /// A host over `port`. `forbidden_dir` (the data directory) is where
@@ -305,7 +315,27 @@ impl<P: VaultPort> McpTools<P> {
             liveness: guards.liveness,
             client_scopes: None,
             quarantined: BTreeSet::new(),
+            unpaired_audited: VecDeque::new(),
         }
+    }
+
+    /// True (and counted) when a refusal before pairing may still be
+    /// audited this minute ([`MAX_UNPAIRED_AUDIT_PER_MIN`]).
+    fn unpaired_audit_allowed(&mut self) -> bool {
+        let now = self.clock.monotonic();
+        let minute = std::time::Duration::from_secs(60);
+        while self
+            .unpaired_audited
+            .front()
+            .is_some_and(|&t| now.saturating_duration_since(t) >= minute)
+        {
+            self.unpaired_audited.pop_front();
+        }
+        if self.unpaired_audited.len() >= MAX_UNPAIRED_AUDIT_PER_MIN {
+            return false;
+        }
+        self.unpaired_audited.push_back(now);
+        true
     }
 
     /// The identity of the client this server serves.
@@ -524,10 +554,14 @@ impl<P: VaultPort> ToolHost for McpTools<P> {
     fn call(&mut self, client: &ClientInfo, name: &str, args: &Map<String, Value>) -> ToolOutcome {
         let known = schema::all().iter().any(|t| t.name == name);
         let mut call = Call::default();
+        let mut before_pairing = false;
         let result = match schema::validate_args(name, args) {
             Ok(()) => match self.admit_client() {
                 Ok(()) => self.dispatch(client, name, args, &mut call),
-                Err(r) => Err(Failure::Refused(r)),
+                Err(r) => {
+                    before_pairing = matches!(r, Refusal::NotPaired | Refusal::RegistryUnusable);
+                    Err(Failure::Refused(r))
+                }
             },
             Err(m) => Err(Failure::Params(m)),
         };
@@ -544,7 +578,9 @@ impl<P: VaultPort> ToolHost for McpTools<P> {
         };
         // An unknown name comes from the agent: it is not logged verbatim.
         let action = if known { name } else { "unknown" };
-        self.record(client, action, &call, label);
+        if !before_pairing || self.unpaired_audit_allowed() {
+            self.record(client, action, &call, label);
+        }
         outcome
     }
 }

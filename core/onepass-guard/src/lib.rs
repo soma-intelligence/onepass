@@ -30,7 +30,8 @@ pub use approval::{
 pub use audit::{
     AuditEntry, AuditLog, AuditRecord, AuditSink, AuditVerification, OUTCOME_CLIENT_COOLING_DOWN,
     OUTCOME_GRANT_EXPIRED, OUTCOME_GRANT_REVOKED, OUTCOME_HOST_NOT_BOUND, OUTCOME_NOT_PAIRED,
-    OUTCOME_RATE_LIMITED, OUTCOME_STRONG_AUTH_FAILED, SignedAuditSink, head_path, verify_log,
+    OUTCOME_RATE_LIMITED, OUTCOME_REGISTRY_UNUSABLE, OUTCOME_STRONG_AUTH_FAILED, SignedAuditSink,
+    head_path, verify_log,
 };
 pub use clients::{
     CLIENTS_DOMAIN, ClientRecord, ClientRegistry, ClientRegistryLoader, Unpaired, load_clients,

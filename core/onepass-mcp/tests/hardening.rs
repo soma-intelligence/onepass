@@ -278,14 +278,19 @@ fn unpaired_client_is_refused_everywhere() {
     assert_eq!(*h.port.resolved.borrow(), 0);
     assert!(!mark.exists());
     assert!(!out.exists());
+    // At most 6 refusals before pairing are audited per minute.
     let e = h.audit.entries();
-    assert_eq!(e.len(), 10);
+    assert_eq!(e.len(), 6);
     for entry in &e {
         assert_eq!(entry.outcome, "not_paired");
         assert_eq!(entry.client_id.as_deref(), Some(CLIENT_ID));
         assert_eq!(entry.client_label.as_deref(), Some(CLIENT_LABEL));
         assert_eq!(entry.client, "declared-name");
     }
+
+    h.clock.advance(Duration::from_secs(61));
+    refused(hcall(&mut h.tools, "list_vaults", json!({})));
+    assert_eq!(h.audit.entries().len(), 7);
 
     // Paired for another client id only: still refused.
     h.data
@@ -765,11 +770,15 @@ fn unpaired_after_start_refused_next_call() {
     std::fs::write(h.data.clients(), &paired).unwrap();
     let m = refused(hcall(&mut h.tools, "list_vaults", json!({})));
     assert_eq!(m, "client registry failed verification");
+    assert_eq!(outcomes(&h.audit).last().unwrap(), "registry_unusable");
     // Paired again (a newer registry): served.
     let scopes = all_scopes(h.port.inner.borrow().0);
     h.data.pair(&client(CLIENT_ID), &scopes, T0);
     ok(hcall(&mut h.tools, "list_vaults", json!({})));
-    assert_eq!(outcomes(&h.audit), ["ok", "not_paired", "not_paired", "ok"]);
+    assert_eq!(
+        outcomes(&h.audit),
+        ["ok", "not_paired", "registry_unusable", "ok"]
+    );
 }
 
 #[test]
@@ -832,4 +841,44 @@ fn audit_entries_name_the_client() {
     // The prompt names the verified client, not only the declared name.
     let req = &h.approver.calls()[0];
     assert!(req.client.contains(CLIENT_LABEL), "{}", req.client);
+    assert!(req.client_verified);
+}
+
+#[test]
+fn strong_auth_denials_count_toward_cooling_down() {
+    let mut h = build(Setup {
+        policy: Box::new(open_policy),
+        answers: vec![Decision::AllowOnce; 4],
+        strong: StrongOutcome::Denied,
+        limits: Limits::mcp(),
+        ..Setup::default()
+    });
+    let reveal = json!({"reference": "onepass://Dev/GitHub/password"});
+    for _ in 0..3 {
+        assert_eq!(
+            refused(hcall(&mut h.tools, "reveal_secret", reveal.clone())),
+            "strong authentication failed"
+        );
+    }
+    let m = refused(hcall(&mut h.tools, "reveal_secret", reveal.clone()));
+    assert!(m.starts_with("client cooling down"), "{m}");
+    assert_eq!(h.approver.calls().len(), 3, "no fourth prompt");
+    assert_eq!(h.strong.reasons().len(), 3);
+    assert_eq!(*h.port.resolved.borrow(), 0);
+
+    // `Unavailable` is not the user's denial: no cooling down.
+    let mut h = build(Setup {
+        policy: Box::new(open_policy),
+        answers: vec![Decision::AllowOnce; 4],
+        strong: StrongOutcome::Unavailable,
+        limits: Limits::mcp(),
+        ..Setup::default()
+    });
+    for _ in 0..4 {
+        assert_eq!(
+            refused(hcall(&mut h.tools, "reveal_secret", reveal.clone())),
+            "strong authentication failed"
+        );
+    }
+    assert_eq!(h.approver.calls().len(), 4);
 }

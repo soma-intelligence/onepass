@@ -539,6 +539,7 @@ impl<K: KeySource> Agent<K> {
         }
         ApprovalRequest {
             surface: Surface::Ssh,
+            client_verified: false,
             client: exe.to_owned(),
             action: ACTION_SIGN.to_owned(),
             details,
