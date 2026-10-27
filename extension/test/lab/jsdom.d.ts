@@ -6,7 +6,9 @@ declare module "jsdom" {
     runScripts?: "dangerously" | "outside-only";
     pretendToBeVisual?: boolean;
     beforeParse?(window: LabWindow): void;
+    virtualConsole?: VirtualConsole;
   }
+  export class VirtualConsole {}
   export class JSDOM {
     constructor(html?: string, options?: ConstructorOptions);
     readonly window: LabWindow;

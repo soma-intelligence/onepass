@@ -1,6 +1,6 @@
 // Picks, without any click, up to 6 form pages of a site: links of the home page
 // that match the seed lexicon, then sitemap entries, then common paths.
-import { JSDOM } from "jsdom";
+import { JSDOM, VirtualConsole } from "jsdom";
 import { getDomain } from "tldts";
 
 /** Shape of seed-lexicon.json that discovery reads: button words per intent and language. */
@@ -58,7 +58,7 @@ export function discoverFormPages(home: { url: string; html: string }, sitemapXm
   };
 
   const lex = words(lexicon);
-  const doc = new JSDOM(home.html).window.document;
+  const doc = new JSDOM(home.html, { virtualConsole: new VirtualConsole() }).window.document; // silent: real pages ship CSS jsdom cannot parse
   for (const a of Array.from(doc.querySelectorAll("a[href]"))) {
     const text = fold(a.textContent ?? "");
     if (LOGOUT.test(text)) continue;
