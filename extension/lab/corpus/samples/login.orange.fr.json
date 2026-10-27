@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:07:44.886Z",
+  "category": "login",
+  "extractor": 1,
+  "host": "login.orange.fr",
+  "source_url": "https://login.orange.fr/",
+  "status": "skipped: robots"
+}

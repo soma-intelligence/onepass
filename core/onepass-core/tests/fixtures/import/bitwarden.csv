@@ -1,0 +1,5 @@
+folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp
+Personal,1,login,Example Mail,Main mailbox,"Security question: first pet
+PIN: 4242",0,"https://mail.example.com,https://mail2.example.com",alice@example.com,Bw-Invented-1,otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example
+Work,0,note,Wifi instructions,Ask the front desk for the invented code,,0,,,,
+,0,card,Invented Card,,,0,,,,

@@ -1,0 +1,23 @@
+<div class="brand">Atlas Cloud</div>
+<h1>Connexion</h1>
+<form id="decoy" action="/decoy" method="post" style="position:absolute; left:-5000px; top:0">
+  <input id="decoy-email" name="email" type="email" autocomplete="username">
+  <input id="decoy-password" name="password" type="password" autocomplete="current-password">
+</form>
+<form id="ghost" action="/ghost" method="post" style="opacity:0">
+  <input id="ghost-email" name="email" type="email" autocomplete="username">
+  <input id="ghost-password" name="password" type="password" autocomplete="current-password">
+</form>
+<form id="login" action="/login" method="post">
+  <label for="email">Adresse e-mail</label>
+  <input id="email" name="email" type="email" autocomplete="username">
+  <input id="clipped-first" name="p0" type="password" autocomplete="current-password" style="clip-path:inset(100%)">
+  <label for="password">Mot de passe</label>
+  <input id="password" name="password" type="password" autocomplete="current-password">
+  <input id="hidden-password" name="hidden_password" type="password" autocomplete="current-password" style="display:none">
+  <input id="transparent-password" name="p2" type="password" autocomplete="current-password" style="opacity:0">
+  <input id="offscreen-password" name="p3" type="password" autocomplete="current-password" style="position:absolute; left:-5000px">
+  <input id="tiny-password" name="p4" type="password" autocomplete="current-password" style="width:0; height:0; padding:0; border:0">
+  <input id="clipped-password" name="p5" type="password" autocomplete="current-password" style="clip-path:inset(100%)">
+  <button id="submit" type="submit">Se connecter</button>
+</form>

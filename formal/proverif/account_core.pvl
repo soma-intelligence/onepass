@@ -1,0 +1,259 @@
+(* OnePass formal model: account, 2SKD, keyset, vault envelope and items.
+
+   Shared by account.pv, account_kem_mlkem_broken.pv and
+   account_kem_x25519_broken.pv. formal/run.sh loads it as a second library
+   (after common.pvl) for every model whose first lines carry the directive
+   `(* formal-lib: account_core.pvl *)`.
+
+   Everything stored or exchanged goes out on the public channel c and is
+   read back from it: account params, keyset blob, vault key envelopes, vault
+   meta, signed manifests, item records. The attacker reads, drops, replays
+   and substitutes any of them. Only the device's local state stays out of
+   the attacker's reach: the Secret Key, the password typed by the user and
+   the pinned account (account id and identity key), passed as process
+   parameters.
+
+   Each process is tagged with the account it belongs to (acct_main and the
+   P2 accounts of account.pv), so that one file can run several accounts
+   and each query names the account it is about.
+
+   Abstractions (also listed in the task report, for the README):
+   - KDF costs (m_kib, t, p), the KDF floor, its ratchet (raise_floor) and
+     the ceiling are not modeled: the account has one signed parameter set,
+     modeled as its salt. Downgrade to an older signed set is out of scope.
+   - Manifests carry at most one entry; the Merkle root (a hash of the
+     entries) is folded into the entries themselves; seq is an abstract
+     successor (next_seq). History checks against the last manifest seen
+     (rollback, fork) are manifest.pv's job: verify_manifest is modeled
+     here with last_seen = None.
+   - Item records are read with their manifest in one input (load reads
+     the manifest, then the records); the 16 byte vault prefix of a stored
+     item record is not modeled.
+   - save_item uses the manifest just verified by the vault listing as
+     `prev` (the code reads it again in load: same checks).
+   - Repository::finish_unlock's check that the params record id equals the
+     signed account id is not modeled (record ids are not modeled).
+   - unlock_with_auk (AUK kept in the Keychain) and trust on first use on an
+     unpinned device are out of scope here (emergency_kit.pv covers the
+     latter, with the RestoreDevice process it defines on top of Device). *)
+
+(* Account tags. *)
+const acct_main: bitstring.
+const acct_sk_leaked: bitstring.
+const acct_pw_leaked: bitstring.
+
+(* core/onepass-core/src/repo.rs: personal() (the "Personnel" vault meta) *)
+const vault_meta_personal: bitstring.
+(* core/onepass-core/src/manifest.rs: Manifest::next with prev = None:
+   seq 1, prev_hash zeros, no entries. *)
+const seq_one: bitstring.
+const zero_hash: bitstring.
+const no_entries: bitstring.
+(* Manifest::next: seq + 1 *)
+fun next_seq(bitstring): bitstring.
+(* repo.rs: Loaded::next_version for an item not listed yet: version 1 *)
+const ver_one: bitstring.
+
+(* P4: params signed at creation, params accepted by a pinned device.
+   Arguments: identity_pub, account_id, kdf salt, signing_pub, kem_pub. *)
+event ParamsSigned(pkey, bitstring, bitstring, pkey, mlkem_pk, x25519_pk).
+event ParamsAccepted(pkey, bitstring, bitstring, pkey, mlkem_pk, x25519_pk).
+(* emergency_kit.pv (P18): the account created under a tag (tag, account_id,
+   identity_pub). Not used by the account models. *)
+event AccountOwned(bitstring, bitstring, pkey).
+(* P2: the AUK of an account. *)
+event AukCreated(bitstring, key).
+(* Sanity: unlock went through every check. *)
+event Unlocked(bitstring).
+(* P5, P1: tag, account signing key, vault id, vault key. *)
+event VaultCreated(bitstring, pkey, bitstring, key).
+event VaultAccepted(bitstring, pkey, bitstring, key).
+(* P1: content of an item sealed by the account (creation or device). *)
+event ItemSealed(bitstring, bitstring).
+(* Sanity: a device wrote an item (tag, vault id, content). *)
+event ItemWritten(bitstring, bitstring, bitstring).
+(* Sanity: tag, vault id, item id, content. *)
+event ItemRead(bitstring, bitstring, bitstring, bitstring).
+
+(* core/onepass-core/src/vault.rs: kem_context = "vault:" || vault_id *)
+letfun kem_context(vid: bitstring) = (ctx_vault, vid).
+
+(* core/onepass-core/src/account.rs: keyset_aad (blob id = account id,
+   no vault id) *)
+letfun keyset_aad(acct_id: bitstring) = blob_aad(kind_keyset, acct_id, no_vault).
+
+(* core/onepass-core/src/account.rs: signed_message
+   postcard(account_id, kdf, signing_pub, kem_pub) *)
+letfun params_message(acct_id: bitstring, salt: bitstring, spub: pkey,
+                      pkm: mlkem_pk, pkx: x25519_pk) =
+  (acct_id, salt, spub, pkm, pkx).
+
+(* core/onepass-core/src/vault.rs: Vault::seal_with
+   wrapped_key = seal(vault_key, ItemKey, item_aad, item_key)
+   blob = seal(item_key, Item, item_aad, postcard(version, item))
+   item_aad = (blob id = item id, vault id). The item is (vault_id, id,
+   content). Returns the ItemRecord (item_id, version, wrapped_key, blob). *)
+letfun seal_item(kv: key, vid: bitstring, iid: bitstring, ik: key,
+                 ver: bitstring, content: bitstring) =
+  (iid, ver,
+   aead_seal(kv, blob_aad(kind_item_key, iid, vid), k2b(ik)),
+   aead_seal(ik, blob_aad(kind_item, iid, vid), (ver, (vid, iid, content)))).
+
+(* core/onepass-core/src/manifest.rs: sign_manifest
+   blob = seal(vault_key, Manifest, aad(vault_id), postcard(m)),
+   sig = sign(signing key, "manifest", blob). Returns (blob, sig). *)
+letfun signed_manifest(ssk: skey, kv: key, vid: bitstring, m: bitstring) =
+  let mb = aead_seal(kv, blob_aad(kind_manifest, vid, vid), m) in
+  (mb, sign_dom(ssk, dom_manifest, mb)).
+
+(* ------------------------------------------------------------------ *)
+(* Vault creation by the account holder.                               *)
+(* core/onepass-core/src/repo.rs: Repository::create_vault (also run by *)
+(* create_account for "Personnel"), Vault::create, put_manifest with    *)
+(* prev = None; then Repository::save_item of a first item              *)
+(* (Vault::seal_item, put_item, write_manifest).                        *)
+(* ------------------------------------------------------------------ *)
+let CreateVault(tag: bitstring, ssk: skey, pkm: mlkem_pk, pkx: x25519_pk) =
+  new vid_n: nonce; new kv: key; new rm: seed; new rx: seed;
+  let vid = n2b(vid_n) in
+  (* vault.rs: Vault::create, wrap_key(kem_pub, key, kem_context(id)) *)
+  let env = core_wrap(pkm, pkx, rm, rx, kem_context(vid), kv) in
+  (* vault.rs: seal_meta, meta_aad (blob id = vault id = vault id) *)
+  let meta_blob = aead_seal(kv, blob_aad(kind_vault_meta, vid, vid),
+                            vault_meta_personal) in
+  (* manifest.rs: Manifest::next(None, vault_id, []) *)
+  let m1 = (vid, seq_one, zero_hash, no_entries) in
+  let (mb1: bitstring, ms1: bitstring) = signed_manifest(ssk, kv, vid, m1) in
+  event VaultCreated(tag, pk(ssk), vid, kv);
+  out(c, (vid, env, meta_blob, mb1, ms1));
+  (* repo.rs: Repository::save_item, first version of a new item *)
+  new iid_n: nonce; new ik: key; new content: bitstring;
+  let iid = n2b(iid_n) in
+  let rec = seal_item(kv, vid, iid, ik, ver_one, content) in
+  let m2 = (vid, next_seq(seq_one), h(m1), (iid, ver_one, h(rec))) in
+  let (mb2: bitstring, ms2: bitstring) = signed_manifest(ssk, kv, vid, m2) in
+  event ItemSealed(tag, content);
+  out(c, (rec, mb2, ms2)).
+
+(* ------------------------------------------------------------------ *)
+(* A device that pinned the account (account id, identity key).        *)
+(* core/onepass-core/src/repo.rs: Repository::unlock (DeviceState with  *)
+(* pinned = Some), core/onepass-core/src/account.rs: Account::unlock,   *)
+(* verify_params, open_keyset.                                          *)
+(* ------------------------------------------------------------------ *)
+let Device(tag: bitstring, pw: password, sk_acct: key, pin_acct: bitstring,
+           pin_idpub: pkey) =
+  (* repo.rs: account_records (params and keyset records from storage) *)
+  in(c, (params: bitstring, keyset_blob: bitstring));
+  (* account.rs: AccountParams::decode *)
+  let (acct_id: bitstring, salt: bitstring, id_pub: pkey, spub: pkey,
+       pkm: mlkem_pk, pkx: x25519_pk, psig: bitstring) = params in
+  (* account.rs: verify_params, step 1: identity_sig under its own
+     identity_pub, domain "account-params" *)
+  if verify_dom(id_pub, dom_account_params,
+                params_message(acct_id, salt, spub, pkm, pkx), psig) = true then
+  (* step 1, pinned: same account id and identity *)
+  if acct_id = pin_acct then
+  if id_pub = pin_idpub then
+  (* steps 2 and 3 (KDF floor, ceiling): not modeled *)
+  event ParamsAccepted(id_pub, acct_id, salt, spub, pkm, pkx);
+  (* crypto/kdf.rs: derive_auk(password, secret_key, params.kdf) *)
+  let auk = derive_auk(pw, sk_acct, salt) in
+  (* account.rs: open_keyset, step 4: open under the AUK, keyset_aad *)
+  let (skm: seed, skx: seed, ssk: skey, isk: skey) =
+    aead_open(auk, keyset_aad(acct_id), keyset_blob) in
+  (* step 5: the keyset's public keys equal the signed ones *)
+  if kem_pk_m(skm) = pkm then
+  if kem_pk_x(skx) = pkx then
+  if pk(ssk) = spub then
+  if pk(isk) = id_pub then
+  event Unlocked(tag);
+  (* repo.rs: Repository::vaults for one vault: Vault::open (unwrap_key
+     with kem_context(id), meta opens under the key), then read_manifest
+     (verify_manifest: signature under the account signing key, opens
+     with the vault key, vault id). The envelope is not authenticated:
+     the manifest signature is what authenticates the vault key. *)
+  in(c, (vid: bitstring, env: bitstring, meta_blob: bitstring,
+         mb: bitstring, ms: bitstring));
+  let kv = core_unwrap(skm, skx, kem_context(vid), env) in
+  let meta = aead_open(kv, blob_aad(kind_vault_meta, vid, vid), meta_blob) in
+  if verify_dom(spub, dom_manifest, mb, ms) = true then
+  let (=vid, mseq: bitstring, mprev: bitstring, mentries: bitstring) =
+    aead_open(kv, blob_aad(kind_manifest, vid, vid), mb) in
+  event VaultAccepted(tag, spub, vid, kv);
+  (* Each branch is parenthesized: `let ... in P | Q` would parse as
+     `let ... in (P | Q)` and run the second branch only after the first. *)
+  ((
+    (* repo.rs: Repository::items -> load (read_manifest, check_records:
+       version and record_hash match the entry) -> Vault::open_item
+       (unwrap_item_key, open_with: inner version, vault id, item id). *)
+    in(c, (mb2: bitstring, ms2: bitstring, rec: bitstring));
+    if verify_dom(spub, dom_manifest, mb2, ms2) = true then
+    let (=vid, seq2: bitstring, prev2: bitstring,
+         (eid: bitstring, ever: bitstring, erh: bitstring)) =
+      aead_open(kv, blob_aad(kind_manifest, vid, vid), mb2) in
+    let (=eid, =ever, wrapped: bitstring, iblob: bitstring) = rec in
+    if h(rec) = erh then
+    let k2b(ik) = aead_open(kv, blob_aad(kind_item_key, eid, vid), wrapped) in
+    let (=ever, (=vid, =eid, content: bitstring)) =
+      aead_open(ik, blob_aad(kind_item, eid, vid), iblob) in
+    event ItemRead(tag, vid, eid, content)
+  ) | (
+    (* repo.rs: Repository::save_item on the accepted vault: Vault::seal_item
+       under a fresh item key, put_item, then write_manifest (signed with
+       the keyset signing key, sealed under the accepted vault key). *)
+    (* Abstractions, both needed for termination:
+       - the seq and prev_hash of the written manifest are fresh values
+         instead of next_seq(mseq) and h(m): chained to the manifest read
+         from storage, this signing step lets the attacker grow unbounded
+         terms (next_seq(next_seq(...)), h(h(...))). History is
+         manifest.pv's job; here only the vault id and the vault key
+         matter.
+       - the fresh names of this branch depend on the vault id only
+         (new n[vid]), not on every earlier input: otherwise a signed
+         manifest written here, read back as `mb`, nests names inside
+         names without bound. Fewer name arguments merge sessions, a
+         sound over-approximation for secrecy and non-injective
+         correspondence. *)
+    new iid_n[vid]: nonce; new ik[vid]: key; new wcontent[vid]: bitstring;
+    new seq_w[vid]: nonce; new prev_w[vid]: nonce;
+    let iid = n2b(iid_n) in
+    let rec = seal_item(kv, vid, iid, ik, ver_one, wcontent) in
+    let m3 = (vid, n2b(seq_w), n2b(prev_w), (iid, ver_one, h(rec))) in
+    let (mb3: bitstring, ms3: bitstring) = signed_manifest(ssk, kv, vid, m3) in
+    event ItemSealed(tag, wcontent);
+    event ItemWritten(tag, vid, wcontent);
+    out(c, (rec, mb3, ms3))
+  )).
+
+(* ------------------------------------------------------------------ *)
+(* Account creation.                                                   *)
+(* core/onepass-core/src/repo.rs: Repository::create_account,           *)
+(* core/onepass-core/src/account.rs: Account::create_with_params,       *)
+(* sign_params, seal_keyset; crypto/kdf.rs: derive_auk.                 *)
+(* The KEM secret halves skm, skx come from the caller so that a broken *)
+(* half variant can publish one of them. The creating device pins the   *)
+(* account (create_account: DeviceState.pinned = pin(&account)); every  *)
+(* Device below is such a pinned device.                                *)
+(* ------------------------------------------------------------------ *)
+let CreateAccount(tag: bitstring, pw: password, sk_acct: key, skm: seed,
+                  skx: seed) =
+  new acct_n: nonce; new salt_n: nonce; new id_sk: skey; new ssk: skey;
+  let acct_id = n2b(acct_n) in
+  let salt = n2b(salt_n) in
+  let pkm = kem_pk_m(skm) in
+  let pkx = kem_pk_x(skx) in
+  (* account.rs: sign_params, identity.sign("account-params", msg) *)
+  let psig = sign_dom(id_sk, dom_account_params,
+                      params_message(acct_id, salt, pk(ssk), pkm, pkx)) in
+  let params = (acct_id, salt, pk(id_sk), pk(ssk), pkm, pkx, psig) in
+  (* kdf.rs: derive_auk; account.rs: seal_keyset (kem, signing, identity) *)
+  let auk = derive_auk(pw, sk_acct, salt) in
+  let keyset_blob = aead_seal(auk, keyset_aad(acct_id), (skm, skx, ssk, id_sk)) in
+  event ParamsSigned(pk(id_sk), acct_id, salt, pk(ssk), pkm, pkx);
+  event AccountOwned(tag, acct_id, pk(id_sk));
+  event AukCreated(tag, auk);
+  (* repo.rs: create_account stores the params and keyset records *)
+  out(c, (params, keyset_blob));
+  ( !CreateVault(tag, ssk, pkm, pkx)
+  | !Device(tag, pw, sk_acct, acct_id, pk(id_sk)) ).

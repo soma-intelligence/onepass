@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="fr"><head><title>Atlas Cloud - Paiement</title></head>
+<body>
+  <form id="card" action="/paiement" method="post">
+    <label for="num">Numéro de carte</label>
+    <input id="num" name="numero" type="text" autocomplete="cc-number">
+    <label for="exp">Date d'expiration</label>
+    <input id="exp" name="exp" type="text" placeholder="MM/AA">
+    <label for="promo">Code promo</label>
+    <input id="promo" name="promo" type="text" maxlength="12">
+    <label for="gift">Gift card code</label>
+    <input id="gift" name="gift" type="text">
+    <label for="ref">Code parrainage</label>
+    <input id="ref" name="parrain" type="text" inputmode="numeric" maxlength="6">
+    <button id="submit" type="submit">Payer</button>
+  </form>
+</body></html>

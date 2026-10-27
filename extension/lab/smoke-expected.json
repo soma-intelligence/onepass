@@ -1,0 +1,16 @@
+{
+  "0:lookalike": "pass",
+  "0:one_click": "pass",
+  "1:one_click": "pass",
+  "2:one_click": "xfail",
+  "3:one_click": "pass",
+  "4:one_click": "xfail",
+  "4:passkey_control": "pass",
+  "5:one_click": "pass",
+  "6:menu_fill": "xfail",
+  "7:menu_fill": "pass",
+  "8:menu_fill": "pass",
+  "9:menu_fill": "pass",
+  "10:one_click": "pass",
+  "11:one_click": "pass"
+}

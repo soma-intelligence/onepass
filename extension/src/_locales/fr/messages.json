@@ -1,0 +1,10 @@
+{
+  "extDescription": {
+    "message": "Remplis tes logins, cartes et identités depuis l'app OnePass.",
+    "description": "Description of the extension in the store and the extensions page."
+  },
+  "actionTitle": {
+    "message": "OnePass",
+    "description": "Tooltip of the toolbar button."
+  }
+}

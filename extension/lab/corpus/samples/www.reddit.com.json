@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-26T21:10:26.996Z",
+  "category": "signup",
+  "extractor": 1,
+  "host": "www.reddit.com",
+  "source_url": "https://www.reddit.com/register/",
+  "status": "skipped: robots"
+}

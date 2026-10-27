@@ -1,0 +1,3 @@
+Title,URL,Username,Password,Notes,OTPAuth
+Example Mail (alice@example.com),https://mail.example.com,alice@example.com,Safari-Invented-1,Recovery by phone,otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example
+Example Shop,https://shop.example.org,alice,Safari-Invented-2,,

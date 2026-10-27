@@ -1,0 +1,27 @@
+[package]
+name = "onepass-native-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "onepass-native-host"
+path = "src/main.rs"
+
+[dependencies]
+# Never the `vectors` feature: deterministic KEM helpers stay out of the host.
+onepass-bridge = { path = "../onepass-bridge" }
+# dev-fast-kdf: the fixture source builds its account with the dev floor,
+# which a release build ignores (the fixture source is refused there).
+onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }
+serde.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
+data-encoding.workspace = true
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+time = { version = "0.3", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+tempfile = "3"

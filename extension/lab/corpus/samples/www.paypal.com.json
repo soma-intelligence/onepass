@@ -1,0 +1,19 @@
+{
+  "captured_at": "2026-10-26T21:06:04.544Z",
+  "category": "login",
+  "extractor": 1,
+  "forms": [],
+  "host": "www.paypal.com",
+  "iframes": [
+    {
+      "origin": "https://geo.ddc.paypal.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://www.paypal.com/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

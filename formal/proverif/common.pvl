@@ -1,0 +1,263 @@
+(* OnePass formal model: shared library (ProVerif 2.05).
+
+   Loaded by formal/run.sh with `proverif -lib formal/proverif/common.pvl`.
+   Every primitive below is an ideal symbolic abstraction of the Rust code
+   it names. Encodings (postcard, blob headers, padding, length prefixes)
+   are abstracted by injective tuples: their correctness is covered by
+   tests and fuzzing, not by this model. *)
+
+(* ------------------------------------------------------------------ *)
+(* Public channel: storage (CloudKit, server, disk), network, native   *)
+(* messaging. The attacker reads, drops, replays and forges on it.     *)
+(* ------------------------------------------------------------------ *)
+
+free c: channel.
+
+(* ------------------------------------------------------------------ *)
+(* Types                                                               *)
+(* ------------------------------------------------------------------ *)
+
+type key.        (* 32 byte symmetric key (SymmetricKey, bridge keys) *)
+type seed.       (* secret randomness: KEM secret keys, encapsulation coins *)
+type nonce.      (* public or secret random value (n_E, ids, salts) *)
+type password.   (* low entropy master password, usable with weaksecret *)
+type skey.       (* signing secret key (hybrid ML-DSA-87 + Ed25519, or SLH-DSA identity) *)
+type pkey.       (* signature verifying key *)
+type mlkem_pk.   (* ML-KEM-1024 encapsulation key *)
+type x25519_pk.  (* X25519 public key *)
+
+(* Keys travel inside other messages (wrapped keys, HKDF inputs). *)
+fun k2b(key): bitstring [data, typeConverter].
+fun n2b(nonce): bitstring [data, typeConverter].
+
+const empty: bitstring.
+
+(* ------------------------------------------------------------------ *)
+(* Labels, named after the constants in the code                       *)
+(* ------------------------------------------------------------------ *)
+
+(* core/onepass-core/src/crypto/kdf.rs: AUK_INFO *)
+const lbl_auk: bitstring.
+(* core/onepass-core/src/crypto/aead.rs: ENC_INFO, COMMIT_INFO (folded
+   into the committing AEAD below, kept for models that need them) *)
+const lbl_blob_enc: bitstring.
+const lbl_blob_commit: bitstring.
+(* core/onepass-core/src/crypto/kem.rs: KEM_INFO *)
+const lbl_kem: bitstring.
+(* core/onepass-core/src/companion.rs: KEM_LABEL *)
+const lbl_companion: bitstring.
+(* core/onepass-core/src/crypto/sign.rs: SIG_PREFIX and the two domains *)
+const lbl_sig: bitstring.
+const dom_account_params: bitstring.
+const dom_manifest: bitstring.
+(* core/onepass-core/src/vault.rs: kem_context prefix "vault:" *)
+const ctx_vault: bitstring.
+
+(* core/onepass-bridge/src/kem.rs: KEM_LABEL *)
+const lbl_bridge_kem: bitstring.
+(* core/onepass-bridge/src/transcript.rs: TRANSCRIPT_LABEL *)
+const lbl_bridge_transcript: bitstring.
+(* core/onepass-bridge/src/pairing.rs: COMMIT_LABEL, SAS_LABEL,
+   PAIRING_KEY_LABEL, CONFIRM_LABEL *)
+const lbl_bridge_commit: bitstring.
+const lbl_bridge_sas: bitstring.
+const lbl_bridge_pairing_key: bitstring.
+const lbl_bridge_pair_confirm: bitstring.
+(* core/onepass-bridge/src/session.rs: E2H_LABEL, H2E_LABEL, CONFIRM_LABEL *)
+const lbl_bridge_e2h: bitstring.
+const lbl_bridge_h2e: bitstring.
+const lbl_bridge_session_confirm: bitstring.
+(* core/onepass-bridge/src/kdf.rs: hmac role strings *)
+const role_host: bitstring.
+const role_ext: bitstring.
+
+(* core/onepass-core/src/crypto/aead.rs: BlobKind, bound in the AAD *)
+const kind_keyset: bitstring.
+const kind_vault_key: bitstring.
+const kind_vault_meta: bitstring.
+const kind_item_key: bitstring.
+const kind_item: bitstring.
+const kind_manifest: bitstring.
+(* Aad.vault_id = None (16 zero bytes in the code) *)
+const no_vault: bitstring.
+
+(* ------------------------------------------------------------------ *)
+(* Hashes and key derivation                                           *)
+(* ------------------------------------------------------------------ *)
+
+(* SHA-256 / SHA3-256: one-way, collision free. *)
+fun h(bitstring): bitstring.
+
+(* HKDF-SHA256 extract and expand to 32 bytes.
+   core/onepass-core/src/crypto/key.rs: hkdf32(salt, ikm, info)
+   core/onepass-bridge/src/kdf.rs: hkdf32(salt, ikm, info), try_expand *)
+fun hkdf(bitstring, bitstring, bitstring): key.
+
+(* core/onepass-core/src/crypto/key.rs: SymmetricKey::derive (empty salt) *)
+letfun derive(k: key, info: bitstring) = hkdf(empty, k2b(k), info).
+
+(* HMAC-SHA256. core/onepass-bridge/src/kdf.rs: hmac(key, role, t) *)
+fun mac(key, bitstring): bitstring.
+
+(* Argon2id over the NFC password: one-way, low entropy input.
+   core/onepass-core/src/crypto/kdf.rs: derive_auk (Argon2 step) *)
+fun argon(password, bitstring): bitstring.
+
+(* core/onepass-core/src/crypto/kdf.rs: derive_auk
+   AUK = HKDF(salt = kdf.salt, ikm = argon2(pw) || secret_key, info = lbl_auk) *)
+letfun derive_auk(pw: password, sk: key, salt: bitstring) =
+  hkdf(salt, (argon(pw, salt), k2b(sk)), lbl_auk).
+
+(* ------------------------------------------------------------------ *)
+(* AEAD with key commitment                                            *)
+(* core/onepass-core/src/crypto/aead.rs: seal, open                    *)
+(* (AES-256-GCM-SIV + HMAC commitment over K_com).                     *)
+(* Opening succeeds only with the exact key and the exact AAD: a wrong *)
+(* key fails (commitment), a wrong AAD fails (tag).                    *)
+(* Also used for the bridge channel (AES-256-GCM, no commitment): in   *)
+(* the symbolic model the difference is immaterial, every bridge key   *)
+(* is used with one peer only.                                         *)
+(* The random 96 bit nonce is not modeled: sealing is deterministic.   *)
+(* ------------------------------------------------------------------ *)
+
+fun aead_seal(key, bitstring, bitstring): bitstring.
+reduc forall k: key, ad: bitstring, m: bitstring;
+  aead_open(k, ad, aead_seal(k, ad, m)) = m.
+
+(* AAD of a core blob: kind, blob id, vault id (format, algorithm, nonce
+   and schema are constants or not modeled). *)
+letfun blob_aad(kind: bitstring, blob_id: bitstring, vault_id: bitstring) =
+  (kind, blob_id, vault_id).
+
+(* ------------------------------------------------------------------ *)
+(* Signatures (EUF-CMA)                                                *)
+(* core/onepass-core/src/crypto/sign.rs: HybridSigningKey, IdentityKey *)
+(* Both halves of the hybrid signature are mandatory in the code; the  *)
+(* model treats the pair as one ideal signature.                       *)
+(* getmess: a signature does not hide its message (conservative).      *)
+(* ------------------------------------------------------------------ *)
+
+fun pk(skey): pkey.
+fun sign(skey, bitstring): bitstring.
+reduc forall sk: skey, m: bitstring;
+  verify(pk(sk), m, sign(sk, m)) = true.
+reduc forall sk: skey, m: bitstring;
+  getmess(sign(sk, m)) = m.
+
+(* Framed message: "onepass/sig/v1" || len(domain) || domain || msg. *)
+letfun sign_dom(sk: skey, dom: bitstring, m: bitstring) =
+  sign(sk, (lbl_sig, dom, m)).
+letfun verify_dom(vk: pkey, dom: bitstring, m: bitstring, s: bitstring) =
+  verify(vk, (lbl_sig, dom, m), s).
+
+(* ------------------------------------------------------------------ *)
+(* Hybrid KEM: two independent ideal KEMs                              *)
+(*                                                                     *)
+(* For each half: secret key sk (seed), public key kem_pk_*(sk),       *)
+(* encapsulation coins r (seed). Ciphertext kem_enc_*(pk, r), shared   *)
+(* secret kem_ss_*(pk, r). The encapsulator knows r, so it (and the    *)
+(* attacker, for its own r) computes the secret with kem_ss_*.         *)
+(* Decapsulation recovers it only with the matching secret key.        *)
+(* X25519 is modeled as a KEM: kem_enc_x(pk, r) is the ephemeral       *)
+(* public key, kem_ss_x(pk, r) the Diffie-Hellman value.               *)
+(* ML-KEM implicit rejection (a bad ciphertext gives an unrelated      *)
+(* secret) is modeled as failure: in every use the next step (AEAD     *)
+(* open, MAC check) fails on the unrelated secret anyway.              *)
+(*                                                                     *)
+(* Broken half variants: a model publishes the corresponding secret    *)
+(* key, out(c, sk_m) or out(c, sk_x).                                  *)
+(* ------------------------------------------------------------------ *)
+
+fun kem_pk_m(seed): mlkem_pk.
+fun kem_enc_m(mlkem_pk, seed): bitstring.
+fun kem_ss_m(mlkem_pk, seed): bitstring.
+reduc forall sk: seed, r: seed;
+  kem_dec_m(sk, kem_enc_m(kem_pk_m(sk), r)) = kem_ss_m(kem_pk_m(sk), r).
+
+fun kem_pk_x(seed): x25519_pk.
+fun kem_enc_x(x25519_pk, seed): bitstring.
+fun kem_ss_x(x25519_pk, seed): bitstring.
+reduc forall sk: seed, r: seed;
+  kem_dec_x(sk, kem_enc_x(kem_pk_x(sk), r)) = kem_ss_x(kem_pk_x(sk), r).
+
+(* Core combiner. core/onepass-core/src/crypto/kem.rs: combine
+   HKDF(salt = empty, ikm = ss_m || ss_x || ct_m || eph_pub || recipient_x,
+        info = label || context).
+   wrap_key uses info = "onepass/kem/v1" || context (unframed);
+   wrap_key_labeled uses info = label || u32(len(context)) || context.
+   Both are the injective pair (label, context) here. *)
+letfun combine_core(ss_m: bitstring, ss_x: bitstring, ct_m: bitstring,
+                    eph: bitstring, pkx: x25519_pk, label: bitstring,
+                    context: bitstring) =
+  hkdf(empty, (ss_m, ss_x, ct_m, eph, pkx), (label, context)).
+
+(* Bridge combiner. core/onepass-bridge/src/kem.rs: combine
+   HKDF(salt = "onepass/bridge/kem/v1", ikm = ss_m || ss_x,
+        info = SHA-256(ct_m || E_x || pk_x)). *)
+letfun combine_bridge(ss_m: bitstring, ss_x: bitstring, ct_m: bitstring,
+                      eph: bitstring, pkx: x25519_pk) =
+  hkdf(lbl_bridge_kem, (ss_m, ss_x), h((ct_m, eph, pkx))).
+
+(* --- Core envelope: core/onepass-core/src/crypto/kem.rs ------------- *)
+
+(* AAD of the inner VaultKey blob: blob id = SHA-256(info context),
+   no vault id. kem.rs: blob_aad *)
+letfun kem_blob_aad(aad_context: bitstring) =
+  blob_aad(kind_vault_key, h(aad_context), no_vault).
+
+(* wrap_with_info / unwrap_with_info: envelope = (ct_m, eph_pub, blob).
+   rm, rx: fresh encapsulation coins chosen by the caller. aad_context is
+   what the code hashes into the inner blob id. *)
+letfun core_wrap_info(pkm: mlkem_pk, pkx: x25519_pk, rm: seed, rx: seed,
+                      label: bitstring, context: bitstring,
+                      aad_context: bitstring, k: key) =
+  let ct_m = kem_enc_m(pkm, rm) in
+  let eph = kem_enc_x(pkx, rx) in
+  let kss = combine_core(kem_ss_m(pkm, rm), kem_ss_x(pkx, rx), ct_m, eph,
+                         pkx, label, context) in
+  (ct_m, eph, aead_seal(kss, kem_blob_aad(aad_context), k2b(k))).
+
+(* Fails on any mismatch (ciphertext, secret key, label, context). *)
+letfun core_unwrap_info(skm: seed, skx: seed, label: bitstring,
+                        context: bitstring, aad_context: bitstring,
+                        env: bitstring) =
+  let (ct_m: bitstring, eph: bitstring, blob: bitstring) = env in
+  let pkx = kem_pk_x(skx) in
+  let kss = combine_core(kem_dec_m(skm, ct_m), kem_dec_x(skx, eph), ct_m,
+                         eph, pkx, label, context) in
+  let k2b(k) = aead_open(kss, kem_blob_aad(aad_context), blob) in
+  k.
+
+(* wrap_key / unwrap_key: info = "onepass/kem/v1" || context, the inner
+   blob id hashes the context alone. *)
+letfun core_wrap(pkm: mlkem_pk, pkx: x25519_pk, rm: seed, rx: seed,
+                 context: bitstring, k: key) =
+  core_wrap_info(pkm, pkx, rm, rx, lbl_kem, context, context, k).
+letfun core_unwrap(skm: seed, skx: seed, context: bitstring, env: bitstring) =
+  core_unwrap_info(skm, skx, lbl_kem, context, context, env).
+
+(* wrap_key_labeled / unwrap_key_labeled: info = label || len || context,
+   the inner blob id hashes that whole info string. *)
+letfun core_wrap_labeled(pkm: mlkem_pk, pkx: x25519_pk, rm: seed, rx: seed,
+                         label: bitstring, context: bitstring, k: key) =
+  core_wrap_info(pkm, pkx, rm, rx, label, context, (label, context), k).
+letfun core_unwrap_labeled(skm: seed, skx: seed, label: bitstring,
+                           context: bitstring, env: bitstring) =
+  core_unwrap_info(skm, skx, label, context, (label, context), env).
+
+(* --- Bridge KEM: core/onepass-bridge/src/kem.rs --------------------- *)
+
+(* encapsulate: ciphertext (ct_m, E_x) ... *)
+letfun bridge_encaps_ct(pkm: mlkem_pk, pkx: x25519_pk, rm: seed, rx: seed) =
+  (kem_enc_m(pkm, rm), kem_enc_x(pkx, rx)).
+
+(* ... and the sender's shared secret. *)
+letfun bridge_encaps_ss(pkm: mlkem_pk, pkx: x25519_pk, rm: seed, rx: seed) =
+  combine_bridge(kem_ss_m(pkm, rm), kem_ss_x(pkx, rx), kem_enc_m(pkm, rm),
+                 kem_enc_x(pkx, rx), pkx).
+
+(* KemSecret::decapsulate *)
+letfun bridge_decaps(skm: seed, skx: seed, ct: bitstring) =
+  let (ct_m: bitstring, eph: bitstring) = ct in
+  combine_bridge(kem_dec_m(skm, ct_m), kem_dec_x(skx, eph), ct_m, eph,
+                 kem_pk_x(skx)).

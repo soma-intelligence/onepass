@@ -1,0 +1,36 @@
+{
+  "name": "onepass-extension",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:chromium": "node build.mjs chromium",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "playwright test -c e2e/playwright.config.ts",
+    "check": "npm run typecheck && npm run test && npm run build",
+    "lab:corpus": "node --experimental-strip-types lab/corpus/extract.ts --sites lab/corpus/sites.json --out lab/corpus/samples && node --experimental-strip-types lab/corpus/distill.ts",
+    "lab:smoke": "playwright test -c lab/run/playwright.config.ts",
+    "lab": "node --experimental-strip-types lab/cli.ts lab",
+    "lab:repro": "node --experimental-strip-types lab/cli.ts repro",
+    "sbom": "mkdir -p sbom && npm sbom --sbom-format cyclonedx --omit dev > sbom/extension.cdx.json"
+
+  },
+  "dependencies": {
+    "@noble/curves": "1.9.7",
+    "@noble/hashes": "1.8.0",
+    "@noble/post-quantum": "0.5.4",
+    "tldts": "7.4.19"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1",
+    "@types/chrome": "0.3.6",
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.2",
+    "jsdom": "26.1.0",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  }
+}

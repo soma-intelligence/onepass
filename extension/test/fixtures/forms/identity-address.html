@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr"><head><title>Atlas Cloud - Profil</title></head>
+<body>
+  <form id="profile" action="/profil" method="post">
+    <label for="fn">Prénom</label><input id="fn" name="prenom" type="text">
+    <label for="ln">Nom</label><input id="ln" name="nom" type="text">
+    <label for="tel">Téléphone</label><input id="tel" name="tel" type="tel">
+    <label for="org">Société</label><input id="org" name="societe" type="text">
+    <label for="a1">Adresse</label><input id="a1" name="adresse" type="text">
+    <label for="a2">Complément d'adresse</label><input id="a2" name="adresse2" type="text">
+    <label for="zip">Code postal</label><input id="zip" name="cp" type="text">
+    <label for="city">Ville</label><input id="city" name="ville" type="text">
+    <label for="country">Pays</label>
+    <select id="country" name="pays"><option>France</option></select>
+    <button id="submit" type="submit">Enregistrer</button>
+  </form>
+  <form id="ship" action="/livraison" method="post">
+    <input id="s1" type="text" autocomplete="shipping address-line1">
+    <input id="s2" type="text" autocomplete="shipping postal-code">
+    <input id="s3" type="text" autocomplete="shipping address-level2">
+  </form>
+</body></html>

@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["onepass-core", "onepass-cli", "onepass-ffi", "onepass-guard", "onepass-mcp", "onepass-peer", "onepass-ssh-agent", "onepass-bridge", "onepass-native-host"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+publish = false
+rust-version = "1.99"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+uuid = { version = "1", features = ["v7"] }
+aws-lc-rs = "1.18"
+zeroize = { version = "1.9", features = ["derive", "serde"] }
+data-encoding = "2.11"
+serde_json = "1"
+psl = "2"
+url = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+# SLH-DSA-SHA2-256s hashes through sha2: unoptimized, one signature takes
+# about 35 s in debug tests instead of about 15 s.
+[profile.dev.package.sha2]
+opt-level = 3
+
+# SLH-DSA itself (both slh-dsa versions): its hypertree loops dominate the
+# identity key tests in debug builds.
+[profile.dev.package.slh-dsa]
+opt-level = 3

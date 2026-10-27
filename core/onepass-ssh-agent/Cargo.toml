@@ -1,0 +1,28 @@
+[package]
+name = "onepass-ssh-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+onepass-core = { path = "../onepass-core" }
+onepass-guard = { path = "../onepass-guard" }
+aws-lc-rs.workspace = true
+zeroize.workspace = true
+data-encoding.workspace = true
+# Key derivation of encrypted OpenSSH private keys (openssh-key-v1). The
+# container itself is parsed here: ssh-key 0.6 needs `signature` ^2, which
+# cannot share the lock file with the `=2.3.0-pre.4` pin of onepass-core.
+bcrypt-pbkdf = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
+# CRT exponents d mod (p-1) and d mod (q-1) for RSA keys imported from OpenSSH.
+crypto-bigint = { version = "0.7.10", default-features = false, features = ["alloc", "zeroize"] }
+# Kernel credentials of socket clients and the effective uid.
+onepass-peer = { path = "../onepass-peer" }
+
+[dev-dependencies]
+tempfile = "3"
+# dev-fast-kdf: the repository tests unlock an account made with fast KDF
+# parameters (debug builds only).
+onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }

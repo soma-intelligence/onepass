@@ -1,0 +1,30 @@
+(* formal-lib: account_core.pvl *)
+(* OnePass formal model: the account model of account.pv (processes in
+   account_core.pvl) with the ML-KEM-1024 half of the account's hybrid KEM
+   broken: its secret key is published (out(c, skm_main)). The X25519
+   half alone must keep the vault keys, hence the items, secret.
+   Only the main account runs here (P2 and P3 are account.pv's). *)
+
+free pw_main: password [private].
+
+(* P1 with one KEM half broken. *)
+query s: pkey, v: bitstring, k: key;
+  event(VaultCreated(acct_main, s, v, k)) && attacker(k).
+query m: bitstring; event(ItemSealed(acct_main, m)) && attacker(m).
+
+(* P5 with one KEM half broken. *)
+query t: bitstring, s: pkey, v: bitstring, k: key;
+  event(VaultAccepted(t, s, v, k)) ==> event(VaultCreated(t, s, v, k)).
+
+(* Sanity (expected false): unlock, a vault listed, an item read, an item
+   written by a device. *)
+query event(Unlocked(acct_main)).
+query s: pkey, v: bitstring, k: key; event(VaultAccepted(acct_main, s, v, k)).
+query v: bitstring, i: bitstring, m: bitstring; event(ItemRead(acct_main, v, i, m)).
+query v: bitstring, m: bitstring; event(ItemWritten(acct_main, v, m)).
+
+process
+  new sk_main: key; new skm_main: seed; new skx_main: seed;
+  (* The broken half: its secret key is public. *)
+  out(c, skm_main);
+  CreateAccount(acct_main, pw_main, sk_main, skm_main, skx_main)

@@ -1,0 +1,4 @@
+type,name,url,email,username,password,note,totp,createTime,modifyTime,vault
+login,Example Mail,https://mail.example.com,alice@example.com,alice,Proton-Invented-1,Main mailbox,otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example,1700000000,1700000500,Personal
+note,Ideas,,,,,Invented note body,,1690000000,1690000100,Work
+alias,Invented Alias,,alias@example.net,,,,,1690000000,1690000100,Work

@@ -1,0 +1,4 @@
+type,account_name,account_holder,cc_number,code,expiration_month,expiration_year,routing_number,account_number,country,issuing_bank
+payment_card,Example Visa,Alice Example,4111111111111111,123,6,2027,,,US,Example Bank
+bank,Example Checking,Alice Example,,,,,021000021,12345678,US,Example Bank
+paypal,Example PayPal,alice@example.com,,,,,,,,

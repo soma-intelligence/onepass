@@ -1,0 +1,365 @@
+{
+  "captured_at": "2026-10-26T21:12:28.912Z",
+  "category": "address",
+  "extractor": 1,
+  "forms": [
+    {
+      "buttons": [
+        "Search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "id": "global-header--search-track-mail-ship",
+          "label": "Search USPS.com",
+          "maxlength": 256,
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "id": "global-header--search-track-track-manage",
+          "label": "Search USPS.com",
+          "maxlength": 256,
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "id": "global-header--search-track-store",
+          "label": "Search the Postal Store: Keyword or SKU",
+          "maxlength": 256,
+          "name": "q",
+          "required": false,
+          "role": "postal_code",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "id": "global-header--search-track-business",
+          "label": "Search USPS.com",
+          "maxlength": 256,
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "id": "<long>",
+          "label": "Search USPS.com",
+          "maxlength": 256,
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "id": "global-header--search-track-search",
+          "label": "Search USPS.com",
+          "maxlength": 256,
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "hasPattern": false,
+          "id": "global-header--search-track-mob-search",
+          "label": "Enter Search term for Search USPS.com",
+          "maxlength": 256,
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Close Modal",
+        "Find"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "tCompany",
+          "label": "Company",
+          "maxlength": 38,
+          "name": "tCompany",
+          "required": false,
+          "role": "organization",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "id": "tAddress",
+          "label": "*Street Address",
+          "maxlength": 38,
+          "name": "tAddress",
+          "required": true,
+          "role": "address_line1",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "id": "tApt",
+          "label": "Apt/Suite/Other",
+          "maxlength": 38,
+          "name": "tApt",
+          "required": false,
+          "role": "address_line2",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "id": "tCity",
+          "label": "City",
+          "maxlength": 50,
+          "name": "tCity",
+          "required": false,
+          "role": "city",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "id": "tState",
+          "label": "State",
+          "name": "tState",
+          "required": false,
+          "role": "unknown",
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "hasPattern": false,
+          "id": "tUrbanCode",
+          "label": "Urbanization Code",
+          "maxlength": 38,
+          "name": "tUrbanCode",
+          "required": false,
+          "role": "unknown",
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        },
+        {
+          "hasPattern": false,
+          "id": "tZip-byaddress",
+          "label": "ZIP Code™",
+          "maxlength": 10,
+          "name": "tZip-byaddress",
+          "required": false,
+          "role": "postal_code",
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Find"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "tCity-city-state",
+          "label": "*City",
+          "maxlength": 50,
+          "name": "tCity-city-state",
+          "required": true,
+          "role": "city",
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        },
+        {
+          "hasPattern": false,
+          "id": "tState-city-state",
+          "label": "*State",
+          "name": "tState-city-state",
+          "required": true,
+          "role": "city",
+          "tag": "select",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Find"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "tZip",
+          "label": "Enter ZIP Code™",
+          "maxlength": 10,
+          "required": false,
+          "role": "postal_code",
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "Search",
+        "Search",
+        "Search",
+        "Search",
+        "Search",
+        "Search",
+        "Search",
+        "By Address",
+        "Find by Address",
+        "By City and State",
+        "Find by City & State",
+        "Cities by ZIP Code™",
+        "Find Cities by ZIP",
+        "Go to",
+        "Close Modal",
+        "Find",
+        "Look Up Another ZIP Code™",
+        "Edit and Search Again",
+        "Find",
+        "Look Up Another ZIP Code™",
+        "Edit and Search Again",
+        "Find",
+        "Look Up Another ZIP Code™",
+        "Edit and Search Again"
+      ],
+      "fields": [
+        {
+          "hasPattern": false,
+          "id": "select-results-by-address",
+          "required": false,
+          "role": "address_line1",
+          "tag": "select",
+          "visibility": "zero_size"
+        },
+        {
+          "hasPattern": false,
+          "id": "select-results-by-address-responsive",
+          "required": false,
+          "role": "address_line1",
+          "tag": "select",
+          "visibility": "zero_size"
+        },
+        {
+          "hasPattern": false,
+          "id": "select-results-by-city-state",
+          "required": false,
+          "role": "city",
+          "tag": "select",
+          "visibility": "zero_size"
+        },
+        {
+          "hasPattern": false,
+          "id": "select-results-by-city-state-responsive",
+          "required": false,
+          "role": "city",
+          "tag": "select",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "host": "tools.usps.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source_url": "https://tools.usps.com/zip-code-lookup.htm?byaddress",
+  "status": "ok",
+  "webauthnCalls": []
+}

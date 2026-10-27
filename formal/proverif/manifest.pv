@@ -1,0 +1,337 @@
+(* OnePass formal model: signed vault manifests and the device-side history
+   check (rollback and fork detection).
+
+   Sources: core/onepass-core/src/manifest.rs (Manifest, SignedManifest,
+   Manifest::next, sign_manifest, verify_manifest, check_records) and
+   core/onepass-core/src/repo.rs (DeviceState::last_seen, create_vault,
+   items, save_item, load, read_manifest, write_manifest, put_manifest).
+   docs/security/README.md section 3.7.
+
+   Attacker: the store. Every signed manifest and every item record goes out
+   on the public channel c; the attacker replays any old one, reorders,
+   drops, and serves manifests of one vault to another vault (any number of
+   vaults share the account signing key). The vault keys are published too
+   (out(c, vk)): integrity must rest on the account signature alone, not on
+   the confidentiality of the vault key.
+
+   Writers: any number of devices of the same account. Every signed
+   manifest gets any number of children (seq + 1, chained to it): two
+   devices that load the same manifest and both write sign two different
+   manifests at the same seq, a real fork (put_if_version is a check of
+   the store, which is hostile here, so both writes get through).
+
+   Device state (DeviceState::last_seen for one vault) is threaded through
+   the device process as a parameter, over a bounded number of reads. See
+   "Device state" below for why this, and not a private channel cell, is
+   the faithful encoding in ProVerif.
+
+   Abstractions:
+   - seq and item versions are natural numbers; writers stop at seq 4
+     (Manifest::next is unbounded, checked_add only stops at u64::MAX),
+     and each device makes 3 reads after its first use or the creation;
+   - a manifest lists at most one entry, for a single item id per vault,
+     so the sorted / unique check of check_shape is trivially true; the
+     Merkle root is an ideal hash of the entry list;
+   - delete_item, move_item, trash and archive (other manifest writers)
+     are not modeled: they produce manifests of the same shape as
+     save_item;
+   - the interrupted-write and leftover rules of load (records ignored
+     beside the manifest) are not modeled: they never change the manifest
+     accepted, only which extra records are tolerated. *)
+
+(* An input in a given session receives one value: needed for the device's
+   successive reads (the state of read k + 1 is the result of read k). *)
+set preciseActions = true.
+
+(* ------------------------------------------------------------------ *)
+(* Manifest terms                                                      *)
+(* ------------------------------------------------------------------ *)
+
+(* manifest.rs: Manifest { vault_id, seq, prev_hash, entries, merkle_root }
+   postcard encoding abstracted by an injective constructor. *)
+fun mf(bitstring, nat, bitstring, bitstring, bitstring): bitstring [data].
+
+(* manifest.rs: ManifestEntry { item_id, version, record_hash }. A manifest
+   lists no entry (create_vault) or one. *)
+const no_entries: bitstring.
+fun one_entry(bitstring, nat, bitstring): bitstring [data].
+
+(* manifest.rs: merkle_root, an ideal hash (domain separated from h on a
+   manifest by the tag). *)
+const tag_merkle: bitstring.
+letfun merkle_root(ents: bitstring) = h((tag_merkle, ents)).
+
+(* manifest.rs: Manifest::next, prev_hash of the first manifest. *)
+const zero_hash: bitstring.
+
+(* vault.rs: ItemRecord { item_id, version, blob }. *)
+fun item_rec(bitstring, nat, bitstring): bitstring [data].
+
+(* manifest.rs: SeenManifest { seq, hash }; never_seen is
+   DeviceState::last_seen without an entry for this vault. *)
+const never_seen: bitstring.
+fun seen(nat, bitstring): bitstring [data].
+
+(* What a device reports for an accepted item when the manifest is empty. *)
+const no_item: bitstring.
+
+(* ------------------------------------------------------------------ *)
+(* Events                                                              *)
+(* ------------------------------------------------------------------ *)
+
+(* An honest writer signed manifest (vault, seq, prev_hash, hash, entries). *)
+event Signed(bitstring, nat, bitstring, bitstring, bitstring).
+(* Device d moved its last_seen for vault v to (seq, hash), the manifest
+   listing these entries: after a verified read (repo.rs: items) or after
+   its own write (repo.rs: write_manifest, create_vault). *)
+event Accept(bitstring, bitstring, nat, bitstring, bitstring).
+(* Read path only (repo.rs: items), one event per read: device d, vault v,
+   last_seen before the read, seq and hash of the manifest accepted. *)
+event Fetched(bitstring, bitstring, bitstring, nat, bitstring).
+(* repo.rs: items returned this record: device, vault,
+   one_entry(item_id, version, SHA-256(record)) computed from the record
+   itself, or no_item. *)
+event ItemAccepted(bitstring, bitstring, bitstring).
+
+(* ------------------------------------------------------------------ *)
+(* Queries                                                             *)
+(* ------------------------------------------------------------------ *)
+
+(* P6 authenticity: every manifest a device accepts was signed by an
+   honest writer of the account, for this vault, with these entries. *)
+query d: bitstring, v: bitstring, n: nat, mh: bitstring, e: bitstring, p: bitstring;
+  event(Accept(d, v, n, mh, e)) ==> event(Signed(v, n, p, mh, e)).
+
+(* P7 no rollback: once a device accepted seq n, every later accept by
+   that device for that vault has seq >= n. *)
+query d: bitstring, v: bitstring, n: nat, m: nat, h1: bitstring, h2: bitstring,
+      e1: bitstring, e2: bitstring, i: time, j: time;
+  event(Accept(d, v, n, h1, e1))@i && event(Accept(d, v, m, h2, e2))@j
+    ==> j < i || m >= n.
+
+(* P8 no fork: a device never accepts two different manifests with the
+   same seq for the same vault. *)
+query d: bitstring, v: bitstring, n: nat, h1: bitstring, h2: bitstring,
+      e1: bitstring, e2: bitstring;
+  event(Accept(d, v, n, h1, e1)) && event(Accept(d, v, n, h2, e2)) ==> h1 = h2.
+
+(* P8, chaining: a manifest read right after seq n, with seq n + 1, was
+   signed on top of the manifest the device had seen (prev_hash = its
+   hash). *)
+query d: bitstring, v: bitstring, n: nat, h0: bitstring, mh: bitstring, e: bitstring;
+  event(Fetched(d, v, seen(n, h0), n + 1, mh)) ==> event(Signed(v, n + 1, h0, mh, e)).
+
+(* P9: an item a device accepts is listed, with the same version and the
+   same record hash, in a manifest that device accepted. *)
+query d: bitstring, v: bitstring, i: bitstring, ver: nat, rh: bitstring,
+      n: nat, mh: bitstring;
+  event(ItemAccepted(d, v, one_entry(i, ver, rh)))
+    ==> event(Accept(d, v, n, mh, one_entry(i, ver, rh))).
+
+(* Documented limit (F-03, manifest.rs verify_manifest doc, README 3.7): a
+   gap larger than one cannot be chained and is accepted. A device that saw
+   seq 2 accepts a seq 4 that does not descend from it (built on a seq 3
+   that is built on a fork of seq 2). Expected false. *)
+query d: bitstring, v: bitstring, h0: bitstring, mh: bitstring, e: bitstring,
+      p: bitstring, e3: bitstring;
+  event(Fetched(d, v, seen(2, h0), 4, mh))
+    ==> event(Signed(v, 4, p, mh, e)) && event(Signed(v, 3, h0, p, e3)).
+
+(* Sanity (expected false). *)
+(* Two writers sign two different manifests at the same seq: forks exist,
+   so P8 is not true for lack of them. *)
+query v: bitstring, p1: bitstring, p2: bitstring, h1: bitstring, h2: bitstring,
+      e1: bitstring, e2: bitstring;
+  event(Signed(v, 2, p1, h1, e1)) && event(Signed(v, 2, p2, h2, e2)) ==> h1 = h2.
+(* A device reads seq 2 after seq 1 (the next one, chained). *)
+query d: bitstring, v: bitstring, h0: bitstring, mh: bitstring;
+  event(Fetched(d, v, seen(1, h0), 2, mh)).
+(* A device reads seq 3 after seq 1 (a gap). *)
+query d: bitstring, v: bitstring, h0: bitstring, mh: bitstring;
+  event(Fetched(d, v, seen(1, h0), 3, mh)).
+(* A device reads seq 2 and keeps it, then reads it again (same seq, same
+   manifest). *)
+query d: bitstring, v: bitstring, h0: bitstring, mh: bitstring;
+  event(Fetched(d, v, seen(2, h0), 2, mh)).
+(* A device reads seq 3 after seq 2, then the item it lists. *)
+query d: bitstring, v: bitstring, h0: bitstring, mh: bitstring;
+  event(Fetched(d, v, seen(2, h0), 3, mh)).
+query d: bitstring, v: bitstring, i: bitstring, ver: nat, rh: bitstring;
+  event(ItemAccepted(d, v, one_entry(i, ver, rh))).
+
+(* ------------------------------------------------------------------ *)
+(* Verification                                                        *)
+(* ------------------------------------------------------------------ *)
+
+(* manifest.rs: aad(vault_id): blob id = vault id = vid. *)
+letfun manifest_aad(vid: bitstring) = blob_aad(kind_manifest, vid, vid).
+
+(* manifest.rs: sign_manifest (check_shape holds by construction, then
+   seal under the vault key, sign the sealed blob, domain "manifest"). *)
+letfun sign_manifest(ssk: skey, vk: key, vid: bitstring, m: bitstring) =
+  let blob = aead_seal(vk, manifest_aad(vid), m) in
+  (blob, sign_dom(ssk, dom_manifest, blob)).
+
+(* manifest.rs: verify_manifest, history part (lines 227-240):
+   older seq refused; same seq must be the same manifest; next seq must
+   chain through prev_hash; a larger gap is accepted. No last_seen: no
+   history check. *)
+letfun history_ok(st: bitstring, seq: nat, mh: bitstring, prev: bitstring) =
+  if st = never_seen then true
+  else
+    let seen(ls: nat, lh: bitstring) = st in
+      if seq < ls then false
+      else if seq = ls then (if mh = lh then true else false)
+      else if seq = ls + 1 then (if prev = lh then true else false)
+      else true
+    else false.
+
+(* manifest.rs: verify_manifest, in the code's order: signature over the
+   blob, opening with the vault key, decoding and vault id (WrongContext),
+   Merkle root, history. Returns (seq, manifest hash, entries) or fails.
+   repo.rs: read_manifest calls it with last_seen = st. *)
+letfun verify_manifest(spk: pkey, vk: key, vid: bitstring, st: bitstring,
+                       sm: bitstring) =
+  let (blob: bitstring, sg: bitstring) = sm in
+  if verify_dom(spk, dom_manifest, blob, sg) = true then
+  let mf(=vid, seq: nat, prev: bitstring, ents: bitstring, root: bitstring) =
+    aead_open(vk, manifest_aad(vid), blob) in
+  if root = merkle_root(ents) then
+  let mh = h(mf(vid, seq, prev, ents, root)) in
+  if history_ok(st, seq, mh, prev) = true then
+  (seq, mh, ents).
+
+(* manifest.rs: check_records for a manifest of at most one entry: the one
+   record served must carry the listed item id, version and record hash
+   (record_hash = SHA-256(postcard(ItemRecord)), here h(record)). Returns
+   what the device accepts, computed from the record itself, or fails. *)
+letfun check_records(ents: bitstring, rec: bitstring) =
+  if ents = no_entries then no_item
+  else
+    let one_entry(i: bitstring, ver: nat, rh: bitstring) = ents in
+    let item_rec(ri: bitstring, rver: nat, body: bitstring) = rec in
+    if ri = i && rver = ver && h(rec) = rh then one_entry(ri, rver, h(rec)).
+
+(* ------------------------------------------------------------------ *)
+(* Device state                                                        *)
+(*                                                                     *)
+(* In the code, DeviceState::last_seen lives in the Repository and is   *)
+(* persisted by the caller after every successful operation, reads     *)
+(* included (onepass-ffi/src/session.rs: Session::with calls           *)
+(* persist_device_state; onepass-cli/src/session.rs: save_after), then *)
+(* given back to Repository::unlock. So it is a single, linear piece   *)
+(* of state per device and vault: each operation reads the current     *)
+(* value and replaces it. A private channel cell (in(cell, st); ...;   *)
+(* out(cell, st')) is not linear in ProVerif's Horn clause abstraction: *)
+(* an output stays available forever, so an operation may read a value *)
+(* that was already replaced, a rollback the code cannot do. With a    *)
+(* cell, P7 and both P8 queries "cannot be proved" on exactly that     *)
+(* spurious derivation (checked, see the task 3 report). The state is  *)
+(* therefore threaded as a process parameter through a bounded         *)
+(* sequence of reads, which is linear by construction.                 *)
+(*                                                                     *)
+(* A failed operation leaves last_seen unchanged and emits no event:   *)
+(* it is the same as the store not serving it, so the failure branches *)
+(* do not continue (no loss of traces).                                *)
+(* ------------------------------------------------------------------ *)
+
+(* repo.rs: Repository::items -> load -> read_manifest (verify_manifest with
+   last_seen) and check_records, then open_item, then
+   last_seen.insert(vault, seen(manifest)): last_seen moves only after all
+   the checks pass. One process per read, since ProVerif processes are not
+   recursive: Read1 continues with Read2 on the new state. *)
+let Read3(d: bitstring, spk: pkey, vid: bitstring, vk: key, st: bitstring) =
+  in(c, (sm: bitstring, rec: bitstring));
+  let (seq: nat, mh: bitstring, ents: bitstring) = verify_manifest(spk, vk, vid, st, sm) in
+  let got = check_records(ents, rec) in
+  event Fetched(d, vid, st, seq, mh);
+  event Accept(d, vid, seq, mh, ents);
+  event ItemAccepted(d, vid, got).
+
+let Read2(d: bitstring, spk: pkey, vid: bitstring, vk: key, st: bitstring) =
+  in(c, (sm: bitstring, rec: bitstring));
+  let (seq: nat, mh: bitstring, ents: bitstring) = verify_manifest(spk, vk, vid, st, sm) in
+  let got = check_records(ents, rec) in
+  event Fetched(d, vid, st, seq, mh);
+  event Accept(d, vid, seq, mh, ents);
+  event ItemAccepted(d, vid, got);
+  Read3(d, spk, vid, vk, seen(seq, mh)).
+
+let Read1(d: bitstring, spk: pkey, vid: bitstring, vk: key, st: bitstring) =
+  in(c, (sm: bitstring, rec: bitstring));
+  let (seq: nat, mh: bitstring, ents: bitstring) = verify_manifest(spk, vk, vid, st, sm) in
+  let got = check_records(ents, rec) in
+  event Fetched(d, vid, st, seq, mh);
+  event Accept(d, vid, seq, mh, ents);
+  event ItemAccepted(d, vid, got);
+  Read2(d, spk, vid, vk, seen(seq, mh)).
+
+(* Honest writers. repo.rs: Repository::save_item -> load, seal_item at
+   next_version, put_item, commit_manifest -> write_manifest ->
+   put_manifest (Manifest::next: seq + 1, prev_hash = hash of the loaded
+   manifest; sign_manifest; put_if_version, which the hostile store
+   ignores). A writer only builds on a manifest that verified under the
+   account key, that is, one an honest writer signed: the writers form a
+   tree of signed manifests rooted at seq 1, where every node gets any
+   number of children (replication). Two children of one node are a fork,
+   as when two devices load the same manifest and both write. The writing
+   device's own last_seen update (write_manifest) is not modeled as an
+   Accept: it moves last_seen to the manifest the device just signed, and
+   any later read goes through the same history check as below. *)
+letfun item_record(vk: key, vid: bitstring, iid: bitstring, ver: nat, content: bitstring) =
+  item_rec(iid, ver, aead_seal(vk, blob_aad(kind_item, iid, vid), content)).
+
+let Writer4(ssk: skey, vid: bitstring, vk: key, iid: bitstring, ph: bitstring) =
+  new content: bitstring;
+  let r = item_record(vk, vid, iid, 3, content) in
+  out(c, r);
+  let ents = one_entry(iid, 3, h(r)) in
+  let m = mf(vid, 4, ph, ents, merkle_root(ents)) in
+  event Signed(vid, 4, ph, h(m), ents);
+  out(c, sign_manifest(ssk, vk, vid, m)).
+
+let Writer3(ssk: skey, vid: bitstring, vk: key, iid: bitstring, ph: bitstring) =
+  new content: bitstring;
+  let r = item_record(vk, vid, iid, 2, content) in
+  out(c, r);
+  let ents = one_entry(iid, 2, h(r)) in
+  let m = mf(vid, 3, ph, ents, merkle_root(ents)) in
+  event Signed(vid, 3, ph, h(m), ents);
+  out(c, sign_manifest(ssk, vk, vid, m));
+  ! Writer4(ssk, vid, vk, iid, h(m)).
+
+let Writer2(ssk: skey, vid: bitstring, vk: key, iid: bitstring, ph: bitstring) =
+  new content: bitstring;
+  let r = item_record(vk, vid, iid, 1, content) in
+  out(c, r);
+  let ents = one_entry(iid, 1, h(r)) in
+  let m = mf(vid, 2, ph, ents, merkle_root(ents)) in
+  event Signed(vid, 2, ph, h(m), ents);
+  out(c, sign_manifest(ssk, vk, vid, m));
+  ! Writer3(ssk, vid, vk, iid, h(m)).
+
+(* repo.rs: Repository::create_vault -> put_manifest(None, []):
+   Manifest::next(None) is seq 1, prev_hash zeros, no entry; signed and
+   stored; the creating device sets last_seen to it (Accept). Then the
+   writers, the creating device and any number of other devices of the
+   account (last_seen without this vault: first use) run. *)
+let Vault(spk: pkey, ssk: skey) =
+  new vid: bitstring; new vk: key; new iid: bitstring;
+  out(c, (vid, vk, iid));
+  let m1 = mf(vid, 1, zero_hash, no_entries, merkle_root(no_entries)) in
+  event Signed(vid, 1, zero_hash, h(m1), no_entries);
+  out(c, sign_manifest(ssk, vk, vid, m1));
+  (
+    ( ! Writer2(ssk, vid, vk, iid, h(m1)) )
+  | ( new d0: bitstring;
+      event Accept(d0, vid, 1, h(m1), no_entries);
+      Read1(d0, spk, vid, vk, seen(1, h(m1))) )
+  | ( ! new d: bitstring; Read1(d, spk, vid, vk, never_seen) )
+  ).
+
+(* account.rs: the account signing key (keyset.signing), its public half in
+   the signed params (params.signing_pub). Any number of vaults. *)
+process
+  new ssk: skey;
+  out(c, pk(ssk));
+  ! Vault(pk(ssk), ssk)
