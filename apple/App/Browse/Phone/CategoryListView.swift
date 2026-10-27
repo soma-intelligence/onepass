@@ -50,6 +50,8 @@ struct CategoryListView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(PhoneBackground())
         .overlay {
             if items.isEmpty { emptyState }
         }

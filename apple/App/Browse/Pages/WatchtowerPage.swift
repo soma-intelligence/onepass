@@ -223,7 +223,15 @@ struct StrengthCard: View {
     }
 
     private var legend: some View {
-        HStack(spacing: 18) {
+        #if os(iOS)
+        // iPhone: the five levels wrap instead of squeezing into one row.
+        ChipFlow(spacing: 14) { legendEntries }
+        #else
+        HStack(spacing: 18) { legendEntries }
+        #endif
+    }
+
+    @ViewBuilder private var legendEntries: some View {
             ForEach(levels.indices, id: \.self) { i in
                 HStack(spacing: 6) {
                     Circle().fill(Self.colors[i]).frame(width: 8, height: 8)
@@ -234,7 +242,6 @@ struct StrengthCard: View {
                 }
                 .accessibilityElement(children: .combine)
             }
-        }
     }
 }
 
@@ -307,6 +314,13 @@ struct WatchtowerCard: Identifiable {
 }
 
 struct WatchtowerCardView: View {
+    /// Mac: the grid's cards line up; iPhone: one column, each card as tall as its text.
+    #if os(iOS)
+    private static let minHeight: CGFloat = 0
+    #else
+    private static let minHeight: CGFloat = 210
+    #endif
+
     let card: WatchtowerCard
     let report: FfiWatchtowerReport
     let checkBreaches: Bool
@@ -353,7 +367,7 @@ struct WatchtowerCardView: View {
                     .opacity(ids.isEmpty ? 0.45 : 1)
             }
             .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 210, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: Self.minHeight, alignment: .topLeading)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("watchtower.card.\(card.id)")

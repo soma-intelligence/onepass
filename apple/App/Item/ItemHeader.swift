@@ -21,6 +21,21 @@ struct ItemHeader: View {
         (item.urls.first(where: \.primary) ?? item.urls.first)?.url
     }
 
+    @ViewBuilder private var vaultBadge: some View {
+        if let vault {
+            HStack(spacing: 5) {
+                VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 16)
+                Text(vault.meta.name).lineLimit(1)
+            }
+            .padding(.leading, 3)
+            .padding(.trailing, 8)
+            .padding(.vertical, 2)
+            .background(.fill.quaternary, in: Capsule())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text("Coffre \(vault.meta.name)"))
+        }
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon, size: 64)
@@ -37,25 +52,30 @@ struct ItemHeader: View {
                             .accessibilityLabel(Text("Favori"))
                     }
                 }
-                HStack(spacing: 8) {
-                    Text(subtitle)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    if let vault {
-                        HStack(spacing: 5) {
-                            VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 16)
-                            Text(vault.meta.name).lineLimit(1)
-                        }
-                        .padding(.leading, 3)
-                        .padding(.trailing, 8)
-                        .padding(.vertical, 2)
-                        .background(.fill.quaternary, in: Capsule())
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(Text("Coffre \(vault.meta.name)"))
+                #if os(iOS)
+                // iPhone: the subtitle on its own line when the vault badge would cut it.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        Text(subtitle).lineLimit(1)
+                        vaultBadge
+                    }
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(subtitle).lineLimit(2)
+                        vaultBadge
                     }
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                #else
+                HStack(spacing: 8) {
+                    Text(subtitle)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    vaultBadge
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                #endif
             }
             Spacer(minLength: 0)
         }
