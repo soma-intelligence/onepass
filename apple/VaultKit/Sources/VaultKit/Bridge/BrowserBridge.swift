@@ -134,6 +134,8 @@ public final class BrowserBridge {
         requests.removeAll { $0.id == r.requestId }
         requests.append(
             Request(id: r.requestId, extensionName: r.extName, browser: r.browser, code: r.code))
+        // The code must be on screen while the extension shows it.
+        NotificationCenter.default.post(name: Self.unlockRequestedNotification, object: nil)
     }
 
     fileprivate func ended(_ id: UInt64) {
@@ -230,7 +232,7 @@ enum BridgeLog {
 }
 
 extension BrowserBridge {
-    /// Posted when an extension asks to unlock: the app activates its window.
+    /// Posted when an extension asks to unlock or to pair: the app activates its window.
     public static let unlockRequestedNotification = Notification.Name("me.somalabs.onepass.bridge.unlock")
 }
 
