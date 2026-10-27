@@ -616,10 +616,14 @@ mod tests {
 
     #[test]
     fn merge_keeps_the_larger_epoch() {
-        let mut old = DeviceState::default();
-        old.epoch = 2;
-        let mut new = DeviceState::default();
-        new.epoch = 5;
+        let old = DeviceState {
+            epoch: 2,
+            ..DeviceState::default()
+        };
+        let new = DeviceState {
+            epoch: 5,
+            ..DeviceState::default()
+        };
         assert_eq!(merge_device(&old, &new).unwrap().epoch, 5);
         assert_eq!(merge_device(&new, &old).unwrap().epoch, 5);
     }
