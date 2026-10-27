@@ -601,6 +601,10 @@ public final class VaultSession {
         }
         clearMemory()
         clipboard.clear()
+        // A debounced identity refresh would find the session locked: drop it (what was published
+        // stays, suggestions work while locked).
+        let sync = identitySync
+        enqueueIdentity { await sync.dropPending() }
         if state == .unlocked || state == .unlocking { state = .locked }
         if wasOpen { notifySync { await $0.sessionLocked() } }
     }
