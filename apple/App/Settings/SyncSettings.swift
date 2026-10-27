@@ -9,7 +9,7 @@ struct SyncSettings: View {
 
     /// Status line and its symbol; nil last sync means a first round has not finished yet.
     private enum Line {
-        case disabled, offline, refused(String), error(String), syncing, idle(Date?), accountChanged
+        case disabled, offline, refused(String), error(String), syncing, idle(Date?), accountChanged, waiting
     }
 
     private var line: Line {
@@ -22,8 +22,11 @@ struct SyncSettings: View {
         case .syncing: return .syncing
         case .idle(let last): return .idle(last)
         case .accountChanged: return .accountChanged
+        case .waitingForServer: return .waiting
         }
     }
+
+    @State private var safeExitKind: String?
 
     private var canSync: Bool {
         if case .disabled = line { return false }
@@ -51,6 +54,10 @@ struct SyncSettings: View {
                 if case .accountChanged = line {
                     UseICloudAccountButton()
                 }
+                if case .refused(let kind) = line {
+                    Button("Voir les solutions") { safeExitKind = kind }
+                        .accessibilityIdentifier("settings.sync.safeExits")
+                }
             } footer: {
                 footer
             }
@@ -77,6 +84,9 @@ struct SyncSettings: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Sync")
+        .sheet(item: Binding(get: { safeExitKind.map(RefusedKind.init) }, set: { safeExitKind = $0?.kind })) {
+            SafeExitChooserSheet(kind: $0.kind)
+        }
         #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -101,6 +111,9 @@ struct SyncSettings: View {
                 .foregroundStyle(.orange)
         case .syncing:
             Label("Synchronisation en cours", systemImage: "arrow.triangle.2.circlepath")
+        case .waiting:
+            Label("Synchronisation en attente d'iCloud", systemImage: "icloud.and.arrow.up")
+                .foregroundStyle(.secondary)
         case .idle(let last):
             if let last {
                 // Re-evaluated every 30 seconds so "il y a 1 minute" moves on.
@@ -119,6 +132,8 @@ struct SyncSettings: View {
             Text("Les données restent sur cet appareil. La synchronisation chiffrée par iCloud demande une version signée de OnePass.")
         case .refused:
             Text("Les données reçues d'iCloud ont été refusées par OnePass. Aucune n'a été utilisée.")
+        case .waiting:
+            Text("iCloud sert encore une version plus ancienne que celle de cet appareil. OnePass continue avec sa copie vérifiée et la renvoie ; rien n'est à faire.")
         case .accountChanged:
             Text("Cet appareil est maintenant connecté à un autre compte iCloud que celui avec lequel ton coffre se synchronisait. Par sécurité, OnePass ne lit et n'envoie plus rien vers iCloud : ton coffre reste intact sur cet appareil. Reconnecte-toi au compte iCloud d'origine dans Réglages pour reprendre la synchronisation, ou utilise ce compte : OnePass vérifie d'abord qu'il ne contient pas un autre coffre.")
         default:
@@ -143,4 +158,10 @@ struct SyncSettings: View {
             syncing = false
         }
     }
+}
+
+/// A refusal kind, as a sheet item.
+struct RefusedKind: Identifiable {
+    let kind: String
+    var id: String { kind }
 }

@@ -1,6 +1,7 @@
 // Save prompt (spec 8.5, 8.7): `save.html#<token>` in the top frame. The
 // record holds the submitted password, so it lives in memory only and for
-// at most 2 minutes. The page gets the username and the choices; the
+// at most 2 minutes, and blanked as soon as the prompt is saved, dismissed
+// or closed (security hardening 6.3). The page gets the username and the choices; the
 // password reaches the page only on "Afficher" (`save_reveal`) or as a value
 // it asked to generate. Task 17 (save-flow) decides when to prompt and calls
 // `open`.
@@ -65,6 +66,10 @@ export class SavePrompts {
     this.tokens = new FrameTokens<SaveRecord>({
       prefix: "save:",
       ttlMs: SAVE_TTL_MS,
+      // Dismiss, close, navigation and tab removal all end in a drop.
+      onDrop: (rec) => {
+        rec.password = "";
+      },
       // Spec 8.5: the submitted password is kept at most 2 minutes.
       onExpire: async (rec) => {
         rec.password = "";

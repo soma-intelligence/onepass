@@ -1,12 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BridgeAppError } from "../../src/bridge/client";
 import { createBackground } from "../../src/background/app";
-import { HISTORY_KEY } from "../../src/background/popup";
+import { HISTORY_KEY, resetGeneratorHistoryForTests } from "../../src/background/popup";
 import { MemoryPairingStore, Store } from "../../src/background/store";
 import { type Answer, FakeClient, record } from "./fake-client";
 import { FakeExt, csSender, uiSender } from "./fake-ext";
 
 const SITE = "https://atlas-cloud.test";
+
+beforeEach(() => resetGeneratorHistoryForTests());
 
 const summary = (id: string, kind = "login") => ({
   item_id: id,
@@ -126,7 +128,7 @@ describe("popup background", () => {
     expect(client.requests.filter((r) => r.op === "fill_login")).toEqual([]);
   });
 
-  it("generator: recipe kinds, history of 20 in storage.session, cleared on locked", async () => {
+  it("generator: recipe kinds, history of 20 in memory, cleared on locked", async () => {
     let locked = false;
     const { ext, send } = await setup((r) => (r.op === "list_for_origin" && locked ? new BridgeAppError("locked", "x") : answer(r)));
     expect(await send({ type: "popup_generate", kind: "random", length: 24, symbols: true })).toEqual({
@@ -136,7 +138,7 @@ describe("popup background", () => {
     const h = (await send({ type: "popup_history" })) as { ok: { entries: unknown[] } };
     expect(h.ok.entries).toHaveLength(20);
     expect(h.ok.entries[0]).toEqual({ password: "gen-pin", kind: "pin", at: 42 });
-    expect(ext.session.data.has(HISTORY_KEY)).toBe(true);
+    expect(ext.session.data.has(HISTORY_KEY)).toBe(false);
     locked = true;
     expect(await send({ type: "popup_suggestions" })).toEqual({ err: "locked" });
     expect(ext.session.data.has(HISTORY_KEY)).toBe(false);
@@ -147,8 +149,9 @@ describe("popup background", () => {
   it("status locked clears the history too", async () => {
     const { ext, send } = await setup((r) => (r.op === "status" ? { locked: true, account: "alex@atlas.dev", vaults: 2 } : answer(r)));
     await send({ type: "popup_generate", kind: "memorable" });
-    expect(ext.session.data.has(HISTORY_KEY)).toBe(true);
+    expect(await send({ type: "popup_history" })).toMatchObject({ ok: { entries: [{ kind: "memorable" }] } });
     await send({ type: "popup_status" });
+    expect(await send({ type: "popup_history" })).toEqual({ ok: { entries: [] } });
     expect(ext.session.data.has(HISTORY_KEY)).toBe(false);
   });
 
@@ -178,6 +181,7 @@ describe("popup background", () => {
     expect(await send({ type: "popup_item", itemId: "it_01" })).toMatchObject({ ok: { summary: { item_id: "it_01" } } });
     expect(await send({ type: "popup_forget" })).toEqual({ ok: {} });
     expect(pairings.value).toBeUndefined();
+    expect(await send({ type: "popup_history" })).toEqual({ ok: { entries: [] } });
     expect(ext.session.data.has(HISTORY_KEY)).toBe(false);
     expect(await send({ type: "popup_item", itemId: "it_01" })).toEqual({ err: "not_found" });
     expect(client.closed).toBe(true);
@@ -191,5 +195,48 @@ describe("popup background", () => {
     locked = true;
     expect(await send({ type: "popup_reveal", itemId: "it_01" })).toEqual({ err: "locked" });
     expect(await send({ type: "popup_item", itemId: "it_01" })).toEqual({ err: "not_found" });
+  });
+});
+
+describe("generator history memory hygiene (security hardening 6.3)", () => {
+  it("never writes the history to storage.session or storage.local", async () => {
+    const { ext, send } = await setup();
+    await send({ type: "popup_generate", kind: "pin" });
+    await send({ type: "popup_generate", kind: "smart" });
+    const dump = JSON.stringify([...ext.session.data.entries(), ...ext.local.data.entries()]);
+    expect(dump).not.toContain("gen-pin");
+    expect(dump).not.toContain("gen-smart");
+    expect(ext.session.data.has(HISTORY_KEY)).toBe(false);
+  });
+
+  it("removes an old storage.session history once at startup", async () => {
+    const ext = new FakeExt();
+    await ext.session.set({ [HISTORY_KEY]: [{ password: "old-secret", kind: "pin", at: 1 }] });
+    const pairings = new MemoryPairingStore();
+    createBackground(ext, { pairings, newClient: () => new FakeClient(answer), sleep: async () => undefined, now: () => 42 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ext.session.data.has(HISTORY_KEY)).toBe(false);
+  });
+
+  it("generator_history_survives_restart_as_empty", async () => {
+    const mk = async () => {
+      const mod = await import("../../src/background/popup");
+      const { FakeArea } = await import("./fake-ext");
+      return new mod.PopupBackend({
+        ext: {} as never,
+        area: new FakeArea(),
+        session: { request: (async () => ({ password: "gen-x", entropy_bits: 1 })) as never, onLocked: () => undefined },
+        pairing: {} as never,
+        filler: {} as never,
+        analyses: {} as never,
+      });
+    };
+    const before = await mk();
+    await before.generate("pin");
+    expect((await before.history()).entries).toHaveLength(1);
+    // Service worker restart: the module is evaluated again.
+    vi.resetModules();
+    const after = await mk();
+    await expect(after.history()).resolves.toEqual({ entries: [] });
   });
 });

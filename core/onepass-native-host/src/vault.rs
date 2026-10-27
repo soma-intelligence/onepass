@@ -224,10 +224,22 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
 /// The `dev` source: the data directory of the development CLI.
 pub type DevVault = RepoVault<SqliteStore>;
 
-/// What `device.bin` holds (postcard), as written by the CLI.
+/// What `device.bin` holds (postcard), as written by the CLI: the Secret
+/// Key, then the device state as the byte string of `DeviceState::encode`.
 #[derive(Deserialize)]
 struct DeviceFile {
     secret_key: Zeroizing<String>,
+    #[serde(with = "onepass_core::format::device_state_bytes")]
+    state: DeviceState,
+}
+
+/// `device.bin` before the versioned state: the version 1 state inline.
+/// Read only, migrated with `epoch = 0`; the next write uses the current
+/// layout.
+#[derive(Deserialize)]
+struct LegacyDeviceFile {
+    secret_key: Zeroizing<String>,
+    #[serde(deserialize_with = "onepass_core::format::device_state_v1_inline::deserialize")]
     state: DeviceState,
 }
 
@@ -235,7 +247,29 @@ struct DeviceFile {
 #[derive(Serialize)]
 struct DeviceRef<'a> {
     secret_key: &'a str,
+    #[serde(with = "onepass_core::format::device_state_bytes")]
     state: &'a DeviceState,
+}
+
+/// Decode `device.bin`: the current layout (whole buffer), else the legacy
+/// one.
+fn decode_device(bytes: &[u8]) -> Result<DeviceFile, HostError> {
+    if let Ok((file, [])) = postcard::take_from_bytes::<DeviceFile>(bytes) {
+        return Ok(file);
+    }
+    match postcard::take_from_bytes::<LegacyDeviceFile>(bytes) {
+        Ok((old, [])) => Ok(DeviceFile {
+            secret_key: old.secret_key,
+            state: old.state,
+        }),
+        _ => Err(HostError::new("device.bin is unreadable")),
+    }
+}
+
+fn encode_device(secret_key: &str, state: &DeviceState) -> Result<Zeroizing<Vec<u8>>, HostError> {
+    postcard::to_allocvec(&DeviceRef { secret_key, state })
+        .map(Zeroizing::new)
+        .map_err(|_| HostError::new("cannot encode device.bin"))
 }
 
 /// Rewrite `device.bin` with `state`, keeping its Secret Key unchanged, as
@@ -247,15 +281,8 @@ pub fn persist_device(dir: &Path, state: &DeviceState) -> Result<(), HostError> 
     let bytes = Zeroizing::new(
         fs::read(&path).map_err(|e| HostError::new(format!("device.bin: {}", e.kind())))?,
     );
-    let file: DeviceFile =
-        postcard::from_bytes(&bytes).map_err(|_| HostError::new("device.bin is unreadable"))?;
-    let new = Zeroizing::new(
-        postcard::to_allocvec(&DeviceRef {
-            secret_key: &file.secret_key,
-            state,
-        })
-        .map_err(|_| HostError::new("cannot encode device.bin"))?,
-    );
+    let file = decode_device(&bytes)?;
+    let new = encode_device(&file.secret_key, state)?;
     if *new == *bytes {
         return Ok(());
     }
@@ -276,12 +303,24 @@ pub fn lock_file(path: &Path) -> std::io::Result<fs::File> {
 }
 
 /// The password of the dev source: `ONEPASS_PASSWORD`, only when
-/// `ONEPASS_DEV_ALLOW_ENV_PASSWORD` is `1`, as the CLI does.
+/// `ONEPASS_DEV_ALLOW_ENV_PASSWORD` is `1` in a debug build, as the CLI
+/// does. A release build never reads it.
 pub fn env_password() -> Option<Zeroizing<String>> {
-    if std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").as_deref() != Ok("1") {
+    let switch = std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").ok();
+    if env_password_allowed(cfg!(debug_assertions), switch.as_deref()) != Ok(true) {
         return None;
     }
     std::env::var("ONEPASS_PASSWORD").ok().map(Zeroizing::new)
+}
+
+/// Whether the environment password switch is on: `Ok(true)` for `1` in a
+/// debug build, `Err` for `1` in a release build (refused), else `Ok(false)`.
+pub fn env_password_allowed(debug: bool, var: Option<&str>) -> Result<bool, &'static str> {
+    match var {
+        Some("1") if debug => Ok(true),
+        Some("1") => Err("ONEPASS_DEV_ALLOW_ENV_PASSWORD is refused in a release build"),
+        _ => Ok(false),
+    }
 }
 
 /// Unlock the CLI account of `dir` with `password`, holding its lock.
@@ -296,8 +335,7 @@ pub fn open_dev(dir: &Path, password: &str) -> Result<Repository<SqliteStore>, H
     let bytes = Zeroizing::new(
         fs::read(&device).map_err(|e| HostError::new(format!("device.bin: {}", e.kind())))?,
     );
-    let file: DeviceFile =
-        postcard::from_bytes(&bytes).map_err(|_| HostError::new("device.bin is unreadable"))?;
+    let file = decode_device(&bytes)?;
     let key = SecretKey::parse(&file.secret_key)
         .map_err(|_| HostError::new("device.bin holds an invalid key"))?;
     let store = SqliteStore::open(&store_path)
@@ -326,7 +364,11 @@ pub fn load_dev(dir: PathBuf, unlocked: bool, log: &crate::log::Log) -> DevVault
                 }
             },
             None => {
-                log.line("dev vault stays locked: no environment password");
+                let switch = std::env::var("ONEPASS_DEV_ALLOW_ENV_PASSWORD").ok();
+                match env_password_allowed(cfg!(debug_assertions), switch.as_deref()) {
+                    Err(refused) => log.line(&format!("dev vault stays locked: {refused}")),
+                    Ok(_) => log.line("dev vault stays locked: no environment password"),
+                }
                 None
             }
         }
@@ -341,4 +383,95 @@ pub fn load_dev(dir: PathBuf, unlocked: bool, log: &crate::log::Log) -> DevVault
     }));
     v.set_lock_path(dir.join(LOCK_FILE));
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn env_password_switch_is_debug_only() {
+        assert_eq!(env_password_allowed(true, Some("1")), Ok(true));
+        assert_eq!(env_password_allowed(true, None), Ok(false));
+        assert_eq!(env_password_allowed(false, None), Ok(false));
+        assert_eq!(env_password_allowed(false, Some("0")), Ok(false));
+        assert_eq!(
+            env_password_allowed(false, Some("1")),
+            Err("ONEPASS_DEV_ALLOW_ENV_PASSWORD is refused in a release build")
+        );
+    }
+
+    /// A `device.bin` written before the versioned state: Secret Key "sk",
+    /// then the version 1 state inline,
+    /// `{ pinned: None, last_seen: { [1; 16]: (7, [0xab; 32]) } }`.
+    const LEGACY_DEVICE_BIN_HEX: &str = concat!(
+        "02736b",
+        "00",
+        "01",
+        "01010101010101010101010101010101",
+        "07",
+        "abababababababababababababababababababababababababababababababab",
+    );
+
+    fn from_hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    fn fixed_state() -> DeviceState {
+        let mut state = DeviceState::default();
+        state.last_seen.insert(
+            onepass_core::Id([1; 16]),
+            onepass_core::manifest::SeenManifest {
+                seq: 7,
+                hash: [0xab; 32],
+            },
+        );
+        state
+    }
+
+    #[test]
+    fn legacy_device_bin_reads() {
+        let mut bytes = from_hex(LEGACY_DEVICE_BIN_HEX);
+        let file = decode_device(&bytes).unwrap();
+        assert_eq!(file.secret_key.as_str(), "sk");
+        assert_eq!(file.state, fixed_state());
+        let new = encode_device(&file.secret_key, &file.state).unwrap();
+        assert_eq!(&new[..3], b"\x02sk");
+        assert_eq!(&new[4..8], b"ODS\x02");
+        assert_eq!(decode_device(&new).unwrap().state, file.state);
+        bytes.push(0);
+        assert!(decode_device(&bytes).is_err());
+    }
+
+    #[test]
+    fn device_bin_roundtrips() {
+        let mut state = fixed_state();
+        state.epoch = 9;
+        let mut bytes = encode_device("sk", &state).unwrap();
+        let file = decode_device(&bytes).unwrap();
+        assert_eq!(file.secret_key.as_str(), "sk");
+        assert_eq!(file.state, state);
+        bytes.push(0);
+        assert!(decode_device(&bytes).is_err());
+    }
+
+    /// `persist_device` migrates a legacy file: same Secret Key, new layout.
+    #[test]
+    fn persist_device_rewrites_legacy_layout() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(DEVICE_FILE),
+            from_hex(LEGACY_DEVICE_BIN_HEX),
+        )
+        .unwrap();
+        let mut state = fixed_state();
+        state.epoch = 1;
+        persist_device(dir.path(), &state).unwrap();
+        let file = decode_device(&fs::read(dir.path().join(DEVICE_FILE)).unwrap()).unwrap();
+        assert_eq!(file.secret_key.as_str(), "sk");
+        assert_eq!(file.state, state);
+    }
 }

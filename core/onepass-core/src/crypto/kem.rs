@@ -33,11 +33,19 @@ const SECRET_LEN: usize = MLKEM_SECRET_LEN + X25519_LEN;
 const MLKEM_EK_START: usize = 1536;
 const MLKEM_EK_END: usize = MLKEM_EK_START + MLKEM_PUBLIC_LEN;
 const MLKEM_HASH_END: usize = MLKEM_EK_END + 32;
-/// HKDF info prefix of the combiner. The context follows it unframed,
-/// which is unambiguous only while every context belongs to one family
-/// (`"vault:" || vault_id`, fixed length). Before a second family appears
-/// (device pairing, sharing), the context must be length-prefixed, under
-/// a new label.
+/// HKDF info prefix of the combiner (`wrap_key`). The context follows it
+/// unframed. Three context families use it, each a fixed prefix followed by
+/// a 16-byte id:
+/// - `"vault:" || vault_id` (22 bytes, `vault::kem_context`),
+/// - `"travel:" || account_id` (23 bytes, `repo::travel::kem_context`),
+/// - `"onepass/archive/v1" || archive_id` (34 bytes,
+///   `archive::format::envelope_context`).
+///
+/// This stays unambiguous only while no family's context can be a prefix
+/// of (or equal to) another's: the lengths and prefixes differ, which
+/// `tests::unframed_context_families_are_disjoint` checks. A new family
+/// (device pairing, sharing) must use `wrap_key_labeled` under a label of
+/// its own, never this unframed form.
 const KEM_INFO: &[u8] = b"onepass/kem/v1";
 const SCHEMA: u16 = 1;
 
@@ -317,8 +325,8 @@ fn unwrap_with_info(
         return Err(Error::InvalidFormat("wrapped key length"));
     }
     // Straight into the key buffer: no [u8; 32] temporary.
-    let mut key = SymmetricKey([0u8; 32]);
-    key.0.copy_from_slice(&plain);
+    let mut key = SymmetricKey::zeroed();
+    key.bytes_mut().copy_from_slice(&plain);
     Ok(key)
 }
 
@@ -536,6 +544,70 @@ mod tests {
         let mut longer = bytes.clone();
         longer.push(0);
         assert!(HybridKemPublic::from_bytes(&longer).is_err());
+    }
+
+    type Family = (&'static str, fn(Id) -> Vec<u8>);
+
+    /// Every production context family of the unframed `wrap_key`.
+    fn unframed_families() -> [Family; 3] {
+        [
+            ("vault", crate::vault::kem_context),
+            ("travel", crate::repo::travel::kem_context),
+            ("archive", crate::archive::format::envelope_context),
+        ]
+    }
+
+    #[test]
+    fn unframed_context_families_have_fixed_shapes() {
+        let id = Id([0xA5; 16]);
+        let expected: [(&[u8], usize); 3] = [
+            (b"vault:", 22),
+            (b"travel:", 23),
+            (b"onepass/archive/v1", 34),
+        ];
+        for ((name, family), (prefix, len)) in unframed_families().into_iter().zip(expected) {
+            let ctx = family(id);
+            assert_eq!(ctx.len(), len, "{name} length");
+            assert!(ctx.starts_with(prefix), "{name} prefix");
+            assert_eq!(&ctx[prefix.len()..], &id.0, "{name} id");
+        }
+        // No family's fixed prefix is a prefix of another's.
+        for (i, (a, _)) in expected.iter().enumerate() {
+            for (b, _) in &expected[i + 1..] {
+                assert!(!a.starts_with(b) && !b.starts_with(a));
+            }
+        }
+    }
+
+    proptest::proptest! {
+        /// For any ids, a context of one family is never a prefix of (nor
+        /// equal to) a context of another family, and each family is
+        /// injective. With the shared unframed `KEM_INFO`, this is what
+        /// keeps the HKDF info strings and the blob ids apart.
+        #[test]
+        fn unframed_context_families_are_disjoint(
+            a in proptest::prelude::any::<[u8; 16]>(),
+            b in proptest::prelude::any::<[u8; 16]>(),
+        ) {
+            let families = unframed_families();
+            for (i, (name_f, f)) in families.iter().enumerate() {
+                let fa = f(Id(a));
+                let fb = f(Id(b));
+                proptest::prop_assert_eq!(fa == fb, a == b, "{} not injective", name_f);
+                for (j, (name_g, g)) in families.iter().enumerate() {
+                    if i == j {
+                        continue;
+                    }
+                    let gb = g(Id(b));
+                    proptest::prop_assert!(
+                        !gb.starts_with(&fa),
+                        "{} context is a prefix of a {} context",
+                        name_f,
+                        name_g
+                    );
+                }
+            }
+        }
     }
 
     #[test]

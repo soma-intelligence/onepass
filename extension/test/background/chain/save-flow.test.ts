@@ -290,3 +290,28 @@ describe("auto-submit preference (R-12)", () => {
     expect(await autoSubmitFor(area, "it_01")).toBe(true);
   });
 });
+
+describe("generated passwords memory hygiene", () => {
+  const mk = () =>
+    new SaveFlow({
+      session: { request: (async () => ({})) as never },
+      saves: { open: async () => "tok" },
+      neverSave: { has: async () => false },
+      topFrame: async () => null,
+    });
+  const held = (f: SaveFlow, tab: number) => (f as unknown as { generated: Map<number, { password: string }> }).generated.get(tab);
+
+  it("blanks the replaced entry and clears every entry on lock", () => {
+    const f = mk();
+    f.rememberGenerated(7, "https://atlas-cloud.test", "first-Pass-1");
+    const first = held(f, 7);
+    f.rememberGenerated(7, "https://atlas-cloud.test", "second-Pass-2");
+    expect(first?.password).toBe("");
+    const second = held(f, 7);
+    expect(second?.password).toBe("second-Pass-2");
+    f.clearGenerated();
+    expect(second?.password).toBe("");
+    expect(held(f, 7)).toBeUndefined();
+  });
+});
+

@@ -11,6 +11,18 @@ import os
 /// retries after 30 s, 2 min, then every 10 min (or after the delay the server asked for); an integrity
 /// error from the rebase sets `.refused(kind)`, kept until a rebase succeeds.
 ///
+/// Sync health (spec 3.1): the rebase reports the vaults it rebased even when an error follows
+/// (`rebase_with_report`, so they refresh), and every complete round ends with `note_sync_round` then
+/// `sync_health`. A vault the server is behind on (`ServerBehind`: a lagging replica, a cut fetch, a
+/// recreated zone) is served from this device's copy and only shows `.waitingForServer`; an `Alert`
+/// shows `.refused(kind)`, the integrity screen with its safe exits.
+///
+/// Safe exits (spec 3.3, `safeExitIssued`): after "Garder la version de cet appareil", the status stays
+/// `.waitingForServer` until every vault is `Ok` again, never idle before. A `Conflict` reported by a
+/// later rebase means the epoch could not ship (a vault was still held) and was withdrawn: the
+/// coordinator keeps syncing and, once a rebase is clean, issues `keep_this_device` again while a
+/// vault is still behind or in alert.
+///
 /// iCloud account binding: the first round stores the remote's `accountIdentity()` in the store meta.
 /// A later round (or `remoteHasAccount`) that meets another identity touches nothing (no fetch, no
 /// send) and reports `.accountChanged` until `acceptAccountChange()`: the change token and server tags
@@ -61,6 +73,21 @@ public actor SyncCoordinator: SyncTrigger {
     private var retryAttempt = 0
     /// Kind of the last integrity refusal of a rebase, until a rebase succeeds.
     private var refusal: String?
+    /// The rebase of the current round withdrew a restore epoch (`Conflict`).
+    private var epochWithdrawn = false
+    /// The last sync health read (unlocked rounds only), in vault id order.
+    public private(set) var health: [FfiVaultHealth] = []
+    /// The safe exit issued last, followed until every vault is `Ok`.
+    private var safeExit: SafeExit?
+    /// `keep_this_device` was withdrawn (`Conflict`): issue it again after a clean rebase.
+    private var keepReissue = false
+    /// Rounds in a row that ended with a withdrawn epoch; past `maxQuickConflictRounds`, the next round
+    /// waits for the retry delays instead of starting at once.
+    private var conflictRounds = 0
+    static let maxQuickConflictRounds = 3
+    /// Tests: epochs withdrawn, and `keep_this_device` issued again.
+    private(set) var withdrawnEpochs = 0
+    private(set) var keepReissues = 0
     /// Rounds in a row that ended on `RemoteStoreError.recordUnreadable`.
     private var unreadableRounds = 0
     /// The identity the last check accepted, when, and the remote's account change count before it.
@@ -259,6 +286,10 @@ public actor SyncCoordinator: SyncTrigger {
         defer { release() }
         try await CoreThread.run(reset)
         refusal = nil
+        health = []
+        safeExit = nil
+        keepReissue = false
+        conflictRounds = 0
         verifiedIdentity = nil
         unreadableRounds = 0
         retryAttempt = 0
@@ -296,6 +327,16 @@ public actor SyncCoordinator: SyncTrigger {
 
     public func sessionLocked() async {
         session = nil
+    }
+
+    /// The session issued a safe exit's epoch: follow it (see the type doc) and run a round now.
+    public func safeExitIssued(_ exit: SafeExit) async {
+        safeExit = exit
+        keepReissue = false
+        conflictRounds = 0
+        refusal = nil
+        guard remote != nil else { return }
+        kick()
     }
 
     // MARK: - Rounds
@@ -339,6 +380,7 @@ public actor SyncCoordinator: SyncTrigger {
             return
         }
         setStatus(.syncing)
+        epochWithdrawn = false
         do {
             var turn = 0
             var resets = 0
@@ -366,8 +408,9 @@ public actor SyncCoordinator: SyncTrigger {
             unreadableRounds = 0
             retryTask?.cancel()
             retryTask = nil
-            // A locked round cannot clear a refusal: the refused vault is still held.
-            setStatus(refusal.map { .refused(kind: $0) } ?? .idle(lastSync: now()))
+            await noteRoundAndReadHealth()
+            setStatus(statusAfterRound())
+            followWithdrawnEpoch()
         } catch RemoteStoreError.offline {
             setStatus(.offline)
             scheduleRetry(after: nil)
@@ -414,7 +457,10 @@ public actor SyncCoordinator: SyncTrigger {
     /// lost before staging is fetched again). After the last page, always one `commit_remote`, which
     /// also applies anything left in `staging` (an interrupted fetch, conflicting records of a send),
     /// so staged rows never outlive a complete fetch. Records whose `serverMeta` matches the stored one
-    /// (our own pushes coming back) are not staged; deletions are always staged.
+    /// (our own pushes coming back) are not staged, except manifests: a manifest this device pushed over
+    /// a server that was behind counts as served back only when a fetch returns it (`commit_remote`
+    /// clears the vault's wait), and the log returns it once. Such a manifest is not a remote change.
+    /// Deletions are always staged.
     private func fetchAll(_ remote: any RemoteRecordStore) async throws {
         try await checkAccountIdentity(remote)
         let store = store
@@ -426,6 +472,7 @@ public actor SyncCoordinator: SyncTrigger {
         // and settles the rows the server did not return after the commit (`finish_full_fetch`).
         if token == nil { try await CoreThread.run { try store.beginFullFetch() } }
         var changed = 0
+        var echoedManifests: Set<String> = []
         var resets = 0
         while true {
             let batch: RemoteBatch
@@ -443,12 +490,16 @@ public actor SyncCoordinator: SyncTrigger {
                 Self.log.notice("skipped \(batch.changes.count - valid.count, privacy: .public) unknown remote records")
             }
             let next = batch.token
-            changed += try await CoreThread.run {
+            let (count, echoed) = try await CoreThread.run {
                 var count = 0
+                var echoed: Set<String> = []
                 for change in valid {
                     let known = try store.serverMeta(kind: change.name.kind, id: change.name.id)
                     if change.data != nil {
                         if let meta = change.serverMeta, let known, CloudKitMapping.sameServerVersion(meta, known) {
+                            guard change.name.kind == 6 else { continue }
+                            echoed.insert(change.name.id)
+                            try store.stageRemote(record: FfiRemoteRecord(change))
                             continue
                         }
                         count += 1
@@ -459,8 +510,10 @@ public actor SyncCoordinator: SyncTrigger {
                 }
                 try hook?()
                 if let next { try store.setMeta(key: Self.tokenKey, value: next) }
-                return count
+                return (count, echoed)
             }
+            changed += count
+            echoedManifests.formUnion(echoed)
             if let next { token = next }
             if !batch.moreComing { break }
             // More pages without a new token would fetch the same page forever: retry later.
@@ -476,7 +529,7 @@ public actor SyncCoordinator: SyncTrigger {
             return (vaults, try store.finishFullFetch())
         }
         await refreshIgnoredDeletionCount()
-        if changed > 0 || !vaults.isEmpty || dropped { emitRemoteChange() }
+        if changed > 0 || !Set(vaults).isSubset(of: echoedManifests) || dropped { emitRemoteChange() }
     }
 
     /// Binds the store to the remote's account at the first sync; throws `accountChanged` on any other
@@ -536,14 +589,106 @@ public actor SyncCoordinator: SyncTrigger {
     }
 
     /// Unlocked only. A session locked meanwhile is dropped (`Locked`), the round goes on without it.
+    /// The vaults rebased are announced even when an error follows. An integrity error sets the refusal
+    /// and the round goes on (the refused vault stays held, the core sends nothing of it); a withdrawn
+    /// epoch (`Conflict`) is followed by `followWithdrawnEpoch`; any other error ends the round.
     private func rebaseIfUnlocked() async throws {
         guard let session else { return }
+        let report: FfiRebaseReport
         do {
-            let rebased = try await CoreThread.run { try session.rebaseAll() }
-            refusal = nil
-            if !rebased.isEmpty { emitRemoteChange() }
+            report = try await CoreThread.run { try session.rebaseWithReport() }
         } catch OnePassError.Locked {
             if self.session === session { self.session = nil }
+            return
+        }
+        if !report.rebased.isEmpty { emitRemoteChange() }
+        switch report.error {
+        case nil:
+            refusal = nil
+            if keepReissue { try await reissueKeepUnlessHealthy(session) }
+        case .Conflict?:
+            Self.log.notice("restore epoch withdrawn, a vault was still held")
+            epochWithdrawn = true
+            withdrawnEpochs += 1
+            if safeExit == .keepThisDevice { keepReissue = true }
+        case .Integrity(let kind)?:
+            Self.log.error("remote data refused: \(kind, privacy: .public)")
+            refusal = kind
+        case .Locked?:
+            if self.session === session { self.session = nil }
+        case let error?:
+            throw error
+        }
+    }
+
+    /// The rebase is clean after a withdrawn `keep_this_device`: issued again while a vault is not `Ok`
+    /// (the withdrawal leaves the troubled vaults behind, their alert restarted, so waiting would only
+    /// bring the alert back), and the send of this turn pushes it. Every vault `Ok`: the server
+    /// converged without it.
+    private func reissueKeepUnlessHealthy(_ session: Session) async throws {
+        keepReissue = false
+        let troubled = try await CoreThread.run { () -> Bool in
+            try session.syncHealth().contains { $0.state != .ok }
+        }
+        guard troubled else { return }
+        Self.log.notice("keep this device issued again")
+        keepReissues += 1
+        _ = try await CoreThread.run { try session.keepThisDevice() }
+    }
+
+    /// The end of a complete round (unlocked): `note_sync_round` with the injected clock, then
+    /// `sync_health`. Locked: the last health read stays. An integrity error of the round count (the
+    /// stored epoch) is a refusal; other errors are logged and the health is kept.
+    private func noteRoundAndReadHealth() async {
+        guard let session else { return }
+        let seconds = Int64(now().timeIntervalSince1970.rounded(.down))
+        do {
+            health = try await CoreThread.run {
+                try session.noteSyncRound(now: seconds)
+                return try session.syncHealth()
+            }
+        } catch OnePassError.Integrity(let kind) {
+            Self.log.error("sync round refused: \(kind, privacy: .public)")
+            refusal = kind
+        } catch OnePassError.Locked {
+            if self.session === session { self.session = nil }
+        } catch {
+            Self.log.error("sync health not read")
+        }
+    }
+
+    /// Status of a complete round: a refusal of the rebase, then the first alert (`.waitingForServer`
+    /// instead while a withdrawn `keep_this_device` waits to be issued again), then a vault behind or a
+    /// safe exit not settled yet (`.waitingForServer`), else idle. A safe exit is settled only once every
+    /// vault is `Ok`.
+    private func statusAfterRound() -> SyncStatus {
+        if let refusal { return .refused(kind: refusal) }
+        let alert = health.lazy.compactMap { if case .alert(let kind) = $0.state { kind } else { nil } }.first
+        if let alert {
+            return keepReissue || epochWithdrawn ? .waitingForServer : .refused(kind: alert)
+        }
+        let allOk = health.allSatisfy { $0.state == .ok }
+        if allOk, !keepReissue, !epochWithdrawn {
+            safeExit = nil
+            conflictRounds = 0
+        }
+        if !allOk || safeExit != nil { return .waitingForServer }
+        return .idle(lastSync: now())
+    }
+
+    /// A round whose rebase withdrew an epoch: one more round at once (the next rebase decides whether
+    /// `keep_this_device` must be issued again), at most `maxQuickConflictRounds` in a row, then after
+    /// the retry delays.
+    private func followWithdrawnEpoch() {
+        guard epochWithdrawn else {
+            conflictRounds = 0
+            return
+        }
+        conflictRounds += 1
+        if conflictRounds <= Self.maxQuickConflictRounds {
+            rerun = true
+        } else {
+            scheduleRetry(after: nil)
         }
     }
 

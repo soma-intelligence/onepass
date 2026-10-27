@@ -4,12 +4,19 @@ import VaultKit
 
 /// Concealed, password, one-time code and recovery phrase fields: a secure field with Révéler.
 /// Password: "Générer" (generator sheet) and the strength meter. OTP: a base32 secret or an
-/// `otpauth://` URI, with a live preview of the code. Masked again after 30 s and when it goes away.
+/// `otpauth://` URI, with a live preview of the code. Masked again after 30 s, when it goes away, on lock,
+/// when the scene leaves the foreground and while the screen is captured.
 struct SecretFieldEditor: View {
+    @Environment(AppModel.self) private var model
     let field: FfiField
     @Binding var value: FfiFieldValue
     @Environment(\.requestGenerator) private var requestGenerator
     @State private var revealed = false
+    #if os(iOS) || os(visionOS)
+    @Environment(\.isSceneCaptured) private var captured
+    #else
+    private let captured = false
+    #endif
     @State private var generating = false
     /// The value the generator just put in, with its recipe bits (the meter shows those for it).
     @State private var generated: GeneratedValue?
@@ -48,7 +55,11 @@ struct SecretFieldEditor: View {
                 StrengthMeter(bits: meterBits)
             }
             if field.kind == .otp, !value.text.isEmpty {
-                TotpCodeView(secret: value.text, compact: true)
+                if captured {
+                    Text(verbatim: FieldRow.mask).font(.callout.monospacedDigit())
+                } else {
+                    TotpCodeView(secret: value.text, compact: true)
+                }
             }
         }
         .task(id: revealed) {
@@ -57,6 +68,10 @@ struct SecretFieldEditor: View {
             if !Task.isCancelled { revealed = false }
         }
         .onDisappear { revealed = false }
+        // Lock, or the scene left the foreground (`VaultSession.concealGeneration`).
+        .onChange(of: model.session.concealGeneration) { revealed = false }
+        // Screen captured (iOS, visionOS): masked now, and still masked once the capture ends.
+        .onChange(of: captured) { _, now in if now { revealed = false } }
         #if DEBUG
         .task {
             if field.kind == .password, field.id == "password",
@@ -96,7 +111,7 @@ struct SecretFieldEditor: View {
     }
 
     @ViewBuilder private var input: some View {
-        if revealed {
+        if revealed && !captured {
             TextField(field.label, text: text, axis: field.kind == .mnemonic ? .vertical : .horizontal)
         } else {
             SecureField(field.label, text: text)
@@ -125,9 +140,15 @@ extension EnvironmentValues {
 /// multi-line editor that keeps its line breaks, masked again after 30 s). The public key and the
 /// fingerprint are shown when present. Generation comes later (milestone 7).
 struct SshKeyEditor: View {
+    @Environment(AppModel.self) private var model
     let field: FfiField
     @Binding var value: FfiFieldValue
     @State private var revealed = false
+    #if os(iOS) || os(visionOS)
+    @Environment(\.isSceneCaptured) private var captured
+    #else
+    private let captured = false
+    #endif
 
     private var key: FfiSshKey? {
         if case .sshKey(let key) = value { key } else { nil }
@@ -149,7 +170,7 @@ struct SshKeyEditor: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
                 Group {
-                    if revealed {
+                    if revealed && !captured {
                         TextEditor(text: privateKey)
                             .font(.footnote.monospaced())
                             .frame(minHeight: 120)
@@ -199,5 +220,9 @@ struct SshKeyEditor: View {
             if !Task.isCancelled { revealed = false }
         }
         .onDisappear { revealed = false }
+        // Lock, or the scene left the foreground (`VaultSession.concealGeneration`).
+        .onChange(of: model.session.concealGeneration) { revealed = false }
+        // Screen captured (iOS, visionOS): masked now, and still masked once the capture ends.
+        .onChange(of: captured) { _, now in if now { revealed = false } }
     }
 }

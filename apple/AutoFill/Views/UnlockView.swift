@@ -218,14 +218,17 @@ struct UnlockView: View {
     // MARK: - Actions
 
     /// The password is passed as typed, never trimmed (the core normalizes it). Success moves the
-    /// model to the request's screen; a failure stays here with the session's error.
+    /// model to the request's screen; a failure stays here with the session's error. The field is
+    /// emptied on submission and the password goes into a wipeable buffer at once, crossing the FFI
+    /// as bytes (the field's own `String` cannot be wiped, R5).
     private func unlockWithPassword() async {
         guard !password.isEmpty, !unlocking, !lockedOut else { return }
         message = nil
         busy = true
         session.lastError = nil
-        let typed = password
+        let typed = SecretBytes(utf8: password)
         password = ""
+        defer { typed.wipe() }
         await model.unlock(password: typed)
         busy = false
         guard model.screen == .locked else { return }

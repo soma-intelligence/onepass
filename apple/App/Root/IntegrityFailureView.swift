@@ -5,7 +5,8 @@ import VaultKit
 /// "Données refusées" (spec 8): the core refused the stored data. Nothing from the vault is shown
 /// while the error lasts and the storage is never repaired automatically. "Réessayer" runs a sync
 /// round then reads the store again. Other store failures (unreadable database) use the same screen
-/// with their message.
+/// with their message. For remote data refused (not a missing account), the safe exits of spec 3.3
+/// follow "Réessayer": export first, then keep this device's version or take iCloud's.
 struct IntegrityFailureView: View {
     let error: VaultError
     /// Retry action; the app passes `AppModel.retryAfterFailure`. Previews pass nil.
@@ -53,6 +54,11 @@ struct IntegrityFailureView: View {
                             .accessibilityIdentifier("integrity.learnMore")
                             .buttonStyle(.glass)
                             .controlSize(.large)
+                    }
+                    if integrityKind != nil, model?.session.safeExitAvailable == true {
+                        Divider()
+                        SafeExitActions()
+                            .disabled(retrying)
                     }
                 }
             }
@@ -171,6 +177,7 @@ struct IntegrityFailureView: View {
                         Text("Récupérer depuis iCloud relance une synchronisation complète. Restaurer avec ton Emergency Kit efface la copie locale puis rouvre ton coffre avec ta Secret Key et ton mot de passe maître. Repartir de zéro efface la copie locale et crée un nouveau coffre ; rien n'est effacé dans iCloud.")
                     } else {
                         Text("Réessayer relance une synchronisation complète puis relit le stockage. Si le problème persiste, tes données restent chiffrées et intactes sur tes autres appareils : n'efface rien et utilise un autre appareil ou ton Emergency Kit.")
+                        Text("Exporter une sauvegarde chiffrée garde une copie de ce que cet appareil contient. Garder la version de cet appareil la renvoie vers iCloud ; prendre la version d'iCloud l'abandonne au profit de ce qu'iCloud contient. Les deux enregistrent une restauration signée par ton compte et la détection reste active ensuite.")
                     }
                 }
                 .padding(24)

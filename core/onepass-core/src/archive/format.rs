@@ -464,8 +464,8 @@ fn content_key(plain: &[u8]) -> Result<SymmetricKey> {
     if plain.len() != 32 {
         return Err(Error::InvalidFormat("archive key"));
     }
-    let mut k = SymmetricKey([0u8; 32]);
-    k.0.copy_from_slice(plain);
+    let mut k = SymmetricKey::zeroed();
+    k.bytes_mut().copy_from_slice(plain);
     Ok(k)
 }
 

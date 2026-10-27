@@ -13,7 +13,7 @@ use crate::crypto::{Aad, BlobKind, SymmetricKey, open, seal, unwrap_key, wrap_ke
 use crate::model::{Item, validate};
 use crate::{Error, Id, IntegrityError, Result};
 
-const SCHEMA: u16 = 1;
+const SCHEMA: u16 = crate::format::ITEM_SCHEMA;
 
 /// Display settings of a vault, sealed with the vault key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,7 +62,8 @@ impl ItemRecord {
     }
 }
 
-fn kem_context(vault_id: Id) -> Vec<u8> {
+/// KEM context of a vault key envelope: `"vault:" || vault_id` (22 bytes).
+pub(crate) fn kem_context(vault_id: Id) -> Vec<u8> {
     let mut c = b"vault:".to_vec();
     c.extend_from_slice(&vault_id.0);
     c
@@ -157,8 +158,8 @@ impl Vault {
             return Err(Error::InvalidFormat("item key length"));
         }
         // Straight into the key buffer: no [u8; 32] temporary.
-        let mut key = SymmetricKey::from_bytes([0u8; 32]);
-        key.0.copy_from_slice(&plain);
+        let mut key = SymmetricKey::zeroed();
+        key.bytes_mut().copy_from_slice(&plain);
         Ok(key)
     }
 

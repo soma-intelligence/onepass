@@ -3,7 +3,8 @@
 //! `create` writes every vault with every item, trashed and archived
 //! included, to a new file (mode 0600, never over an existing one).
 //! `restore` writes back only the items whose id is absent from the
-//! account: nothing is overwritten. `inspect` reads the clear header and
+//! account: nothing is overwritten. It then issues a signed restore epoch
+//! (`Restore`), so the other devices accept the restored state. `inspect` reads the clear header and
 //! needs neither an account nor a password.
 
 #![cfg_attr(
@@ -27,6 +28,7 @@ use onepass_core::Id;
 use onepass_core::archive::{
     self, ArchiveKind, ArchivedVault, HeaderInfo, Unlock, inspect as read_header, restore_plan,
 };
+use onepass_core::epoch::EpochReason;
 use onepass_core::model::validate;
 use serde_json::json;
 use time::OffsetDateTime;
@@ -123,7 +125,7 @@ fn create(ctx: &Ctx, out: &Path, with_passphrase: bool) -> Result<(), CliError> 
 fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
     let bytes = read_capped(file)?;
     let info = read_header(&bytes)?;
-    let (created, restored, skipped) = with_session(ctx, |repo| {
+    let (created, restored, skipped, epoch) = with_session(ctx, |repo| {
         // A running server would write back last seen manifests of what
         // this changes; during Travel Mode, restored vaults would sit beside
         // the hidden ones.
@@ -181,19 +183,41 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
                 .map_err(|e| partial(e, usize::try_from(restored).unwrap_or(usize::MAX), total))?;
             restored += 1;
         }
-        Ok((plan.new_vaults.len(), restored, plan.skipped))
+        // After every write: the epoch's heads are the restored state. A
+        // failure here keeps the items written (and the device state saved):
+        // it is reported once the counts are out.
+        let epoch = stored(repo.issue_restore_epoch(EpochReason::Restore)).map(|e| e.epoch);
+        Ok((plan.new_vaults.len(), restored, plan.skipped, epoch))
     })?;
+    let issued = epoch.as_ref().ok().copied();
     if ctx.json {
         crate::out!(
             "{}",
-            json!({ "vaults_created": created, "restored": restored, "skipped": skipped })
+            json!({
+                "vaults_created": created,
+                "restored": restored,
+                "skipped": skipped,
+                "epoch": issued,
+            })
         );
     } else {
         crate::out!("Created {created} vaults");
         crate::out!("Restored {restored} items");
         crate::out!("Skipped {skipped} items (already in the account)");
+        if let Some(n) = issued {
+            crate::out!("Restore epoch {n}");
+        }
     }
-    Ok(())
+    epoch.map(|_| ()).map_err(epoch_not_issued)
+}
+
+/// The restore wrote its items but could not issue the epoch: the other
+/// devices may refuse the restored state until it is issued.
+fn epoch_not_issued(e: CliError) -> CliError {
+    CliError {
+        code: e.code,
+        msg: "items restored, epoch not issued: run sync and retry".to_owned(),
+    }
 }
 
 /// `backup inspect`: no data directory, no password.
@@ -250,7 +274,7 @@ fn created_text(unix: i64) -> String {
 /// The backup passphrase: asked twice on a terminal, once from the
 /// environment (tests).
 fn passphrase_twice() -> Result<Zeroizing<String>, CliError> {
-    let from_env = env_secrets_allowed() && std::env::var_os(ARCHIVE_PASSPHRASE_ENV).is_some();
+    let from_env = env_secrets_allowed()? && std::env::var_os(ARCHIVE_PASSPHRASE_ENV).is_some();
     let p = read_secret("Backup passphrase: ", ARCHIVE_PASSPHRASE_ENV)?;
     if !from_env {
         let again = read_secret("Repeat the backup passphrase: ", ARCHIVE_PASSPHRASE_ENV)?;

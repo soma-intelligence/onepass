@@ -9,9 +9,14 @@ public protocol SyncTrigger: Sendable {
     /// Runs `reset` (which empties the local store) with exclusive access to the store, then forgets
     /// whatever the sync layer kept about it. Default: runs it on the core thread.
     func resetStore(with reset: @escaping @Sendable () throws -> Void) async throws
+    /// A safe exit issued its restore epoch on the session handed over by `sessionUnlocked`: the sync
+    /// layer pushes it and follows it until the server serves this device's state. Default: nothing.
+    func safeExitIssued(_ exit: SafeExit) async
 }
 
 extension SyncTrigger {
+    public func safeExitIssued(_ exit: SafeExit) async {}
+
     public func resetStore(with reset: @escaping @Sendable () throws -> Void) async throws {
         try await CoreThread.run(reset)
     }

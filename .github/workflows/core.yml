@@ -15,6 +15,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Pinned nightly for Miri and fuzz; also the default of core/Makefile.
+  NIGHTLY: nightly-2026-10-20
 
 jobs:
   test:
@@ -28,16 +30,16 @@ jobs:
       run:
         working-directory: core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # rustup reads core/rust-toolchain.toml (pinned toolchain, rustfmt, clippy).
       - name: Install the pinned toolchain
         run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: core
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
-          tool: cargo-deny,cargo-audit
+          tool: cargo-deny,cargo-audit,cargo-vet,cargo-cyclonedx@0.5.9
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
@@ -48,11 +50,45 @@ jobs:
         run: cargo test --release -p onepass-core --test differential
       - name: Licenses, bans and sources
         run: cargo deny check
+      # Imported audit sets are fetched from the network; exemptions are
+      # recorded in core/supply-chain/config.toml.
+      - name: Supply-chain audits
+        run: cargo vet
       # Informative only: a new RustSec advisory can turn this red without
       # any change here. It must not block a merge; read it and act.
       - name: Advisories
         run: cargo audit
         continue-on-error: true
+      - name: SBOM (CycloneDX)
+        if: matrix.os == 'ubuntu-latest'
+        run: make sbom
+      - name: Keep the SBOM
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-core
+          path: core/target/sbom/*.cdx.json
+          if-no-files-found: error
+
+  miri:
+    name: miri
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install nightly with Miri
+        run: |
+          rustup toolchain install "$NIGHTLY" --profile minimal --component miri,rust-src
+          cargo "+$NIGHTLY" miri setup
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: core
+          key: miri
+      # The locked-memory pool (mlock, page guards) under Miri.
+      - name: Miri
+        run: make miri NIGHTLY="$NIGHTLY"
 
   fuzz:
     name: fuzz (${{ matrix.target }})
@@ -83,20 +119,20 @@ jobs:
       run:
         working-directory: core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install nightly
-        run: rustup toolchain install nightly --profile minimal
-      - uses: Swatinem/rust-cache@v2
+        run: rustup toolchain install "$NIGHTLY" --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: core/fuzz
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-fuzz
       - name: Fuzz 30 s
-        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=30 -rss_limit_mb=4096
+        run: cargo "+$NIGHTLY" fuzz run ${{ matrix.target }} -- -max_total_time=30 -rss_limit_mb=4096
       - name: Keep the crashing input
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: fuzz-artifacts-${{ matrix.target }}
           path: core/fuzz/artifacts/${{ matrix.target }}

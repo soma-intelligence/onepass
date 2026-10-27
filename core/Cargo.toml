@@ -5,7 +5,7 @@ members = ["onepass-core", "onepass-cli", "onepass-ffi", "onepass-guard", "onepa
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-license = "MIT OR Apache-2.0"
+license = "GPL-3.0-or-later"
 publish = false
 rust-version = "1.99"
 
@@ -27,4 +27,9 @@ panic = "abort"
 # SLH-DSA-SHA2-256s hashes through sha2: unoptimized, one signature takes
 # about 35 s in debug tests instead of about 15 s.
 [profile.dev.package.sha2]
+opt-level = 3
+
+# SLH-DSA itself (both slh-dsa versions): its hypertree loops dominate the
+# identity key tests in debug builds.
+[profile.dev.package.slh-dsa]
 opt-level = 3

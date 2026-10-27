@@ -513,7 +513,7 @@ fn wrong_finish_mac_closes() {
 }
 
 /// A dev data directory in the CLI format: `device.bin` (postcard of the
-/// Secret Key and the device state) next to `vault.sqlite`.
+/// Secret Key and the versioned device state bytes) next to `vault.sqlite`.
 fn make_dev_account(dir: &Path, password: &str) {
     use onepass_core::crypto::{DEV_KDF_FLOOR, KdfParams};
     use onepass_core::model::{FieldValue, ItemType, ItemUrl, MatchRule, new_item};
@@ -523,6 +523,7 @@ fn make_dev_account(dir: &Path, password: &str) {
     #[derive(serde::Serialize)]
     struct DeviceFile<'a> {
         secret_key: &'a str,
+        #[serde(with = "onepass_core::format::device_state_bytes")]
         state: &'a DeviceState,
     }
 
@@ -606,6 +607,7 @@ fn dev_source_serves_the_cli_vault() {
 #[derive(serde::Deserialize)]
 struct DeviceBin {
     secret_key: String,
+    #[serde(with = "onepass_core::format::device_state_bytes")]
     state: onepass_core::repo::DeviceState,
 }
 

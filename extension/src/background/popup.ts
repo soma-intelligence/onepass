@@ -1,8 +1,9 @@
 // Handlers of the toolbar popup (spec 8.8). The popup never names a target:
 // "Remplir" goes to the top frame of the active tab, whose origin the worker
 // reads from the browser, into a form the content script reported there.
-// Generator history: 20 entries in `storage.session`, cleared when the host
-// answers `locked` or the pairing is forgotten.
+// Generator history: 20 entries in a module-level array of the service worker,
+// never written to any storage. It is cleared when the host answers `locked`
+// or the pairing is forgotten, and a worker restart starts it empty.
 import type { FillField, Summary } from "../bridge/client";
 import { parseOrigin } from "../shared/domain";
 import type { FormInfo, FormKind } from "../shared/messages";
@@ -14,8 +15,17 @@ import type { PairingFlow } from "./pairing";
 import type { Handlers } from "./router";
 import { BgError, type Session } from "./session";
 
+/** Key an earlier version used in `storage.session`; removed at startup. */
 export const HISTORY_KEY = "genHistory";
 export const HISTORY_MAX = 20;
+
+/** Memory only: a restart of the worker (a new module evaluation) empties it. */
+let historyEntries: GeneratorEntry[] = [];
+
+/** Test-only: the state a fresh worker would have (tests share one module instance). */
+export function resetGeneratorHistoryForTests(): void {
+  historyEntries = [];
+}
 
 export interface PopupDeps {
   ext: Pick<BgExt, "tabs">;
@@ -26,6 +36,8 @@ export interface PopupDeps {
   analyses: Pick<PageAnalyses, "top">;
   /** A generated password was filled in `tabId` (feeds the save proposal, spec 8.8). */
   onGenerated?: (tabId: number, origin: string, password: string) => void;
+  /** The host reported a locked vault (secrets held elsewhere must go too). */
+  onLock?: () => void;
   now?: () => number;
 }
 
@@ -60,9 +72,11 @@ export class PopupBackend {
 
   constructor(private readonly deps: PopupDeps) {
     this.now = deps.now ?? Date.now;
+    // The history an older version kept in `storage.session` is removed once.
+    void Promise.resolve(deps.area.remove(HISTORY_KEY)).catch(() => undefined);
     deps.session.onLocked(() => {
       this.known.clear();
-      void this.clearHistory();
+      this.clearHistory();
     });
   }
 
@@ -110,7 +124,8 @@ export class PopupBackend {
     const s = await this.deps.session.request({ op: "status" });
     if (s.locked) {
       this.known.clear();
-      await this.clearHistory();
+      this.clearHistory();
+      this.deps.onLock?.();
     }
     return s;
   }
@@ -173,36 +188,24 @@ export class PopupBackend {
     if (length !== undefined) recipe.length = length;
     if (symbols !== undefined) recipe.symbols = symbols;
     const g = await this.deps.session.request({ op: "generate", ctx: "popup", recipe });
-    const entries = await this.readHistory();
-    entries.unshift({ password: g.password, kind, at: this.now() });
-    await this.deps.area.set({ [HISTORY_KEY]: entries.slice(0, HISTORY_MAX) });
+    historyEntries.unshift({ password: g.password, kind, at: this.now() });
+    historyEntries.length = Math.min(historyEntries.length, HISTORY_MAX);
     return g;
   }
 
   async history(): Promise<{ entries: GeneratorEntry[] }> {
-    return { entries: await this.readHistory() };
+    return { entries: historyEntries.map((e) => ({ ...e })) };
   }
 
-  private async readHistory(): Promise<GeneratorEntry[]> {
-    const raw = (await this.deps.area.get(HISTORY_KEY))[HISTORY_KEY];
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .filter(
-        (e): e is GeneratorEntry =>
-          typeof e === "object" && e !== null && typeof e.password === "string" && typeof e.kind === "string" && typeof e.at === "number",
-      )
-      .slice(0, HISTORY_MAX);
-  }
-
-  async clearHistory(): Promise<void> {
-    await this.deps.area.remove(HISTORY_KEY);
+  clearHistory(): void {
+    historyEntries = [];
   }
 
   /** "Oublier cet appairage" (spec 6.4): drops the record and everything the popup was shown. */
   async forget(): Promise<Record<string, never>> {
     await this.deps.pairing.forgetPairing();
     this.known.clear();
-    await this.clearHistory();
+    this.clearHistory();
     return {};
   }
 

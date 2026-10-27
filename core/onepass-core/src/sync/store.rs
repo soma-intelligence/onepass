@@ -5,9 +5,16 @@
 //!   a deletion). Reads see `pending` over `base`.
 //! - `staging`: changes received during a fetch, applied to `base` in one
 //!   transaction by `commit_remote`.
-//! - `ancestor`: for a manifest with a pending local write, the `base` row
-//!   that write was built on, kept when the server replaces `base`.
-//! - `meta`: device state, change token and other small values.
+//! - `ancestor`: for a manifest or a restore epoch with a pending local
+//!   write, the `base` row that write was built on, kept when the server
+//!   replaces `base`.
+//! - `kept`: the `base` rows of manifests and items the server replaced or
+//!   removed since their vault last loaded cleanly (the first such row per
+//!   key), so the device still holds its own verified copy when the server
+//!   goes back to an older state or serves an incomplete one. See
+//!   `RecordStore::kept_rows` and `crate::sync::VaultSyncHealth`.
+//! - `meta`: device state, change token, sync health and other small
+//!   values.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -19,12 +26,21 @@ use rusqlite::{
     Connection, OptionalExtension, Savepoint, Transaction, TransactionBehavior, params,
 };
 
-use super::{Change, MAX_RECORD_BYTES, RemoteChange};
+use std::collections::BTreeMap;
+
+use super::{
+    Change, MAX_RECORD_BYTES, RemoteChange, STALE_ALERT_MAX_ROUNDS, STALE_ALERT_ROUNDS,
+    STALE_ALERT_SECONDS, STALE_CLEAR_ROUNDS, STALE_MEMORY_ROUNDS,
+};
+use crate::format::STORE_USER_VERSION;
 use crate::repo::{DeviceState, split_item_record};
-use crate::store::{Record, RecordKind, RecordStore};
+use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
 use crate::{Error, Id, IntegrityError, Result};
 
 const DEVICE_STATE_KEY: &str = "device_state";
+/// The restore epoch mark (`RecordStore::restore_epoch_mark`): epoch
+/// (8 bytes, big endian) then the SHA-256 of its record data.
+const EPOCH_MARK_KEY: &str = "epoch_hash";
 /// The capped log of remote deletions the store refused (outside the `sync.`
 /// namespace of the FFI handle, so only the core writes it).
 const IGNORED_DELETIONS_KEY: &str = "ignored_deletions";
@@ -32,6 +48,19 @@ const IGNORED_LOG_VERSION: u8 = 1;
 const IGNORED_ENTRY_BYTES: usize = 1 + 16 + 8;
 /// Most entries kept in the log of ignored deletions; the oldest go first.
 pub const MAX_IGNORED_DELETIONS: usize = 100;
+/// The sync health of the vaults not `Ok` (see `HealthEntry`), outside the
+/// `sync.` namespace of the FFI handle: only the core writes it.
+const HEALTH_KEY: &str = "sync_health";
+const HEALTH_VERSION: u8 = 1;
+/// `vault (16) | seq (8) | cause (1) | flags (1) | since (8) | rounds (4)
+/// | clean rounds (1)`.
+const HEALTH_ENTRY_BYTES: usize = 16 + 8 + 1 + 1 + 8 + 4 + 1;
+/// The count of the vaults cleared lately (see `HealthMemory`), next to
+/// the health map.
+const HEALTH_MEMORY_KEY: &str = "sync_health_memory";
+const HEALTH_MEMORY_VERSION: u8 = 1;
+/// `vault (16) | flags (1) | since (8) | rounds (4) | rounds left (1)`.
+const HEALTH_MEMORY_ENTRY_BYTES: usize = 16 + 1 + 8 + 4 + 1;
 const FETCH_MODE_KEY: &str = "zone.full_fetch";
 const FETCH_PLAIN: u8 = 1;
 const FETCH_RESET: u8 = 2;
@@ -69,12 +98,35 @@ CREATE TABLE IF NOT EXISTS ancestor (
     data BLOB NOT NULL,
     PRIMARY KEY (kind, id)
 );
+CREATE TABLE IF NOT EXISTS kept (
+    kind INTEGER NOT NULL,
+    id BLOB NOT NULL,
+    version INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (kind, id)
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT NOT NULL PRIMARY KEY,
     value BLOB NOT NULL
 );
-PRAGMA user_version = 1;
 ";
+
+/// Check `PRAGMA user_version`, then create what is missing and stamp the
+/// current version. 0 (a new file, or one from before the check) and the
+/// current version open; nothing is dropped or rewritten. A newer version is
+/// `InvalidFormat("store from a newer version")`, the file left untouched.
+fn init_schema(conn: &Connection) -> Result<()> {
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .map_err(store_err)?;
+    if version > STORE_USER_VERSION {
+        return Err(Error::InvalidFormat("store from a newer version"));
+    }
+    conn.execute_batch(SCHEMA).map_err(store_err)?;
+    conn.execute_batch(&format!("PRAGMA user_version = {STORE_USER_VERSION};"))
+        .map_err(store_err)?;
+    Ok(())
+}
 
 /// A `staging` row: `(kind, id, version, data, server_meta)`.
 type StagedRow = (i64, Vec<u8>, i64, Option<Vec<u8>>, Option<Vec<u8>>);
@@ -170,11 +222,18 @@ fn fetch_mode(conn: &Connection) -> Result<Option<u8>> {
     Ok(value.and_then(|v| v.first().copied()))
 }
 
-/// Write a pending data row. A manifest write over a `base` manifest with no
-/// `ancestor` yet first keeps that `base` row as its ancestor.
+/// The kinds whose pending write keeps the `base` row it was built on as
+/// its `ancestor`, to tell when the server moved on.
+fn keeps_ancestor(kind: RecordKind) -> bool {
+    matches!(kind, RecordKind::Manifest | RecordKind::RestoreEpoch)
+}
+
+/// Write a pending data row. A manifest or restore epoch write over a
+/// `base` row with no `ancestor` yet first keeps that `base` row as its
+/// ancestor.
 fn write_pending(tx: &Connection, r: &Record) -> Result<()> {
     let version = to_i64(r.version)?;
-    if r.kind == RecordKind::Manifest {
+    if keeps_ancestor(r.kind) {
         tx.execute(
             "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
              SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
@@ -192,8 +251,10 @@ fn write_pending(tx: &Connection, r: &Record) -> Result<()> {
 
 /// Vaults whose pending manifest was not built on the current `base`
 /// manifest: the ancestor it captured (the `base` row it was built on) is
-/// gone or older than `base`, so the server moved on and the local manifest
-/// must be rebased before any push.
+/// gone, older than `base`, or another manifest with the same seq, so the
+/// server moved on and the local manifest must be rebased before any push.
+/// A `base` older than the ancestor is a server that went back: the local
+/// manifest is not held, its push restores the server's copy.
 fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
     let mut stmt = conn
         .prepare(
@@ -201,7 +262,8 @@ fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
              JOIN base b ON b.kind = p.kind AND b.id = p.id
              LEFT JOIN ancestor a ON a.kind = p.kind AND a.id = p.id
              WHERE p.kind = ?1 AND p.data IS NOT NULL
-               AND (a.id IS NULL OR a.version != b.version)",
+               AND (a.id IS NULL OR b.version > a.version
+                    OR (b.version = a.version AND b.data != a.data))",
         )
         .map_err(store_err)?;
     let rows = stmt
@@ -212,9 +274,28 @@ fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
     rows.map(|id| decode_id(id.map_err(store_err)?)).collect()
 }
 
+/// Whether the pending restore epoch was not built on the current `base`
+/// one: the server took another device's epoch meanwhile. Such an epoch is
+/// never pushed; the rebase drops it (`Error::Conflict`).
+fn held_epoch(conn: &Connection) -> Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM pending p
+             JOIN base b ON b.kind = p.kind AND b.id = p.id
+             LEFT JOIN ancestor a ON a.kind = p.kind AND a.id = p.id
+             WHERE p.kind = ?1 AND p.data IS NOT NULL
+               AND (a.id IS NULL OR a.version != b.version OR a.data != b.data))",
+        params![RecordKind::RestoreEpoch.code()],
+        |r| r.get(0),
+    )
+    .map_err(store_err)
+}
+
 /// `SyncStore::pending_changes` on a consistent view.
 fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
     let held = held_vaults(tx)?;
+    // The epoch ships only with or after the manifests its heads name: never
+    // while a vault is held (its head would be rebased away).
+    let epoch_held = held_epoch(tx)? || !held.is_empty();
     let mut stmt = tx
         .prepare("SELECT kind, id, version, data, vault FROM pending ORDER BY kind, id")
         .map_err(store_err)?;
@@ -244,7 +325,9 @@ fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
             },
             _ => None,
         };
-        if vault.is_some_and(|v| held.contains(&v)) {
+        if vault.is_some_and(|v| held.contains(&v))
+            || (kind == RecordKind::RestoreEpoch && epoch_held)
+        {
             continue;
         }
         let change = Change {
@@ -281,13 +364,13 @@ impl SyncStore {
         }
         conn.execute_batch("PRAGMA synchronous = FULL;")
             .map_err(store_err)?;
-        conn.execute_batch(SCHEMA).map_err(store_err)?;
+        init_schema(&conn)?;
         Ok(SyncStore { conn })
     }
 
     pub fn open_in_memory() -> Result<SyncStore> {
         let conn = Connection::open_in_memory().map_err(store_err)?;
-        conn.execute_batch(SCHEMA).map_err(store_err)?;
+        init_schema(&conn)?;
         Ok(SyncStore { conn })
     }
 
@@ -385,12 +468,24 @@ impl SyncStore {
             params![kind.code(), &id.0[..]],
         )
         .map_err(store_err)?;
-        if kind == RecordKind::Manifest {
+        if keeps_ancestor(kind) {
             tx.execute(
                 "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2",
                 params![kind.code(), &id.0[..]],
             )
             .map_err(store_err)?;
+        }
+        if kind == RecordKind::Manifest {
+            // The server took this device's copy back: only a fetch that
+            // serves it (or newer) shows that it kept it.
+            update_health_lenient(&tx, |map| {
+                map.get_mut(&id)
+                    .map(|e| {
+                        e.awaiting = true;
+                        e.dirty();
+                    })
+                    .is_some()
+            })?;
         }
         tx.commit()
     }
@@ -457,7 +552,7 @@ impl SyncStore {
     ///   blob next to its manifest would be refused as unexpected). Any other
     ///   such row (the stable id kinds, items of a vault the server lacks)
     ///   becomes a pending row with the same version and data, a manifest
-    ///   keeping its `base` row as ancestor (not held).
+    ///   or the restore epoch keeping its `base` row as ancestor (not held).
     ///
     /// A pending tombstone or edit is never touched. After a plain full fetch,
     /// the kept rows the server has no right to remove (see `commit_remote`)
@@ -499,7 +594,19 @@ impl SyncStore {
             append_ignored(&tx, &ignored)?;
         }
         // Both modes: an item the server did not return, in a vault whose
-        // manifest it did return, is gone from that vault.
+        // manifest it did return, is gone from that vault. Kept first: it
+        // may belong to this device's copy of a vault the server is behind on.
+        tx.execute(
+            &format!(
+                "INSERT OR IGNORE INTO kept (kind, id, version, data)
+                 SELECT b.kind, b.id, b.version, b.data FROM base AS b
+                 WHERE b.kind = ?1 AND {missing}
+                 AND EXISTS (SELECT 1 FROM base m WHERE m.kind = ?2
+                     AND m.id = substr(b.data, 1, 16) AND m.server_meta IS NOT NULL)"
+            ),
+            params![RecordKind::Item.code(), RecordKind::Manifest.code()],
+        )
+        .map_err(store_err)?;
         let deleted = tx
             .execute(
                 &format!(
@@ -515,9 +622,9 @@ impl SyncStore {
                 &format!(
                     "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
                      SELECT b.kind, b.id, b.version, b.data FROM base b
-                     WHERE b.kind = ?1 AND {missing}"
+                     WHERE b.kind IN (?1, ?2) AND {missing}"
                 ),
-                params![RecordKind::Manifest.code()],
+                params![RecordKind::Manifest.code(), RecordKind::RestoreEpoch.code()],
             )
             .map_err(store_err)?;
             tx.execute(
@@ -555,7 +662,8 @@ impl SyncStore {
     ///
     /// Remote deletions the store has no right to make are ignored (no
     /// client deletes them in M2, so they come from a hostile or broken
-    /// server): account params and keysets, and the vault key, vault meta and
+    /// server): account params, keysets and the restore epoch, and the vault
+    /// key, vault meta and
     /// manifest of a vault in the device's `last_seen`. The local rows stay
     /// and the vault stays readable from them: nothing the server sends can
     /// make this device forget its account or a vault it has read (the
@@ -579,6 +687,7 @@ impl SyncStore {
         };
         let mut vaults = BTreeSet::new();
         let mut ignored = Vec::new();
+        let mut manifests = Vec::new();
         for (kind, id, version, data, server_meta) in staged {
             let kind_code = kind;
             let kind = decode_kind(kind)?;
@@ -588,8 +697,23 @@ impl SyncStore {
                 }
                 continue;
             }
+            if matches!(kind, RecordKind::Manifest | RecordKind::Item) {
+                // The first row replaced or removed since the vault last
+                // loaded cleanly stays as part of the device's copy.
+                tx.execute(
+                    "INSERT OR IGNORE INTO kept (kind, id, version, data)
+                     SELECT kind, id, version, data FROM base
+                     WHERE kind = ?1 AND id = ?2 AND (?3 IS NULL OR data != ?3)",
+                    params![kind_code, &id, &data],
+                )
+                .map_err(store_err)?;
+            }
             if kind == RecordKind::Manifest {
-                vaults.insert(decode_id(id.clone())?);
+                let v = decode_id(id.clone())?;
+                vaults.insert(v);
+                if data.is_some() {
+                    manifests.push((v, version));
+                }
             }
             match data {
                 Some(data) => tx.execute(
@@ -606,6 +730,21 @@ impl SyncStore {
         }
         tx.execute("DELETE FROM staging", []).map_err(store_err)?;
         append_ignored(&tx, &ignored)?;
+        // A vault the server was behind on: served again at least as new as
+        // the device's copy, or still older.
+        update_health_lenient(&tx, |map| {
+            let mut changed = false;
+            for (v, version) in &manifests {
+                if let Some(e) = map.get_mut(v) {
+                    e.awaiting = u64::try_from(*version).map_or(true, |n| n < e.seq);
+                    if e.awaiting {
+                        e.dirty();
+                    }
+                    changed = true;
+                }
+            }
+            changed
+        })?;
         tx.commit()?;
         Ok(vaults.into_iter().collect())
     }
@@ -668,11 +807,14 @@ impl SyncStore {
     /// a rebase, which renumbers a vault and may end below the `seq` of the
     /// local manifests it abandoned. Those were persisted earlier, so the
     /// vaults in `force` take the memory entry as is (or none), whatever is
-    /// stored.
+    /// stored. The restore epoch only goes up too, unless `keep_epoch` (the
+    /// caller dropped a pending epoch it had not shipped): then the memory
+    /// one stands.
     pub(crate) fn merge_device_state(
         &mut self,
         mem: &DeviceState,
         force: &[Id],
+        keep_epoch: bool,
     ) -> Result<DeviceState> {
         let tx = self.write_tx()?;
         let stored = device_state_in(&tx)?;
@@ -692,9 +834,15 @@ impl SyncStore {
             }
             (mine, theirs) => mine.or(theirs),
         };
+        let epoch = if keep_epoch {
+            mem.epoch
+        } else {
+            mem.epoch.max(stored.epoch)
+        };
         let mut merged = DeviceState {
             pinned,
             last_seen: mem.last_seen.clone(),
+            epoch,
         };
         for (v, theirs) in stored.last_seen {
             if force.contains(&v) {
@@ -743,7 +891,7 @@ impl SyncStore {
     /// stays in place, so other open connections keep working on it.
     pub fn reset(&mut self) -> Result<()> {
         let tx = self.write_tx()?;
-        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
         }
@@ -769,7 +917,7 @@ impl SyncStore {
         if visible {
             return Err(Error::InvalidFormat("store holds an account"));
         }
-        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
         }
@@ -827,6 +975,263 @@ impl SyncStore {
     pub(crate) fn drop_pending_vault(&mut self, vault: Id) -> Result<()> {
         let tx = self.write_tx()?;
         delete_vault_rows(&tx, vault)?;
+        tx.commit()
+    }
+
+    /// Whether the pending restore epoch lost the race to another device's
+    /// (see `held_epoch`).
+    pub(crate) fn epoch_held(&self) -> Result<bool> {
+        self.read(held_epoch)
+    }
+
+    /// The version (epoch number) of the restore epoch written here and not
+    /// yet pushed, if any.
+    pub(crate) fn pending_epoch(&self) -> Result<Option<u64>> {
+        self.read(|c| {
+            c.query_row(
+                "SELECT version FROM pending WHERE kind = ?1 AND data IS NOT NULL",
+                params![RecordKind::RestoreEpoch.code()],
+                |r| r.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(store_err)?
+            .map(|v| u64::try_from(v).map_err(|_| Error::InvalidFormat("record version")))
+            .transpose()
+        })
+    }
+
+    /// Make the pending manifests of `vaults` built on the current `base`
+    /// row: its ancestor becomes that row, so it is no longer held and its
+    /// push overwrites what the server holds now. For an owner's explicit
+    /// choice of the local copy (`issue_restore_epoch_from_local`), on the
+    /// vaults the server is behind on or forked from only.
+    pub(crate) fn rebuild_ancestors_on_base(&mut self, vaults: &[Id]) -> Result<()> {
+        let tx = self.write_tx()?;
+        let code = RecordKind::Manifest.code();
+        for v in vaults {
+            tx.execute(
+                "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2",
+                params![code, &v.0[..]],
+            )
+            .map_err(store_err)?;
+            tx.execute(
+                "INSERT INTO ancestor (kind, id, version, data)
+                 SELECT b.kind, b.id, b.version, b.data FROM base b
+                 WHERE b.kind = ?1 AND b.id = ?2 AND EXISTS (SELECT 1 FROM pending p
+                     WHERE p.kind = b.kind AND p.id = b.id AND p.data IS NOT NULL)",
+                params![code, &v.0[..]],
+            )
+            .map_err(store_err)?;
+        }
+        tx.commit()
+    }
+
+    /// Drop every local write of vault rows (keys, metas, manifests, items)
+    /// and of the restore epoch, their ancestors, the kept rows and the
+    /// sync health: reads see the server's state only. For an owner's
+    /// explicit choice of the server's copy
+    /// (`issue_restore_epoch_take_server`), after the local one was
+    /// exported. Account params and keysets stay. One transaction.
+    pub(crate) fn discard_local_changes(&mut self) -> Result<()> {
+        let tx = self.write_tx()?;
+        tx.execute(
+            "DELETE FROM pending WHERE kind IN (?1, ?2, ?3, ?4, ?5)",
+            params![
+                RecordKind::VaultKey.code(),
+                RecordKind::VaultMeta.code(),
+                RecordKind::Item.code(),
+                RecordKind::Manifest.code(),
+                RecordKind::RestoreEpoch.code()
+            ],
+        )
+        .map_err(store_err)?;
+        for table in ["ancestor", "kept"] {
+            tx.execute(&format!("DELETE FROM {table}"), [])
+                .map_err(store_err)?;
+        }
+        for key in [HEALTH_KEY, HEALTH_MEMORY_KEY] {
+            tx.execute("DELETE FROM meta WHERE key = ?1", params![key])
+                .map_err(store_err)?;
+        }
+        tx.commit()
+    }
+
+    /// The vaults whose sync health is not `Ok`, with their entry.
+    pub(crate) fn health(&self) -> Result<BTreeMap<Id, HealthEntry>> {
+        self.read(health_in)
+    }
+
+    /// The vaults whose copy "keep this device" pushes over the server's.
+    ///
+    /// A vault held for a rebase (`vaults_needing_rebase`: the server's
+    /// manifest moved past the one the local copy was built on) is one only
+    /// when it is a fork (`HealthEntry::fork`): otherwise another device's
+    /// newer write is there, maybe incomplete, and the vault stays held on
+    /// its copy until the rebase merges onto it. Any other vault is one when
+    /// it is in alert or when the server went back on it: its `base`
+    /// manifest is gone or older than the copy this device serves (its
+    /// pending manifest, else its kept one). The health entry's `seq` is
+    /// not used: after a first keep it is the epoch head, above any honest
+    /// server state.
+    pub(crate) fn keep_targets(&self) -> Result<Vec<Id>> {
+        self.read(|c| {
+            let held = held_vaults(c)?;
+            let mut out = Vec::new();
+            for (v, e) in health_in(c)? {
+                if held.contains(&v) {
+                    if e.fork {
+                        out.push(v);
+                    }
+                    continue;
+                }
+                let older = match copy_manifest_version(c, v)? {
+                    Some(copy) => base_manifest(c, v)?.is_none_or(|(version, _)| version < copy),
+                    None => false,
+                };
+                if e.alert || older {
+                    out.push(v);
+                }
+            }
+            Ok(out)
+        })
+    }
+
+    /// Whether "keep this device" has anything to do: a vault it would push
+    /// over the server's (`keep_targets`: every fork, every other vault in
+    /// alert or that the server went back on). False while the only
+    /// trouble is a newer server state still incomplete: the rebase settles
+    /// it, and an epoch issued then would be withdrawn.
+    pub(crate) fn keep_needed(&self) -> Result<bool> {
+        Ok(!self.keep_targets()?.is_empty())
+    }
+
+    /// Replace the entries of `vaults` by fresh ones for the copy at
+    /// `seq`: behind, not counted yet, no alert. After the owner chose this
+    /// device's copy.
+    pub(crate) fn restart_health(&mut self, vaults: &BTreeMap<Id, u64>) -> Result<()> {
+        let tx = self.write_tx()?;
+        update_health(&tx, |map| {
+            for (v, seq) in vaults {
+                let cause = map
+                    .get(v)
+                    .map_or(IntegrityError::ManifestRollback, |e| e.cause);
+                map.insert(*v, HealthEntry::new(*seq, cause));
+            }
+            !vaults.is_empty()
+        })?;
+        tx.commit()
+    }
+
+    /// Forget the sync health and the memory of cleared vaults, after the
+    /// owner chose to (`Repository::reset_sync_health`): every vault reads
+    /// `Ok` until the next rounds find it behind again. The way out of an
+    /// unreadable health map that discards nothing.
+    pub(crate) fn reset_health(&mut self) -> Result<()> {
+        let tx = self.write_tx()?;
+        for key in [HEALTH_KEY, HEALTH_MEMORY_KEY] {
+            tx.execute("DELETE FROM meta WHERE key = ?1", params![key])
+                .map_err(store_err)?;
+        }
+        tx.commit()
+    }
+
+    /// The end of a sync round at `now` (Unix seconds).
+    ///
+    /// A vault that loaded cleanly in this round (`VaultEvent::Clean` with
+    /// nothing left to confirm) counts one clean round; after
+    /// `STALE_CLEAR_ROUNDS` clean rounds in a row its entry is removed
+    /// (`Ok`). A single clean round is not enough: a store that serves the
+    /// good state one round and the old one the next keeps the vault behind
+    /// and its count running.
+    ///
+    /// Every other vault still behind counts one more round, from `now` if
+    /// it was not counted yet, and becomes an alert once it reached
+    /// `STALE_ALERT_ROUNDS` rounds and `STALE_ALERT_SECONDS` seconds, or
+    /// `STALE_ALERT_MAX_ROUNDS` rounds whatever the clock says. A clock
+    /// earlier than `since` moves `since` back: a clock set forward once
+    /// cannot push the alert back.
+    ///
+    /// The clean mark is spent by the round that counts it: the next round
+    /// is clean only if a fresh clean load marks it again, so a round that
+    /// stopped before loading the vault (an epoch or vault list error)
+    /// counts as behind, not clean. A cleared vault's count is remembered
+    /// for `STALE_MEMORY_ROUNDS` rounds (`HealthMemory`), alert included.
+    ///
+    /// An alert from a fork or from no verified copy (`VaultEvent::Alert`)
+    /// is never cleared here: only a safe exit (keep this device, take the
+    /// server, `reset_health`) ends it. An alert reached by staying behind
+    /// clears like the rest, after `STALE_CLEAR_ROUNDS` clean rounds.
+    ///
+    /// Fails closed: an unreadable health map is an error.
+    pub(crate) fn count_round(&mut self, now: i64) -> Result<()> {
+        let tx = self.write_tx()?;
+        let mut memory = memory_in(&tx)?;
+        let memory_before = memory.clone();
+        memory.retain(|_, m| {
+            m.left = m.left.saturating_sub(1);
+            m.left > 0
+        });
+        update_health(&tx, |map| {
+            let mut cleared = Vec::new();
+            for (v, e) in map.iter_mut() {
+                if e.clean {
+                    e.clean = false;
+                    if e.fork {
+                        // A fork (or no verified copy) is settled by a safe
+                        // exit only, never by clean rounds.
+                        e.clean_rounds = 0;
+                        continue;
+                    }
+                    e.clean_rounds = e.clean_rounds.saturating_add(1);
+                    if u32::from(e.clean_rounds) >= STALE_CLEAR_ROUNDS {
+                        cleared.push(*v);
+                    }
+                    continue;
+                }
+                e.clean_rounds = 0;
+                if e.alert {
+                    continue;
+                }
+                let since = e.since.map_or(now, |s| s.min(now));
+                e.since = Some(since);
+                e.rounds = e.rounds.saturating_add(1);
+                if e.rounds >= STALE_ALERT_ROUNDS
+                    && (now.saturating_sub(since) >= STALE_ALERT_SECONDS
+                        || e.rounds >= STALE_ALERT_MAX_ROUNDS)
+                {
+                    e.alert = true;
+                }
+            }
+            for v in cleared {
+                if let Some(e) = map.remove(&v) {
+                    memory.insert(
+                        v,
+                        HealthMemory {
+                            since: e.since,
+                            rounds: e.rounds,
+                            alert: e.alert,
+                            left: u8::try_from(STALE_MEMORY_ROUNDS).unwrap_or(u8::MAX),
+                        },
+                    );
+                }
+            }
+            true
+        })?;
+        if memory != memory_before {
+            save_memory(&tx, &memory)?;
+        }
+        tx.commit()
+    }
+
+    /// Remove the pending restore epoch and its ancestor: reads see the
+    /// server's epoch again.
+    pub(crate) fn drop_pending_epoch(&mut self) -> Result<()> {
+        let tx = self.write_tx()?;
+        let code = RecordKind::RestoreEpoch.code();
+        tx.execute("DELETE FROM pending WHERE kind = ?1", params![code])
+            .map_err(store_err)?;
+        tx.execute("DELETE FROM ancestor WHERE kind = ?1", params![code])
+            .map_err(store_err)?;
         tx.commit()
     }
 }
@@ -955,12 +1360,454 @@ fn device_state_in(conn: &Connection) -> Result<DeviceState> {
     }
 }
 
-/// A remote deletion `commit_remote` ignores: account params and keysets
-/// (never deleted by a client in M2), and the vault key, meta or manifest of
-/// a vault the device has seen (no vault deletion in M2, R14).
+/// The sync state of a vault that is not `Ok`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HealthEntry {
+    /// Seq of the device's copy the server is behind on.
+    pub seq: u64,
+    /// The check the server's state failed.
+    pub cause: IntegrityError,
+    /// Unix seconds of the first round that counted it.
+    pub since: Option<i64>,
+    pub rounds: u32,
+    /// The server took this device's copy back (`mark_pushed`) and no fetch
+    /// served it yet: until one does, the server is not trusted to have
+    /// kept it.
+    pub awaiting: bool,
+    pub alert: bool,
+    /// The vault loaded cleanly from a state the server served, with
+    /// nothing left to confirm, since the last round that found it behind.
+    pub clean: bool,
+    /// Clean rounds in a row (`count_round`).
+    pub clean_rounds: u8,
+    /// The alert came from a fork or from no verified copy
+    /// (`VaultEvent::Alert`), not from staying behind: clean rounds never
+    /// clear it, only a safe exit.
+    pub fork: bool,
+}
+
+impl HealthEntry {
+    fn new(seq: u64, cause: IntegrityError) -> HealthEntry {
+        HealthEntry {
+            seq,
+            cause,
+            since: None,
+            rounds: 0,
+            awaiting: false,
+            alert: false,
+            clean: false,
+            clean_rounds: 0,
+            fork: false,
+        }
+    }
+
+    /// Found behind (or alerting) again: the clean streak restarts.
+    fn dirty(&mut self) {
+        self.clean = false;
+        self.clean_rounds = 0;
+    }
+}
+
+/// The count of a vault cleared after `STALE_CLEAR_ROUNDS` clean rounds,
+/// kept for `STALE_MEMORY_ROUNDS` rounds: found behind again meanwhile, the
+/// vault resumes it (`resume`) instead of starting from zero, so a store
+/// that rolls back once every few rounds cannot keep the alert away by
+/// letting the vault clear in between.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct HealthMemory {
+    since: Option<i64>,
+    rounds: u32,
+    /// It was cleared in alert: found behind again, it is an alert at once.
+    alert: bool,
+    /// Rounds before it is forgotten.
+    left: u8,
+}
+
+/// A vault found behind (or alerting) with no entry yet: its entry, which
+/// resumes the count of `memory` if it was cleared lately.
+fn resume(
+    memory: &mut BTreeMap<Id, HealthMemory>,
+    vault: Id,
+    seq: u64,
+    cause: IntegrityError,
+) -> HealthEntry {
+    let mut e = HealthEntry::new(seq, cause);
+    if let Some(m) = memory.remove(&vault) {
+        e.since = m.since;
+        e.rounds = m.rounds;
+        e.alert = m.alert;
+    }
+    e
+}
+
+/// The code of an `IntegrityError` persisted in the health map. Exhaustive:
+/// a new variant does not compile until it gets its code.
+fn cause_code(e: IntegrityError) -> u8 {
+    match e {
+        IntegrityError::Commitment => 0,
+        IntegrityError::Aead => 1,
+        IntegrityError::Signature => 2,
+        IntegrityError::ManifestRollback => 3,
+        IntegrityError::ManifestMissingItem => 4,
+        IntegrityError::ManifestUnexpectedItem => 5,
+        IntegrityError::ManifestItemMismatch => 6,
+        IntegrityError::ParamsUnsigned => 7,
+        IntegrityError::ParamsDowngrade => 8,
+        IntegrityError::WrongKind => 9,
+        IntegrityError::WrongContext => 10,
+        IntegrityError::VaultMissing => 11,
+        IntegrityError::EpochRollback => 12,
+    }
+}
+
+fn cause_of(code: u8) -> Option<IntegrityError> {
+    Some(match code {
+        0 => IntegrityError::Commitment,
+        1 => IntegrityError::Aead,
+        2 => IntegrityError::Signature,
+        3 => IntegrityError::ManifestRollback,
+        4 => IntegrityError::ManifestMissingItem,
+        5 => IntegrityError::ManifestUnexpectedItem,
+        6 => IntegrityError::ManifestItemMismatch,
+        7 => IntegrityError::ParamsUnsigned,
+        8 => IntegrityError::ParamsDowngrade,
+        9 => IntegrityError::WrongKind,
+        10 => IntegrityError::WrongContext,
+        11 => IntegrityError::VaultMissing,
+        12 => IntegrityError::EpochRollback,
+        _ => return None,
+    })
+}
+
+const HEALTH_SINCE: u8 = 1;
+const HEALTH_AWAITING: u8 = 2;
+const HEALTH_ALERT: u8 = 4;
+const HEALTH_CLEAN: u8 = 8;
+const HEALTH_FORK: u8 = 16;
+
+fn encode_health(map: &BTreeMap<Id, HealthEntry>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(1 + map.len() * HEALTH_ENTRY_BYTES);
+    out.push(HEALTH_VERSION);
+    for (v, e) in map {
+        let flags = if e.since.is_some() { HEALTH_SINCE } else { 0 }
+            | if e.awaiting { HEALTH_AWAITING } else { 0 }
+            | if e.alert { HEALTH_ALERT } else { 0 }
+            | if e.clean { HEALTH_CLEAN } else { 0 }
+            | if e.fork { HEALTH_FORK } else { 0 };
+        out.extend_from_slice(&v.0);
+        out.extend_from_slice(&e.seq.to_be_bytes());
+        out.push(cause_code(e.cause));
+        out.push(flags);
+        out.extend_from_slice(&e.since.unwrap_or(0).to_be_bytes());
+        out.extend_from_slice(&e.rounds.to_be_bytes());
+        out.push(e.clean_rounds);
+    }
+    out
+}
+
+fn health_unreadable() -> Error {
+    Error::Store("sync health unreadable".into())
+}
+
+/// Decodes the health map. Fails closed: a map of another version or
+/// length is an error (never an empty map, which would hide every alert),
+/// and an entry with an unknown cause code is kept as an alert.
+fn decode_health(bytes: &[u8]) -> Result<BTreeMap<Id, HealthEntry>> {
+    let (&version, rest) = bytes.split_first().ok_or_else(health_unreadable)?;
+    if version != HEALTH_VERSION {
+        return Err(health_unreadable());
+    }
+    let (entries, tail) = rest.as_chunks::<HEALTH_ENTRY_BYTES>();
+    if !tail.is_empty() {
+        return Err(health_unreadable());
+    }
+    let mut map = BTreeMap::new();
+    for c in entries {
+        let mut id = [0; 16];
+        id.copy_from_slice(&c[0..16]);
+        let mut seq = [0; 8];
+        seq.copy_from_slice(&c[16..24]);
+        let flags = c[25];
+        let mut since = [0; 8];
+        since.copy_from_slice(&c[26..34]);
+        let mut rounds = [0; 4];
+        rounds.copy_from_slice(&c[34..38]);
+        let cause = cause_of(c[24]);
+        map.insert(
+            Id(id),
+            HealthEntry {
+                seq: u64::from_be_bytes(seq),
+                cause: cause.unwrap_or(IntegrityError::ManifestRollback),
+                since: (flags & HEALTH_SINCE != 0).then_some(i64::from_be_bytes(since)),
+                rounds: u32::from_be_bytes(rounds),
+                awaiting: flags & HEALTH_AWAITING != 0,
+                alert: cause.is_none() || flags & HEALTH_ALERT != 0,
+                clean: flags & HEALTH_CLEAN != 0,
+                clean_rounds: c[38],
+                fork: flags & HEALTH_FORK != 0,
+            },
+        );
+    }
+    Ok(map)
+}
+
+/// The value of `key` in `meta`, if any.
+fn meta_in(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>> {
+    conn.query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+        r.get::<_, Vec<u8>>(0)
+    })
+    .optional()
+    .map_err(store_err)
+}
+
+/// The health map in `meta`; empty when there is none. An unreadable one
+/// (edited file) is an error, not an empty map.
+fn health_in(conn: &Connection) -> Result<BTreeMap<Id, HealthEntry>> {
+    match meta_in(conn, HEALTH_KEY)? {
+        Some(b) => decode_health(&b),
+        None => Ok(BTreeMap::new()),
+    }
+}
+
+fn encode_memory(map: &BTreeMap<Id, HealthMemory>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(1 + map.len() * HEALTH_MEMORY_ENTRY_BYTES);
+    out.push(HEALTH_MEMORY_VERSION);
+    for (v, m) in map {
+        out.extend_from_slice(&v.0);
+        out.push(
+            if m.since.is_some() { HEALTH_SINCE } else { 0 }
+                | if m.alert { HEALTH_ALERT } else { 0 },
+        );
+        out.extend_from_slice(&m.since.unwrap_or(0).to_be_bytes());
+        out.extend_from_slice(&m.rounds.to_be_bytes());
+        out.push(m.left);
+    }
+    out
+}
+
+/// Decodes the memory of cleared vaults; fails closed like `decode_health`.
+fn decode_memory(bytes: &[u8]) -> Result<BTreeMap<Id, HealthMemory>> {
+    let (&version, rest) = bytes.split_first().ok_or_else(health_unreadable)?;
+    if version != HEALTH_MEMORY_VERSION {
+        return Err(health_unreadable());
+    }
+    let (entries, tail) = rest.as_chunks::<HEALTH_MEMORY_ENTRY_BYTES>();
+    if !tail.is_empty() {
+        return Err(health_unreadable());
+    }
+    let mut map = BTreeMap::new();
+    for c in entries {
+        let mut id = [0; 16];
+        id.copy_from_slice(&c[0..16]);
+        let mut since = [0; 8];
+        since.copy_from_slice(&c[17..25]);
+        let mut rounds = [0; 4];
+        rounds.copy_from_slice(&c[25..29]);
+        map.insert(
+            Id(id),
+            HealthMemory {
+                since: (c[16] & HEALTH_SINCE != 0).then_some(i64::from_be_bytes(since)),
+                rounds: u32::from_be_bytes(rounds),
+                alert: c[16] & HEALTH_ALERT != 0,
+                left: c[29],
+            },
+        );
+    }
+    Ok(map)
+}
+
+fn memory_in(conn: &Connection) -> Result<BTreeMap<Id, HealthMemory>> {
+    match meta_in(conn, HEALTH_MEMORY_KEY)? {
+        Some(b) => decode_memory(&b),
+        None => Ok(BTreeMap::new()),
+    }
+}
+
+fn save_memory(conn: &Connection, map: &BTreeMap<Id, HealthMemory>) -> Result<()> {
+    if map.is_empty() {
+        conn.execute(
+            "DELETE FROM meta WHERE key = ?1",
+            params![HEALTH_MEMORY_KEY],
+        )
+    } else {
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+            params![HEALTH_MEMORY_KEY, encode_memory(map)],
+        )
+    }
+    .map_err(store_err)?;
+    Ok(())
+}
+
+/// `update_health` for the paths a read or a fetch takes: an unreadable
+/// map is left as is (so `health` keeps failing and the app offers the
+/// safe exits) and `f` is skipped, instead of blocking every read and the
+/// export of the vaults.
+fn update_health_lenient(
+    conn: &Connection,
+    f: impl FnOnce(&mut BTreeMap<Id, HealthEntry>) -> bool,
+) -> Result<()> {
+    match health_in(conn) {
+        Ok(map) => save_health(conn, map, f),
+        Err(_) => Ok(()),
+    }
+}
+
+/// Apply `f` to the health map and save it if `f` says it changed. Fails
+/// closed on an unreadable map.
+fn update_health(
+    conn: &Connection,
+    f: impl FnOnce(&mut BTreeMap<Id, HealthEntry>) -> bool,
+) -> Result<()> {
+    save_health(conn, health_in(conn)?, f)
+}
+
+fn save_health(
+    conn: &Connection,
+    mut map: BTreeMap<Id, HealthEntry>,
+    f: impl FnOnce(&mut BTreeMap<Id, HealthEntry>) -> bool,
+) -> Result<()> {
+    if !f(&mut map) {
+        return Ok(());
+    }
+    if map.is_empty() {
+        conn.execute("DELETE FROM meta WHERE key = ?1", params![HEALTH_KEY])
+    } else {
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+            params![HEALTH_KEY, encode_health(&map)],
+        )
+    }
+    .map_err(store_err)?;
+    Ok(())
+}
+
+/// The kept rows of one vault, `?3`: its manifest (kind `?1`) and its item
+/// records by vault prefix (kind `?2`).
+const KEPT_ROWS: &str = "(kind = ?1 AND id = ?3) OR (kind = ?2 AND substr(data, 1, 16) = ?3)";
+
+fn delete_kept(tx: &Connection, vault: Id) -> Result<()> {
+    tx.execute(
+        &format!("DELETE FROM kept WHERE {KEPT_ROWS}"),
+        params![
+            RecordKind::Manifest.code(),
+            RecordKind::Item.code(),
+            &vault.0[..]
+        ],
+    )
+    .map_err(store_err)?;
+    Ok(())
+}
+
+/// The `base` manifest row of a vault: `(version, data)`.
+fn base_manifest(conn: &Connection, vault: Id) -> Result<Option<(u64, Vec<u8>)>> {
+    conn.query_row(
+        "SELECT version, data FROM base WHERE kind = ?1 AND id = ?2",
+        params![RecordKind::Manifest.code(), &vault.0[..]],
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
+    )
+    .optional()
+    .map_err(store_err)?
+    .map(|(v, d)| {
+        u64::try_from(v)
+            .map(|v| (v, d))
+            .map_err(|_| Error::InvalidFormat("record version"))
+    })
+    .transpose()
+}
+
+/// The version of the copy of `vault` this device serves over the
+/// server's: its pending manifest, else its kept one.
+fn copy_manifest_version(conn: &Connection, vault: Id) -> Result<Option<u64>> {
+    let code = RecordKind::Manifest.code();
+    let pending: Option<i64> = conn
+        .query_row(
+            "SELECT version FROM pending WHERE kind = ?1 AND id = ?2 AND data IS NOT NULL",
+            params![code, &vault.0[..]],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(store_err)?;
+    let version = match pending {
+        Some(v) => Some(v),
+        None => conn
+            .query_row(
+                "SELECT version FROM kept WHERE kind = ?1 AND id = ?2",
+                params![code, &vault.0[..]],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(store_err)?,
+    };
+    version
+        .map(|v| u64::try_from(v).map_err(|_| Error::InvalidFormat("record version")))
+        .transpose()
+}
+
+fn has_pending_manifest(conn: &Connection, vault: Id) -> Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM pending WHERE kind = ?1 AND id = ?2 AND data IS NOT NULL)",
+        params![RecordKind::Manifest.code(), &vault.0[..]],
+        |r| r.get(0),
+    )
+    .map_err(store_err)
+}
+
+/// `RecordStore::delete` inside a transaction: a row known to the server
+/// becomes a tombstone carrying its version, a local-only row vanishes.
+fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
+    let base_row: Option<(i64, Option<Vec<u8>>)> = tx
+        .query_row(
+            "SELECT version, substr(data, 1, 16) FROM base WHERE kind = ?1 AND id = ?2",
+            params![kind.code(), &id.0[..]],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(store_err)?;
+    match base_row {
+        // Known to the server: a tombstone carrying the deleted version.
+        Some((version, prefix)) => {
+            // An item tombstone keeps its vault, for holding and dropping.
+            let vault = if kind == RecordKind::Item {
+                prefix
+            } else {
+                None
+            };
+            if kind == RecordKind::Manifest {
+                tx.execute(
+                    "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
+                     SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
+                    params![kind.code(), &id.0[..]],
+                )
+                .map_err(store_err)?;
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO pending (kind, id, version, data, vault)
+                 VALUES (?1, ?2, ?3, NULL, ?4)",
+                params![kind.code(), &id.0[..], version, vault],
+            )
+            .map_err(store_err)?;
+        }
+        // Local only: it vanishes.
+        None => {
+            tx.execute(
+                "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+                params![kind.code(), &id.0[..]],
+            )
+            .map_err(store_err)?;
+        }
+    }
+    Ok(())
+}
+
+/// A remote deletion `commit_remote` ignores: account params, keysets and
+/// the restore epoch (never deleted by a client), and the vault key, meta
+/// or manifest of a vault the device has seen (no vault deletion in M2,
+/// R14). A store that hides the epoch from a device with a fresh copy is
+/// caught by the repository (`EpochRollback`).
 fn protected_from_remote_deletion(kind: RecordKind, id: &[u8], seen: &BTreeSet<Id>) -> bool {
     match kind {
-        RecordKind::AccountParams | RecordKind::Keyset => true,
+        RecordKind::AccountParams | RecordKind::Keyset | RecordKind::RestoreEpoch => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v))
         }
@@ -1062,47 +1909,224 @@ impl RecordStore for SyncStore {
         .collect()
     }
 
+    fn restore_epoch_mark(&self) -> Result<Option<(u64, [u8; 32])>> {
+        let Some(v) = self.meta(EPOCH_MARK_KEY)? else {
+            return Ok(None);
+        };
+        let (epoch, hash) = v
+            .split_first_chunk::<8>()
+            .filter(|(_, h)| h.len() == 32)
+            .ok_or(Error::InvalidFormat("restore epoch mark"))?;
+        let mut h = [0u8; 32];
+        h.copy_from_slice(hash);
+        Ok(Some((u64::from_be_bytes(*epoch), h)))
+    }
+
+    fn set_restore_epoch_mark(&mut self, epoch: u64, hash: [u8; 32]) -> Result<()> {
+        let mut v = epoch.to_be_bytes().to_vec();
+        v.extend_from_slice(&hash);
+        self.set_meta(EPOCH_MARK_KEY, &v)
+    }
+
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
         let tx = self.write_tx()?;
-        let base_row: Option<(i64, Option<Vec<u8>>)> = tx
-            .query_row(
-                "SELECT version, substr(data, 1, 16) FROM base WHERE kind = ?1 AND id = ?2",
-                params![kind.code(), &id.0[..]],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+        delete_in(&tx, kind, id)?;
+        tx.commit()
+    }
+
+    fn kept_rows(&self, vault: Id) -> Result<Option<Vec<Record>>> {
+        self.read(|c| {
+            let mut stmt = c
+                .prepare(&format!(
+                    "SELECT kind, id, version, data FROM kept WHERE {KEPT_ROWS}"
+                ))
+                .map_err(store_err)?;
+            let rows = stmt
+                .query_map(
+                    params![
+                        RecordKind::Manifest.code(),
+                        RecordKind::Item.code(),
+                        &vault.0[..]
+                    ],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+                .map_err(store_err)?;
+            rows.map(|row| {
+                let (k, id, v, d) = row.map_err(store_err)?;
+                decode_row(k, id, v, d)
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(Some)
+        })
+    }
+
+    /// Materialize the device's copy (see the trait). The pending
+    /// manifest's ancestor decides what the push does: a `base` older than
+    /// the copy (the server went back) becomes the ancestor, so the push
+    /// restores the server's copy; a newer `base` (the server moved on, its
+    /// state incomplete) leaves the copy itself as the ancestor, so the
+    /// vault is held until the rebase merges onto the server's state.
+    fn keep_local_copy(
+        &mut self,
+        vault: Id,
+        manifest: &Record,
+        restore: &[Record],
+        unlisted: &[Id],
+        write: bool,
+    ) -> Result<()> {
+        let tx = self.write_tx()?;
+        let base = base_manifest(&tx, vault)?;
+        let behind = base.as_ref().is_none_or(|(v, _)| *v < manifest.version);
+        if !(write || behind) {
+            return Ok(());
+        }
+        if effective_get(&tx, RecordKind::Manifest, vault)?.as_ref() != Some(manifest) {
+            let version = to_i64(manifest.version)?;
+            let code = RecordKind::Manifest.code();
+            tx.execute(
+                "INSERT OR REPLACE INTO pending (kind, id, version, data) VALUES (?1, ?2, ?3, ?4)",
+                params![code, &vault.0[..], version, manifest.data],
             )
-            .optional()
             .map_err(store_err)?;
-        match base_row {
-            // Known to the server: a tombstone carrying the deleted version.
-            Some((version, prefix)) => {
-                // An item tombstone keeps its vault, for holding and dropping.
-                let vault = if kind == RecordKind::Item {
-                    prefix
+            tx.execute(
+                "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2",
+                params![code, &vault.0[..]],
+            )
+            .map_err(store_err)?;
+            if base.is_some() {
+                let (v, data) = if behind {
+                    base.ok_or(Error::NotFound)?
                 } else {
-                    None
+                    (manifest.version, manifest.data.clone())
                 };
-                if kind == RecordKind::Manifest {
-                    tx.execute(
-                        "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
-                         SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
-                        params![kind.code(), &id.0[..]],
-                    )
-                    .map_err(store_err)?;
-                }
                 tx.execute(
-                    "INSERT OR REPLACE INTO pending (kind, id, version, data, vault)
-                     VALUES (?1, ?2, ?3, NULL, ?4)",
-                    params![kind.code(), &id.0[..], version, vault],
+                    "INSERT INTO ancestor (kind, id, version, data) VALUES (?1, ?2, ?3, ?4)",
+                    params![code, &vault.0[..], to_i64(v)?, data],
                 )
                 .map_err(store_err)?;
             }
-            // Local only: it vanishes.
-            None => {
-                tx.execute(
-                    "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
-                    params![kind.code(), &id.0[..]],
-                )
-                .map_err(store_err)?;
+        }
+        for r in restore {
+            check_size(&r.data)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO pending (kind, id, version, data) VALUES (?1, ?2, ?3, ?4)",
+                params![r.kind.code(), &r.id.0[..], to_i64(r.version)?, r.data],
+            )
+            .map_err(store_err)?;
+        }
+        for id in unlisted {
+            delete_in(&tx, RecordKind::Item, *id)?;
+        }
+        tx.commit()
+    }
+
+    fn vault_event(&mut self, vault: Id, event: VaultEvent) -> Result<()> {
+        // A clean load with nothing to settle writes nothing.
+        if event == VaultEvent::Clean {
+            let idle = self.read(|c| {
+                let kept: bool = c
+                    .query_row(
+                        &format!("SELECT EXISTS (SELECT 1 FROM kept WHERE {KEPT_ROWS})"),
+                        params![
+                            RecordKind::Manifest.code(),
+                            RecordKind::Item.code(),
+                            &vault.0[..]
+                        ],
+                        |r| r.get(0),
+                    )
+                    .map_err(store_err)?;
+                // An unreadable map is no entry here: reads go on.
+                let entry = health_in(c).is_ok_and(|m| m.contains_key(&vault));
+                Ok(!kept && !entry)
+            })?;
+            if idle {
+                return Ok(());
+            }
+        }
+        let tx = self.write_tx()?;
+        match event {
+            VaultEvent::Clean => {
+                delete_kept(&tx, vault)?;
+                // Clean once the server serves the copy back by itself;
+                // settled after `STALE_CLEAR_ROUNDS` such rounds
+                // (`count_round`).
+                let pending = has_pending_manifest(&tx, vault)?;
+                update_health_lenient(&tx, |map| match map.get_mut(&vault) {
+                    Some(e) if !e.awaiting && !pending && !e.clean => {
+                        e.clean = true;
+                        true
+                    }
+                    _ => false,
+                })?;
+            }
+            VaultEvent::Behind { seq, cause } => {
+                // An unreadable map (or memory) is left as is: the read
+                // goes on, `health` and `count_round` report it.
+                if let (Ok(health), Ok(mut memory)) = (health_in(&tx), memory_in(&tx)) {
+                    let resumed = memory.contains_key(&vault);
+                    save_health(&tx, health, |map| {
+                        let e = map
+                            .entry(vault)
+                            .or_insert_with(|| resume(&mut memory, vault, seq, cause));
+                        e.seq = e.seq.max(seq);
+                        e.cause = cause;
+                        e.dirty();
+                        true
+                    })?;
+                    if resumed && !memory.contains_key(&vault) {
+                        save_memory(&tx, &memory)?;
+                    }
+                }
+            }
+            VaultEvent::EpochAccepted => {
+                update_health_lenient(&tx, |map| match map.get_mut(&vault) {
+                    Some(e) if e.fork => {
+                        e.fork = false;
+                        true
+                    }
+                    _ => false,
+                })?;
+            }
+            VaultEvent::CaughtUp => {
+                // The rebase verified the server's newer state: a clean
+                // round, settled like the others. The device's copy is now
+                // built on that state, so it is what the server must keep
+                // serving: an older copy's seq (or the head of an epoch
+                // that was withdrawn) no longer applies.
+                delete_kept(&tx, vault)?;
+                let base = base_manifest(&tx, vault)?.map(|(version, _)| version);
+                update_health_lenient(&tx, |map| match map.get_mut(&vault) {
+                    Some(e) => {
+                        if let Some(version) = base {
+                            e.seq = version;
+                        }
+                        e.awaiting = false;
+                        e.clean = true;
+                        true
+                    }
+                    None => false,
+                })?;
+            }
+            VaultEvent::Alert { seq, cause } => {
+                // An unreadable map (or memory) is left as is: the read
+                // goes on, `health` and `count_round` report it.
+                if let (Ok(health), Ok(mut memory)) = (health_in(&tx), memory_in(&tx)) {
+                    let resumed = memory.contains_key(&vault);
+                    save_health(&tx, health, |map| {
+                        let e = map
+                            .entry(vault)
+                            .or_insert_with(|| resume(&mut memory, vault, seq, cause));
+                        e.seq = e.seq.max(seq);
+                        e.cause = cause;
+                        e.alert = true;
+                        e.fork = true;
+                        e.dirty();
+                        true
+                    })?;
+                    if resumed && !memory.contains_key(&vault) {
+                        save_memory(&tx, &memory)?;
+                    }
+                }
             }
         }
         tx.commit()
@@ -1700,7 +2724,7 @@ mod tests {
         s.reset_for_recovery().unwrap();
         assert_eq!(s.account_state().unwrap(), AccountState::Empty);
         assert_eq!(s.device_state().unwrap(), DeviceState::default());
-        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
             assert_eq!(count(&s, table), 0, "{table}");
         }
     }
@@ -1745,7 +2769,7 @@ mod tests {
         s.set_meta("sync.tok", &[1]).unwrap();
         s.set_device_state(&DeviceState::default()).unwrap();
         other.reset().unwrap();
-        for table in ["base", "pending", "staging", "ancestor", "meta"] {
+        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
             assert_eq!(count(&s, table), 0, "{table}");
         }
         // Both connections keep working on the same file.
@@ -1911,6 +2935,47 @@ mod tests {
     }
 
     #[test]
+    fn store_user_version_newer_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sync.sqlite");
+        // A database from before the version check (user_version 0) opens,
+        // keeps its rows and is stamped with the current version.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE meta (key TEXT NOT NULL PRIMARY KEY, value BLOB NOT NULL);
+                 INSERT INTO meta VALUES ('change_token', x'746f6b');",
+            )
+            .unwrap();
+        }
+        {
+            let s = SyncStore::open(&path).unwrap();
+            assert_eq!(s.meta("change_token").unwrap(), Some(b"tok".to_vec()));
+            let v: i64 = s
+                .conn
+                .query_row("PRAGMA user_version", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(v, crate::format::STORE_USER_VERSION);
+        }
+        // The current version opens again.
+        drop(SyncStore::open(&path).unwrap());
+        // A newer one is refused, and left as it is.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("PRAGMA user_version = 2;").unwrap();
+        }
+        assert!(matches!(
+            SyncStore::open(&path),
+            Err(Error::InvalidFormat("store from a newer version"))
+        ));
+        let conn = Connection::open(&path).unwrap();
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 2);
+    }
+
+    #[test]
     fn device_state_persists_across_reopen() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("sync.sqlite");
@@ -1999,6 +3064,339 @@ mod tests {
         assert_eq!(s.pending_changes().unwrap(), vec![]);
         s.drop_pending_vault(vault).unwrap();
         assert_eq!(count(&s, "pending"), 0);
+    }
+
+    #[test]
+    fn server_going_back_leaves_the_vault_unheld_and_its_rows_kept() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (vault, item, other) = (Id::new(), Id::new(), Id::new());
+        seed_base(&mut s, RecordKind::Manifest, vault, 3, b"m3".to_vec());
+        seed_base(&mut s, RecordKind::Item, item, 1, item_data(vault, b"i"));
+        seed_base(
+            &mut s,
+            RecordKind::Item,
+            other,
+            1,
+            item_data(Id::new(), b"o"),
+        );
+        s.put(rec(vault, RecordKind::Manifest, 4, b"l4")).unwrap();
+        // The server goes back to seq 2 and drops the item: older than the
+        // ancestor, so not held; both rows it replaced are kept.
+        s.stage_remote(remote(RecordKind::Manifest, vault, 2, Some(b"m2".to_vec())))
+            .unwrap();
+        s.stage_remote(remote(RecordKind::Item, item, 1, None))
+            .unwrap();
+        s.commit_remote().unwrap();
+        assert_eq!(s.vaults_needing_rebase().unwrap(), vec![]);
+        let mut kept = s.kept_rows(vault).unwrap().unwrap();
+        kept.sort_by_key(|r| r.kind);
+        assert_eq!(
+            kept,
+            vec![
+                rec(item, RecordKind::Item, 1, &item_data(vault, b"i")),
+                rec(vault, RecordKind::Manifest, 3, b"m3"),
+            ]
+        );
+        // The same seq with other content is a fork: held.
+        seed_base(&mut s, RecordKind::Manifest, vault, 3, b"fork".to_vec());
+        assert_eq!(s.vaults_needing_rebase().unwrap(), vec![vault]);
+        // A clean load drops the kept rows.
+        s.vault_event(vault, VaultEvent::Clean).unwrap();
+        assert_eq!(s.kept_rows(vault).unwrap(), Some(vec![]));
+    }
+
+    #[test]
+    fn health_counts_rounds_and_settles_only_on_a_fetch() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let cause = IntegrityError::ManifestRollback;
+        seed_base(&mut s, RecordKind::Manifest, vault, 2, b"m2".to_vec());
+        s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        for i in 1..=STALE_ALERT_ROUNDS {
+            s.count_round(100 * i64::from(i)).unwrap();
+        }
+        let e = s.health().unwrap()[&vault];
+        assert_eq!((e.since, e.rounds, e.alert), (Some(100), 5, false));
+        // The copy pushed back: not settled until a fetch serves it.
+        s.put(rec(vault, RecordKind::Manifest, 3, b"m3")).unwrap();
+        s.mark_pushed(RecordKind::Manifest, vault, 3, None).unwrap();
+        s.vault_event(vault, VaultEvent::Clean).unwrap();
+        assert!(s.health().unwrap()[&vault].awaiting);
+        // Served older again: still behind; time passes: an alert.
+        seed_base(&mut s, RecordKind::Manifest, vault, 2, b"m2".to_vec());
+        s.count_round(100 + STALE_ALERT_SECONDS).unwrap();
+        let e = s.health().unwrap()[&vault];
+        assert!(e.alert && e.awaiting);
+        // Persisted as is.
+        assert_eq!(
+            decode_health(&encode_health(&s.health().unwrap())),
+            Ok(s.health().unwrap())
+        );
+        // Served back, loaded cleanly: settled after `STALE_CLEAR_ROUNDS`
+        // clean rounds in a row, not one.
+        seed_base(&mut s, RecordKind::Manifest, vault, 3, b"m3".to_vec());
+        for i in 1..STALE_CLEAR_ROUNDS {
+            s.vault_event(vault, VaultEvent::Clean).unwrap();
+            s.count_round(1000).unwrap();
+            let e = s.health().unwrap()[&vault];
+            assert_eq!(u32::from(e.clean_rounds), i);
+        }
+        s.vault_event(vault, VaultEvent::Clean).unwrap();
+        s.count_round(1000).unwrap();
+        assert!(s.health().unwrap().is_empty());
+        // An unreadable map is an error, never an empty map that would hide
+        // every alert.
+        s.set_meta(HEALTH_KEY, &[HEALTH_VERSION, 1, 2]).unwrap();
+        assert!(matches!(s.health(), Err(Error::Store(_))));
+        s.set_meta(HEALTH_KEY, &[HEALTH_VERSION + 1]).unwrap();
+        assert!(matches!(s.health(), Err(Error::Store(_))));
+        assert!(matches!(s.count_round(2000), Err(Error::Store(_))));
+    }
+
+    #[test]
+    fn periodic_rollback_still_alerts() {
+        // The server rolls the vault back every `STALE_CLEAR_ROUNDS + 1`-th
+        // round and serves it cleanly in between: just enough clean rounds
+        // to clear the entry each time. The count resumes across the clears.
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let cause = IntegrityError::ManifestRollback;
+        let period = STALE_CLEAR_ROUNDS + 1;
+        let mut alerts = 0;
+        for round in 0..60u32 {
+            if round % period == 0 {
+                s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+                    .unwrap();
+            } else {
+                s.vault_event(vault, VaultEvent::Clean).unwrap();
+            }
+            s.count_round(1_793_000_000 + 100 * i64::from(round))
+                .unwrap();
+            if s.health().unwrap().get(&vault).is_some_and(|e| e.alert) {
+                alerts += 1;
+            }
+        }
+        assert!(alerts > 0, "a periodic rollback never alerted");
+        // Forgotten after `STALE_MEMORY_ROUNDS` rounds without a rollback.
+        let mut s = SyncStore::open_in_memory().unwrap();
+        s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        s.count_round(0).unwrap();
+        for _ in 0..STALE_CLEAR_ROUNDS {
+            s.vault_event(vault, VaultEvent::Clean).unwrap();
+            s.count_round(0).unwrap();
+        }
+        assert!(s.health().unwrap().is_empty());
+        assert_eq!(memory_in(&s.conn).unwrap()[&vault].rounds, 1);
+        for _ in 0..STALE_MEMORY_ROUNDS {
+            s.count_round(0).unwrap();
+        }
+        assert!(memory_in(&s.conn).unwrap().is_empty());
+        s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        assert_eq!(s.health().unwrap()[&vault].rounds, 0);
+    }
+
+    #[test]
+    fn clean_mark_is_spent_by_each_round() {
+        // One clean load, then rounds that stop early (an epoch or vault
+        // list error) and never load the vault: they are not clean rounds.
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let cause = IntegrityError::ManifestRollback;
+        s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        s.count_round(100).unwrap();
+        s.vault_event(vault, VaultEvent::Clean).unwrap();
+        s.count_round(200).unwrap();
+        let e = s.health().unwrap()[&vault];
+        assert_eq!((e.clean, e.clean_rounds), (false, 1));
+        for i in 0..STALE_CLEAR_ROUNDS {
+            s.count_round(300 + i64::from(i)).unwrap();
+        }
+        let e = s.health().unwrap()[&vault];
+        assert_eq!((e.clean, e.clean_rounds), (false, 0));
+        assert_eq!(e.rounds, 1 + STALE_CLEAR_ROUNDS);
+    }
+
+    /// Defines `ALL_CAUSES` and `exhaustive` from one list: `exhaustive`
+    /// does not compile once a variant is added, until it is listed here,
+    /// which also puts it in `ALL_CAUSES`.
+    macro_rules! causes {
+        ($($v:ident),* $(,)?) => {
+            const ALL_CAUSES: &[IntegrityError] = &[$(IntegrityError::$v),*];
+            fn exhaustive(e: IntegrityError) {
+                match e {
+                    $(IntegrityError::$v)|* => {}
+                }
+            }
+        };
+    }
+    causes!(
+        Commitment,
+        Aead,
+        Signature,
+        ManifestRollback,
+        ManifestMissingItem,
+        ManifestUnexpectedItem,
+        ManifestItemMismatch,
+        ParamsUnsigned,
+        ParamsDowngrade,
+        WrongKind,
+        WrongContext,
+        VaultMissing,
+        EpochRollback,
+    );
+
+    #[test]
+    fn alerts_stay_until_resolved() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (fork, behind) = (Id::new(), Id::new());
+        let cause = IntegrityError::ManifestRollback;
+        // A fork alert: clean rounds never clear it.
+        s.vault_event(fork, VaultEvent::Alert { seq: 3, cause })
+            .unwrap();
+        for i in 0..2 * STALE_CLEAR_ROUNDS {
+            s.vault_event(fork, VaultEvent::Clean).unwrap();
+            s.count_round(i64::from(i)).unwrap();
+            let e = s.health().unwrap()[&fork];
+            assert!(e.alert && e.fork);
+        }
+        // Only a safe exit does.
+        s.reset_health().unwrap();
+        assert!(s.health().unwrap().is_empty());
+        // An alert reached by staying behind clears after the clean rounds,
+        // and comes back at once if the server goes back within the window.
+        s.vault_event(behind, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        for _ in 0..STALE_ALERT_MAX_ROUNDS {
+            s.count_round(0).unwrap();
+        }
+        assert!(s.health().unwrap()[&behind].alert);
+        for _ in 0..STALE_CLEAR_ROUNDS {
+            s.vault_event(behind, VaultEvent::Clean).unwrap();
+            s.count_round(0).unwrap();
+        }
+        assert!(s.health().unwrap().is_empty());
+        s.vault_event(behind, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        let e = s.health().unwrap()[&behind];
+        assert!(e.alert && !e.fork);
+        assert_eq!(e.rounds, STALE_ALERT_MAX_ROUNDS);
+    }
+
+    #[test]
+    fn unreadable_health_never_blocks_reads() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let cause = IntegrityError::ManifestRollback;
+        s.set_meta(HEALTH_KEY, &[HEALTH_VERSION, 1]).unwrap();
+        // The events of a read or a fetch go on and leave the map as is.
+        s.vault_event(vault, VaultEvent::Clean).unwrap();
+        s.vault_event(vault, VaultEvent::CaughtUp).unwrap();
+        s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        s.vault_event(vault, VaultEvent::Alert { seq: 3, cause })
+            .unwrap();
+        assert_eq!(s.meta(HEALTH_KEY).unwrap(), Some(vec![HEALTH_VERSION, 1]));
+        // The health and the rounds fail closed.
+        assert!(matches!(s.health(), Err(Error::Store(_))));
+        assert!(matches!(s.count_round(0), Err(Error::Store(_))));
+        assert!(matches!(s.keep_targets(), Err(Error::Store(_))));
+        s.reset_health().unwrap();
+        assert!(s.health().unwrap().is_empty());
+        s.count_round(0).unwrap();
+    }
+
+    #[test]
+    fn health_cause_codes_round_trip_and_fail_closed() {
+        let mut codes = std::collections::BTreeSet::new();
+        assert_eq!(ALL_CAUSES.len(), 13);
+        for &cause in ALL_CAUSES {
+            exhaustive(cause);
+            let code = cause_code(cause);
+            assert_eq!(cause_of(code), Some(cause));
+            assert!(codes.insert(code), "duplicate code {code}");
+            let mut map = BTreeMap::new();
+            let mut e = HealthEntry::new(7, cause);
+            e.since = Some(-5);
+            e.rounds = 9;
+            e.clean = true;
+            e.clean_rounds = 2;
+            e.fork = true;
+            map.insert(Id([3; 16]), e);
+            assert_eq!(decode_health(&encode_health(&map)), Ok(map));
+        }
+        for code in 0..=u8::MAX {
+            if let Some(cause) = cause_of(code) {
+                assert_eq!(cause_code(cause), code);
+            } else {
+                assert!(!codes.contains(&code));
+            }
+        }
+        // An unknown cause code keeps the entry, as an alert.
+        let mut map = BTreeMap::new();
+        map.insert(Id([4; 16]), HealthEntry::new(7, IntegrityError::Aead));
+        let mut bytes = encode_health(&map);
+        bytes[1 + 24] = 200;
+        let e = decode_health(&bytes).unwrap()[&Id([4; 16])];
+        assert!(e.alert);
+        assert_eq!(e.seq, 7);
+        // Memory round trip.
+        let mut memory = BTreeMap::new();
+        memory.insert(
+            Id([5; 16]),
+            HealthMemory {
+                since: Some(-1),
+                rounds: 4,
+                alert: true,
+                left: 3,
+            },
+        );
+        memory.insert(
+            Id([6; 16]),
+            HealthMemory {
+                since: None,
+                rounds: 0,
+                alert: false,
+                left: 1,
+            },
+        );
+        assert_eq!(decode_memory(&encode_memory(&memory)), Ok(memory));
+        assert!(decode_memory(&[HEALTH_MEMORY_VERSION, 0]).is_err());
+    }
+
+    #[test]
+    fn alert_is_clock_proof() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (ahead, stuck) = (Id::new(), Id::new());
+        let cause = IntegrityError::ManifestRollback;
+        for v in [ahead, stuck] {
+            s.vault_event(v, VaultEvent::Behind { seq: 3, cause })
+                .unwrap();
+        }
+        // Clock a year ahead for one round, then right again: `since`
+        // follows it back, the alert comes on time.
+        let t0 = 1_793_000_000;
+        s.count_round(t0 + 31_536_000).unwrap();
+        for i in 0..STALE_ALERT_ROUNDS - 1 {
+            s.count_round(t0 + 150 * i64::from(i + 1)).unwrap();
+        }
+        let e = s.health().unwrap()[&ahead];
+        assert_eq!((e.since, e.rounds, e.alert), (Some(t0 + 150), 5, false));
+        s.count_round(t0 + 150 + STALE_ALERT_SECONDS).unwrap();
+        assert!(s.health().unwrap()[&ahead].alert);
+        // A clock that stands still: the alert comes at the round cap.
+        let mut s = SyncStore::open_in_memory().unwrap();
+        s.vault_event(stuck, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        for _ in 1..STALE_ALERT_MAX_ROUNDS {
+            s.count_round(t0).unwrap();
+        }
+        assert!(!s.health().unwrap()[&stuck].alert);
+        s.count_round(t0).unwrap();
+        assert!(s.health().unwrap()[&stuck].alert);
     }
 
     #[test]

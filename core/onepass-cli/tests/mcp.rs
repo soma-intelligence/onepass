@@ -99,6 +99,7 @@ fn last_seen(dir: &Path) -> BTreeMap<Id, SeenManifest> {
     struct DeviceFile {
         #[allow(dead_code)]
         secret_key: String,
+        #[serde(with = "onepass_core::format::device_state_bytes")]
         state: DeviceState,
     }
     let bytes = fs::read(dir.join("device.bin")).unwrap();

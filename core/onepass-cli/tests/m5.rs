@@ -912,6 +912,14 @@ fn backup_roundtrip_same_account() {
     assert_eq!(report["restored"], 0);
     assert_eq!(report["skipped"], 4);
     assert_eq!(report["vaults_created"], 0);
+    // Every restore issues the next signed restore epoch.
+    assert_eq!(report["epoch"], 1);
+    let again = json(&run(
+        dir,
+        &["backup", "restore", path_str(&backup), "--json"],
+    ));
+    assert_eq!(again["epoch"], 2);
+    assert_eq!(again["skipped"], 4);
 
     // Into the snapshot: the note comes back, the others are skipped.
     let report = json(&run(

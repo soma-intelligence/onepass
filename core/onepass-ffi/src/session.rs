@@ -40,7 +40,7 @@ impl Session {
         }))
     }
 
-    fn guard(&self) -> MutexGuard<'_, Option<Repo>> {
+    pub(crate) fn guard(&self) -> MutexGuard<'_, Option<Repo>> {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
