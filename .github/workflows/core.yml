@@ -68,6 +68,26 @@ jobs:
           path: core/target/sbom/*.cdx.json
           if-no-files-found: error
 
+  miri:
+    name: miri
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install nightly with Miri
+        run: |
+          rustup toolchain install nightly --profile minimal --component miri,rust-src
+          cargo +nightly miri setup
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: core
+          key: miri
+      # The locked-memory pool (mlock, page guards) under Miri.
+      - name: Miri
+        run: make miri
+
   fuzz:
     name: fuzz (${{ matrix.target }})
     runs-on: ubuntu-latest
