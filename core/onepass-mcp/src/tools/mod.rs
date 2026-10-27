@@ -19,10 +19,11 @@ use onepass_core::model::Item;
 use onepass_core::reference::{SecretRef, parse_ref};
 use onepass_guard::{Approver, AuditEntry, AuditSink, Surface};
 use serde_json::{Map, Value, json};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 use zeroize::Zeroizing;
 
 /// Placed next to every piece of vault data a tool returns.
@@ -202,8 +203,9 @@ pub struct McpTools<P: VaultPort> {
     approver: Arc<dyn Approver>,
     audit: Box<dyn AuditSink>,
     forbidden_dir: Option<PathBuf>,
-    /// Canonical keys of the requests allowed for the session.
-    grants: HashSet<String>,
+    /// Canonical keys of the requests allowed for a while, with the
+    /// (monotonic) end of each grant.
+    grants: HashMap<String, Instant>,
     /// Vaults quarantined after an integrity failure (spec section 8).
     quarantined: BTreeSet<Id>,
 }
@@ -226,7 +228,7 @@ impl<P: VaultPort> McpTools<P> {
             approver,
             audit,
             forbidden_dir,
-            grants: HashSet::new(),
+            grants: HashMap::new(),
             quarantined: BTreeSet::new(),
         }
     }
@@ -395,6 +397,8 @@ impl<P: VaultPort> McpTools<P> {
             let written = self.audit.record(&AuditEntry {
                 surface: Surface::Mcp,
                 client: client.name.clone(),
+                client_id: None,
+                client_label: None,
                 action: action.to_owned(),
                 vault_id: vault_id.map(|id| id.to_string()),
                 item_id: item_id.map(|id| id.to_string()),
@@ -710,7 +714,9 @@ mod tests {
             .vaults
             .insert(f.work.id.to_string(), Scope::ALL.into_iter().collect());
         let approver = Arc::new(ScriptedApprover::new(vec![
-            onepass_guard::Decision::AllowForSession;
+            onepass_guard::Decision::AllowFor(
+                std::time::Duration::from_secs(300)
+            );
             8
         ]));
         f.tools.approver = approver.clone();

@@ -4,6 +4,10 @@
 //!
 //! This crate does not depend on `onepass-core`: signatures are opaque bytes
 //! produced and checked through the [`LocalSigner`] trait.
+//!
+//! `unsafe` is denied except in the terminal handling of `approval` (libc
+//! calls on `/dev/tty`) and in `strong_macos` (LocalAuthentication).
+#![deny(unsafe_code)]
 
 mod approval;
 mod audit;
@@ -12,15 +16,20 @@ mod clock;
 mod control;
 mod display;
 mod grants;
+mod limits;
 mod signed;
+mod strong;
+#[cfg(target_os = "macos")]
+mod strong_macos;
 
 pub use approval::{
     ApprovalRequest, Approver, CHALLENGE_ALPHABET, Decision, DevAutoApprover, Surface, Target,
     TtyApprover, challenge_code, dev_auto_approver_from_env, parse_answer, render_prompt,
 };
 pub use audit::{
-    AuditEntry, AuditLog, AuditRecord, AuditSink, AuditVerification, SignedAuditSink, head_path,
-    verify_log,
+    AuditEntry, AuditLog, AuditRecord, AuditSink, AuditVerification, OUTCOME_CLIENT_COOLING_DOWN,
+    OUTCOME_GRANT_EXPIRED, OUTCOME_GRANT_REVOKED, OUTCOME_HOST_NOT_BOUND, OUTCOME_NOT_PAIRED,
+    OUTCOME_RATE_LIMITED, OUTCOME_STRONG_AUTH_FAILED, SignedAuditSink, head_path, verify_log,
 };
 pub use clients::{
     CLIENTS_DOMAIN, ClientRecord, ClientRegistry, ClientRegistryLoader, Unpaired, load_clients,
@@ -36,7 +45,12 @@ pub use grants::{
     DEFAULT_GRANT_TTL, GRANTS_DOMAIN, Grant, GrantCheck, GrantRequest, GrantStore, MAX_GRANT_TTL,
     Revoke, RevokeOutcome, RevokedGrant,
 };
+pub use limits::{Admit, Kind, Limits, PromptGate, Throttle};
 pub use signed::{open_config, seal_config};
+pub use strong::{
+    ChainStrong, DevStrong, FallbackStrong, LOCAL_AUTH_TIMEOUT, LocalAuthStrong, StrongAuth,
+    StrongOutcome, dev_strong_from_env,
+};
 
 use std::fmt;
 

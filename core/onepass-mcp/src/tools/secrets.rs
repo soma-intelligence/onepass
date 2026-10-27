@@ -23,13 +23,15 @@ use onepass_core::model::{
 };
 use onepass_core::reference::{SecretRef, otp_field_of};
 use onepass_core::totp::{TotpConfig, parse_otpauth, seconds_remaining, totp_from_secret};
-use onepass_guard::{ApprovalRequest, Decision, Surface, Target, sanitize_for_display};
+use onepass_guard::{
+    ApprovalRequest, Decision, MAX_GRANT_TTL, Surface, Target, sanitize_for_display,
+};
 use serde_json::{Map, Value, json};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use zeroize::Zeroizing;
 
 /// `run_with_secrets` timeout when none is given.
@@ -259,7 +261,9 @@ impl<P: VaultPort> McpTools<P> {
             return Err(Refusal::AuditUnusable);
         }
         let key = key.filter(|_| remember_allowed);
-        if key.as_ref().is_some_and(|k| self.grants.contains(k)) {
+        let now = Instant::now();
+        self.grants.retain(|_, until| *until > now);
+        if key.as_ref().is_some_and(|k| self.grants.contains_key(k)) {
             call.decision = "remembered";
             return Ok(());
         }
@@ -276,12 +280,13 @@ impl<P: VaultPort> McpTools<P> {
                 call.decision = "denied";
                 Err(Refusal::Denied)
             }
-            Decision::AllowForSession if key.is_some() => {
+            Decision::AllowFor(d) if key.is_some() => {
                 call.decision = "session";
-                self.grants.extend(key);
+                let until = Instant::now() + d.min(MAX_GRANT_TTL);
+                self.grants.extend(key.map(|k| (k, until)));
                 Ok(())
             }
-            Decision::AllowOnce | Decision::AllowForSession => {
+            Decision::AllowOnce | Decision::AllowFor(_) => {
                 call.decision = "once";
                 Ok(())
             }

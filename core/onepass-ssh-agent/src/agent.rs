@@ -226,7 +226,8 @@ pub struct AgentConfig {
     pub allow_forwarded: bool,
     /// `known_hosts` files read to name a bound destination.
     pub known_hosts: Vec<PathBuf>,
-    /// How long an "allow for the session" answer lasts.
+    /// Ceiling of a grant: an "allow for N minutes" answer lasts N minutes,
+    /// at most this long.
     pub remember_for: Duration,
 }
 
@@ -464,12 +465,12 @@ impl<K: KeySource> Agent<K> {
                     return Reply::failure();
                 }
                 Decision::AllowOnce => "once",
-                Decision::AllowForSession if rememberable => {
+                Decision::AllowFor(d) if rememberable => {
                     self.grants
-                        .insert(grant_key, Instant::now() + self.config.remember_for);
+                        .insert(grant_key, Instant::now() + d.min(self.config.remember_for));
                     "session"
                 }
-                Decision::AllowForSession => "once",
+                Decision::AllowFor(_) => "once",
             }
         };
 
@@ -575,6 +576,8 @@ impl<K: KeySource> Agent<K> {
         let written = self.audit.record(&AuditEntry {
             surface: Surface::Ssh,
             client: exe.to_owned(),
+            client_id: None,
+            client_label: None,
             action: ACTION_SIGN.to_owned(),
             vault_id: key.map(|k| k.vault_id.clone()),
             item_id: key.map(|k| k.item_id.clone()),
@@ -593,6 +596,8 @@ impl<K: KeySource> Agent<K> {
         let written = self.audit.record(&AuditEntry {
             surface: Surface::Ssh,
             client: exe,
+            client_id: None,
+            client_label: None,
             action: ACTION_SIGN.to_owned(),
             vault_id: None,
             item_id: None,

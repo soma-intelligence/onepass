@@ -33,6 +33,21 @@ use time::format_description::well_known::Rfc3339;
 const HEAD_DOMAIN: &[u8] = b"audit-head";
 const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
+/// Outcome: the client is not paired (refused without a prompt).
+pub const OUTCOME_NOT_PAIRED: &str = "not_paired";
+/// Outcome: over the per-minute prompt or secret limit.
+pub const OUTCOME_RATE_LIMITED: &str = "rate_limited";
+/// Outcome: the client is cooling down after repeated denials.
+pub const OUTCOME_CLIENT_COOLING_DOWN: &str = "client_cooling_down";
+/// Outcome: a grant matched but had expired (the user is asked again).
+pub const OUTCOME_GRANT_EXPIRED: &str = "grant_expired";
+/// Outcome: a grant matched but had been revoked (the user is asked again).
+pub const OUTCOME_GRANT_REVOKED: &str = "grant_revoked";
+/// Outcome: strong authentication (Touch ID or master password) failed.
+pub const OUTCOME_STRONG_AUTH_FAILED: &str = "strong_auth_failed";
+/// Outcome: an SSH signature for a host the connection is not bound to.
+pub const OUTCOME_HOST_NOT_BOUND: &str = "host_not_bound";
+
 /// What happened, with opaque ids only: no secret values and no titles.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct AuditEntry {
@@ -40,6 +55,13 @@ pub struct AuditEntry {
     pub surface: Surface,
     /// Client name as declared (untrusted).
     pub client: String,
+    /// Code identity of the paired client (`platform:`, `team:` or
+    /// `unsigned:` form). Absent in entries written before it existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    /// Label of the paired client, as shown to the user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_label: Option<String>,
     /// Action name.
     pub action: String,
     /// Opaque vault id.
@@ -83,6 +105,12 @@ struct Line {
     ts: String,
     surface: Surface,
     client: String,
+    // Optional so that lines written before these fields keep verifying,
+    // and omitted when absent so that such lines are byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_label: Option<String>,
     action: String,
     vault_id: Option<String>,
     item_id: Option<String>,
@@ -245,6 +273,8 @@ impl AuditLog {
             ts,
             surface: e.surface,
             client: e.client.clone(),
+            client_id: e.client_id.clone(),
+            client_label: e.client_label.clone(),
             action: e.action.clone(),
             vault_id: e.vault_id.clone(),
             item_id: e.item_id.clone(),
@@ -385,6 +415,8 @@ pub fn verify_log(path: &Path, signer: &dyn LocalSigner) -> Result<AuditVerifica
             entry: AuditEntry {
                 surface: l.surface,
                 client: l.client.clone(),
+                client_id: l.client_id.clone(),
+                client_label: l.client_label.clone(),
                 action: l.action.clone(),
                 vault_id: l.vault_id.clone(),
                 item_id: l.item_id.clone(),
@@ -462,6 +494,8 @@ mod tests {
                 Surface::Mcp
             },
             client: format!("client{n}"),
+            client_id: None,
+            client_label: None,
             action: "reveal_secret".into(),
             vault_id: Some(format!("v{n}")),
             item_id: Some(format!("i{n}")),
@@ -832,5 +866,80 @@ mod tests {
             head_path(Path::new("/data/audit.log")),
             PathBuf::from("/data/audit.log.head")
         );
+    }
+
+    /// A line exactly as written before `client_id` and `client_label`
+    /// existed (milestone 7 format).
+    const OLD_LINE: &str = r#"{"seq":1,"ts":"2026-10-25T10:00:00Z","surface":"mcp","client":"claude","action":"run_with_secrets","vault_id":"v1","item_id":"i1","field":"password","decision":"once","outcome":"ok","prev":"0000000000000000000000000000000000000000000000000000000000000000"}"#;
+
+    #[test]
+    fn audit_old_format_line_still_verifies() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.log");
+        let signer = TestSigner::new();
+        fs::write(&path, format!("{OLD_LINE}\n")).unwrap();
+        let head = seal_head(&signer, 1, &hash_line(OLD_LINE)).unwrap();
+        fs::write(head_path(&path), head).unwrap();
+
+        let v = verify_log(&path, &signer).unwrap();
+        assert_eq!(v.records.len(), 1);
+        assert!(!v.unsealed_tail);
+        let e = &v.records[0].entry;
+        assert_eq!(e.client, "claude");
+        assert_eq!(e.client_id, None);
+        assert_eq!(e.client_label, None);
+
+        // The chain goes on with new-format entries after the old line.
+        let mut log = AuditLog::open(&path).unwrap();
+        let mut new = entry(2);
+        new.client_id = Some("team:ABCDE12345:com.example.agent".into());
+        new.client_label = Some("Example agent".into());
+        new.outcome = OUTCOME_RATE_LIMITED.into();
+        log.append(&signer, &new).unwrap();
+        let recs = verify_log(&path, &signer).unwrap().records;
+        assert_eq!(recs.len(), 2);
+        assert_eq!(recs[1].entry, new);
+        // The old line is untouched on disk.
+        assert_eq!(lines(&path)[0], OLD_LINE);
+    }
+
+    #[test]
+    fn audit_client_fields_roundtrip_and_are_omitted_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.log");
+        let signer = TestSigner::new();
+        let mut log = AuditLog::open(&path).unwrap();
+        let mut with = entry(1);
+        with.client_id = Some("platform:com.apple.Terminal".into());
+        with.client_label = Some("Terminal \u{1b}[2J".into());
+        let without = entry(2);
+        log.append(&signer, &with).unwrap();
+        log.append(&signer, &without).unwrap();
+
+        let recs = verify_log(&path, &signer).unwrap().records;
+        assert_eq!(recs[0].entry, with);
+        assert_eq!(recs[1].entry, without);
+        let l = lines(&path);
+        let first: serde_json::Value = serde_json::from_str(&l[0]).unwrap();
+        assert_eq!(first["client_id"], "platform:com.apple.Terminal");
+        assert!(!l[1].contains("client_id"));
+        assert!(!l[1].contains("client_label"));
+
+        // AuditEntry itself (de)serializes the same way.
+        let json = serde_json::to_string(&without).unwrap();
+        assert!(!json.contains("client_id"));
+        let back: AuditEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, without);
+    }
+
+    #[test]
+    fn audit_outcomes_are_the_spec_strings() {
+        assert_eq!(OUTCOME_NOT_PAIRED, "not_paired");
+        assert_eq!(OUTCOME_RATE_LIMITED, "rate_limited");
+        assert_eq!(OUTCOME_CLIENT_COOLING_DOWN, "client_cooling_down");
+        assert_eq!(OUTCOME_GRANT_EXPIRED, "grant_expired");
+        assert_eq!(OUTCOME_GRANT_REVOKED, "grant_revoked");
+        assert_eq!(OUTCOME_STRONG_AUTH_FAILED, "strong_auth_failed");
+        assert_eq!(OUTCOME_HOST_NOT_BOUND, "host_not_bound");
     }
 }

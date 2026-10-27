@@ -170,7 +170,10 @@ fn user_denial_runs_nothing() {
 
 #[test]
 fn reprompt_item_is_never_remembered() {
-    let a = approver(vec![Decision::AllowForSession, Decision::AllowForSession]);
+    let a = approver(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+        Decision::AllowFor(std::time::Duration::from_secs(300)),
+    ]);
     let (mut t, audit) = tools_with_audit(default_policy(), a.clone());
     add_mail(&mut t, true);
     let args = json!({"command": ["/bin/echo", "hi"], "env": {"P": "onepass://Dev/Mail/password"}});
