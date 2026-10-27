@@ -1,69 +1,69 @@
-# Politique de sécurité
+# Security policy
 
-OnePass est un gestionnaire de mots de passe. Une faille y a des conséquences directes pour les gens qui s'en servent : nous préférons les apprendre par un signalement privé plutôt que par une publication.
+OnePass is a password manager. A flaw in it directly affects the people who use it, so we would much rather hear about one through a private report than read about it in public.
 
-## Périmètre
+## Reporting a vulnerability
 
-Dans le périmètre :
+Don't open a public issue, pull request or discussion for a security problem. Report it privately instead:
 
-- le noyau Rust (`core/`) : cryptographie, format du coffre, synchronisation, restauration, import ;
-- les applications Apple (`apple/`) : iOS, macOS, Watch, extensions et widgets ;
-- l'extension de navigateur (`extension/`) et l'hôte natif (`core/onepass-native-host`, `core/onepass-bridge`) ;
-- la ligne de commande (`core/onepass-cli`) et les interfaces locales (`core/onepass-ffi`, `core/onepass-mcp`, `core/onepass-ssh-agent`) ;
-- la chaîne de fabrication : workflows GitHub Actions, dépendances, signatures.
+- through [GitHub private vulnerability reporting](https://github.com/soma-intelligence/onepass/security/advisories/new) (Security tab, "Report a vulnerability");
+- or by email to **security@somalabs.me**.
 
-Le modèle de menace et les garanties visées sont décrits dans `docs/security/README.md`.
+Please include:
 
-## Signaler une vulnérabilité
+- the version or commit, the platform and the OS version;
+- what the flaw is and what it lets an attacker do (which data, which attacker, which conditions);
+- steps to reproduce, ideally with synthetic data, never a real vault;
+- a proof of concept if you have one, and any ideas for a fix;
+- the name to credit, if you want credit.
 
-Ne créez pas de ticket public pour une faille.
+## Timelines
 
-- Par courriel : `TODO-CONTACT` (adresse à renseigner avant la publication du dépôt). Chiffrez le message si vous le pouvez ; la clé publique sera publiée avec l'adresse.
-- Par le signalement privé de GitHub (Security > Report a vulnerability), dès que le dépôt sera public.
+- Acknowledgement within 72 hours.
+- First assessment (confirmed or not, estimated severity) within 7 days.
+- A fix released, or a dated fix plan shared with you, within 90 days.
 
-Merci d'inclure :
+If a flaw is already being exploited, we ship a fix or a mitigation as soon as we can, without waiting for the end of that window.
 
-- la version ou le commit concerné, la plateforme et la version du système ;
-- une description de la faille et de son impact (quelles données, quel attaquant, quelles conditions) ;
-- les étapes pour la reproduire, de préférence avec un jeu de données synthétique, jamais un vrai coffre ;
-- une preuve de concept si vous en avez une, et vos pistes de correction éventuelles ;
-- si vous souhaitez être crédité, le nom à utiliser.
+## Coordinated disclosure
 
-## Délais
+Please don't publish anything before a fix is available or 90 days have passed, whichever comes first. If we can't meet that window, we'll tell you and agree on a date together. Reporters are credited in the security advisory unless they ask otherwise.
 
-- Accusé de réception sous 72 heures.
-- Première évaluation (faille confirmée ou non, gravité estimée) sous 7 jours.
-- Correctif publié, ou plan de correction daté communiqué, sous 90 jours.
+## Safe harbor for good faith research
 
-Si une faille est déjà exploitée, nous publions un correctif ou une mesure d'atténuation dès que possible, sans attendre la fin du délai.
+We won't take legal action against, or ask for prosecution of, anyone who looks for and reports a flaw in good faith and follows these rules:
 
-## Divulgation coordonnée
+- test only your own accounts, devices and data, or synthetic data;
+- don't access, change or destroy other people's data;
+- don't degrade a shared service (no denial of service, no load testing against CloudKit or third party infrastructure);
+- no social engineering and no physical attacks against people;
+- give us the window above before publishing.
 
-Nous demandons de ne rien publier avant qu'un correctif soit disponible ou que les 90 jours soient écoulés, selon ce qui arrive en premier. Si le délai ne peut pas être tenu, nous le disons et nous convenons d'une date avec vous. Les personnes qui signalent sont créditées dans l'avis de sécurité, sauf demande contraire.
+## In scope
 
-## Cadre protecteur pour la recherche de bonne foi
+- The Rust core (`core/`): cryptography, vault format, sync, restore epochs, import and export, archives.
+- The Apple apps (`apple/`): iPhone, iPad, Mac, Apple Watch and Vision Pro, the AutoFill provider, widgets.
+- The browser extension (`extension/`) and the native messaging host (`core/onepass-native-host`, `core/onepass-bridge`).
+- The command line and the local interfaces (`core/onepass-cli`, `core/onepass-ffi`, `core/onepass-mcp`, `core/onepass-ssh-agent`).
+- The build chain: GitHub Actions workflows, dependencies, signatures.
 
-Nous n'engagerons aucune action en justice et ne demanderons aucune poursuite contre une personne qui recherche et signale une faille de bonne foi, dans le respect de ces règles :
+The threat model and the guarantees we aim for are described in [docs/security/README.md](docs/security/README.md).
 
-- tester uniquement vos propres comptes, appareils et données, ou des données synthétiques ;
-- ne pas accéder aux données d'autres personnes, ne pas les modifier ni les détruire ;
-- ne pas dégrader un service partagé (pas de déni de service, pas de tests de charge sur CloudKit ou sur une infrastructure tierce) ;
-- ne pas utiliser d'ingénierie sociale ni d'attaque physique contre des personnes ;
-- nous laisser le délai raisonnable ci-dessus avant toute publication.
+## Out of scope
 
-## Hors périmètre
+- Attacks that need a device already compromised at the system level (root, kernel, the owner debugging the app), or physical access to an unlocked device.
+- A weak or reused master password chosen by the user.
+- Platform flaws (iOS, macOS, browsers, CloudKit) unrelated to our code: report those to the vendor.
+- Reports from automated tools without a demonstrated impact, and headers or settings without a demonstrated consequence.
+- Phishing and social engineering.
+- Limits already documented in `docs/security/README.md` and in the design specs under `docs/specs/`, such as the dev CLI keeping its Secret Key in clear.
 
-- Les attaques qui exigent un appareil déjà compromis au niveau du système (racine, noyau, débogage de l'application par le propriétaire), ou un accès physique à un appareil déverrouillé.
-- Un mot de passe maître faible ou réutilisé choisi par la personne.
-- Les failles de la plateforme (iOS, macOS, navigateur, CloudKit) sans lien avec notre code ; signalez-les à l'éditeur concerné.
-- Les rapports d'outils automatiques sans preuve d'impact, les en-têtes ou configurations sans conséquence démontrée.
-- L'hameçonnage et l'ingénierie sociale.
-- Les limites déjà documentées dans `docs/security/README.md` et dans les spécifications sous `docs/superpowers/specs/`.
+## Supported versions
 
-## Versions prises en charge
+OnePass has no 1.0 release yet. Only `main` receives security fixes. After 1.0, this section will list the maintained versions.
 
-OnePass n'a pas encore de version 1.0. Seule la branche `main` reçoit des correctifs de sécurité. Après la 1.0, cette section listera les versions maintenues.
+OnePass has not had an external audit yet. One is planned before the first stable release.
 
-## Chaîne d'approvisionnement
+## Supply chain
 
-Les dépendances sont contrôlées par `cargo deny`, `cargo vet` et `npm audit` ; les actions GitHub sont épinglées par SHA de commit. Voir `docs/security/reproducible-builds.md`.
+Dependencies are checked with `cargo deny`, `cargo vet` and `npm audit`, and GitHub Actions are pinned by commit SHA. See `docs/security/reproducible-builds.md`.

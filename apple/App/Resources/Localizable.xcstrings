@@ -5340,12 +5340,12 @@
         }
       }
     },
-    "OnePass est open source (GPL-3.0)" : {
+    "OnePass est open source (AGPL-3.0)" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass Is Open Source (GPL-3.0)"
+            "value" : "OnePass Is Open Source (AGPL-3.0)"
           }
         }
       }
