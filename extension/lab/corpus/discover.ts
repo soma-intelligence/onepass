@@ -32,6 +32,11 @@ function normalize(href: string, base: string): string | undefined {
   return u.href;
 }
 
+/** Untrusted pages can carry malformed percent sequences: fall back to the raw text. */
+function safeDecode(s: string): string {
+  try { return decodeURIComponent(s); } catch { return s; }
+}
+
 function sitemapLocs(xml: string): string[] {
   const out: string[] = [];
   for (const m of xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)) out.push((m[1] ?? "").replace(/&amp;/g, "&"));
@@ -47,7 +52,7 @@ export function discoverFormPages(home: { url: string; html: string }, sitemapXm
     if (!url || result.length >= MAX_PAGES || seen.has(url)) return;
     const host = new URL(url).hostname;
     if (getDomain(host) !== site && host !== new URL(home.url).hostname) return;
-    if (LOGOUT.test(fold(decodeURIComponent(new URL(url).pathname)))) return;
+    if (LOGOUT.test(fold(safeDecode(new URL(url).pathname)))) return;
     seen.add(url);
     result.push(url);
   };
