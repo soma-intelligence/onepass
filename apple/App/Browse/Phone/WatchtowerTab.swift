@@ -29,23 +29,13 @@ struct WatchtowerTab: View {
                 if let report = watchtower.report {
                     StrengthCard(levels: report.strength.map(Int.init))
                     ForEach(WatchtowerCard.all) { card in
-                        let ids = card.itemIDs(in: report)
-                        WatchtowerCardView(card: card, report: report, checkBreaches: watchtower.checkBreaches) {}
-                            .overlay {
-                                // The card's own button shows the items in the Mac list column:
-                                // here, a pushed list of the flagged items.
-                                NavigationLink(value: PhoneRoute.watchtower(title: card.title, itemIDs: ids)) {
-                                    Color.clear
-                                }
-                                .disabled(ids.isEmpty)
-                                .accessibilityLabel(Text("Voir les éléments"))
-                                .accessibilityIdentifier("watchtower.show.\(card.id)")
-                            }
+                        PhoneWatchtowerCard(card: card, report: report, checkBreaches: watchtower.checkBreaches)
                     }
                 }
                 BreachSettingCard()
             }
             .padding(.horizontal, 16)
+            .padding(.top, 8)
             .padding(.bottom, 24)
         }
         .background(PhoneBackground())
@@ -85,6 +75,31 @@ struct WatchtowerTab: View {
                 .font(.footnote)
                 .foregroundStyle(.orange)
         }
+    }
+}
+
+/// One Watchtower check as a card. The card's own button shows the items in the Mac list column;
+/// here the whole card is a link to the pushed list of the flagged items, and it shrinks as one
+/// piece under the finger.
+private struct PhoneWatchtowerCard: View {
+    let card: WatchtowerCard
+    let report: FfiWatchtowerReport
+    let checkBreaches: Bool
+    @State private var pressed = false
+
+    var body: some View {
+        let ids = card.itemIDs(in: report)
+        WatchtowerCardView(card: card, report: report, checkBreaches: checkBreaches) {}
+            .overlay {
+                NavigationLink(value: PhoneRoute.watchtower(title: card.title, itemIDs: ids)) {
+                    Color.clear
+                }
+                .buttonStyle(PressReportingButtonStyle(isPressed: $pressed))
+                .disabled(ids.isEmpty)
+                .accessibilityLabel(Text("Voir les éléments"))
+                .accessibilityIdentifier("watchtower.show.\(card.id)")
+            }
+            .pressedAppearance(pressed && !ids.isEmpty)
     }
 }
 
