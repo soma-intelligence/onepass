@@ -236,8 +236,7 @@ struct ItemDetailView: View {
                 .frame(maxWidth: .infinity)
         }
         if !item.urls.isEmpty {
-            #if os(iOS)
-            // iPhone and iPad: a card like the fields and the notes around it, rows split by hairlines.
+            // A card like the fields and the notes around it, rows split by hairlines.
             EditorCard {
                 ForEach(Array(item.urls.enumerated()), id: \.offset) { index, url in
                     if index > 0 { CardDivider() }
@@ -245,13 +244,6 @@ struct ItemDetailView: View {
                         .padding(.vertical, 6)
                 }
             }
-            #else
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(item.urls.enumerated()), id: \.offset) { index, url in
-                    WebsiteRow(url: url, index: index) { showToast($0) }
-                }
-            }
-            #endif
         }
         if !item.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             EditorCard {
@@ -277,20 +269,24 @@ struct ItemDetailView: View {
             ItemPlacesCard(locations: places)
         }
         if !item.tags.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                EditorLabel("tags")
-                FlowLayout(spacing: 6) {
-                    ForEach(item.tags, id: \.self) { tag in
-                        Text(tag)
-                            .font(.footnote.weight(.medium))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Theme.accent.opacity(0.18), in: Capsule())
+            EditorCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    EditorLabel("tags")
+                    FlowLayout(spacing: 6) {
+                        ForEach(item.tags, id: \.self) { tag in
+                            Text(tag)
+                                .font(.footnote.weight(.medium))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Theme.accent.opacity(0.18), in: Capsule())
+                        }
                     }
+                    .accessibilityElement(children: .combine)
                 }
-                .accessibilityElement(children: .combine)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal, 16)
         }
     }
 
