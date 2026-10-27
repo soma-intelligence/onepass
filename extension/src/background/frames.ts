@@ -97,12 +97,17 @@ export class Frames {
    * Spec 8.4 step 2: HTTPS, still the origin (and document, when known)
    * bound when the gesture started, and the top frame or a frame of the
    * same registrable domain as the top frame. No exception (R-10).
+   *
+   * `scope` "same_origin" (the chain, spec C1) narrows a child frame to
+   * exactly the top frame's origin: a subdomain of the same site may be
+   * another service.
    */
   async checkFillTarget(
     tabId: number,
     frameId: number,
     expectedOrigin: string,
     expectedDocumentId?: string,
+    scope: "same_site" | "same_origin" = "same_site",
   ): Promise<FillCheck> {
     const expected = parseOrigin(expectedOrigin);
     if (!expected?.https) return { ok: false, code: "insecure_origin" };
@@ -119,6 +124,7 @@ export class Frames {
       if (!top || !sameSite(top.url, f.url)) return { ok: false, code: "cross_site_frame" };
       // A secure frame inside a plain HTTP page is refused as well.
       if (parseOrigin(top.url)?.https !== true) return { ok: false, code: "insecure_origin" };
+      if (scope === "same_origin" && parseOrigin(top.url)?.origin !== current.origin) return { ok: false, code: "origin_mismatch" };
     }
     return { ok: true };
   }

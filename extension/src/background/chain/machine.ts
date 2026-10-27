@@ -1,8 +1,10 @@
 // The one-click sign-in chain (spec 8.6, 8.7) as a pure state machine: no
 // browser API, the clock is a parameter. The driver (driver.ts) feeds it the
-// analyses of the top frame of the chain's tab (origin from `sender`), the
-// navigations and load completions of that frame, and timer ticks; it runs
-// the actions the machine returns.
+// analyses of the chain's tab (origin from `sender`): the top frame's, or
+// those of a child frame of exactly the top frame's origin that holds the
+// sign-in form (spec C1); the navigations and load completions of the top
+// frame and of the frame the last step acted in; and timer ticks. It runs
+// the actions the machine returns, in the frame of the analysis.
 //
 // The state is plain JSON, persisted in `storage.session` by the driver. It
 // holds ids, labels, hosts and times, never a secret: values are fetched
@@ -10,7 +12,7 @@
 //
 // Double submission: every acted step records a signature of the page (kind
 // of step, host and path, fields involved) and the navigation counter of the
-// top frame. The same signature on the same navigation is a re-analysis of a
+// page (top frame, or the frame the chain acts in). The same signature on the same navigation is a re-analysis of a
 // page already handled (ignored); on a later navigation it is the same step
 // coming back (password refused): `repeat`.
 import type { FillField, Summary } from "../../bridge/client";
@@ -40,8 +42,10 @@ export interface ChainStep {
   kind: StepKind;
   /** Page signature the step acted on ("" for done / stop). */
   sig: string;
-  /** Navigation counter of the top frame when the step ran. */
+  /** Navigation counter of the page when the step ran. */
   nav: number;
+  /** Child frame the step acted in (spec C1); absent for the top frame. */
+  frameId?: number;
   at: number;
   /** Set when the step submitted its form. */
   submittedAt?: number;
@@ -55,7 +59,7 @@ export interface ChainStep {
 }
 
 export interface ChainPage {
-  /** Top frame navigations since the start. */
+  /** Navigations of the top frame, or of the frame the chain acts in, since the start. */
   nav: number;
   /** Load completed (`webNavigation.onCompleted`) at. */
   settledAt?: number;
@@ -290,8 +294,12 @@ function fillLabel(fields: FillField[], provider: string | null): string {
   return fields.includes("username") ? "Identifiant rempli" : "Mot de passe rempli";
 }
 
-/** One top-frame analysis of the chain's tab; `pageOrigin` comes from `sender`. */
-export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: number): StepResult {
+/**
+ * One analysis of the chain's tab; `pageOrigin` comes from `sender`.
+ * `frameId` is the frame it came from (0: top frame), recorded on the step it
+ * starts so the driver follows that frame's navigations.
+ */
+export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: number, frameId = 0): StepResult {
   if (s.status !== "running") return { state: s, actions: [] };
   if (now >= s.deadline) return stopped(s, "timeout", now);
   const w = where(s, pageOrigin);
@@ -347,6 +355,7 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
   const pname = onProvider && n.provider ? providerName(n.provider) : null;
   const actions: ChainAction[] = [];
   const st: ChainStep = { kind: d.kind, sig, nav: n.page.nav, at: now, label: "", state: "done" };
+  if (frameId !== 0) st.frameId = frameId;
   switch (d.kind) {
     case "provider_click":
       st.label = `Clic sur « Continuer avec ${providerName(n.provider ?? "google")} »`;
@@ -398,7 +407,7 @@ export function submitMissed(s: ChainState): ChainState {
   return n;
 }
 
-/** A new document committed in the top frame of the chain's tab. */
+/** A new document committed in the top frame of the chain's tab, or in the frame it acts in. */
 export function navigated(s: ChainState, url: string, now: number): ChainState {
   if (s.status !== "running") return s;
   const w = where(s, url);
@@ -409,7 +418,7 @@ export function navigated(s: ChainState, url: string, now: number): ChainState {
   return n;
 }
 
-/** The top frame finished loading (`webNavigation.onCompleted`). */
+/** The page finished loading (`webNavigation.onCompleted`). */
 export function settled(s: ChainState, now: number): ChainState {
   if (s.status !== "running" || s.page.settledAt !== undefined) return s;
   const n = clone(s);
@@ -521,6 +530,8 @@ function parseStep(v: unknown): ChainStep {
   if (sub !== undefined) st.submittedAt = sub;
   if (o.missed !== undefined) st.missed = bool(o.missed);
   if (o.retried !== undefined) st.retried = bool(o.retried);
+  const frameId = optInt(o.frameId);
+  if (frameId !== undefined && frameId > 0) st.frameId = frameId;
   if (o.detail !== undefined) st.detail = str(o.detail, 256);
   return st;
 }

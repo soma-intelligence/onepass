@@ -1,5 +1,5 @@
 // The sign-in chain state machine (spec 8.6, 8.7): pure, driven by page
-// analyses of the top frame, navigations, load completion and the clock.
+// analyses (top frame, or a child frame of the same origin), navigations, load completion and the clock.
 import { describe, expect, it } from "vitest";
 import type { Summary } from "../../../src/bridge/client";
 import {
@@ -450,6 +450,14 @@ describe("resume from serialized state", () => {
     // And the next page still works.
     const s = navigated(r2.state, `${SITE}/home`, T0 + 2500);
     expect(step(s, page([], {}, `${SITE}/home`), SITE, T0 + 2600).state.status).toBe("running");
+  });
+
+  it("a step in a same-origin child frame records that frame, through a round trip", () => {
+    const r = step(start(), page([loginForm()], {}, `${SITE}/frame`), SITE, T0 + 100, 3);
+    expect(r.state.steps.at(-1)?.frameId).toBe(3);
+    expect(parseChainState(JSON.parse(JSON.stringify(r.state)))?.steps.at(-1)?.frameId).toBe(3);
+    // The top frame's steps carry none.
+    expect(step(start(), page([loginForm()]), SITE, T0 + 100).state.steps.at(-1)).not.toHaveProperty("frameId");
   });
 
   it("rejects malformed states", () => {
