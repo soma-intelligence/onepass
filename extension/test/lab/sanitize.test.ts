@@ -1,6 +1,6 @@
 // Sanitizer of the corpus extractor: nothing personal or long leaves a page.
 import { describe, expect, it } from "vitest";
-import { sanitizeOrigin, sanitizeText, sanitizeToken } from "../../lab/corpus/sanitize.ts";
+import { sanitizeNeighbour, sanitizeOrigin, sanitizeText, sanitizeToken } from "../../lab/corpus/sanitize.ts";
 
 describe("sanitize", () => {
   it("redacts_email", () => {
@@ -36,5 +36,15 @@ describe("sanitize", () => {
     expect(sanitizeToken("a1b2c3d4e5f6g7h8i9j0k1l2m3")).toBe("<redacted>");
     expect(sanitizeToken("a".repeat(30))).toBe("<redacted>");
     expect(sanitizeToken("input-12")).toBe("input-12");
+  });
+  it("neighbour_capped_at_40", () => {
+    const out = sanitizeNeighbour("Please continue to the next step of the long form " + "tail ".repeat(5))!;
+    expect(out).toHaveLength(40);
+  });
+  it("neighbour_sanitized", () => {
+    expect(sanitizeNeighbour("Call 4155550123 or mail a@b.co now, then continue to the very long tail")).not.toMatch(/\d{6,}|@/);
+    expect(sanitizeNeighbour("Call 4155550123")).not.toMatch(/\d{6,}/);
+    expect(sanitizeNeighbour("a@b.co")).not.toContain("@");
+    expect(sanitizeNeighbour("  ")).toBeUndefined();
   });
 });
