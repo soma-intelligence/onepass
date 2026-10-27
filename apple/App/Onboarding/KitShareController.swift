@@ -45,14 +45,18 @@ struct KitShareController: UIViewControllerRepresentable {
 /// destination is in iCloud Drive (spec 4). Writes from memory to the chosen file only.
 @MainActor
 enum KitSavePanel {
-    /// Asks for a destination. Nil when the user cancels.
-    static func chooseDestination() async -> URL? {
+    /// Asks for a destination. Nil when the user cancels. Defaults: the Emergency Kit PDF; the
+    /// encrypted backup of a safe exit passes its own name, type and message.
+    static func chooseDestination(
+        fileName: String = EmergencyKitFile.fileName, contentType: UTType = .pdf,
+        message: String = String(localized: "Choisis un emplacement hors ligne, par exemple une clé USB. iCloud Drive et les autres clouds synchronisent la Secret Key hors de ce Mac.")
+    ) async -> URL? {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = EmergencyKitFile.fileName
-        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = fileName
+        panel.allowedContentTypes = [contentType]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
-        panel.message = String(localized: "Choisis un emplacement hors ligne, par exemple une clé USB. iCloud Drive et les autres clouds synchronisent la Secret Key hors de ce Mac.")
+        panel.message = message
         let response: NSApplication.ModalResponse
         if let window = NSApp.keyWindow ?? NSApp.mainWindow {
             response = await panel.beginSheetModal(for: window)

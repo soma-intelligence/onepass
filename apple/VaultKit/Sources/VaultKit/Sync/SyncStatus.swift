@@ -11,6 +11,9 @@ public enum SyncStatus: Equatable, Sendable {
     case error(String)
     /// The core refused remote data (`Integrity { kind }`).
     case refused(kind: String)
+    /// The server serves an older or incomplete state (`ServerBehind`), or a safe exit waits for the
+    /// server to serve this device's state back: a sync state, never an integrity refusal (spec 3.1).
+    case waitingForServer
     /// The iCloud account is not the one this store first synced with: sync stopped until
     /// `SyncCoordinator.acceptAccountChange(expected:)`.
     case accountChanged
@@ -25,6 +28,7 @@ public enum SyncStatus: Equatable, Sendable {
         case .error(let message): message
         case .refused(let kind): "Données refusées : \(VaultError.integrityLabel(kind))"
         case .accountChanged: "Le compte iCloud a changé"
+        case .waitingForServer: "Synchronisation en attente d'iCloud"
         }
     }
 }
@@ -55,3 +59,11 @@ public enum AccountChangeOutcome: Equatable, Sendable {
         "Ce compte iCloud contient déjà un autre coffre OnePass. Reviens au compte iCloud d'origine pour synchroniser."
 }
 
+
+/// Safe exits of "Données refusées" (spec 3.3): each issues a signed restore epoch.
+public enum SafeExit: Equatable, Sendable {
+    /// "Garder la version de cet appareil": this device's verified copies are sent over the server's.
+    case keepThisDevice
+    /// "Prendre la version d'iCloud": the server's state is taken, unsent local changes are dropped.
+    case takeServer
+}

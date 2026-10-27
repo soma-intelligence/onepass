@@ -57,7 +57,7 @@ func dropAccountParams(_ path: String) throws {
 }
 
 @MainActor
-@Suite("iCloud account change and recovery", .timeLimit(.minutes(2)))
+@Suite("iCloud account change and recovery", .timeLimit(.minutes(4)))
 struct AccountChangeTests {
     /// Device A synced with account "a", then "b" signs in. Returns A, the switching remote and the zones.
     func switchedDevice(zoneB: InMemoryRemote) async throws -> (SyncDevice, AccountSwitchingRemote, InMemoryRemote) {

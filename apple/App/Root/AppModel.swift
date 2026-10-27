@@ -279,9 +279,11 @@ final class AppModel {
         return await remote.accountAvailable()
     }
 
-    /// Emergency Kit PDFs left in the temporary folder by a previous run (killed during the step).
+    /// Emergency Kit PDFs and encrypted backups left in the temporary folder by a previous run
+    /// (killed while the share sheet was open).
     private static func sweepEmergencyKits() {
         EmergencyKitFile.sweep(in: FileManager.default.temporaryDirectory)
+        EncryptedBackupFile.sweep(in: FileManager.default.temporaryDirectory)
     }
 
     /// Spec 7: the creation is refused when this iCloud already holds an account (ruling R13).
@@ -298,6 +300,32 @@ final class AppModel {
         await coordinator?.refetchFromScratch()
         await session.reload()
         if case .failed = session.state { await session.refresh() }
+    }
+
+    // MARK: - Safe exits (spec 3.3)
+
+    /// "Exporter une sauvegarde chiffrée": the archive bytes (the caller saves them through the
+    /// warning-first save flow). Both buffers are wiped here.
+    func exportEncryptedBackup(password: SecretBytes, passphrase: SecretBytes) async throws -> Data {
+        defer {
+            password.wipe()
+            passphrase.wipe()
+        }
+        return try await session.exportEncryptedBackup(password: password, passphrase: passphrase)
+    }
+
+    /// "Garder la version de cet appareil" or "Prendre la version d'iCloud", master password checked.
+    /// The coordinator follows the epoch: `syncStatus` stays `.waitingForServer` until every vault is
+    /// `Ok` (`safeExitSettled`). The buffer is wiped here.
+    func runSafeExit(_ exit: SafeExit, password: SecretBytes) async throws {
+        defer { password.wipe() }
+        try await session.runSafeExit(exit, password: password)
+    }
+
+    /// The safe exit converged: the coordinator reports idle (every vault `Ok`), never before.
+    var safeExitSettled: Bool {
+        if case .idle = syncStatus { return true }
+        return !cloudKitEnabled && session.state == .unlocked
     }
 
     // MARK: - Account missing

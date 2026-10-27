@@ -78,6 +78,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case "is not a valid recovery phrase": "Phrase de récupération invalide"
         case "is not a valid national number": "Numéro invalide"
         case "must not be empty": "Ne peut pas être vide"
+        case "too weak": "Trop facile à deviner : allonge-la ou ajoute des mots."
         default: "Valeur invalide"
         }
     }
@@ -88,6 +89,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case "passkey": "Clé d'accès inconnue."
         case "date", "month", "timestamp": "Date invalide."
         case "recipe": "Réglages du générateur invalides."
+        case "passphrase": "Phrase de passe illisible."
         default: "Valeur invalide."
         }
     }
@@ -105,6 +107,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case "signature", "params_unsigned": "Une signature est invalide."
         case "params_downgrade": "Les paramètres de sécurité du compte ont été affaiblis."
         case "wrong_kind", "wrong_context": "Un enregistrement a été déplacé ou substitué."
+        case "epoch_rollback": "Une ancienne restauration du coffre a été rejouée."
         default: "Le stockage ne correspond pas à ce qui était attendu."
         }
     }

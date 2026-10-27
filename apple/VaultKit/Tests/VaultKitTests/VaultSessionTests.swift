@@ -675,7 +675,8 @@ struct VaultSessionHardeningTests {
     }
 
     /// I1: the throwaway password check never writes the device state. A save made while the check is
-    /// in flight keeps its newer `last_seen` on disk: a later replay of the older manifest is refused.
+    /// in flight keeps its newer `last_seen` on disk: a later replay of the older manifest is never
+    /// taken as the vault's state (spec 3.1: the device serves its verified copy, item included).
     @Test func passwordCheckKeepsTheNewerLastSeenOnDisk() async throws {
         let remote = InMemoryRemote()
         let a = try SyncDevice(remote: remote, name: "A")
@@ -701,9 +702,10 @@ struct VaultSessionHardeningTests {
         await a.session.waitForReleasedSessions()
         await remote.replay(name: manifest, version: oldVersion)
         await a.coordinator.syncNow()
-        await #expect(throws: VaultError.integrity(kind: "manifest_rollback")) {
-            try await a.session.unlock(password: testPassword)
-        }
+        try await a.session.unlock(password: testPassword)
+        #expect(Set(a.session.summaries.map(\.title)) == ["Projet Atlas"])
+        await a.sync()
+        #expect(await a.coordinator.status == .waitingForServer)
     }
 
     @Test func restoreIsCancelledWhenSecretKeyCannotBeStored() async throws {

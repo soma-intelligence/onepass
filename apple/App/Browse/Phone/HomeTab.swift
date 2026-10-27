@@ -141,6 +141,7 @@ private struct HomeSection: View {
 /// its sidebar chip, the iPhone this banner.
 struct SyncRefusalSection: View {
     @Environment(AppModel.self) private var model
+    @State private var safeExitKind: String?
 
     var body: some View {
         if case .refused(let kind) = model.syncStatus {
@@ -150,10 +151,16 @@ struct SyncRefusalSection: View {
                     Text("Les données reçues d'iCloud ont été refusées. Tes modifications restent sur cet appareil mais ne se synchronisent plus pour ce coffre.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    Button("Voir les solutions") { safeExitKind = kind }
+                        .font(.footnote.weight(.semibold))
+                        .accessibilityIdentifier("sync.refused.safeExits")
                 }
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                 .accessibilityIdentifier("sync.refused.banner")
+            }
+            .sheet(item: Binding(get: { safeExitKind.map(RefusedKind.init) }, set: { safeExitKind = $0?.kind })) {
+                SafeExitChooserSheet(kind: $0.kind)
             }
         }
     }

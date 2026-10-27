@@ -772,6 +772,112 @@ public final class VaultSession {
         noteActivity()
     }
 
+    // MARK: - Safe exits (spec 3.3)
+
+    /// The safe exits can run: unlocked (sync refused remote data, the vault is served from this
+    /// device's copy), or "Données refusées" for anything but a missing account.
+    public var safeExitAvailable: Bool {
+        switch state {
+        case .unlocked: true
+        case .failed(.integrity(let kind)): kind != Self.accountMissingKind
+        default: false
+        }
+    }
+
+    /// "Exporter une sauvegarde chiffrée": an encrypted OnePass archive of what this device serves
+    /// (every vault, its verified copy when the server is behind), readable with `passphrase` (strength
+    /// checked by the core) or the account. Asks the master password first. The caller wipes both
+    /// buffers and saves the bytes. Nothing changes in the store or the state.
+    public func exportEncryptedBackup(password: SecretBytes, passphrase: SecretBytes) async throws -> Data {
+        let kdf = environment.accountKdf
+        return try await withConfirmedSession(password: password, reopen: false) { session in
+            try passphrase.withData { phrase in
+                try kdf.map { try session.exportEncryptedBackupWithKdf(passphrase: phrase, kdf: $0) }
+                    ?? session.exportEncryptedBackup(passphrase: phrase)
+            }
+        }
+    }
+
+    /// "Garder la version de cet appareil" or "Prendre la version d'iCloud": asks the master password,
+    /// issues the signed restore epoch (`keep_this_device`, `take_server`), reloads (from "Données
+    /// refusées", the vault opens when it now loads) and hands the epoch to the sync layer, which pushes
+    /// it and follows it until the server serves it back. `takeServer` drops every local change not
+    /// sent yet: the UI offers the export first.
+    public func runSafeExit(_ exit: SafeExit, password: SecretBytes) async throws {
+        _ = try await withConfirmedSession(password: password, reopen: true) { session in
+            switch exit {
+            case .keepThisDevice: try session.keepThisDevice()
+            case .takeServer: try session.takeServer()
+            }
+        }
+        notifySync { await $0.safeExitIssued(exit) }
+    }
+
+    /// Checks the master password and runs `op` on a session. Unlocked: `verify_password_bytes`, then
+    /// the open session (the lists are reloaded when `reopen`). "Données refusées": the password opens
+    /// a session (`unlock_with_password_bytes`) for `op`; with `reopen`, the vault is installed when it
+    /// loads now, otherwise the session is dropped and the screen stays. Wrong passwords count toward
+    /// the throttle. Errors of `op` never drop an open session.
+    private func withConfirmedSession<T: Sendable>(
+        password: SecretBytes, reopen: Bool, _ op: @escaping @Sendable (Session) throws -> T
+    ) async throws -> T {
+        guard safeExitAvailable else { throw fail(.passwordRequired) }
+        try checkLockout()
+        let secretKey = try loadSecretKey().secretKey
+        defer { secretKey.wipe() }
+        try beginPasswordCheck()
+        defer { passwordCheckInFlight = false }
+        let path = dbPath
+        let gen = generation
+        let open = state == .unlocked ? session : nil
+        // The password check and `op` run in one core call; `op`'s outcome is kept apart, so a right
+        // password resets the throttle even when the exit itself is refused.
+        let result: (outcome: Result<T, any Error>, session: Session, snapshot: Snapshot?)
+        do {
+            result = try await background {
+                if let open {
+                    var auk = try Self.withBytes(password, secretKey) { password, secretKey in
+                        try verifyPasswordBytes(dbPath: path, password: password, secretKey: secretKey)
+                    }
+                    SecretBytes(taking: &auk).wipe()
+                    return (Result { try op(open) }, open, nil)
+                }
+                var unlocked = try Self.withBytes(password, secretKey) { password, secretKey in
+                    try unlockWithPasswordBytes(dbPath: path, password: password, secretKey: secretKey)
+                }
+                SecretBytes(taking: &unlocked.auk).wipe()
+                let session = unlocked.session
+                let outcome = Result { try op(session) }
+                guard case .success = outcome else {
+                    session.lock()
+                    return (outcome, session, nil)
+                }
+                return (outcome, session, reopen ? try? Self.load(session, purge: false) : nil)
+            }
+        } catch {
+            let failure = VaultError(error)
+            if failure == .wrongPassword { recordFailedUnlock() }
+            throw fail(failure)
+        }
+        settings.resetFailedUnlocks()
+        settings.lockoutUntil = nil
+        let value: T
+        do {
+            value = try result.outcome.get()
+        } catch {
+            throw fail(VaultError(error))
+        }
+        if open != nil {
+            if reopen { await refresh() }
+            noteActivity()
+        } else if gen == generation, safeExitAvailable, let snapshot = result.snapshot {
+            install(result.session, snapshot)
+        } else {
+            release(result.session)
+        }
+        return value
+    }
+
     // MARK: - Plumbing
 
     /// Lists loaded after an unlock or a write.

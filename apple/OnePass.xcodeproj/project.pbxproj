@@ -27,6 +27,7 @@
 		369F365C2C4F921040181B8B /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1D108454111E28E82A0B04F6 /* DesignKit */; };
 		3966FEC30AD7CAC800F12F2C /* DemoWatchModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4807ECE87FEA8C5106548F /* DemoWatchModel.swift */; };
 		3B5912DB886A1E8510C4F27E /* BrowseRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F8A0A14957792EE5EDF2DCD /* BrowseRoot.swift */; };
+		3BA390E406586A30AE2B1F1A /* SafeExitViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01023E7F8B52E18C675B84F /* SafeExitViews.swift */; };
 		3DA9195F5E3C77FBE22E96EE /* HomeTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5A4B3BD06C13AC7742D5DB /* HomeTab.swift */; };
 		3DE3CD55A4E8F4D47BBB186A /* TotpFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30039937E6F1542ACCE29B1D /* TotpFieldView.swift */; };
 		4399475D3738EE8A726DE3BF /* OpenItemIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82760DEA71118ECB0D50446 /* OpenItemIntent.swift */; };
@@ -255,6 +256,7 @@
 		C83485D924585FA30495DE07 /* SplitBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitBrowseView.swift; sourceTree = "<group>"; };
 		C89189A5B59E73F9B657D77B /* EntryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryListView.swift; sourceTree = "<group>"; };
 		CFF11DA958080038BA1B310F /* IntegrityFailureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrityFailureView.swift; sourceTree = "<group>"; };
+		D01023E7F8B52E18C675B84F /* SafeExitViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafeExitViews.swift; sourceTree = "<group>"; };
 		D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemHeader.swift; sourceTree = "<group>"; };
 		D45B0A2E7E89981FFB0AA858 /* OnePassWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWidgetsBundle.swift; sourceTree = "<group>"; };
 		D53F785E56AE55B95035986B /* CompanionKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CompanionKit; path = CompanionKit; sourceTree = SOURCE_ROOT; };
@@ -470,6 +472,7 @@
 				CFF11DA958080038BA1B310F /* IntegrityFailureView.swift */,
 				DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */,
 				0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */,
+				D01023E7F8B52E18C675B84F /* SafeExitViews.swift */,
 				DA59281B681069BA80A59493 /* Snapshot.swift */,
 				29FAC83196CF84E1C4C92CA5 /* VisionGlass.swift */,
 			);
@@ -852,6 +855,7 @@
 				608A23FFF1AF64C0A8871372 /* PrivacyShield.swift in Sources */,
 				A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */,
 				9E735A256691AD70E64876A6 /* RootView.swift in Sources */,
+				3BA390E406586A30AE2B1F1A /* SafeExitViews.swift in Sources */,
 				0B6E58B02964EE1E945B9C16 /* SearchTab.swift in Sources */,
 				B4E15F549C1237B3AF03FA6B /* SecretFieldEditor.swift in Sources */,
 				EF47D8E4525E8080B7D4779A /* SecretKeyCaptureGuard.swift in Sources */,
