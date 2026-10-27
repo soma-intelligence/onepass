@@ -368,17 +368,34 @@ describe("overlay offer", () => {
     expect(overlays(t)).toHaveLength(1);
   });
 
-  it("a later sign-in form of the same document is offered again; its re-render is not", async () => {
+  it("a closed overlay stays closed for the rest of the document, whatever forms it cycles", async () => {
     const t = await setup();
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userForm]));
     expect(overlays(t)).toHaveLength(1);
     await closeOverlay(t);
-    // The same form re-rendered (new refs): the user closed the overlay, it stays closed.
+    // The same form re-rendered (new refs), then another sign-in form: not offered.
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [{ ...userForm, ref: "f7", fields: [{ ref: "u7", role: "email" }] }]));
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+    expect(overlays(t)).toHaveLength(1);
+    // A new document offers again.
+    t.ext.navigate(7, 0, `${SITE}/login`, "doc-2");
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]), "doc-2");
+    expect(overlays(t)).toHaveLength(2);
+  });
+
+  it("an offer the content script could not show is retried by the next analysis of that form", async () => {
+    const t = await setup();
+    const send = t.ext.tabs.sendMessage;
+    let refuse = true;
+    t.ext.tabs.sendMessage = async (tabId, message, options) => {
+      if (refuse && (message as { type: string }).type === "show_frame") throw new Error("no receiving end");
+      return send(tabId, message, options);
+    };
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userForm]));
+    expect(overlays(t)).toHaveLength(0);
+    refuse = false;
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [{ ...userForm, ref: "f7", fields: [{ ref: "u7", role: "email" }] }]));
     expect(overlays(t)).toHaveLength(1);
-    // A different sign-in form appears in the same document.
-    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
-    expect(overlays(t)).toHaveLength(2);
   });
 
   it("not without logins for the site, nor without a sign-in form", async () => {

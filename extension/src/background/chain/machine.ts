@@ -47,6 +47,8 @@ export interface ChainStep {
   submittedAt?: number;
   /** The submit did not reach the form (re-rendered): retried once on its copy. */
   missed?: boolean;
+  /** The retry on the copy was sent: a second miss is not retried. */
+  retried?: boolean;
   label: string;
   detail?: string;
   state: StepState;
@@ -308,9 +310,8 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
     const waitingForUser = last !== undefined && last.nav === n.page.nav && last.kind === "fill" && last.submittedAt === undefined;
     const leftPage = last !== undefined && (last.nav < n.page.nav || last.submittedAt !== undefined);
     if (!onProvider && leftPage) {
-      // Back on the site without a sign-in form: done, once it stays so
-      // (each change of the page starts the wait again).
-      n.page.doneAt = now;
+      // Back on the site without a sign-in form: done, once it stays so.
+      n.page.doneAt ??= now;
       n.page.idle = false;
     } else {
       n.page.doneAt = undefined;
@@ -336,6 +337,7 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
     // it. Not a repeat: submit the copy, once (no second fill).
     if (prev.missed && prev === n.steps.at(-1) && (d.kind === "fill" || d.kind === "otp") && n.autoSubmit) {
       delete prev.missed;
+      prev.retried = true;
       prev.submittedAt = now;
       return { state: n, actions: [{ type: "submit", formRef: d.form.ref }] };
     }
@@ -381,16 +383,18 @@ function where(s: ChainState, url: string): { ok: boolean; onProvider: boolean; 
   return { ok: p?.https === true && (onProvider || p.site === s.site), onProvider, host: p?.host ?? url.slice(0, 256) };
 }
 
-/** The last step's submit did not reach its form (the content script said so). */
+/**
+ * The last step's submit did not reach its form (the content script said
+ * so). The step may submit a re-rendered copy once; `submittedAt` stays, so
+ * a page that does not change still ends in `repeat` after `REPEAT_MS`, and
+ * a second miss (the retry) is not retried.
+ */
 export function submitMissed(s: ChainState): ChainState {
   const last = s.steps.at(-1);
-  if (s.status !== "running" || last?.submittedAt === undefined) return s;
+  if (s.status !== "running" || last?.submittedAt === undefined || last.retried || last.missed) return s;
   const n = clone(s);
   const l = n.steps.at(-1);
-  if (l) {
-    delete l.submittedAt;
-    l.missed = true;
-  }
+  if (l) l.missed = true;
   return n;
 }
 
@@ -516,6 +520,7 @@ function parseStep(v: unknown): ChainStep {
   const sub = optInt(o.submittedAt);
   if (sub !== undefined) st.submittedAt = sub;
   if (o.missed !== undefined) st.missed = bool(o.missed);
+  if (o.retried !== undefined) st.retried = bool(o.retried);
   if (o.detail !== undefined) st.detail = str(o.detail, 256);
   return st;
 }

@@ -19,7 +19,7 @@ import { domGeometry, type Geometry } from "./detect/visibility";
 import { createFiller } from "./filler";
 import { checkFrameUrl, createFrames, createShell, type Shell } from "./frames";
 import { createIcons, type IconTarget } from "./icon";
-import { createObserver } from "./observer";
+import { createObserver, OBSERVER_DELAY_MS } from "./observer";
 import { createSubmitWatcher } from "./submit";
 
 type Sender = { id?: string };
@@ -130,6 +130,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
   };
 
   let menuSeq = 0;
+  let lastKeyAnalysis = Number.NEGATIVE_INFINITY;
   const closeMenu = (notify: boolean) => {
     if (!parts?.frames.has("menu")) return;
     parts.frames.removeFrame("menu");
@@ -267,8 +268,12 @@ export function createContentScript(o: ContentOptions): ContentScript {
           if (e.key !== "ArrowDown" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
           // A field the page added since the last analysis (it runs 150 ms
           // after a mutation burst): analyse now rather than miss the key.
+          // At most one such analysis per observer delay: a held key does not
+          // analyse the page on every repeat.
           let t = icons.targetOf(e.target);
-          if (!t && isControl(e.target)) {
+          const now = Date.now();
+          if (!t && isControl(e.target) && now - lastKeyAnalysis >= OBSERVER_DELAY_MS) {
+            lastKeyAnalysis = now;
             observer.refresh();
             t = icons.targetOf(e.target);
           }

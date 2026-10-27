@@ -428,6 +428,7 @@ L'extension garde `PK` dans l'**IndexedDB de l'origine de l'extension** (`extens
 - **Épingles d'origine et `documentId`** : chaque jeton de menu, d'overlay ou de proposition est lié à l'onglet, au cadre et au document ; une navigation tue le jeton. Le remplissage et la proposition ciblent le `documentId` vérifié, à défaut le `frameId` plus une épingle d'origine que le script de contenu revérifie. Une navigation entre la demande et le remplissage annule tout (S9), sans valeur envoyée.
 - **Ressources non devinables** : sur Chromium, `use_dynamic_url` : l'URL d'une page de l'extension est différente par session (S17).
 - **Cadres d'autres sites** : aucun remplissage dans une iframe d'un autre site, sans exception (R-10, S6).
+- **Formulaires re-rendus** : quand la page remplace un formulaire pendant le remplissage ou avant la soumission, la ref morte est résolue à nouveau, dans le même document et le même cadre seulement (le message reste épinglé à l'origine et au `documentId`), vers la seule copie de même identité (balise, attributs `id` et `name`, type de formulaire, rôles des champs) et le champ visible de même rôle. Un champ remplacé par une copie vide est rempli une seconde fois, une seule. Si deux formulaires ont la même identité, rien n'est rempli. Une page qui remplace son formulaire par un sosie de sa fabrication ne gagne rien : les valeurs vont à cette même page, qui pouvait déjà lire celles de son propre formulaire.
 
 ### 12.7 Garde-fous de la chaîne "Connexion en un clic"
 

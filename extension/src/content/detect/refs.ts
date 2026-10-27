@@ -60,7 +60,8 @@ export class FormLineage {
     const el = this.refs.get(f.ref);
     if (!el) return null;
     const fields = f.fields.map((x) => `${x.role}:${x.parts?.length ?? 0}`);
-    return JSON.stringify([el.tagName, el.id, el.getAttribute("name") ?? "", f.kind, fields]);
+    // Attributes, not properties: a field named "id" shadows `form.id`.
+    return JSON.stringify([el.localName, el.getAttribute("id") ?? "", el.getAttribute("name") ?? "", f.kind, fields]);
   }
 
   /** Remembers the identity of each form of an analysis. */

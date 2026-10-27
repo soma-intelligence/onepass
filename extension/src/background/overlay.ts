@@ -115,7 +115,13 @@ export class Overlays {
     const token = await this.tokens.register(rec);
     const msg: BgToCs = { type: "show_frame", kind: "overlay", url: `${this.deps.ext.runtime.getURL("overlay.html")}#${token}` };
     const opts = cs.documentId !== undefined ? { documentId: cs.documentId } : { frameId: 0 };
-    await this.deps.ext.tabs.sendMessage(cs.tabId, msg, opts);
+    try {
+      await this.deps.ext.tabs.sendMessage(cs.tabId, msg, opts);
+    } catch (e) {
+      // Not shown: no live token may claim the tab has its overlay.
+      await this.tokens.drop(token);
+      throw e;
+    }
     return token;
   }
 
@@ -164,6 +170,7 @@ export class Overlays {
     const rec = await this.record(token, ui);
     await this.tokens.drop(token);
     await removeFrame(this.deps.ext.tabs, rec, "overlay");
+    await this.deps.chain.closed?.(rec.tabId, rec.origin, rec.documentId);
     return {};
   }
 }

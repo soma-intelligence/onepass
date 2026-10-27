@@ -388,7 +388,6 @@ describe("late fields and re-rendered forms (B1, B2)", () => {
     expect(types(r1.actions)).toEqual(["fill", "submit"]);
     // The submit did not reach the form: the page had re-rendered it.
     let s = submitMissed(r1.state);
-    expect(tick(s, T0 + 100 + REPEAT_MS).actions).toEqual([]);
     // The same step, re-rendered (new refs), same document: submit the copy, no new fill.
     const r2 = step(s, page([userOnly("f9")]), SITE, T0 + 400);
     expect(r2.actions).toEqual([{ type: "submit", formRef: "f9" }]);
@@ -397,6 +396,32 @@ describe("late fields and re-rendered forms (B1, B2)", () => {
     // Once only: a later copy of that step is a re-analysis, then repeat if it stays.
     expect(step(s, page([userOnly("f10")]), SITE, T0 + 600).actions).toEqual([]);
     expect(tick(s, T0 + 400 + REPEAT_MS).actions).toEqual([{ type: "stop", reason: "repeat" }]);
+  });
+
+  it("a missed submit on a page that does not change ends in repeat", () => {
+    const s = submitMissed(step(start(), page([userOnly("f1")]), SITE, T0 + 100).state);
+    expect(nextDue(s)).toBe(T0 + 100 + REPEAT_MS);
+    expect(tick(s, T0 + 100 + REPEAT_MS).actions).toEqual([{ type: "stop", reason: "repeat" }]);
+  });
+
+  it("the retry on the copy missing too is not retried again: repeat", () => {
+    let s = submitMissed(step(start(), page([userOnly("f1")]), SITE, T0 + 100).state);
+    const r2 = step(s, page([userOnly("f9")]), SITE, T0 + 400);
+    expect(r2.actions).toEqual([{ type: "submit", formRef: "f9" }]);
+    s = submitMissed(r2.state);
+    expect(s).toBe(r2.state);
+    expect(step(s, page([userOnly("f10")]), SITE, T0 + 700).actions).toEqual([]);
+    expect(tick(s, T0 + 400 + REPEAT_MS).actions).toEqual([{ type: "stop", reason: "repeat" }]);
+    // Persisted: the retry mark survives a worker restart.
+    expect(parseChainState(JSON.parse(JSON.stringify(s)))?.steps.at(-1)?.retried).toBe(true);
+  });
+
+  it("a busy page after sign-in (changing analyses) still reaches done", () => {
+    let s = step(start(), page([loginForm()]), SITE, T0 + 100).state;
+    s = navigated(s, `${SITE}/home`, T0 + 300);
+    s = settled(s, T0 + 400);
+    for (let i = 0; i < 20; i++) s = step(s, page([], {}, `${SITE}/home#t${i}`), SITE, T0 + 450 + i * 500).state;
+    expect(tick(s, T0 + 400 + UNKNOWN_MS).actions).toEqual([{ type: "done" }]);
   });
 
   it("a re-render before submit with auto-submit off acts on nothing and never repeats", () => {

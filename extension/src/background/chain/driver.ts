@@ -92,8 +92,8 @@ export class ChainRunner implements ChainDriver {
   private readonly mem = new Map<number, ChainState>();
   private readonly queues = new Map<number, Promise<unknown>>();
   private readonly armed = new Map<number, unknown>();
-  /** Per tab: the document the overlay was offered on, and its sign-in forms offered. */
-  private readonly offered = new Map<number, { doc: string; shapes: Set<string> }>();
+  /** Per tab: the document the overlay was offered on, its sign-in forms offered, a close by the user. */
+  private readonly offered = new Map<number, { doc: string; shapes: Set<string>; closed: boolean }>();
   /** Per tab: top frame commits, to key documents where `documentId` is absent. */
   private readonly navs = new Map<number, number>();
   private readonly now: () => number;
@@ -186,6 +186,11 @@ export class ChainRunner implements ChainDriver {
       if (s.status !== "running" && s.endedAt !== undefined && this.now() - s.endedAt > ENDED_VIEW_MS) return null;
       return chainView(s);
     });
+  }
+
+  /** The user closed the overlay: no more offers in that document. */
+  async closed(tabId: number, origin: string, documentId?: string): Promise<void> {
+    await this.serial(tabId, async () => this.seen(tabId, documentId ?? `${origin}#${this.navs.get(tabId) ?? 0}`).closed = true);
   }
 
   /** A chain is running in this tab (the save and link proposals stay quiet). */
@@ -291,37 +296,49 @@ export class ChainRunner implements ChainDriver {
 
   // ---- overlay ----
 
-  private async showOverlay(cs: CsContext): Promise<void> {
+  /** True when the overlay is (now) in the tab. */
+  private async showOverlay(cs: CsContext): Promise<boolean> {
     try {
       if (!(await this.deps.overlays.hasTab(cs.tabId))) await this.deps.overlays.open(cs);
+      return true;
     } catch {
       // Content script not there (yet): the next analysis retries.
+      return false;
     }
+  }
+
+  private seen(tabId: number, doc: string): { doc: string; shapes: Set<string>; closed: boolean } {
+    let seen = this.offered.get(tabId);
+    if (seen?.doc !== doc) {
+      seen = { doc, shapes: new Set(), closed: false };
+      this.offered.set(tabId, seen);
+    }
+    return seen;
   }
 
   /**
    * Spec 8.6: the overlay on a recognized sign-in page of a site with logins.
    * Spec B1: any analysis may offer it, not just the first of the document,
    * once per sign-in form (a form built late, or the next step of the same
-   * document); a re-render of a form already offered does not offer again.
+   * document); a re-render of a form already offered does not offer again,
+   * and nothing is offered in a document where the user closed the overlay.
    */
   private async offerOverlay(a: PageAnalysis, cs: CsContext): Promise<void> {
     const shape = signInShape(a);
     if (shape === null || parseOrigin(cs.origin)?.https !== true) return;
-    const doc = cs.documentId ?? `${cs.origin}#${this.navs.get(cs.tabId) ?? 0}`;
-    let seen = this.offered.get(cs.tabId);
-    if (seen?.doc !== doc) {
-      seen = { doc, shapes: new Set() };
-      this.offered.set(cs.tabId, seen);
-    }
-    if (seen.shapes.has(shape) || seen.shapes.size >= MAX_OFFERS) return;
+    const seen = this.seen(cs.tabId, cs.documentId ?? `${cs.origin}#${this.navs.get(cs.tabId) ?? 0}`);
+    if (seen.closed || seen.shapes.has(shape) || seen.shapes.size >= MAX_OFFERS) return;
     seen.shapes.add(shape);
+    let shown = true;
     try {
       const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "overlay", origin: cs.origin });
-      if (items.some(canSignIn)) await this.showOverlay(cs);
+      if (items.some(canSignIn)) shown = await this.showOverlay(cs);
     } catch {
       // Locked, unpaired, host missing: no overlay.
+      shown = false;
     }
+    // Not shown for want of the host or the content script: the next analysis may retry.
+    if (!shown) seen.shapes.delete(shape);
   }
 
   // ---- state and timers ----

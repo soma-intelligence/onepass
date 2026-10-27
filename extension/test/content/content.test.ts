@@ -313,9 +313,15 @@ describe("re-rendered forms (B2)", () => {
    * (same attributes): `copy` carries the values over, `times` is how many
    * input events re-render (Infinity: every one).
    */
+  let stopRerender: (() => void) | null = null;
+  afterEach(() => {
+    stopRerender?.();
+    stopRerender = null;
+  });
+
   function rerenderOnInput(opts: { copy: boolean; times: number }): void {
     let left = opts.times;
-    document.addEventListener("input", () => {
+    const onInput = () => {
       if (left <= 0) return;
       left--;
       const old = document.getElementById("login") as HTMLFormElement;
@@ -324,7 +330,13 @@ describe("re-rendered forms (B2)", () => {
       const to = fresh.querySelectorAll("input");
       from.forEach((el, i) => (to[i]!.value = opts.copy ? el.value : ""));
       old.replaceWith(fresh);
-    });
+    };
+    document.addEventListener("input", onInput);
+    const before = stopRerender;
+    stopRerender = () => {
+      document.removeEventListener("input", onInput);
+      before?.();
+    };
   }
 
   it("fill_resolves_detached_ref_again", () => {
@@ -384,6 +396,33 @@ describe("re-rendered forms (B2)", () => {
     expect(s.ext.deliver({ type: "submit", origin: ORIGIN, ref: f.ref })).toEqual({ ok: true });
     expect(clicks).toBe(1);
   });
+
+  it("form identity reads attributes: fields named id or tagName do not blur two forms together", () => {
+    const form = (id: string, p: string) =>
+      `<form id="${id}"><input name="id" autocomplete="username"><input name="tagName" type="hidden"><input id="${p}" type="password" autocomplete="current-password"></form>`;
+    setPage(form("login", "p") + form("other", "op"));
+    // Browsers expose a form's controls as named properties of the form,
+    // shadowing `form.id` and `form.tagName`; jsdom does not, so mimic it.
+    const proto = HTMLFormElement.prototype;
+    const saved = ["id", "tagName"].map((k) => [k, Object.getOwnPropertyDescriptor(Element.prototype, k)!] as const);
+    for (const [k] of saved) {
+      Object.defineProperty(proto, k, {
+        configurable: true,
+        get(this: HTMLFormElement) {
+          return this.elements.namedItem(k);
+        },
+      });
+    }
+    stopRerender = () => {
+      for (const [k] of saved) delete (proto as unknown as Record<string, unknown>)[k];
+    };
+    s = start();
+    const f = analysis(s).forms.find((x) => s!.cs.internals.refs.get(x.ref)?.getAttribute("id") === "login")!;
+    rerenderOnInput({ copy: true, times: 1 });
+    fill(s, f.ref, { username: "alex@atlas.dev", current_password: "pw-1" });
+    expect(input("p").value).toBe("pw-1");
+    expect(input("op").value).toBe("");
+  });
 });
 
 describe("late fields (B1)", () => {
@@ -397,6 +436,25 @@ describe("late fields (B1)", () => {
     userKey(input("u"), "ArrowDown");
     await flush();
     expect(s.ext.ofType("open_menu")).toHaveLength(1);
+  });
+
+  it("analyses on such a key at most once per 150 ms", async () => {
+    useTimers();
+    setPage(`<div id="app"></div><div id="more"></div>`);
+    s = start();
+    s.ext.reply = () => ({ ok: null });
+    document.getElementById("app")!.innerHTML = LOGIN;
+    await flush();
+    userKey(input("u"), "ArrowDown");
+    expect(s.ext.ofType("page_analysis")).toHaveLength(2);
+    document.getElementById("more")!.innerHTML = `<form id="b"><input id="bu" autocomplete="username"><input id="bp" type="password" autocomplete="current-password"></form>`;
+    await flush();
+    vi.advanceTimersByTime(100);
+    userKey(input("bu"), "ArrowDown");
+    // Within 150 ms of the last one: no analysis on the key, the observer's comes on time.
+    expect(s.ext.ofType("page_analysis")).toHaveLength(2);
+    vi.advanceTimersByTime(60);
+    expect(s.ext.ofType("page_analysis")).toHaveLength(3);
   });
 });
 
