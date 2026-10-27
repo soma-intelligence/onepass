@@ -2,8 +2,8 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// The current one-time code ("123 • 456") and its countdown ring, refreshed every second.
-/// The secret itself is never shown here.
+/// The current one-time code ("123 • 456") and its countdown (a ring in the editor, a ring pill in
+/// the detail), refreshed every second. The secret itself is never shown here.
 struct TotpCodeView: View {
     let secret: String
     var compact = false
@@ -13,11 +13,15 @@ struct TotpCodeView: View {
             if let code = Self.code(secret, at: context.date) {
                 HStack(spacing: 10) {
                     Text(verbatim: Self.grouped(code.code))
-                        .font(compact ? .callout.monospacedDigit() : .title3.monospacedDigit().weight(.medium))
+                        .font(compact ? .callout.monospacedDigit() : .title3.monospacedDigit())
                         .contentTransition(.numericText())
                         .accessibilityLabel(Text("Code à usage unique"))
                         .accessibilityValue(Text(verbatim: code.code))
-                    TotpRing(remaining: Int(code.remaining), period: Int(code.period))
+                    if compact {
+                        TotpRing(remaining: Int(code.remaining), period: Int(code.period))
+                    } else {
+                        TotpCountdown(remaining: Int(code.remaining), period: Int(code.period))
+                    }
                 }
             } else {
                 Text("Secret invalide : colle la clé base32 ou l'URI otpauth://.")
@@ -40,27 +44,25 @@ struct TotpCodeView: View {
     }
 }
 
-/// Detail row of a one-time code field: label, live code with its ring, Copier (the code).
+/// Detail row of a one-time code field: label, live code with its countdown pill, Copier (the code).
 struct TotpFieldView: View {
     let field: FfiField
     let onCopy: (String) -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(field.label).font(.footnote).foregroundStyle(.secondary)
-                TotpCodeView(secret: field.value.text)
-            }
-            Spacer(minLength: 0)
-            Button {
-                let now = Date()
-                if let code = TotpCodeView.code(field.value.text, at: now) { onCopy(code.code) }
-            } label: {
-                Image(systemName: "doc.on.doc")
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel(Text("Copier le code"))
-            .accessibilityIdentifier("field.copy.\(field.id)")
+        DetailRow(
+            label: field.displayLabel.detailLabelCase, copyIdentifier: "field.copy.\(field.id)",
+            copyLabel: Text("Copier le code"), onCopy: copyCurrent, showsMenu: false
+        ) {
+            TotpCodeView(secret: field.value.text)
+        } accessory: {
+            EmptyView()
+        } menu: {
+            EmptyView()
         }
+    }
+
+    private func copyCurrent() {
+        if let code = TotpCodeView.code(field.value.text, at: Date()) { onCopy(code.code) }
     }
 }

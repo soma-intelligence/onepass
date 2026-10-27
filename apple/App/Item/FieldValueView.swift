@@ -2,16 +2,40 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// One non-empty field in the detail view, drawn for its kind. Secrets are masked (`FieldRow`,
-/// 30 s re-mask); copies go through the session clipboard (90 s, local only, concealed).
+extension Theme {
+    /// Accent lightened for text on the dark glass (links, "Copier"), same mix as `EditorLabel`.
+    static let readableAccent = Theme.accent.mix(with: .white, by: 0.45)
+}
+
+extension String {
+    /// Field labels read like the editor's: "Mot de passe" gives "mot de passe". An acronym first
+    /// ("PIN", "URL") stays as is.
+    var detailLabelCase: String {
+        guard let first, first.isUppercase else { return self }
+        if let second = dropFirst().first, second.isUppercase { return self }
+        return first.lowercased() + dropFirst()
+    }
+}
+
+/// One non-empty field in the detail view, drawn for its kind as rows of a card. Secrets are masked
+/// (30 s re-mask); copies go through the session clipboard (90 s, local only, concealed).
 struct FieldValueView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     let field: FfiField
+    /// Type of the item the field belongs to (card number badge), nil when unknown.
+    var itemType: FfiItemType?
     /// Tells the detail a value was copied (toast).
     let onCopied: (String) -> Void
 
+    init(field: FfiField, itemType: FfiItemType? = nil, onCopied: @escaping (String) -> Void) {
+        self.field = field
+        self.itemType = itemType
+        self.onCopied = onCopied
+    }
+
     private var session: VaultSession { model.session }
+    private var label: String { field.displayLabel.detailLabelCase }
 
     var body: some View {
         switch field.value {
@@ -20,16 +44,24 @@ struct FieldValueView: View {
                 .id(secret)
                 .privacySensitive()
         case .password(let value):
-            VStack(alignment: .leading, spacing: 6) {
-                row(value, secret: true, monospaced: true)
-                StrengthMeter(bits: PasswordStrength.estimatedBits(value))
+            row(value, secret: true, monospaced: true) {
+                StrengthBadge(bits: PasswordStrength.estimatedBits(value))
+            }
+        case .concealed(let value) where itemType == .creditCard && field.id == "number":
+            // The network is read from the number's prefix; the badge itself shows no digit.
+            row(value, secret: true, monospaced: true) {
+                CardNetworkBadge(network: .detect(number: value))
+                    .accessibilityLabel(Text(CardNetworkBadge.CardNetwork.detect(number: value).name))
             }
         case .concealed(let value), .mnemonic(let value):
             row(value, secret: true, monospaced: true)
         case .url(let value):
-            urlRow(label: field.label, url: value, identifier: "field.copy.\(field.id)")
-        case .text(let v), .email(let v), .phone(let v), .menu(let v):
+            urlRow(url: value)
+        case .text(let v), .email(let v), .phone(let v):
             row(v, secret: false, monospaced: false)
+        case .menu(let v):
+            // Stored in French (core menu option), shown in the app's language.
+            row(CoreLabels.menuOption(v), secret: false, monospaced: false)
         case .date(let d):
             row(FieldDates.long(d), secret: false, monospaced: false)
         case .monthYear(let year, let month):
@@ -41,28 +73,11 @@ struct FieldValueView: View {
         case .address(let a):
             row(AddressEditor.lines(a), secret: false, monospaced: false)
         case .location(let l):
-            row(LocationEditor.summary(l), secret: false, monospaced: false)
-        case .sshKey(let key):
-            VStack(alignment: .leading, spacing: 8) {
-                if !key.privatePem.isEmpty {
-                    FieldRow(
-                        label: "\(field.label) (clé privée)", value: key.privatePem, isSecret: true, monospaced: true,
-                        copyIdentifier: "field.copy.\(field.id)", allowsLarge: false,
-                        onCopy: { copy(key.privatePem, concealed: true) }, onReveal: reveal)
-                        .privacySensitive()
-                }
-                if !key.publicOpenssh.isEmpty {
-                    FieldRow(
-                        label: "Clé publique", value: key.publicOpenssh, isSecret: false, monospaced: true,
-                        copyIdentifier: "field.copy.\(field.id).public", allowsLarge: false,
-                        onCopy: { copy(key.publicOpenssh, concealed: false) }, onReveal: nil)
-                }
-                if !key.fingerprintSha256.isEmpty {
-                    FieldRow(
-                        label: "Empreinte", value: key.fingerprintSha256, isSecret: false, monospaced: true,
-                        allowsLarge: false, onCopy: { copy(key.fingerprintSha256, concealed: false) }, onReveal: nil)
-                }
+            LocationRow(field: field, location: l) {
+                copy(l.address.flatMap { $0.isEmpty ? nil : $0 } ?? LocationEditor.coordinates(l), concealed: false)
             }
+        case .sshKey(let key):
+            sshRows(key)
         case .barcode(let value, let format):
             BarcodeRow(field: field, value: value, format: format) { copy(value, concealed: false) }
         case .itemLink(let id):
@@ -70,30 +85,58 @@ struct FieldValueView: View {
         case .passkey(let passkey):
             PasskeyRow(field: field, passkey: passkey)
         case .file:
-            VStack(alignment: .leading, spacing: 2) {
-                Text(field.label).font(.footnote).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                EditorLabel(label)
                 ReadOnlyFieldView(field: field)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .editorRowPadding()
         case .empty:
             EmptyView()
         }
     }
 
-    private func row(_ value: String, secret: Bool, monospaced: Bool) -> some View {
+    private func row(
+        _ value: String, secret: Bool, monospaced: Bool, label: String? = nil, copyIdentifier: String? = nil,
+        allowsLarge: Bool? = nil
+    ) -> some View {
+        row(value, secret: secret, monospaced: monospaced, label: label, copyIdentifier: copyIdentifier,
+            allowsLarge: allowsLarge) { EmptyView() }
+    }
+
+    private func row<Accessory: View>(
+        _ value: String, secret: Bool, monospaced: Bool, label: String? = nil, copyIdentifier: String? = nil,
+        allowsLarge: Bool? = nil, @ViewBuilder accessory: () -> Accessory
+    ) -> some View {
         let session = session
         let onReveal: ((Bool) -> Void)? = secret ? { _ in session.noteActivity() } : nil
-        return FieldRow(
-            label: field.label, value: value, isSecret: secret, monospaced: monospaced,
-            copyIdentifier: "field.copy.\(field.id)",
+        return ValueRow(
+            label: label ?? self.label, value: value, isSecret: secret, monospaced: monospaced,
+            copyIdentifier: copyIdentifier ?? "field.copy.\(field.id)",
             // "Afficher en grand" for passwords (barcodes have their own row).
-            allowsLarge: field.kind == .password,
+            allowsLarge: allowsLarge ?? (field.kind == .password),
             onCopy: { copy(value, concealed: secret) },
-            onReveal: onReveal)
+            onReveal: onReveal,
+            accessory: accessory)
             .privacySensitive(secret)
     }
 
-    private func reveal(_ shown: Bool) {
-        session.noteActivity()
+    @ViewBuilder private func sshRows(_ key: FfiSshKey) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !key.privatePem.isEmpty {
+                row(key.privatePem, secret: true, monospaced: true, label: "\(label) (clé privée)", allowsLarge: false)
+            }
+            if !key.publicOpenssh.isEmpty {
+                if !key.privatePem.isEmpty { CardDivider() }
+                row(key.publicOpenssh, secret: false, monospaced: true, label: String(localized: "clé publique"),
+                    copyIdentifier: "field.copy.\(field.id).public", allowsLarge: false)
+            }
+            if !key.fingerprintSha256.isEmpty {
+                if !key.privatePem.isEmpty || !key.publicOpenssh.isEmpty { CardDivider() }
+                row(key.fingerprintSha256, secret: false, monospaced: true, label: String(localized: "empreinte"),
+                    copyIdentifier: "field.copy.\(field.id).fingerprint", allowsLarge: false)
+            }
+        }
     }
 
     private func copy(_ value: String, concealed: Bool) {
@@ -101,30 +144,19 @@ struct FieldValueView: View {
         onCopied(String(localized: "Copié · effacé dans 90 s"))
     }
 
-    private func urlRow(label: String, url: String, identifier: String) -> some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.footnote).foregroundStyle(.secondary)
-                Text(url).lineLimit(1).truncationMode(.middle).foregroundStyle(.tint)
+    private func urlRow(url: String) -> some View {
+        let target = Self.openable(url)
+        return DetailRow(
+            label: label, copyIdentifier: "field.copy.\(field.id)", onCopy: { copy(url, concealed: false) },
+            showsMenu: target != nil
+        ) {
+            Text(url).lineLimit(1).truncationMode(.middle).foregroundStyle(Theme.readableAccent)
+        } accessory: {
+            EmptyView()
+        } menu: {
+            if let target {
+                Button("Ouvrir dans le navigateur", systemImage: "arrow.up.forward.app") { openURL(target) }
             }
-            Spacer(minLength: 0)
-            if let target = Self.openable(url) {
-                Button {
-                    openURL(target)
-                } label: {
-                    Image(systemName: "arrow.up.forward.app")
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(Text("Ouvrir"))
-            }
-            Button {
-                copy(url, concealed: false)
-            } label: {
-                Image(systemName: "doc.on.doc")
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel(Text("Copier"))
-            .accessibilityIdentifier(identifier)
         }
     }
 
@@ -141,14 +173,14 @@ struct FieldValueView: View {
 
     @ViewBuilder private func itemLinkRow(_ id: String) -> some View {
         let linked = session.summaries.first { $0.id == id }
-        VStack(alignment: .leading, spacing: 2) {
-            Text(field.label).font(.footnote).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 3) {
+            EditorLabel(label)
             if let linked {
                 Button {
                     model.editing = false
                     model.selectedItem = ItemRef(vaultID: linked.vaultId, itemID: linked.id)
                 } label: {
-                    Label(linked.title, systemImage: "link")
+                    Label(linked.title, systemImage: "link").foregroundStyle(Theme.readableAccent)
                 }
                 .buttonStyle(.borderless)
                 .accessibilityIdentifier("field.link.\(field.id)")
@@ -156,6 +188,236 @@ struct FieldValueView: View {
                 Text("Élément introuvable").foregroundStyle(.secondary)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .editorRowPadding()
+    }
+}
+
+// MARK: - Rows
+
+/// A read-only row of a detail card: small accent label above the value, an optional accessory on the
+/// right (strength, countdown). Clicking the row copies. On the Mac a hover highlights the row and
+/// shows "Copier" and the menu of the other actions; elsewhere the menu (with Copier) stays visible.
+struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
+    let label: String
+    let copyIdentifier: String?
+    let copyLabel: Text
+    let onCopy: (() -> Void)?
+    let showsMenu: Bool
+    let value: Value
+    let accessory: Accessory
+    let menu: MenuItems
+    @State private var hovered = false
+
+    init(
+        label: String, copyIdentifier: String? = nil, copyLabel: Text = Text("Copier"),
+        onCopy: (() -> Void)?, showsMenu: Bool,
+        @ViewBuilder value: () -> Value, @ViewBuilder accessory: () -> Accessory,
+        @ViewBuilder menu: () -> MenuItems
+    ) {
+        self.label = label
+        self.copyIdentifier = copyIdentifier
+        self.copyLabel = copyLabel
+        self.onCopy = onCopy
+        self.showsMenu = showsMenu
+        self.value = value()
+        self.accessory = accessory()
+        self.menu = menu()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                EditorLabel(label)
+                value.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            #if os(macOS)
+            // Same slot at the trailing edge: the accessory gives way to Copier and the menu on hover,
+            // so nothing reflows and the accessory sits flush right.
+            ZStack(alignment: .trailing) {
+                accessory.opacity(hovered ? 0 : 1)
+                actions
+            }
+            #else
+            accessory
+            actions
+            #endif
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        .frame(minHeight: 56)
+        .background {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Theme.accent.opacity(hovered ? 0.18 : 0))
+                .padding(4)
+        }
+        .contentShape(.rect)
+        .onTapGesture { onCopy?() }
+        #if os(macOS)
+        .onHover { inside in
+            withAnimation(.easeOut(duration: 0.12)) { hovered = inside }
+        }
+        #endif
+        .accessibilityElement(children: .contain)
+        #if os(macOS)
+        .modifier(CopyAccessibilityAction(onCopy: onCopy, label: copyLabel))
+        #endif
+    }
+
+    @ViewBuilder private var actions: some View {
+        #if os(macOS)
+        HStack(spacing: 4) {
+            if let onCopy {
+                Button(action: onCopy) {
+                    Text("Copier").font(.callout.weight(.medium)).foregroundStyle(Theme.readableAccent)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(copyLabel)
+                .accessibilityIdentifier(copyIdentifier ?? "")
+            }
+            if showsMenu {
+                Menu {
+                    menu
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(.rect)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel(Text(verbatim: "Actions pour \(label)"))
+            }
+        }
+        .opacity(hovered ? 1 : 0)
+        .allowsHitTesting(hovered)
+        .accessibilityHidden(!hovered)
+        #else
+        if onCopy != nil || showsMenu {
+            Menu {
+                if let onCopy {
+                    Button(action: onCopy) { Label { copyLabel } icon: { Image(systemName: "doc.on.doc") } }
+                        .accessibilityIdentifier(copyIdentifier ?? "")
+                }
+                if showsMenu { menu }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .accessibilityLabel(Text(verbatim: "Actions pour \(label)"))
+            }
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
+            .fixedSize()
+        }
+        #endif
+    }
+}
+
+/// VoiceOver reaches "Copier" even while the hover buttons are hidden.
+private struct CopyAccessibilityAction: ViewModifier {
+    let onCopy: (() -> Void)?
+    let label: Text
+
+    func body(content: Content) -> some View {
+        if let onCopy {
+            content.accessibilityAction(named: label, onCopy)
+        } else {
+            content
+        }
+    }
+}
+
+/// A text value in a detail card, masked when secret. Menu: Révéler / Masquer, Afficher en grand.
+/// A revealed secret is masked again after 30 s and when the row goes away.
+struct ValueRow<Accessory: View>: View {
+    let label: String
+    let value: String
+    let isSecret: Bool
+    let monospaced: Bool
+    let copyIdentifier: String?
+    let allowsLarge: Bool
+    let onCopy: () -> Void
+    let onReveal: ((Bool) -> Void)?
+    let accessory: Accessory
+
+    private let autoHideAfter: TimeInterval = 30
+    @State private var revealed = false
+    @State private var revealedAt: Date?
+    @State private var large = false
+
+    init(
+        label: String, value: String, isSecret: Bool, monospaced: Bool, copyIdentifier: String?,
+        allowsLarge: Bool, onCopy: @escaping () -> Void, onReveal: ((Bool) -> Void)?,
+        @ViewBuilder accessory: () -> Accessory
+    ) {
+        self.label = label
+        self.value = value
+        self.isSecret = isSecret
+        self.monospaced = monospaced
+        self.copyIdentifier = copyIdentifier
+        self.allowsLarge = allowsLarge
+        self.onCopy = onCopy
+        self.onReveal = onReveal
+        self.accessory = accessory()
+    }
+
+    private var hidden: Bool { isSecret && !revealed }
+
+    var body: some View {
+        DetailRow(
+            label: label, copyIdentifier: copyIdentifier, onCopy: onCopy, showsMenu: isSecret || allowsLarge
+        ) {
+            Text(hidden ? FieldRow.mask : value)
+                .font(monospaced ? .body.monospaced() : .body)
+                .textSelection(.disabled)
+                .accessibilityLabel(Text(label))
+                .accessibilityValue(Text(hidden ? "masqué" : value))
+        } accessory: {
+            accessory
+        } menu: {
+            if isSecret {
+                Button(revealed ? "Masquer" : "Révéler", systemImage: revealed ? "eye.slash" : "eye") {
+                    setRevealed(!revealed)
+                }
+            }
+            if allowsLarge {
+                Button("Afficher en grand", systemImage: "arrow.up.left.and.arrow.down.right") { showLarge() }
+            }
+        }
+        .task(id: revealedAt) {
+            guard let at = revealedAt else { return }
+            try? await Task.sleep(for: .seconds(autoHideAfter))
+            if !Task.isCancelled, revealed, Date().timeIntervalSince(at) >= autoHideAfter { setRevealed(false) }
+        }
+        .onDisappear { if revealed { setRevealed(false) } }
+        .sheet(isPresented: Binding(get: { large && !hidden }, set: { large = $0 })) {
+            VStack(spacing: 16) {
+                Text(label).font(.headline)
+                Text(value)
+                    .font(.system(.largeTitle, design: .monospaced))
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.4)
+                Button("Fermer") { large = false }.keyboardShortcut(.cancelAction)
+            }
+            .padding(32)
+            .presentationDetents([.medium])
+        }
+    }
+
+    private func setRevealed(_ on: Bool) {
+        guard isSecret else { return }
+        revealed = on
+        revealedAt = on ? Date() : nil
+        if !on { large = false }
+        onReveal?(on)
+    }
+
+    /// A secret goes through the same reveal path before it is shown large.
+    private func showLarge() {
+        if isSecret { setRevealed(true) }
+        large = true
     }
 }
 
@@ -166,14 +428,9 @@ private struct PasskeyRow: View {
     let passkey: FfiPasskey
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "person.badge.key.fill")
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .frame(width: 28)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(field.label).font(.footnote).foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                EditorLabel(field.displayLabel.detailLabelCase)
                 Text(passkey.rpId.isEmpty ? String(localized: "Site inconnu") : passkey.rpId)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -189,9 +446,69 @@ private struct PasskeyRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
+            Image(systemName: "person.badge.key.fill")
+                .font(.title3)
+                .foregroundStyle(Theme.readableAccent)
+                .accessibilityHidden(true)
         }
+        .editorRowPadding()
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("field.passkey.\(field.id)")
+    }
+}
+
+/// Location: the place's label and address (copied on click), a small map with its pin, and
+/// "Ouvrir dans Plans". A location never placed (blank coordinates) shows its text only.
+private struct LocationRow: View {
+    let field: FfiField
+    let location: FfiLocation
+    let onCopy: () -> Void
+
+    private var point: GeoPoint { GeoPoint(latitude: location.lat, longitude: location.lon) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DetailRow(
+                label: field.displayLabel.detailLabelCase, copyIdentifier: "field.copy.\(field.id)", onCopy: onCopy,
+                showsMenu: point.isPlaced
+            ) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if !location.label.isEmpty { Text(location.label) }
+                    if let address = location.address, !address.isEmpty {
+                        Text(address)
+                            .foregroundStyle(location.label.isEmpty ? .primary : .secondary)
+                            .font(location.label.isEmpty ? .body : .callout)
+                    }
+                    // A placed location shows its map below, never raw coordinates.
+                    if location.label.isEmpty, location.address?.isEmpty ?? true {
+                        Text(point.isPlaced ? String(localized: "Lieu sur la carte") : LocationEditor.coordinates(location))
+                            .foregroundStyle(point.isPlaced ? .secondary : .primary)
+                    }
+                }
+            } accessory: {
+                EmptyView()
+            } menu: {
+                Button("Ouvrir dans Plans", systemImage: "map") { location.openInMaps() }
+            }
+            if point.isPlaced {
+                LocationMap(point: point, title: location.label)
+                    .frame(height: 140)
+                    .padding(.horizontal, 16)
+                    .accessibilityIdentifier("field.location.map.\(field.id)")
+                Button {
+                    location.openInMaps()
+                } label: {
+                    Label("Ouvrir dans Plans", systemImage: "map")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(Theme.readableAccent)
+                }
+                .buttonStyle(.borderless)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+                .accessibilityIdentifier("field.location.open.\(field.id)")
+            }
+        }
     }
 }
 
@@ -204,65 +521,86 @@ private struct BarcodeRow: View {
     @State private var large = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        DetailRow(
+            label: field.displayLabel.detailLabelCase, copyIdentifier: "field.copy.\(field.id)", onCopy: onCopy,
+            showsMenu: true
+        ) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(field.label).font(.footnote).foregroundStyle(.secondary)
                 Text(value).font(.body.monospaced())
                 Text(BarcodeRenderer.name(format)).font(.caption).foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
-            Menu {
-                Button("Copier", systemImage: "doc.on.doc", action: onCopy)
-                    .accessibilityIdentifier("field.copy.\(field.id)")
-                Button("Afficher en grand", systemImage: "barcode.viewfinder") { large = true }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .accessibilityLabel(Text("Actions pour \(field.label)"))
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+        } accessory: {
+            EmptyView()
+        } menu: {
+            Button("Afficher en grand", systemImage: "barcode.viewfinder") { large = true }
         }
         .sheet(isPresented: $large) {
-            BarcodeLargeView(label: field.label, value: value, format: format)
+            BarcodeLargeView(label: field.displayLabel, value: value, format: format)
         }
     }
 }
 
-/// A website of the item: label ("site web" by default), URL, Ouvrir, Copier.
+/// A website of the item, under the fields card: label ("site web" by default) and the link, which
+/// opens in the browser. Copier on hover (Mac) or as an icon (elsewhere).
 struct WebsiteRow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     let url: FfiUrl
     let index: Int
     let onCopied: (String) -> Void
+    @State private var hovered = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(url.label.isEmpty ? String(localized: "site web") : url.label)
-                    .font(.footnote).foregroundStyle(.secondary)
-                Text(url.url).lineLimit(1).truncationMode(.middle).foregroundStyle(.tint)
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                EditorLabel(url.label.isEmpty ? String(localized: "site web") : url.label.detailLabelCase)
+                if let target = FieldValueView.openable(url.url) {
+                    Button {
+                        openURL(target)
+                    } label: {
+                        Text(url.url)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(Theme.readableAccent)
+                            .underline(hovered)
+                    }
+                    .buttonStyle(.plain)
+                    #if os(macOS)
+                    .pointerStyle(.link)
+                    #endif
+                    .accessibilityHint(Text("Ouvrir"))
+                    .accessibilityIdentifier("item.url.open.\(index)")
+                } else {
+                    Text(url.url).lineLimit(1).truncationMode(.middle)
+                }
             }
             Spacer(minLength: 0)
-            if let target = FieldValueView.openable(url.url) {
-                Button {
-                    openURL(target)
-                } label: {
-                    Image(systemName: "arrow.up.forward.app")
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(Text("Ouvrir"))
-                .accessibilityIdentifier("item.url.open.\(index)")
-            }
-            Button {
-                model.session.copy(url.url, concealed: false)
-                onCopied(String(localized: "Copié · effacé dans 90 s"))
-            } label: {
+            Button(action: copy) {
+                #if os(macOS)
+                Text("Copier").font(.callout.weight(.medium)).foregroundStyle(Theme.readableAccent)
+                #else
                 Image(systemName: "doc.on.doc")
+                #endif
             }
             .buttonStyle(.borderless)
+            #if os(macOS)
+            .opacity(hovered ? 1 : 0)
+            #endif
             .accessibilityLabel(Text("Copier"))
             .accessibilityIdentifier("item.url.copy.\(index)")
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .contentShape(.rect)
+        #if os(macOS)
+        .onHover { inside in
+            withAnimation(.easeOut(duration: 0.12)) { hovered = inside }
+        }
+        #endif
+    }
+
+    private func copy() {
+        model.session.copy(url.url, concealed: false)
+        onCopied(String(localized: "Copié · effacé dans 90 s"))
     }
 }
