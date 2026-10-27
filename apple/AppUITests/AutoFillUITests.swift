@@ -81,11 +81,14 @@ final class AutoFillUITests: XCTestCase {
         let done = onePass.buttons["settings.done"]
         let back = onePass.navigationBars.buttons.element(boundBy: 0)
         var backs = 0
-        while !done.waitForExistence(timeout: 2), back.exists, backs < 3 {
+        let settingsList = onePass.descendants(matching: .any)["settings.autofill"].firstMatch
+        while !done.waitForExistence(timeout: 2), settingsList.exists || status.exists, back.exists, backs < 3 {
             back.tap()
             backs += 1
         }
-        tap(done, in: onePass)
+        // Coming back from the system settings can close the sheet on its own (iOS 27): then
+        // there is no "OK" left to press.
+        if done.exists { tap(done, in: onePass) }
         tap(tabButton(onePass, id: "tab.home", label: "Accueil"), in: onePass)
         // Accueil may still show the first Login: back to its root, where "Nouvel élément" is.
         let pop = onePass.navigationBars.buttons.element(boundBy: 0)
