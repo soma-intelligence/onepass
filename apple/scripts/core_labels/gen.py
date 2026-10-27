@@ -18,7 +18,7 @@ def dump(obj):
 
 
 def put(key, fr, en, comment):
-    assert "—" not in en and "—" not in fr
+    assert "\u2014" not in en and "\u2014" not in fr
     strings[key] = {"comment": comment, "extractionState": "manual", "localizations": {
         "en": {"stringUnit": {"state": "translated", "value": en}},
         "fr": {"stringUnit": {"state": "translated", "value": fr}}}}
