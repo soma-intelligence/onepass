@@ -393,13 +393,15 @@ impl fmt::Debug for Auk {
     }
 }
 
-/// Steps 1 to 3 of `Account::unlock`, before any derivation: decode and
-/// verify the signed parameters, check the pin, the pinned epoch, the floors
-/// and the ceiling.
-fn verify_params(
+/// Step 1 of `Account::unlock`: `params_record` decodes and its
+/// `identity_sig` verifies under its own `identity_pub`, and with `pinned`
+/// the account id and identity are the pinned ones (otherwise
+/// `IntegrityError::ParamsUnsigned`). The signing key it carries is then
+/// the account's, without any unlock (the sync store checks the signed vault
+/// list with it).
+pub(crate) fn signed_params(
     params_record: &[u8],
     pinned: Option<&PinnedAccount>,
-    min_epoch: u64,
 ) -> Result<AccountParams> {
     let params = AccountParams::decode(params_record)?;
     let unsigned = Error::Integrity(IntegrityError::ParamsUnsigned);
@@ -419,6 +421,18 @@ fn verify_params(
     {
         return Err(unsigned);
     }
+    Ok(params)
+}
+
+/// Steps 1 to 3 of `Account::unlock`, before any derivation: decode and
+/// verify the signed parameters, check the pin, the pinned epoch, the floors
+/// and the ceiling.
+fn verify_params(
+    params_record: &[u8],
+    pinned: Option<&PinnedAccount>,
+    min_epoch: u64,
+) -> Result<AccountParams> {
+    let params = signed_params(params_record, pinned)?;
     // An older epoch than the one this device accepted: a replay of signed
     // params the account has since replaced.
     if params.epoch < min_epoch {

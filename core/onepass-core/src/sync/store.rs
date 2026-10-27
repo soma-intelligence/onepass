@@ -20,10 +20,12 @@ use rusqlite::{
 };
 
 use super::{Change, MAX_RECORD_BYTES, RemoteChange};
-use crate::account::AccountParams;
+use crate::account::{AccountParams, signed_params};
 use crate::chain::ChainState;
+use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::repo::{DeviceState, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore};
+use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, Result};
 
 const DEVICE_STATE_KEY: &str = "device_state";
@@ -37,8 +39,13 @@ const SUPERSEDED_KEY: &str = "password_change_superseded";
 const IGNORED_DELETIONS_KEY: &str = "ignored_deletions";
 const IGNORED_LOG_VERSION: u8 = 1;
 const IGNORED_ENTRY_BYTES: usize = 1 + 16 + 8;
-/// Most entries kept in the log of ignored deletions; the oldest go first.
+/// Most entries kept in the log of ignored deletions (and in the log of
+/// dropped vault writes); the oldest go first.
 pub const MAX_IGNORED_DELETIONS: usize = 100;
+/// The capped log of vaults whose pending local writes a rebase dropped
+/// because the signed vault list marks them deleted (same encoding as the
+/// ignored deletions, kind `Manifest`, id the vault).
+const DROPPED_WRITES_KEY: &str = "dropped_vault_writes";
 const FETCH_MODE_KEY: &str = "zone.full_fetch";
 const FETCH_PLAIN: u8 = 1;
 const FETCH_RESET: u8 = 2;
@@ -374,6 +381,7 @@ fn settle_account_changes(tx: &Connection) -> Result<()> {
 fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
     let held = held_vaults(tx)?;
     let held_lists = held_lists(tx)?;
+    let deleted = deleted_vaults(tx, &[]);
     let mut stmt = tx
         .prepare("SELECT kind, id, version, data, vault FROM pending ORDER BY kind, id")
         .map_err(store_err)?;
@@ -404,6 +412,16 @@ fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
             _ => None,
         };
         if vault.is_some_and(|v| held.contains(&v)) || held_lists.contains(&(kind, id)) {
+            continue;
+        }
+        // A write into a vault the verified vault list marks deleted (by
+        // another device): never pushed, it would bring back part of the
+        // vault. The rebase drops it (`drop_pending_vault_writes`).
+        let owner = match kind {
+            RecordKind::VaultKey | RecordKind::VaultMeta => Some(id),
+            _ => vault,
+        };
+        if data.is_some() && owner.is_some_and(|v| deleted.contains(&v)) {
             continue;
         }
         if data.is_some()
@@ -503,11 +521,13 @@ impl SyncStore {
         self.conn.execute_batch("ROLLBACK").map_err(store_err)
     }
 
-    /// Local writes to push, minus the held vaults, and minus the account
-    /// params and keyset unless both are pending and the params epoch is
-    /// above the server's (`account_pair_pushable`). Order: account params,
-    /// keysets, vault keys, vault metas, items, manifests, then deletions,
-    /// so a manifest never reaches the server before its items.
+    /// Local writes to push, minus the held vaults, minus the writes (not
+    /// the deletions) into a vault the verified vault list in `base` marks
+    /// deleted (`deleted_vaults`, spec 4.5), and minus the account params
+    /// and keyset unless both are pending and the params epoch is above the
+    /// server's (`account_pair_pushable`). Order: account params, keysets,
+    /// vault keys, vault metas, items, manifests, then deletions, so a
+    /// manifest never reaches the server before its items.
     pub fn pending_changes(&self) -> Result<Vec<Change>> {
         self.read(pending_changes_in)
     }
@@ -626,6 +646,11 @@ impl SyncStore {
     ///   becomes a pending row with the same version and data, a manifest
     ///   keeping its `base` row as ancestor (not held).
     ///
+    /// Both modes: every row of a vault the account's signed vault list in
+    /// `base` marks deleted (`deleted_vaults`), its key, meta, manifest and
+    /// item records, that the server did not return is deleted, and the
+    /// vault leaves the persisted `last_seen` (spec 4.5).
+    ///
     /// A pending tombstone or edit is never touched. After a plain full fetch,
     /// the kept rows the server has no right to remove (see `commit_remote`)
     /// are appended to the log of `ignored_deletions`.
@@ -636,6 +661,7 @@ impl SyncStore {
         };
         let missing = "b.server_meta IS NULL AND NOT EXISTS
              (SELECT 1 FROM pending p WHERE p.kind = b.kind AND p.id = b.id)";
+        let deleted = deleted_vaults(&tx, &[]);
         if mode == FETCH_PLAIN {
             // The server stopped serving rows it has no right to remove: they
             // stay (see above) and the refusal is logged.
@@ -657,7 +683,7 @@ impl SyncStore {
             let mut ignored = Vec::new();
             for (kind, id) in rows {
                 let kind = decode_kind(kind)?;
-                if protected_from_remote_deletion(kind, &id, &seen)
+                if protected_from_remote_deletion(kind, &id, &seen, &deleted)
                     && let Ok(id) = decode_id(id)
                 {
                     ignored.push((kind, id));
@@ -665,9 +691,30 @@ impl SyncStore {
             }
             append_ignored(&tx, &ignored)?;
         }
+        // Both modes: the rows of a vault the signed list marks deleted.
+        let mut removed = 0;
+        for v in &deleted {
+            removed += tx
+                .execute(
+                    &format!(
+                        "DELETE FROM base AS b WHERE {missing} AND (
+                             (b.kind IN (?1, ?2, ?3) AND b.id = ?5)
+                             OR (b.kind = ?4 AND substr(b.data, 1, 16) = ?5))"
+                    ),
+                    params![
+                        RecordKind::VaultKey.code(),
+                        RecordKind::VaultMeta.code(),
+                        RecordKind::Manifest.code(),
+                        RecordKind::Item.code(),
+                        &v.0[..]
+                    ],
+                )
+                .map_err(store_err)?;
+        }
+        forget_seen(&tx, &deleted)?;
         // Both modes: an item the server did not return, in a vault whose
         // manifest it did return, is gone from that vault.
-        let deleted = tx
+        removed += tx
             .execute(
                 &format!(
                     "DELETE FROM base AS b WHERE b.kind = ?1 AND {missing}
@@ -703,7 +750,7 @@ impl SyncStore {
         tx.execute("DELETE FROM meta WHERE key = ?1", params![FETCH_MODE_KEY])
             .map_err(store_err)?;
         tx.commit()?;
-        Ok(deleted > 0)
+        Ok(removed > 0)
     }
 
     /// Park a change received from the server. Nothing is visible until
@@ -728,14 +775,18 @@ impl SyncStore {
     /// another change. Returns the ids of the vaults whose manifest was
     /// applied.
     ///
-    /// Remote deletions the store has no right to make are ignored (no
-    /// client deletes them in M2, so they come from a hostile or broken
-    /// server): account params and keysets, and the vault key, vault meta and
-    /// manifest of a vault in the device's `last_seen`. The local rows stay
-    /// and the vault stays readable from them: nothing the server sends can
-    /// make this device forget its account or a vault it has read (the
+    /// Remote deletions the store has no right to make are ignored (they
+    /// come from a hostile or broken server): account params, keysets and
+    /// the signed lists, and the vault key, vault meta and manifest of a
+    /// vault in the device's `last_seen`, unless the account's signed vault
+    /// list marks that vault deleted (spec 4.5, `deleted_vaults`: the list
+    /// in `base` or the one staged in this batch, verified). The local rows
+    /// stay and the vault stays readable from them: nothing the server sends
+    /// can make this device forget its account or a vault it has read (the
     /// repository reports `VaultMissing` if those rows ever disappear). Each
     /// ignored deletion is appended to the capped log of `ignored_deletions`.
+    /// A vault the verified list marks deleted also leaves the persisted
+    /// `last_seen`.
     pub fn commit_remote(&mut self) -> Result<Vec<Id>> {
         let tx = self.write_tx()?;
         let seen: BTreeSet<Id> = device_state_in(&tx)?.last_seen.into_keys().collect();
@@ -752,12 +803,13 @@ impl SyncStore {
                 .map_err(store_err)?;
             rows.collect::<rusqlite::Result<_>>().map_err(store_err)?
         };
+        let deleted = deleted_vaults(&tx, &staged);
         let mut vaults = BTreeSet::new();
         let mut ignored = Vec::new();
         for (kind, id, version, data, server_meta) in staged {
             let kind_code = kind;
             let kind = decode_kind(kind)?;
-            if data.is_none() && protected_from_remote_deletion(kind, &id, &seen) {
+            if data.is_none() && protected_from_remote_deletion(kind, &id, &seen, &deleted) {
                 if let Ok(id) = decode_id(id) {
                     ignored.push((kind, id));
                 }
@@ -781,6 +833,7 @@ impl SyncStore {
         }
         tx.execute("DELETE FROM staging", []).map_err(store_err)?;
         append_ignored(&tx, &ignored)?;
+        forget_seen(&tx, &deleted)?;
         settle_account_changes(&tx)?;
         tx.commit()?;
         Ok(vaults.into_iter().collect())
@@ -958,6 +1011,66 @@ impl SyncStore {
         Ok(())
     }
 
+    /// Vaults whose pending local writes a rebase dropped because the
+    /// signed vault list marks them deleted (`Repository::rebase`), oldest
+    /// first, at most `MAX_IGNORED_DELETIONS`.
+    pub fn dropped_vault_writes(&self) -> Result<Vec<DroppedVaultWrites>> {
+        Ok(self
+            .read(|c| log_in(c, DROPPED_WRITES_KEY))?
+            .into_iter()
+            .map(|e| DroppedVaultWrites {
+                vault_id: e.id,
+                at: e.at,
+            })
+            .collect())
+    }
+
+    /// Empty the log of dropped vault writes.
+    pub fn clear_dropped_vault_writes(&mut self) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM meta WHERE key = ?1",
+                params![DROPPED_WRITES_KEY],
+            )
+            .map_err(store_err)?;
+        Ok(())
+    }
+
+    /// Drop every pending write (not the tombstones) into `vault`: its key,
+    /// meta and manifest rows with data and its item records, with the
+    /// manifest's ancestor unless a pending tombstone of the manifest still
+    /// needs it. If anything was dropped, the vault is appended to the log
+    /// of `dropped_vault_writes`. Returns whether anything was dropped. For
+    /// a vault the verified vault list marks deleted (`Repository::rebase`).
+    pub(crate) fn drop_pending_vault_writes(&mut self, vault: Id) -> Result<bool> {
+        let tx = self.write_tx()?;
+        let dropped = tx
+            .execute(
+                "DELETE FROM pending WHERE data IS NOT NULL AND (
+                     (kind IN (?1, ?2, ?3) AND id = ?5)
+                     OR (kind = ?4 AND substr(data, 1, 16) = ?5))",
+                params![
+                    RecordKind::VaultKey.code(),
+                    RecordKind::VaultMeta.code(),
+                    RecordKind::Manifest.code(),
+                    RecordKind::Item.code(),
+                    &vault.0[..]
+                ],
+            )
+            .map_err(store_err)?;
+        tx.execute(
+            "DELETE FROM ancestor WHERE kind = ?1 AND id = ?2
+                 AND NOT EXISTS (SELECT 1 FROM pending p WHERE p.kind = ?1 AND p.id = ?2)",
+            params![RecordKind::Manifest.code(), &vault.0[..]],
+        )
+        .map_err(store_err)?;
+        if dropped > 0 {
+            append_log(&tx, DROPPED_WRITES_KEY, &[(RecordKind::Manifest, vault)])?;
+        }
+        tx.commit()?;
+        Ok(dropped > 0)
+    }
+
     /// Vaults held back because the server manifest caught up with, or
     /// passed, the local pending one. Sorted by id.
     pub fn vaults_needing_rebase(&self) -> Result<Vec<Id>> {
@@ -1063,6 +1176,15 @@ pub struct IgnoredDeletion {
     pub at: i64,
 }
 
+/// A vault whose pending local writes a rebase dropped because the signed
+/// vault list marks it deleted (spec 4.5): which vault, and when (Unix
+/// seconds, device clock).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DroppedVaultWrites {
+    pub vault_id: Id,
+    pub at: i64,
+}
+
 fn unix_now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1108,12 +1230,15 @@ fn decode_ignored(bytes: &[u8]) -> Result<Vec<IgnoredDeletion>> {
 }
 
 fn ignored_in(conn: &Connection) -> Result<Vec<IgnoredDeletion>> {
+    log_in(conn, IGNORED_DELETIONS_KEY)
+}
+
+/// The capped log under `key` (ignored deletions, dropped vault writes).
+fn log_in(conn: &Connection, key: &str) -> Result<Vec<IgnoredDeletion>> {
     let bytes: Option<Vec<u8>> = conn
-        .query_row(
-            "SELECT value FROM meta WHERE key = ?1",
-            params![IGNORED_DELETIONS_KEY],
-            |r| r.get(0),
-        )
+        .query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+            r.get(0)
+        })
         .optional()
         .map_err(store_err)?;
     bytes.map_or(Ok(Vec::new()), |b| decode_ignored(&b))
@@ -1124,10 +1249,15 @@ fn ignored_in(conn: &Connection) -> Result<Vec<IgnoredDeletion>> {
 /// time. An unreadable log (edited file) starts again empty: logging never
 /// blocks a commit.
 fn append_ignored(conn: &Connection, new: &[(RecordKind, Id)]) -> Result<()> {
+    append_log(conn, IGNORED_DELETIONS_KEY, new)
+}
+
+/// `append_ignored` for the capped log under `key`.
+fn append_log(conn: &Connection, key: &str, new: &[(RecordKind, Id)]) -> Result<()> {
     if new.is_empty() {
         return Ok(());
     }
-    let mut entries = ignored_in(conn).unwrap_or_default();
+    let mut entries = log_in(conn, key).unwrap_or_default();
     let at = unix_now();
     entries.retain(|e| !new.contains(&(e.kind, e.id)));
     let mut fresh: Vec<(RecordKind, Id)> = Vec::with_capacity(new.len());
@@ -1145,7 +1275,7 @@ fn append_ignored(conn: &Connection, new: &[(RecordKind, Id)]) -> Result<()> {
     entries.drain(..excess);
     conn.execute(
         "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
-        params![IGNORED_DELETIONS_KEY, encode_ignored(&entries)],
+        params![key, encode_ignored(&entries)],
     )
     .map_err(store_err)?;
     Ok(())
@@ -1168,20 +1298,107 @@ fn device_state_in(conn: &Connection) -> Result<DeviceState> {
 }
 
 /// A remote deletion `commit_remote` ignores: account params and keysets
-/// (never deleted by a client in M2), the signed device and vault lists
-/// (never deleted by a client), and the vault key, meta or manifest of a
-/// vault the device has seen (no vault deletion in M2, R14).
-fn protected_from_remote_deletion(kind: RecordKind, id: &[u8], seen: &BTreeSet<Id>) -> bool {
+/// (never deleted by a client), the signed device and vault lists (never
+/// deleted by a client), and the vault key, meta or manifest of a vault the
+/// device has seen, unless the verified vault list marks that vault deleted
+/// (`deleted`, spec 4.5).
+fn protected_from_remote_deletion(
+    kind: RecordKind,
+    id: &[u8],
+    seen: &BTreeSet<Id>,
+    deleted: &BTreeSet<Id>,
+) -> bool {
     match kind {
         RecordKind::AccountParams
         | RecordKind::Keyset
         | RecordKind::DeviceList
         | RecordKind::VaultList => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
-            decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v))
+            decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v) && !deleted.contains(&v))
         }
         RecordKind::Item => false,
     }
+}
+
+/// The vaults the account's signed vault list marks deleted, as this store
+/// can prove it without an unlock: the pinned account (device state) gives
+/// the account id and identity; the `base` account params of that account,
+/// signed by that identity (`account::signed_params`), give the signing
+/// key; the vault list in `base`, and the one staged in `staged` (this
+/// batch), each count if it verifies under that key against the pinned
+/// chain state (`lists::verify`) and is the account's. Fail closed: no pin,
+/// no params, a list that does not verify, or any read error proves
+/// nothing (empty set, or that list skipped).
+fn deleted_vaults(conn: &Connection, staged: &[StagedRow]) -> BTreeSet<Id> {
+    proven_deleted(conn, staged).unwrap_or_default()
+}
+
+fn proven_deleted(conn: &Connection, staged: &[StagedRow]) -> Result<BTreeSet<Id>> {
+    let mut out = BTreeSet::new();
+    let Some(pin) = device_state_in(conn)?.pinned else {
+        return Ok(out);
+    };
+    let account = pin.account_id;
+    let Some(params) = row_data(conn, "base", RecordKind::AccountParams, account)? else {
+        return Ok(out);
+    };
+    let signing = signed_params(&params, Some(&pin))?.signing_pub;
+    let chain = chain_state_in(conn)?;
+    let base = row_data(conn, "base", RecordKind::VaultList, account)?;
+    let incoming = staged.iter().find_map(|(kind, id, _, data, _)| {
+        (*kind == i64::from(RecordKind::VaultList.code()) && id[..] == account.0[..])
+            .then_some(data.as_deref())
+            .flatten()
+    });
+    for bytes in [base.as_deref(), incoming].into_iter().flatten() {
+        let Ok(body) = verify::<VaultListEntry>(
+            &signing,
+            VAULT_LIST_DOMAIN,
+            bytes,
+            chain.vault_list.as_ref(),
+        ) else {
+            continue;
+        };
+        if body.account_id != account {
+            continue;
+        }
+        out.extend(
+            body.entries
+                .iter()
+                .filter(|e| e.deleted_at.is_some())
+                .map(|e| e.vault_id),
+        );
+    }
+    Ok(out)
+}
+
+/// The persisted chain state, or the default one.
+fn chain_state_in(conn: &Connection) -> Result<ChainState> {
+    let bytes: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            params![CHAIN_STATE_KEY],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(store_err)?;
+    bytes.map_or(Ok(ChainState::default()), |b| ChainState::decode(&b))
+}
+
+/// Remove the `deleted` vaults from the persisted `last_seen`.
+fn forget_seen(conn: &Connection, deleted: &BTreeSet<Id>) -> Result<()> {
+    let mut state = device_state_in(conn)?;
+    let before = state.last_seen.len();
+    state.last_seen.retain(|id, _| !deleted.contains(id));
+    if state.last_seen.len() == before {
+        return Ok(());
+    }
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+        params![DEVICE_STATE_KEY, state.encode()],
+    )
+    .map_err(store_err)?;
+    Ok(())
 }
 
 /// The pending rows of one vault, `?3`: its manifest (kind `?1`), its item
@@ -1328,56 +1545,87 @@ impl RecordStore for SyncStore {
         tx.commit()
     }
 
+    /// The conditional writes and the deletions (as `delete`) in one
+    /// transaction (or one savepoint of the open batch).
+    fn put_all_if_version_and_delete(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+    ) -> Result<()> {
+        for (r, _) in &writes {
+            check_size(&r.data)?;
+        }
+        let tx = self.write_tx()?;
+        for (r, expected) in &writes {
+            if effective_version(&tx, r.kind, r.id)? != *expected {
+                return Err(Error::Conflict);
+            }
+            write_pending(&tx, r)?;
+        }
+        for (kind, id) in deletes {
+            delete_in(&tx, kind, id)?;
+        }
+        tx.commit()
+    }
+
     /// A signed list record is never deleted (spec 4.2: the lists only
     /// grow): `InvalidFormat("list record deletion")`, nothing written.
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
-        if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
-            return Err(Error::InvalidFormat("list record deletion"));
-        }
         let tx = self.write_tx()?;
-        let base_row: Option<(i64, Option<Vec<u8>>)> = tx
-            .query_row(
-                "SELECT version, substr(data, 1, 16) FROM base WHERE kind = ?1 AND id = ?2",
-                params![kind.code(), &id.0[..]],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()
-            .map_err(store_err)?;
-        match base_row {
-            // Known to the server: a tombstone carrying the deleted version.
-            Some((version, prefix)) => {
-                // An item tombstone keeps its vault, for holding and dropping.
-                let vault = if kind == RecordKind::Item {
-                    prefix
-                } else {
-                    None
-                };
-                if keeps_ancestor(kind) {
-                    tx.execute(
-                        "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
-                         SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
-                        params![kind.code(), &id.0[..]],
-                    )
-                    .map_err(store_err)?;
-                }
+        delete_in(&tx, kind, id)?;
+        tx.commit()
+    }
+}
+
+/// `SyncStore::delete` inside an open write transaction: a row known to the
+/// server becomes a pending tombstone carrying the deleted version, a local
+/// only row vanishes.
+fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
+    if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+        return Err(Error::InvalidFormat("list record deletion"));
+    }
+    let base_row: Option<(i64, Option<Vec<u8>>)> = tx
+        .query_row(
+            "SELECT version, substr(data, 1, 16) FROM base WHERE kind = ?1 AND id = ?2",
+            params![kind.code(), &id.0[..]],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(store_err)?;
+    match base_row {
+        // Known to the server: a tombstone carrying the deleted version.
+        Some((version, prefix)) => {
+            // An item tombstone keeps its vault, for holding and dropping.
+            let vault = if kind == RecordKind::Item {
+                prefix
+            } else {
+                None
+            };
+            if keeps_ancestor(kind) {
                 tx.execute(
-                    "INSERT OR REPLACE INTO pending (kind, id, version, data, vault)
-                     VALUES (?1, ?2, ?3, NULL, ?4)",
-                    params![kind.code(), &id.0[..], version, vault],
-                )
-                .map_err(store_err)?;
-            }
-            // Local only: it vanishes.
-            None => {
-                tx.execute(
-                    "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+                    "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
+                     SELECT kind, id, version, data FROM base WHERE kind = ?1 AND id = ?2",
                     params![kind.code(), &id.0[..]],
                 )
                 .map_err(store_err)?;
             }
+            tx.execute(
+                "INSERT OR REPLACE INTO pending (kind, id, version, data, vault)
+                 VALUES (?1, ?2, ?3, NULL, ?4)",
+                params![kind.code(), &id.0[..], version, vault],
+            )
+            .map_err(store_err)?;
         }
-        tx.commit()
+        // Local only: it vanishes.
+        None => {
+            tx.execute(
+                "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+                params![kind.code(), &id.0[..]],
+            )
+            .map_err(store_err)?;
+        }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1749,6 +1997,41 @@ mod tests {
                 (RecordKind::Keyset, false),
             ]
         );
+    }
+
+    #[test]
+    fn dropping_vault_writes_keeps_tombstones_and_logs_once() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let item = Id::new();
+        seed_base(&mut s, RecordKind::Manifest, vault, 1, b"m1".to_vec());
+        s.put(rec(vault, RecordKind::Manifest, 2, b"m2")).unwrap();
+        s.put(rec(item, RecordKind::Item, 1, &item_data(vault, b"1")))
+            .unwrap();
+        s.put(rec(vault, RecordKind::VaultMeta, 2, b"vm")).unwrap();
+        let tomb = Id::new();
+        seed_base(&mut s, RecordKind::Item, tomb, 1, item_data(vault, b"t"));
+        s.delete(RecordKind::Item, tomb).unwrap();
+        // Another vault's write stays.
+        let other = Id::new();
+        s.put(rec(other, RecordKind::Manifest, 1, b"o")).unwrap();
+
+        // The writes go, the tombstone stays, logged once.
+        assert!(s.drop_pending_vault_writes(vault).unwrap());
+        assert!(!s.drop_pending_vault_writes(vault).unwrap());
+        assert_eq!(count(&s, "pending"), 2);
+        assert_eq!(count(&s, "ancestor"), 0);
+        let log = s.dropped_vault_writes().unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].vault_id, vault);
+        s.clear_dropped_vault_writes().unwrap();
+        assert!(s.dropped_vault_writes().unwrap().is_empty());
+    }
+
+    #[test]
+    fn no_vault_deletion_proven_without_a_pin() {
+        let s = SyncStore::open_in_memory().unwrap();
+        assert!(deleted_vaults(&s.conn, &[]).is_empty());
     }
 
     #[test]

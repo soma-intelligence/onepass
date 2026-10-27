@@ -71,3 +71,8 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "signed_lists"
 required-features = ["dev-fast-kdf"]
+
+# Vault deletion across devices, fast-KDF accounts: needs the dev floor.
+[[test]]
+name = "vault_deletion"
+required-features = ["dev-fast-kdf"]

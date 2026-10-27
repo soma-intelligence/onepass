@@ -94,6 +94,25 @@ pub trait RecordStore {
         Ok(())
     }
 
+    /// `put_all_if_version`, then delete every `(kind, id)` of `deletes` in
+    /// order, all or nothing where the store can: on a conflict nothing is
+    /// written or deleted (`Error::Conflict`). The default writes then
+    /// deletes, which is atomic only for a store whose `put` and `delete`
+    /// cannot fail (in memory); a persistent store overrides it with one
+    /// transaction (`SqliteStore`, `SyncStore`). A deletion the store
+    /// refuses (a signed list record) fails the whole call there.
+    fn put_all_if_version_and_delete(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+    ) -> Result<()> {
+        self.put_all_if_version(writes)?;
+        for (kind, id) in deletes {
+            self.delete(kind, id)?;
+        }
+        Ok(())
+    }
+
     /// The pinned chain state this store keeps for the device, read by the
     /// `Repository` unlock functions. Only `SyncStore` persists one (meta key
     /// `chain`); other stores give the default, so each session pins on

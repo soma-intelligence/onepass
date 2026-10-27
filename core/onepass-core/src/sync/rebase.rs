@@ -84,16 +84,21 @@ impl Plan {
 
 impl Repository<SyncStore> {
     /// Save the device state and the chain state in the store, together
-    /// (`SyncStore::set_device_state`, `SyncStore::set_chain_state`).
+    /// (`SyncStore::set_device_state`, `SyncStore::set_chain_state`). The
+    /// vaults the signed vault list marks deleted leave `last_seen` first.
     pub fn persist_device_state(&mut self) -> Result<()> {
+        self.forget_deleted_vaults();
         self.store
             .set_device_and_chain_state(&self.device, &self.chain)
     }
 
-    /// Rebase every held vault (see the module doc) and return their ids,
-    /// then every held signed list. Each vault and each list is tried, in
-    /// one transaction with the device state; a failing one does not stop
-    /// the others. The device state is persisted again at the end.
+    /// Rebase every held signed list, then drop the pending writes into the
+    /// vaults the signed vault list marks deleted (spec 4.5: a write into a
+    /// vault deleted elsewhere is abandoned, and logged in
+    /// `SyncStore::dropped_vault_writes`), then rebase every held vault (see
+    /// the module doc) and return their ids. Each list and each vault is
+    /// tried, in one transaction with the device state; a failing one does
+    /// not stop the others. The device state is persisted again at the end.
     ///
     /// Errors, the first one met after trying every vault: a local
     /// manifest that does not descend from its ancestor, or a server
@@ -102,17 +107,7 @@ impl Repository<SyncStore> {
     /// error keeps its pending writes and stays held; the others stay
     /// rebased.
     pub fn rebase(&mut self) -> Result<Vec<Id>> {
-        let held = self.store.vaults_needing_rebase()?;
-        let mut rebased = Vec::new();
         let mut first_error = None;
-        for v in held {
-            match self.rebase_vault(v) {
-                Ok(()) => rebased.push(v),
-                Err(e) => {
-                    first_error.get_or_insert(e);
-                }
-            }
-        }
         for (kind, _) in self.store.lists_needing_rebase()? {
             let result = match kind {
                 RecordKind::DeviceList => self.rebase_list::<DeviceEntry>(),
@@ -122,11 +117,38 @@ impl Repository<SyncStore> {
                 first_error.get_or_insert(e);
             }
         }
+        if let Err(e) = self.drop_deleted_vault_writes() {
+            first_error.get_or_insert(e);
+        }
+        let held = self.store.vaults_needing_rebase()?;
+        let mut rebased = Vec::new();
+        for v in held {
+            match self.rebase_vault(v) {
+                Ok(()) => rebased.push(v),
+                Err(e) => {
+                    first_error.get_or_insert(e);
+                }
+            }
+        }
         let persisted = self.persist_device_state();
         match first_error {
             Some(e) => Err(e),
             None => persisted.map(|()| rebased),
         }
+    }
+
+    /// Drop the pending writes into every vault the verified vault list
+    /// marks deleted (`SyncStore::drop_pending_vault_writes`, logged there),
+    /// and forget those vaults' last manifest seen.
+    fn drop_deleted_vault_writes(&mut self) -> Result<()> {
+        let Some(list) = self.read_list::<VaultListEntry>()? else {
+            return Ok(());
+        };
+        for e in list.body.entries.iter().filter(|e| e.deleted_at.is_some()) {
+            self.store.drop_pending_vault_writes(e.vault_id)?;
+            self.device.last_seen.remove(&e.vault_id);
+        }
+        Ok(())
     }
 
     fn rebase_vault(&mut self, v: Id) -> Result<()> {

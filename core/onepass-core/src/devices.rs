@@ -213,6 +213,10 @@ impl<S: RecordStore> Repository<S> {
         }
         if let Some(v) = &vault_list {
             self.chain.vault_list = Some(v.body.seen());
+            // A vault deleted (here or elsewhere) is no longer remembered.
+            for e in v.body.entries.iter().filter(|e| e.deleted_at.is_some()) {
+                self.device.last_seen.remove(&e.vault_id);
+            }
         }
         let registers = self.store.persists_chain();
         let mut chain = self.chain.clone();

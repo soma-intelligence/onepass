@@ -8,7 +8,10 @@
 //! list (created by a client from before the list) is accepted, and added
 //! to the list by the next call that brings the lists up to date
 //! (adoption, see `devices`). `create_vault` adds its entry in the same
-//! write as the vault.
+//! write as the vault; `delete_vault` marks it deleted in the same write as
+//! the deletion of the vault's rows, and the sync store accepts the remote
+//! deletion of a vault's rows only for a vault the verified list marks
+//! deleted (spec 4.5).
 
 use serde::{Deserialize, Serialize};
 

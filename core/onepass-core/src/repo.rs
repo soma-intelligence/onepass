@@ -571,6 +571,89 @@ impl<S: RecordStore> Repository<S> {
         Ok(vault)
     }
 
+    /// Delete a vault (spec 4.5, ruling B8). Refused while it holds a live
+    /// or archived item (`InvalidFormat("vault not empty")`: the user
+    /// empties it first), and for the last live vault of the account
+    /// (`InvalidFormat("last vault")`). A vault that is not among `vaults()`
+    /// (already deleted, or never there) is `NotFound`; `vaults()` and the
+    /// verified load of the vault report their own faults first.
+    ///
+    /// Otherwise, in one write (`RecordStore::put_all_if_version_and_delete`):
+    /// the next vault list with the vault marked deleted, then the deletion
+    /// of its key, meta and manifest and of every item record of the vault
+    /// (the trashed items are purged with it, ignored leftovers too). The
+    /// list goes first: on a store where the write is not atomic, a cut
+    /// leaves rows of a vault the list marks deleted, which `vaults()` no
+    /// longer returns or expects. The vault leaves `last_seen`. A list
+    /// changed by another writer meanwhile is `Error::Conflict`, and nothing
+    /// is written. On an account without a vault list (from before it), the
+    /// lists are first brought up to date.
+    pub fn delete_vault(&mut self, vault: &Vault) -> Result<()> {
+        if self.read_list::<VaultListEntry>()?.is_none() {
+            self.maintain_lists(None)?;
+        }
+        if !self.vaults()?.iter().any(|v| v.id == vault.id) {
+            return Err(Error::NotFound);
+        }
+        let list = self.read_list::<VaultListEntry>()?.ok_or(Error::NotFound)?;
+        let others_live = list
+            .body
+            .entries
+            .iter()
+            .any(|e| e.vault_id != vault.id && e.deleted_at.is_none());
+        if !others_live {
+            return Err(Error::InvalidFormat("last vault"));
+        }
+        let loaded = self.load(vault)?;
+        for (_, rec) in &loaded.records {
+            if vault.open_item(rec)?.trashed_at.is_none() {
+                return Err(Error::InvalidFormat("vault not empty"));
+            }
+        }
+
+        let at = now();
+        let mut entries = list.body.entries.clone();
+        match entries.iter_mut().find(|e| e.vault_id == vault.id) {
+            Some(e) => e.deleted_at = Some(at),
+            None => entries.push(VaultListEntry {
+                vault_id: vault.id,
+                created_at: at,
+                deleted_at: Some(at),
+            }),
+        }
+        let (rec, expected, body) = self.list_write(Some(&list), entries)?;
+        let mut deletes: Vec<(RecordKind, Id)> = [
+            RecordKind::VaultKey,
+            RecordKind::VaultMeta,
+            RecordKind::Manifest,
+        ]
+        .into_iter()
+        .map(|kind| (kind, vault.id))
+        .collect();
+        for r in self.store.list(RecordKind::Item)? {
+            if split_item_record(&r.data).is_ok_and(|(prefix, _)| prefix == vault.id) {
+                deletes.push((RecordKind::Item, r.id));
+            }
+        }
+        self.store
+            .put_all_if_version_and_delete(vec![(rec, expected)], deletes)?;
+        self.chain.vault_list = Some(body.seen());
+        self.device.last_seen.remove(&vault.id);
+        Ok(())
+    }
+
+    /// Forget the last manifest seen of every vault the signed vault list
+    /// marks deleted: a vault deleted (here or elsewhere) is no longer
+    /// remembered. Best effort: a list that does not verify changes nothing
+    /// here, `vaults()` reports it.
+    pub(crate) fn forget_deleted_vaults(&mut self) {
+        if let Ok(Some(list)) = self.read_list::<VaultListEntry>() {
+            for e in list.body.entries.iter().filter(|e| e.deleted_at.is_some()) {
+                self.device.last_seen.remove(&e.vault_id);
+            }
+        }
+    }
+
     /// Replace the display settings of a vault (name, icon, color, flags).
     /// `vault` is the state the caller read: if the stored meta is no longer
     /// the same, another writer got there first and the result is

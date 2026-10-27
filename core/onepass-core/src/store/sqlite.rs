@@ -123,6 +123,22 @@ impl RecordStore for SqliteStore {
         tx.commit().map_err(store_err)
     }
 
+    /// The conditional writes and the deletions in one transaction.
+    fn put_all_if_version_and_delete(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+    ) -> Result<()> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        for (r, expected) in &writes {
+            put_if_version_on(&tx, r, *expected)?;
+        }
+        for (kind, id) in deletes {
+            delete_on(&tx, kind, id)?;
+        }
+        tx.commit().map_err(store_err)
+    }
+
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
         self.conn
             .query_row(
@@ -150,17 +166,22 @@ impl RecordStore for SqliteStore {
     /// A signed list record is never deleted (spec 4.2: the lists only
     /// grow): `InvalidFormat("list record deletion")`, nothing written.
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
-        if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
-            return Err(Error::InvalidFormat("list record deletion"));
-        }
-        self.conn
-            .execute(
-                "DELETE FROM records WHERE kind = ?1 AND id = ?2",
-                params![kind.code(), &id.0[..]],
-            )
-            .map_err(store_err)?;
-        Ok(())
+        delete_on(&self.conn, kind, id)
     }
+}
+
+/// `delete` on a connection or an open transaction. A signed list record is
+/// never deleted: `InvalidFormat("list record deletion")`.
+fn delete_on(conn: &Connection, kind: RecordKind, id: Id) -> Result<()> {
+    if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+        return Err(Error::InvalidFormat("list record deletion"));
+    }
+    conn.execute(
+        "DELETE FROM records WHERE kind = ?1 AND id = ?2",
+        params![kind.code(), &id.0[..]],
+    )
+    .map_err(store_err)?;
+    Ok(())
 }
 
 /// `put_if_version` on a connection or an open transaction.
