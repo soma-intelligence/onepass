@@ -561,7 +561,15 @@ mod mcp {
         let host = start(&fx, ui.clone());
         let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
         initialize(&mut r);
-        let clients = fx.session.clone().paired_clients(fx.data()).unwrap();
+        // Pairing runs beside the session: wait for the user's answer.
+        let mut clients = Vec::new();
+        for _ in 0..200 {
+            clients = fx.session.clone().paired_clients(fx.data()).unwrap();
+            if !clients.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
         assert_eq!(clients.len(), 1);
         assert_eq!(clients[0].id, "team:TEAMID0001:com.exemple.agent");
 
@@ -648,6 +656,7 @@ mod mcp {
         let host = start(&fx, ui);
         let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
         initialize(&mut r);
+        std::thread::sleep(std::time::Duration::from_millis(300));
         let listed = r.call(
             2,
             "tools/call",

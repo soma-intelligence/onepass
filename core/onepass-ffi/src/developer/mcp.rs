@@ -301,7 +301,18 @@ fn connection(stream: UnixStream, ctx: &Ctx) {
     let Some(RelayToApp::Hello { client, .. }) = hello else {
         return;
     };
-    let client = client.map(|c| admit(ctx, c));
+    // Pairing waits for the user: it runs beside the session, so the
+    // client's `initialize` is answered at once. The registry is read again
+    // at every tool call, so calls made after the user agreed are served.
+    let client = client.map(|c| {
+        let context = c.context();
+        let (ctx, hello) = (ctx.clone(), c);
+        let _ = thread::Builder::new()
+            .name("onepass-mcp-pair".into())
+            .stack_size(SERVER_STACK)
+            .spawn(move || admit(&ctx, hello));
+        context
+    });
     let context = match client {
         Some(c) => c,
         // Unidentified: served, but no registry entry ever matches it, so
@@ -335,7 +346,7 @@ fn connection(stream: UnixStream, ctx: &Ctx) {
 /// Pairs a signed client the registry does not know, if the user agrees
 /// (the app checks presence too). Ad hoc and unsigned clients are only
 /// paired from the settings, by choosing their file.
-fn admit(ctx: &Ctx, hello: ClientHello) -> ClientContext {
+fn admit(ctx: &Ctx, hello: ClientHello) {
     let client = hello.context();
     let known = {
         let state = guard_state(&ctx.dir, &ctx.account);
@@ -364,7 +375,6 @@ fn admit(ctx: &Ctx, hello: ClientHello) -> ClientContext {
             refused(ctx, &client.label, "pair");
         }
     }
-    client
 }
 
 fn demux(
