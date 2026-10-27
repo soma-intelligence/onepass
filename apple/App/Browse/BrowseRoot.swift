@@ -9,6 +9,7 @@ struct BrowseRoot: View {
     @Environment(AppModel.self) private var model
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #endif
 
     var body: some View {
@@ -60,16 +61,34 @@ struct BrowseRoot: View {
                 if let toast = model.toast {
                     ToastBanner(toast: toast)
                         .padding(.bottom, 18)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .transition(toastTransition)
                         .id(toast)
                 }
             }
-            .animation(.snappy, value: model.toast)
+            .animation(toastAnimation, value: model.toast)
             // Not over the iPhone tabs: on iOS 27 this tap gesture swallows the taps of the navigation
             // links below it (rows, Réglages pages); the tabs note activity on navigation instead.
             .simultaneousGesture(
                 TapGesture().onEnded { model.session.noteActivity() },
                 including: handlesRevealInTabs ? .subviews : .all)
+    }
+
+    /// The toast rises from the bottom edge and leaves the same way. iPhone and iPad: a critically
+    /// damped spring, and only a fade with Reduce Motion.
+    private var toastTransition: AnyTransition {
+        #if os(iOS)
+        reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity)
+        #else
+        .move(edge: .bottom).combined(with: .opacity)
+        #endif
+    }
+
+    private var toastAnimation: Animation {
+        #if os(iOS)
+        reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.35, bounce: 0)
+        #else
+        .snappy
+        #endif
     }
 
     @ViewBuilder private var layout: some View {
