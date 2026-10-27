@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 
 use super::{
     Change, MAX_RECORD_BYTES, RemoteChange, STALE_ALERT_MAX_ROUNDS, STALE_ALERT_ROUNDS,
-    STALE_ALERT_SECONDS, STALE_CLEAR_ROUNDS,
+    STALE_ALERT_SECONDS, STALE_CLEAR_ROUNDS, STALE_MEMORY_ROUNDS,
 };
 use crate::format::STORE_USER_VERSION;
 use crate::repo::{DeviceState, split_item_record};
@@ -55,6 +55,12 @@ const HEALTH_VERSION: u8 = 1;
 /// `vault (16) | seq (8) | cause (1) | flags (1) | since (8) | rounds (4)
 /// | clean rounds (1)`.
 const HEALTH_ENTRY_BYTES: usize = 16 + 8 + 1 + 1 + 8 + 4 + 1;
+/// The count of the vaults cleared lately (see `HealthMemory`), next to
+/// the health map.
+const HEALTH_MEMORY_KEY: &str = "sync_health_memory";
+const HEALTH_MEMORY_VERSION: u8 = 1;
+/// `vault (16) | flags (1) | since (8) | rounds (4) | rounds left (1)`.
+const HEALTH_MEMORY_ENTRY_BYTES: usize = 16 + 1 + 8 + 4 + 1;
 const FETCH_MODE_KEY: &str = "zone.full_fetch";
 const FETCH_PLAIN: u8 = 1;
 const FETCH_RESET: u8 = 2;
@@ -967,14 +973,16 @@ impl SyncStore {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
         }
-        tx.execute("DELETE FROM meta WHERE key = ?1", params![HEALTH_KEY])
-            .map_err(store_err)?;
+        for key in [HEALTH_KEY, HEALTH_MEMORY_KEY] {
+            tx.execute("DELETE FROM meta WHERE key = ?1", params![key])
+                .map_err(store_err)?;
+        }
         tx.commit()
     }
 
     /// The vaults whose sync health is not `Ok`, with their entry.
     pub(crate) fn health(&self) -> Result<BTreeMap<Id, HealthEntry>> {
-        self.read(|c| Ok(health_in(c)))
+        self.read(health_in)
     }
 
     /// The vaults whose copy "keep this device" pushes over the server's:
@@ -986,7 +994,7 @@ impl SyncStore {
     pub(crate) fn keep_targets(&self) -> Result<Vec<Id>> {
         self.read(|c| {
             let mut out = Vec::new();
-            for (v, e) in health_in(c) {
+            for (v, e) in health_in(c)? {
                 let older = base_manifest(c, v)?.is_none_or(|(version, _)| version < e.seq);
                 if e.alert || older {
                     out.push(v);
@@ -1028,12 +1036,25 @@ impl SyncStore {
     /// `STALE_ALERT_MAX_ROUNDS` rounds whatever the clock says. A clock
     /// earlier than `since` moves `since` back: a clock set forward once
     /// cannot push the alert back.
+    ///
+    /// The clean mark is spent by the round that counts it: the next round
+    /// is clean only if a fresh clean load marks it again, so a round that
+    /// stopped before loading the vault (an epoch or vault list error)
+    /// counts as behind, not clean. A cleared vault's count is remembered
+    /// for `STALE_MEMORY_ROUNDS` rounds (`HealthMemory`).
     pub(crate) fn count_round(&mut self, now: i64) -> Result<()> {
         let tx = self.write_tx()?;
+        let mut memory = memory_in(&tx)?;
+        let memory_before = memory.clone();
+        memory.retain(|_, m| {
+            m.left = m.left.saturating_sub(1);
+            m.left > 0
+        });
         update_health(&tx, |map| {
             let mut cleared = Vec::new();
             for (v, e) in map.iter_mut() {
                 if e.clean {
+                    e.clean = false;
                     e.clean_rounds = e.clean_rounds.saturating_add(1);
                     if u32::from(e.clean_rounds) >= STALE_CLEAR_ROUNDS {
                         cleared.push(*v);
@@ -1055,10 +1076,22 @@ impl SyncStore {
                 }
             }
             for v in cleared {
-                map.remove(&v);
+                if let Some(e) = map.remove(&v) {
+                    memory.insert(
+                        v,
+                        HealthMemory {
+                            since: e.since,
+                            rounds: e.rounds,
+                            left: u8::try_from(STALE_MEMORY_ROUNDS).unwrap_or(u8::MAX),
+                        },
+                    );
+                }
             }
             true
         })?;
+        if memory != memory_before {
+            save_memory(&tx, &memory)?;
+        }
         tx.commit()
     }
 
@@ -1242,6 +1275,35 @@ impl HealthEntry {
     }
 }
 
+/// The count of a vault cleared after `STALE_CLEAR_ROUNDS` clean rounds,
+/// kept for `STALE_MEMORY_ROUNDS` rounds: found behind again meanwhile, the
+/// vault resumes it (`resume`) instead of starting from zero, so a store
+/// that rolls back once every few rounds cannot keep the alert away by
+/// letting the vault clear in between.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct HealthMemory {
+    since: Option<i64>,
+    rounds: u32,
+    /// Rounds before it is forgotten.
+    left: u8,
+}
+
+/// A vault found behind (or alerting) with no entry yet: its entry, which
+/// resumes the count of `memory` if it was cleared lately.
+fn resume(
+    memory: &mut BTreeMap<Id, HealthMemory>,
+    vault: Id,
+    seq: u64,
+    cause: IntegrityError,
+) -> HealthEntry {
+    let mut e = HealthEntry::new(seq, cause);
+    if let Some(m) = memory.remove(&vault) {
+        e.since = m.since;
+        e.rounds = m.rounds;
+    }
+    e
+}
+
 /// The code of an `IntegrityError` persisted in the health map. Exhaustive:
 /// a new variant does not compile until it gets its code.
 fn cause_code(e: IntegrityError) -> u8 {
@@ -1305,48 +1367,133 @@ fn encode_health(map: &BTreeMap<Id, HealthEntry>) -> Vec<u8> {
     out
 }
 
-fn decode_health(bytes: &[u8]) -> Option<BTreeMap<Id, HealthEntry>> {
-    let (&version, rest) = bytes.split_first()?;
+fn health_unreadable() -> Error {
+    Error::Store("sync health unreadable".into())
+}
+
+/// Decodes the health map. Fails closed: a map of another version or
+/// length is an error (never an empty map, which would hide every alert),
+/// and an entry with an unknown cause code is kept as an alert.
+fn decode_health(bytes: &[u8]) -> Result<BTreeMap<Id, HealthEntry>> {
+    let (&version, rest) = bytes.split_first().ok_or_else(health_unreadable)?;
     if version != HEALTH_VERSION {
-        return None;
+        return Err(health_unreadable());
     }
     let (entries, tail) = rest.as_chunks::<HEALTH_ENTRY_BYTES>();
     if !tail.is_empty() {
-        return None;
+        return Err(health_unreadable());
     }
     let mut map = BTreeMap::new();
     for c in entries {
-        let v = Id(c[0..16].try_into().ok()?);
+        let mut id = [0; 16];
+        id.copy_from_slice(&c[0..16]);
+        let mut seq = [0; 8];
+        seq.copy_from_slice(&c[16..24]);
         let flags = c[25];
-        let since = i64::from_be_bytes(c[26..34].try_into().ok()?);
+        let mut since = [0; 8];
+        since.copy_from_slice(&c[26..34]);
+        let mut rounds = [0; 4];
+        rounds.copy_from_slice(&c[34..38]);
+        let cause = cause_of(c[24]);
         map.insert(
-            v,
+            Id(id),
             HealthEntry {
-                seq: u64::from_be_bytes(c[16..24].try_into().ok()?),
-                cause: cause_of(c[24])?,
-                since: (flags & HEALTH_SINCE != 0).then_some(since),
-                rounds: u32::from_be_bytes(c[34..38].try_into().ok()?),
+                seq: u64::from_be_bytes(seq),
+                cause: cause.unwrap_or(IntegrityError::ManifestRollback),
+                since: (flags & HEALTH_SINCE != 0).then_some(i64::from_be_bytes(since)),
+                rounds: u32::from_be_bytes(rounds),
                 awaiting: flags & HEALTH_AWAITING != 0,
-                alert: flags & HEALTH_ALERT != 0,
+                alert: cause.is_none() || flags & HEALTH_ALERT != 0,
                 clean: flags & HEALTH_CLEAN != 0,
                 clean_rounds: c[38],
             },
         );
     }
-    Some(map)
+    Ok(map)
 }
 
-/// The health map in `meta`. An unreadable one (edited file) reads as
-/// empty: the next round finds the vaults behind again.
-fn health_in(conn: &Connection) -> BTreeMap<Id, HealthEntry> {
-    conn.query_row(
-        "SELECT value FROM meta WHERE key = ?1",
-        params![HEALTH_KEY],
-        |r| r.get::<_, Vec<u8>>(0),
-    )
-    .ok()
-    .and_then(|b| decode_health(&b))
-    .unwrap_or_default()
+/// The value of `key` in `meta`, if any.
+fn meta_in(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>> {
+    conn.query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+        r.get::<_, Vec<u8>>(0)
+    })
+    .optional()
+    .map_err(store_err)
+}
+
+/// The health map in `meta`; empty when there is none. An unreadable one
+/// (edited file) is an error, not an empty map.
+fn health_in(conn: &Connection) -> Result<BTreeMap<Id, HealthEntry>> {
+    match meta_in(conn, HEALTH_KEY)? {
+        Some(b) => decode_health(&b),
+        None => Ok(BTreeMap::new()),
+    }
+}
+
+fn encode_memory(map: &BTreeMap<Id, HealthMemory>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(1 + map.len() * HEALTH_MEMORY_ENTRY_BYTES);
+    out.push(HEALTH_MEMORY_VERSION);
+    for (v, m) in map {
+        out.extend_from_slice(&v.0);
+        out.push(if m.since.is_some() { HEALTH_SINCE } else { 0 });
+        out.extend_from_slice(&m.since.unwrap_or(0).to_be_bytes());
+        out.extend_from_slice(&m.rounds.to_be_bytes());
+        out.push(m.left);
+    }
+    out
+}
+
+/// Decodes the memory of cleared vaults; fails closed like `decode_health`.
+fn decode_memory(bytes: &[u8]) -> Result<BTreeMap<Id, HealthMemory>> {
+    let (&version, rest) = bytes.split_first().ok_or_else(health_unreadable)?;
+    if version != HEALTH_MEMORY_VERSION {
+        return Err(health_unreadable());
+    }
+    let (entries, tail) = rest.as_chunks::<HEALTH_MEMORY_ENTRY_BYTES>();
+    if !tail.is_empty() {
+        return Err(health_unreadable());
+    }
+    let mut map = BTreeMap::new();
+    for c in entries {
+        let mut id = [0; 16];
+        id.copy_from_slice(&c[0..16]);
+        let mut since = [0; 8];
+        since.copy_from_slice(&c[17..25]);
+        let mut rounds = [0; 4];
+        rounds.copy_from_slice(&c[25..29]);
+        map.insert(
+            Id(id),
+            HealthMemory {
+                since: (c[16] & HEALTH_SINCE != 0).then_some(i64::from_be_bytes(since)),
+                rounds: u32::from_be_bytes(rounds),
+                left: c[29],
+            },
+        );
+    }
+    Ok(map)
+}
+
+fn memory_in(conn: &Connection) -> Result<BTreeMap<Id, HealthMemory>> {
+    match meta_in(conn, HEALTH_MEMORY_KEY)? {
+        Some(b) => decode_memory(&b),
+        None => Ok(BTreeMap::new()),
+    }
+}
+
+fn save_memory(conn: &Connection, map: &BTreeMap<Id, HealthMemory>) -> Result<()> {
+    if map.is_empty() {
+        conn.execute(
+            "DELETE FROM meta WHERE key = ?1",
+            params![HEALTH_MEMORY_KEY],
+        )
+    } else {
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+            params![HEALTH_MEMORY_KEY, encode_memory(map)],
+        )
+    }
+    .map_err(store_err)?;
+    Ok(())
 }
 
 /// Apply `f` to the health map and save it if `f` says it changed.
@@ -1354,7 +1501,7 @@ fn update_health(
     conn: &Connection,
     f: impl FnOnce(&mut BTreeMap<Id, HealthEntry>) -> bool,
 ) -> Result<()> {
-    let mut map = health_in(conn);
+    let mut map = health_in(conn)?;
     if !f(&mut map) {
         return Ok(());
     }
@@ -1695,7 +1842,7 @@ impl RecordStore for SyncStore {
                         |r| r.get(0),
                     )
                     .map_err(store_err)?;
-                Ok(!kept && !health_in(c).contains_key(&vault))
+                Ok(!kept && !health_in(c)?.contains_key(&vault))
             })?;
             if idle {
                 return Ok(());
@@ -1717,13 +1864,22 @@ impl RecordStore for SyncStore {
                     _ => false,
                 })?;
             }
-            VaultEvent::Behind { seq, cause } => update_health(&tx, |map| {
-                let e = map.entry(vault).or_insert(HealthEntry::new(seq, cause));
-                e.seq = e.seq.max(seq);
-                e.cause = cause;
-                e.dirty();
-                true
-            })?,
+            VaultEvent::Behind { seq, cause } => {
+                let mut memory = memory_in(&tx)?;
+                let resumed = memory.contains_key(&vault);
+                update_health(&tx, |map| {
+                    let e = map
+                        .entry(vault)
+                        .or_insert_with(|| resume(&mut memory, vault, seq, cause));
+                    e.seq = e.seq.max(seq);
+                    e.cause = cause;
+                    e.dirty();
+                    true
+                })?;
+                if resumed && !memory.contains_key(&vault) {
+                    save_memory(&tx, &memory)?;
+                }
+            }
             VaultEvent::CaughtUp => {
                 // The rebase verified the server's newer state: a clean
                 // round, settled like the others.
@@ -1736,14 +1892,23 @@ impl RecordStore for SyncStore {
                     _ => false,
                 })?;
             }
-            VaultEvent::Alert { seq, cause } => update_health(&tx, |map| {
-                let e = map.entry(vault).or_insert(HealthEntry::new(seq, cause));
-                e.seq = e.seq.max(seq);
-                e.cause = cause;
-                e.alert = true;
-                e.dirty();
-                true
-            })?,
+            VaultEvent::Alert { seq, cause } => {
+                let mut memory = memory_in(&tx)?;
+                let resumed = memory.contains_key(&vault);
+                update_health(&tx, |map| {
+                    let e = map
+                        .entry(vault)
+                        .or_insert_with(|| resume(&mut memory, vault, seq, cause));
+                    e.seq = e.seq.max(seq);
+                    e.cause = cause;
+                    e.alert = true;
+                    e.dirty();
+                    true
+                })?;
+                if resumed && !memory.contains_key(&vault) {
+                    save_memory(&tx, &memory)?;
+                }
+            }
         }
         tx.commit()
     }
@@ -2747,22 +2912,183 @@ mod tests {
         // Persisted as is.
         assert_eq!(
             decode_health(&encode_health(&s.health().unwrap())),
-            Some(s.health().unwrap())
+            Ok(s.health().unwrap())
         );
         // Served back, loaded cleanly: settled after `STALE_CLEAR_ROUNDS`
         // clean rounds in a row, not one.
         seed_base(&mut s, RecordKind::Manifest, vault, 3, b"m3".to_vec());
-        for _ in 1..STALE_CLEAR_ROUNDS {
+        for i in 1..STALE_CLEAR_ROUNDS {
             s.vault_event(vault, VaultEvent::Clean).unwrap();
             s.count_round(1000).unwrap();
-            assert!(s.health().unwrap()[&vault].clean);
+            let e = s.health().unwrap()[&vault];
+            assert_eq!(u32::from(e.clean_rounds), i);
         }
         s.vault_event(vault, VaultEvent::Clean).unwrap();
         s.count_round(1000).unwrap();
         assert!(s.health().unwrap().is_empty());
-        // An unreadable map reads as empty.
+        // An unreadable map is an error, never an empty map that would hide
+        // every alert.
         s.set_meta(HEALTH_KEY, &[HEALTH_VERSION, 1, 2]).unwrap();
+        assert!(matches!(s.health(), Err(Error::Store(_))));
+        s.set_meta(HEALTH_KEY, &[HEALTH_VERSION + 1]).unwrap();
+        assert!(matches!(s.health(), Err(Error::Store(_))));
+        assert!(matches!(s.count_round(2000), Err(Error::Store(_))));
+    }
+
+    #[test]
+    fn periodic_rollback_still_alerts() {
+        // The server rolls the vault back every `STALE_CLEAR_ROUNDS + 1`-th
+        // round and serves it cleanly in between: just enough clean rounds
+        // to clear the entry each time. The count resumes across the clears.
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let cause = IntegrityError::ManifestRollback;
+        let period = STALE_CLEAR_ROUNDS + 1;
+        let mut alerts = 0;
+        for round in 0..60u32 {
+            if round % period == 0 {
+                s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+                    .unwrap();
+            } else {
+                s.vault_event(vault, VaultEvent::Clean).unwrap();
+            }
+            s.count_round(1_793_000_000 + 100 * i64::from(round))
+                .unwrap();
+            if s.health().unwrap().get(&vault).is_some_and(|e| e.alert) {
+                alerts += 1;
+            }
+        }
+        assert!(alerts > 0, "a periodic rollback never alerted");
+        // Forgotten after `STALE_MEMORY_ROUNDS` rounds without a rollback.
+        let mut s = SyncStore::open_in_memory().unwrap();
+        s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        s.count_round(0).unwrap();
+        for _ in 0..STALE_CLEAR_ROUNDS {
+            s.vault_event(vault, VaultEvent::Clean).unwrap();
+            s.count_round(0).unwrap();
+        }
         assert!(s.health().unwrap().is_empty());
+        assert_eq!(memory_in(&s.conn).unwrap()[&vault].rounds, 1);
+        for _ in 0..STALE_MEMORY_ROUNDS {
+            s.count_round(0).unwrap();
+        }
+        assert!(memory_in(&s.conn).unwrap().is_empty());
+        s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        assert_eq!(s.health().unwrap()[&vault].rounds, 0);
+    }
+
+    #[test]
+    fn clean_mark_is_spent_by_each_round() {
+        // One clean load, then rounds that stop early (an epoch or vault
+        // list error) and never load the vault: they are not clean rounds.
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let vault = Id::new();
+        let cause = IntegrityError::ManifestRollback;
+        s.vault_event(vault, VaultEvent::Behind { seq: 3, cause })
+            .unwrap();
+        s.count_round(100).unwrap();
+        s.vault_event(vault, VaultEvent::Clean).unwrap();
+        s.count_round(200).unwrap();
+        let e = s.health().unwrap()[&vault];
+        assert_eq!((e.clean, e.clean_rounds), (false, 1));
+        for i in 0..STALE_CLEAR_ROUNDS {
+            s.count_round(300 + i64::from(i)).unwrap();
+        }
+        let e = s.health().unwrap()[&vault];
+        assert_eq!((e.clean, e.clean_rounds), (false, 0));
+        assert_eq!(e.rounds, 1 + STALE_CLEAR_ROUNDS);
+    }
+
+    /// Every `IntegrityError`, kept complete by `exhaustive`.
+    const ALL_CAUSES: [IntegrityError; 13] = [
+        IntegrityError::Commitment,
+        IntegrityError::Aead,
+        IntegrityError::Signature,
+        IntegrityError::ManifestRollback,
+        IntegrityError::ManifestMissingItem,
+        IntegrityError::ManifestUnexpectedItem,
+        IntegrityError::ManifestItemMismatch,
+        IntegrityError::ParamsUnsigned,
+        IntegrityError::ParamsDowngrade,
+        IntegrityError::WrongKind,
+        IntegrityError::WrongContext,
+        IntegrityError::VaultMissing,
+        IntegrityError::EpochRollback,
+    ];
+
+    /// Does not compile once a variant is added: add it to `ALL_CAUSES`.
+    fn exhaustive(e: IntegrityError) {
+        match e {
+            IntegrityError::Commitment
+            | IntegrityError::Aead
+            | IntegrityError::Signature
+            | IntegrityError::ManifestRollback
+            | IntegrityError::ManifestMissingItem
+            | IntegrityError::ManifestUnexpectedItem
+            | IntegrityError::ManifestItemMismatch
+            | IntegrityError::ParamsUnsigned
+            | IntegrityError::ParamsDowngrade
+            | IntegrityError::WrongKind
+            | IntegrityError::WrongContext
+            | IntegrityError::VaultMissing
+            | IntegrityError::EpochRollback => {}
+        }
+    }
+
+    #[test]
+    fn health_cause_codes_round_trip_and_fail_closed() {
+        let mut codes = std::collections::BTreeSet::new();
+        for cause in ALL_CAUSES {
+            exhaustive(cause);
+            let code = cause_code(cause);
+            assert_eq!(cause_of(code), Some(cause));
+            assert!(codes.insert(code), "duplicate code {code}");
+            let mut map = BTreeMap::new();
+            let mut e = HealthEntry::new(7, cause);
+            e.since = Some(-5);
+            e.rounds = 9;
+            e.clean = true;
+            e.clean_rounds = 2;
+            map.insert(Id([3; 16]), e);
+            assert_eq!(decode_health(&encode_health(&map)), Ok(map));
+        }
+        for code in 0..=u8::MAX {
+            if let Some(cause) = cause_of(code) {
+                assert_eq!(cause_code(cause), code);
+            } else {
+                assert!(!codes.contains(&code));
+            }
+        }
+        // An unknown cause code keeps the entry, as an alert.
+        let mut map = BTreeMap::new();
+        map.insert(Id([4; 16]), HealthEntry::new(7, IntegrityError::Aead));
+        let mut bytes = encode_health(&map);
+        bytes[1 + 24] = 200;
+        let e = decode_health(&bytes).unwrap()[&Id([4; 16])];
+        assert!(e.alert);
+        assert_eq!(e.seq, 7);
+        // Memory round trip.
+        let mut memory = BTreeMap::new();
+        memory.insert(
+            Id([5; 16]),
+            HealthMemory {
+                since: Some(-1),
+                rounds: 4,
+                left: 3,
+            },
+        );
+        memory.insert(
+            Id([6; 16]),
+            HealthMemory {
+                since: None,
+                rounds: 0,
+                left: 1,
+            },
+        );
+        assert_eq!(decode_memory(&encode_memory(&memory)), Ok(memory));
+        assert!(decode_memory(&[HEALTH_MEMORY_VERSION, 0]).is_err());
     }
 
     #[test]

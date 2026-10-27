@@ -31,6 +31,13 @@ pub const STALE_ALERT_MAX_ROUNDS: u32 = 50;
 /// there, and the alert count keeps running.
 pub const STALE_CLEAR_ROUNDS: u32 = 3;
 
+/// Rounds a vault cleared after `STALE_CLEAR_ROUNDS` clean rounds keeps the
+/// count of its last stretch behind (`since`, rounds): found behind again
+/// within them, it resumes that count instead of starting over, so a store
+/// that rolls back once every `STALE_CLEAR_ROUNDS + 1` rounds still reaches
+/// the alert.
+pub const STALE_MEMORY_ROUNDS: u32 = 20;
+
 /// The sync state of one vault (`Repository::sync_health`). Not an
 /// integrity error by itself: only `Alert` is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
