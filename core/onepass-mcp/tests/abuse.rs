@@ -128,6 +128,7 @@ fn vault_name_shadowing_resolves_inside_mcp_only() {
         .insert(shadow.id.to_string(), Scope::ALL.into_iter().collect());
     let a = approver(vec![Decision::AllowOnce]);
     let audit = SharedAudit::default();
+    let guards = default_guards(repo);
     let mut t = McpTools::new(
         RepoPort(repo),
         p,
@@ -135,6 +136,7 @@ fn vault_name_shadowing_resolves_inside_mcp_only() {
         a.clone(),
         Box::new(audit.clone()),
         None,
+        guards,
     );
     let v = ok(call(
         &mut t,
@@ -372,6 +374,7 @@ fn flaky_tools(
 ) -> (McpTools<Flaky>, SharedAudit, Arc<Mutex<usize>>, Id) {
     let repo = repo();
     let dev = vault(repo, "Dev").id;
+    let guards = default_guards(repo);
     let hits = Arc::new(Mutex::new(0));
     let port = Flaky {
         inner: RepoPort(repo),
@@ -388,6 +391,7 @@ fn flaky_tools(
         approver,
         Box::new(audit.clone()),
         None,
+        guards,
     );
     (t, audit, hits, dev)
 }

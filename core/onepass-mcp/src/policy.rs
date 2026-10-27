@@ -5,7 +5,7 @@
 //! [`POLICY_DOMAIN`], signed by the account's local key: an agent with a
 //! shell can write the data directory but cannot grant itself a scope.
 
-use onepass_guard::{GuardError, LocalSigner, open_config, seal_config};
+use onepass_guard::{ClientRecord, GuardError, LocalSigner, open_config, seal_config};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -129,6 +129,53 @@ pub fn effective(policy: &Policy, narrowing: &Narrowing, vault_id: &str) -> BTre
     match &narrowing.scopes {
         Some(only) => granted.intersection(only).copied().collect(),
         None => granted,
+    }
+}
+
+/// Scopes a paired client may use, per vault id (spec section 4.1). A
+/// vault absent from the map is invisible to the client.
+pub type ClientScopes = BTreeMap<String, BTreeSet<Scope>>;
+
+/// The scopes of a client record: its `mcp_scopes`, unknown scope names
+/// dropped. A record without `mcp_scopes` gets none (fail closed).
+pub fn client_scopes(record: &ClientRecord) -> ClientScopes {
+    record
+        .mcp_scopes
+        .iter()
+        .flatten()
+        .map(|(vault, names)| {
+            (
+                vault.clone(),
+                names.iter().filter_map(|n| n.parse().ok()).collect(),
+            )
+        })
+        .collect()
+}
+
+/// The scopes given at pairing (spec section 3.3): `metadata` and `use` on
+/// each of `vault_ids` (the MCP vaults).
+pub fn default_client_scopes(vault_ids: impl IntoIterator<Item = String>) -> ClientScopes {
+    vault_ids
+        .into_iter()
+        .map(|v| (v, BTreeSet::from([Scope::Metadata, Scope::Use])))
+        .collect()
+}
+
+/// Scopes in force on `vault_id` for a paired client: [`effective`]
+/// (policy and launch narrowing) intersected with the client's scopes. A
+/// vault outside the client's scopes gets none.
+pub fn effective_for_client(
+    policy: &Policy,
+    narrowing: &Narrowing,
+    client: &ClientScopes,
+    vault_id: &str,
+) -> BTreeSet<Scope> {
+    match client.get(vault_id) {
+        Some(allowed) => effective(policy, narrowing, vault_id)
+            .intersection(allowed)
+            .copied()
+            .collect(),
+        None => BTreeSet::new(),
     }
 }
 
@@ -310,6 +357,59 @@ mod tests {
         );
         assert_eq!(effective(&p, &n, "other"), BTreeSet::new());
         assert_eq!(effective(&p, &n, "vault-b"), BTreeSet::new());
+    }
+
+    fn record(scopes: Option<BTreeMap<String, BTreeSet<String>>>) -> ClientRecord {
+        ClientRecord {
+            id: "team:T:x".into(),
+            surface: onepass_guard::Surface::Mcp,
+            label: "x".into(),
+            code: serde_json::Value::Null,
+            paired_at: 1,
+            mcp_scopes: scopes,
+            ssh_keys: None,
+        }
+    }
+
+    #[test]
+    fn client_scopes_intersect_policy_and_narrowing() {
+        let p = sample();
+        let names = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<BTreeSet<_>>();
+        let rec = record(Some(BTreeMap::from([
+            ("vault-a".to_owned(), names(&["reveal", "use", "bogus"])),
+            ("other".to_owned(), names(&["metadata", "use"])),
+        ])));
+        let c = client_scopes(&rec);
+        assert_eq!(c["vault-a"], BTreeSet::from([Scope::Use, Scope::Reveal]));
+        let none = Narrowing::default();
+        // Policy grants metadata+reveal on vault-a; the client use+reveal.
+        assert_eq!(
+            effective_for_client(&p, &none, &c, "vault-a"),
+            BTreeSet::from([Scope::Reveal])
+        );
+        // Defaults (metadata, use) on "other", the client asks both.
+        assert_eq!(
+            effective_for_client(&p, &none, &c, "other"),
+            BTreeSet::from([Scope::Metadata, Scope::Use])
+        );
+        // A vault absent from the client's scopes gets nothing.
+        assert_eq!(
+            effective_for_client(&p, &none, &c, "vault-z"),
+            BTreeSet::new()
+        );
+        // The narrowing still applies.
+        let n = Narrowing {
+            vaults: None,
+            scopes: Some(BTreeSet::from([Scope::Use])),
+        };
+        assert_eq!(
+            effective_for_client(&p, &n, &c, "other"),
+            BTreeSet::from([Scope::Use])
+        );
+        // No mcp_scopes at all: nothing.
+        assert!(client_scopes(&record(None)).is_empty());
+        let d = default_client_scopes(["a".to_owned()]);
+        assert_eq!(d["a"], BTreeSet::from([Scope::Metadata, Scope::Use]));
     }
 
     #[test]
