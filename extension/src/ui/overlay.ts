@@ -195,6 +195,8 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   /** The way the user clicked: the progress names its account until the worker reports it. */
   let picked: OverlayAccount | null = null;
   const unfolded = new Set<string>();
+  /** The other logins for this site, shown under the first one from the pill's dropdown. */
+  let showAll = false;
 
   const stopPolling = () => {
     if (timer !== null) timers.clearInterval(timer);
@@ -340,11 +342,35 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     picked = null;
     if (!init) return;
     const list = h("div", { class: "ov-accounts" });
-    init.accounts.forEach((a, i) => list.append(...wayRow(a, i === 0)));
+    init.accounts.forEach((a, i) => {
+      const rows = wayRow(a, i === 0);
+      // Only the first login shows in the pill; the others wait behind the dropdown.
+      if (i > 0 && !showAll) rows.forEach((r) => (r.hidden = true));
+      list.append(...rows);
+    });
     if (init.accounts.length === 0) list.append(messageBlock(tr(`Aucun login pour ${hostOf(init.origin)}`, `No login for ${hostOf(init.origin)}`)));
-    // A pill: the site, the account, one button, and the close button at the end.
+    const more = init.accounts.length - 1;
+    const label = showAll ? tr("Masquer les autres comptes", "Hide the other accounts") : tr(`${more} autre(s) compte(s)`, `${more} other account(s)`);
+    const dropdown =
+      more > 0
+        ? h(
+            "button",
+            {
+              class: `btn-icon ov-more${showAll ? " open" : ""}`,
+              attrs: { type: "button", "aria-expanded": String(showAll), "aria-label": label, title: label },
+              on: {
+                click: guard.wrap(() => {
+                  showAll = !showAll;
+                  renderIdle();
+                }),
+              },
+            },
+            icon("chevron", 10),
+          )
+        : null;
+    // A pill: the site, the account, one button; other accounts behind the dropdown; close on hover.
     const heading = h("h1", { class: "sr-only" }, tr(`Se connecter à ${hostOf(init.origin)}`, `Sign in to ${hostOf(init.origin)}`));
-    show(h("div", { class: "ov-pill" }, heading, list, closeButton()));
+    show(h("div", { class: `ov-pill${showAll ? " ov-pill-open" : ""}` }, heading, list, dropdown, closeButton()));
   }
 
   /** The way the chain runs with, as in the offer's row. */

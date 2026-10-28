@@ -285,11 +285,13 @@ struct AccountHeader: View {
                     .lineLimit(1)
                 if !compact { Spacer(minLength: 0) }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            // Same inset on the avatar's three sides: the circle is concentric with the capsule.
+            .padding(.leading, 5)
+            .padding(.trailing, 12)
+            .padding(.vertical, 5)
             .background(hovering || showingMenu ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear),
-                in: .rect(cornerRadius: 9))
-            .contentShape(.rect(cornerRadius: 9))
+                in: .capsule)
+            .contentShape(.capsule)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -325,7 +327,8 @@ struct AccountAvatar: View {
             .font(.system(size: size * 0.43, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
-            .background(Theme.accent.gradient, in: RoundedRectangle(cornerRadius: size / 4, style: .continuous))
+            // Round, so it sits concentric in the capsule of the account button.
+            .background(Theme.accent.gradient, in: Circle())
             .accessibilityHidden(true)
     }
 }

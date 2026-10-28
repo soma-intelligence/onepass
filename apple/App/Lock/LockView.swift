@@ -94,10 +94,6 @@ struct LockView: View {
             passwordField
                 .padding(.top, 26)
             status
-            actions
-                .padding(.top, 14)
-            footer
-                .padding(.top, 18)
         }
         .animation(.smooth(duration: 0.2), value: password.isEmpty)
         .animation(.smooth(duration: 0.2), value: message)
@@ -194,7 +190,14 @@ struct LockView: View {
             .visionHoverEffect()
             .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
             .accessibilityIdentifier("lock.reveal")
-            unlockButton
+            // One trailing slot: Touch ID (Face ID, Optic ID) while the field is empty, the
+            // arrow once something is typed. Everything lives in the one field.
+            if biometrics, password.isEmpty {
+                Divider().frame(height: Platform.isMac ? 18 : 22).padding(.horizontal, 2)
+                fieldBiometricButton
+            } else {
+                unlockButton
+            }
         }
         .padding(.leading, 14)
         .padding(.trailing, 6)
@@ -260,34 +263,8 @@ struct LockView: View {
 
     // MARK: - Actions
 
-    /// Unlocking with the password lives in the field (its arrow, or Return). Below it, only
-    /// biometrics: the big button while the field is empty, a link once something is typed.
-    @ViewBuilder private var actions: some View {
-        VStack(spacing: 10) {
-            if biometrics, password.isEmpty {
-                biometricButton
-            } else {
-                if biometrics {
-                    Button {
-                        Task { await unlockWithBiometrics(automatic: false) }
-                    } label: {
-                        Label("Utiliser \(OnboardingModel.biometryName)", systemImage: OnboardingModel.biometrySymbol)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(Theme.accent)
-                            .padding(.vertical, 4)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .visionHoverEffect()
-                    .disabled(unlocking)
-                    .accessibilityLabel(Text("Déverrouiller avec \(OnboardingModel.biometryName)"))
-                    .accessibilityIdentifier("lock.biometrics")
-                }
-            }
-        }
-    }
-
-    private var biometricButton: some View {
+    /// Touch ID inside the field, after a thin divider; its help text says when the password is due.
+    private var fieldBiometricButton: some View {
         Button {
             Task { await unlockWithBiometrics(automatic: false) }
         } label: {
@@ -295,19 +272,27 @@ struct LockView: View {
                 if unlocking {
                     ProgressView().controlSize(.small)
                 } else {
-                    Label("Déverrouiller avec \(OnboardingModel.biometryName)", systemImage: OnboardingModel.biometrySymbol)
+                    Image(systemName: OnboardingModel.biometrySymbol)
+                        .font(.system(size: Platform.isMac ? 18 : 22, weight: .regular))
+                        .foregroundStyle(Theme.accent)
                 }
             }
-            .font(.system(size: Platform.isMac ? 14 : 17, weight: .semibold))
-            .frame(maxWidth: .infinity)
-            .frame(height: Self.buttonHeight)
+            .frame(width: Platform.isMac ? 32 : 40, height: Self.fieldHeight)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.glassProminent)
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
+        .buttonStyle(.plain)
+        .visionHoverEffect()
         .disabled(unlocking)
+        .help(passwordDueText ?? String(localized: "Déverrouiller avec \(OnboardingModel.biometryName)"))
         .accessibilityLabel(Text("Déverrouiller avec \(OnboardingModel.biometryName)"))
         .accessibilityIdentifier("lock.biometrics")
+    }
+
+    private var passwordDueText: String? {
+        guard let days = daysUntilPassword else { return nil }
+        return days <= 1
+            ? String(localized: "Mot de passe maître redemandé dans 1 jour, puis tous les 14 jours.")
+            : String(localized: "Mot de passe maître redemandé dans \(days) jours, puis tous les 14 jours.")
     }
 
     /// The arrow at the end of the field: dim until something is typed, a spinner while unlocking.
@@ -336,19 +321,6 @@ struct LockView: View {
         .animation(.smooth(duration: 0.15), value: ready)
         .accessibilityLabel(Text("Déverrouiller"))
         .accessibilityIdentifier("lock.unlock")
-    }
-
-    @ViewBuilder private var footer: some View {
-        if let days = daysUntilPassword {
-            Text(days <= 1
-                 ? String(localized: "Mot de passe maître redemandé dans 1 jour, puis tous les 14 jours.")
-                 : String(localized: "Mot de passe maître redemandé dans \(days) jours, puis tous les 14 jours."))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 8)
-                .accessibilityIdentifier("lock.passwordDue")
-        }
     }
 
     // MARK: - State
