@@ -1,6 +1,6 @@
 // Real test set (Task 10). The honest score of the model comes from real pages
 // the generator and the lexicon never saw: 200 rendered pages picked by seed
-// over the categories, labelled by hand (label-server.ts), plus the owner's
+// (whole sites, as few as possible, rarer categories first), labelled by hand (label-server.ts), plus the owner's
 // recorded flows once labelled. Labels live in lab/corpus/labels/<host>.<n>.json
 // (committed) and lab/corpus/private/labels/ (git-ignored, recorded flows):
 // a Record<field index, Role | "none">, the index being the position of the
@@ -75,7 +75,12 @@ function readPages(dir: string, priv: boolean): RealPage[] {
 
 /** Candidates of the real test set: rendered samples with a visible field, hand-picked and top 1000 (Common Crawl pages are static copies, not rendered). */
 export function loadPool(dirs: RealDirs): RealPage[] {
-  return [...readPages(dirs.samples, false), ...readPages(join(dirs.samples, "top1000"), false)];
+  // A hand-picked `<host>.json` and a crawled `<host>.0.json` would share one label file: the first (hand-picked) wins.
+  const seen = new Set<string>();
+  return [...readPages(dirs.samples, false), ...readPages(join(dirs.samples, "top1000"), false)].filter((p) => {
+    const k = `${p.host}.${p.n}`;
+    return seen.has(k) ? false : (seen.add(k), true);
+  });
 }
 
 /** Recorded flows (private), also real-test material once labelled. */
@@ -84,49 +89,48 @@ export function loadPrivate(dirs: RealDirs): RealPage[] {
 }
 
 const byKey = (a: RealPage, b: RealPage) => (a.host < b.host ? -1 : a.host > b.host ? 1 : a.n - b.n);
+const COMMON = new Set(["login", "signup"]);
 
 /**
- * `size` pages by seed, spread over the categories: categories take turns
- * (alphabetical), each handing over its page of smallest hash, one page per
- * registrable site. A pure function of the pool and the seed.
+ * Whole sites until the pages reach `size` (Ruling R15: 200 pages from as few
+ * hosts as possible). Sites are taken in seeded order; the ones that bring
+ * checkout, address or identity pages go first, taking turns per category
+ * (alphabetical), then the login and signup sites alternate. Every page with a
+ * field of a taken site comes with it, and the pick stops as soon as the
+ * pages reach `size`. A pure function of the pool and the seed.
  */
 export function pickRealTest(pool: RealPage[], seed: string, size: number = REAL_TEST_SIZE): RealPage[] {
-  const rank = (p: RealPage) => cyrb128(`${seed}|${p.host}|${p.n}`)[1];
-  const queues = new Map<string, RealPage[]>();
+  const sites = new Map<string, RealPage[]>();
   for (const p of [...pool].sort(byKey)) {
-    const q = queues.get(p.category) ?? [];
-    q.push(p);
-    queues.set(p.category, q);
+    const k = siteOf(p.host);
+    sites.set(k, [...(sites.get(k) ?? []), p]);
   }
-  for (const q of queues.values()) q.sort((a, b) => rank(a) - rank(b) || byKey(a, b));
-  const cats = [...queues.keys()].sort();
-  const taken = new Set<string>();
+  const rank = (site: string) => cyrb128(`${seed}|${site}`)[1];
+  const queues = new Map<string, string[]>();
+  for (const [site, pages] of [...sites].sort((a, b) => rank(a[0]) - rank(b[0]) || (a[0] < b[0] ? -1 : 1))) {
+    const rare = [...new Set(pages.map((p) => p.category))].filter((c) => !COMMON.has(c)).sort();
+    const lane = rare.length > 0 ? `rare:${rare[0]}` : `common:${pages[0]!.category}`;
+    queues.set(lane, [...(queues.get(lane) ?? []), site]);
+  }
+  const lanes = [...queues.keys()].sort((a, b) => (a.startsWith("rare") === b.startsWith("rare") ? (a < b ? -1 : 1) : a.startsWith("rare") ? -1 : 1));
   const out: RealPage[] = [];
-  while (out.length < size && cats.some((c) => queues.get(c)!.length > 0)) {
-    for (const c of cats) {
-      if (out.length >= size) break;
-      const q = queues.get(c)!;
-      while (q.length > 0) {
-        const p = q.shift()!;
-        const site = siteOf(p.host);
-        if (taken.has(site)) continue;
-        taken.add(site);
-        out.push(p);
-        break;
+  // Rare lanes empty first (taking turns), then the common ones.
+  for (const group of [lanes.filter((l) => l.startsWith("rare")), lanes.filter((l) => l.startsWith("common"))]) {
+    while (out.length < size && group.some((l) => queues.get(l)!.length > 0)) {
+      for (const l of group) {
+        if (out.length >= size) break;
+        const site = queues.get(l)!.shift();
+        if (site !== undefined) out.push(...sites.get(site)!);
       }
     }
   }
   return out;
 }
 
-/** The labelling queue: the first page with fields of each real-test host (sorted), then the private pages. */
+/** The labelling queue: every page with fields of each real-test host (sorted by host, then page), then the private pages. */
 export function queueOf(hosts: string[], pool: RealPage[], priv: RealPage[]): RealPage[] {
-  const out: RealPage[] = [];
-  for (const h of [...new Set(hosts)].sort()) {
-    const first = pool.filter((p) => p.host === h).sort(byKey)[0];
-    if (first) out.push(first);
-  }
-  return [...out, ...[...priv].sort(byKey)];
+  const want = new Set(hosts);
+  return [...pool.filter((p) => want.has(p.host)).sort(byKey), ...[...priv].sort(byKey)];
 }
 
 export const labelFile = (p: RealPage, dirs: RealDirs): string => join(p.private ? dirs.privateLabels : dirs.labels, `${p.host}.${p.n}.json`);
@@ -186,10 +190,11 @@ function main(): void {
     const seed = arg("--seed") ?? REAL_TEST_SEED;
     const size = Number(arg("--size") ?? REAL_TEST_SIZE);
     const picked = pickRealTest(loadPool(dirs), seed, size);
-    writeFileSync(REAL_TEST_HOSTS_FILE, stableJson({ seed, hosts: picked.map((p) => p.host).sort() }));
+    const hosts = [...new Set(picked.map((p) => p.host))].sort();
+    writeFileSync(REAL_TEST_HOSTS_FILE, stableJson({ seed, hosts, pages: picked.length }));
     const per: Record<string, number> = {};
     for (const p of picked) per[p.category] = (per[p.category] ?? 0) + 1;
-    console.log(`real-test-hosts.json written: ${picked.length} hosts`, per);
+    console.log(`real-test-hosts.json written: ${picked.length} pages on ${hosts.length} hosts`, per);
     return;
   }
   const { seed, hosts } = readRealTestHosts();

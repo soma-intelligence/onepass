@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { corpusDirs, distillSamples } from "../../lab/corpus/distill.ts";
 import { readRealTestHosts, siteOf, withoutHosts } from "../../lab/corpus/real-test-hosts.ts";
 import type { Category, Sample, SampleField } from "../../lab/corpus/types.ts";
-import { ALL_ROLES, flatFields, pickRealTest, queueOf, readLabels, realRows, writeLabels } from "../../lab/dataset/real.ts";
+import { ALL_ROLES, defaultDirs, flatFields, loadPool, pickRealTest, queueOf, readLabels, realRows, writeLabels } from "../../lab/dataset/real.ts";
 import type { RealDirs, RealPage } from "../../lab/dataset/real.ts";
 
 const field = (over: Partial<SampleField> = {}): SampleField => ({
@@ -41,17 +41,27 @@ describe("pickRealTest", () => {
     expect(pickRealTest([...pool].reverse(), "s", 20).map((p) => p.host)).toEqual(a);
     expect(pickRealTest(pool, "other", 20).map((p) => p.host)).not.toEqual(a);
   });
-  it("spreads over categories and keeps one page per site", () => {
-    const got = pickRealTest(pool, "s", 20);
-    expect(got).toHaveLength(20);
-    const per = new Map<string, number>();
-    for (const p of got) per.set(p.category, (per.get(p.category) ?? 0) + 1);
-    expect([...per.values()].sort()).toEqual([5, 5, 5, 5]);
-    expect(new Set(got.map((p) => siteOf(p.host))).size).toBe(20);
+  it("takes whole sites and stops as soon as the pages reach the size", () => {
+    const multi = Array.from({ length: 30 }, (_, i) => [0, 1, 2].map((n) => page(`m${i}.com`, "login", n))).flat();
+    const got = pickRealTest(multi, "s", 10);
+    expect(got).toHaveLength(12);
+    const hosts = new Set(got.map((p) => p.host));
+    expect(hosts.size).toBe(4);
+    for (const h of hosts) expect(got.filter((p) => p.host === h).map((p) => p.n)).toEqual([0, 1, 2]);
   });
-  it("counts sub-domains of one site once", () => {
-    const two = [page("a.example.com", "login"), page("b.example.com", "login"), page("other.org", "login")];
-    expect(pickRealTest(two, "s", 5)).toHaveLength(2);
+  it("brings the rare categories first, taking turns, then login and signup", () => {
+    const mixed = [
+      ...Array.from({ length: 10 }, (_, i) => page(`l${i}.com`, "login")), ...Array.from({ length: 10 }, (_, i) => page(`s${i}.com`, "signup")),
+      page("shop.com", "checkout"), page("home.com", "address"), page("id.com", "identity"),
+    ];
+    const got = pickRealTest(mixed, "s", 6);
+    expect(got.slice(0, 3).map((p) => p.category).sort()).toEqual(["address", "checkout", "identity"]);
+    expect(got.slice(3).every((p) => p.category === "login" || p.category === "signup")).toBe(true);
+    expect(got.some((p) => p.category === "login") && got.some((p) => p.category === "signup")).toBe(true);
+  });
+  it("counts sub-domains of one site as one site", () => {
+    const two = [page("a.example.com", "login"), page("b.example.com", "login")];
+    expect(pickRealTest(two, "s", 1)).toHaveLength(2);
   });
 });
 
@@ -71,10 +81,15 @@ describe("isolation", () => {
       expect(inputs.filter((s) => banned.has(siteOf(s.host)))).toEqual([]);
     }
   });
-  it("the committed list holds 200 distinct sites", () => {
-    const { hosts } = readRealTestHosts();
-    expect(hosts).toHaveLength(200);
-    expect(new Set(hosts.map(siteOf)).size).toBe(200);
+  it("the committed list covers at least 200 pages of the pool, from fewer hosts", () => {
+    const { hosts, pages } = readRealTestHosts();
+    expect(pages).toBeGreaterThanOrEqual(200);
+    expect(hosts.length).toBeLessThan(200);
+    expect(queueOf(hosts, loadPool(defaultDirs()), [])).toHaveLength(pages);
+  });
+  it("the pool never holds two pages with one label file", () => {
+    const names = loadPool(defaultDirs()).map((p) => `${p.host}.${p.n}`);
+    expect(new Set(names).size).toBe(names.length);
   });
 });
 
@@ -123,10 +138,10 @@ describe("realRows", () => {
 });
 
 describe("queueOf", () => {
-  it("takes the first page with fields of each real test host, then the private pages", () => {
+  it("takes every page with fields of each real test host, then the private pages", () => {
     const pool = [page("b.com", "login", 1), page("b.com", "login", 0), page("a.com", "signup", 2)];
     const priv = [page("rec.io", "login", 0, true)];
-    expect(queueOf(["b.com", "a.com", "gone.com"], pool, priv).map((p) => p.file)).toEqual(["a.com.2.json", "b.com.0.json", "rec.io.0.json"]);
+    expect(queueOf(["b.com", "a.com", "gone.com"], pool, priv).map((p) => p.file)).toEqual(["a.com.2.json", "b.com.0.json", "b.com.1.json", "rec.io.0.json"]);
   });
 });
 

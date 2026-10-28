@@ -9,7 +9,7 @@ import type { Sample } from "./types.ts";
 
 export const REAL_TEST_HOSTS_FILE = join(dirname(fileURLToPath(import.meta.url)), "real-test-hosts.json");
 
-export interface RealTestHosts { seed: string; hosts: string[] }
+export interface RealTestHosts { seed: string; hosts: string[]; pages: number }
 
 const SECOND_LEVEL = new Set(["co", "com", "org", "net", "gov", "ac", "edu", "or", "ne"]);
 
@@ -26,7 +26,8 @@ export function readRealTestHosts(file: string = REAL_TEST_HOSTS_FILE): RealTest
   if (typeof v.seed !== "string" || !Array.isArray(v.hosts) || !v.hosts.every((h) => typeof h === "string")) {
     throw new Error(`${file}: expected { seed, hosts: string[] }`);
   }
-  return { seed: v.seed, hosts: v.hosts };
+  if (typeof v.pages !== "number") throw new Error(`${file}: expected a numeric "pages"`);
+  return { seed: v.seed, hosts: v.hosts, pages: v.pages };
 }
 
 /** Samples whose site is not one of `hosts`. */
