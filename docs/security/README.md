@@ -651,10 +651,59 @@ Le Simulateur n'a pas de caméra. En Debug seulement, `-OnePassPairingQRText <te
 
 ### 15.6 Présence, retrait, effacement
 
-Approuver et retirer demandent une présence fraîche : Face ID ou Touch ID, sinon le mot de passe maître (ruling A8), jamais le code de l'appareil (`.deviceOwnerAuthenticationWithBiometrics`, ruling A19). Une approbation commence par un état posé avant toute attente et revérifié après chacune : "Annuler" pendant Face ID ou pendant l'attente du nouvel appareil n'envoie rien et ne liste rien ; une seconde approbation pendant la première ne fait rien. L'approbateur attend la confirmation du nouvel appareil 60 s au plus après la présence, puis l'appairage échoue (ruling A20). Pendant l'envoi de l'autorisation, "Annuler" est désactivé et un abandon de l'écran est ignoré : l'autorisation est peut-être déjà partie, rien ne doit dire le contraire. Le nouvel appareil n'est ajouté à la liste signée que si son autorisation est scellée : l'ajout et le scellement se font dans une même transaction du magasin, et un instantané au-dessus de 50 Mio annule l'ajout. Après chaque déverrouillage et chaque sync, VaultKit lit la liste signée ; un appareil marqué retiré s'efface par le chemin de `resetForRecovery` (base, Secret Key, enrôlement biométrique, ruling A5). Limites : un appareil retiré resté verrouillé et hors ligne garde ses données jusqu'à son prochain déverrouillage, et sans CloudKit le retrait ne voyage pas du tout (vérifié : un Mac retiré depuis l'iPhone dans un build Debug garde ses données). Si l'effacement d'un appareil retiré échoue (magasin occupé, par exemple), l'écran le dit au lieu d'annoncer des données effacées, l'état "retiré, à effacer" est gardé dans les réglages de l'app, l'app montre cet écran (jamais celui du verrou) à chaque ouverture et réessaie l'effacement à chaque rafraîchissement (ruling A21). Le retrait ne change pas les clés : l'app conseille de changer le mot de passe maître si l'appareil a été perdu ou volé.
+Approuver et retirer demandent une présence fraîche : Face ID ou Touch ID, sinon le mot de passe maître (ruling A8), jamais le code de l'appareil (`.deviceOwnerAuthenticationWithBiometrics`, ruling A19). Une approbation commence par un état posé avant toute attente et revérifié après chacune : "Annuler" pendant Face ID ou pendant l'attente du nouvel appareil n'envoie rien et ne liste rien ; une seconde approbation pendant la première ne fait rien. L'approbateur attend la confirmation du nouvel appareil 60 s au plus après la présence, puis l'appairage échoue (ruling A20). Pendant l'envoi de l'autorisation, "Annuler" est désactivé et un abandon de l'écran est ignoré : l'autorisation est peut-être déjà partie, rien ne doit dire le contraire. Le nouvel appareil n'est ajouté à la liste signée que si son autorisation est scellée : l'ajout et le scellement se font dans une même transaction du magasin, et un instantané au-dessus de 50 Mio annule l'ajout. Après chaque déverrouillage et chaque sync, VaultKit lit la liste signée ; un appareil marqué retiré s'efface par le chemin de `resetForRecovery` (base, Secret Key, enrôlement biométrique, ruling A5). Limites : un appareil retiré resté verrouillé et hors ligne garde ses données jusqu'à son prochain déverrouillage, et sans CloudKit le retrait ne voyage pas du tout (vérifié : un Mac retiré depuis l'iPhone dans un build Debug garde ses données). Si l'effacement d'un appareil retiré échoue (magasin occupé, par exemple), l'écran le dit au lieu d'annoncer des données effacées, l'état "retiré, à effacer" est gardé dans les réglages de l'app, l'app montre cet écran (jamais celui du verrou) à chaque ouverture et réessaie l'effacement à chaque rafraîchissement (ruling A21). Dans l'app, le retrait appelle encore `revoke_device` et ne change donc pas les clés : il ne coupe pas un appareil qui garde sa Secret Key. Le cœur et le FFI offrent depuis le 2026-10-28 `revoke_device_rotating`, qui fait tourner toutes les clés dans la même écriture (section 16) ; le branchement dans l'app est une suite à faire (spec de la rotation, section 12). En attendant, un changement de mot de passe ne suffit pas : il garde le même keyset et la même Secret Key.
 
 ### 15.7 Limites
 
 - Vérifié seulement sur une machine (Mac et Simulateur, transport en boucle locale) : caméra, AWDL, autorisation "Réseau local" d'iOS, Face ID et propagation du retrait par CloudKit demandent deux vrais appareils signés (voir [`apple/README.md`](../apple/README.md), "Jalon 2b dans les apps").
 - Aucun audit externe de l'appairage.
 - La Secret Key passe par une `String` Swift le temps de sceller une autorisation et de la ranger après un import : des copies peuvent rester dans la mémoire du processus jusqu'à ce qu'elle soit réutilisée (ruling A22, risque accepté).
+
+## 16. Rotation des clés (constat F1)
+
+Spec : [`docs/superpowers/specs/2026-10-28-key-rotation-design.md`](../superpowers/specs/2026-10-28-key-rotation-design.md). Code : `core/onepass-core/src/repo/rotation.rs`, `Account::rotate` et `Account::unlock_rotated_at` (`account.rs`). Tests : `core/onepass-core/tests/key_rotation.rs`, tests unitaires de `account.rs`, `core/onepass-ffi/tests/m2b.rs`, `core/onepass-cli/tests/cli.rs`.
+
+### 16.1 Retrait et changement de mot de passe
+
+- **Retrait d'un appareil** : `revoke_device` marque seulement l'appareil dans la liste signée ; l'appareil honnête s'efface (15.6), mais un appareil volé qui garde sa base et sa Secret Key continue de tout lire. `revoke_device_rotating(id, mot de passe, Secret Key, nouvelle Secret Key)` marque l'appareil et fait tourner toutes les clés dans la même écriture (16.2) : c'est la coupure cryptographique. Elle demande le mot de passe maître et la Secret Key.
+- **Changement de mot de passe** : `change_password` rescelle le même keyset sous une nouvelle AUK (époque + 1, même Secret Key, mêmes clés : ruling B1 du jalon 2b). Qui a eu le mot de passe et la Secret Key garde les clés. `rotate_keys(mot de passe actuel, Secret Key, nouvelle Secret Key, Some(nouveau mot de passe))` change le mot de passe et fait tourner toutes les clés : c'est l'option à proposer quand le mot de passe et la Secret Key ont pu fuir ensemble.
+- **Rotation seule** : `rotate_keys(..., None)`. CLI de développement : `onepass account rotate-keys [--change-password]` (la Secret Key actuelle est saisie, la nouvelle est affichée avant l'écriture puis rangée dans `device.bin`).
+
+### 16.2 Construction
+
+Une seule écriture conditionnelle (`put_all_if_version_and_delete`, une transaction en SQLite et dans `SyncStore`), tout ou rien, après vérification du mot de passe et de la Secret Key actuels avec tous les contrôles du déverrouillage :
+
+- **Keyset** : trois clés neuves (KEM hybride, signature hybride, identité SLH-DSA). Paramètres v2 d'époque + 1 (sel neuf, coûts au moins égaux aux actuels et au plancher) portant les nouvelles clés publiques, signés par la **nouvelle** identité ; keyset v2 scellé sous l'AUK du mot de passe (actuel ou nouveau) et de la **nouvelle** Secret Key. Aucun nouveau format.
+- **Coffres** : clé de coffre neuve, enveloppée pour la nouvelle clé KEM (même contexte `"vault:" || vault_id`), métadonnées rescellées. Chaque élément listé (vivant, archivé, à la corbeille) est rescellé à la version + 1 sous une clé d'élément neuve, nouvel id de blob ; les anciens enregistrements et les restes ignorés sont supprimés. Manifeste suivant (`prev_hash` du manifeste chargé), signé par la nouvelle clé de signature, `seq` au moins `époque × 2^32`.
+- **Listes** : liste des appareils (avec l'appareil retiré) et liste des coffres resignées par la nouvelle clé au `seq` suivant.
+- **Époque de restauration** : nouvelle époque, raison `KeyRotation`, signée par la nouvelle clé, têtes = nouveaux manifestes. L'appareil épingle ensuite la nouvelle identité (plancher Argon2id conservé et relevé), l'époque des paramètres, les listes, l'époque et ses têtes.
+
+La nouvelle Secret Key est tirée par l'appelant (`generate_secret_key` dans le FFI) et rangée "en attente" avant l'appel : une coupure entre l'écriture et l'affichage du nouvel Emergency Kit ne rend jamais le compte inaccessible. La rotation est refusée en mode voyage, sur un appareil retiré, et si la session ne correspond plus aux paramètres stockés (`Conflict`).
+
+### 16.3 Les autres appareils
+
+Un appareil resté sur l'ancienne Secret Key ne déverrouille plus : l'identité stockée n'est plus celle qu'il a épinglée (`ParamsUnsigned`), son AUK biométrique n'ouvre plus le keyset. `keys_rotated` (FFI `store_keys_rotated`) le détecte sans déverrouiller. Il suit avec la nouvelle Secret Key (saisie depuis le nouveau kit, ou reçue par un nouvel appairage) par `unlock_after_rotation`, qui accepte une nouvelle identité seulement pour le même compte, à une époque strictement supérieure à l'époque épinglée, et si le keyset s'ouvre sous le mot de passe et cette Secret Key. Le déverrouillage normal ne suit jamais un changement d'identité (ruling K9) : un appareil qui ne connaît que les anciens secrets ne peut pas distinguer la vraie rotation d'une fausse faite par l'appareil retiré, qui connaît les mêmes. Pas de livraison automatique de la nouvelle Secret Key (ruling K4).
+
+### 16.4 Attaques testées
+
+| Attaque | Résultat |
+| --- | --- |
+| Appareil retiré qui garde sa clé de coffre : lire un élément écrit après la rotation, ou un élément d'avant rescellé | échec à l'ouverture ; le serveur ne garde aucun ancien enregistrement d'élément |
+| Appareil retiré qui garde son keyset : ouvrir la nouvelle enveloppe de clé de coffre | échec (`Commitment`) |
+| Appareil retiré : déverrouiller avec son ancienne Secret Key, normalement ou par `unlock_after_rotation` | `ParamsUnsigned`, `WrongPassword` |
+| Manifeste forgé avec l'ancienne clé de signature et l'ancienne clé de coffre, `seq` au-dessus du courant | `Signature` |
+| Ancienne enveloppe de clé de coffre resservie | refusée au listage des coffres |
+| Anciens paramètres et ancien keyset resservis à un appareil qui a vu la rotation, avec l'ancienne ou la nouvelle Secret Key, normalement ou par `unlock_after_rotation` | `ParamsRollback` (avant toute dérivation) |
+| Nouvelle identité à l'époque épinglée, ou pour un autre compte, par `unlock_after_rotation` | `ParamsUnsigned` |
+| Ancien kit (ancienne Secret Key), avec l'ancien ou le nouveau mot de passe, sur un appareil neuf | `WrongPassword` |
+| Mauvais mot de passe, mauvaise Secret Key, retrait de l'appareil courant, appareil inconnu | refus, aucun enregistrement modifié |
+
+### 16.5 Limites
+
+- La rotation protège l'avenir : ce que l'appareil retiré a déjà lu, ou peut relire dans des copies qu'un serveur hostile garde, reste à lui.
+- Une écriture faite avec les anciennes clés par un autre appareil et arrivée sur le serveur avant la rotation ne peut plus être vérifiée : alerte sur ce coffre, sortie "garder cet appareil". Synchroniser avant de faire tourner les clés.
+- L'envoi vers CloudKit n'est pas atomique : un appareil qui récupère une rotation incomplète voit une erreur d'intégrité jusqu'à la fin de l'envoi (il ne peut de toute façon rien ouvrir sans la nouvelle Secret Key).
+- Les archives liées au compte faites avant la rotation sont enveloppées pour l'ancienne clé KEM et ne s'ouvrent plus avec le compte tourné ; refaire une sauvegarde après une rotation.
+- Le retrait dans l'app n'utilise pas encore `revoke_device_rotating`, et l'app n'affiche pas encore le nouvel Emergency Kit (suites, section 12 de la spec).
+- Le modèle ProVerif ne couvre pas la rotation (`formal/README.md`).
+

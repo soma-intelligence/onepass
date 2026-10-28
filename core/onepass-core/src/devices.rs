@@ -145,7 +145,7 @@ pub(crate) fn now() -> i64 {
     OffsetDateTime::now_utc().unix_timestamp()
 }
 
-fn invalid(field: &str, reason: &'static str) -> Error {
+pub(crate) fn invalid(field: &str, reason: &'static str) -> Error {
     ValidationError {
         field: field.into(),
         reason,
@@ -164,7 +164,7 @@ pub(crate) fn check_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-fn revoked() -> Error {
+pub(crate) fn revoked() -> Error {
     invalid("device", "revoked")
 }
 

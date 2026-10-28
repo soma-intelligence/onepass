@@ -102,3 +102,8 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "vault_deletion"
 required-features = ["dev-fast-kdf"]
+
+# Key rotation across devices, fast-KDF accounts: needs the dev floor.
+[[test]]
+name = "key_rotation"
+required-features = ["dev-fast-kdf"]

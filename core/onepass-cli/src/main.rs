@@ -102,6 +102,14 @@ enum Command {
 enum AccountCmd {
     /// Create the account and show its Secret Key once.
     Create,
+    /// Rotate every key of the account: new Secret Key (shown once, the old
+    /// one and its Emergency Kit stop working), keyset and vault keys, every
+    /// item re-encrypted. Asks for the current Secret Key.
+    RotateKeys {
+        /// Also change the master password.
+        #[arg(long)]
+        change_password: bool,
+    },
 }
 
 fn default_data_dir() -> Result<PathBuf, CliError> {
@@ -134,6 +142,9 @@ fn run(cli: Cli) -> Result<(), CliError> {
     ctx.banner();
     match command {
         Command::Account(AccountCmd::Create) => commands::account::create(&ctx),
+        Command::Account(AccountCmd::RotateKeys { change_password }) => {
+            commands::account::rotate_keys(&ctx, change_password)
+        }
         Command::Vault(c) => commands::vault::run(&ctx, c),
         Command::Item(c) => commands::item::run(&ctx, c),
         Command::Read { reference } => commands::read::run(&ctx, &reference),

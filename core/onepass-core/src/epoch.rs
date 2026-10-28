@@ -32,6 +32,9 @@ pub enum EpochReason {
     KeepThisDevice,
     /// After an alert, the owner took the server's copy.
     TakeServer,
+    /// The account keys were rotated (spec 2026-10-28): every manifest is
+    /// signed again by the new signing key.
+    KeyRotation,
 }
 
 /// The signed content of an epoch.

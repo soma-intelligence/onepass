@@ -1,5 +1,6 @@
 use std::fs;
 
+use onepass_core::crypto::SecretKey;
 use onepass_core::repo::Repository;
 use onepass_core::store::SqliteStore;
 
@@ -83,4 +84,75 @@ fn build(
     let key_text = zeroize::Zeroizing::new(key.to_display());
     Session::created(ctx, repo, &key).persist()?;
     Ok(key_text)
+}
+
+/// Test-only source of the current Secret Key (`read_secret`).
+const SECRET_KEY_ENV: &str = "ONEPASS_SECRET_KEY";
+/// Test-only source of the new password (`read_secret`).
+const NEW_PASSWORD_ENV: &str = "ONEPASS_NEW_PASSWORD";
+
+/// `onepass account rotate-keys [--change-password]`: rotate every key of
+/// the account (spec 2026-10-28). The current password and Secret Key are
+/// asked for (the Secret Key is typed, as proof, not taken from
+/// `device.bin`). The new Secret Key is drawn and shown before anything is
+/// written, so a crash after the write never leaves an account nobody has
+/// the key of; on failure nothing changed and the old key stays valid. The
+/// new key then replaces the old one in `device.bin`.
+pub fn rotate_keys(ctx: &Ctx, change_password: bool) -> Result<(), CliError> {
+    if !ctx.has_account() {
+        return Err(CliError::usage(format!(
+            "no account in {}; run `onepass account create` first",
+            ctx.data_dir.display()
+        )));
+    }
+    let password = session::read_password("Password: ")?;
+    let current_key = session::read_secret("Current Secret Key: ", SECRET_KEY_ENV)?;
+    let current_key = SecretKey::parse(&current_key)?;
+    let new_password = if change_password {
+        let p = session::read_secret("New password: ", NEW_PASSWORD_ENV)?;
+        if p.is_empty() {
+            return Err(CliError::usage("the password must not be empty"));
+        }
+        if !session::env_secrets_allowed()? {
+            let again = session::read_secret("Repeat the new password: ", NEW_PASSWORD_ENV)?;
+            if *again != *p {
+                return Err(CliError::usage("the passwords differ"));
+            }
+        }
+        Some(p)
+    } else {
+        None
+    };
+    let _lock = session::lock(ctx)?;
+    let open = Session::open(ctx, &password)?;
+    let mut repo = open.repo;
+    let new_key = SecretKey::generate()?;
+    let shown = if ctx.json {
+        session::write_line(format_args!(
+            "{}",
+            serde_json::json!({ "secret_key": *zeroize::Zeroizing::new(new_key.to_display()) })
+        ))
+    } else {
+        eprintln!("Write the new Secret Key down now: it is shown only once.");
+        eprintln!("The old Secret Key and its Emergency Kit stop working.");
+        session::write_line(format_args!(
+            "New Secret Key: {}",
+            *zeroize::Zeroizing::new(new_key.to_display())
+        ))
+    };
+    if let Err(e) = shown {
+        return Err(CliError::usage(format!(
+            "cannot show the new Secret Key (i/o error: {}): nothing was changed",
+            e.kind()
+        )));
+    }
+    repo.rotate_keys(
+        &password,
+        &current_key,
+        &new_key,
+        new_password.as_deref().map(String::as_str),
+    )
+    .inspect_err(|_| eprintln!("The keys did not change: the old Secret Key stays valid."))?;
+    session::harden(ctx)?;
+    Session::created(ctx, repo, &new_key).persist()
 }
