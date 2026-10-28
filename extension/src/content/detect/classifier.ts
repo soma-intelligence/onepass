@@ -210,6 +210,9 @@ export function wireFeatures(f: FieldFeatures): FieldFeatures {
 /** The worker said the asking frame is cross-site. */
 export class CrossSiteFrame extends Error {}
 
+/** The worker refused for now (the tab's inference still running, or the tab over its rate): ask again later. */
+export class TransientRefusal extends Error {}
+
 type Send = (m: { type: "classify"; fields: FieldFeatures[] }) => Promise<unknown>;
 
 /** The `ok` value of a reply envelope, or undefined. */
@@ -233,6 +236,7 @@ export async function remoteSession(send: Send, kind: ModelKind): Promise<ModelS
     async predict(features) {
       const ok = okOf(await send({ type: "classify", fields: features.map(wireFeatures) }));
       if (ok?.crossSite === true) throw new CrossSiteFrame("classifier: cross-site frame");
+      if (ok?.refused === "busy" || ok?.refused === "rate") throw new TransientRefusal(`classifier: ${ok.refused}`);
       if (!ok || ok.crossSite !== false || !Array.isArray(ok.labels) || ok.labels.length !== features.length) {
         throw new Error("classifier: no model answer");
       }
@@ -264,25 +268,34 @@ const cacheKey = (features: FieldFeatures[]): string =>
     return rest;
   }));
 
+/** Wait before a form refused for now (busy, rate) is asked again; the worker refills 2 requests a second. */
+export const CLASSIFY_RETRY_MS = 1000;
+
 /**
  * A ModelHook over a model classifier: answers from a cache; on a miss the form becomes the one
  * pending request (a newer miss replaces it, older ones are dropped and asked again on a later
  * analysis), sent after CLASSIFY_DEBOUNCE_MS of quiet, with at most one request in flight per frame.
  * onUpdate runs after each answer (or failure) so the page is analysed again and the next form asked.
+ * Only definitive answers are cached: labels, a failure, or a budget refusal (null, heuristics for
+ * the page's life). A transient refusal (TransientRefusal: busy, rate) is not cached, and the next
+ * request waits CLASSIFY_RETRY_MS instead of the debounce.
  */
 export function createModelHook(opts: {
   classifier: FieldClassifier;
   onUpdate: () => void;
   debounceMs?: number;
+  retryMs?: number;
   setTimer?: (cb: () => void, ms: number) => unknown;
 }): ModelHook {
   const debounceMs = opts.debounceMs ?? CLASSIFY_DEBOUNCE_MS;
+  const retryMs = opts.retryMs ?? CLASSIFY_RETRY_MS;
   const setTimer = opts.setTimer ?? ((cb: () => void, ms: number) => setTimeout(cb, ms));
   const cache = new Map<string, RoleScore[] | null>();
   let crossSite = false;
   let inFlight: string | null = null;
   let queued: { key: string; features: FieldFeatures[] } | null = null;
   let timerSet = false;
+  let backOff = false;
   const remember = (key: string, v: RoleScore[] | null) => {
     if (cache.size >= MAX_CACHED_FORMS) cache.delete(cache.keys().next().value as string);
     cache.set(key, v);
@@ -290,10 +303,12 @@ export function createModelHook(opts: {
   const schedule = (): void => {
     if (inFlight !== null || timerSet || queued === null || crossSite) return;
     timerSet = true;
+    const ms = backOff ? Math.max(retryMs, debounceMs) : debounceMs;
+    backOff = false;
     setTimer(() => {
       timerSet = false;
       send();
-    }, debounceMs);
+    }, ms);
   };
   const send = (): void => {
     if (queued === null || inFlight !== null || crossSite) return;
@@ -311,7 +326,13 @@ export function createModelHook(opts: {
         done();
       },
       (e: unknown) => {
-        // Failed or refused (budget, busy, rate): this form stays on the heuristics.
+        if (e instanceof TransientRefusal) {
+          // Refused for now: heuristics meanwhile, asked again on a later analysis, after a pause.
+          backOff = true;
+          done();
+          return;
+        }
+        // Failed or refused for good (budget, bad answer): this form stays on the heuristics.
         remember(key, null);
         if (e instanceof CrossSiteFrame) {
           crossSite = true;
