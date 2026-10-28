@@ -10,6 +10,8 @@ struct BrowseRoot: View {
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The window's width: an unfolded iPhone gets the two-pane layout.
+    @State private var width: CGFloat = 0
     #endif
 
     var body: some View {
@@ -99,13 +101,33 @@ struct BrowseRoot: View {
         #if os(macOS) || os(visionOS)
         split
         #else
-        if usesTabs {
-            PhoneTabsView()
-        } else {
-            split
+        Group {
+            if usesTabs {
+                PhoneTabsView()
+                    .transition(.opacity)
+            } else if isFold {
+                foldSplit
+                    .transition(.opacity)
+            } else {
+                split
+            }
         }
+        // Folding or unfolding swaps the layouts; the unfolded one plays its own entrance.
+        .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.4, bounce: 0), value: isFold)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         #endif
     }
+
+    #if os(iOS)
+    /// The unfolded iPhone: list and detail side by side, the new item sheet as on iPad.
+    private var foldSplit: some View {
+        @Bindable var model = model
+        return FoldSplitView()
+            .sheet(isPresented: $model.showNewItemPicker) {
+                NewItemSheet()
+            }
+    }
+    #endif
 
     /// The split view and its ⌘N type picker (the iPhone tabs present their own new item sheet).
     private var split: some View {
@@ -117,7 +139,19 @@ struct BrowseRoot: View {
     }
 
     #if os(iOS)
-    private var usesTabs: Bool { !(UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular) }
+    /// An iPhone unfolded wide enough for two panes (about 700 pt), or `-OnePassFoldLayout YES`
+    /// (Debug captures on a wide simulator, there is no foldable one).
+    private var isFold: Bool {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "OnePassFoldLayout") { return width >= 600 }
+        #endif
+        return UIDevice.current.userInterfaceIdiom == .phone && width >= 700
+    }
+
+    private var usesTabs: Bool {
+        if isFold { return false }
+        return !(UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular)
+    }
     #endif
 
     private var handlesRevealInTabs: Bool {

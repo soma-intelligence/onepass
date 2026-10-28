@@ -255,6 +255,42 @@ final class OnboardingAndItemUITests: XCTestCase {
         XCTAssertFalse(menu.isHittable, "Accueil shown during a search")
     }
 
+    // MARK: - Unfolded iPhone
+
+    /// Showcase of the unfolded layout (recorded for review): two panes, hold to reveal a
+    /// password, drag a row to the vault tray, lock then unlock through the vault door. Runs only
+    /// on a wide simulator (there is no foldable one), with the demo data.
+    func testFoldShowcase() throws {
+        let app = XCUIApplication()
+        // Demo data (fictional); `-OnePassDemoVaultPassage` plays the unlock and lock passages
+        // over it, as the demo store cannot be locked and unlocked again.
+        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassFoldLayout", "YES", "-OnePassDemoVaultPassage", "YES"]
+        app.launch()
+        try XCTSkipUnless(app.windows.firstMatch.frame.width >= 600, "needs a wide simulator")
+        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'list.row.'"))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: Self.uiTimeout), "fold list missing")
+        // The passages play first (about 6 s).
+        sleep(7)
+        let item = app.descendants(matching: .any)["list.row.Coffre du bureau Atlas"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: Self.uiTimeout))
+        item.tap()
+        sleep(2)
+        // Hold the masked password: shown while held, masked on release.
+        let masked = app.staticTexts.matching(NSPredicate(format: "value == 'masqué' OR value == 'hidden'")).firstMatch
+        if masked.waitForExistence(timeout: Self.uiTimeout) {
+            masked.press(forDuration: 2.5)
+        }
+        sleep(1)
+        // Drag a row onto the tray that rises at the bottom.
+        let card = app.descendants(matching: .any)["list.row.Carte Visa Exemple"].firstMatch
+        if card.waitForExistence(timeout: Self.uiTimeout) {
+            let target = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9))
+            card.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
+                .press(forDuration: 1.2, thenDragTo: target, withVelocity: .slow, thenHoldForDuration: 1.0)
+        }
+        sleep(3)
+    }
+
     // MARK: - Lock screen
 
     /// Exactly one secure field (the master password), no Secret Key field, no Emergency Kit screen.

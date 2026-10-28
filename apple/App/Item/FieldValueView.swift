@@ -1,4 +1,8 @@
 import DesignKit
+#if os(iOS)
+import CoreMotion
+import UniformTypeIdentifiers
+#endif
 import SwiftUI
 import VaultKit
 
@@ -413,6 +417,13 @@ struct ValueRow<Accessory: View>: View {
     @State private var revealed = false
     @State private var revealedAt: Date?
     @State private var large = false
+    #if os(iOS)
+    /// Shown while a finger holds the value (released: masked again at once).
+    @State private var held = false
+    /// Tilting the phone toward the face while a secret shows makes it larger to read.
+    @State private var tilt = TiltReader()
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
 
     init(
         label: String, value: String, isSecret: Bool, monospaced: Bool, copyIdentifier: String?,
@@ -433,14 +444,31 @@ struct ValueRow<Accessory: View>: View {
         self.accessory = accessory()
     }
 
-    private var hidden: Bool { isSecret && (!revealed || captured) }
+    private var hidden: Bool {
+        #if os(iOS)
+        isSecret && ((!revealed && !held) || captured)
+        #else
+        isSecret && (!revealed || captured)
+        #endif
+    }
+
+    /// iPhone: a shown secret read at arm's length grows while the phone is tilted toward the face.
+    private var enlarged: Bool {
+        #if os(iOS)
+        isSecret && !hidden && tilt.towardFace
+        #else
+        false
+        #endif
+    }
 
     var body: some View {
         DetailRow(
             label: label, copyIdentifier: copyIdentifier, onCopy: onCopy, showsMenu: isSecret || allowsLarge
         ) {
             Text(hidden ? FieldRow.mask : value)
-                .font(monospaced ? .body.monospaced() : .body)
+                .font(enlarged ? .system(.title, design: .monospaced).weight(.semibold)
+                    : monospaced ? .body.monospaced() : .body)
+                .animation(.spring(duration: 0.3, bounce: 0.2), value: enlarged)
                 .textSelection(.disabled)
                 .accessibilityLabel(Text(label))
                 .accessibilityValue(Text(hidden ? "masqué" : value))
@@ -463,6 +491,41 @@ struct ValueRow<Accessory: View>: View {
         }
         .onDisappear { if revealed { setRevealed(false) } }
         .onChange(of: concealToken) { if revealed { setRevealed(false) } }
+        #if os(iOS)
+        // Hold to see: revealed after a short press, masked the moment the finger lifts.
+        // Simultaneous: the row's own tap (copy) and the drag lift keep working.
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.35, maximumDistance: 24)
+                .onEnded { _ in if isSecret, !captured { held = true } })
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onEnded { _ in held = false })
+        .sensoryFeedback(.impact(weight: .medium), trigger: held) { _, now in now }
+        // Folding the phone hides whatever was shown.
+        .onChange(of: sizeClass) {
+            held = false
+            if revealed { setRevealed(false) }
+        }
+        .onChange(of: !hidden && isSecret) { _, showing in
+            if showing { tilt.start() } else { tilt.stop() }
+        }
+        // Drag the value out to another app: a secret is produced only at the drop, the drag
+        // preview shows the field's name, never the value.
+        .onDrag {
+            let provider = NSItemProvider()
+            let text = value
+            provider.registerDataRepresentation(forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all) { load in
+                load(Data(text.utf8), nil)
+                return nil
+            }
+            provider.suggestedName = label
+            return provider
+        } preview: {
+            Label(label, systemImage: isSecret ? "key.fill" : "text.alignleft")
+                .padding(10)
+                .background(.regularMaterial, in: Capsule())
+        }
+        #endif
         // Captured: masked now, and still masked once the capture ends.
         .onChange(of: captured) { _, now in if now, revealed { setRevealed(false) } }
         .sheet(isPresented: Binding(get: { large && !hidden }, set: { large = $0 })) {
@@ -701,3 +764,31 @@ struct WebsiteRow: View {
         #endif
     }
 }
+
+#if os(iOS)
+/// The phone tilted toward the face (screen nearly upright, top edge away): device motion only,
+/// no permission, running only while a secret is shown.
+@Observable
+@MainActor
+final class TiltReader {
+    private(set) var towardFace = false
+    @ObservationIgnored private let motion = CMMotionManager()
+
+    func start() {
+        guard motion.isDeviceMotionAvailable, !motion.isDeviceMotionActive else { return }
+        motion.deviceMotionUpdateInterval = 0.1
+        motion.startDeviceMotionUpdates(to: .main) { [weak self] data, _ in
+            guard let self, let pitch = data?.attitude.pitch else { return }
+            // Above about 70 degrees: held up in front of the eyes.
+            let up = pitch > 1.2
+            if up != self.towardFace { self.towardFace = up }
+        }
+    }
+
+    func stop() {
+        motion.stopDeviceMotionUpdates()
+        towardFace = false
+    }
+}
+#endif
+

@@ -11,10 +11,40 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var windowScene: UIWindowScene?
     #endif
+    #if os(iOS)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The vault door playing between the lock screen and the vault (iPhone and iPad).
+    @State private var vaultPassage: VaultPassage.Direction?
+    #endif
 
     var body: some View {
         content
             .animation(.smooth(duration: 0.25), value: route)
+            #if os(iOS)
+            // Unlock: the wheel turns once, the door swings open, the vault shows. Lock: the reverse.
+            // Reduce Motion keeps the plain fade.
+            .overlay {
+                if let direction = vaultPassage {
+                    VaultPassage(direction: direction) { vaultPassage = nil }
+                        .transition(.opacity)
+                }
+            }
+            #if DEBUG
+            // Captures: `-OnePassDemoVaultPassage YES` plays the opening then the closing passage.
+            .task {
+                guard UserDefaults.standard.bool(forKey: "OnePassDemoVaultPassage") else { return }
+                try? await Task.sleep(for: .seconds(1))
+                vaultPassage = .opening
+                try? await Task.sleep(for: .seconds(2.5))
+                vaultPassage = .closing
+            }
+            #endif
+            .onChange(of: route) { old, new in
+                guard !reduceMotion else { return }
+                if old == .lock, new == .unlocked { vaultPassage = .opening }
+                if old == .unlocked, new == .lock { vaultPassage = .closing }
+            }
+            #endif
             .onAppear { model.start() }
             .onChange(of: model.session.state) { _, state in
                 model.sessionStateChanged(state)
@@ -122,3 +152,47 @@ struct RootView: View {
         }
     }
 }
+
+#if os(iOS)
+/// The vault illustration as a short passage over the screen change. Opening: one turn of the
+/// wheel, the door swings open, then everything fades into the vault. Closing: the door swings
+/// shut over the lock screen, the wheel turns back, then it fades. About 1.3 s, touches pass.
+struct VaultPassage: View {
+    enum Direction { case opening, closing }
+
+    let direction: Direction
+    let done: () -> Void
+    @State private var wheel: Double = 0
+    @State private var door: Double = 0
+    @State private var shown = true
+
+    var body: some View {
+        ZStack {
+            Color(uiColor: .systemBackground).ignoresSafeArea()
+            VaultIllustration(size: 300, tint: Theme.accent, wheelTurn: wheel, doorOpen: door)
+        }
+        .opacity(shown ? 1 : 0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .task {
+            if direction == .closing {
+                wheel = 360
+                door = 1
+                withAnimation(.spring(duration: 0.5, bounce: 0.1)) { door = 0 }
+                try? await Task.sleep(for: .milliseconds(450))
+                withAnimation(.easeInOut(duration: 0.55)) { wheel = 0 }
+                try? await Task.sleep(for: .milliseconds(600))
+            } else {
+                withAnimation(.easeInOut(duration: 0.6)) { wheel = 360 }
+                try? await Task.sleep(for: .milliseconds(600))
+                withAnimation(.spring(duration: 0.55, bounce: 0.15)) { door = 1 }
+                try? await Task.sleep(for: .milliseconds(450))
+            }
+            withAnimation(.easeOut(duration: 0.25)) { shown = false }
+            try? await Task.sleep(for: .milliseconds(260))
+            done()
+        }
+    }
+}
+#endif
+

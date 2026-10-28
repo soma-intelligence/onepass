@@ -9,9 +9,17 @@ public struct VaultIllustration: View {
     private let tint: Color
     @Environment(\.colorScheme) private var scheme
 
-    public init(size: CGFloat = 320, tint: Color = Color(red: 0.37, green: 0.36, blue: 0.90)) {
+    /// The wheel's turn in degrees and how far the door has swung open (0 closed, 1 open): the
+    /// unlock animation drives both; the still picture leaves them at 0.
+    private let wheelTurn: Double
+    private let doorOpen: Double
+
+    public init(size: CGFloat = 320, tint: Color = Color(red: 0.37, green: 0.36, blue: 0.90),
+        wheelTurn: Double = 0, doorOpen: Double = 0) {
         self.size = size
         self.tint = tint
+        self.wheelTurn = wheelTurn
+        self.doorOpen = doorOpen
     }
 
     private var dark: Bool { scheme == .dark }
@@ -63,6 +71,8 @@ public struct VaultIllustration: View {
             key(u: u).rotationEffect(.degrees(-36)).offset(x: -u * 34, y: -u * 19)
 
             door(u: u)
+                // Hinged on the left: swings toward the viewer, opening on the right.
+                .rotation3DEffect(.degrees(-82 * doorOpen), axis: (x: 0, y: 1, z: 0), anchor: .leading, perspective: 0.45)
 
             padlock(u: u).rotationEffect(.degrees(-10)).offset(x: -u * 28, y: u * 26)
 
@@ -123,6 +133,7 @@ public struct VaultIllustration: View {
                     startPoint: .leading, endPoint: .trailing), style: StrokeStyle(lineWidth: u * 0.6, lineCap: .round))
                 .frame(width: u * 45, height: u * 45)
             wheel(u: u)
+                .rotationEffect(.degrees(wheelTurn))
         }
     }
 

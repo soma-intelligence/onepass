@@ -315,4 +315,194 @@ private struct TopBlurFade: ViewModifier {
 extension View {
     fileprivate func topBlurFade() -> some View { modifier(TopBlurFade()) }
 }
+
+// MARK: - Unfolded iPhone
+
+extension EnvironmentValues {
+    /// Set by the unfolded layout: list rows become draggable and report the drag's start.
+    @Entry var itemDragStarted: (@MainActor (ItemRef) -> Void)?
+}
+
+/// The unfolded iPhone (spec "iPhone pliable"): the item list and the detail side by side, the
+/// fold's seam between them. On unfold the open item slides out from the seam. Dragging a row
+/// raises a tray of vaults and a star at the bottom: drop to move or to mark as favorite.
+struct FoldSplitView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+    @State private var dragging: ItemRef?
+    @State private var dragToken = 0
+
+    var body: some View {
+        GeometryReader { proxy in
+            let half = proxy.size.width / 2
+            // Two plain panes, not a split view: an iPhone-sized split view slides its list over
+            // the detail and dims it; here both halves stay put on either side of the fold.
+            HStack(spacing: 0) {
+                NavigationStack {
+                    ItemListColumn()
+                        // The account menu (Réglages, Importer, Verrouiller) as on the folded phone.
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) { AccountMenu() }
+                                .sharedBackgroundVisibility(.hidden)
+                        }
+                }
+                .frame(width: half)
+                DetailColumn()
+                    .frame(width: proxy.size.width - half)
+                    // Out from the seam: from the hinge toward the right edge.
+                    .offset(x: appeared || reduceMotion ? 0 : -half * 0.4)
+                    .opacity(appeared ? 1 : 0)
+                    .clipped()
+            }
+            .overlay(alignment: .topLeading) { hinge.offset(x: half - 4) }
+            .overlay(alignment: .bottom) {
+                if let dragging {
+                    FoldDropTray(ref: dragging) { self.dragging = nil }
+                        .padding(.bottom, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(duration: 0.35, bounce: 0.2), value: dragging)
+        }
+        .environment(\.itemDragStarted) { ref in
+            dragging = ref
+            dragToken &+= 1
+        }
+        // A drag dropped outside any target leaves no callback: the tray goes after a while.
+        .task(id: dragToken) {
+            guard dragging != nil else { return }
+            try? await Task.sleep(for: .seconds(8))
+            if !Task.isCancelled { dragging = nil }
+        }
+        .onAppear {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.55, bounce: 0.18).delay(0.05)) {
+                appeared = true
+            }
+        }
+    }
+
+    /// The fold: a soft vertical crease, darker in its middle, never taking a touch.
+    private var hinge: some View {
+        LinearGradient(colors: [.clear, Color.primary.opacity(0.10), .clear], startPoint: .leading, endPoint: .trailing)
+            .frame(width: 8)
+            .frame(maxHeight: .infinity)
+            .overlay {
+                LinearGradient(colors: [.clear, Color.primary.opacity(0.18), Color.primary.opacity(0.18), .clear],
+                    startPoint: .top, endPoint: .bottom)
+                    .frame(width: 1)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// While a row is dragged: the vaults as round marks and a star, each one a drop target that
+/// grows under the finger.
+private struct FoldDropTray: View {
+    @Environment(AppModel.self) private var model
+    let ref: ItemRef
+    let done: () -> Void
+    @State private var targeted: String?
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ForEach(model.session.vaults, id: \.id) { vault in
+                target(id: vault.id, label: vault.meta.name, current: vault.id == ref.vaultID) {
+                    VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 44)
+                } drop: {
+                    move(to: vault)
+                }
+            }
+            Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 36)
+            target(id: "favorite", label: String(localized: "Favori"), current: false) {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color(red: 0xF5 / 255, green: 0xA6 / 255, blue: 0x23 / 255).gradient, in: Circle())
+            } drop: {
+                favorite()
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .glassEffect(.regular, in: Capsule())
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("fold.dropTray")
+    }
+
+    private func target(
+        id: String, label: String, current: Bool, @ViewBuilder mark: () -> some View, drop: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 5) {
+            mark()
+                .scaleEffect(targeted == id ? 1.22 : 1)
+                .opacity(current ? 0.4 : 1)
+            Text(label).font(.caption2.weight(.medium)).lineLimit(1).frame(maxWidth: 70)
+        }
+        .animation(.spring(duration: 0.25, bounce: 0.4), value: targeted)
+        .dropDestination(for: String.self) { items, _ in
+            guard !current, items.contains(where: { $0.hasPrefix(FoldDrag.prefix) }) else { return false }
+            drop()
+            return true
+        } isTargeted: { inside in
+            if inside { targeted = id } else if targeted == id { targeted = nil }
+        }
+        .sensoryFeedback(.selection, trigger: targeted)
+        .accessibilityIdentifier("fold.drop.\(id)")
+    }
+
+    private func move(to vault: FfiVault) {
+        let ref = ref
+        done()
+        Task {
+            do {
+                try await model.session.move(itemID: ref.itemID, from: ref.vaultID, to: vault.id)
+                model.showToast(String(localized: "Déplacé vers \(vault.meta.name)"))
+            } catch {
+                model.showToast(VaultError(error).localizedMessage, kind: .error)
+            }
+        }
+    }
+
+    private func favorite() {
+        let ref = ref
+        done()
+        Task {
+            try? await model.session.setFavorite(true, itemID: ref.itemID, vaultID: ref.vaultID)
+            model.showToast(String(localized: "Ajouté aux favoris"))
+        }
+    }
+}
+
+/// The drag payload of a row: an opaque reference, never the item's content.
+enum FoldDrag {
+    static let prefix = "onepass-item:"
+
+    static func payload(_ ref: ItemRef) -> String { prefix + ref.vaultID + "/" + ref.itemID }
+}
+
+/// List rows of the unfolded layout: open on tap, draggable to the tray (elsewhere unchanged).
+struct ItemRowDrag: ViewModifier {
+    @Environment(AppModel.self) private var model
+    @Environment(\.itemDragStarted) private var started
+    let ref: ItemRef
+
+    func body(content: Content) -> some View {
+        if let started {
+            // Outside a split view a list does not select on tap: the row opens its item itself.
+            content
+                .contentShape(.rect)
+                .onTapGesture { model.selectedItem = ref }
+                .onDrag {
+                started(ref)
+                return NSItemProvider(object: FoldDrag.payload(ref) as NSString)
+            }
+        } else {
+            content
+        }
+    }
+}
 #endif
