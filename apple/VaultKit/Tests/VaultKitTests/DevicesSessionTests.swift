@@ -47,6 +47,27 @@ struct DevicesSessionTests {
         #expect(!f.newcomer.passwordChangedElsewhere)
     }
 
+    /// The core lists the account's first device under its default name and type ("Appareil",
+    /// other); the session names it after this device right away, and again at unlock.
+    @Test func newAccountListsThisDeviceByNameAndType() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "Camille", mode: .personal)
+        try await session.refreshDevices()
+        let me = try #require(session.devices.first { $0.isThisDevice })
+        #expect(session.devices.count == 1)
+        #expect(me.name == VaultSession.currentDeviceName())
+        #expect(me.kind == VaultSession.currentDeviceKind)
+        #expect(me.mode == .personal)
+
+        session.lock()
+        try await session.unlock(password: testPassword)
+        try await session.refreshDevices()
+        #expect(session.devices.count == 1)
+        #expect(session.devices.first?.name == VaultSession.currentDeviceName())
+    }
+
     @Test func revokedDeviceWipes() async throws {
         let f = try await PairingFixture(server: true)
         defer { f.cleanUp() }

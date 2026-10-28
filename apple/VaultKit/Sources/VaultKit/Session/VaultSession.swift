@@ -1325,7 +1325,7 @@ public final class VaultSession {
         // Only a list that reads as revoked erases; one that cannot be read now (the server behind
         // after a lost zone, for example) never blocks the unlock or the reload.
         if checkRevoked, (try? session.isThisDeviceRevoked()) == true { throw VaultError.deviceRevoked }
-        if let device, session.thisDeviceId() == nil {
+        if let device, needsRegistration(session) {
             do {
                 _ = try session.registerThisDevice(name: device.name, kind: device.kind, mode: device.mode)
             } catch {
@@ -1334,6 +1334,17 @@ public final class VaultSession {
         }
         let purged = purge ? try session.purgeTrash(olderThanDays: trashRetentionDays) : 0
         return Snapshot(vaults: try session.vaults(), summaries: try session.itemSummaries(), purged: purged)
+    }
+
+    /// The core's default name of a device that listed itself (`devices::DEFAULT_DEVICE_NAME`).
+    nonisolated static let defaultDeviceName = "Appareil"
+
+    /// This device has no id yet, or the core listed it under its default name and type (the first
+    /// device of a new account, a migrated store): it registers its real name and type.
+    nonisolated private static func needsRegistration(_ session: Session) -> Bool {
+        guard session.thisDeviceId() != nil else { return true }
+        guard let me = (try? session.devices())?.first(where: { $0.isThisDevice }) else { return false }
+        return me.revokedAt == nil && me.name == defaultDeviceName && me.kind == .other
     }
 
     func background<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
