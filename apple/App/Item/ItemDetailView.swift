@@ -441,6 +441,39 @@ struct ItemDetailView: View {
         // Actions on the right of the detail column (the search lives at the top of the list).
         ToolbarSpacer(.flexible)
         #endif
+        #if os(macOS)
+        // The vault as quiet text, then one glass group of same-size icons: Partager, Modifier,
+        // Actions (separate glass pills of mixed sizes looked heavy and uneven).
+        if item.trashedAt == nil {
+            ToolbarItem(placement: .primaryAction) {
+                VaultToolbarMenu(currentVaultID: item.vaultId) { vault in move(item, to: vault) }
+                    .menuStyle(.button)
+                    .buttonStyle(QuietToolbarButtonStyle())
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            if item.trashedAt == nil {
+                ShareLink(item: ItemShare.text(item), subject: Text(item.title)) {
+                    Label("Partager", systemImage: "square.and.arrow.up")
+                }
+                .help("Partager")
+                .accessibilityIdentifier("item.share")
+                // ⌘E is the "Modifier" menu command (`BrowseCommands`).
+                Button("Modifier", systemImage: "pencil") { startEditing(item) }
+                    .help("Modifier (⌘E)")
+                    .accessibilityIdentifier("item.edit")
+            }
+            Menu {
+                menuContent(item)
+            } label: {
+                Label("Actions", systemImage: "ellipsis")
+            }
+            .menuIndicator(.hidden)
+            .help("Actions")
+            .accessibilityIdentifier("item.menu")
+        }
+        #else
         if item.trashedAt == nil {
             ToolbarItem(placement: .primaryAction) {
                 VaultToolbarMenu(currentVaultID: item.vaultId) { vault in move(item, to: vault) }
@@ -466,6 +499,7 @@ struct ItemDetailView: View {
             .menuIndicator(.hidden)
             .accessibilityIdentifier("item.menu")
         }
+        #endif
     }
 
     @ViewBuilder private func menuContent(_ item: FfiItem) -> some View {

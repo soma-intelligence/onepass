@@ -70,30 +70,56 @@ private struct FavoriteBadge: ViewModifier {
 
     static let amber = Color(red: 0xF5 / 255, green: 0xA6 / 255, blue: 0x23 / 255)
 
-    private var starSize: CGFloat { (iconSize * 0.42).rounded() }
-    /// The star's center sits on the icon's corner, pulled in a little so most of it overlaps.
-    private var inset: CGFloat { iconSize * 0.1 }
+    private var star: CGFloat { iconSize * 0.42 }
+    /// The gap cut around the star, so it reads on any row background, selected or not.
+    private var ring: CGFloat { max(1.5, iconSize * 0.05) }
+    /// The star's center, mostly over the icon, its tips just past the corner.
+    private var center: CGFloat { iconSize * 0.84 }
 
     func body(content: Content) -> some View {
         if isOn {
             content
                 .mask {
-                    Rectangle()
-                        .overlay(alignment: .bottomTrailing) { star.scaleEffect(1.45).blendMode(.destinationOut) }
-                        .compositingGroup()
+                    ZStack(alignment: .topLeading) {
+                        Rectangle()
+                        placed(StarShape().fill(.black).overlay {
+                            StarShape().stroke(.black, style: StrokeStyle(lineWidth: ring * 2, lineJoin: .round))
+                        })
+                        .blendMode(.destinationOut)
+                    }
+                    .compositingGroup()
                 }
-                .overlay(alignment: .bottomTrailing) {
-                    star.foregroundStyle(Self.amber).accessibilityLabel(Text("Favori"))
+                .overlay(alignment: .topLeading) {
+                    // A thin stroke of the same amber rounds the tips.
+                    placed(StarShape().fill(Self.amber).overlay {
+                        StarShape().stroke(Self.amber, style: StrokeStyle(lineWidth: star * 0.08, lineJoin: .round))
+                    })
+                    .accessibilityLabel(Text("Favori"))
                 }
         } else {
             content
         }
     }
 
-    private var star: some View {
-        Image(systemName: "star.fill")
-            .font(.system(size: starSize, weight: .semibold))
-            .frame(width: starSize * 1.2, height: starSize * 1.2)
-            .offset(x: starSize * 0.6 - inset, y: starSize * 0.6 - inset)
+    private func placed(_ view: some View) -> some View {
+        view.frame(width: star, height: star).position(x: center, y: center)
+    }
+}
+
+/// A five-pointed star drawn as a path: its cut-out ring and its fill share the same geometry.
+private struct StarShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY + rect.height * 0.04)
+        let outer = min(rect.width, rect.height) / 2
+        let inner = outer * 0.48
+        var path = Path()
+        for i in 0..<10 {
+            let radius = i.isMultiple(of: 2) ? outer : inner
+            let angle = -Double.pi / 2 + Double(i) * .pi / 5
+            let point = CGPoint(x: center.x + radius * cos(angle), y: center.y + radius * sin(angle))
+            if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        path.closeSubpath()
+        return path
     }
 }
