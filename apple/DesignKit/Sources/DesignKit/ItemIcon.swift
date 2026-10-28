@@ -198,8 +198,8 @@ private struct BrandCard: View {
             }
             .overlay(alignment: .bottomTrailing) {
                 mark
-                    .padding(.trailing, width * 0.08)
-                    .padding(.bottom, height * 0.12)
+                    .padding(.trailing, width * 0.07)
+                    .padding(.bottom, height * (brand == "amex" ? 0.1 : 0.12))
             }
             .overlay { shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5) }
             .frame(width: width, height: height)
@@ -223,8 +223,11 @@ private struct BrandCard: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundStyle(.white)
-                .frame(width: width * (brand == "visa" ? 0.42 : brand == "amex" ? 0.24 : 0.3),
-                    height: width * (brand == "amex" ? 0.24 : 0.18))
+                // The marks sit in a square 24 pt box: the Visa wordmark is a thin band across it,
+                // so its box is sized by width and its empty top and bottom are pulled back in.
+                .frame(width: width * (brand == "visa" ? 0.5 : brand == "amex" ? 0.3 : 0.42),
+                    height: width * (brand == "visa" ? 0.5 : brand == "amex" ? 0.3 : 0.24))
+                .frame(height: brand == "visa" ? width * 0.17 : nil)
         }
     }
 }
