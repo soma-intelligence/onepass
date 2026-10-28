@@ -55,9 +55,11 @@ export interface Manifest {
   parts: number;
   workers: number;
   mismatches: number;
+  /** Pages that produced no row (a form the extractor cannot reach, e.g. in a shadow root). Not counted in formsPerSecond. */
+  skippedForms: number;
   seconds: number;
   formsPerSecond: number;
-  byRole: Record<string, number>;
+  byTarget: Record<string, number>;
   byLang: Record<string, number>;
   bySource: Record<string, number>;
   bySplit: Record<string, number>;
@@ -138,7 +140,7 @@ export async function buildDataset(opts: BuildOptions): Promise<Manifest> {
   const writer = new PartWriter(dir);
   const m: Manifest = {
     seed: opts.seed, generator: GENERATOR_VERSION, featureVersion: FEATURE_VERSION, forms: 0, rows: 0, parts: 0, workers,
-    mismatches: 0, seconds: 0, formsPerSecond: 0, byRole: {}, byLang: {}, bySource: {}, bySplit: {},
+    mismatches: 0, skippedForms: 0, seconds: 0, formsPerSecond: 0, byTarget: {}, byLang: {}, bySource: {}, bySplit: {},
   };
 
   const pw = (await import("playwright-core")) as unknown as { chromium?: any; default?: { chromium: any } };
@@ -147,7 +149,25 @@ export async function buildDataset(opts: BuildOptions): Promise<Manifest> {
   const started = Date.now(); // throughput measurement only: no row depends on it
   const source = tasks(opts.seed, patterns);
   let claimed = 0;
-  const next = (): Task | undefined => (claimed < opts.forms ? (claimed++, source.next().value as Task) : undefined);
+  const next = (): (Task & { seq: number }) | undefined => (claimed < opts.forms ? { ...(source.next().value as Task), seq: claimed++ } : undefined);
+  // Rows are written in task order, whatever order the workers finish in: a seed always gives the same files.
+  const done = new Map<number, DatasetRow[]>();
+  let written = 0;
+  const flush = (): void => {
+    for (let rows = done.get(written); rows; rows = done.get(written)) {
+      done.delete(written++);
+      m.forms++;
+      if (rows.length === 0) m.skippedForms++;
+      for (const row of rows) {
+        writer.write(row);
+        m.rows++;
+        bump(m.byTarget, row.target);
+        bump(m.byLang, row.lang);
+        bump(m.bySource, row.source);
+        bump(m.bySplit, row.split);
+      }
+    }
+  };
 
   const worker = async (): Promise<void> => {
     const ctx = await browser.newContext({ javaScriptEnabled: true, serviceWorkers: "block" });
@@ -157,19 +177,12 @@ export async function buildDataset(opts: BuildOptions): Promise<Manifest> {
       const html = renderSitePage(t.site, p.page, p.ctx, { labelMarks: true }).replace("<head>", `<head>${FAST_TIMERS}`);
       await page.setContent(html, { waitUntil: "domcontentloaded" });
       const features: PageFeatures = await page.evaluate(EXTRACT);
-      m.forms++;
       if (!consistent(t.site, t.step, features)) {
         m.mismatches++;
         if (process.env.DATASET_DEBUG) console.error(`mismatch site ${t.site.index} ${t.site.flow} ${t.site.traits.join(",")} step ${t.step} marks ${JSON.stringify(features.forms.flatMap((f) => f.fields.map((x) => x.lab)))} spec ${datasetPages(t.site)[t.step]!.fields.length}`);
       }
-      for (const row of rowsFor(t.site, t.step, features, t.seed)) {
-        writer.write(row);
-        m.rows++;
-        bump(m.byRole, row.label);
-        bump(m.byLang, row.lang);
-        bump(m.bySource, row.source);
-        bump(m.bySplit, row.split);
-      }
+      done.set(t.seq, rowsFor(t.site, t.step, features, t.seed));
+      flush();
     }
     await ctx.close();
   };
@@ -181,7 +194,7 @@ export async function buildDataset(opts: BuildOptions): Promise<Manifest> {
   await writer.finish();
   m.parts = writer.parts;
   m.seconds = Math.round((Date.now() - started) / 10) / 100;
-  m.formsPerSecond = Math.round((m.forms / Math.max(m.seconds, 0.001)) * 10) / 10;
+  m.formsPerSecond = Math.round(((m.forms - m.skippedForms) / Math.max(m.seconds, 0.001)) * 10) / 10;
   writeFileSync(join(dir, "manifest.json"), `${JSON.stringify(m, null, 2)}\n`);
   return m;
 }
@@ -206,6 +219,6 @@ if (isMain) {
     process.exit(2);
   }
   buildDataset({ seed: a.seed, forms, workers: a.workers ? Number(a.workers) : undefined, out: a.out })
-    .then((m) => console.log(JSON.stringify({ forms: m.forms, rows: m.rows, parts: m.parts, mismatches: m.mismatches, seconds: m.seconds, formsPerSecond: m.formsPerSecond })))
+    .then((m) => console.log(JSON.stringify({ forms: m.forms, rows: m.rows, parts: m.parts, mismatches: m.mismatches, skippedForms: m.skippedForms, seconds: m.seconds, formsPerSecond: m.formsPerSecond })))
     .catch((e) => { console.error(e instanceof Error ? e.message : e); process.exit(1); });
 }

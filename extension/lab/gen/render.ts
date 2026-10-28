@@ -73,7 +73,7 @@ const t = (lang: Lang, key: Text) => (TEXT[lang as keyof typeof TEXT] ?? TEXT.en
 // A label that asks to type the new password again, in the corpus languages.
 const CONFIRM_LABEL = /confirm|bestätig|wiederhol|repeat|retype|again|répét|repet|vérif/i;
 
-function styleOf(site: Site): LoginStyle {
+export function styleOf(site: Site): LoginStyle {
   if (site.flow === "login_username_first") return "username_first";
   if (site.flow === "login_email_then_password") return "email_then_password";
   return site.loginStyle ?? "single";
