@@ -26,3 +26,18 @@ Noté le 2026-10-26 (Task 3, C1). Pas commencé.
 
 - **Boutons fournisseur et sélecteur de compte dans un cadre enfant.** La chaîne et l'overlay ne retiennent d'un cadre enfant de même origine que ses formulaires de connexion ou de code. Un bouton "Continuer avec Google" ou un sélecteur de compte placé dans ce cadre n'est pas cliqué : une page qui ne propose que cela dans une iframe reste au menu.
 - **Commits du cadre et compteur de navigation.** Un commit du cadre où la chaîne a agi fait avancer le compteur de navigation de la chaîne, comme un commit du cadre principal. Entre ce commit et l'analyse du nouveau document du cadre, une analyse du cadre principal sans formulaire peut lancer l'attente de fin (1,5 s) plus tôt que voulu. Même course que pour une navigation du cadre principal ; la fin n'arrive jamais moins de 4 s après le chargement.
+
+## Coffre haute sécurité verrouillé par YubiKey
+
+Noté le 2026-10-28, demandé par le fondateur. Pas commencé.
+
+**Besoin.** Une section du coffre (un ou plusieurs vaults marqués "haute sécurité") ne s'ouvre qu'avec une clé matérielle (YubiKey ou toute clé FIDO2), en plus du déverrouillage normal. Le reste du coffre garde le mot de passe maître et Touch ID.
+
+**Principe envisagé.**
+- La clé de ce vault est enveloppée une seconde fois par une clé dérivée de la YubiKey. Sans la clé physique, le contenu reste illisible, même avec le mot de passe maître et la Secret Key.
+- Dérivation par l'extension FIDO2 `hmac-secret` / WebAuthn PRF (sel fixe par vault), via `ASAuthorizationSecurityKeyPublicKeyCredentialProvider` sur macOS et iOS (NFC ou USB-C/Lightning). Repli possible : défi-réponse HMAC-SHA1 du slot OTP des YubiKey.
+- Au moins deux clés enregistrées par vault (une principale, une de secours), chacune enveloppe la même clé de vault. L'Emergency Kit indique quels vaults exigent une clé matérielle.
+- La clé de vault déverrouillée ne reste en mémoire que le temps de la consultation (délai court, réglable), puis est effacée.
+- Le core reste la seule partie qui manipule la clé : Swift ne reçoit que la sortie PRF le temps de l'appel.
+
+**Points ouverts.** Récupération si les deux clés sont perdues (aucune, ou par l'Emergency Kit avec un délai ?) ; comportement de l'extension navigateur et de l'AutoFill pour ces vaults (refus par défaut, ou demande de la clé) ; sync et appareils sans NFC.

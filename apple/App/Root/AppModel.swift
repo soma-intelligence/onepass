@@ -1,5 +1,6 @@
 import Foundation
 import GlanceKit
+import ImageIO
 import LocalAuthentication
 import Observation
 import Security
@@ -876,7 +877,13 @@ final class AppModel {
             return
         }
         #endif
-        _ = await AutoFillStatus.requestActivation()
+        // The system prompt does not always show (already asked within 10 s, or macOS keeps the
+        // choice in System Settings): when the provider is still off, open that page instead of
+        // leaving the button without effect.
+        let enabled = await AutoFillStatus.requestActivation()
+        if !enabled, !(await AutoFillStatus.isEnabled()) {
+            await AutoFillStatus.openProviderSettings()
+        }
         await refreshAutoFillStatus()
     }
 
@@ -1061,6 +1068,21 @@ final class AppModel {
         if DemoData.requested { return DemoData.defaults }
         #endif
         return .standard
+    }
+
+    @ObservationIgnored private var photoCache: (data: Data, image: Image)?
+
+    /// The account photo, decoded once per change of the stored JPEG.
+    var profileImage: Image? {
+        _ = settingsRevision
+        guard let data = settings.profilePhoto else { return nil }
+        if let photoCache, photoCache.data == data { return photoCache.image }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else { return nil }
+        let image = Image(decorative: cgImage, scale: 1)
+        photoCache = (data, image)
+        return image
     }
 
     /// Initials for the account badge ("Camille Durand" gives "CD"), empty without a name.

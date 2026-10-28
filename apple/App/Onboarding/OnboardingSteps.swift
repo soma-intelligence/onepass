@@ -7,7 +7,7 @@ struct OnboardingStepContent: View {
     @Bindable var model: OnboardingModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: Platform.isMac ? 18 : 22) {
             switch model.step {
             case .welcome: WelcomeStep(model: model)
             case .device: DeviceStep(model: model)
@@ -20,7 +20,8 @@ struct OnboardingStepContent: View {
             case .pairMode: PairingModeStep(model: model)
             case .pairing: PairingStep(model: model)
             }
-            if let busy = model.busyMessage {
+            // iPhone and iPad: the primary button carries the busy message.
+            if Platform.isMac, let busy = model.busyMessage {
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
                     Text(busy).foregroundStyle(.secondary)
@@ -28,18 +29,49 @@ struct OnboardingStepContent: View {
                 .font(.subheadline)
             }
             if let error = model.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("onboarding.error")
-                if model.offerRestore {
-                    Button("J'ai mon Emergency Kit") { model.switchToRestore() }
-                        .buttonStyle(.glass)
-                }
+                OnboardingErrorCard(message: error, model: model)
+                    .transition(.opacity.combined(with: .offset(y: 6)))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.smooth(duration: 0.3), value: model.errorMessage)
         .disabled(model.busy)
+    }
+}
+
+/// An error where it happened, with its next step as a button: never only an alert.
+private struct OnboardingErrorCard: View {
+    let message: String
+    let model: OnboardingModel
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.red)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("onboarding.error")
+                if let action = model.errorAction {
+                    Button(action.label) { Task { await model.performErrorAction() } }
+                        .font(.subheadline.weight(.semibold))
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("onboarding.errorAction")
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: Platform.isMac ? 12 : 16, style: .continuous)
+            shape.fill(Color.red.opacity(0.08))
+                .overlay(shape.strokeBorder(Color.red.opacity(0.22), lineWidth: 1))
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -51,15 +83,15 @@ struct StepTitle: View {
     var centered = false
 
     var body: some View {
-        VStack(alignment: centered ? .center : .leading, spacing: 10) {
+        VStack(alignment: centered ? .center : .leading, spacing: Platform.isMac ? 10 : 12) {
             Text(title)
-                .font(Platform.isMac ? .system(size: 28, weight: .bold) : .system(size: 30, weight: .bold))
+                .font(Platform.isMac ? .system(size: 28, weight: .bold) : .largeTitle.bold())
                 .multilineTextAlignment(centered ? .center : .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             if let subtitle {
                 Text(subtitle)
-                    .font(Platform.isMac ? .system(size: 15) : .system(size: 16))
+                    .font(Platform.isMac ? .system(size: 15) : .body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(centered ? .center : .leading)
                     .lineSpacing(2)
@@ -116,7 +148,7 @@ private struct CardBackground: ViewModifier {
                         .overlay(shape.strokeBorder(selected ? Theme.accent : Color.primary.opacity(0.1),
                                                     lineWidth: selected ? 2 : 1))
                 } else {
-                    shape.fill(.fill.tertiary)
+                    shape.fill(selected ? AnyShapeStyle(Theme.accent.opacity(0.10)) : AnyShapeStyle(.fill.tertiary))
                         .overlay(shape.strokeBorder(selected ? Theme.accent : .clear, lineWidth: 2))
                 }
             }
@@ -125,6 +157,20 @@ private struct CardBackground: ViewModifier {
 
 extension View {
     func card(selected: Bool = false) -> some View { modifier(CardBackground(selected: selected)) }
+
+    /// A card that acts as a button: it gives a little under the finger on iPhone.
+    @ViewBuilder func onboardingPressable() -> some View {
+        #if os(iOS)
+        buttonStyle(PressableButtonStyle())
+        #else
+        buttonStyle(.plain)
+        #endif
+    }
+}
+
+/// The fields of a step that pass the focus along (return goes to the next one).
+enum OnboardingFocus: Hashable {
+    case password, confirm
 }
 
 /// Text or secure field in the mockup style (filled on iPhone, bordered on Mac).
@@ -134,10 +180,15 @@ struct OnboardingField: View {
     @Binding var text: String
     var secure = false
     var mismatch = false
+    /// Checked and right (a confirmation that matches): green outline and check.
+    var valid = false
     var monospaced = false
     /// Secret Key entry: no autocorrection, ASCII keyboard, capitals, hidden from screen captures.
     var secretKey = false
     var identifier: String
+    /// Focus chaining: the step's focus state and this field's place in it.
+    var focus: FocusState<OnboardingFocus?>.Binding?
+    var focusValue: OnboardingFocus?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -150,6 +201,7 @@ struct OnboardingField: View {
                 }
             }
             .labelsHidden()
+            .modifier(OnboardingFocusModifier(focus: focus, value: focusValue))
             .textFieldStyle(.plain)
             .font(monospaced ? .system(.body, design: .monospaced) : .body)
             .autocorrectionDisabled()
@@ -158,20 +210,47 @@ struct OnboardingField: View {
             .keyboardType(secretKey ? .asciiCapable : .default)
             #endif
             .privacySensitive(secretKey || secure)
-            .padding(.horizontal, 14)
+            .accessibilityIdentifier(identifier)
+            .padding(.leading, 14)
+            .padding(.trailing, mismatch || valid ? 8 : 14)
             .frame(height: Platform.isMac ? 40 : 52)
-            .background {
-                let shape = RoundedRectangle(cornerRadius: Platform.isMac ? 10 : 14, style: .continuous)
-                if Platform.isMac {
-                    shape.fill(.background)
-                        .overlay(shape.strokeBorder(mismatch ? Color.red : Color.primary.opacity(0.15),
-                                                    lineWidth: mismatch ? 2 : 1))
-                } else {
-                    shape.fill(.fill.tertiary)
-                        .overlay(shape.strokeBorder(mismatch ? Color.red : .clear, lineWidth: 2))
+            .overlay(alignment: .trailing) {
+                if mismatch || valid {
+                    Image(systemName: valid ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(valid ? Color.green : Color.red)
+                        .padding(.trailing, 12)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                        .accessibilityHidden(true)
                 }
             }
-            .accessibilityIdentifier(identifier)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: Platform.isMac ? 10 : 14, style: .continuous)
+                let edge: Color = mismatch ? .red : valid ? .green : .clear
+                if Platform.isMac {
+                    shape.fill(.background)
+                        .overlay(shape.strokeBorder(edge == .clear ? Color.primary.opacity(0.15) : edge,
+                                                    lineWidth: edge == .clear ? 1 : 2))
+                } else {
+                    shape.fill(.fill.tertiary)
+                        .overlay(shape.strokeBorder(edge, lineWidth: 1.5))
+                }
+            }
+            .animation(.smooth(duration: 0.2), value: mismatch)
+            .animation(.smooth(duration: 0.2), value: valid)
+        }
+    }
+}
+
+private struct OnboardingFocusModifier: ViewModifier {
+    let focus: FocusState<OnboardingFocus?>.Binding?
+    let value: OnboardingFocus?
+
+    func body(content: Content) -> some View {
+        if let focus, let value {
+            content.focused(focus, equals: value)
+        } else {
+            content
         }
     }
 }
@@ -210,7 +289,7 @@ private struct WelcomeStep: View {
         if Platform.isMac {
             AppGlyph(size: 64).accessibilityHidden(true)
         } else {
-            AppGlyph(size: 88).padding(.top, 30)
+            AppGlyph(size: 96).padding(.top, 36).padding(.bottom, 4)
         }
         Text("Bienvenue dans OnePass")
             .font(.system(size: Platform.isMac ? 32 : 34, weight: .bold))
@@ -277,11 +356,11 @@ private struct WelcomeStep: View {
                     Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
                 }
             }
-            .padding(Platform.isMac ? 16 : 14)
+            .padding(Platform.isMac ? 16 : 16)
             .contentShape(Rectangle())
             .card()
         }
-        .buttonStyle(.plain)
+        .onboardingPressable()
         .visionHoverEffect()
         .disabled(soon)
         .opacity(soon ? 0.55 : 1)
@@ -313,9 +392,18 @@ private struct DeviceStep: View {
     ) -> some View {
         let selected = model.mode == mode
         return Button {
-            model.mode = mode
+            withAnimation(.spring(duration: 0.35, bounce: 0.15)) { model.mode = mode }
         } label: {
             HStack(spacing: 14) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.fill.secondary))
+                    .frame(width: 44, height: 44)
+                    .overlay {
+                        Image(systemName: mode == .personal ? "person.fill" : "person.2.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(selected ? Color.white : Color.primary)
+                    }
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.system(size: 16, weight: .semibold))
                     Text(subtitle).font(.system(size: 13.5)).foregroundStyle(.secondary)
@@ -323,15 +411,27 @@ private struct DeviceStep: View {
                 }
                 .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
-                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(selected ? Theme.accent : .secondary)
+                ZStack {
+                    Circle()
+                        .strokeBorder(Color.secondary.opacity(selected ? 0 : 0.35), lineWidth: 1.5)
+                    if selected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 24))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, Theme.accent)
+                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    }
+                }
+                .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
             }
             .padding(16)
             .contentShape(Rectangle())
             .card(selected: selected)
+            .scaleEffect(selected || Platform.isMac ? 1 : 0.98)
+            .opacity(selected || Platform.isMac ? 1 : 0.9)
         }
-        .buttonStyle(.plain)
+        .onboardingPressable()
         .visionHoverEffect()
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(mode == .personal ? "onboarding.personal" : "onboarding.shared")
@@ -342,6 +442,7 @@ private struct DeviceStep: View {
 
 private struct PasswordStep: View {
     @Bindable var model: OnboardingModel
+    @FocusState private var focus: OnboardingFocus?
 
     var body: some View {
         StepTitle(
@@ -354,14 +455,19 @@ private struct PasswordStep: View {
             label: "Ton prénom (affiché seulement sur tes appareils)", prompt: "Camille",
             text: $model.displayName, identifier: "onboarding.name")
         #endif
-        OnboardingField(
-            label: "Mot de passe maître",
-            prompt: Platform.isMac ? "Cinq mots tirés au hasard marchent bien" : "Cinq mots tirés au hasard",
-            text: $model.password, secure: true, identifier: "onboarding.password")
-        StrengthMeter(bits: model.passwordBits)
+        VStack(alignment: .leading, spacing: 10) {
+            OnboardingField(
+                label: "Mot de passe maître",
+                prompt: Platform.isMac ? "Cinq mots tirés au hasard marchent bien" : "Cinq mots tirés au hasard",
+                text: $model.password, secure: true, identifier: "onboarding.password",
+                focus: $focus, focusValue: .password)
+            .submitLabel(.next)
+            .onSubmit { focus = .confirm }
+            MasterStrengthMeter(password: model.password, bits: model.passwordBits)
+        }
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Button {
-                model.generateMasterPassword()
+                withAnimation(.smooth(duration: 0.3)) { model.generateMasterPassword() }
             } label: {
                 Label("Générer", systemImage: "wand.and.stars")
             }
@@ -376,12 +482,24 @@ private struct PasswordStep: View {
                     .accessibilityIdentifier("onboarding.generated")
             }
         }
-        OnboardingField(
-            label: "Confirme-le", prompt: "", text: $model.confirmation, secure: true,
-            mismatch: model.confirmationMismatch, identifier: "onboarding.confirm")
-        if model.confirmationMismatch {
-            Text("Les deux saisies sont différentes.").font(.footnote).foregroundStyle(.red)
+        VStack(alignment: .leading, spacing: 8) {
+            OnboardingField(
+                label: "Confirme-le", prompt: "", text: $model.confirmation, secure: true,
+                mismatch: model.confirmationMismatch, valid: model.confirmationMatches,
+                identifier: "onboarding.confirm", focus: $focus, focusValue: .confirm)
+            .submitLabel(.continue)
+            .onSubmit { Task { await model.primary() } }
+            if model.confirmationMismatch {
+                Label("Les deux saisies sont différentes.", systemImage: "xmark")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.red)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("onboarding.mismatch")
+            }
         }
+        .id(OnboardingFocus.confirm)
+        .animation(.smooth(duration: 0.2), value: model.confirmationMismatch)
+        PasswordRulesList(rules: model.passwordRules)
         if Platform.isMac {
             Label {
                 Text("Conseil : cinq mots tirés au hasard (« tapis-orage-girafe-violon-nuage ») sont plus solides et plus faciles à retenir qu'un mot compliqué. « Générer » en tire cinq pour toi.")
@@ -394,6 +512,88 @@ private struct PasswordStep: View {
             .padding(12)
             .card()
         }
+    }
+}
+
+/// Live strength of the master password, on the scale of the gate: green only once it passes.
+private struct MasterStrengthMeter: View {
+    let password: String
+    let bits: Double
+
+    private var level: Int {
+        if password.isEmpty { return 0 }
+        if bits < 40 { return 1 }
+        if !PasswordStrength.acceptsMasterPassword(password) { return 2 }
+        return bits < 90 ? 3 : 4
+    }
+
+    private var tint: Color {
+        switch level {
+        case 1: .red
+        case 2: .orange
+        case 3, 4: .green
+        default: .secondary
+        }
+    }
+
+    private var word: String {
+        switch level {
+        case 1: String(localized: "Trop faible")
+        case 2: String(localized: "Presque")
+        case 3: String(localized: "Solide")
+        case 4: String(localized: "Excellent")
+        default: String(localized: "Force")
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 4) {
+                ForEach(0..<4, id: \.self) { index in
+                    Capsule()
+                        .fill(index < level ? tint : Color.primary.opacity(0.1))
+                        .frame(height: 5)
+                }
+            }
+            Text(word)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(level == 0 ? Color.secondary : tint)
+                .contentTransition(.opacity)
+                .frame(minWidth: 70, alignment: .trailing)
+        }
+        .animation(.spring(duration: 0.35, bounce: 0), value: level)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Force du mot de passe"))
+        .accessibilityValue(Text(word))
+        .accessibilityIdentifier("onboarding.strength")
+    }
+}
+
+/// The rules of the master password: a circle each, turning into a green check once met.
+private struct PasswordRulesList: View {
+    let rules: [PasswordRule]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(rules) { rule in
+                HStack(spacing: 10) {
+                    Image(systemName: rule.met ? "checkmark.circle.fill" : "circle")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(rule.met ? Color.green : Color.secondary.opacity(0.6))
+                        .contentTransition(.symbolEffect(.replace))
+                        .frame(width: 22)
+                    Text(rule.label)
+                        .font(.subheadline)
+                        .foregroundStyle(rule.met ? Color.primary : Color.secondary)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(rule.label))
+                .accessibilityValue(Text(rule.met ? String(localized: "fait") : String(localized: "à faire")))
+                .accessibilityIdentifier("onboarding.rule.\(rule.id)")
+            }
+        }
+        .padding(.top, 2)
+        .animation(.spring(duration: 0.3, bounce: 0.2), value: rules.map(\.met))
     }
 }
 
@@ -411,6 +611,15 @@ private struct SecretKeyStep: View {
     #endif
 
     var body: some View {
+        if model.path == .create {
+            Label("Coffre créé", systemImage: "checkmark.seal.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.green)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.green.opacity(0.12), in: Capsule())
+                .accessibilityIdentifier("onboarding.created")
+        }
         StepTitle(
             title: "Range ta Secret Key",
             subtitle: Platform.text(
@@ -474,7 +683,7 @@ private struct SecretKeyStep: View {
                 .font(.subheadline)
                 .accessibilityIdentifier("onboarding.saveKit")
         }
-        CheckRow(title: "Je l'ai rangée hors ligne", isOn: $model.kitStoredOffline)
+        KitStoredRow(isOn: $model.kitStoredOffline)
             .accessibilityIdentifier("onboarding.kitStored")
             .onAppear { model.prepareKit() }
             .onDisappear { model.deleteKit() }
@@ -511,6 +720,57 @@ private struct SecretKeyStep: View {
     }
 }
 
+/// "Je l'ai rangée hors ligne": a checkbox on Mac; on iPhone and iPad a card whose circle draws a
+/// green check, the card turning green with it.
+private struct KitStoredRow: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        #if os(macOS)
+        CheckRow(title: "Je l'ai rangée hors ligne", isOn: $isOn)
+        #else
+        Button {
+            withAnimation(.spring(duration: 0.4, bounce: 0.25)) { isOn.toggle() }
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .strokeBorder(Color.secondary.opacity(isOn ? 0 : 0.45), lineWidth: 1.5)
+                    if isOn {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 28))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, Color.green)
+                            .transition(.scale(scale: 0.3).combined(with: .opacity))
+                    }
+                }
+                .frame(width: 28, height: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Je l'ai rangée hors ligne")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text(isOn ? "C'est noté. Garde-la loin de tes écrans." : "Imprimée, ou sur un support hors ligne.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.opacity)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .contentShape(Rectangle())
+            .background {
+                let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+                shape.fill(isOn ? AnyShapeStyle(Color.green.opacity(0.10)) : AnyShapeStyle(.fill.tertiary))
+                    .overlay(shape.strokeBorder(isOn ? Color.green.opacity(0.6) : .clear, lineWidth: 1.5))
+            }
+        }
+        .onboardingPressable()
+        .visionHoverEffect()
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+        #endif
+    }
+}
+
 #if os(iOS) || os(visionOS)
 private struct SharedKitFile: Identifiable {
     let url: URL
@@ -524,28 +784,48 @@ private struct BiometricsStep: View {
     @Bindable var model: OnboardingModel
 
     var body: some View {
+        let enabled = model.biometricsEnabled
         VStack(spacing: 18) {
-            RoundedRectangle(cornerRadius: Platform.isMac ? 48 : 30, style: .continuous)
-                .fill(.fill.tertiary)
-                .frame(width: Platform.isMac ? 96 : 120, height: Platform.isMac ? 96 : 120)
-                .overlay {
+            ZStack {
+                RoundedRectangle(cornerRadius: Platform.isMac ? 48 : 32, style: .continuous)
+                    .fill(enabled ? AnyShapeStyle(Color.green.opacity(0.12)) : AnyShapeStyle(.fill.tertiary))
+                if enabled {
+                    CalmCheckmark(size: Platform.isMac ? 64 : 80)
+                        .transition(.opacity)
+                } else {
                     Image(systemName: OnboardingModel.biometrySymbol)
                         .font(.system(size: Platform.isMac ? 46 : 60, weight: .light))
                         .foregroundStyle(Theme.accent)
+                        .symbolEffect(.pulse, options: .repeating, isActive: model.busy)
+                        .transition(.opacity)
                 }
-                .padding(.top, Platform.isMac ? 0 : 30)
-                .accessibilityHidden(true)
+            }
+            .frame(width: Platform.isMac ? 96 : 128, height: Platform.isMac ? 96 : 128)
+            .padding(.top, Platform.isMac ? 0 : 28)
+            .animation(.smooth(duration: 0.35), value: enabled)
+            .accessibilityHidden(true)
             StepTitle(
-                title: "Déverrouiller avec \(model.biometryName)",
-                subtitle: Platform.text(
-                mac: "La clé de déverrouillage reste dans la Secure Enclave de ce Mac. Ajouter une empreinte l'invalide : le mot de passe maître est alors redemandé. Il est aussi redemandé tous les 14 jours.",
-                phone: "La clé reste dans la Secure Enclave. Le mot de passe maître est redemandé tous les 14 jours et si \(model.biometryName) change."),
+                title: enabled ? "\(model.biometryName) est activé" : "Déverrouiller avec \(model.biometryName)",
+                subtitle: enabled
+                    ? "Ton coffre s'ouvre maintenant d'un regard ou d'un doigt."
+                    : Platform.text(
+                        mac: "La clé de déverrouillage reste dans la Secure Enclave de ce Mac. Ajouter une empreinte l'invalide : le mot de passe maître est alors redemandé. Il est aussi redemandé tous les 14 jours.",
+                        phone: "La clé reste dans la Secure Enclave. Le mot de passe maître est redemandé tous les 14 jours et si \(model.biometryName) change."),
                 centered: !Platform.isMac)
+                .contentTransition(.opacity)
+                .accessibilityIdentifier(enabled ? "onboarding.biometricsOn" : "onboarding.biometricsOffer")
+            if !enabled, !Platform.isMac {
+                Text("« Plus tard » : tu pourras l'activer dans Réglages.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
         }
         .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
         #if os(macOS)
         Toggle("Accepter aussi l'Apple Watch", isOn: $model.allowWatch)
             .toggleStyle(.checkbox)
+            .disabled(enabled)
         #endif
     }
 }
@@ -692,37 +972,58 @@ private struct RestoreStep: View {
 
 private struct DoneStep: View {
     let model: OnboardingModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var settled = false
 
     var body: some View {
-        Circle()
-            .fill(Color.green.opacity(0.2))
-            .frame(width: Platform.isMac ? 64 : 90, height: Platform.isMac ? 64 : 90)
-            .overlay {
-                Image(systemName: "checkmark")
-                    .font(.system(size: Platform.isMac ? 28 : 40, weight: .bold))
-                    .foregroundStyle(.green)
-            }
+        CalmCheckmark(size: Platform.isMac ? 64 : 96)
             .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
-            .padding(.top, Platform.isMac ? 0 : 40)
+            .padding(.top, Platform.isMac ? 0 : 44)
+            .padding(.bottom, Platform.isMac ? 0 : 4)
             .accessibilityHidden(true)
-        Text(title)
-            .font(.system(size: Platform.isMac ? 30 : 32, weight: .bold))
-            .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
-            .accessibilityAddTraits(.isHeader)
+        VStack(spacing: 8) {
+            Text(title)
+                .font(Platform.isMac ? .system(size: 30, weight: .bold) : .largeTitle.bold())
+                .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("onboarding.doneTitle")
+            Text("Ton coffre est chiffré et prêt sur cet \(Platform.deviceName).")
+                .font(Platform.isMac ? .system(size: 15) : .body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(Platform.isMac ? .leading : .center)
+                .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
+        }
+        .opacity(settled ? 1 : 0)
+        .offset(y: settled ? 0 : 6)
         VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                if index > 0 { Divider().padding(.leading, 16) }
-                HStack {
+                if index > 0 { Divider().padding(.leading, 52) }
+                HStack(spacing: 12) {
+                    Image(systemName: row.symbol)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(Theme.accent)
+                        .frame(width: 24)
+                        .accessibilityHidden(true)
                     Text(row.label)
                     Spacer()
                     Text(row.value).foregroundStyle(.secondary)
                 }
                 .font(Platform.isMac ? .system(size: 14) : .body)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.vertical, 13)
+                .accessibilityElement(children: .combine)
             }
         }
         .card()
+        .opacity(settled ? 1 : 0)
+        .offset(y: settled ? 0 : 10)
+        .onAppear {
+            if reduceMotion {
+                settled = true
+            } else {
+                withAnimation(.spring(duration: 0.6, bounce: 0).delay(0.55)) { settled = true }
+            }
+        }
         #if os(macOS)
         Button("Ouvrir OnePass") { Task { await model.primary() } }
             .buttonStyle(.glassProminent)
@@ -738,7 +1039,7 @@ private struct DoneStep: View {
             ? String(localized: "Tout est prêt, \(first)") : String(localized: "Tout est prêt")
     }
 
-    private var rows: [(label: String, value: String)] {
+    private var rows: [(symbol: String, label: String, value: String)] {
         let biometrics: String
         if model.biometricsEnabled {
             biometrics = String(localized: "Activé")
@@ -747,13 +1048,61 @@ private struct DoneStep: View {
         } else if !model.biometricsOffered {
             biometrics = String(localized: "Non disponible")
         } else {
-            biometrics = String(localized: "Plus tard")
+            biometrics = String(localized: "Plus tard, dans Réglages")
         }
         return [
-            (String(localized: "Coffre chiffré dans iCloud"),
+            ("icloud", String(localized: "Coffre chiffré dans iCloud"),
              model.cloudKitEnabled ? String(localized: "Oui") : String(localized: "Non (build local)")),
-            (model.biometryName, biometrics),
-            ("Emergency Kit", model.path == .create ? String(localized: "Rangé") : String(localized: "Déjà fait")),
+            (OnboardingModel.biometrySymbol, model.biometryName, biometrics),
+            ("doc.text", "Emergency Kit", model.path == .create ? String(localized: "Rangé") : String(localized: "Déjà fait")),
         ]
+    }
+}
+
+/// A calm success: a ring draws itself, then the check, in green. No bounce, no confetti; drawn at
+/// once with Reduce Motion.
+struct CalmCheckmark: View {
+    let size: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var ring = false
+    @State private var check = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.green.opacity(0.12))
+                .scaleEffect(ring ? 1 : 0.86)
+                .opacity(ring ? 1 : 0)
+            Circle()
+                .trim(from: 0, to: ring ? 1 : 0)
+                .stroke(Color.green, style: StrokeStyle(lineWidth: max(size * 0.035, 2.5), lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .padding(size * 0.02)
+            CheckShape()
+                .trim(from: 0, to: check ? 1 : 0)
+                .stroke(Color.green, style: StrokeStyle(lineWidth: max(size * 0.07, 4), lineCap: .round, lineJoin: .round))
+                .frame(width: size * 0.40, height: size * 0.30)
+                .offset(y: size * 0.01)
+        }
+        .frame(width: size, height: size)
+        .onAppear {
+            guard !reduceMotion else {
+                ring = true
+                check = true
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.55).delay(0.1)) { ring = true }
+            withAnimation(.easeOut(duration: 0.3).delay(0.5)) { check = true }
+        }
+    }
+}
+
+private struct CheckShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.55))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.37, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        return path
     }
 }

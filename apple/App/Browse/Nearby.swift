@@ -159,15 +159,8 @@ struct NearbyTile: View {
     var size: CGFloat = 18
 
     var body: some View {
-        RoundedRectangle(cornerRadius: size * 5 / 18, style: .continuous)
-            .fill(Color(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255))
-            .frame(width: size, height: size)
-            .overlay {
-                Image(systemName: "location.fill")
-                    .font(.system(size: size * 0.5, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-            .accessibilityHidden(true)
+        SymbolTile(symbol: "location.fill", color: Color(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255),
+            size: size)
     }
 }
 

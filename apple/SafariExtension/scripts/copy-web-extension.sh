@@ -14,3 +14,5 @@ fi
 
 mkdir -p "$DEST"
 cp -R "$SRC/." "$DEST/"
+# manifest.json is the phase's declared output: its new date makes Xcode sign the appex again.
+touch "$DEST/manifest.json"

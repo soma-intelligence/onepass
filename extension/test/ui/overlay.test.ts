@@ -162,7 +162,7 @@ describe("overlay", () => {
     expect(worker.types().slice(-2)).toEqual(["overlay_stop", "overlay_close"]);
   });
 
-  it("done: Connecté with the steps done, then the card leaves by itself", async () => {
+  it("done: a single check, no steps, then the card leaves by itself", async () => {
     const done: ChainView = {
       ...running,
       status: "done",
@@ -177,13 +177,9 @@ describe("overlay", () => {
     await handle.ready;
     await handle.poll();
     expect(r.querySelector(".ov-status")!.textContent).toBe("Connecté");
-    // The steps, worded by the page (the worker may speak another language), the end left out.
-    expect([...r.querySelectorAll(".ov-step-label")].map((x) => x.textContent)).toEqual([
-      "Clic sur « Continuer avec Google »",
-      "Compte choisi sur Google",
-      "Mot de passe Google rempli",
-    ]);
-    expect(r.querySelector(".ov-step-detail")!.textContent).toBe("alex.perso@example.com");
+    // Only the check: the words stay for screen readers, the steps are not listed.
+    expect(r.querySelector(".ov-status .dot-big")).not.toBeNull();
+    expect(r.querySelectorAll(".ov-step-label")).toHaveLength(0);
     expect(timers.intervals.size).toBe(0);
     timers.fire(DONE_CLOSE_MS);
     await flush();

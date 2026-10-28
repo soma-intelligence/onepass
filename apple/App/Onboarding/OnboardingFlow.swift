@@ -14,6 +14,31 @@ enum OnboardingPath: Sendable {
     case create, restore, pair
 }
 
+/// The next step offered under an inline error: never only a message.
+enum OnboardingErrorAction: Sendable {
+    /// Runs the primary action again.
+    case retry
+    /// The system settings (iCloud sign-in, keychain).
+    case openSettings
+    /// "J'ai mon Emergency Kit": this iCloud already holds an account.
+    case restore
+
+    var label: String {
+        switch self {
+        case .retry: String(localized: "Réessayer")
+        case .openSettings: String(localized: "Ouvrir Réglages")
+        case .restore: String(localized: "J'ai mon Emergency Kit")
+        }
+    }
+}
+
+/// One rule of the master password, shown as a checkmark that turns green once met.
+struct PasswordRule: Identifiable, Sendable {
+    let id: String
+    let label: String
+    let met: Bool
+}
+
 /// The onboarding state machine (spec 7): create an account, or restore one with the Emergency Kit.
 /// The typed fields are emptied as soon as they are submitted. When the biometric step follows, the
 /// master password then stays in a wipeable buffer until the last step, as does the new Secret Key
@@ -53,9 +78,25 @@ final class OnboardingModel {
     }
 
     private(set) var busyMessage: String?
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet {
+            if errorMessage == nil {
+                errorAction = nil
+            } else if errorMessage != oldValue {
+                errorPulse &+= 1
+            }
+        }
+    }
+    /// The next step offered with `errorMessage` (set after it).
+    private(set) var errorAction: OnboardingErrorAction?
     /// The creation was refused because this iCloud already holds an account (R13).
     private(set) var offerRestore = false
+
+    /// Haptic and motion triggers for the layouts: a new error, a success worth feeling (account
+    /// created, biometrics on, the end), and the direction of the last step change.
+    private(set) var errorPulse = 0
+    private(set) var successPulse = 0
+    private(set) var movingForward = true
 
     /// The mode asked for on "J'ai déjà OnePass sur un autre appareil" (public included).
     var pairDeviceMode: FfiDeviceMode = .personal
@@ -146,6 +187,7 @@ final class OnboardingModel {
         let index = stepIndex
         guard canGoBack, index > 0 else { return }
         if step == .pairing { stopPairing() }
+        movingForward = false
         step = steps[index - 1]
     }
 
@@ -153,6 +195,7 @@ final class OnboardingModel {
         errorMessage = nil
         let all = steps
         if let index = all.firstIndex(of: step), index + 1 < all.count {
+            movingForward = true
             step = all[index + 1]
         }
     }
@@ -161,6 +204,7 @@ final class OnboardingModel {
         self.path = path
         errorMessage = nil
         offerRestore = false
+        movingForward = true
         step = path == .pair ? .pairMode : .device
     }
 
@@ -172,11 +216,60 @@ final class OnboardingModel {
     var secretKey: String? { credentials.secretKey?.string() }
 
     var confirmationMismatch: Bool { !confirmation.isEmpty && confirmation != password }
+    var confirmationMatches: Bool { !confirmation.isEmpty && confirmation == password }
 
-    /// "Continuer" once the password reaches the master password gate (five random words pass,
-    /// `PasswordStrength.masterPasswordMinimumBits`) and both fields match.
-    var passwordAccepted: Bool {
-        PasswordStrength.acceptsMasterPassword(password) && password == confirmation
+    /// At least this many characters, on top of the strength gate.
+    static let masterPasswordMinimumLength = 12
+
+    /// The rules shown under the fields, in order; all must be met.
+    var passwordRules: [PasswordRule] {
+        [
+            PasswordRule(
+                id: "length",
+                label: String(localized: "\(Self.masterPasswordMinimumLength) caractères au moins"),
+                met: password.count >= Self.masterPasswordMinimumLength),
+            PasswordRule(
+                id: "strength",
+                label: String(localized: "Assez solide pour ton coffre"),
+                met: PasswordStrength.acceptsMasterPassword(password)),
+            PasswordRule(
+                id: "match",
+                label: String(localized: "Confirmé à l'identique"),
+                met: confirmationMatches),
+        ]
+    }
+
+    /// "Continuer" once every rule holds: the length, the master password gate (five random words
+    /// pass, `PasswordStrength.masterPasswordMinimumBits`) and both fields matching.
+    var passwordAccepted: Bool { passwordRules.allSatisfy(\.met) }
+
+    /// Why the primary button is off, said next to it.
+    var primaryHint: String? {
+        guard !busy, !primaryEnabled, primaryLabel != nil else { return nil }
+        switch step {
+        case .password:
+            if password.isEmpty { return String(localized: "Choisis un mot de passe, ou touche Générer.") }
+            let missing = Self.masterPasswordMinimumLength - password.count
+            if missing > 0 {
+                return missing == 1 ? String(localized: "Encore 1 caractère.") : String(localized: "Encore \(missing) caractères.")
+            }
+            if !PasswordStrength.acceptsMasterPassword(password) {
+                return String(localized: "Pas encore assez solide : ajoute un mot, ou touche Générer.")
+            }
+            if confirmation.isEmpty { return String(localized: "Confirme ton mot de passe.") }
+            return String(localized: "Les deux saisies doivent être identiques.")
+        case .secretKey:
+            return String(localized: "Coche la case une fois ta Secret Key rangée.")
+        case .restore:
+            if restoreKey.trimmingCharacters(in: .whitespaces).isEmpty {
+                return String(localized: "Saisis la Secret Key de ton kit.")
+            }
+            return String(localized: "Saisis ton mot de passe maître.")
+        case .pairing:
+            return String(localized: "Saisis ton mot de passe maître.")
+        default:
+            return nil
+        }
     }
 
     /// Shown under "Générer" so it can be written down, decoded on each read (kept in a wipeable
@@ -222,6 +315,8 @@ final class OnboardingModel {
         switch step {
         case .password: return passwordAccepted
         case .secretKey: return kitStoredOffline
+        // Enabled: the success shows for a moment before the next step.
+        case .biometrics: return !biometricsEnabled
         case .restore: return !restoreKey.trimmingCharacters(in: .whitespaces).isEmpty && !restorePassword.isEmpty
         case .pairing:
             if pairing?.state == .receivedFull { return !restorePassword.isEmpty }
@@ -230,7 +325,7 @@ final class OnboardingModel {
         }
     }
 
-    var canSkip: Bool { step == .biometrics && !busy }
+    var canSkip: Bool { step == .biometrics && !busy && !biometricsEnabled }
 
     func primary() async {
         guard primaryEnabled else { return }
@@ -261,6 +356,33 @@ final class OnboardingModel {
         advance()
     }
 
+    /// The button under an inline error.
+    func performErrorAction() async {
+        guard let action = errorAction else { return }
+        switch action {
+        case .retry:
+            errorMessage = nil
+            await primary()
+        case .openSettings:
+            #if os(iOS)
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                await UIApplication.shared.open(url)
+            }
+            #elseif os(macOS)
+            if let url = URL(string: "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings") {
+                NSWorkspace.shared.open(url)
+            }
+            #endif
+        case .restore:
+            switchToRestore()
+        }
+    }
+
+    private func fail(_ message: String, next action: OnboardingErrorAction?) {
+        errorMessage = message
+        errorAction = action
+    }
+
     // MARK: - Actions
 
     private func createAccount() async {
@@ -269,20 +391,20 @@ final class OnboardingModel {
         errorMessage = nil
         offerRestore = false
         guard await model.iCloudAccountAvailable() else {
-            errorMessage = String(localized: "Connecte-toi à iCloud dans Réglages pour créer ton coffre.")
+            fail(String(localized: "Connecte-toi à iCloud dans Réglages pour créer ton coffre."), next: .openSettings)
             return
         }
         do {
             if try await model.remoteHasAccount() {
-                errorMessage = String(localized: "Un compte OnePass existe déjà dans ton iCloud, utilise ton Emergency Kit.")
+                fail(String(localized: "Un compte OnePass existe déjà dans ton iCloud, utilise ton Emergency Kit."), next: .restore)
                 offerRestore = true
                 return
             }
         } catch RemoteStoreError.accountUnavailable {
-            errorMessage = String(localized: "Connecte-toi à iCloud dans Réglages pour créer ton coffre.")
+            fail(String(localized: "Connecte-toi à iCloud dans Réglages pour créer ton coffre."), next: .openSettings)
             return
         } catch {
-            errorMessage = String(localized: "Impossible de vérifier ton iCloud. Vérifie ta connexion puis réessaie.")
+            fail(String(localized: "Impossible de vérifier ton iCloud. Vérifie ta connexion puis réessaie."), next: .retry)
             return
         }
         busyMessage = String(localized: "Création du coffre...")
@@ -297,9 +419,14 @@ final class OnboardingModel {
             let key = try await session.createAccount(password: typed, displayName: name, mode: mode)
             // The password is kept only when the biometric step follows.
             credentials.accountCreated(secretKey: key, password: typed, keepPasswordForBiometrics: biometricsOffered)
+            successPulse &+= 1
             advance()
         } catch {
-            errorMessage = VaultError(error).localizedMessage
+            // The fields were emptied on submission: the next step is typing the password again
+            // (said in the message). A keychain refusal also offers the settings.
+            fail(
+                VaultError(error).localizedMessage + " " + String(localized: "Saisis à nouveau ton mot de passe pour réessayer."),
+                next: error is KeychainError ? .openSettings : nil)
         }
     }
 
@@ -316,9 +443,14 @@ final class OnboardingModel {
             try await model.enableBiometrics(password: typed)
             model.markBiometricOfferAnswered()
             biometricsEnabled = true
+            successPulse &+= 1
+            busyMessage = nil
+            // The success shows on this step for a moment, then the next one comes in.
+            try? await Task.sleep(for: .milliseconds(1100))
+            guard step == .biometrics else { return }
             advance()
         } catch {
-            errorMessage = VaultError(error).localizedMessage
+            fail(VaultError(error).localizedMessage, next: .retry)
         }
     }
 
@@ -327,7 +459,7 @@ final class OnboardingModel {
         defer { busyMessage = nil }
         errorMessage = nil
         guard await model.iCloudAccountAvailable() else {
-            errorMessage = String(localized: "Connecte-toi à iCloud dans Réglages pour retrouver ton coffre.")
+            fail(String(localized: "Connecte-toi à iCloud dans Réglages pour retrouver ton coffre."), next: .openSettings)
             return
         }
         do {
@@ -339,14 +471,14 @@ final class OnboardingModel {
                 found = try await CoreThread.run { try hasAccount(dbPath: path) }
             }
             guard found else {
-                errorMessage = String(localized: "Aucun compte trouvé dans ton iCloud.")
+                fail(String(localized: "Aucun compte trouvé dans ton iCloud."), next: .openSettings)
                 return
             }
         } catch RemoteStoreError.accountUnavailable {
-            errorMessage = String(localized: "Connecte-toi à iCloud dans Réglages pour retrouver ton coffre.")
+            fail(String(localized: "Connecte-toi à iCloud dans Réglages pour retrouver ton coffre."), next: .openSettings)
             return
         } catch {
-            errorMessage = String(localized: "Impossible de joindre iCloud. Vérifie ta connexion puis réessaie.")
+            fail(String(localized: "Impossible de joindre iCloud. Vérifie ta connexion puis réessaie."), next: .retry)
             return
         }
         busyMessage = String(localized: "Déverrouillage...")
@@ -577,8 +709,8 @@ final class OnboardingModel {
     }
 }
 
-/// Full-window onboarding: pages with progress dots on iPhone and iPad, a step rail in a native
-/// sidebar on Mac (mockups `PhoneOnboarding` and `Onboarding`).
+/// Full-window onboarding: one step per screen with a thin progress line on iPhone and iPad, a
+/// step rail in a native sidebar on Mac (mockups `PhoneOnboarding` and `Onboarding`).
 struct OnboardingFlow: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
@@ -632,30 +764,63 @@ struct OnboardingFlow: View {
 // MARK: - iPhone and iPad
 
 #if os(iOS) || os(visionOS)
+/// One step at a time, pushed in from the trailing edge (from the leading edge when going back)
+/// on a critically damped spring, a fade with Reduce Motion. A thin progress line under the back
+/// button, one primary action pinned at the bottom above the keyboard, and the reason it is off
+/// said right above it.
 private struct PhoneOnboardingLayout: View {
     @Bindable var model: OnboardingModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
             topBar
                 .padding(.horizontal, 16)
-                .frame(height: 44)
-            ScrollView {
-                OnboardingStepContent(model: model)
-                    .frame(maxWidth: 520, alignment: .leading)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity)
+                .frame(height: 52)
+            ZStack {
+                ScrollView {
+                    OnboardingStepContent(model: model)
+                        .frame(maxWidth: 520, alignment: .leading)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 20)
+                        .padding(.bottom, 32)
+                        .frame(maxWidth: .infinity)
+                }
+                #if os(iOS)
+                .scrollDismissesKeyboard(.interactively)
+                #endif
+                .scrollBounceBehavior(.basedOnSize)
+                .id(model.step)
+                .transition(stepTransition)
             }
-            #if os(iOS)
-            .scrollDismissesKeyboard(.interactively)
-            #endif
+            // Content scrolled under the bottom bar stays out of it (the reason text sits there).
+            .clipped()
             bottomBar
                 .frame(maxWidth: 520)
                 .padding(.horizontal, 24)
+                .padding(.top, 8)
                 .padding(.bottom, 12)
         }
-        .animation(.smooth(duration: 0.25), value: model.step)
+        .animation(stepAnimation, value: model.step)
+        #if os(iOS)
+        .sensoryFeedback(.impact(weight: .light), trigger: model.step)
+        .sensoryFeedback(.selection, trigger: model.mode)
+        .sensoryFeedback(.success, trigger: model.successPulse)
+        .sensoryFeedback(.error, trigger: model.errorPulse)
+        .sensoryFeedback(trigger: model.kitStoredOffline) { _, stored in stored ? .success : .selection }
+        #endif
+    }
+
+    private var stepTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        let forward = model.movingForward
+        return .asymmetric(
+            insertion: .move(edge: forward ? .trailing : .leading).combined(with: .opacity),
+            removal: .move(edge: forward ? .leading : .trailing).combined(with: .opacity))
+    }
+
+    private var stepAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.5, bounce: 0)
     }
 
     private var topBar: some View {
@@ -672,64 +837,94 @@ private struct PhoneOnboardingLayout: View {
                 .buttonBorderShape(.circle)
                 .accessibilityLabel(Text("Retour"))
                 .accessibilityIdentifier("onboarding.back")
-            } else {
-                Color.clear.frame(width: 40, height: 40)
+                .transition(.opacity)
             }
             Spacer()
-            ProgressDots(count: model.steps.count, current: model.stepIndex)
-            Spacer()
-            Color.clear.frame(width: 40, height: 40)
         }
+        .frame(height: 44)
+        // Centered between the edges, clear of the back button.
+        .overlay { OnboardingProgressLine(model: model) }
+        .animation(.smooth(duration: 0.25), value: model.canGoBack)
     }
 
     @ViewBuilder private var bottomBar: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
+            if let hint = model.primaryHint {
+                Text(hint)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .transition(.opacity)
+                    .id(hint)
+                    .accessibilityIdentifier("onboarding.hint")
+            }
             if let label = model.primaryLabel {
                 Button {
                     Task { await model.primary() }
                 } label: {
-                    Group {
+                    HStack(spacing: 10) {
                         if model.busy {
-                            ProgressView()
+                            ProgressView().tint(.white)
+                            Text(model.busyMessage ?? label)
                         } else {
                             Text(label)
                         }
                     }
                     .font(.headline)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 40)
+                    .frame(height: 52)
+                    // The busy label replaces the title at once (a crossfade mixed both words).
+                    .transaction { $0.animation = nil }
                 }
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.capsule)
-                .disabled(!model.primaryEnabled)
+                // Busy keeps the prominent look (the spinner speaks), only taps are off.
+                .disabled(!model.primaryEnabled && !model.busy)
+                .allowsHitTesting(!model.busy)
                 .accessibilityIdentifier("onboarding.primary")
             }
             if model.canSkip {
                 Button("Plus tard") { model.skip() }
-                    .font(.body)
+                    .font(.body.weight(.medium))
                     .frame(height: 40)
                     .accessibilityIdentifier("onboarding.skip")
             }
         }
+        .animation(.smooth(duration: 0.25), value: model.primaryHint)
     }
 }
 
-private struct ProgressDots: View {
-    let count: Int
-    let current: Int
+/// Progress, quietly: a hairline under the navigation that fills as the steps go by. Hidden on
+/// the first and the last screens.
+private struct OnboardingProgressLine: View {
+    let model: OnboardingModel
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<count, id: \.self) { index in
+        let steps = model.steps
+        let total = max(steps.count - 1, 1)
+        let fraction = Double(model.stepIndex) / Double(total)
+        let shown = model.step != .welcome && model.step != .done && steps.count > 2
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.08))
                 Capsule()
-                    .fill(index <= current ? Theme.accent : Color.secondary.opacity(0.25))
-                    .frame(width: index == current ? 22 : 8, height: 8)
+                    .fill(Theme.accent)
+                    .frame(width: max(proxy.size.width * fraction, 3))
             }
         }
-        .animation(.smooth, value: current)
+        .frame(height: 3)
+        .frame(maxWidth: 160)
+        .opacity(shown ? 1 : 0)
+        .animation(.spring(duration: 0.5, bounce: 0), value: fraction)
+        .animation(.easeOut(duration: 0.2), value: shown)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Progression"))
-        .accessibilityValue(Text("Étape \(current + 1) sur \(count)"))
+        .accessibilityValue(Text("Étape \(model.stepIndex) sur \(total)"))
+        .accessibilityHidden(!shown)
+        .accessibilityIdentifier("onboarding.progress")
     }
 }
 #endif
@@ -775,6 +970,13 @@ private struct MacOnboardingLayout: View {
                     .accessibilityIdentifier("onboarding.back")
             }
             Spacer()
+            if let hint = model.primaryHint {
+                Text(hint)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .accessibilityIdentifier("onboarding.hint")
+            }
             if model.step != .welcome, model.step != .done {
                 if model.busy { ProgressView().controlSize(.small) }
                 if model.canSkip {

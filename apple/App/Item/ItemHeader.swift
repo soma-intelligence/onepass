@@ -24,7 +24,7 @@ struct ItemHeader: View {
     @ViewBuilder private var vaultBadge: some View {
         if let vault {
             HStack(spacing: 5) {
-                VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 16)
+                VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 16)
                 Text(vault.meta.name).lineLimit(1)
             }
             .padding(.leading, 3)
@@ -38,19 +38,14 @@ struct ItemHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon, size: 64)
+            ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon, size: 64, brand: item.cardBrandName)
+                .favoriteBadge(item.favorite, iconSize: 64)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(item.title)
                         .font(.title.weight(.bold))
                         .lineLimit(2)
                         .accessibilityIdentifier("item.title")
-                    if item.favorite {
-                        Image(systemName: "star.fill")
-                            .font(.callout)
-                            .foregroundStyle(.yellow)
-                            .accessibilityLabel(Text("Favori"))
-                    }
                 }
                 #if os(iOS)
                 // iPhone: the subtitle on its own line when the vault badge would cut it.

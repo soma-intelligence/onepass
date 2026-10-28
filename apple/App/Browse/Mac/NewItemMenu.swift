@@ -59,10 +59,10 @@ struct NewItemSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var showAll = false
+    /// The pointer over "Plus de catégories": its fan of tiles opens a little wider.
+    @State private var hoveringMore = false
     @FocusState private var searchFocused: Bool
-    #if os(iOS)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    #endif
     /// iPhone: the sheet stays up after a pick, the editor takes its place (`PhoneNewItemSheet`).
     private let inPhoneSheet: Bool
 
@@ -160,9 +160,7 @@ struct NewItemSheet: View {
                         moreCategories
                         if showAll {
                             allCategories
-                                #if os(iOS)
-                                .transition(Motion.reveal(reduceMotion: reduceMotion))
-                                #endif
+                                .transition(revealTransition)
                         }
                     } else {
                         if let website {
@@ -180,6 +178,10 @@ struct NewItemSheet: View {
                 .padding(.bottom, 16)
             }
             .scrollDismissesKeyboard(.immediately)
+            // No scroll bar flashing and resizing while the categories unfold: the sheet scrolls
+            // with the trackpad or wheel, the bar stays out of the animation.
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
 
             Divider().padding(.horizontal, Self.sideInset)
             Button {
@@ -233,11 +235,7 @@ struct NewItemSheet: View {
     /// The wide "Plus de catégories" row, with a few other types fanned out on its right.
     private var moreCategories: some View {
         Button {
-            #if os(iOS)
-            withAnimation(Motion.fold(reduceMotion: reduceMotion)) { showAll.toggle() }
-            #else
-            withAnimation(.snappy) { showAll.toggle() }
-            #endif
+            withAnimation(foldAnimation) { showAll.toggle() }
         } label: {
             HStack {
                 Text(showAll ? "Moins de catégories" : "Plus de catégories")
@@ -245,33 +243,75 @@ struct NewItemSheet: View {
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 ZStack {
-                    ForEach(Array([FfiItemType.router, .medicalRecord, .sshKey, .passport, .vehicle, .bankAccount].enumerated()), id: \.offset) { i, type in
+                    ForEach(Array(Self.fanTypes.enumerated()), id: \.offset) { i, type in
+                        let fan = fanPose(i)
                         CategoryTile(category: ItemCategory.of(type), size: Self.fanTile)
-                            .rotationEffect(.degrees(Double(i % 3 - 1) * 9))
-                            .offset(x: CGFloat(i) * Self.fanStep - Self.fanStep * 2.7, y: i.isMultiple(of: 2) ? 6 : -6)
-                            .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
+                            .rotationEffect(.degrees(fan.angle))
+                            .scaleEffect(fan.scale)
+                            .offset(x: fan.x, y: fan.y)
+                            .shadow(color: .black.opacity(showAll ? 0.12 : 0.28), radius: hoveringMore ? 5 : 3,
+                                y: hoveringMore ? 3 : 2)
+                            // A small stagger from left to right: the fan unfolds and folds like a hand of cards.
+                            .animation(reduceMotion ? .easeOut(duration: 0.2)
+                                : .spring(duration: 0.45, bounce: 0.28).delay(Double(i) * 0.025),
+                                value: hoveringMore)
+                            .animation(reduceMotion ? .easeOut(duration: 0.2)
+                                : .spring(duration: 0.5, bounce: 0.18).delay(Double(i) * 0.03),
+                                value: showAll)
                     }
                 }
                 .frame(width: Self.fanStep * 6.2, height: 44)
-                .opacity(showAll ? 0.5 : 1)
                 Image(systemName: "chevron.down")
+                    .font(.body.weight(.semibold))
                     .rotationEffect(.degrees(showAll ? 180 : 0))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(hoveringMore ? .primary : .secondary)
+                    .animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.2), value: showAll)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
-            .background(.fill.quinary, in: .rect(cornerRadius: 14))
-            .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.1)) }
+            .background(hoveringMore ? AnyShapeStyle(.fill.quaternary) : AnyShapeStyle(.fill.quinary),
+                in: .rect(cornerRadius: 14))
+            .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(hoveringMore ? 0.16 : 0.1)) }
             .contentShape(.rect(cornerRadius: 14))
         }
         .tileButtonStyle()
+        .onHover { hovering in hoveringMore = hovering }
+        .animation(.easeOut(duration: 0.15), value: hoveringMore)
         .accessibilityIdentifier("newItem.more")
+    }
+
+    /// The house fold (as DesignKit's iPhone `Motion.fold`, which the Mac target does not get):
+    /// a short critically damped spring, a plain ease with Reduce Motion.
+    private var foldAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.34, bounce: 0)
+    }
+
+    /// The categories unfolding: they fade in while settling a few points down from under the row.
+    private var revealTransition: AnyTransition {
+        reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: -8)), removal: .opacity)
+    }
+
+    private static let fanTypes: [FfiItemType] = [.router, .medicalRecord, .sshKey, .passport, .vehicle, .bankAccount]
+
+    /// Where fan tile `i` sits. At rest: a loose hand of cards. Under the pointer: wider, more tilted,
+    /// lifted. Open: gathered into a tidy stack against the chevron, as if put away.
+    private func fanPose(_ i: Int) -> (x: CGFloat, y: CGFloat, angle: Double, scale: CGFloat) {
+        let rest = CGFloat(i) * Self.fanStep - Self.fanStep * 2.7
+        let tilt = Double(i % 3 - 1)
+        let lift: CGFloat = i.isMultiple(of: 2) ? 6 : -6
+        if showAll {
+            return (Self.fanStep * 2.2 + CGFloat(i) * 3, CGFloat(i) * -1, tilt * 3, 0.82)
+        }
+        if hoveringMore, !reduceMotion {
+            return (rest * 1.12, lift * 1.35 - 2, tilt * 15, 1.06)
+        }
+        return (rest, lift, tilt * 9, 1)
     }
 
     private var allCategories: some View {
         VStack(alignment: .leading, spacing: 18) {
-            ForEach(groups) { group in
+            ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(group.title)
                         .font(.subheadline.weight(.semibold))
@@ -287,6 +327,7 @@ struct NewItemSheet: View {
                         }
                     }
                 }
+                .modifier(StaggeredReveal(index: index, reduceMotion: reduceMotion))
             }
         }
         .padding(.top, 8)
@@ -469,6 +510,26 @@ private struct NewItemTile: View {
         .onHover { hovering = $0 }
         .help(category.singular)
         .accessibilityIdentifier(identifier ?? "newItem.\(NewItemMenu.key(type))")
+    }
+}
+
+/// A group of "Toutes les catégories" settling in after the ones above it: it fades in and drops
+/// the last few points into place, 40 ms after the previous group (Reduce Motion: a plain fade).
+private struct StaggeredReveal: ViewModifier {
+    let index: Int
+    let reduceMotion: Bool
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 10)
+            .onAppear {
+                withAnimation(reduceMotion ? .easeOut(duration: 0.2)
+                    : .spring(duration: 0.42, bounce: 0.12).delay(Double(min(index, 6)) * 0.04)) {
+                    shown = true
+                }
+            }
     }
 }
 

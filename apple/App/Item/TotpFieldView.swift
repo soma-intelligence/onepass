@@ -7,20 +7,23 @@ import VaultKit
 struct TotpCodeView: View {
     let secret: String
     var compact = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        // Every frame while shown, so the ring drains smoothly; once a second with Reduce Motion.
+        TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 30)) { context in
             if let code = Self.code(secret, at: context.date) {
                 HStack(spacing: 10) {
                     Text(verbatim: Self.grouped(code.code))
                         .font(compact ? .callout.monospacedDigit() : .title3.monospacedDigit())
                         .contentTransition(.numericText())
+                        .animation(.snappy(duration: 0.35), value: code.code)
                         .accessibilityLabel(Text("Code à usage unique"))
                         .accessibilityValue(Text(verbatim: code.code))
                     if compact {
-                        TotpRing(remaining: Int(code.remaining), period: Int(code.period))
+                        TotpRing(remaining: Int(code.remaining), period: Int(code.period), exact: reduceMotion ? nil : Self.exactRemaining(period: code.period, at: context.date))
                     } else {
-                        TotpCountdown(remaining: Int(code.remaining), period: Int(code.period))
+                        TotpCountdown(remaining: Int(code.remaining), period: Int(code.period), exact: reduceMotion ? nil : Self.exactRemaining(period: code.period, at: context.date))
                     }
                 }
             } else {
@@ -29,6 +32,12 @@ struct TotpCodeView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// Seconds left in the current period, with their fraction.
+    static func exactRemaining(period: UInt32, at date: Date) -> Double {
+        let length = Double(max(period, 1))
+        return length - date.timeIntervalSince1970.truncatingRemainder(dividingBy: length)
     }
 
     /// Cheap core call (HMAC), fine on the main actor.

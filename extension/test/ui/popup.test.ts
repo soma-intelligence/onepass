@@ -187,11 +187,12 @@ describe("popup", () => {
     expect(button(r, "Réessayer")).toBeTruthy();
   });
 
-  it("suggestions for the domain, verified domain note", async () => {
+  it("suggestions for the domain with the site's icon, no extra note", async () => {
     const { r, handle } = setup();
     await handle.ready;
     expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
-    expect(text(r)).toContain("Domaine vérifié : atlas-cloud.test. Le remplissage ne marche que sur ce site exact.");
+    expect(text(r)).not.toContain("Domaine vérifié");
+    expect(r.querySelector("img.site-icon")!.getAttribute("src")).toBe("https://atlas-cloud.test/favicon.ico");
     expect(text(r)).toContain("Atlas Cloud");
     expect(text(r)).toContain("alex@atlas.dev");
     expect(r.querySelector("input[type=search]")!.getAttribute("placeholder")).toBe("Rechercher dans OnePass");
@@ -374,7 +375,8 @@ describe("popup", () => {
     );
     const { r, handle } = setup(w);
     await handle.ready;
-    expect(r.querySelector("img")).toBeNull();
+    // The only image is the site's icon: the title stays text.
+    expect(r.querySelector("img:not(.site-icon)")).toBeNull();
     expect(text(r)).toContain("<img src=x onerror=alert(1)>");
   });
 });

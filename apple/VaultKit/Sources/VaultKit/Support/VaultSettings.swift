@@ -45,6 +45,7 @@ public final class VaultSettings: @unchecked Sendable {
         static let lockout = "onepass.lockoutUntil"
         static let accountID = "onepass.accountID"
         static let displayName = "onepass.displayName"
+        static let profilePhoto = "onepass.profilePhoto"
         static let quickType = "onepass.quickTypeSuggestions"
         static let autofillTip = "onepass.autofillTipDismissed"
         static let revokedErase = "onepass.revokedErasePending"
@@ -133,6 +134,14 @@ public final class VaultSettings: @unchecked Sendable {
     public var displayName: String {
         get { defaults.string(forKey: Key.displayName) ?? "" }
         set { defaults.set(newValue, forKey: Key.displayName) }
+    }
+
+    /// The account's photo: a small square JPEG (no metadata), on this device only.
+    public var profilePhoto: Data? {
+        get { defaults.data(forKey: Key.profilePhoto) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Key.profilePhoto) } else { defaults.removeObject(forKey: Key.profilePhoto) }
+        }
     }
 
     /// Offer logins as QuickType suggestions in the keyboard bar (default on).

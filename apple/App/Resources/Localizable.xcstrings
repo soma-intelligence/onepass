@@ -238,6 +238,16 @@
         }
       }
     },
+    "%@ · utilisée %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · used %2$@"
+          }
+        }
+      }
+    },
     "%@, utilisé %@" : {
       "localizations" : {
         "en" : {
@@ -478,6 +488,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld · 30 days"
+          }
+        }
+      }
+    },
+    "%lld élément(s) déjà importé(s) mis à jour, %lld nouveau(x)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld already imported item(s) updated, %2$lld new"
           }
         }
       }
@@ -850,6 +870,16 @@
         }
       }
     },
+    "Achats" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shopping"
+          }
+        }
+      }
+    },
     "Action" : {
       "localizations" : {
         "en" : {
@@ -956,6 +986,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Turn On OnePass"
+          }
+        }
+      }
+    },
+    "Activer Touch ID…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn On Touch ID…"
           }
         }
       }
@@ -1220,6 +1260,16 @@
         }
       }
     },
+    "Ajouter une photo…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Photo…"
+          }
+        }
+      }
+    },
     "Ajouté aux favoris" : {
       "localizations" : {
         "en" : {
@@ -1236,6 +1286,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Integrity Alert"
+          }
+        }
+      }
+    },
+    "Ambre" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amber"
           }
         }
       }
@@ -1276,6 +1336,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "English"
+          }
+        }
+      }
+    },
+    "Animaux" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pets"
           }
         }
       }
@@ -1490,6 +1560,16 @@
         }
       }
     },
+    "Apple, 1Password, Bitwarden, les navigateurs et 8 autres." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple, 1Password, Bitwarden, browsers and 8 more."
+          }
+        }
+      }
+    },
     "Approuve seulement si l'extension affiche exactement ce code." : {
       "localizations" : {
         "en" : {
@@ -1560,6 +1640,16 @@
         }
       }
     },
+    "Archives" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archives"
+          }
+        }
+      }
+    },
     "Archivé" : {
       "localizations" : {
         "en" : {
@@ -1580,12 +1670,32 @@
         }
       }
     },
+    "Argent" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Money"
+          }
+        }
+      }
+    },
     "Arrêté" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopped"
+          }
+        }
+      }
+    },
+    "Art" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Art"
           }
         }
       }
@@ -1890,6 +2000,16 @@
         }
       }
     },
+    "Aussi après ce temps en arrière-plan." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also after this long in the background."
+          }
+        }
+      }
+    },
     "Autorisations en cours" : {
       "localizations" : {
         "en" : {
@@ -2000,6 +2120,26 @@
         }
       }
     },
+    "Banque" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bank"
+          }
+        }
+      }
+    },
+    "Bateau" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boat"
+          }
+        }
+      }
+    },
     "Biens et contrats" : {
       "localizations" : {
         "en" : {
@@ -2080,12 +2220,52 @@
         }
       }
     },
+    "Bouclier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shield"
+          }
+        }
+      }
+    },
+    "Bricolage" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DIY"
+          }
+        }
+      }
+    },
+    "Brun" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brown"
+          }
+        }
+      }
+    },
     "Build local : la synchronisation iCloud est désactivée, seul un compte déjà présent sur cet appareil peut être ouvert." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Local build: iCloud sync is off, so only an account already on this device can be opened."
+          }
+        }
+      }
+    },
+    "Bureau" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Office"
           }
         }
       }
@@ -2110,12 +2290,52 @@
         }
       }
     },
+    "Cadeau" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gift"
+          }
+        }
+      }
+    },
+    "Cadenas" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lock"
+          }
+        }
+      }
+    },
+    "Café" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coffee"
+          }
+        }
+      }
+    },
     "Camille" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alex"
+          }
+        }
+      }
+    },
+    "Camping" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camping"
           }
         }
       }
@@ -2146,6 +2366,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Characters"
+          }
+        }
+      }
+    },
+    "Carte" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Map"
           }
         }
       }
@@ -2306,6 +2536,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "What the System Sees"
+          }
+        }
+      }
+    },
+    "Ce qui est envoyé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What is sent"
           }
         }
       }
@@ -2500,6 +2740,16 @@
         }
       }
     },
+    "Cette image n'a pas pu être lue. Essaie un JPEG, un PNG ou un HEIC." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image couldn't be read. Try a JPEG, PNG or HEIC."
+          }
+        }
+      }
+    },
     "Cette liste est signée par ton compte : le serveur ne peut ni ajouter ni cacher un appareil." : {
       "localizations" : {
         "en" : {
@@ -2576,6 +2826,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Change"
+          }
+        }
+      }
+    },
+    "Changer la photo…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Photo…"
           }
         }
       }
@@ -2890,6 +3150,16 @@
         }
       }
     },
+    "Ciel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sky"
+          }
+        }
+      }
+    },
     "Cinq mots tirés au hasard" : {
       "localizations" : {
         "en" : {
@@ -2906,6 +3176,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Five random words work well"
+          }
+        }
+      }
+    },
+    "Cinéma" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Movies"
+          }
+        }
+      }
+    },
+    "Citron vert" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lime"
           }
         }
       }
@@ -3016,6 +3306,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Offered Keys"
+          }
+        }
+      }
+    },
+    "Code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code"
           }
         }
       }
@@ -3660,6 +3960,36 @@
         }
       }
     },
+    "Couronne" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crown"
+          }
+        }
+      }
+    },
+    "Courrier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mail"
+          }
+        }
+      }
+    },
+    "Course" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running"
+          }
+        }
+      }
+    },
     "Cryptographie post-quantique : ML-KEM-1024, ML-DSA-87, SLH-DSA" : {
       "localizations" : {
         "en" : {
@@ -3810,6 +4140,16 @@
         }
       }
     },
+    "Cyan" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cyan"
+          }
+        }
+      }
+    },
     "Cœur" : {
       "localizations" : {
         "en" : {
@@ -3910,6 +4250,16 @@
         }
       }
     },
+    "Depuis le site lui-même, sans service tiers." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From the site itself, no third-party service."
+          }
+        }
+      }
+    },
     "Depuis un autre gestionnaire ou un navigateur" : {
       "localizations" : {
         "en" : {
@@ -3956,6 +4306,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Currency"
+          }
+        }
+      }
+    },
+    "Documents" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Documents"
           }
         }
       }
@@ -4016,6 +4376,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duplicates"
+          }
+        }
+      }
+    },
+    "Drapeau" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flag"
+          }
+        }
+      }
+    },
+    "Duo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Two People"
           }
         }
       }
@@ -4156,6 +4536,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Drop Your Export Here"
+          }
+        }
+      }
+    },
+    "Dés" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dice"
           }
         }
       }
@@ -4450,12 +4840,32 @@
         }
       }
     },
+    "Elle ne pourra plus remplir. Pour la réutiliser, associe-la de nouveau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It won't be able to fill anymore. To use it again, pair it again."
+          }
+        }
+      }
+    },
     "Elle reste sur cet appareil" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "It stays on this device"
+          }
+        }
+      }
+    },
+    "Elles remplissent depuis le coffre ouvert sur ce Mac et se verrouillent avec lui." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "They fill from the vault open on this Mac and lock with it."
           }
         }
       }
@@ -4840,6 +5250,26 @@
         }
       }
     },
+    "Extension" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extension"
+          }
+        }
+      }
+    },
+    "Extensions de navigateur" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browser Extensions"
+          }
+        }
+      }
+    },
     "Face ID, Touch ID ou le mot de passe maître sera demandé avant d'afficher cet élément." : {
       "localizations" : {
         "en" : {
@@ -4876,6 +5306,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Weak"
+          }
+        }
+      }
+    },
+    "Famille" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Family"
           }
         }
       }
@@ -4926,6 +5366,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Close"
+          }
+        }
+      }
+    },
+    "Fermé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapsed"
+          }
+        }
+      }
+    },
+    "Feuille" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leaf"
           }
         }
       }
@@ -5016,6 +5476,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finance"
+          }
+        }
+      }
+    },
+    "Finances" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finances"
+          }
+        }
+      }
+    },
+    "Fitness" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fitness"
+          }
+        }
+      }
+    },
+    "Flamme" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flame"
           }
         }
       }
@@ -5140,6 +5630,26 @@
         }
       }
     },
+    "Goutte" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drop"
+          }
+        }
+      }
+    },
+    "Graphite" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graphite"
+          }
+        }
+      }
+    },
     "Gris" : {
       "localizations" : {
         "en" : {
@@ -5236,6 +5746,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Manage in System Settings"
+          }
+        }
+      }
+    },
+    "Hiver" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Winter"
           }
         }
       }
@@ -5670,6 +6190,16 @@
         }
       }
     },
+    "Indigo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indigo"
+          }
+        }
+      }
+    },
     "Indique où est rangée la copie physique de la phrase de récupération de ces portefeuilles." : {
       "localizations" : {
         "en" : {
@@ -5750,6 +6280,16 @@
         }
       }
     },
+    "Jaune" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yellow"
+          }
+        }
+      }
+    },
     "Je comprends que ce fichier n'est pas chiffré" : {
       "localizations" : {
         "en" : {
@@ -5826,6 +6366,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Empty Log"
+          }
+        }
+      }
+    },
+    "Juridique" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Legal"
           }
         }
       }
@@ -6040,6 +6590,16 @@
         }
       }
     },
+    "La photo reste sur cet appareil, recadrée en carré, sans ses métadonnées (lieu, date)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo stays on this device, cropped to a square, without its metadata (location, date)."
+          }
+        }
+      }
+    },
     "La politique signée décide des droits du client, `reveal_secret` et `totp_code` demandent Touch ID, et `onepass mcp audit` affiche le journal de chaque accès. Le mot de passe maître est demandé dans le terminal. Sur Mac, l'app sert un serveur MCP sans terminal, avec appairage des clients : Réglages > Développeur." : {
       "localizations" : {
         "en" : {
@@ -6146,6 +6706,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud sync isn't active in this build."
+          }
+        }
+      }
+    },
+    "Laboratoire" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lab"
           }
         }
       }
@@ -6426,6 +6996,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The same code must show on your other device. If it's different, someone else is trying to connect."
+          }
+        }
+      }
+    },
+    "Le nombre seulement, jamais le nom d'un élément." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only the count, never an item's name."
           }
         }
       }
@@ -6840,6 +7420,16 @@
         }
       }
     },
+    "Livre" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Book"
+          }
+        }
+      }
+    },
     "Longueur" : {
       "localizations" : {
         "en" : {
@@ -6950,6 +7540,16 @@
         }
       }
     },
+    "Matériel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hardware"
+          }
+        }
+      }
+    },
     "Me prévenir" : {
       "localizations" : {
         "en" : {
@@ -6960,12 +7560,32 @@
         }
       }
     },
+    "Menthe" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mint"
+          }
+        }
+      }
+    },
     "Menu du compte" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Account Menu"
+          }
+        }
+      }
+    },
+    "Messages" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Messages"
           }
         }
       }
@@ -7040,6 +7660,16 @@
         }
       }
     },
+    "Modifier le coffre…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Vault…"
+          }
+        }
+      }
+    },
     "Modifié" : {
       "localizations" : {
         "en" : {
@@ -7106,6 +7736,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "My OnePass security score: %lld out of 100."
+          }
+        }
+      }
+    },
+    "Monde" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "World"
+          }
+        }
+      }
+    },
+    "Montagne" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mountain"
           }
         }
       }
@@ -7310,6 +7960,26 @@
         }
       }
     },
+    "Musique" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Music"
+          }
+        }
+      }
+    },
+    "Médicaments" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medication"
+          }
+        }
+      }
+    },
     "Métadonnées" : {
       "localizations" : {
         "en" : {
@@ -7326,6 +7996,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Same site and same username in several items. Keep only one."
+          }
+        }
+      }
+    },
+    "Nature" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nature"
           }
         }
       }
@@ -7560,6 +8240,26 @@
         }
       }
     },
+    "Nuage" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloud"
+          }
+        }
+      }
+    },
+    "Nuit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Night"
+          }
+        }
+      }
+    },
     "OK" : {
       "localizations" : {
         "en" : {
@@ -7750,6 +8450,26 @@
         }
       }
     },
+    "Oublier %@ ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget %@?"
+          }
+        }
+      }
+    },
+    "Oublier l'extension" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget Extension"
+          }
+        }
+      }
+    },
     "Oui" : {
       "localizations" : {
         "en" : {
@@ -7766,6 +8486,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yes, It's Mine"
+          }
+        }
+      }
+    },
+    "Outils" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tools"
           }
         }
       }
@@ -7810,6 +8540,16 @@
         }
       }
     },
+    "Ouvre l'extension OnePass dans Safari, Chrome ou Firefox pour l'associer à ce Mac." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the OnePass extension in Safari, Chrome or Firefox to pair it with this Mac."
+          }
+        }
+      }
+    },
     "Ouvre un élément dans OnePass." : {
       "localizations" : {
         "en" : {
@@ -7836,6 +8576,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open ${item}"
+          }
+        }
+      }
+    },
+    "Ouvrir %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open %@"
           }
         }
       }
@@ -8090,6 +8840,16 @@
         }
       }
     },
+    "Photo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo"
+          }
+        }
+      }
+    },
     "Phrase de passe" : {
       "localizations" : {
         "en" : {
@@ -8196,6 +8956,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Location not allowed"
+          }
+        }
+      }
+    },
+    "Pour approuver un navigateur, OnePass demande Touch ID. Active-le dans Réglages > Sécurité, puis approuve : l'extension attend." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To approve a browser, OnePass asks for Touch ID. Turn it on in Settings > Security, then approve: the extension is waiting."
+          }
+        }
+      }
+    },
+    "Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. Les catalogues de 2fa.directory et la liste des sites piratés sont téléchargés en entier et gardés une semaine. Désactivé, aucune requête réseau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The 2fa.directory catalogs and the list of breached sites are downloaded whole and kept for a week. When off, no network request."
           }
         }
       }
@@ -8356,6 +9136,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Public"
+          }
+        }
+      }
+    },
+    "Puzzle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puzzle"
           }
         }
       }
@@ -8546,6 +9336,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search (⌘F)"
+          }
+        }
+      }
+    },
+    "Rechercher dans %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search %@"
           }
         }
       }
@@ -8760,6 +9560,16 @@
         }
       }
     },
+    "Restaurants" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurants"
+          }
+        }
+      }
+    },
     "Restaurer" : {
       "localizations" : {
         "en" : {
@@ -8816,6 +9626,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restored"
+          }
+        }
+      }
+    },
+    "Reste sur cet appareil, sans ses métadonnées." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stays on this device, without its metadata."
           }
         }
       }
@@ -9046,6 +9866,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pink"
+          }
+        }
+      }
+    },
+    "Rose poudré" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rose"
+          }
+        }
+      }
+    },
+    "Rouge" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Red"
           }
         }
       }
@@ -9350,6 +10190,16 @@
         }
       }
     },
+    "Santé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health"
+          }
+        }
+      }
+    },
     "Sauvegarde chiffrée" : {
       "localizations" : {
         "en" : {
@@ -9460,6 +10310,16 @@
         }
       }
     },
+    "Science" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Science"
+          }
+        }
+      }
+    },
     "Score de sécurité" : {
       "localizations" : {
         "en" : {
@@ -9556,6 +10416,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "MCP Server"
+          }
+        }
+      }
+    },
+    "Serveurs" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Servers"
           }
         }
       }
@@ -9820,12 +10690,32 @@
         }
       }
     },
+    "Soleil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sun"
+          }
+        }
+      }
+    },
     "Source" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Source"
+          }
+        }
+      }
+    },
+    "Sport" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sports"
           }
         }
       }
@@ -10190,6 +11080,16 @@
         }
       }
     },
+    "Terminal" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal"
+          }
+        }
+      }
+    },
     "Terminer" : {
       "localizations" : {
         "en" : {
@@ -10236,6 +11136,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your logins, codes and passkeys suggested in apps and Safari, no copy and paste."
+          }
+        }
+      }
+    },
+    "Tes mots de passe ne quittent jamais l'appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your passwords never leave this device."
           }
         }
       }
@@ -10410,6 +11320,16 @@
         }
       }
     },
+    "Ton nom" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your name"
+          }
+        }
+      }
+    },
     "Ton prénom (affiché seulement sur tes appareils)" : {
       "localizations" : {
         "en" : {
@@ -10426,6 +11346,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Touch ID is required. Without Touch ID turned on in OnePass, pairing is refused."
+          }
+        }
+      }
+    },
+    "Touch ID n'est pas activé dans OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touch ID is off in OnePass"
           }
         }
       }
@@ -10586,6 +11516,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "All commands and their options:"
+          }
+        }
+      }
+    },
+    "Transports" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transit"
+          }
+        }
+      }
+    },
+    "Travail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Work"
           }
         }
       }
@@ -11210,6 +12160,26 @@
         }
       }
     },
+    "Voiture" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Car"
+          }
+        }
+      }
+    },
+    "Voyage" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel"
+          }
+        }
+      }
+    },
     "Vérification de ton iCloud..." : {
       "localizations" : {
         "en" : {
@@ -11310,6 +12280,16 @@
         }
       }
     },
+    "Wi-Fi" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fi"
+          }
+        }
+      }
+    },
     "Wi-Fi peu protégés" : {
       "localizations" : {
         "en" : {
@@ -11360,6 +12340,16 @@
         }
       }
     },
+    "ajouter %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "add %@"
+          }
+        }
+      }
+    },
     "ajouter plus" : {
       "localizations" : {
         "en" : {
@@ -11370,12 +12360,32 @@
         }
       }
     },
+    "ajouter un autre lieu" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "add another place"
+          }
+        }
+      }
+    },
     "ajouter un autre site web" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "add another website"
+          }
+        }
+      }
+    },
+    "ajouter un lieu" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "add a place"
           }
         }
       }
@@ -11850,6 +12860,26 @@
         }
       }
     },
+    "se connecte avec" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "signs in with"
+          }
+        }
+      }
+    },
+    "se connecter avec" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sign in with"
+          }
+        }
+      }
+    },
     "site web" : {
       "localizations" : {
         "en" : {
@@ -11876,6 +12906,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "tags"
+          }
+        }
+      }
+    },
+    "taille du fichier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "file size"
           }
         }
       }
@@ -11956,6 +12996,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Write an SSH configuration for your servers (OnePass never edits ~/.ssh/config, you add the Include line shown yourself):"
+          }
+        }
+      }
+    },
+    "Écriture" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Writing"
           }
         }
       }
@@ -12060,12 +13110,32 @@
         }
       }
     },
+    "Énergie" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Energy"
+          }
+        }
+      }
+    },
     "Étape %lld sur %lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Step %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "Étincelles" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sparkles"
           }
         }
       }

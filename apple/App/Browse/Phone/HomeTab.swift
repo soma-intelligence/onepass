@@ -11,9 +11,12 @@ import VaultKit
 /// navigation bar picks the cards shown. An empty vault shows "Créer ton premier élément".
 struct HomeTab: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.phoneSearchActive) private var searchActive
+    @Environment(\.openPhoneTab) private var openTab
     @AppStorage("onepass.home.favoritesOpen", store: AppModel.browseDefaults) private var favoritesOpen = true
     @AppStorage("onepass.home.recentsOpen", store: AppModel.browseDefaults) private var recentsOpen = true
-    @AppStorage("onepass.home.showsNearby", store: AppModel.browseDefaults) private var showsNearby = true
+    // The À proximité tile leads to the same list: its card is off unless chosen.
+    @AppStorage("onepass.home.showsNearbyCard", store: AppModel.browseDefaults) private var showsNearby = false
     @AppStorage("onepass.home.showsProfile", store: AppModel.browseDefaults) private var showsProfile = true
     @AppStorage("onepass.home.showsFavorites", store: AppModel.browseDefaults) private var showsFavorites = true
     @AppStorage("onepass.home.showsRecents", store: AppModel.browseDefaults) private var showsRecents = true
@@ -30,16 +33,11 @@ struct HomeTab: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text(accountName)
-                            .font(.title2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .padding(.horizontal, 4)
-                            .accessibilityAddTraits(.isHeader)
                         // Banners: these are list sections elsewhere, plain blocks here.
                         SyncRefusalSection()
                         AccountChangedSection()
-                        if model.showsAutoFillTip {
+                        tiles(all: counts.all, favorites: counts.favorites)
+                        if model.showsAutoFillTip, !searchActive {
                             AutoFillTipCard()
                                 .padding(16)
                                 .phoneCard()
@@ -65,8 +63,9 @@ struct HomeTab: View {
                 .background(PhoneBackground())
             }
         }
-        .navigationTitle("Accueil")
-        .navigationBarTitleDisplayMode(.inline)
+        // "Bonjour Camille", large, above the four tiles.
+        .navigationTitle(greeting)
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
             PhoneRootToolbar {
                 Section("Afficher sur l'accueil") {
@@ -79,9 +78,53 @@ struct HomeTab: View {
         }
     }
 
-    private var accountName: String {
-        model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
+    /// "Accueil", or "Bonjour" and the account's first name.
+    private var greeting: String {
+        let first = model.settings.displayName.split(separator: " ").first.map(String.init) ?? ""
+        return first.isEmpty ? String(localized: "Accueil") : String(localized: "Bonjour \(first)")
     }
+
+    private func tiles(all: Int, favorites: Int) -> some View {
+        let score = model.watchtower.report.map { Int($0.score) }
+        return Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+            GridRow {
+                NavigationLink(value: PhoneRoute.list(.all)) {
+                    HomeTile(title: "Tous les éléments", symbol: "square.grid.2x2.fill", color: Theme.accent) {
+                        Text(all, format: .number)
+                    }
+                }
+                .accessibilityIdentifier("home.all")
+                NavigationLink(value: PhoneRoute.list(.favorites)) {
+                    HomeTile(title: "Favoris", symbol: "star.fill", color: .orange) {
+                        Text(favorites, format: .number)
+                    }
+                }
+                .accessibilityIdentifier("home.favoritesTile")
+            }
+            GridRow {
+                Button {
+                    openTab(.watchtower)
+                } label: {
+                    HomeTile(title: "Watchtower", symbol: "checkmark.shield.fill", color: Sidebar.watchtowerColor) {
+                        if let score {
+                            Text(score, format: .number).foregroundStyle(ScoreGauge.color(score))
+                        } else {
+                            Image(systemName: "chevron.forward").font(.body.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .accessibilityIdentifier("home.watchtower")
+                NavigationLink(value: PhoneRoute.list(.nearby)) {
+                    HomeTile(title: "À proximité", symbol: "location.fill", color: Color(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255)) {
+                        Text("2 km").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("home.nearby")
+            }
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+
 
     /// The first identity, the account holder's card.
     private var profile: FfiItemSummary? {
@@ -562,4 +605,35 @@ struct SyncRefusalSection: View {
         }
     }
 }
+/// One of the four tiles of Accueil: the Mac sidebar's colored tile, the figure on the right, the
+/// name below.
+private struct HomeTile<Value: View>: View {
+    let title: LocalizedStringKey
+    let symbol: String
+    let color: Color
+    @ViewBuilder var value: Value
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                SymbolTile(symbol: symbol, color: color, size: 34)
+                Spacer(minLength: 4)
+                value
+                    .font(.title2.weight(.bold))
+                    .monospacedDigit()
+            }
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .phoneCard()
+        .contentShape(.rect(cornerRadius: PhoneCard.radius))
+        .accessibilityElement(children: .combine)
+    }
+}
+
 #endif

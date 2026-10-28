@@ -17,6 +17,7 @@ import {
   mark,
   mount,
   realTimers,
+  siteIcon,
   srOnly,
 } from "./components";
 import {
@@ -169,7 +170,13 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     h("button", { class: "btn-icon", attrs: { type: "button", "aria-label": label, title: label }, on: { click: () => fn() } }, icon(glyph, size));
 
   // ---- full-page states ----
-  const center = (...children: (Node | null)[]) => mount(container, h("div", { class: "center" }, ...children));
+  // Message states (pairing, locked, missing app) get a compact popup sized to their content;
+  // the list and detail views keep the full size.
+  const compact = (on: boolean) => container.ownerDocument.body.classList.toggle("compact", on);
+  const center = (...children: (Node | null)[]) => {
+    compact(true);
+    mount(container, h("div", { class: "center" }, ...children));
+  };
 
   function renderUnpaired(err?: string): void {
     center(
@@ -218,6 +225,19 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   }
 
   async function approve(): Promise<void> {
+    // Approving in the app closes this popup in Safari: the pairing goes on without it.
+    center(
+      mark("l"),
+      h("h1", null, tr("Approuve dans l'app OnePass", "Approve in the OnePass app")),
+      h(
+        "p",
+        null,
+        tr(
+          "Clique sur « Approuver » dans OnePass et confirme avec Touch ID. Tu peux fermer cette fenêtre.",
+          "Click Approve in OnePass and confirm with Touch ID. You can close this window.",
+        ),
+      ),
+    );
     const r = await call(deps.send, { type: "popup_pair_approve" }, parseEmpty);
     if (!r.ok) {
       renderUnpaired(errorText(r.code));
@@ -331,6 +351,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       icon("key", 18),
     );
     const account = status?.account ?? "";
+    compact(false);
     mount(
       container,
       h(
@@ -339,7 +360,14 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
         h("span", { class: "brand" }, mark("m"), "OnePass"),
         h("label", { class: "search glass" }, icon("search", 14), input),
         genBtn,
-        h("span", { class: "account", attrs: { title: account } }, h("span", { class: "avatar", attrs: { "aria-hidden": "true" } }, initials(account)), h("span", null, account)),
+        // The account chip also holds "Oublier cet appairage", out of the way.
+        h(
+          "button",
+          { class: "account", attrs: { type: "button", title: account }, on: { click: () => confirmForget() } },
+          h("span", { class: "avatar", attrs: { "aria-hidden": "true" } }, initials(account)),
+          h("span", null, account),
+          srOnly(tr("Oublier cet appairage", "Forget this pairing")),
+        ),
       ),
       h("div", { class: "pp-body" }, side, main),
     );
@@ -383,7 +411,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             attrs: { type: "button", role: "option", "aria-selected": String(view === "detail" && selected === it.item_id) },
             on: { click: () => void track(openItem(it.item_id)) },
           },
-          itemArt(it, "m"),
+          results || !domain ? itemArt(it, "m") : siteIcon(`https://${domain}`, itemArt(it, "m")),
           h("span", { class: "stack" }, h("span", { class: "t1" }, it.title), h("span", { class: "t2" }, it.subtitle)),
         ),
       );
@@ -393,22 +421,6 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       h("h1", { class: "pp-side-title" }, icon(results ? "search" : "star", 13), title),
       list,
       empty ? h("p", { class: "pp-empty" }, empty) : null,
-      domain && !results
-        ? h(
-            "div",
-            { class: "verified" },
-            icon("shield", 16),
-            h(
-              "span",
-              null,
-              tr(
-                `Domaine vérifié : ${domain}. Le remplissage ne marche que sur ce site exact.`,
-                `Verified domain: ${domain}. Filling only works on this exact site.`,
-              ),
-            ),
-          )
-        : null,
-      h("div", { class: "pp-foot" }, forgetButton()),
     );
   }
 
@@ -564,7 +576,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       h(
         "div",
         { class: "pp-bar" },
-        itemArt(s, 52),
+        siteIcon(website, itemArt(s, 52), 52),
         h("div", { class: "pp-title" }, h("h2", null, s.title), h("span", { class: "vault" }, s.vault_name)),
         fill,
       ),
@@ -748,7 +760,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     renderMain();
   }
 
-  mount(container, h("div", { class: "center" }, mark("l")));
+  center(mark("l"));
   // A pairing in progress dies with the popup.
   addEventListener("pagehide", () => void deps.send({ type: "popup_pair_cancel" }).catch(() => undefined));
   const ready = load();

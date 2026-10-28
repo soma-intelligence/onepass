@@ -346,7 +346,11 @@ pub fn menu_options(item_type: FfiItemType, field_id: String) -> Vec<String> {
 
 #[uniffi::export]
 pub fn card_brand(number: String) -> String {
-    match model::checks::card_brand(&number) {
+    brand_name(model::checks::card_brand(&number)).to_owned()
+}
+
+pub(crate) fn brand_name(brand: CardBrand) -> &'static str {
+    match brand {
         CardBrand::Visa => "visa",
         CardBrand::Mastercard => "mastercard",
         CardBrand::Amex => "amex",
@@ -358,7 +362,6 @@ pub fn card_brand(number: String) -> String {
         CardBrand::CartesBancaires => "cartes_bancaires",
         CardBrand::Unknown => "unknown",
     }
-    .to_owned()
 }
 
 /// The first problem of an item, as a `Validation` error naming the field

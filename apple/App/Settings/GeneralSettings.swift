@@ -1,4 +1,10 @@
+import DesignKit
+import ImageIO
+#if os(iOS)
+import PhotosUI
+#endif
 import SwiftUI
+import UniformTypeIdentifiers
 import VaultKit
 
 /// Général: automatic lock delay, site icons, the import of other password managers' exports, and
@@ -25,6 +31,7 @@ struct GeneralSettings: View {
         // Read so the page redraws when a setting changes.
         let _ = model.settingsRevision
         Form {
+            ProfileSection()
             Section {
                 Picker("Verrouillage automatique", selection: Binding(
                     get: { delays.contains(settings.autoLockDelay) ? settings.autoLockDelay : .fiveMinutes },
@@ -40,7 +47,7 @@ struct GeneralSettings: View {
                 if shared {
                     Text("Appareil partagé : le délai est imposé (5 minutes au plus). Repasse en mode personnel pour le régler.")
                 } else {
-                    Text("OnePass se verrouille après ce délai d'inactivité et quand l'app reste en arrière-plan aussi longtemps.")
+                    Text("Aussi après ce temps en arrière-plan.")
                 }
             }
             Section {
@@ -50,7 +57,7 @@ struct GeneralSettings: View {
                 ))
                 .accessibilityIdentifier("settings.siteIcons")
             } footer: {
-                Text("Récupérées directement sur le site de l'élément, sans cookies et sans service tiers. Désactivées, aucune requête n'est envoyée.")
+                Text("Depuis le site lui-même, sans service tiers.")
             }
             Section {
                 Button("Importer depuis un autre gestionnaire…", systemImage: "square.and.arrow.down") {
@@ -60,7 +67,7 @@ struct GeneralSettings: View {
             } header: {
                 Text("Import")
             } footer: {
-                Text("Mots de passe d'Apple, 1Password, Bitwarden, NordPass, Dashlane, LastPass, Proton Pass, Keeper, Enpass, RoboForm, KeePass et les navigateurs.")
+                Text("Apple, 1Password, Bitwarden, les navigateurs et 8 autres.")
             }
             Section {
                 Button("Exporter une sauvegarde chiffrée…", systemImage: "square.and.arrow.down.on.square") {
@@ -98,5 +105,139 @@ struct GeneralSettings: View {
         #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+    }
+}
+
+/// Profil: the account's name and photo, shown in the sidebar, the account menu and the settings.
+private struct ProfileSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var choosingFile = false
+    @State private var failed = false
+    /// The Settings window opens on this page: the name field would take focus with all its text
+    /// selected. It only focuses on a click.
+    @FocusState private var nameFocused: Bool
+    #if os(iOS)
+    @State private var pick: PhotosPickerItem?
+    #endif
+
+    var body: some View {
+        let _ = model.settingsRevision
+        Section {
+            HStack(spacing: 16) {
+                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 64)
+                    #if os(macOS)
+                    .dropDestination(for: Data.self) { items, _ in
+                        guard let data = items.first else { return false }
+                        return use(data)
+                    }
+                    #endif
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("Nom", text: Binding(
+                        get: { model.settings.displayName },
+                        set: { name in model.updateSettings { $0.displayName = name } }
+                    ), prompt: Text("Ton nom"))
+                    .labelsHidden()
+                    .textFieldStyle(.plain)
+                    .font(.title3.weight(.semibold))
+                    .focused($nameFocused)
+                    // A real field: a soft well, an accent ring while typing.
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.fill.quaternary, in: .rect(cornerRadius: 8, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(nameFocused ? Theme.accent : Color.primary.opacity(0.08), lineWidth: nameFocused ? 1.5 : 1)
+                    }
+                    .frame(maxWidth: 280, alignment: .leading)
+                    .accessibilityIdentifier("settings.profile.name")
+                    HStack(spacing: 12) {
+                        #if os(iOS)
+                        PhotosPicker(selection: $pick, matching: .images) {
+                            Text(model.settings.profilePhoto == nil ? "Ajouter une photo…" : "Changer la photo…")
+                        }
+                        .accessibilityIdentifier("settings.profile.photo")
+                        #else
+                        Button(model.settings.profilePhoto == nil ? "Ajouter une photo…" : "Changer la photo…") {
+                            choosingFile = true
+                        }
+                        .accessibilityIdentifier("settings.profile.photo")
+                        #endif
+                        if model.settings.profilePhoto != nil {
+                            Button("Retirer", role: .destructive) {
+                                model.updateSettings { $0.profilePhoto = nil }
+                            }
+                            .accessibilityIdentifier("settings.profile.removePhoto")
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text("Profil")
+        } footer: {
+            Text(failed
+                ? "Cette image n'a pas pu être lue. Essaie un JPEG, un PNG ou un HEIC."
+                : "Reste sur cet appareil, sans ses métadonnées.")
+        }
+        .task {
+            try? await Task.sleep(for: .milliseconds(50))
+            nameFocused = false
+        }
+        .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.image]) { result in
+            guard case .success(let url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            if let data = try? Data(contentsOf: url) { _ = use(data) } else { failed = true }
+        }
+        #if os(iOS)
+        .onChange(of: pick) {
+            guard let pick else { return }
+            Task {
+                if let data = try? await pick.loadTransferable(type: Data.self) { _ = use(data) } else { failed = true }
+                self.pick = nil
+            }
+        }
+        #endif
+    }
+
+    @discardableResult private func use(_ data: Data) -> Bool {
+        guard let photo = ProfilePhoto.square(from: data) else {
+            failed = true
+            return false
+        }
+        failed = false
+        model.updateSettings { $0.profilePhoto = photo }
+        return true
+    }
+}
+
+/// Turns any image into the stored profile photo: a centered square of 256 px, as a JPEG written
+/// from the pixels alone (EXIF, GPS and other metadata stay behind).
+enum ProfilePhoto {
+    static let side = 256
+
+    static func square(from data: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: side * 3,
+            ] as CFDictionary)
+        else { return nil }
+        let edge = min(image.width, image.height)
+        let crop = CGRect(x: (image.width - edge) / 2, y: (image.height - edge) / 2, width: edge, height: edge)
+        guard let square = image.cropping(to: crop),
+            let space = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { return nil }
+        context.interpolationQuality = .high
+        context.draw(square, in: CGRect(x: 0, y: 0, width: side, height: side))
+        guard let scaled = context.makeImage() else { return nil }
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, scaled, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? out as Data : nil
     }
 }

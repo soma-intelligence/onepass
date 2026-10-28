@@ -49,6 +49,11 @@ struct DevicesSettings: View {
             } footer: {
                 Text("Cette liste est signée par ton compte : le serveur ne peut ni ajouter ni cacher un appareil.")
             }
+            #if os(macOS)
+            if let bridge = model.browserBridge {
+                BrowserExtensionsSection(bridge: bridge)
+            }
+            #endif
             Section {
                 #if os(iOS)
                 Button {
@@ -266,3 +271,96 @@ private struct DeviceTarget: Identifiable {
     let device: FfiDevice
     var id: String { device.id }
 }
+
+#if os(macOS)
+/// The browser extensions paired with this Mac, listed like devices: they fill from the vault open
+/// here and lock with it. Each row says which browser, when it was last used, and can be forgotten.
+private struct BrowserExtensionsSection: View {
+    let bridge: BrowserBridge
+    @State private var forgetting: BrowserBridge.Paired?
+
+    var body: some View {
+        Section {
+            if !bridge.isRunning {
+                Text("Indisponible dans cette version de OnePass.")
+                    .foregroundStyle(.secondary)
+            } else if bridge.paired.isEmpty {
+                Label("Ouvre l'extension OnePass dans Safari, Chrome ou Firefox pour l'associer à ce Mac.",
+                    systemImage: "puzzlepiece.extension")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("settings.devices.browsers.empty")
+            } else {
+                ForEach(bridge.paired) { paired in
+                    row(paired)
+                }
+            }
+        } header: {
+            Text("Extensions de navigateur")
+        } footer: {
+            Text("Elles remplissent depuis le coffre ouvert sur ce Mac et se verrouillent avec lui.")
+        }
+        .confirmationDialog(
+            Text("Oublier \(forgetting?.browser ?? "") ?"),
+            isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
+            titleVisibility: .visible, presenting: forgetting
+        ) { paired in
+            Button("Oublier l'extension", role: .destructive) { bridge.forget(paired.id) }
+                .accessibilityIdentifier("settings.devices.browsers.confirmForget")
+        } message: { _ in
+            Text("Elle ne pourra plus remplir. Pour la réutiliser, associe-la de nouveau.")
+        }
+    }
+
+    private func row(_ paired: BrowserBridge.Paired) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: Self.symbol(paired.browser))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(Self.color(paired.browser).gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(paired.browser).lineLimit(1)
+                    Text("Extension")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(.fill.tertiary, in: Capsule())
+                }
+                Text("\(paired.extensionName) · utilisée \(paired.lastUsed.formatted(.relative(presentation: .named)))")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Menu {
+                Button("Oublier l'extension", systemImage: "minus.circle", role: .destructive) { forgetting = paired }
+            } label: {
+                Image(systemName: "ellipsis.circle").font(.title3)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel(Text("Actions"))
+            .accessibilityIdentifier("settings.devices.browsers.menu")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("settings.devices.browsers.row")
+    }
+
+    private static func symbol(_ browser: String) -> String {
+        browser.localizedCaseInsensitiveContains("safari") ? "safari.fill" : "globe"
+    }
+
+    private static func color(_ browser: String) -> Color {
+        let name = browser.lowercased()
+        if name.contains("safari") { return Color(red: 0.0, green: 0.48, blue: 1.0) }
+        if name.contains("firefox") { return Color(red: 0.93, green: 0.42, blue: 0.13) }
+        if name.contains("chrome") { return Color(red: 0.26, green: 0.52, blue: 0.96) }
+        return Color(red: 0.36, green: 0.40, blue: 0.45)
+    }
+}
+#endif

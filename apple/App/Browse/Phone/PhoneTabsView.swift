@@ -24,6 +24,8 @@ enum PhoneTab: String, Hashable {
 extension EnvironmentValues {
     /// Switches the iPhone tab bar to a tab.
     @Entry var openPhoneTab: @MainActor (PhoneTab) -> Void = { _ in }
+    /// The iPhone search is presented: Accueil keeps its banners for when it is really on screen.
+    @Entry var phoneSearchActive = false
 }
 
 /// iPhone, and iPad in compact width (spec 6.2, mockups `PhoneHome`, `PhoneItems`, `PhoneSearch`):
@@ -41,18 +43,32 @@ struct PhoneTabsView: View {
     /// Choosing Rechercher opens its field (off for the demo captures of the list).
     @State private var openSearchOnSelect = true
 
+    /// A tab's label: the outline symbol, its filled form when the tab is selected.
+    private func tabLabel(_ title: LocalizedStringKey, _ symbol: String, _ value: PhoneTab) -> some View {
+        Label(title, systemImage: tab == value ? symbol + ".fill" : symbol)
+            .environment(\.symbolVariants, .none)
+    }
+
     var body: some View {
         TabView(selection: $tab) {
-            Tab("Accueil", systemImage: "house.fill", value: PhoneTab.home) {
+            // One family: outline symbols of the same weight, filled only on the selected tab (the
+            // bar's own fill variant is turned off so the unselected ones stay light).
+            Tab(value: PhoneTab.home) {
                 stack(.home) { HomeTab() }
+            } label: {
+                tabLabel("Accueil", "house", .home)
             }
             .accessibilityIdentifier("tab.home")
-            Tab("Éléments", systemImage: "list.bullet.rectangle.fill", value: PhoneTab.items) {
+            Tab(value: PhoneTab.items) {
                 stack(.items) { ItemsTab() }
+            } label: {
+                tabLabel("Éléments", "rectangle.stack", .items)
             }
             .accessibilityIdentifier("tab.items")
-            Tab("Watchtower", systemImage: "checkmark.shield.fill", value: PhoneTab.watchtower) {
+            Tab(value: PhoneTab.watchtower) {
                 stack(.watchtower) { WatchtowerTab() }
+            } label: {
+                tabLabel("Watchtower", "checkmark.shield", .watchtower)
             }
             .accessibilityIdentifier("tab.watchtower")
             Tab("Rechercher", systemImage: "magnifyingglass", value: PhoneTab.search, role: .search) {
@@ -67,6 +83,11 @@ struct PhoneTabsView: View {
         .searchable(text: $searchQuery, isPresented: $searching, placement: .toolbar, prompt: Text("Titre, site, identifiant, tag"))
         .tabViewSearchActivation(.searchTabSelection)
         .tabBarMinimizeBehavior(.onScrollDown)
+        // A search is only ever shown on its own tab, whatever presented it.
+        .onChange(of: searching) { _, presented in
+            if presented, tab != .search { tab = .search }
+        }
+        .environment(\.phoneSearchActive, searching)
         .environment(\.openPhoneTab) { tab = $0 }
         .sheet(isPresented: newItemShown) {
             PhoneNewItemSheet()
@@ -75,6 +96,10 @@ struct PhoneTabsView: View {
         .onChange(of: tab) { _, newTab in
             // The search field shows only while presented: choosing Rechercher opens it.
             if newTab == .search, openSearchOnSelect, paths[.search]?.isEmpty ?? true { searching = true }
+            // Leaving the search tab (the tab button beside the field) does not write
+            // `isPresented` back: a search still "presented" here came back later over the other
+            // tab (field and keyboard over Accueil, tab bar hidden). It ends with its tab.
+            if newTab != .search, searching { searching = false }
             let ref = paths[newTab]?.last?.itemRef
             if model.selectedItem != ref { model.perform(.select(ref)) }
             model.session.noteActivity()
@@ -114,6 +139,7 @@ struct PhoneTabsView: View {
     private func stack<Root: View>(_ which: PhoneTab, @ViewBuilder root: () -> Root) -> some View {
         NavigationStack(path: path(which)) {
             root()
+                .topBlurFade()
                 .navigationDestination(for: PhoneRoute.self) { route in
                     switch route {
                     case .list(let filter):
@@ -251,5 +277,42 @@ struct PhoneNewItemSheet: View {
     private var stepTransition: AnyTransition {
         reduceMotion ? .opacity : .push(from: .trailing)
     }
+}
+
+/// Content scrolling up under the status bar and the navigation bar fades into a blur: a material
+/// masked by a gradient, strongest at the top edge, gone by the bar's bottom. Over the content,
+/// under the bar's own controls; never takes a touch.
+private struct TopBlurFade: ViewModifier {
+    @MainActor static var statusBarHeight: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first { $0.activationState == .foregroundActive } as? UIWindowScene
+        return scene?.keyWindow?.safeAreaInsets.top ?? 59
+    }
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            GeometryReader { _ in
+                // The status bar plus the compact navigation bar: the large title and the search
+                // field below stay sharp.
+                let height = Self.statusBarHeight + 64
+                Rectangle()
+                    .fill(.regularMaterial)
+                    .mask {
+                        LinearGradient(stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 0.45),
+                            .init(color: .black.opacity(0), location: 1),
+                        ], startPoint: .top, endPoint: .bottom)
+                    }
+                    .frame(height: height)
+                    .ignoresSafeArea(edges: .top)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+extension View {
+    fileprivate func topBlurFade() -> some View { modifier(TopBlurFade()) }
 }
 #endif

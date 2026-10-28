@@ -22,7 +22,7 @@ struct VisibleVaultsView: View {
                         set: { setVisible(vault, $0) }
                     )) {
                         HStack(spacing: 12) {
-                            VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 28)
+                            VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 28)
                             Text(vault.meta.name)
                         }
                     }

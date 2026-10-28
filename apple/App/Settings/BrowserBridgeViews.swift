@@ -6,6 +6,8 @@ import VaultKit
 /// extension shows, then approves with Touch ID. The name and browser are what the extension
 /// says about itself.
 struct BrowserPairingSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openSettings) private var openSettings
     let bridge: BrowserBridge
     let request: BrowserBridge.Request
     @State private var working = false
@@ -39,13 +41,34 @@ struct BrowserPairingSheet: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(working)
+                .disabled(working || !bridge.canApprove)
                 .accessibilityIdentifier("bridge.pairing.approve")
             }
-            Text("Touch ID est demandé. Sans Touch ID activé dans OnePass, l'association est refusée.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            if bridge.canApprove {
+                Text("Touch ID est demandé. Sans Touch ID activé dans OnePass, l'association est refusée.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                // Said before the tap: approving without Touch ID can only be refused.
+                VStack(spacing: 8) {
+                    Label("Touch ID n'est pas activé dans OnePass", systemImage: "touchid")
+                        .font(.callout.weight(.semibold))
+                    Text("Pour approuver un navigateur, OnePass demande Touch ID. Active-le dans Réglages > Sécurité, puis approuve : l'extension attend.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Activer Touch ID…") {
+                        model.settingsPageRequest = .security
+                        openSettings()
+                    }
+                    .accessibilityIdentifier("bridge.pairing.enableTouchID")
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity)
+                .background(.orange.opacity(0.12), in: .rect(cornerRadius: 10))
+                .accessibilityIdentifier("bridge.pairing.touchIDOff")
+            }
         }
         .padding(28)
         .frame(width: 380)

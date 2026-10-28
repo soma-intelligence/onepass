@@ -20,8 +20,9 @@ struct OnePassApp: App {
         Window("OnePass", id: "main") {
             root
                 .frame(minWidth: 820, minHeight: 600)
-                // The desktop shows through, blurred: columns and cards stay see-through.
-                .containerBackground(.thinMaterial, for: .window)
+                // No window-wide material: the split view's sidebar keeps the system's blurred,
+                // translucent material while the list and detail stay on the opaque window
+                // background (a see-through detail let the desktop wash out labels and cards).
         }
         .defaultSize(width: 1280, height: 820)
         .windowToolbarStyle(.unified)

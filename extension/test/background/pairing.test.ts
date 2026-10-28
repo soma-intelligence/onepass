@@ -54,6 +54,43 @@ describe("pairing flow", () => {
     await expect(flow.confirmPairing()).rejects.toBeInstanceOf(BgError);
   });
 
+  it("a popup closed after the codes were confirmed keeps waiting for the app", async () => {
+    let approve!: () => void;
+    const appAnswered = new Promise<void>((r) => (approve = r));
+    const { store, flow, clients } = setup(async (cb) => {
+      if (!(await cb("314 159"))) throw new BridgeError("refused");
+      await appAnswered;
+      return record();
+    });
+    await flow.startPairing();
+    const confirmed = flow.confirmPairing();
+    // Safari closes the popup when the user switches to the app to approve.
+    flow.cancelPairing();
+    expect(clients[0]?.closed).toBe(false);
+    approve();
+    await confirmed;
+    expect((await store.getPairing())?.pairingId).toEqual(record().pairingId);
+  });
+
+  it("a pairing the app refuses says refused, not a generic error", async () => {
+    const { flow } = setup(async (cb) => {
+      await cb("271 828");
+      throw new BridgeError("host", "not_allowed", "not_allowed");
+    });
+    await flow.startPairing();
+    await expect(flow.confirmPairing()).rejects.toMatchObject({ code: "refused" });
+  });
+
+  it("confirming a pairing that already ended says it expired", async () => {
+    const { flow } = setup(async (cb) => {
+      await cb("161 803");
+      return record();
+    });
+    await flow.startPairing();
+    flow.cancelPairing();
+    await expect(flow.confirmPairing()).rejects.toMatchObject({ code: "expired" });
+  });
+
   it("a host that is missing fails the start with host_missing", async () => {
     const { flow } = setup(async () => {
       throw new BridgeError("transport", "Specified native messaging host not found.");

@@ -11,6 +11,8 @@ struct ItemEditorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editor: ItemEditorModel
     @State private var confirmDiscard = false
+    /// The site's icon, as on the item's page: editing keeps the same picture.
+    @State private var siteIcon: Data?
     /// The generator asked by a password field (presented here, not from the field's row).
     @State private var generatorRequest: GeneratorRequest?
     /// A passkey whose removal waits for "Supprimer la passkey ?" (section id, row key).
@@ -42,6 +44,9 @@ struct ItemEditorView: View {
     }
 
     private var item: FfiItem { editor.draft.item }
+    private var primaryURL: String? {
+        (item.urls.first(where: \.primary) ?? item.urls.first)?.url
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -84,6 +89,12 @@ struct ItemEditorView: View {
                 #endif
             }
             .scrollDismissesKeyboard(.interactively)
+            #if os(macOS)
+            // Fields scrolling up fade out under the toolbar instead of running behind Annuler and
+            // Enregistrer (they float without glass of their own).
+            .scrollEdgeEffectStyle(.hard, for: .top)
+            .scrollIndicators(.never)
+            #endif
             .defaultScrollAnchor(.top)
             .groupedScreen()
             .environment(\.requestGenerator) { request in generatorRequest = request }
@@ -110,12 +121,17 @@ struct ItemEditorView: View {
         #endif
         .toolbar {
             #if os(macOS)
-            // Glass buttons on the right of the detail column, Enregistrer as the prominent one.
+            // Right of the detail column: Annuler as quiet text, Enregistrer as one accent capsule. Each
+            // item keeps out of the toolbar's shared glass, which fused them into one heavy pill.
             ToolbarSpacer(.flexible)
-            ToolbarItemGroup(placement: .primaryAction) {
-                cancelButton
-                saveButton.buttonStyle(.glassProminent)
+            ToolbarItem(placement: .primaryAction) {
+                cancelButton.buttonStyle(QuietToolbarButtonStyle())
             }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) {
+                saveButton.buttonStyle(AccentCapsuleButtonStyle())
+            }
+            .sharedBackgroundVisibility(.hidden)
             #else
             ToolbarItem(placement: .cancellationAction) { cancelButton }
             ToolbarItem(placement: .confirmationAction) { saveButton }
@@ -194,7 +210,16 @@ struct ItemEditorView: View {
                 .tracking(0.6)
             #endif
             HStack(alignment: .center, spacing: 16) {
-                ItemIcon(type: item.itemType, title: item.title, siteIcon: nil, size: 64)
+                ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon, size: 64, brand: item.cardBrandName)
+                    .favoriteBadge(item.favorite, iconSize: 64)
+                    // Follows the website being typed: a new address loads its icon.
+                    .task(id: primaryURL) {
+                        guard let url = primaryURL else {
+                            siteIcon = nil
+                            return
+                        }
+                        siteIcon = await model.iconLoader.icon(for: url)
+                    }
                 TextField("Titre", text: $editor.draft.item.title, prompt: Text(ItemCategory.of(item.itemType).singular))
                     .textFieldStyle(.plain)
                     .font(.system(size: 26, weight: .bold))
@@ -245,7 +270,7 @@ struct ItemEditorView: View {
                             field.kind != .passkey, field.kind != .file
                         {
                             CardDivider()
-                            AddRowButton(title: "ajouter \(field.displayLabel(itemType: item.itemType).lowercasedFirst)") {
+                            AddRowButton(title: String(localized: "ajouter \(field.displayLabel(itemType: item.itemType).lowercasedFirst)")) {
                                 editor.addRepeat(of: field.id, in: section.id)
                                 pinLastRow(of: field.id, in: section.id)
                             }
@@ -402,7 +427,7 @@ struct ItemEditorView: View {
                 .accessibilityIdentifier("editor.location.\(index)")
                 CardDivider()
             }
-            AddRowButton(title: item.locations.isEmpty ? "ajouter un lieu" : "ajouter un autre lieu") {
+            AddRowButton(title: item.locations.isEmpty ? String(localized: "ajouter un lieu") : String(localized: "ajouter un autre lieu")) {
                 searchingPlace = true
             }
             .accessibilityIdentifier("editor.location")
@@ -811,3 +836,84 @@ private struct AddFieldTile: View {
         .onHover { hovering = $0 }
     }
 }
+
+#if os(macOS)
+/// The toolbar's main action: white semibold text on an accent capsule (the system prominent style
+/// draws as bare text in a toolbar item without shared glass). Dims when disabled.
+struct AccentCapsuleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        AccentBody(configuration: configuration)
+    }
+
+    private struct AccentBody: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(Theme.accent.mix(with: .white, by: hovering ? 0.1 : 0), in: .capsule)
+                .overlay { Capsule().strokeBorder(.white.opacity(0.14), lineWidth: 0.5) }
+                .contentShape(.capsule)
+                .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.45)
+                .onHover { hovering = $0 }
+                .animation(.easeOut(duration: 0.12), value: hovering)
+        }
+    }
+}
+
+/// A toolbar icon button without glass: a secondary glyph in a 30 pt circle that fills softly and
+/// brightens under the pointer.
+struct QuietIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        QuietIconBody(configuration: configuration)
+    }
+
+    private struct QuietIconBody: View {
+        let configuration: Configuration
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .frame(width: 30, height: 30)
+                .background(hovering ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear), in: Circle())
+                .contentShape(Circle())
+                .opacity(configuration.isPressed ? 0.6 : 1)
+                .onHover { hovering = $0 }
+                .animation(.easeOut(duration: 0.12), value: hovering)
+        }
+    }
+}
+
+/// A text-only toolbar button: secondary text that brightens and gets a soft capsule under the
+/// pointer, so "Annuler" sits next to the accent "Enregistrer" without competing with it.
+struct QuietToolbarButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        QuietBody(configuration: configuration)
+    }
+
+    private struct QuietBody: View {
+        let configuration: Configuration
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(.body.weight(.medium))
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(hovering ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear), in: .capsule)
+                .contentShape(.capsule)
+                .opacity(configuration.isPressed ? 0.6 : 1)
+                .onHover { hovering = $0 }
+                .animation(.easeOut(duration: 0.12), value: hovering)
+        }
+    }
+}
+#endif

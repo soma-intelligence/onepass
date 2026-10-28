@@ -167,7 +167,7 @@ describe("shell placement", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("the overlay goes under the field it was started from, else to the top right; above when no room below", () => {
+  it("the overlay sits centered at the top of the page, whatever field started it", () => {
     setPage(`<input id="f" data-test-rect="40,500,200,30">`);
     shell = createShell(document);
     const frames = createFrames({ shell, doc: document, geometry: testGeometry });
@@ -175,16 +175,17 @@ describe("shell placement", () => {
     frames.showFrame("overlay", `${CHROME}overlay.html#${TOKEN}`, field);
     const iframe = shell.root.querySelector("iframe")!;
     frames.resize("overlay", 120);
-    // jsdom's viewport is 1024 x 768: 500 + 30 + 4 + 120 fits below.
-    expect([iframe.style.left, iframe.style.top]).toEqual(["40px", "534px"]);
-    frames.resize("overlay", 300);
-    expect(iframe.style.top).toBe(`${500 - 4 - 300}px`);
-    // The field went away (the page changed): the progress moves to the corner.
+    // jsdom's viewport is 1024 wide: centered, at the top edge.
+    const width = parseFloat(iframe.style.width);
+    expect(iframe.style.left).toBe(`${Math.round((1024 - width) / 2)}px`);
+    expect(iframe.style.top).toBe("12px");
+    expect(iframe.classList.contains("top-center")).toBe(true);
+    expect(iframe.classList.contains("corner")).toBe(false);
+    // The field went away: the overlay stays where it is.
     field.remove();
     frames.reposition();
     expect(shell.root.querySelector("iframe")).toBe(iframe);
     expect(iframe.style.top).toBe("12px");
-    expect(iframe.classList.contains("corner")).toBe(true);
     frames.destroy();
   });
 

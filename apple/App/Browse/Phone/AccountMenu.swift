@@ -26,7 +26,7 @@ struct AccountMenu: View {
                 .accessibilityIdentifier("account.lock")
         } label: {
             HStack(spacing: 4) {
-                AccountAvatar(initials: model.initials, size: 32)
+                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 32)
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)

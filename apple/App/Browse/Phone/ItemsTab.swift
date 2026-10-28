@@ -48,7 +48,7 @@ struct ItemsTab: View {
                 if vaultsOpen {
                     ForEach(session.vaults, id: \.id) { vault in
                         row(.vault(vault.id), id: "items.vaults.\(vault.id)") {
-                            VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 30)
+                            VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 30)
                         } label: {
                             Text(vault.meta.name)
                         } count: {

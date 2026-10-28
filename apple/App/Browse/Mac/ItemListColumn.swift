@@ -110,6 +110,10 @@ struct ItemListColumn: View {
                     .accessibilityIdentifier("list.count")
             }
         }
+        #if os(macOS)
+        // No scroll bar parked on the column's edge: the trackpad or wheel still scrolls.
+        .scrollIndicators(.never)
+        #endif
         // A new sidebar filter starts on every type again.
         .onChange(of: model.selection) { categoryFilter = nil }
         .focusedValue(\.itemListFocused, true)
@@ -134,35 +138,20 @@ struct ItemListColumn: View {
         #if os(macOS)
         // Mockup `Main`: the list names its filter above the rows; the toolbar keeps search and actions.
         .toolbar(removing: .title)
-        // Search on top of its list (the detail column keeps its own actions on the right), then
-        // the filter's name. On a bar material: rows scrolling up pass under it, never through it
-        // (the list has no background of its own any more).
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
+        // One row in the title bar above the list: the search field (it names the category it
+        // searches), then the category filter, the sort order and "Nouvel élément" as quiet round
+        // icons. No glass behind it, no second row under the title bar.
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                HStack(spacing: 4) {
+                    searchField
+                        .frame(minWidth: 150, idealWidth: 210, maxWidth: 320)
                     categoryPill
-                    Spacer(minLength: 4)
-                    Button {
-                        withAnimation(.snappy) { searchShown.toggle() }
-                        if searchShown { searchFocused = true } else { query = "" }
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                            .frame(width: 26, height: 26)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(searchShown ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
-                    .help("Rechercher (⌘F)")
-                    .accessibilityIdentifier("items.searchToggle")
                     sortMenu
+                    newItemButton
                 }
-                if searchShown { searchField }
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 6)
-            .padding(.bottom, 8)
-            .background(.bar)
-            .overlay(alignment: .bottom) { Divider().opacity(0.5) }
+            .sharedBackgroundVisibility(.hidden)
         }
         #else
         .navigationBarTitleDisplayMode(.inline)
@@ -182,6 +171,7 @@ struct ItemListColumn: View {
         .onChange(of: model.searchFocusRequest) { searchFocused = true }
         #endif
         .toolbar {
+            #if !os(macOS)
             ToolbarItem(placement: .primaryAction) {
                 // The add sheet (common types first, search, every category, import), like ⌘N.
                 Button {
@@ -192,6 +182,7 @@ struct ItemListColumn: View {
                 .help("Nouvel élément (⌘N)")
                 .accessibilityIdentifier("items.new")
             }
+            #endif
             #if !os(macOS)
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -217,26 +208,23 @@ struct ItemListColumn: View {
         return Button {
             choosingCategory.toggle()
         } label: {
-            HStack(spacing: 7) {
+            Group {
                 if let current {
+                    // A type is chosen: its tile, ringed in the accent.
                     CategoryTile(category: current, size: 18)
+                        .padding(3)
+                        .overlay { Circle().strokeBorder(Theme.accent, lineWidth: 1.5) }
                 } else {
-                    Image(systemName: "square.grid.2x2").font(.system(size: 12, weight: .semibold))
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 13, weight: .medium))
                 }
-                Text(current?.plural ?? String(localized: "Toutes les catégories"))
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
             }
-            .foregroundStyle(current == nil ? AnyShapeStyle(.primary) : AnyShapeStyle(.white))
-            .padding(.leading, current == nil ? 10 : 5)
-            .padding(.trailing, 10)
-            .padding(.vertical, 5)
-            .background(current == nil ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(Theme.accent.opacity(0.9)),
-                in: Capsule())
-            .overlay { Capsule().strokeBorder(.white.opacity(0.08)) }
-            .contentShape(Capsule())
+            .frame(width: 28, height: 28)
+            .foregroundStyle(.secondary)
+            .contentShape(Circle())
         }
+        .buttonStyle(QuietIconButtonStyle())
+        .help(current?.plural ?? String(localized: "Toutes les catégories"))
         .buttonStyle(.plain)
         .accessibilityLabel(Text(current?.plural ?? String(localized: "Toutes les catégories")))
         .accessibilityIdentifier("list.title")
@@ -253,6 +241,20 @@ struct ItemListColumn: View {
         }
     }
 
+    /// The add sheet (common types first, search, every category, import), like ⌘N: the last
+    /// icon of the list's one header row.
+    private var newItemButton: some View {
+        Button {
+            model.showNewItemPicker = true
+        } label: {
+            Image(systemName: "plus")
+        }
+        .buttonStyle(QuietIconButtonStyle())
+        .help("Nouvel élément (⌘N)")
+        .accessibilityLabel(Text("Nouvel élément"))
+        .accessibilityIdentifier("items.new")
+    }
+
     private var sortMenu: some View {
         Menu {
             Picker("Trier par", selection: $sortByDate) {
@@ -264,19 +266,24 @@ struct ItemListColumn: View {
             Image(systemName: "arrow.up.arrow.down")
         }
         .menuStyle(.button)
-        .buttonStyle(.borderless)
+        .buttonStyle(QuietIconButtonStyle())
         .menuIndicator(.hidden)
         .fixedSize()
-        .foregroundStyle(.secondary)
         .help("Trier")
         .accessibilityIdentifier("items.sort")
+    }
+
+    /// "Rechercher", or "Rechercher dans Logins" once a type is chosen.
+    private var searchPrompt: String {
+        guard let type = shownCategory else { return String(localized: "Rechercher") }
+        return String(localized: "Rechercher dans \(ItemCategory.of(type).plural)")
     }
 
     /// The list's own search field (⌘F), above the rows. Escape clears it.
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Rechercher", text: $query, prompt: Text("Rechercher"))
+            TextField("Rechercher", text: $query, prompt: Text(searchPrompt))
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .onExitCommand { query = ""; searchFocused = false }
@@ -292,10 +299,10 @@ struct ItemListColumn: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(.fill.quaternary, in: .rect(cornerRadius: 9))
+        .padding(.vertical, 5)
+        .background(.fill.quaternary, in: Capsule())
         .overlay {
-            RoundedRectangle(cornerRadius: 9)
+            Capsule()
                 .strokeBorder(searchFocused ? AnyShapeStyle(Theme.accent.opacity(0.8)) : AnyShapeStyle(.white.opacity(0.06)))
         }
     }
@@ -308,6 +315,8 @@ struct ItemListColumn: View {
                 .tag(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
                 .contextMenu { contextMenu(summary) }
                 .visionHoverEffect()
+                // Rows breathe on their own: the selection and hover capsules mark them, no rules.
+                .listRowSeparator(.hidden)
         }
     }
 

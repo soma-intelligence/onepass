@@ -92,7 +92,7 @@ struct ItemPickerList: View {
 // MARK: - Se connecte avec
 
 /// A sign-in provider of a login (`FfiLoginMethod.provider`), as the core spells it: "google",
-/// "entra_id", "oidc:<domain>". Shown as a monochrome letter mark, never the brand's logo.
+/// "entra_id", "oidc:<domain>". Shown with the provider's own mark in one color (`ProviderMark`).
 enum LoginProvider: String, CaseIterable, Identifiable {
     case google, apple, microsoft, github, facebook, x, linkedin, discord, slack, okta
     case entraID = "entra_id"
@@ -115,6 +115,15 @@ enum LoginProvider: String, CaseIterable, Identifiable {
         case .slack: "Slack"
         case .okta: "Okta"
         case .entraID: "Microsoft Entra ID"
+        }
+    }
+
+    /// The brand mark in `Assets.xcassets/Providers` (Simple Icons, CC0; each mark stays its
+    /// owner's trademark and only names the provider), nil when there is none to use.
+    var assetName: String? {
+        switch self {
+        case .google, .apple, .github, .facebook, .x, .discord, .okta: "provider-\(rawValue)"
+        default: nil
         }
     }
 
@@ -163,6 +172,16 @@ enum LoginProvider: String, CaseIterable, Identifiable {
 }
 
 extension FfiItem {
+    /// A credit card's network from its number ("visa"...), nil when unknown or not a card.
+    var cardBrandName: String? {
+        guard itemType == .creditCard,
+            let number = sections.lazy.flatMap(\.fields).first(where: { $0.id == "number" })?.value.text,
+            !number.isEmpty
+        else { return nil }
+        let brand = cardBrand(number: number)
+        return brand == "unknown" ? nil : brand
+    }
+
     /// The provider the login signs in with, and the item of that account (the first one).
     var signInProvider: (provider: String, accountItemID: String)? {
         for method in loginMethods {
@@ -187,7 +206,8 @@ enum PendingSignInProvider {
     static var value: (itemID: String, provider: LoginProvider)?
 }
 
-/// The monochrome mark of a provider: its letters on a neutral rounded square.
+/// The mark of a provider in one color on a neutral rounded square: its logo when the catalog has
+/// one, the four squares for Microsoft, else its letters.
 struct ProviderMark: View {
     let provider: LoginProvider?
     var size: CGFloat = 20
@@ -196,15 +216,29 @@ struct ProviderMark: View {
         RoundedRectangle(cornerRadius: size / 4, style: .continuous)
             .fill(.primary.opacity(0.1))
             .frame(width: size, height: size)
-            .overlay {
-                if let provider {
-                    Text(provider.mark)
-                        .font(.system(size: size * (provider.mark.count > 1 ? 0.42 : 0.55), weight: .bold, design: .rounded))
-                } else {
-                    Image(systemName: "key.fill").font(.system(size: size * 0.48, weight: .semibold))
-                }
-            }
+            .overlay { glyph }
             .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private var glyph: some View {
+        if let provider, let asset = provider.assetName {
+            Image(asset)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size * 0.56, height: size * 0.56)
+        } else if provider == .microsoft || provider == .entraID {
+            let cell = size * 0.25
+            Grid(horizontalSpacing: size * 0.05, verticalSpacing: size * 0.05) {
+                GridRow { Rectangle().frame(width: cell, height: cell); Rectangle().frame(width: cell, height: cell) }
+                GridRow { Rectangle().frame(width: cell, height: cell); Rectangle().frame(width: cell, height: cell) }
+            }
+        } else if let provider {
+            Text(provider.mark)
+                .font(.system(size: size * (provider.mark.count > 1 ? 0.42 : 0.55), weight: .bold, design: .rounded))
+        } else {
+            Image(systemName: "key.fill").font(.system(size: size * 0.48, weight: .semibold))
+        }
     }
 }
 
@@ -220,7 +254,7 @@ struct LoginMethodCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            EditorLabel("se connecte avec").padding(.leading, 16)
+            EditorLabel(String(localized: "se connecte avec")).padding(.leading, 16)
             EditorCard {
                 ChipFlow(spacing: 8) {
                     chip(nil)

@@ -4,18 +4,29 @@ import SwiftUI
 public struct TotpRing: View {
     private let remaining: Int
     private let period: Int
+    private let exact: Double?
 
-    public init(remaining: Int, period: Int) {
+    /// `exact`: the seconds left with their fraction, so the ring drains continuously (redrawn
+    /// every frame by the caller) instead of jumping once a second.
+    public init(remaining: Int, period: Int, exact: Double? = nil) {
         self.remaining = remaining
         self.period = period
+        self.exact = exact
     }
 
     private var fraction: Double {
         guard period > 0 else { return 0 }
-        return min(max(Double(remaining) / Double(period), 0), 1)
+        return min(max((exact ?? Double(remaining)) / Double(period), 0), 1)
     }
 
-    private var tint: Color { remaining <= 5 ? .red : Theme.accent }
+    /// Accent, blending to red over the last five seconds rather than switching at once.
+    private func blended(_ calm: Color) -> Color {
+        let left = exact ?? Double(remaining)
+        let warning = min(max((6 - left) / 2, 0), 1)
+        return calm.mix(with: .red, by: warning)
+    }
+
+    private var tint: Color { blended(Theme.accent) }
 
     public var body: some View {
         ZStack {
@@ -27,6 +38,8 @@ public struct TotpRing: View {
             Text("\(max(remaining, 0))")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
+                .contentTransition(.numericText(countsDown: true))
+                .animation(.snappy(duration: 0.3), value: remaining)
         }
         .frame(width: 28, height: 28)
         .accessibilityElement(children: .ignore)
@@ -39,18 +52,29 @@ public struct TotpRing: View {
 public struct TotpCountdown: View {
     private let remaining: Int
     private let period: Int
+    private let exact: Double?
 
-    public init(remaining: Int, period: Int) {
+    /// `exact`: the seconds left with their fraction, so the ring drains continuously (redrawn
+    /// every frame by the caller) instead of jumping once a second.
+    public init(remaining: Int, period: Int, exact: Double? = nil) {
         self.remaining = remaining
         self.period = period
+        self.exact = exact
     }
 
     private var fraction: Double {
         guard period > 0 else { return 0 }
-        return min(max(Double(remaining) / Double(period), 0), 1)
+        return min(max((exact ?? Double(remaining)) / Double(period), 0), 1)
     }
 
-    private var tint: Color { remaining <= 5 ? .red : Theme.accent.mix(with: .white, by: 0.35) }
+    /// Accent, blending to red over the last five seconds rather than switching at once.
+    private func blended(_ calm: Color) -> Color {
+        let left = exact ?? Double(remaining)
+        let warning = min(max((6 - left) / 2, 0), 1)
+        return calm.mix(with: .red, by: warning)
+    }
+
+    private var tint: Color { blended(Theme.accent.mix(with: .white, by: 0.35)) }
 
     public var body: some View {
         HStack(spacing: 5) {
@@ -66,6 +90,7 @@ public struct TotpCountdown: View {
                 .font(.caption.monospacedDigit().weight(.medium))
                 .foregroundStyle(remaining <= 5 ? Color.red : Color.secondary)
                 .contentTransition(.numericText(countsDown: true))
+                .animation(.snappy(duration: 0.3), value: remaining)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
