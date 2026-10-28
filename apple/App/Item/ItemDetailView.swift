@@ -453,8 +453,6 @@ struct ItemDetailView: View {
         if item.trashedAt == nil {
             ToolbarItem(placement: .primaryAction) {
                 VaultToolbarMenu(currentVaultID: item.vaultId) { vault in move(item, to: vault) }
-                    .menuStyle(.button)
-                    .buttonStyle(QuietToolbarButtonStyle())
             }
             .sharedBackgroundVisibility(.hidden)
         }
