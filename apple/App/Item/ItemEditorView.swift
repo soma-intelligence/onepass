@@ -110,12 +110,21 @@ struct ItemEditorView: View {
         #endif
         .toolbar {
             #if os(macOS)
-            // Glass buttons on the right of the detail column, Enregistrer as the prominent one.
+            // Right of the detail column: Annuler as quiet text, Enregistrer as one accent capsule. Each
+            // item keeps out of the toolbar's shared glass, which fused them into one heavy pill.
             ToolbarSpacer(.flexible)
-            ToolbarItemGroup(placement: .primaryAction) {
-                cancelButton
-                saveButton.buttonStyle(.glassProminent)
+            ToolbarItem(placement: .primaryAction) {
+                cancelButton.buttonStyle(QuietToolbarButtonStyle())
             }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) {
+                saveButton
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
+                    .fontWeight(.semibold)
+            }
+            .sharedBackgroundVisibility(.hidden)
             #else
             ToolbarItem(placement: .cancellationAction) { cancelButton }
             ToolbarItem(placement: .confirmationAction) { saveButton }
@@ -811,3 +820,31 @@ private struct AddFieldTile: View {
         .onHover { hovering = $0 }
     }
 }
+
+#if os(macOS)
+/// A text-only toolbar button: secondary text that brightens and gets a soft capsule under the
+/// pointer, so "Annuler" sits next to the accent "Enregistrer" without competing with it.
+struct QuietToolbarButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        QuietBody(configuration: configuration)
+    }
+
+    private struct QuietBody: View {
+        let configuration: Configuration
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(.body.weight(.medium))
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(hovering ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear), in: .capsule)
+                .contentShape(.capsule)
+                .opacity(configuration.isPressed ? 0.6 : 1)
+                .onHover { hovering = $0 }
+                .animation(.easeOut(duration: 0.12), value: hovering)
+        }
+    }
+}
+#endif

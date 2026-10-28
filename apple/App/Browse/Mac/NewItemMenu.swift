@@ -149,7 +149,6 @@ struct NewItemSheet: View {
                 .padding(.horizontal, Self.searchInset)
                 .padding(.bottom, 22)
 
-            ScrollViewReader { scroller in
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if trimmed.isEmpty {
@@ -159,7 +158,6 @@ struct NewItemSheet: View {
                             }
                         }
                         moreCategories
-                            .id("newItem.more")
                         if showAll {
                             allCategories
                                 .transition(revealTransition)
@@ -180,14 +178,10 @@ struct NewItemSheet: View {
                 .padding(.bottom, 16)
             }
             .scrollDismissesKeyboard(.immediately)
-            // Opening brings the row to the top so the categories that just unfolded are in view.
-            .onChange(of: showAll) { _, open in
-                guard open, !inPhoneSheet else { return }
-                withAnimation(foldAnimation.delay(0.08)) {
-                    scroller.scrollTo("newItem.more", anchor: .top)
-                }
-            }
-            }
+            // No scroll bar flashing and resizing while the categories unfold: the sheet scrolls
+            // with the trackpad or wheel, the bar stays out of the animation.
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
 
             Divider().padding(.horizontal, Self.sideInset)
             Button {
