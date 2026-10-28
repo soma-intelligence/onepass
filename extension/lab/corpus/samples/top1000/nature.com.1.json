@@ -34,7 +34,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://www.nature.com/briefing/signup/?brieferEntryPoint=MainBriefingBanner",
+  "source_url": "https://www.nature.com/briefing/signup/",
   "status": "ok",
   "webauthnCalls": []
 }

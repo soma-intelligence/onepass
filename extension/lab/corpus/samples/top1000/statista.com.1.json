@@ -35,7 +35,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://statista.com/accounts/individuals?recommendation=basic",
+  "source_url": "https://statista.com/accounts/individuals",
   "status": "ok",
   "webauthnCalls": []
 }

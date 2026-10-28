@@ -82,7 +82,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://my.roku.com/signin?next=https%3A%2F%2Fwww.roku.com",
+  "source_url": "https://my.roku.com/signin",
   "status": "ok",
   "webauthnCalls": []
 }

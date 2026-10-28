@@ -4,6 +4,6 @@
   "extractor": 2,
   "host": "www.zendesk.com",
   "source": "rendered",
-  "source_url": "https://www.zendesk.com/company/events/ai-summit-2026/?utm_medium=webpromo&utm_source=navigation&utm_campaign=AISummit_26_nav2_NA_2026Q3",
+  "source_url": "https://www.zendesk.com/company/events/ai-summit-2026/",
   "status": "error: <redacted>"
 }

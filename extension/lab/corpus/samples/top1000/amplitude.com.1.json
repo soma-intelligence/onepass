@@ -59,7 +59,7 @@
   ],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://app.amplitude.com/login?siteLocation=nav&deviceId=632b7a8d-c8f3-4836-a679-bde5f2a3a2ea",
+  "source_url": "https://app.amplitude.com/login",
   "status": "ok",
   "webauthnCalls": []
 }

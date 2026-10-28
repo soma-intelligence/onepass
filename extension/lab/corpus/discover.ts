@@ -22,13 +22,14 @@ function words(lexicon: SeedLexicon): string[] {
   return out;
 }
 
-/** Absolute http(s) URL without fragment, or undefined. */
+/** Absolute http(s) URL without query or fragment (a query can carry a session value the site put in its links), or undefined. */
 function normalize(href: string, base: string): string | undefined {
   if (href.trim().startsWith("#")) return undefined;
   let u: URL;
   try { u = new URL(href, base); } catch { return undefined; }
   if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
   u.hash = "";
+  u.search = "";
   return u.href;
 }
 

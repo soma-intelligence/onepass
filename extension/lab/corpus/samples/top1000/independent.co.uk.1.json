@@ -58,7 +58,7 @@
   ],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://independent.co.uk/login?regSourceMethod=Nav+register+CTA",
+  "source_url": "https://independent.co.uk/login",
   "status": "ok",
   "webauthnCalls": []
 }

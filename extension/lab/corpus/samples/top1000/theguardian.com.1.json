@@ -59,7 +59,7 @@
   ],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://profile.theguardian.com/signin?INTCMP=DOTCOM_NEWHEADER_SIGNIN&ABCMP=ab-sign-in&componentEventParams=componentType%3Didentityauthentication%26componentId%3Dguardian_signin_header",
+  "source_url": "https://profile.theguardian.com/signin",
   "status": "ok",
   "webauthnCalls": []
 }

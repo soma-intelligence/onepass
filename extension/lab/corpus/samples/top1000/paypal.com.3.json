@@ -10,7 +10,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://paypal.com/mobile-app/dashboard?source=%252Fhome_cta&pp_ref_id=9f21811f-4a58-453f-a9bc-4b80451643f7&utm_campaign=&utm_medium=web&utm_source=%2Fhome&cust=&redirect=true",
+  "source_url": "https://paypal.com/mobile-app/dashboard",
   "status": "ok",
   "webauthnCalls": []
 }

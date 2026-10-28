@@ -50,7 +50,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://account.2gis.com/?language=en&id=99&utm_source=2gisonline&utm_medium=products&utm_campaign=sidebar",
+  "source_url": "https://account.2gis.com/",
   "status": "ok",
   "webauthnCalls": []
 }

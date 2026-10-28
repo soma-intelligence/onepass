@@ -71,7 +71,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://steamcommunity.com/login/home/?goto=",
+  "source_url": "https://steamcommunity.com/login/home/",
   "status": "ok",
   "webauthnCalls": []
 }

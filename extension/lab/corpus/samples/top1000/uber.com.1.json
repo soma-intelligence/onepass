@@ -44,7 +44,7 @@
   ],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://auth.uber.com/login-redirect?next_url=https://www.uber.com",
+  "source_url": "https://auth.uber.com/login-redirect",
   "status": "ok",
   "webauthnCalls": []
 }

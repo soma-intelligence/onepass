@@ -39,7 +39,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://weather.com/newsletters?cm_ven=dnt_newsletter_footer",
+  "source_url": "https://weather.com/newsletters",
   "status": "ok",
   "webauthnCalls": []
 }

@@ -26,6 +26,13 @@ describe("discoverFormPages", () => {
     expect(urls[0]).toBe("https://a.example/login");
     expect(urls.filter((u) => u === "https://a.example/login")).toHaveLength(1);
   });
+  it("discovered URLs keep no query (session values a site puts in its links)", () => {
+    const html = '<a href="/login?csrf=5glFabc&next=%2F">Sign in</a><a href="/signup?state=xyz#top">Sign up</a>';
+    const sitemap = "<urlset><url><loc>https://a.example/account/login?dsh=S-123&amp;x=1</loc></url></urlset>";
+    const urls = discoverFormPages({ url: "https://a.example/", html }, sitemap, lexicon);
+    expect(urls).toContain("https://a.example/login");
+    expect(urls.some((u) => u.includes("?") || u.includes("#"))).toBe(false);
+  });
   it("same registrable domain subdomains are kept", () => {
     const html = '<a href="https://accounts.a.example/start">Sign in</a>';
     const urls = discoverFormPages({ url: "https://www.a.example/", html }, undefined, lexicon);

@@ -67,7 +67,7 @@
   ],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://w.deepl.com/signin/oidc_login?redirect_uri=https%3A%2F%2Fwww.deepl.com%2Fen&prompt=select_account",
+  "source_url": "https://w.deepl.com/signin/oidc_login",
   "status": "ok",
   "webauthnCalls": []
 }

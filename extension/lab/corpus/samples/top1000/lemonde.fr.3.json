@@ -55,7 +55,7 @@
   ],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://compte.lemonde.fr/user/edit/payment/?edi_medium=display&edi_campaign=fid_bandeau-cb-expiree-maj_lmfr&edi_creation=bandeau3",
+  "source_url": "https://compte.lemonde.fr/user/edit/payment/",
   "status": "ok",
   "webauthnCalls": []
 }

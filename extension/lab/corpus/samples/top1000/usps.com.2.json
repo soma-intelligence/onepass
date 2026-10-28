@@ -10,7 +10,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://informeddelivery.usps.com/portal/dashboard?mode=id-login",
+  "source_url": "https://informeddelivery.usps.com/portal/dashboard",
   "status": "ok",
   "webauthnCalls": []
 }

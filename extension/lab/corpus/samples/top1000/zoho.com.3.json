@@ -151,7 +151,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://zoho.com/payments/?src=zGlobalAllProducts&category=finance",
+  "source_url": "https://zoho.com/payments/",
   "status": "ok",
   "webauthnCalls": []
 }

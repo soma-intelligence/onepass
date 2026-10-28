@@ -4,6 +4,6 @@
   "extractor": 2,
   "host": "shopify.com",
   "source": "rendered",
-  "source_url": "https://shopify.com/login?ui_locales=en",
+  "source_url": "https://shopify.com/login",
   "status": "error: http 403"
 }

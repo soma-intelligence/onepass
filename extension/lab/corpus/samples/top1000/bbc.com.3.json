@@ -19,7 +19,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "http://www.bbc.com/newsletters?WorldOfBusiness&at_bbc_team=studios&at_medium=onsite&at_objective=acquisition&at_ptr_name=bbc.com&at_format=carousel&at_link_origin=homepage&at_campaign=wob&at_campaign_type=owned&no_app=1",
+  "source_url": "http://www.bbc.com/newsletters",
   "status": "ok",
   "webauthnCalls": []
 }

@@ -67,7 +67,7 @@
   ],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://users.wix.com/signin?view=sign-up&sendEmail=true&loginCompName=SignUp_H&referralInfo=SignUp_H&postSignUp=https%3A%2F%2Fwww.wix.com%2Fnew%2Fintro%2F&postLogin=https%3A%2F%2Fmanage.wix.com%2Faccount%2Froute&loginDialogContext=login&originUrl=https%3A%2F%2Fwww.wix.com%2F",
+  "source_url": "https://users.wix.com/signin",
   "status": "ok",
   "webauthnCalls": []
 }

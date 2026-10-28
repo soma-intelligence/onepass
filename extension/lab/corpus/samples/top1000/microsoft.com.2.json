@@ -4,6 +4,6 @@
   "extractor": 2,
   "host": "www.microsoft.com",
   "source": "rendered",
-  "source_url": "https://www.microsoft.com/en-us/store/b/payment-financing-options?icid=footer_financing_vcc",
+  "source_url": "https://www.microsoft.com/en-us/store/b/payment-financing-options",
   "status": "error: page.goto: net::ERR_HTTP2_PROTOCOL_ERROR at https://www.micr"
 }

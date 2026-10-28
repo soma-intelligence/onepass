@@ -10,7 +10,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://abo.lemonde.fr/?edi_medium=cta_sabonner&edi_campaign=home_lmie&edi_position=footer&edi_rubrique=5&edi_type_de_page=Home",
+  "source_url": "https://abo.lemonde.fr/",
   "status": "ok",
   "webauthnCalls": []
 }

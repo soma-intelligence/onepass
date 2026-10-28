@@ -10,7 +10,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://www.frontiersin.org/people/login?returnUrl=https%3A%2F%2Fwww.frontiersin.org%2F",
+  "source_url": "https://www.frontiersin.org/people/login",
   "status": "ok",
   "webauthnCalls": []
 }
