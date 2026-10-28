@@ -39,8 +39,10 @@ export interface ModelSessionLike {
   predict(features: FieldFeatures[]): Promise<{ label: ModelLabel; score: number }[]>;
 }
 
-/** Most fields of one form sent to the model; bigger forms keep their heuristic roles. */
-export const MAX_CLASSIFY_FIELDS = 256;
+/** Most fields of one form sent to the model (the worker's budget too); bigger forms keep their heuristic roles. */
+export const MAX_CLASSIFY_FIELDS = 64;
+/** Quiet time before a form is sent to the model, so a page that keeps mutating sends at most one request per burst. */
+export const CLASSIFY_DEBOUNCE_MS = 150;
 /** Longest text value sent, in code points (vectorize reads at most 256 after normalization). */
 export const MAX_FEATURE_CHARS = 1024;
 
@@ -232,14 +234,62 @@ const cacheKey = (features: FieldFeatures[]): string =>
     return rest;
   }));
 
-/** A ModelHook over a model classifier: answers from a cache, asks each new form once, calls onUpdate when an answer lands. */
-export function createModelHook(opts: { classifier: FieldClassifier; onUpdate: () => void }): ModelHook {
+/**
+ * A ModelHook over a model classifier: answers from a cache; on a miss the form becomes the one
+ * pending request (a newer miss replaces it, older ones are dropped and asked again on a later
+ * analysis), sent after CLASSIFY_DEBOUNCE_MS of quiet, with at most one request in flight per frame.
+ * onUpdate runs after each answer (or failure) so the page is analysed again and the next form asked.
+ */
+export function createModelHook(opts: {
+  classifier: FieldClassifier;
+  onUpdate: () => void;
+  debounceMs?: number;
+  setTimer?: (cb: () => void, ms: number) => unknown;
+}): ModelHook {
+  const debounceMs = opts.debounceMs ?? CLASSIFY_DEBOUNCE_MS;
+  const setTimer = opts.setTimer ?? ((cb: () => void, ms: number) => setTimeout(cb, ms));
   const cache = new Map<string, RoleScore[] | null>();
-  const pending = new Set<string>();
   let crossSite = false;
+  let inFlight: string | null = null;
+  let queued: { key: string; features: FieldFeatures[] } | null = null;
+  let timerSet = false;
   const remember = (key: string, v: RoleScore[] | null) => {
     if (cache.size >= MAX_CACHED_FORMS) cache.delete(cache.keys().next().value as string);
     cache.set(key, v);
+  };
+  const schedule = (): void => {
+    if (inFlight !== null || timerSet || queued === null || crossSite) return;
+    timerSet = true;
+    setTimer(() => {
+      timerSet = false;
+      send();
+    }, debounceMs);
+  };
+  const send = (): void => {
+    if (queued === null || inFlight !== null || crossSite) return;
+    const { key, features } = queued;
+    queued = null;
+    inFlight = key;
+    const done = () => {
+      inFlight = null;
+      opts.onUpdate();
+      schedule();
+    };
+    opts.classifier.classify([], features).then(
+      (roles) => {
+        remember(key, roles.length === features.length ? roles : null);
+        done();
+      },
+      (e: unknown) => {
+        // Failed or refused (budget, busy, rate): this form stays on the heuristics.
+        remember(key, null);
+        if (e instanceof CrossSiteFrame) {
+          crossSite = true;
+          queued = null;
+        }
+        done();
+      },
+    );
   };
   return {
     get crossSite() {
@@ -250,24 +300,9 @@ export function createModelHook(opts: { classifier: FieldClassifier; onUpdate: (
       const key = cacheKey(features);
       const hit = cache.get(key);
       if (hit !== undefined) return hit;
-      if (!pending.has(key)) {
-        pending.add(key);
-        opts.classifier.classify([], features).then(
-          (roles) => {
-            pending.delete(key);
-            remember(key, roles.length === features.length ? roles : null);
-            opts.onUpdate();
-          },
-          (e: unknown) => {
-            // Failed or refused: this form stays on the heuristics.
-            pending.delete(key);
-            remember(key, null);
-            if (e instanceof CrossSiteFrame) {
-              crossSite = true;
-              opts.onUpdate();
-            }
-          },
-        );
+      if (key !== inFlight) {
+        queued = { key, features };
+        schedule();
       }
       return null;
     },

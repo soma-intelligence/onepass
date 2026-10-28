@@ -5,7 +5,7 @@ import { providerForHost } from "../../shared/providers";
 import { detectCaptcha, detectPush } from "./captcha";
 import { applySafetyRules, type ModelHook, type RoleScore } from "./classifier";
 import { extractFeatures, type FieldFeatures } from "./features";
-import { classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate } from "./fields";
+import { autocompleteRole, classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate } from "./fields";
 import { AUTOCOMPLETE_SCORE, normalizeText } from "./lexicon";
 import { buttonLabel, detectAccountChooser, detectProviderButtons, providerOfButton } from "./provider";
 import type { RefRegistry } from "./refs";
@@ -359,7 +359,8 @@ function documentOrder(a: Element, b: Element): number {
  * Model roles of the visible fields, after the safety rules (classifier.ts). Features come from the
  * shared extractor without the page-supplied lab mark. A field absent from the map keeps its
  * heuristic role (no features, e.g. a checkbox, or no answer yet); a field mapped to `unknown`
- * stays unknown. Never consulted in a cross-site frame.
+ * stays unknown. Never consulted in a cross-site frame, nor for a field whose autocomplete token
+ * the detector recognizes (R21).
  */
 function modelRoles(doc: Document, geometry: Geometry, model: ModelHook): Map<Element, RoleScore> {
   const out = new Map<Element, RoleScore>();
@@ -367,13 +368,16 @@ function modelRoles(doc: Document, geometry: Geometry, model: ModelHook): Map<El
   const elOf = new Map<FieldFeatures, Element>();
   const page = extractFeatures(doc, { maxFields: MAX_FIELDS, onField: (el, f) => elOf.set(f, el) });
   for (const form of page.forms) {
-    const els = form.fields.map((f) => elOf.get(f));
     // The extractor reads input, select and textarea only; types the detector skips (search...) get a role nobody reads.
-    if (els.some((el) => el === undefined)) continue;
-    const roles = model.lookup(form.fields);
+    if (form.fields.some((f) => elOf.get(f) === undefined)) continue;
+    // Ruling R21: a recognized autocomplete token decides (spec 8.2); such a field is never sent to the model.
+    const asked = form.fields.filter((f) => autocompleteRole(elOf.get(f) as FieldElement) === null);
+    if (asked.length === 0) continue;
+    const els = asked.map((f) => elOf.get(f) as FieldElement);
+    const roles = model.lookup(asked);
     if (roles === null || model.crossSite) continue;
-    const safe = applySafetyRules(els as FieldElement[], roles, { crossSite: model.crossSite }, { geometry, features: form.fields });
-    els.forEach((el, i) => out.set(el as Element, safe[i] as RoleScore));
+    const safe = applySafetyRules(els, roles, { crossSite: model.crossSite }, { geometry, features: asked });
+    els.forEach((el, i) => out.set(el, safe[i] as RoleScore));
   }
   return out;
 }
@@ -400,10 +404,9 @@ export function detectForms(
       continue;
     }
     const heuristic = classifyField(el);
-    const m = fromModel?.get(el);
-    const { role } = m ?? heuristic;
-    // `direct` (autocomplete decided) only when the model agrees with the autocomplete role.
-    const direct = heuristic.score === AUTOCOMPLETE_SCORE && heuristic.role === role;
+    const direct = heuristic.score === AUTOCOMPLETE_SCORE;
+    // R21: an autocomplete-decided role is never replaced by the model.
+    const { role } = (direct ? undefined : fromModel?.get(el)) ?? heuristic;
     if (role !== "unknown") classified.push({ el, role, direct, cell: false });
   }
 

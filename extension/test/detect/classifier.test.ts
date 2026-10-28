@@ -226,7 +226,7 @@ describe("createModelHook", () => {
     let calls = 0;
     const classifier: FieldClassifier = { kind: "gbm", classify: async (_e, fs) => (calls++, fs.map(() => ({ role: "email", score: 1 }))) };
     const updated = vi.fn();
-    const hook = createModelHook({ classifier, onUpdate: updated });
+    const hook = createModelHook({ classifier, onUpdate: updated, debounceMs: 0 });
     const form = [{ tag: "input", name: "a" } as FieldFeatures];
     expect(hook.lookup(form)).toBeNull();
     expect(hook.lookup(form)).toBeNull();
@@ -238,20 +238,70 @@ describe("createModelHook", () => {
   it("a failed form stays on heuristics and is not asked again", async () => {
     let calls = 0;
     const classifier: FieldClassifier = { kind: "gbm", classify: async () => { calls++; throw new Error("no"); } };
-    const hook = createModelHook({ classifier, onUpdate: () => {} });
+    const hook = createModelHook({ classifier, onUpdate: () => {}, debounceMs: 0 });
     const form = [{ tag: "input", name: "a" } as FieldFeatures];
     hook.lookup(form);
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 10));
     expect(hook.lookup(form)).toBeNull();
     expect(calls).toBe(1);
   });
 
   it("the lab mark is not part of the cache key", async () => {
     const classifier: FieldClassifier = { kind: "gbm", classify: async (_e, fs) => fs.map(() => ({ role: "email", score: 1 })) };
-    const hook = createModelHook({ classifier, onUpdate: () => {} });
+    const hook = createModelHook({ classifier, onUpdate: () => {}, debounceMs: 0 });
     hook.lookup([{ tag: "input", name: "a" } as FieldFeatures]);
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 10));
     expect(hook.lookup([{ tag: "input", name: "a", lab: "9" } as FieldFeatures])).toEqual([{ role: "email", score: 1 }]);
+  });
+});
+
+describe("createModelHook under a mutating page (I2)", () => {
+  it("a burst of 50 new forms sends one request after the debounce, the latest only; at most one in flight", async () => {
+    const timers: (() => void)[] = [];
+    const asked: string[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let release: (() => void) | null = null;
+    const classifier: FieldClassifier = {
+      kind: "gbm",
+      classify: (_e, fs) => {
+        asked.push(fs[0]!.name!);
+        maxInFlight = Math.max(maxInFlight, ++inFlight);
+        return new Promise((r) => {
+          release = () => {
+            inFlight--;
+            r(fs.map(() => ({ role: "email" as FieldRole, score: 1 })));
+          };
+        });
+      },
+    };
+    const updated = vi.fn();
+    const hook = createModelHook({ classifier, onUpdate: updated, setTimer: (cb) => timers.push(cb) });
+    const form = (i: number) => [{ tag: "input", name: `f${i}` } as FieldFeatures];
+    for (let i = 0; i < 50; i++) expect(hook.lookup(form(i))).toBeNull();
+    expect(asked).toEqual([]);
+    expect(timers).toHaveLength(1);
+    timers.shift()!();
+    expect(asked).toEqual(["f49"]);
+    // More misses while the request runs: no second request, no timer.
+    for (let i = 50; i < 100; i++) hook.lookup(form(i));
+    expect(timers).toHaveLength(0);
+    expect(asked).toHaveLength(1);
+    release!();
+    await vi.waitFor(() => expect(updated).toHaveBeenCalledTimes(1));
+    // Then the latest pending one, after a new debounce.
+    expect(timers).toHaveLength(1);
+    timers.shift()!();
+    expect(asked).toEqual(["f49", "f99"]);
+    expect(maxInFlight).toBe(1);
+    expect(hook.lookup(form(49))).toEqual([{ role: "email", score: 1 }]);
+  });
+
+  it("forms over the field budget are never sent", () => {
+    const classify = vi.fn(async () => []);
+    const hook = createModelHook({ classifier: { kind: "gbm", classify }, onUpdate: () => {}, debounceMs: 0 });
+    expect(hook.lookup(Array.from({ length: 65 }, (_, i) => ({ tag: "input", name: `x${i}` }) as FieldFeatures))).toBeNull();
+    expect(classify).not.toHaveBeenCalled();
   });
 });
 
@@ -287,6 +337,21 @@ describe("detectForms with a model", () => {
     expect(rolesById(a, refs)).toEqual({ u: "username", p: "current_password" });
   });
 
+  it.each([
+    ["current-password", "password", "current_password", "username"],
+    ["new-password", "password", "new_password", "email"],
+    ["email", "email", "email", "current_password"],
+    ["one-time-code", "text", "otp", "username"],
+    ["cc-number", "text", "cc_number", "cc_exp"],
+  ] as const)("R21: autocomplete=%s keeps its role whatever the model says, and is never sent to it", (ac, type, expected, companion) => {
+    // The companion field (no autocomplete) makes a form of the right kind; the model disagrees on the autocomplete field.
+    const html = `<form><input id="u" name="q1"><input id="x" name="zz" type="${type}" autocomplete="${ac}"><button type="submit">Go</button></form>`;
+    const { hook, seen } = syncHook((f) => (f.autocomplete !== undefined ? (expected === "current_password" ? "new_password" : "current_password") : companion));
+    const { a, refs } = analyze(html, hook);
+    expect(rolesById(a, refs).x).toBe(expected);
+    expect(seen.flat().some((f) => f.autocomplete === ac)).toBe(false);
+  });
+
   it("a form holding a type the detector skips (search) still gets the model's roles", () => {
     const html = `<div><input id="s" type="search" name="q"><input id="u" name="q1"><input id="p" name="q2" type="password"><button type="submit">Go</button></div>`;
     const { hook } = syncHook((f) => (f.type === "password" ? "current_password" : "username"));
@@ -297,7 +362,8 @@ describe("detectForms with a model", () => {
   it("a model saying password on a hidden honeypot fills nothing (the trap gets no role)", () => {
     const { hook } = syncHook((f) => (f.type === "password" ? "current_password" : "email"));
     const { a, refs } = analyze(HONEYPOT_HTML, hook);
-    expect(rolesById(a, refs)).toEqual({ email: "email", password: "current_password" });
+    // #email carries autocomplete="username": that decides (R21).
+    expect(rolesById(a, refs)).toEqual({ email: "username", password: "current_password" });
   });
 
   it("a field the features read as invisible stays unknown whatever the model says", () => {
