@@ -257,3 +257,33 @@ def test_writers_closed_when_second_fails(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="second writer"):
         ingest(make_src(tmp_path), tmp_path / "dst")
     assert opened and opened[0].is_open is False
+
+
+def test_recovers_dst_from_old_before_running(tmp_path):
+    src = make_src(tmp_path)
+    ingest(src, tmp_path / "dst")
+    before = {f.name: f.read_bytes() for f in (tmp_path / "dst").iterdir()}
+    (tmp_path / "dst").rename(tmp_path / "dst.old")  # state left by a kill mid-swap
+    (src / "manifest.json").unlink()  # the run itself fails
+    with pytest.raises(FileNotFoundError):
+        ingest(src, tmp_path / "dst")
+    assert {f.name: f.read_bytes() for f in (tmp_path / "dst").iterdir()} == before
+    assert not (tmp_path / "dst.old").exists()
+
+
+def test_restore_failure_names_both_errors(tmp_path, monkeypatch):
+    src = make_src(tmp_path)
+    dst = tmp_path / "dst"
+    ingest(src, dst)
+    real = os.rename
+    calls = []
+
+    def flaky(a, b):
+        calls.append(1)
+        if len(calls) >= 2:
+            raise OSError(f"fail{len(calls)}")
+        return real(a, b)
+
+    monkeypatch.setattr(os, "rename", flaky)
+    with pytest.raises(RuntimeError, match=r"fail2.*fail3.*dst\.old"):
+        ingest(src, dst)

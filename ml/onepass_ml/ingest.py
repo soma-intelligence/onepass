@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
 import os
 import shutil
 import sys
@@ -76,6 +77,8 @@ REQUIRED = [n for n, _ in _FIELDS if n not in _OPTIONAL]
 
 Manifest = dict[str, Any]
 
+log = logging.getLogger(__name__)
+
 
 def _rows(src: Path) -> Iterator[tuple[Path, dict[str, Any]]]:
     parts = sorted(src.glob("part-*.jsonl.gz"))
@@ -99,6 +102,11 @@ def ingest(src: Path, dst: Path, batch_rows: int = BATCH_ROWS) -> Manifest:
     passed; on any failure the temp directory is removed and dst is left untouched.
     """
     src, dst = Path(src), Path(dst)
+    old = dst.with_name(dst.name + ".old")
+    if not dst.exists() and old.exists():
+        # A previous run died between setting dst aside and putting the new output in place.
+        os.rename(old, dst)
+        log.warning("recovered previous output of %s from %s", dst, old)
     manifest_path = src / "manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(manifest_path)
@@ -131,8 +139,14 @@ def _swap(tmp: Path, dst: Path) -> None:
     os.rename(dst, old)
     try:
         os.rename(tmp, dst)
-    except BaseException:
-        os.rename(old, dst)
+    except BaseException as swap_err:
+        try:
+            os.rename(old, dst)
+        except OSError as restore_err:
+            raise RuntimeError(
+                f"swap failed ({swap_err!r}) and restoring the previous output failed ({restore_err!r}); "
+                f"the previous output is in {old}, the new one in {tmp}"
+            ) from swap_err
         raise
     shutil.rmtree(old, ignore_errors=True)
 
