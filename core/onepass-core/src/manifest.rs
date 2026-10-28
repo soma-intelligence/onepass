@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::crypto::{
     Aad, BlobKind, HybridSignature, HybridSigningKey, HybridVerifyingKey, open, seal,
 };
-use crate::vault::{ItemRecord, Vault};
+use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
 /// One item listed in a manifest.
@@ -31,6 +31,23 @@ pub struct Manifest {
     /// Sorted by `item_id`, no duplicates.
     pub entries: Vec<ManifestEntry>,
     pub merkle_root: [u8; 32],
+    /// Encoded after the fields above, only when present (see
+    /// `encode_manifest`), so a manifest written before it keeps its bytes
+    /// and its hash.
+    #[serde(skip)]
+    pub ext: Option<ManifestExt>,
+}
+
+/// What a manifest commits to beyond its items.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManifestExt {
+    /// `meta_hash` of the vault meta, once bound: a meta that does not match
+    /// is refused (`WrongContext`), so a store cannot serve an older one.
+    pub meta_hash: Option<[u8; 32]>,
+    /// `(seq, manifest_hash)` of the ancestors from `prev` back, newest first,
+    /// at most `HISTORY` of them: a device that skipped some manifests
+    /// still checks that its last one is an ancestor.
+    pub history: Vec<(u64, [u8; 32])>,
 }
 
 /// A sealed manifest and the signature over the sealed blob.
@@ -68,6 +85,11 @@ const LEAF: u8 = 0x00;
 const NODE: u8 = 0x01;
 const EMPTY: u8 = 0x02;
 const BAD: Error = Error::InvalidFormat("manifest");
+/// Tag of the `ManifestExt` encoding that follows the manifest fields.
+const EXT_V1: u8 = 1;
+/// Ancestors kept in `ManifestExt::history`.
+pub const HISTORY: usize = 64;
+const META_DOMAIN: &[u8] = b"onepass/vault-meta/v1";
 
 fn finish(ctx: Context) -> [u8; 32] {
     let mut out = [0u8; 32];
@@ -90,10 +112,42 @@ pub fn record_hash(rec: &ItemRecord) -> [u8; 32] {
     hash_postcard(&[], rec)
 }
 
-/// SHA-256 of `postcard(m)`: the `prev_hash` of the next manifest and the
-/// `hash` of a `SeenManifest`.
+/// SHA-256 of `encode_manifest(m)`: the `prev_hash` of the next manifest
+/// and the `hash` of a `SeenManifest`.
 pub fn manifest_hash(m: &Manifest) -> [u8; 32] {
-    hash_postcard(&[], m)
+    let mut ctx = Context::new(&SHA256);
+    ctx.update(&encode_manifest(m));
+    finish(ctx)
+}
+
+/// SHA-256 of `"onepass/vault-meta/v1" || postcard(meta)`.
+pub fn meta_hash(meta: &VaultMeta) -> [u8; 32] {
+    hash_postcard(META_DOMAIN, meta)
+}
+
+/// `postcard(m)`, then, if `m.ext` is set, `EXT_V1 || postcard(ext)`.
+fn encode_manifest(m: &Manifest) -> Vec<u8> {
+    let mut bytes = postcard::to_allocvec(m).expect("postcard into a Vec is infallible");
+    if let Some(ext) = &m.ext {
+        bytes.push(EXT_V1);
+        bytes.extend(postcard::to_allocvec(ext).expect("postcard into a Vec is infallible"));
+    }
+    bytes
+}
+
+/// The inverse of `encode_manifest`, the whole buffer: trailing bytes or an
+/// unknown extension tag are `InvalidFormat("manifest")`.
+fn decode_manifest(bytes: &[u8]) -> Result<Manifest> {
+    let (mut m, rest) = postcard::take_from_bytes::<Manifest>(bytes).map_err(|_| BAD)?;
+    match rest {
+        [] => {}
+        [EXT_V1, tail @ ..] => match postcard::take_from_bytes::<ManifestExt>(tail) {
+            Ok((ext, [])) => m.ext = Some(ext),
+            _ => return Err(BAD),
+        },
+        _ => return Err(BAD),
+    }
+    Ok(m)
 }
 
 /// Merkle root of the entries, in the given order. Leaf
@@ -153,6 +207,14 @@ fn check_shape(vault: &Vault, m: &Manifest) -> Result<()> {
     if merkle_root(&m.entries) != m.merkle_root {
         return Err(IntegrityError::ManifestItemMismatch.into());
     }
+    if let Some(ext) = &m.ext {
+        if ext.history.len() > HISTORY {
+            return Err(BAD);
+        }
+        if ext.meta_hash.is_some_and(|h| h != meta_hash(&vault.meta)) {
+            return Err(IntegrityError::WrongContext.into());
+        }
+    }
     Ok(())
 }
 
@@ -178,6 +240,20 @@ impl Manifest {
             ),
             None => (1, [0u8; 32]),
         };
+        // `prev` itself, then the history `prev` committed to: the window
+        // only names manifests the chain held, with their seqs (a restore
+        // epoch can make the seq jump).
+        let history = match prev {
+            Some(p) => {
+                let older = p.ext.as_ref().map_or(&[][..], |e| &e.history[..]);
+                std::iter::once((p.seq, manifest_hash(p)))
+                    .chain(older.iter().copied())
+                    .take(HISTORY)
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        let meta_hash = prev.and_then(|p| p.ext.as_ref()).and_then(|e| e.meta_hash);
         let merkle_root = merkle_root(&entries);
         Ok(Manifest {
             vault_id,
@@ -185,7 +261,19 @@ impl Manifest {
             prev_hash,
             entries,
             merkle_root,
+            ext: Some(ManifestExt { meta_hash, history }),
         })
+    }
+
+    /// Bind the manifest to `meta`: a vault whose meta differs is refused
+    /// when this manifest is signed or verified.
+    pub fn with_meta(mut self, meta: &VaultMeta) -> Manifest {
+        let ext = self.ext.get_or_insert_with(|| ManifestExt {
+            meta_hash: None,
+            history: Vec::new(),
+        });
+        ext.meta_hash = Some(meta_hash(meta));
+        self
     }
 }
 
@@ -198,7 +286,7 @@ pub fn sign_manifest(
     m: &Manifest,
 ) -> Result<SignedManifest> {
     check_shape(vault, m)?;
-    let plain = postcard::to_allocvec(m).map_err(|_| BAD)?;
+    let plain = encode_manifest(m);
     let blob = seal(vault.key(), BlobKind::Manifest, &aad(vault.id), &plain)?;
     let sig = signer.sign(DOMAIN, &blob)?;
     Ok(SignedManifest { blob, sig })
@@ -210,7 +298,7 @@ pub fn sign_manifest(
 /// then the history against the last manifest seen (`ManifestRollback`):
 /// an older seq is refused; the same seq must be the very same manifest
 /// (else a fork); the next seq must chain to it through `prev_hash`; a
-/// larger gap cannot be chained and is accepted.
+/// larger gap must find it in `ext.history` (see `gap_consistent`).
 pub fn verify_manifest(
     vault: &Vault,
     verifier: &HybridVerifyingKey,
@@ -219,10 +307,7 @@ pub fn verify_manifest(
 ) -> Result<Manifest> {
     verifier.verify(DOMAIN, &sm.blob, &sm.sig)?;
     let plain = open(vault.key(), BlobKind::Manifest, &aad(vault.id), &sm.blob)?;
-    let m: Manifest = match postcard::take_from_bytes(&plain) {
-        Ok((m, [])) => m,
-        _ => return Err(BAD),
-    };
+    let m = decode_manifest(&plain)?;
     check_shape(vault, &m)?;
     if let Some(last) = last_seen {
         let consistent = if m.seq < last.seq {
@@ -232,7 +317,7 @@ pub fn verify_manifest(
         } else if m.seq - last.seq == 1 {
             m.prev_hash == last.hash
         } else {
-            true
+            gap_consistent(&m, last)
         };
         if !consistent {
             return Err(IntegrityError::ManifestRollback.into());
@@ -264,6 +349,23 @@ pub fn check_records(m: &Manifest, records: &[ItemRecord]) -> Result<()> {
         return Err(IntegrityError::ManifestUnexpectedItem.into());
     }
     Ok(())
+}
+
+/// A manifest more than one seq ahead of `last`: `last` must be in its
+/// history with the same hash. A seq inside the window but absent from it
+/// was never in this chain (a fork). Older than the window, or a manifest
+/// written before the history existed, cannot be checked and is accepted.
+fn gap_consistent(m: &Manifest, last: &SeenManifest) -> bool {
+    let Some(ext) = &m.ext else {
+        return true;
+    };
+    if let Some((_, hash)) = ext.history.iter().find(|(seq, _)| *seq == last.seq) {
+        return *hash == last.hash;
+    }
+    match ext.history.last() {
+        Some((oldest, _)) => *oldest > last.seq,
+        None => true,
+    }
 }
 
 #[cfg(test)]
@@ -353,13 +455,7 @@ mod tests {
             vault_id: Some(v.id),
             schema: 1,
         };
-        let blob = seal(
-            v.key(),
-            BlobKind::Manifest,
-            &aad,
-            &postcard::to_allocvec(m).unwrap(),
-        )
-        .unwrap();
+        let blob = seal(v.key(), BlobKind::Manifest, &aad, &encode_manifest(m)).unwrap();
         let sig = signer().sign(b"manifest", &blob).unwrap();
         SignedManifest { blob, sig }
     }
@@ -450,7 +546,11 @@ mod tests {
 
         let m2 = Manifest::next(Some(&m1), v.id, vec![entry(1)]).unwrap();
         assert_eq!(m2.seq, 2);
-        assert_eq!(m2.prev_hash, sha(&[&postcard::to_allocvec(&m1).unwrap()]));
+        assert_eq!(m2.prev_hash, manifest_hash(&m1));
+        assert_eq!(
+            m2.ext.as_ref().unwrap().history,
+            vec![(1, manifest_hash(&m1))]
+        );
     }
 
     #[test]
@@ -509,10 +609,19 @@ mod tests {
 
     #[test]
     fn manifest_hash_is_sha256_of_postcard() {
+        // A manifest from before the extension keeps its bytes and hash.
+        let mut legacy = Manifest::next(None, Id([9; 16]), vec![entry(1)]).unwrap();
+        legacy.ext = None;
+        assert_eq!(
+            manifest_hash(&legacy),
+            sha(&[&postcard::to_allocvec(&legacy).unwrap()])
+        );
+        // With the extension: the fields, the tag, then the extension.
         let m = Manifest::next(None, Id([9; 16]), vec![entry(1)]).unwrap();
+        let ext = postcard::to_allocvec(m.ext.as_ref().unwrap()).unwrap();
         assert_eq!(
             manifest_hash(&m),
-            sha(&[&postcard::to_allocvec(&m).unwrap()])
+            sha(&[&postcard::to_allocvec(&m).unwrap(), &[EXT_V1], &ext])
         );
         assert_eq!(
             Manifest::next(Some(&m), m.vault_id, vec![])
@@ -562,14 +671,92 @@ mod tests {
             verify_manifest(&v, &verifier(), &s2, Some(&seen(&m1))).unwrap(),
             m2
         );
-        // A gap (seq 3 seen from seq 1) cannot be chained, and is accepted.
-        let m3 = Manifest::next(Some(&off), v.id, vec![]).unwrap();
+        // A gap (seq 3 seen from seq 1) is checked against the history: on
+        // the seen chain it is accepted, on the fork it is refused.
+        let m3 = Manifest::next(Some(&m2), v.id, vec![]).unwrap();
         assert_eq!(m3.seq, 3);
         let s3 = sign_manifest(&v, signer(), &m3).unwrap();
         assert_eq!(
             verify_manifest(&v, &verifier(), &s3, Some(&seen(&m1))).unwrap(),
             m3
         );
+        let f3 = Manifest::next(Some(&off), v.id, vec![]).unwrap();
+        let sf3 = sign_manifest(&v, signer(), &f3).unwrap();
+        assert_eq!(
+            integrity(verify_manifest(&v, &verifier(), &sf3, Some(&seen(&m1)))),
+            IntegrityError::ManifestRollback
+        );
+        // A manifest written before the history existed cannot be checked,
+        // and a gap to it is accepted as before.
+        let mut legacy = f3.clone();
+        legacy.ext = None;
+        let sl = sign_manifest(&v, signer(), &legacy).unwrap();
+        assert_eq!(
+            verify_manifest(&v, &verifier(), &sl, Some(&seen(&m1))).unwrap(),
+            legacy
+        );
+    }
+
+    /// A server that took two writers' seq 3 and serves the other branch,
+    /// two writes later, to the device that saw its own seq 3.
+    #[test]
+    fn fork_behind_a_seq_gap_is_refused() {
+        let v = vault();
+        let m1 = Manifest::next(None, v.id, vec![entry(1)]).unwrap();
+        let m2 = Manifest::next(Some(&m1), v.id, vec![entry(1)]).unwrap();
+        let b3 = Manifest::next(Some(&m2), v.id, vec![entry(1), entry(2)]).unwrap();
+        let a3 = Manifest::next(Some(&m2), v.id, vec![entry(1), entry(3)]).unwrap();
+        let a4 = Manifest::next(Some(&a3), v.id, a3.entries.clone()).unwrap();
+        let a5 = Manifest::next(Some(&a4), v.id, a4.entries.clone()).unwrap();
+        let s5 = sign_manifest(&v, signer(), &a5).unwrap();
+        assert_eq!(
+            integrity(verify_manifest(&v, &verifier(), &s5, Some(&seen(&b3)))),
+            IntegrityError::ManifestRollback
+        );
+        // The device that saw a3 accepts a5.
+        assert!(verify_manifest(&v, &verifier(), &s5, Some(&seen(&a3))).is_ok());
+        // Seen m2, common to both branches: a5 descends from it.
+        assert!(verify_manifest(&v, &verifier(), &s5, Some(&seen(&m2))).is_ok());
+    }
+
+    /// The history stays within `HISTORY`, and a seen manifest older than
+    /// the window is accepted (it cannot be checked).
+    #[test]
+    fn history_window_is_bounded() {
+        let v = vault();
+        let first = Manifest::next(None, v.id, vec![]).unwrap();
+        let mut m = first.clone();
+        for _ in 0..HISTORY + 5 {
+            m = Manifest::next(Some(&m), v.id, vec![]).unwrap();
+        }
+        assert_eq!(m.ext.as_ref().unwrap().history.len(), HISTORY);
+        let sm = sign_manifest(&v, signer(), &m).unwrap();
+        assert!(verify_manifest(&v, &verifier(), &sm, Some(&seen(&first))).is_ok());
+    }
+
+    /// A manifest bound to a meta refuses a vault opened with another one.
+    #[test]
+    fn manifest_bound_to_meta_refuses_another_meta() {
+        let v = vault();
+        let mut other = v.meta.clone();
+        other.mcp_access = !other.mcp_access;
+        let m = Manifest::next(None, v.id, vec![])
+            .unwrap()
+            .with_meta(&other);
+        assert_eq!(
+            sign_manifest(&v, signer(), &m).unwrap_err(),
+            Error::Integrity(IntegrityError::WrongContext)
+        );
+        let sm = forge(&v, &m);
+        assert_eq!(
+            integrity(verify_manifest(&v, &verifier(), &sm, None)),
+            IntegrityError::WrongContext
+        );
+        let ok = Manifest::next(None, v.id, vec![])
+            .unwrap()
+            .with_meta(&v.meta);
+        let so = sign_manifest(&v, signer(), &ok).unwrap();
+        assert!(verify_manifest(&v, &verifier(), &so, None).is_ok());
     }
 
     #[test]
