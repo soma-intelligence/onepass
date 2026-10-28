@@ -70,11 +70,11 @@ private struct FavoriteBadge: ViewModifier {
 
     static let amber = Color(red: 0xF5 / 255, green: 0xA6 / 255, blue: 0x23 / 255)
 
-    private var star: CGFloat { iconSize * 0.42 }
+    private var star: CGFloat { iconSize * 0.32 }
     /// The gap cut around the star, so it reads on any row background, selected or not.
-    private var ring: CGFloat { max(1.5, iconSize * 0.05) }
+    private var ring: CGFloat { max(1.25, iconSize * 0.04) }
     /// The star's center, mostly over the icon, its tips just past the corner.
-    private var center: CGFloat { iconSize * 0.84 }
+    private var center: CGFloat { iconSize * 0.87 }
 
     func body(content: Content) -> some View {
         if isOn {
