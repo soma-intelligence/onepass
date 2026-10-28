@@ -287,6 +287,15 @@ describe("filler", () => {
     expect(input("p").value).toBe("pw");
   });
 
+  it("a fill gives the focus back to the field that had it", () => {
+    setPage(LOGIN);
+    s = start();
+    input("u").focus();
+    expect(fill(s, formById(s, "login").ref, { username: "alex@atlas.dev", current_password: "pw" })).toEqual({ ok: true });
+    expect(input("p").value).toBe("pw");
+    expect(document.activeElement).toBe(input("u"));
+  });
+
   it("dispatches input and change events that bubble", () => {
     setPage(LOGIN);
     s = start();
