@@ -66,4 +66,4 @@ OnePass has not had an external audit yet. One is planned before the first stabl
 
 ## Supply chain
 
-Dependencies are checked with `cargo deny`, `cargo vet` and `npm audit`, and GitHub Actions are pinned by commit SHA. See `docs/security/reproducible-builds.md`.
+Dependencies are checked with `cargo deny`, `cargo vet`, `cargo audit` and `npm audit`, and GitHub Actions are pinned by commit SHA. Releases are built on GitHub's runners by `.github/workflows/release.yml`, which signs and notarizes the Mac app, writes `SHA256SUMS` and attests the provenance of every file; verify a download with `gh attestation verify` as described in `docs/security/release-pipeline.md`. What can be rebuilt bit for bit, and what cannot, is in `docs/security/reproducible-builds.md`.
