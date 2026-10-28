@@ -49,6 +49,24 @@
           }
         }
       }
+    },
+    "NSLocalNetworkUsageDescription" : {
+      "comment" : "",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass uses the local network to add a device to your account, without going through a server."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -810,6 +810,16 @@
         }
       }
     },
+    "Afficher le QR code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the QR code"
+          }
+        }
+      }
+    },
     "Afficher le code" : {
       "localizations" : {
         "en" : {
@@ -1066,6 +1076,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pairing: for now, the client that starts the server is its only client, with no identification. The signed policy sets its rights, `reveal_secret` and `totp_code` ask for Touch ID, and `onepass mcp audit` shows the log of every access. The master password is asked in the terminal: a desktop client without a terminal can’t unlock the server yet."
+          }
+        }
+      }
+    },
+    "Appairage arrêté" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pairing stopped"
           }
         }
       }
@@ -1380,6 +1400,16 @@
         }
       }
     },
+    "Aucune activité depuis 5 minutes." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No activity for 5 minutes."
+          }
+        }
+      }
+    },
     "Aucune clé privée" : {
       "localizations" : {
         "en" : {
@@ -1426,6 +1456,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Allow OnePass to use your location to see items saved near you. It stays on this device."
+          }
+        }
+      }
+    },
+    "Autre appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other device"
           }
         }
       }
@@ -2060,6 +2100,16 @@
         }
       }
     },
+    "Choisis un élément" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an item"
+          }
+        }
+      }
+    },
     "Choisis un élément dans la liste." : {
       "localizations" : {
         "en" : {
@@ -2166,6 +2216,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Code Copied"
+          }
+        }
+      }
+    },
+    "Code de vérification" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verification code"
           }
         }
       }
@@ -2280,6 +2340,26 @@
         }
       }
     },
+    "Comment vas-tu utiliser cet appareil ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How will you use this device?"
+          }
+        }
+      }
+    },
+    "Compare les codes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compare the codes"
+          }
+        }
+      }
+    },
     "Compte %@" : {
       "localizations" : {
         "en" : {
@@ -2326,6 +2406,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ accounts"
+          }
+        }
+      }
+    },
+    "Confirme les codes sur ton autre appareil, puis valide avec Face ID ou ton mot de passe maître." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm the codes on your other device, then approve with Face ID or your master password."
           }
         }
       }
@@ -2546,6 +2636,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy “%@” as JSON?"
+          }
+        }
+      }
+    },
+    "Copié · effacé dans 30 s" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied · cleared in 30 s"
           }
         }
       }
@@ -3250,6 +3350,16 @@
         }
       }
     },
+    "En attente de ton autre appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for your other device"
+          }
+        }
+      }
+    },
     "En attente du réseau." : {
       "localizations" : {
         "en" : {
@@ -3486,6 +3596,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Weak"
+          }
+        }
+      }
+    },
+    "Famille ou bureau : ton coffre, sans %@, coffres visibles au choix." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Family or office: your vault, without %@, with the vaults you choose."
           }
         }
       }
@@ -3870,12 +3990,32 @@
         }
       }
     },
+    "Il est à toi : tout ton coffre, déverrouillage par %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It's yours: your whole vault, unlocked with %@."
+          }
+        }
+      }
+    },
     "Ils apparaissent dans des fuites de données connues. Change-les en priorité." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "They appear in known data breaches. Change them first."
+          }
+        }
+      }
+    },
+    "Ils sont différents" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "They're different"
           }
         }
       }
@@ -4180,6 +4320,26 @@
         }
       }
     },
+    "L'appairage n'a pas abouti" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pairing didn't go through"
+          }
+        }
+      }
+    },
+    "L'appareil de quelqu'un d'autre : quelques éléments prêtés, en lecture seule, rien n'y reste." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Someone else's device: a few items lent, read only, nothing stays there."
+          }
+        }
+      }
+    },
     "L'effacement n'a pas pu être envoyé : la montre garde peut-être ses données." : {
       "localizations" : {
         "en" : {
@@ -4226,6 +4386,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The `onepass` command is built from the repository, with Rust."
+          }
+        }
+      }
+    },
+    "La connexion avec ton autre appareil a été coupée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The connection with your other device was lost."
           }
         }
       }
@@ -4560,6 +4730,16 @@
         }
       }
     },
+    "Le même code doit s'afficher sur ton autre appareil. S'il est différent, quelqu'un d'autre essaie de se connecter." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The same code must show on your other device. If it's different, someone else is trying to connect."
+          }
+        }
+      }
+    },
     "Le serveur MCP parle JSON-RPC sur l'entrée et la sortie standard. Il ne voit que les coffres créés avec l'accès MCP, et chaque usage d'un secret demande ton accord dans le terminal. L'agent reçoit des métadonnées ou le résultat d'une commande masquée, jamais la valeur." : {
       "localizations" : {
         "en" : {
@@ -4580,12 +4760,42 @@
         }
       }
     },
+    "Le temps accordé est écoulé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The time granted is up."
+          }
+        }
+      }
+    },
     "Lecture du fichier…" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reading File…"
+          }
+        }
+      }
+    },
+    "Lecture seule : rien n'est enregistré sur cet appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read only: nothing is saved on this device."
+          }
+        }
+      }
+    },
+    "Lecture seule. Tes copies s'effacent du presse-papiers après 30 s." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read only. Your copies are cleared from the clipboard after 30 s."
           }
         }
       }
@@ -4610,12 +4820,32 @@
         }
       }
     },
+    "Les codes sont identiques" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The codes match"
+          }
+        }
+      }
+    },
     "Les coffres décochés restent chiffrés et n'apparaissent pas sur cet appareil. Au moins un coffre reste visible." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unchecked vaults stay encrypted and don't appear on this device. At least one vault stays visible."
+          }
+        }
+      }
+    },
+    "Les deux appareils doivent être proches, sur le même Wi-Fi." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Both devices must be close, on the same Wi-Fi."
           }
         }
       }
@@ -5250,6 +5480,16 @@
         }
       }
     },
+    "Ne quitte pas cet écran : sans ton mot de passe, il faudra refaire l'appairage." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don't leave this screen: without your password, you'll have to pair again."
+          }
+        }
+      }
+    },
     "Nom du coffre" : {
       "localizations" : {
         "en" : {
@@ -5556,6 +5796,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tools > Export Vault, as unencrypted .json or .csv."
+          }
+        }
+      }
+    },
+    "Ouverture..." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opening..."
           }
         }
       }
@@ -6040,6 +6290,36 @@
         }
       }
     },
+    "Public" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Public"
+          }
+        }
+      }
+    },
+    "QR code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QR code"
+          }
+        }
+      }
+    },
+    "QR code d'appairage" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pairing QR code"
+          }
+        }
+      }
+    },
     "QR code du kit" : {
       "localizations" : {
         "en" : {
@@ -6206,6 +6486,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search Sources"
+          }
+        }
+      }
+    },
+    "Recommencer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start over"
           }
         }
       }
@@ -6480,6 +6770,16 @@
         }
       }
     },
+    "Rien n'est resté sur cet appareil et le presse-papiers a été vidé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing stayed on this device and the clipboard was cleared."
+          }
+        }
+      }
+    },
     "Rien à proximité" : {
       "localizations" : {
         "en" : {
@@ -6740,6 +7040,16 @@
         }
       }
     },
+    "Saisis ton mot de passe maître" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter your master password"
+          }
+        }
+      }
+    },
     "Saisis ton mot de passe maître, puis confirme avec %@." : {
       "localizations" : {
         "en" : {
@@ -6796,6 +7106,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Backup ready."
+          }
+        }
+      }
+    },
+    "Scanne ce QR code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan this QR code"
           }
         }
       }
@@ -6910,6 +7230,46 @@
         }
       }
     },
+    "Session invitée" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guest session"
+          }
+        }
+      }
+    },
+    "Session invitée · se termine dans %lld min" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guest session · ends in %lld min"
+          }
+        }
+      }
+    },
+    "Session invitée · se termine dans %lld s" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guest session · ends in %lld s"
+          }
+        }
+      }
+    },
+    "Session terminée" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Session ended"
+          }
+        }
+      }
+    },
     "Seul le journal est effacé : les éléments gardés restent sur cet appareil." : {
       "localizations" : {
         "en" : {
@@ -6976,6 +7336,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Main Website"
+          }
+        }
+      }
+    },
+    "Site web" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Website"
           }
         }
       }
@@ -7106,6 +7476,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "On Apple Watch"
+          }
+        }
+      }
+    },
+    "Sur ton iPhone ou ton iPad : Réglages > Appareils > Ajouter un appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On your iPhone or iPad: Settings > Devices > Add a Device"
           }
         }
       }
@@ -7280,6 +7660,16 @@
         }
       }
     },
+    "Terminer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End"
+          }
+        }
+      }
+    },
     "Terminé" : {
       "localizations" : {
         "en" : {
@@ -7380,6 +7770,26 @@
         }
       }
     },
+    "Ton autre appareil a terminé la session." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your other device ended the session."
+          }
+        }
+      }
+    },
+    "Ton autre appareil le valide en scannant un QR code. Rien ne passe par un serveur." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your other device approves it by scanning a QR code. Nothing goes through a server."
+          }
+        }
+      }
+    },
     "Ton coffre chiffré sera envoyé dans ce compte iCloud." : {
       "localizations" : {
         "en" : {
@@ -7406,6 +7816,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your Vault Is Empty"
+          }
+        }
+      }
+    },
+    "Ton compte est arrivé sur cet appareil. Ton mot de passe maître l'ouvre, comme sur tes autres appareils." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your account is on this device. Your master password opens it, as on your other devices."
           }
         }
       }
@@ -7600,6 +8020,16 @@
         }
       }
     },
+    "Tu as terminé la session." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You ended the session."
+          }
+        }
+      }
+    },
     "Tu peux réessayer." : {
       "localizations" : {
         "en" : {
@@ -7706,6 +8136,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "One password on several accounts: a single breach opens them all."
+          }
+        }
+      }
+    },
+    "Un nouveau code s'affiche toutes les 30 s. Celui-ci reste valable %lld s." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A new code shows every 30 s. This one stays valid for %lld s."
           }
         }
       }
@@ -8796,6 +9236,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Items"
+          }
+        }
+      }
+    },
+    "Éléments prêtés" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lent items"
           }
         }
       }
