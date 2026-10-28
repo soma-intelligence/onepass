@@ -51,6 +51,8 @@ dev-fast-kdf = ["onepass-core/dev-fast-kdf"]
 
 [dev-dependencies]
 tempfile = "3"
+# Builds 1PUX exports (zip) for the re-import tests.
+zip = { version = "9.1.1", default-features = false, features = ["deflate"] }
 # Verifies passkey assertion signatures in the AutoFill tests.
 aws-lc-rs.workspace = true
 # The integration tests make fast-KDF accounts: they need the dev floor of the

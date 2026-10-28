@@ -1903,6 +1903,93 @@ fn import_items_into_vault_with_new_ids_and_folder_tags() {
     assert!(mail[0].favorite);
 }
 
+/// A 1PUX export holding `data` as its `export.data`.
+fn pux(data: &str) -> Vec<u8> {
+    use std::io::Write;
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    w.start_file("export.data", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    w.write_all(data.as_bytes()).unwrap();
+    w.finish().unwrap().into_inner()
+}
+
+const PUX_DATA: &str = r#"{"accounts":[{"vaults":[{"attrs":{"name":"Personal"},"items":[
+  {"uuid":"app1","createdAt":1700000200,"updatedAt":1700000300,"categoryUuid":"001",
+   "overview":{"title":"Notes app","url":"https://notes.example.com"},
+   "details":{"sections":[{"fields":[{"title":"Se connecter avec","id":"sso",
+     "value":{"ssoLogin":{"item":{"itemUuid":"acct1","vaultUuid":"v1"},"provider":"apple"}}}]}]}},
+  {"uuid":"acct1","createdAt":1700000000,"updatedAt":1700000100,"categoryUuid":"001",
+   "overview":{"title":"Apple ID","url":"https://appleid.example.com"},
+   "details":{"loginFields":[{"value":"someone@example.com","designation":"username"},
+     {"value":"Pw-Invented-1","designation":"password"}]}}]}]}]}"#;
+
+#[test]
+fn reimport_1pux_updates_instead_of_duplicating() {
+    let fx = fixture();
+    let bytes = pux(PUX_DATA);
+    let format = detect_import_format("export.1pux".into(), bytes.clone()).unwrap();
+    assert_eq!(format, "1pux");
+    let before = fx.session.item_summaries().unwrap().len();
+
+    let preview = fx
+        .session
+        .preview_import_into(format.clone(), bytes.clone(), fx.vault_id.clone())
+        .unwrap();
+    assert_eq!((preview.items, preview.updated), (2, 0));
+    let done = fx
+        .session
+        .import_items(format.clone(), bytes.clone(), fx.vault_id.clone())
+        .unwrap();
+    assert_eq!((done.items, done.updated), (2, 0));
+    let first = fx.session.item_summaries().unwrap();
+    assert_eq!(first.len(), before + 2);
+
+    // "Sign in with" points at the account item, by its final id.
+    let account = first.iter().find(|s| s.title == "Apple ID").unwrap();
+    let app = first.iter().find(|s| s.title == "Notes app").unwrap();
+    assert_eq!(app.sign_in_provider.as_deref(), Some("apple"));
+    let full = fx
+        .session
+        .item(app.vault_id.clone(), app.id.clone())
+        .unwrap();
+    assert_eq!(
+        full.login_methods,
+        vec![FfiLoginMethod::Provider {
+            provider: "apple".into(),
+            account_item_id: account.id.clone(),
+            relay_email: None,
+        }]
+    );
+
+    // The same export again: both items are updated in place, none added.
+    let preview = fx
+        .session
+        .preview_import_into(format.clone(), bytes.clone(), fx.vault_id.clone())
+        .unwrap();
+    assert_eq!((preview.items, preview.updated), (2, 2));
+    let again = fx
+        .session
+        .import_items(format, bytes, fx.vault_id.clone())
+        .unwrap();
+    assert_eq!((again.items, again.updated), (2, 2));
+    let second = fx.session.item_summaries().unwrap();
+    assert_eq!(second.len(), before + 2, "a re-import never duplicates");
+    let ids = |list: &[FfiItemSummary]| {
+        let mut v: Vec<_> = list.iter().map(|s| s.id.clone()).collect();
+        v.sort();
+        v
+    };
+    assert_eq!(ids(&first), ids(&second));
+    let full = fx
+        .session
+        .item(app.vault_id.clone(), app.id.clone())
+        .unwrap();
+    assert!(matches!(
+        &full.login_methods[..],
+        [FfiLoginMethod::Provider { account_item_id, .. }] if *account_item_id == account.id
+    ));
+}
+
 #[test]
 fn import_into_unknown_vault_writes_nothing() {
     let fx = fixture();
