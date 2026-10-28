@@ -146,6 +146,8 @@ pub fn rotate_keys(ctx: &Ctx, change_password: bool) -> Result<(), CliError> {
             e.kind()
         )));
     }
+    // Every error of `rotate_keys` comes before the write (ruling K12):
+    // then the old key stays valid.
     repo.rotate_keys(
         &password,
         &current_key,
@@ -153,6 +155,13 @@ pub fn rotate_keys(ctx: &Ctx, change_password: bool) -> Result<(), CliError> {
         new_password.as_deref().map(String::as_str),
     )
     .inspect_err(|_| eprintln!("The keys did not change: the old Secret Key stays valid."))?;
-    session::harden(ctx)?;
-    Session::created(ctx, repo, &new_key).persist()
+    // The rotation is written: from here on the new key is the only one.
+    session::harden(ctx)
+        .and_then(|()| Session::created(ctx, repo, &new_key).persist())
+        .inspect_err(|_| {
+            eprintln!(
+                "The keys changed, but device.bin could not be updated: keep the new \
+                 Secret Key shown above, the old one no longer opens the account."
+            )
+        })
 }
