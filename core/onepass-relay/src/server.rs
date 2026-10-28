@@ -249,7 +249,7 @@ mod tests {
 
     use crate::rendezvous::{APP_ID, RELAY_ID, SAFARI_ID};
 
-    const TEAM: &str = "2RFY9Z4UVH";
+    const TEAM: &str = "ABCDE12345";
 
     fn team(id: &str) -> CodeIdentity {
         CodeIdentity::Team {
