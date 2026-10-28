@@ -8,11 +8,23 @@ Mesurer ce que l'extension remplit, et ce qu'elle ne doit jamais remplir, sur un
 
 - `corpus/` : extracteur passif de motifs de formulaires réels, relevés nettoyés et `patterns.json` distillé (version 2 : libellés, suites d'étapes, frameworks, poids des traits). Les libellés passent un filtre : ponctuation seule, plus de 40 caractères, captcha, recherche, lettre d'information, discussion, mots d'inscription sur un identifiant, consignes de mot de passe ; pour les pages relevées en masse, le libellé doit aussi s'accorder avec le rôle du champ. La distillation lit les 59 relevés choisis à la main (`samples/`), le top 1000 (`samples/top1000/`), les pages Common Crawl copiées (déjà nettoyées) dans `samples/commoncrawl/` (jamais `lab/out/`, pour que `patterns.json` se reconstruise depuis un dépôt propre), et les parcours enregistrés de `private/` seulement avec `--with-private` (le `patterns.json` commité n'en dépend jamais). Le générateur ne lit que `patterns.json`.
 - `gen/` : générateur de mondes (PRNG `sfc32` + `cyrb128`, déterminisme par graine), rendu HTML des sites et capacités attendues (`capabilities.ts`). Depuis la version 2 du générateur : formulaires en plusieurs étapes (`multi_step`, une page par étape, `steps.ts`), mises en page (`layouts.ts`) et frameworks simulés en HTML et script simples, sans dépendance (`frameworks.ts`).
+- `gen/population.ts` : population simulée. Un profil d'utilisateur fixe la taille du coffre (0 à 500), les doublons, les comptes multiples par site, le pays (formats d'adresse, de téléphone et de code postal : US, FR, DE, ES, GB, JP) et le comportement après le remplissage. Le profil `p0` est l'utilisateur historique (coffre du monde seul) ; les autres viennent d'un flux aléatoire séparé, donc demander plus de profils ne change ni le monde, ni les profils précédents.
 - `server/` : serveur HTTPS local qui sert tous les hôtes `.test`, les trois fournisseurs d'identité (Google, Apple, Microsoft) sous leurs vrais noms d'hôte résolus en local, la partie utilisatrice (mots de passe, TOTP, WebAuthn) et le registre de fuites.
 - `run/` : configuration Playwright, préparation unique (compilation, hôte natif, coffre fictif, certificats), pilotes de scénarios et oracle.
 - `report.ts` et `cli.ts` : rapport Markdown et ligne de commande.
 
 Les résultats d'un passage sont dans `lab/out/<graine>/` (ignoré par git) : `world.json`, `fixture.json` (coffre fictif), `results.jsonl` (une ligne par scénario) et `report.md`.
+
+## Population simulée
+
+Avec `--profiles <p>`, chaque scénario est joué pour chaque profil (`p0` à `p<p-1>`) :
+
+- **Coffre** : `vaultSize` est un plancher. Le coffre garde toujours les éléments du monde (les scénarios en ont besoin) et des éléments de remplissage fictifs montent jusqu'à `vaultSize` (hôtes `*-archive.test`, jamais ceux du monde). `0` donne un coffre vide : l'extension n'a rien à proposer, les scénarios attendent `nofill`, sauf le générateur de mot de passe d'une inscription, qui n'a besoin d'aucun élément.
+- **Doublons** : des identifiants de site répétés à l'identique. **Comptes multiples** : un second compte (autre identifiant, autre mot de passe, titre « <site> (2) ») pour chaque site à mot de passe.
+- **Pays** : les éléments d'identité reprennent les formats du pays (code postal japonais `NNN-NNNN`, téléphone international). La langue du profil suit le pays.
+- **Comportement** (pilote `menu_fill` seulement) : `partial` vide un champ rempli avant d'envoyer, `corrects_field` retape un champ, `abandons_step` s'arrête après la première étape d'un formulaire en plusieurs étapes. L'oracle juge alors ce que l'extension a rempli (instantané pris avant l'action de l'utilisateur), pas la réponse du site à l'envoi corrigé ; sous `abandons_step`, seule la première étape compte.
+
+Chaque profil a son propre hôte natif et son cache de coffre, préparés en parallèle à l'installation du passage. Sans `--profiles`, le monde, le coffre et `smoke-expected.json` sont ceux du profil historique.
 
 ## Garde-fous du corpus
 
@@ -34,6 +46,7 @@ Le passage du laboratoire lui-même n'utilise aucun réseau externe : tous les h
 | `npm run check` | typage, tests unitaires (dont `test/lab/`), compilation. Sans navigateur. |
 | `npm run lab:smoke` | navigateur, graine fixe `lab-smoke-17`, 12 sites couvrant chaque flux (dont `multi_step`) et les pièges structurels (cadre inter-sites, shadow DOM fermé, rerendu SPA, OTP découpé, sosie), avec plusieurs mises en page et frameworks simulés ; compare au résultat épinglé `smoke-expected.json` |
 | `npm run lab -- --seed <s> --sites <n> [--workers 4] [--report <md>]` | passage complet ; rapport dans `lab/out/<s>/report.md`, copié dans `<md>` si demandé. Code de sortie 1 s'il y a une fuite. |
+| `npm run lab -- --seed <s> --sites <n> --profiles <p>` | même passage joué par `p` utilisateurs simulés (défaut 1, le profil historique). Chaque profil a son coffre et son navigateur : le temps de passage est multiplié par `p`. Le rapport ajoute le tableau « Par profil ». |
 | `npm run lab:repro -- --seed <s> --site <i> [--sites <n>]` | rejoue un seul site du monde ; résultats dans `lab/out/<s>-repro-<i>/` |
 | `npm run lab:corpus` | relevé du corpus (réseau réel, lent, rarement) puis distillation |
 | `node --experimental-strip-types lab/corpus/distill.ts [--with-private]` | distillation seule, sans réseau : réécrit `patterns.json` |

@@ -1,6 +1,6 @@
 // Command line of the autofill lab (spec 9), run by `node --experimental-strip-types`:
-//   lab    --seed <s> --sites <n> [--workers 4] [--report <md>]
-//   repro  --seed <s> --site <i> [--sites <n>]
+//   lab    --seed <s> --sites <n> [--profiles <n>] [--workers 4] [--report <md>]
+//   repro  --seed <s> --site <i> [--sites <n>] [--profiles <n>]
 //   report --out <dir> [--md <file>]
 // `lab` and `repro` run the Playwright lab with the LAB_* variables, then write
 // the report; the exit code is 1 when a leak was found.
@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Profile } from "./gen/population.ts";
 import { renderReport, summarize } from "./report.ts";
 import type { Result } from "./run/oracle.ts";
 
@@ -65,9 +66,9 @@ function readMeta(out: string): { date?: string; commit?: string; durationMin?: 
 
 /** Write <out>/report.md (and `md` when given); returns the number of leaks. */
 function writeReport(out: string, md: string | undefined): number {
-  const world = JSON.parse(readFileSync(join(out, "world.json"), "utf8")) as { seed: string; sites: unknown[] };
+  const world = JSON.parse(readFileSync(join(out, "world.json"), "utf8")) as { seed: string; sites: unknown[]; profiles?: Profile[] };
   const summary = summarize(readResults(out));
-  const text = renderReport({ seed: world.seed, sites: world.sites.length }, summary, readMeta(out));
+  const text = renderReport({ seed: world.seed, sites: world.sites.length, ...(world.profiles ? { profiles: world.profiles } : {}) }, summary, readMeta(out));
   writeFileSync(join(out, "report.md"), text);
   if (md !== undefined) {
     const target = absolute(md);
@@ -109,7 +110,8 @@ function main(argv: string[]): number {
     const sites = posInt(a, "sites", 1);
     if (a.workers !== undefined) posInt(a, "workers", 1);
     const out = absolute(join("lab", "out", seed));
-    return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_OUT: out }, out, a.workers, a.report);
+    const profiles = a.profiles !== undefined ? posInt(a, "profiles", 1) : 1;
+    return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_PROFILES: String(profiles), LAB_OUT: out }, out, a.workers, a.report);
   }
   if (cmd === "repro") {
     const seed = need(a, "seed");
@@ -124,12 +126,13 @@ function main(argv: string[]): number {
     if (site >= sites) throw new Error(`--site ${site} is outside the world (${sites} sites; pass --sites for another size)`);
     // A separate directory keeps the original run's results and report intact.
     const reproOut = absolute(join("lab", "out", `${seed}-repro-${site}`));
-    return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_ONLY: String(site), LAB_OUT: reproOut }, reproOut, a.workers, a.report);
+    const profiles = a.profiles !== undefined ? posInt(a, "profiles", 1) : 1;
+    return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_PROFILES: String(profiles), LAB_ONLY: String(site), LAB_OUT: reproOut }, reproOut, a.workers, a.report);
   }
   if (cmd === "report") {
     return writeReport(absolute(need(a, "out")), a.md) > 0 ? 1 : 0;
   }
-  console.error("usage: lab --seed <s> --sites <n> [--workers 4] [--report <md>] | repro --seed <s> --site <i> [--sites <n>] | report --out <dir> [--md <file>]");
+  console.error("usage: lab --seed <s> --sites <n> [--profiles <n>] [--workers 4] [--report <md>] | repro --seed <s> --site <i> [--sites <n>] [--profiles <n>] | report --out <dir> [--md <file>]");
   return 2;
 }
 

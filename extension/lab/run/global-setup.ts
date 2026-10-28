@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { generateCert } from "../../e2e/cert.ts";
 import { buildHost, prebuildFixtureCache, type StagedHost, stageHost } from "../../e2e/host.ts";
 import { generate, loadPatterns } from "../gen/generate.ts";
+import { DEFAULT_PROFILE_ID, fixtureFor } from "../gen/population.ts";
 
 export const EXT_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 // First seed (n >= 2, generator version 2) whose 12 sites hold iframe_cross_site, shadow_closed,
@@ -29,6 +30,8 @@ export interface LabRunConfig {
   out: string;
   /** Sites per paired profile. */
   batch: number;
+  /** Simulated users (population.ts): 1 is the historical single user. */
+  profiles: number;
 }
 
 /** The run configuration from the LAB_* environment variables (smoke defaults). */
@@ -36,20 +39,22 @@ export function runConfig(env: NodeJS.ProcessEnv = process.env): LabRunConfig {
   const seed = env.LAB_SEED || SMOKE_SEED;
   const sites = Number(env.LAB_SITES || SMOKE_SITES);
   const batch = Number(env.LAB_BATCH || 10);
+  const profiles = Number(env.LAB_PROFILES || 1);
   const only = env.LAB_ONLY !== undefined && env.LAB_ONLY !== "" ? Number(env.LAB_ONLY) : undefined;
   if (!Number.isInteger(sites) || sites < 1) throw new Error(`lab: LAB_SITES must be a positive integer (${env.LAB_SITES})`);
   if (!Number.isInteger(batch) || batch < 1) throw new Error(`lab: LAB_BATCH must be a positive integer (${env.LAB_BATCH})`);
+  if (!Number.isInteger(profiles) || profiles < 1) throw new Error(`lab: LAB_PROFILES must be a positive integer (${env.LAB_PROFILES})`);
   if (only !== undefined && !(Number.isInteger(only) && only >= 0 && only < sites)) {
     throw new Error(`lab: LAB_ONLY must be a site index below ${sites} (${env.LAB_ONLY})`);
   }
   const rawOut = env.LAB_OUT || join("lab", "out", seed);
   const out = isAbsolute(rawOut) ? rawOut : join(EXT_ROOT, rawOut);
-  return { seed, sites, batch, out, ...(only !== undefined ? { only } : {}) };
+  return { seed, sites, batch, out, profiles, ...(only !== undefined ? { only } : {}) };
 }
 
 /** Whether this run is the smoke regression (fixed seed and size, every site). */
 export function isSmoke(c: LabRunConfig): boolean {
-  return c.seed === SMOKE_SEED && c.sites === SMOKE_SITES && c.only === undefined;
+  return c.seed === SMOKE_SEED && c.sites === SMOKE_SITES && c.only === undefined && c.profiles === 1;
 }
 
 export interface LabState {
@@ -62,6 +67,8 @@ export interface LabState {
   certDir: string;
   cache: string;
   host: StagedHost;
+  /** Staged host and encrypted vault cache of every simulated user (the default one is `host` and `cache`). */
+  profiles: Record<string, { host: StagedHost; cache: string }>;
 }
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
@@ -69,7 +76,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const config = runConfig();
   execFileSync(process.execPath, ["build.mjs", "chromium"], { cwd: EXT_ROOT, stdio: "inherit" });
   buildHost();
-  const world = generate(config.seed, { sites: config.sites, patterns: loadPatterns() });
+  const world = generate(config.seed, { sites: config.sites, patterns: loadPatterns(), profiles: config.profiles });
   mkdirSync(config.out, { recursive: true });
   const worldPath = join(config.out, "world.json");
   const fixture = join(config.out, "fixture.json");
@@ -83,11 +90,19 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   generateCert(certDir, world.hosts);
   const host = stageHost(join(root, "host"), fixture);
   const cache = await prebuildFixtureCache(join(root, "prebuild"), host);
-  const state: LabState = { root, config, world: worldPath, fixture, results, certDir, cache, host };
+  // One staged host and cache per other profile: its own vault, built in parallel.
+  const profiles: LabState["profiles"] = { [DEFAULT_PROFILE_ID]: { host, cache } };
+  await Promise.all((world.profiles ?? []).filter((p) => p.id !== DEFAULT_PROFILE_ID).map(async (p) => {
+    const file = join(config.out, `fixture-${p.id}.json`);
+    writeFileSync(file, JSON.stringify(fixtureFor(p, world.sites, world.fixture), null, 2));
+    const staged = stageHost(join(root, `host-${p.id}`), file);
+    profiles[p.id] = { host: staged, cache: await prebuildFixtureCache(join(root, `prebuild-${p.id}`), staged) };
+  }));
+  const state: LabState = { root, config, world: worldPath, fixture, results, certDir, cache, host, profiles };
   const statePath = join(root, "state.json");
   writeFileSync(statePath, JSON.stringify(state));
   process.env.LAB_STATE = statePath;
-  console.log(`lab setup: seed ${config.seed}, ${config.sites} sites, ${((Date.now() - started) / 1000).toFixed(1)} s, out ${config.out}`);
+  console.log(`lab setup: seed ${config.seed}, ${config.sites} sites, ${config.profiles} profile(s), ${((Date.now() - started) / 1000).toFixed(1)} s, out ${config.out}`);
   return async () => {
     rmSync(root, { recursive: true, force: true });
   };
