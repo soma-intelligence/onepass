@@ -470,10 +470,6 @@ struct AccountMenuPanel: View {
     let newVault: () -> Void
     let close: () -> Void
 
-    private var name: String {
-        model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // The account row above already shows who: only the kind of device here.
