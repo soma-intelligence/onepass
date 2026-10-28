@@ -44,10 +44,25 @@ final class OnboardingAndItemUITests: XCTestCase {
         tap(app.buttons["onboarding.create"])
         tap(app.buttons["onboarding.primary"])
 
-        // Mot de passe maître.
-        type(Self.password, into: app.secureTextFields["onboarding.password"])
-        type(Self.password, into: app.secureTextFields["onboarding.confirm"])
-        tap(app.buttons["onboarding.primary"])
+        // Mot de passe maître: the button stays off, and says why, until every rule is met.
+        let primary = app.buttons["onboarding.primary"]
+        XCTAssertTrue(primary.waitForExistence(timeout: Self.uiTimeout))
+        XCTAssertFalse(primary.isEnabled, "Continuer enabled before a password")
+        XCTAssertTrue(app.staticTexts["onboarding.hint"].exists, "no reason under a disabled Continuer")
+        // Return moves to the confirmation (scrolled into view above the keyboard).
+        type(Self.password + "\n", into: app.secureTextFields["onboarding.password"])
+        let confirm = app.secureTextFields["onboarding.confirm"]
+        confirm.typeText("x")
+        XCTAssertTrue(app.descendants(matching: .any)["onboarding.mismatch"].waitForExistence(timeout: Self.uiTimeout),
+                      "no inline mismatch")
+        XCTAssertFalse(primary.isEnabled, "Continuer enabled with a mismatch")
+        confirm.typeText(XCUIKeyboardKey.delete.rawValue + Self.password)
+        XCTAssertTrue(primary.waitForEnabled(timeout: Self.uiTimeout), "Continuer still off with every rule met")
+        for rule in ["length", "strength", "match"] {
+            let row = app.descendants(matching: .any)["onboarding.rule.\(rule)"].firstMatch
+            XCTAssertEqual(row.value as? String, "fait", "rule \(rule) not met")
+        }
+        tap(primary)
 
         // Secret Key and Emergency Kit: shown once the account exists (Argon2id).
         let kitStored = app.buttons["onboarding.kitStored"]
@@ -300,5 +315,12 @@ final class OnboardingAndItemUITests: XCTestCase {
         // A tap that lands during a transition may not give the focus: tap again once.
         if !(element.value(forKey: "hasKeyboardFocus") as? Bool ?? true) { element.tap() }
         element.typeText(text)
+    }
+}
+
+private extension XCUIElement {
+    func waitForEnabled(timeout: TimeInterval) -> Bool {
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: self)
+        return XCTWaiter().wait(for: [enabled], timeout: timeout) == .completed
     }
 }
