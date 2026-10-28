@@ -259,7 +259,19 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           if (subtitle !== undefined) row = row.filter({ has: menu.locator(".t2", { hasText: exact(subtitle) }) });
           await expect(row).toHaveCount(1);
           await settle();
-          await row.click();
+          // A frame that fades in re-arms its click guard once it is declared visible: on a
+          // slow runner the first click can land inside that guard and is dropped (by design).
+          // An accepted pick closes the menu, so click again while it is still there.
+          for (let attempt = 0; attempt < 6; attempt++) {
+            if (menu.isDetached()) return;
+            await row.click({ timeout: 5_000 }).catch(() => undefined);
+            const closed = await row
+              .waitFor({ state: "detached", timeout: 1_000 })
+              .then(() => true)
+              .catch(() => menu.isDetached());
+            if (closed) return;
+            await settle();
+          }
         },
         async overlayStart(p, title) {
           const overlay = await extFrame(p, "overlay");
