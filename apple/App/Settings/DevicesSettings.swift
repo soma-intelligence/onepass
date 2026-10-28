@@ -64,7 +64,12 @@ struct DevicesSettings: View {
                     .accessibilityIdentifier("settings.devices.useIPhone")
                 #endif
             } footer: {
+                #if os(iOS)
                 Text("Sur le nouvel appareil, choisis « J'ai déjà OnePass sur un autre appareil » : il affiche un QR code à scanner d'ici.")
+                #else
+                // The Mac never scans (ruling A2): the QR code is scanned from the iPhone or the iPad.
+                Text("Sur le nouvel appareil, choisis « J'ai déjà OnePass sur un autre appareil » : il affiche un QR code à scanner avec ton iPhone ou ton iPad.")
+                #endif
             }
             if !revoked.isEmpty {
                 Section("Retirés") {

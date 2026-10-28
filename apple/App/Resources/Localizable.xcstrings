@@ -8070,6 +8070,16 @@
         }
       }
     },
+    "Sur le nouvel appareil, choisis « J'ai déjà OnePass sur un autre appareil » : il affiche un QR code à scanner avec ton iPhone ou ton iPad." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the new device, choose \"I already have OnePass on another device\": it shows a QR code to scan with your iPhone or iPad."
+          }
+        }
+      }
+    },
     "Sur le nouvel appareil, choisis « J'ai déjà OnePass sur un autre appareil » : il affiche un QR code à scanner d'ici." : {
       "localizations" : {
         "en" : {
