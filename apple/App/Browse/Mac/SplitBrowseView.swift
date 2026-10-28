@@ -99,7 +99,7 @@ struct DetailColumn: View {
                 ItemDetailView(ref: ref).id(ref)
             } else {
                 // The vault picture alone carries the empty state; the words stay for VoiceOver.
-                VaultIllustration(size: 340)
+                VaultIllustration(size: 340, tint: Theme.accent)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityElement()
                     .accessibilityLabel(Text("Aucun élément sélectionné. Choisis un élément dans la liste."))
