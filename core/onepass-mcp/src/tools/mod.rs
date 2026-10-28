@@ -295,7 +295,15 @@ pub struct McpTools<P: VaultPort> {
     /// When the last refusals before pairing (unpaired client, unusable
     /// registry) were audited, within the last minute.
     unpaired_audited: VecDeque<Instant>,
+    /// Reads the policy and its narrowing again before each call (a host
+    /// whose settings change while a session is open); `None` keeps the
+    /// ones given at construction.
+    policy_source: Option<PolicySource>,
 }
+
+/// Reads the policy in force and its narrowing, verified. An error (a
+/// tampered or unreadable file) exposes nothing for that call.
+pub type PolicySource = Box<dyn FnMut() -> Result<(Policy, Narrowing), String> + Send>;
 
 /// Most audit entries per minute for refusals before pairing: an unpaired
 /// client looping on calls must not flood the log (it is still refused).
@@ -333,6 +341,7 @@ impl<P: VaultPort> McpTools<P> {
             client_scopes: None,
             quarantined: BTreeSet::new(),
             unpaired_audited: VecDeque::new(),
+            policy_source: None,
         }
     }
 
@@ -361,6 +370,34 @@ impl<P: VaultPort> McpTools<P> {
     pub fn with_workspace(mut self, workspace: Box<dyn Workspace + Send>) -> Self {
         self.workspace = workspace;
         self
+    }
+
+    /// Reads the policy and its narrowing from `source` before every tool
+    /// call, so a change applies to an open session at its next call.
+    pub fn with_policy_source(mut self, source: PolicySource) -> Self {
+        self.policy_source = Some(source);
+        self
+    }
+
+    /// The policy of `policy_source` for the coming call. A failed read
+    /// keeps the policy but narrows it to no vault (fail closed).
+    fn refresh_policy(&mut self) {
+        let Some(source) = self.policy_source.as_mut() else {
+            return;
+        };
+        match source() {
+            Ok((policy, narrowing)) => {
+                self.policy = policy;
+                self.narrowing = narrowing;
+            }
+            Err(_) => {
+                self.policy.allow_generate = false;
+                self.narrowing = Narrowing {
+                    vaults: Some(BTreeSet::new()),
+                    scopes: Some(BTreeSet::new()),
+                };
+            }
+        }
     }
 
     /// The identity of the client this server serves.
@@ -577,6 +614,7 @@ impl<P: VaultPort> ToolHost for McpTools<P> {
     }
 
     fn call(&mut self, client: &ClientInfo, name: &str, args: &Map<String, Value>) -> ToolOutcome {
+        self.refresh_policy();
         let known = schema::all().iter().any(|t| t.name == name);
         let mut call = Call::default();
         let mut before_pairing = false;

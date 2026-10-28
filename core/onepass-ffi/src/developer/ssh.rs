@@ -39,17 +39,24 @@ pub struct FfiSshAgentConfig {
 
 /// [`KeySource`] over the app's session: every call reads the vaults again,
 /// so a key edited, removed or moved out of the agent applies at once. A
-/// locked session offers nothing.
-struct SessionKeys(Arc<Session>);
+/// locked session, or a stopped agent (connections opened before the stop
+/// stay open until their client leaves), offers nothing.
+struct SessionKeys(Arc<Session>, Arc<AtomicBool>);
 
 impl KeySource for SessionKeys {
     fn list(&mut self) -> Result<Vec<KeyInfo>, String> {
+        if self.1.load(Ordering::SeqCst) {
+            return Err("agent stopped".into());
+        }
         self.0
             .with(|repo| Ok(ssh_keys_of(repo)?))
             .map_err(|e| e.to_string())
     }
 
     fn load(&mut self, item_id: &str) -> Result<AgentKey, String> {
+        if self.1.load(Ordering::SeqCst) {
+            return Err("agent stopped".into());
+        }
         let mut out = None;
         self.0
             .with(|repo| {
@@ -65,6 +72,7 @@ impl KeySource for SessionKeys {
 #[derive(uniffi::Object)]
 pub struct SshAgentHost {
     socket: PathBuf,
+    socket_id: Option<(u64, u64)>,
     stop: Arc<AtomicBool>,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
@@ -86,8 +94,9 @@ impl SshAgentHost {
             log,
             signer: SessionSigner(session.clone()),
         };
+        let stop = Arc::new(AtomicBool::new(false));
         let agent = Agent::new(
-            SessionKeys(session),
+            SessionKeys(session, stop.clone()),
             Arc::new(UiApprover {
                 ui,
                 presence: config.require_presence,
@@ -103,7 +112,7 @@ impl SshAgentHost {
             std::io::ErrorKind::AddrInUse => invalid("another agent is serving this socket"),
             _ => invalid("cannot listen on the agent socket"),
         })?;
-        let stop = Arc::new(AtomicBool::new(false));
+        let socket_id = super::socket_identity(&socket);
         let thread = {
             let stop = stop.clone();
             thread::Builder::new()
@@ -117,6 +126,7 @@ impl SshAgentHost {
         };
         Ok(Arc::new(SshAgentHost {
             socket,
+            socket_id,
             stop,
             thread: Mutex::new(Some(thread)),
         }))
@@ -135,7 +145,8 @@ impl SshAgentHost {
     }
 
     /// Stops accepting, waits for the accept loop (at most one poll) and
-    /// removes the socket. Open connections end with their client.
+    /// removes the socket. Connections still open get no key and no
+    /// signature from then on, and end with their client.
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
         let handle = self
@@ -145,7 +156,7 @@ impl SshAgentHost {
             .take();
         if let Some(h) = handle {
             let _ = h.join();
-            let _ = std::fs::remove_file(&self.socket);
+            super::remove_socket(&self.socket, self.socket_id);
         }
     }
 }

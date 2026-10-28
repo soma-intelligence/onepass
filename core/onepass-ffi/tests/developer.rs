@@ -410,7 +410,10 @@ fn programs_pair_and_unpair_and_the_audit_log_rotates() {
     assert!(report.problem.is_some());
     fx.session.clone().rotate_audit_log(data.clone()).unwrap();
     let report = fx.session.clone().audit_report(data).unwrap();
-    assert!(report.problem.is_none() && report.entries.is_empty());
+    // The new log starts with the signed record of the rotation.
+    assert!(report.problem.is_none(), "{report:?}");
+    assert_eq!(report.entries.len(), 1);
+    assert_eq!(report.entries[0].action, "audit_log_rotated");
 }
 
 // ---- MCP server, with the test playing the relay
@@ -536,6 +539,7 @@ mod mcp {
                 data_dir: fx.data(),
                 socket_path: fx.mcp_socket(),
                 relay_path: "/unused".into(),
+                protected_dirs: vec![fx.dir.path().display().to_string()],
             },
             ui,
         )
@@ -664,6 +668,105 @@ mod mcp {
             &no_exec,
         );
         assert_eq!(listed["result"]["isError"], true, "{listed}");
+        host.stop();
+    }
+
+    #[test]
+    fn open_sessions_follow_the_settings_and_end_on_stop() {
+        let fx = fixture();
+        exposed(&fx);
+        let ui = ScriptedUi::new(FfiDecision::AllowOnce, true);
+        let host = start(&fx, ui);
+        let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
+        initialize(&mut r);
+        for _ in 0..200 {
+            if !fx
+                .session
+                .clone()
+                .paired_clients(fx.data())
+                .unwrap()
+                .is_empty()
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let list = |r: &mut Relay, id| {
+            r.call(
+                id,
+                "tools/call",
+                serde_json::json!({"name": "list_vaults", "arguments": {}}),
+                &no_exec,
+            )
+        };
+        let before = list(&mut r, 2);
+        assert_eq!(
+            before["result"]["structuredContent"]["untrusted_vault_data"]
+                .as_array()
+                .map(Vec::len),
+            Some(1),
+            "{before}"
+        );
+        // The vault is no longer exposed: the open session sees it at once.
+        fx.session
+            .clone()
+            .set_mcp_policy(fx.data(), Vec::new(), true)
+            .unwrap();
+        let after = list(&mut r, 3);
+        assert_eq!(
+            after["result"]["structuredContent"]["untrusted_vault_data"]
+                .as_array()
+                .map(Vec::len),
+            Some(0),
+            "{after}"
+        );
+        // Stopping the server ends the session.
+        host.stop();
+        let mut line = String::new();
+        let n = r.input.read_line(&mut line).unwrap_or(0);
+        assert_eq!(n, 0, "{line}");
+        let report = fx.session.clone().audit_report(fx.data()).unwrap();
+        for action in ["client_paired", "mcp_policy_set"] {
+            assert!(
+                report.entries.iter().any(|e| e.action == action),
+                "{action}"
+            );
+        }
+    }
+
+    #[test]
+    fn templates_never_touch_the_store_folder() {
+        let fx = fixture();
+        let reference = exposed(&fx);
+        let _ = reference;
+        let ui = ScriptedUi::new(FfiDecision::AllowOnce, true);
+        let host = start(&fx, ui.clone());
+        let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
+        initialize(&mut r);
+        for _ in 0..200 {
+            if !fx
+                .session
+                .clone()
+                .paired_clients(fx.data())
+                .unwrap()
+                .is_empty()
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let target = fx.dir.path().join("onepass.db");
+        let filled = r.call(
+            2,
+            "tools/call",
+            serde_json::json!({"name": "fill_template", "arguments": {
+                "template_path": "/tmp/any.tpl", "output_path": target.display().to_string(),
+                "overwrite": true}}),
+            &|m| panic!("the relay must not be asked: {m}"),
+        );
+        assert_eq!(filled["result"]["isError"], true, "{filled}");
+        assert!(filled.to_string().contains("data folder"), "{filled}");
+        assert!(ui.asked.lock().unwrap().is_empty());
         host.stop();
     }
 }

@@ -202,8 +202,11 @@ public final class DeveloperHosts {
 
     private func startMCP(_ session: VaultSession) async {
         guard mcp == nil, let core = session.coreSession else { return }
+        // The store's folder: no tool may read or write it through the relay.
+        let store = session.environment.databaseURL.deletingLastPathComponent().path
         let config = FfiMcpHostConfig(
-            dataDir: dataDirectory, socketPath: paths.mcpSocket.path, relayPath: paths.relay.path)
+            dataDir: dataDirectory, socketPath: paths.mcpSocket.path, relayPath: paths.relay.path,
+            protectedDirs: [store])
         let ui = bridge
         do {
             let host = try await CoreThread.run { try McpHost.start(session: core, config: config, ui: ui) }

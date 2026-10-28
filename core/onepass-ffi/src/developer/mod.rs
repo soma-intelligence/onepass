@@ -253,6 +253,22 @@ pub(crate) fn socket_path(path: &str) -> Result<PathBuf, OnePassError> {
     Ok(p.to_path_buf())
 }
 
+/// Device and inode of the socket at `path`, right after binding it.
+pub(crate) fn socket_identity(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::symlink_metadata(path)
+        .ok()
+        .map(|m| (m.dev(), m.ino()))
+}
+
+/// Removes the socket at `path` only if it is still the one this host
+/// bound (`id`): a newer host's socket at the same path stays.
+pub(crate) fn remove_socket(path: &Path, id: Option<(u64, u64)>) {
+    if id.is_some() && socket_identity(path) == id {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 pub(crate) fn guard_error(e: GuardError) -> OnePassError {
     match e {
         GuardError::Signature | GuardError::Tampered(_) => OnePassError::Integrity {

@@ -15,11 +15,11 @@ use std::collections::HashMap;
 use std::io::{self, BufRead, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use onepass_core::Id;
 use onepass_core::model::Item;
@@ -29,8 +29,8 @@ use onepass_guard::{
 };
 use onepass_mcp::runner::{RunOutput, RunRequest};
 use onepass_mcp::{
-    ClientContext, McpGuards, McpTools, Narrowing, PortError, RepoPort, VaultInfo, VaultPort,
-    Workspace, WorkspaceRefusal, file_registry, serve,
+    ClientContext, McpGuards, McpTools, Narrowing, PolicySource, PortError, RepoPort, VaultInfo,
+    VaultPort, Workspace, WorkspaceRefusal, file_registry, serve,
 };
 use onepass_mcp_relay::wire::{
     AppToRelay, ClientHello, Line, LineReader, MAX_WIRE_LINE, RelayToApp, Reply, decode, encode,
@@ -39,10 +39,10 @@ use onepass_peer::{CodeIdentity, effective_uid, identify_peer, identity_of_file,
 use onepass_ssh_agent::bind_socket;
 use zeroize::Zeroizing;
 
-use super::admin::{app_policy, exposed_vaults, guard_state, pair};
+use super::admin::{PairingState, app_policy, audit_admin, exposed_vaults, guard_state, pair};
 use super::{
     AUDIT_FILE, CLIENTS_FILE, FfiDeveloperUi, SERVER_STACK, SessionSigner, UiApprover, UiStrong,
-    data_dir, guard_account_id, socket_path,
+    data_dir, guard_account_id, remove_socket, socket_identity, socket_path,
 };
 use crate::error::{OnePassError, invalid};
 use crate::session::Session;
@@ -69,6 +69,9 @@ pub struct FfiMcpHostConfig {
     pub socket_path: String,
     /// The relay file in the app bundle: the only program served.
     pub relay_path: String,
+    /// Folders no tool may read or write through the relay (the store's
+    /// folder; the data folder is always protected).
+    pub protected_dirs: Vec<String>,
 }
 
 /// Whether the peer runs exactly the relay of the app bundle: the same
@@ -107,8 +110,12 @@ pub(crate) enum RelayCheck {
 #[derive(uniffi::Object)]
 pub struct McpHost {
     socket: PathBuf,
+    /// Device and inode of the socket this host bound: `stop` removes only
+    /// that file, never a newer host's socket at the same path.
+    socket_id: Option<(u64, u64)>,
     stop: Arc<AtomicBool>,
     thread: Mutex<Option<JoinHandle<()>>>,
+    conns: Conns,
 }
 
 #[uniffi::export]
@@ -137,7 +144,8 @@ impl McpHost {
             .is_some_and(|t| !t.is_finished())
     }
 
-    /// Stops accepting and removes the socket.
+    /// Stops accepting, ends every open session (their relays see the
+    /// socket close) and removes the socket.
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
         let handle = self
@@ -147,7 +155,15 @@ impl McpHost {
             .take();
         if let Some(h) = handle {
             let _ = h.join();
-            let _ = std::fs::remove_file(&self.socket);
+            remove_socket(&self.socket, self.socket_id);
+        }
+        for (_, s) in self
+            .conns
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .drain()
+        {
+            let _ = s.shutdown(std::net::Shutdown::Both);
         }
     }
 }
@@ -174,6 +190,25 @@ impl McpHost {
 
 /// Pause between two non-blocking `accept` calls.
 const POLL: Duration = Duration::from_millis(100);
+/// Most relay sessions served at once; more connections are closed.
+const MAX_CONNECTIONS: usize = 16;
+/// How long a relay has to send its `hello`.
+const HELLO_WAIT: Duration = Duration::from_secs(5);
+/// How long a write to the relay may block (a client that stopped reading).
+const WRITE_WAIT: Duration = Duration::from_secs(30);
+/// MCP lines buffered from the relay while the server is busy (a prompt, a
+/// command). The reader never blocks on it (it must keep delivering the
+/// results the busy server waits for): a client that sends more than this
+/// while the server is busy loses its session.
+const LINE_BACKLOG: usize = 64;
+/// At most one audit entry per this interval for refused peers.
+const REFUSAL_AUDIT_EVERY: Duration = Duration::from_secs(10);
+
+/// The open relay sessions, by connection number, to end them on `stop`.
+type Conns = Arc<Mutex<HashMap<u64, UnixStream>>>;
+/// Requests sent to the relay and waiting for their result; `None` once
+/// the relay is gone.
+type Pending = Arc<Mutex<Option<HashMap<u64, Sender<RelayToApp>>>>>;
 
 /// Everything a connection needs.
 #[derive(Clone)]
@@ -183,6 +218,10 @@ struct Ctx {
     dir: PathBuf,
     account: String,
     relay: RelayCheck,
+    protected: Vec<PathBuf>,
+    conns: Conns,
+    active: Arc<AtomicUsize>,
+    last_refusal_audit: Arc<Mutex<Option<Instant>>>,
 }
 
 impl McpHost {
@@ -205,12 +244,18 @@ impl McpHost {
         listener
             .set_nonblocking(true)
             .map_err(|_| invalid("cannot listen on the MCP socket"))?;
+        let socket_id = socket_identity(&socket);
+        let conns: Conns = Arc::default();
         let ctx = Ctx {
             session,
             ui,
             dir,
             account,
             relay,
+            protected: config.protected_dirs.iter().map(PathBuf::from).collect(),
+            conns: conns.clone(),
+            active: Arc::new(AtomicUsize::new(0)),
+            last_refusal_audit: Arc::default(),
         };
         let stop = Arc::new(AtomicBool::new(false));
         let thread = {
@@ -219,18 +264,10 @@ impl McpHost {
                 .name("onepass-mcp".into())
                 .stack_size(SERVER_STACK)
                 .spawn(move || {
+                    let mut next = 0u64;
                     while !stop.load(Ordering::SeqCst) {
                         match listener.accept() {
-                            Ok((stream, _)) => {
-                                if stream.set_nonblocking(false).is_err() {
-                                    continue;
-                                }
-                                let ctx = ctx.clone();
-                                let _ = thread::Builder::new()
-                                    .name("onepass-mcp-conn".into())
-                                    .stack_size(SERVER_STACK)
-                                    .spawn(move || connection(stream, &ctx));
-                            }
+                            Ok((stream, _)) => accept(stream, &ctx, &mut next),
                             Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
                             Err(_) => thread::sleep(POLL),
                         }
@@ -240,10 +277,74 @@ impl McpHost {
         };
         Ok(Arc::new(McpHost {
             socket,
+            socket_id,
             stop,
             thread: Mutex::new(Some(thread)),
+            conns,
         }))
     }
+}
+
+/// One accepted connection: refused at once beyond `MAX_CONNECTIONS` or
+/// when the peer is not the relay (checked here, before any thread), else
+/// served on its own thread and registered until it ends.
+fn accept(stream: UnixStream, ctx: &Ctx, next: &mut u64) {
+    if stream.set_nonblocking(false).is_err() {
+        return;
+    }
+    if ctx.active.load(Ordering::SeqCst) >= MAX_CONNECTIONS {
+        return;
+    }
+    if !peer_is_relay(&stream, &ctx.relay) {
+        refused_limited(ctx, "unverified relay", "connect");
+        return;
+    }
+    let Ok(handle) = stream.try_clone() else {
+        return;
+    };
+    *next += 1;
+    let id = *next;
+    ctx.conns
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(id, handle);
+    ctx.active.fetch_add(1, Ordering::SeqCst);
+    let conn_ctx = ctx.clone();
+    let spawned = thread::Builder::new()
+        .name("onepass-mcp-conn".into())
+        .stack_size(SERVER_STACK)
+        .spawn(move || {
+            connection(stream, &conn_ctx);
+            conn_ctx
+                .conns
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&id);
+            conn_ctx.active.fetch_sub(1, Ordering::SeqCst);
+        });
+    if spawned.is_err() {
+        ctx.conns
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&id);
+        ctx.active.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// [`refused`], at most once per `REFUSAL_AUDIT_EVERY`: a flood of
+/// connections cannot flood the signed log (or hold the session lock).
+fn refused_limited(ctx: &Ctx, client: &str, action: &str) {
+    {
+        let mut last = ctx
+            .last_refusal_audit
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if last.is_some_and(|t| t.elapsed() < REFUSAL_AUDIT_EVERY) {
+            return;
+        }
+        *last = Some(Instant::now());
+    }
+    refused(ctx, client, action);
 }
 
 /// An audit entry for a connection refused before any tool call.
@@ -283,10 +384,12 @@ fn peer_is_relay(stream: &UnixStream, check: &RelayCheck) -> bool {
     }
 }
 
-/// Serves one relay connection until it closes.
+/// Serves one relay connection (its peer already verified) until it
+/// closes.
 fn connection(stream: UnixStream, ctx: &Ctx) {
-    if !peer_is_relay(&stream, &ctx.relay) {
-        refused(ctx, "unverified relay", "connect");
+    if stream.set_read_timeout(Some(HELLO_WAIT)).is_err()
+        || stream.set_write_timeout(Some(WRITE_WAIT)).is_err()
+    {
         return;
     }
     let Ok(read_half) = stream.try_clone() else {
@@ -301,6 +404,10 @@ fn connection(stream: UnixStream, ctx: &Ctx) {
     let Some(RelayToApp::Hello { client, .. }) = hello else {
         return;
     };
+    // The session itself waits for the client as long as it likes.
+    if stream_clear_read_timeout(&writer).is_err() {
+        return;
+    }
     // Pairing waits for the user: it runs beside the session, so the
     // client's `initialize` is answered at once. The registry is read again
     // at every tool call, so calls made after the user agreed are served.
@@ -326,8 +433,8 @@ fn connection(stream: UnixStream, ctx: &Ctx) {
     };
 
     // Demultiplexer: MCP lines to the server, results to their requests.
-    let (mcp_tx, mcp_rx) = mpsc::channel::<Zeroizing<Vec<u8>>>();
-    let pending: Arc<Mutex<HashMap<u64, Sender<RelayToApp>>>> = Arc::default();
+    let (mcp_tx, mcp_rx) = mpsc::sync_channel::<Zeroizing<Vec<u8>>>(LINE_BACKLOG);
+    let pending: Pending = Arc::new(Mutex::new(Some(HashMap::new())));
     let reader = {
         let pending = pending.clone();
         thread::Builder::new()
@@ -360,28 +467,66 @@ fn admit(ctx: &Ctx, hello: ClientHello) {
             .map(|reg| reg.find(Surface::Mcp, &client.client_id).is_some())
             .unwrap_or(false)
     };
-    if !known && client.signed {
-        let asked = super::FfiMcpClient {
-            id: client.client_id.clone(),
-            label: onepass_guard::sanitize_for_display(&client.label),
-            signed: true,
-            chain: hello.chain.clone(),
-        };
-        if ctx.ui.pair_request(asked) {
-            if let Ok(policy) = app_policy(&ctx.session, &ctx.dir) {
-                let _ = pair(&ctx.session, &ctx.dir, &client, hello.code.clone(), &policy);
-            }
-        } else {
-            refused(ctx, &client.label, "pair");
+    if known || !client.signed {
+        return;
+    }
+    // One question at a time per client, and none for a while after a
+    // refusal: relaunching the relay in a loop cannot wear the user down.
+    let state = guard_state(&ctx.dir, &ctx.account);
+    {
+        let mut pairing = state.pairing.lock().unwrap_or_else(PoisonError::into_inner);
+        match pairing.get(&client.client_id) {
+            Some(PairingState::Asking) => return,
+            Some(PairingState::RefusedAt(at)) if at.elapsed() < PAIRING_COOLDOWN => return,
+            _ => {}
         }
+        pairing.insert(client.client_id.clone(), PairingState::Asking);
+    }
+    let shown = onepass_guard::sanitize_for_display;
+    let asked = super::FfiMcpClient {
+        id: shown(&client.client_id),
+        label: shown(&client.label),
+        signed: true,
+        chain: hello.chain.iter().take(8).map(|c| shown(c)).collect(),
+    };
+    let agreed = ctx.ui.pair_request(asked);
+    let mut pairing = state.pairing.lock().unwrap_or_else(PoisonError::into_inner);
+    if agreed {
+        pairing.remove(&client.client_id);
+        drop(pairing);
+        if let Ok(policy) = app_policy(&ctx.session, &ctx.dir)
+            && pair(&ctx.session, &ctx.dir, &client, hello.code.clone(), &policy).is_ok()
+        {
+            audit_admin(
+                &ctx.session,
+                &ctx.dir,
+                "client_paired",
+                Some(&client.label),
+                None,
+            );
+        }
+    } else {
+        pairing.insert(
+            client.client_id.clone(),
+            PairingState::RefusedAt(Instant::now()),
+        );
+        drop(pairing);
+        refused(ctx, &client.label, "pair");
     }
 }
 
-fn demux(
-    mut lines: LineReader<UnixStream>,
-    mcp: Sender<Zeroizing<Vec<u8>>>,
-    pending: Arc<Mutex<HashMap<u64, Sender<RelayToApp>>>>,
-) {
+/// How long a refused pairing stays refused without asking again.
+const PAIRING_COOLDOWN: Duration = Duration::from_secs(600);
+
+/// Removes the read timeout of the hello once it came.
+fn stream_clear_read_timeout(writer: &Mutex<UnixStream>) -> io::Result<()> {
+    writer
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .set_read_timeout(None)
+}
+
+fn demux(mut lines: LineReader<UnixStream>, mcp: SyncSender<Zeroizing<Vec<u8>>>, pending: Pending) {
     while let Ok(Some(Line::Complete(line))) = lines.next_line() {
         let Ok(msg) = decode::<RelayToApp>(&line) else {
             break;
@@ -391,7 +536,7 @@ fn demux(
                 let mut bytes = Zeroizing::new(Vec::with_capacity(line.len() + 1));
                 bytes.extend_from_slice(line.as_bytes());
                 bytes.push(b'\n');
-                if mcp.send(bytes).is_err() {
+                if mcp.try_send(bytes).is_err() {
                     break;
                 }
             }
@@ -399,7 +544,8 @@ fn demux(
                 let waiter = pending
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
-                    .remove(&id);
+                    .as_mut()
+                    .and_then(|p| p.remove(&id));
                 if let Some(w) = waiter {
                     let _ = w.send(msg);
                 }
@@ -408,11 +554,9 @@ fn demux(
             RelayToApp::Hello { .. } => break,
         }
     }
-    // Dropping the senders ends the session and every waiting request.
-    pending
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clear();
+    // Dropping the senders ends the session and every waiting request;
+    // later requests see the relay gone at once.
+    *pending.lock().unwrap_or_else(PoisonError::into_inner) = None;
 }
 
 fn serve_session(
@@ -420,7 +564,7 @@ fn serve_session(
     client: ClientContext,
     mcp_rx: Receiver<Zeroizing<Vec<u8>>>,
     writer: Arc<Mutex<UnixStream>>,
-    pending: Arc<Mutex<HashMap<u64, Sender<RelayToApp>>>>,
+    pending: Pending,
 ) {
     let Ok(policy) = app_policy(&ctx.session, &ctx.dir) else {
         return;
@@ -450,11 +594,25 @@ fn serve_session(
         Arc::new(UiStrong(ctx.ui.clone())),
         Arc::new(SystemClock),
     );
+    let mut protected = ctx.protected.clone();
+    protected.push(ctx.dir.clone());
     let workspace = RelayWorkspace {
         writer: writer.clone(),
         pending,
+        protected,
         next: AtomicU64::new(1),
     };
+    // The settings may change while the session is open: the policy and
+    // the exposed vaults are read again before every call.
+    let (session, dir) = (ctx.session.clone(), ctx.dir.clone());
+    let policy_source: PolicySource = Box::new(move || {
+        let policy = app_policy(&session, &dir).map_err(|e| e.to_string())?;
+        let narrowing = Narrowing {
+            vaults: Some(exposed_vaults(&policy)),
+            scopes: None,
+        };
+        Ok((policy, narrowing))
+    });
     let mut tools = McpTools::new(
         SessionPort(ctx.session.clone()),
         policy,
@@ -467,7 +625,8 @@ fn serve_session(
         Some(ctx.dir.clone()),
         guards,
     )
-    .with_workspace(Box::new(workspace));
+    .with_workspace(Box::new(workspace))
+    .with_policy_source(policy_source);
     let input = ChannelReader {
         rx: mcp_rx,
         buf: Zeroizing::new(Vec::new()),
@@ -569,28 +728,43 @@ const EXEC_MARGIN: Duration = Duration::from_secs(30);
 /// read and written in the user's environment, outside the app's sandbox.
 struct RelayWorkspace {
     writer: Arc<Mutex<UnixStream>>,
-    pending: Arc<Mutex<HashMap<u64, Sender<RelayToApp>>>>,
+    pending: Pending,
+    /// The data folder and the store's folder: never read nor written.
+    protected: Vec<PathBuf>,
     next: AtomicU64,
 }
 
 impl RelayWorkspace {
+    fn forget(&self, id: u64) {
+        if let Some(p) = self
+            .pending
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_mut()
+        {
+            p.remove(&id);
+        }
+    }
+
     fn ask(
         &self,
         msg: impl FnOnce(u64) -> AppToRelay,
         wait: Duration,
     ) -> Result<RelayToApp, WorkspaceRefusal> {
+        let gone = || WorkspaceRefusal::new("the MCP relay is gone");
         let id = self.next.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::channel();
-        self.pending
+        match self
+            .pending
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(id, tx);
-        let gone = || WorkspaceRefusal::new("the MCP relay is gone");
+            .as_mut()
+        {
+            Some(p) => p.insert(id, tx),
+            None => return Err(gone()),
+        };
         let Ok(bytes) = encode(&msg(id)) else {
-            self.pending
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .remove(&id);
+            self.forget(id);
             return Err(WorkspaceRefusal::new("too large for the MCP relay"));
         };
         let written = {
@@ -598,18 +772,29 @@ impl RelayWorkspace {
             w.write_all(&bytes).and_then(|()| w.flush())
         };
         if written.is_err() {
-            self.pending
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .remove(&id);
+            self.forget(id);
             return Err(gone());
         }
         let reply = rx.recv_timeout(wait).map_err(|_| gone());
-        self.pending
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&id);
+        self.forget(id);
         reply
+    }
+
+    /// Refuses a path inside a protected folder before the relay sees it.
+    /// Lexical (the relay resolves links and checks the data folder again,
+    /// see `forbidden`): it stops an agent from naming the store's file.
+    fn check_protected(&self, path: &Path) -> Result<(), WorkspaceRefusal> {
+        let path = normalize(path);
+        if self
+            .protected
+            .iter()
+            .any(|p| path.starts_with(normalize(p)))
+        {
+            return Err(WorkspaceRefusal::new(
+                "refused: inside the OnePass data folder",
+            ));
+        }
+        Ok(())
     }
 
     fn file(
@@ -624,6 +809,23 @@ impl RelayWorkspace {
             _ => Err(WorkspaceRefusal::new("unexpected relay reply")),
         }
     }
+}
+
+/// `path` made absolute against nothing (relative paths stay relative)
+/// with `.` dropped and `..` applied, lexically.
+fn normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 fn path_text(p: Option<&Path>) -> Option<String> {
@@ -646,6 +848,7 @@ impl Workspace for RelayWorkspace {
         path: &Path,
         forbidden: Option<&Path>,
     ) -> Result<Zeroizing<String>, WorkspaceRefusal> {
+        self.check_protected(path)?;
         self.file(|id| AppToRelay::ReadTemplate {
             id,
             path: path.to_string_lossy().into_owned(),
@@ -660,6 +863,7 @@ impl Workspace for RelayWorkspace {
         overwrite: bool,
         forbidden: Option<&Path>,
     ) -> Result<(), WorkspaceRefusal> {
+        self.check_protected(path)?;
         self.file(|id| AppToRelay::CheckOutput {
             id,
             path: path.to_string_lossy().into_owned(),
@@ -676,6 +880,7 @@ impl Workspace for RelayWorkspace {
         overwrite: bool,
         forbidden: Option<&Path>,
     ) -> Result<(), WorkspaceRefusal> {
+        self.check_protected(path)?;
         self.file(|id| AppToRelay::WriteOutput {
             id,
             path: path.to_string_lossy().into_owned(),

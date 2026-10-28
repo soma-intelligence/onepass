@@ -28,5 +28,5 @@ pub use protocol::{
     ClientInfo, MAX_LINE, PROTOCOL_VERSIONS, Session, ToolHost, ToolOutcome, ToolSpec, handle_line,
     serve,
 };
-pub use tools::McpTools;
+pub use tools::{McpTools, PolicySource};
 pub use workspace::{LocalWorkspace, MAX_TEMPLATE, Workspace, WorkspaceRefusal};

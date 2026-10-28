@@ -153,6 +153,18 @@ impl Session {
             if unsynced {
                 return Err(invalid("unsynced changes"));
             }
+            // A vault the server is behind on: this device keeps its own
+            // verified copy (`kept`), which the server does not hold. It
+            // must not leave until the sync has put that copy back.
+            for id in &leaving {
+                if repo
+                    .store()
+                    .kept_rows(*id)?
+                    .is_some_and(|rows| !rows.is_empty())
+                {
+                    return Err(invalid("unsynced changes"));
+                }
+            }
             let mut upstream = MemoryStore::new();
             for r in repo.store().export_records()? {
                 upstream.put(r)?;

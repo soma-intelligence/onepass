@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use onepass_guard::{
-    AuditRecord, ClientRegistry, ClientRegistryLoader, GrantStore, Revoke, Surface, SystemClock,
-    head_path, verify_log,
+    AuditEntry, AuditLog, AuditRecord, AuditSink, ClientRegistry, ClientRegistryLoader, GrantStore,
+    Revoke, SignedAuditSink, Surface, SystemClock, head_path, verify_log,
 };
 use onepass_mcp::{Policy, PolicyError, Scope, load_policy, save_policy};
 use onepass_peer::{CodeIdentity, identity_of_file};
@@ -29,6 +29,17 @@ use crate::session::Session;
 pub(crate) struct GuardState {
     pub grants: Arc<Mutex<GrantStore>>,
     pub loader: Arc<Mutex<ClientRegistryLoader>>,
+    /// Pairing questions by client id: one at a time, and a pause after a
+    /// refusal.
+    pub pairing: Mutex<HashMap<String, PairingState>>,
+}
+
+/// Where the pairing of one client stands.
+pub(crate) enum PairingState {
+    /// The user is being asked.
+    Asking,
+    /// The user refused at this time.
+    RefusedAt(std::time::Instant),
 }
 
 /// The [`GuardState`] of `dir` for `account_id`, made on first use. A new
@@ -50,6 +61,7 @@ pub(crate) fn guard_state(dir: &Path, account_id: &str) -> Arc<GuardState> {
                     account_id,
                 ))),
                 loader: Arc::new(Mutex::new(ClientRegistryLoader::new())),
+                pairing: Mutex::new(HashMap::new()),
             })
         })
         .clone()
@@ -284,7 +296,10 @@ impl Session {
             vaults: map,
             allow_generate,
         };
-        save_policy(&dir.join(POLICY_FILE), &SessionSigner(me), &policy).map_err(policy_error)
+        save_policy(&dir.join(POLICY_FILE), &SessionSigner(me.clone()), &policy)
+            .map_err(policy_error)?;
+        audit_admin(&me, &dir, "mcp_policy_set", None, None);
+        Ok(())
     }
 
     /// The paired clients of the registry, verified.
@@ -344,7 +359,16 @@ impl Session {
                 map.insert(vault.clone(), names_of(&scopes).into_iter().collect());
             }
             Ok(())
-        })
+        })?;
+        let dir = data_dir(&data_dir_path)?;
+        audit_admin(
+            &self,
+            &dir,
+            "client_scopes_set",
+            Some(&client_id),
+            Some(vault),
+        );
+        Ok(())
     }
 
     /// Unpairs a client, and revokes its grants, in the files and in the
@@ -369,7 +393,9 @@ impl Session {
             let generation = loader.generation_seen;
             loader.apply_unpairs(generation, &[u]);
         }
-        revoke(&self, &dir, &account, Revoke::Client(client_id))
+        revoke(&self, &dir, &account, Revoke::Client(client_id.clone()))?;
+        audit_admin(&self, &dir, "client_unpaired", Some(&client_id), None);
+        Ok(())
     }
 
     /// Pairs the program at `path` for MCP (ad hoc or unsigned code, which
@@ -400,6 +426,7 @@ impl Session {
         };
         let id = client.client_id.clone();
         pair(&me, &dir, &client, code_json(&code), &policy)?;
+        audit_admin(&me, &dir, "client_paired", Some(&id), None);
         Ok(id)
     }
 
@@ -443,7 +470,9 @@ impl Session {
             &dir,
             &account,
             grant_id.map_or(Revoke::All, Revoke::Id),
-        )
+        )?;
+        audit_admin(&self, &dir, "grants_revoked", None, None);
+        Ok(())
     }
 
     /// The audit log, verified; vault and item ids become names where the
@@ -517,6 +546,8 @@ impl Session {
     /// `.bad.head`) and starts an empty one: the way out of a log that no
     /// longer verifies. Servers reopen the log path at their next entry.
     pub fn rotate_audit_log(self: Arc<Self>, data_dir_path: String) -> Result<(), OnePassError> {
+        // Only from an unlocked app: the new log starts with a signed entry.
+        guard_account_id(&self)?;
         let dir = data_dir(&data_dir_path)?;
         let path = dir.join(AUDIT_FILE);
         let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
@@ -529,8 +560,45 @@ impl Session {
         rename(
             &head_path(&path),
             &dir.join(format!("{AUDIT_FILE}.{stamp}.bad.head")),
-        )
+        )?;
+        audit_admin(&self, &dir, "audit_log_rotated", None, None);
+        Ok(())
     }
+}
+
+/// Who changes the settings, in the audit log.
+const SETTINGS_CLIENT: &str = "OnePass settings";
+
+/// One signed audit entry for a change of the guards made from the app
+/// (pairing, unpairing, scopes, policy, revocation, log rotation): the log
+/// tells who could do what, and when that changed. A failure to write it
+/// is not reported (the change itself is already made and verified).
+pub(crate) fn audit_admin(
+    session: &Arc<Session>,
+    dir: &Path,
+    action: &str,
+    client: Option<&str>,
+    vault: Option<String>,
+) {
+    let Ok(log) = AuditLog::open(&dir.join(AUDIT_FILE)) else {
+        return;
+    };
+    let mut sink = SignedAuditSink {
+        log,
+        signer: SessionSigner(session.clone()),
+    };
+    let _ = sink.record(&AuditEntry {
+        surface: Surface::Mcp,
+        client: SETTINGS_CLIENT.into(),
+        client_id: None,
+        client_label: client.map(onepass_guard::sanitize_for_display),
+        action: action.into(),
+        vault_id: vault,
+        item_id: None,
+        field: None,
+        decision: "allowed".into(),
+        outcome: "ok".into(),
+    });
 }
 
 fn edit_registry(
@@ -584,8 +652,11 @@ pub(crate) fn pair(
     let mut loader = lock(&state.loader);
     let path = dir.join(CLIENTS_FILE);
     let mut reg = loader.load(&path, &signer, &account).map_err(guard_error)?;
-    reg.clients
-        .retain(|c| !(c.surface == Surface::Mcp && c.id == client.client_id));
+    // Already paired (two connections asked at once, or a pairing from the
+    // settings): its scopes stay as the user set them.
+    if reg.find(Surface::Mcp, &client.client_id).is_some() {
+        return Ok(());
+    }
     let scopes = onepass_mcp::default_client_scopes(exposed_vaults(policy));
     let now = time::OffsetDateTime::now_utc().unix_timestamp();
     reg.clients

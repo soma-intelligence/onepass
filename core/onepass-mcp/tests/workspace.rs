@@ -243,3 +243,43 @@ fn fill_template_write_refused_by_the_workspace_is_a_tool_refusal() {
     assert!(*overwrite);
     assert_eq!(forbidden.as_deref(), Some(data.as_path()));
 }
+
+/// A host whose settings change while a session is open: the policy source
+/// is read again before every call, and a failed read exposes nothing.
+#[test]
+fn the_policy_source_applies_to_the_next_call() {
+    use std::sync::atomic::{AtomicU8, Ordering};
+    let (t, _) = scripted_tools("", None, None);
+    let state = Arc::new(AtomicU8::new(0));
+    let s = state.clone();
+    let mut t = t.with_policy_source(Box::new(move || match s.load(Ordering::SeqCst) {
+        0 => Ok((Policy::default_for(&account_id()), Narrowing::default())),
+        1 => Ok((
+            Policy::default_for(&account_id()),
+            Narrowing {
+                vaults: Some(Default::default()),
+                scopes: None,
+            },
+        )),
+        _ => Err("tampered".into()),
+    }));
+    let listed = ok(call(&mut t, "list_vaults", json!({})));
+    assert!(
+        !listed["untrusted_vault_data"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{listed}"
+    );
+    for next in [1, 2] {
+        state.store(next, Ordering::SeqCst);
+        let listed = ok(call(&mut t, "list_vaults", json!({})));
+        assert!(
+            listed["untrusted_vault_data"]
+                .as_array()
+                .unwrap()
+                .is_empty(),
+            "{listed}"
+        );
+    }
+}
