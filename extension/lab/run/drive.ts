@@ -36,7 +36,7 @@ export const GENERATE_ROW = "Générer un mot de passe";
 const byId = (id: string) => `[id="${id.replace(/["\\]/g, "\\$&")}"]`;
 
 function blank(driver: Observation["driver"]): Observation {
-  return { driver, overlayShown: false, itemOffered: false, events: [], filled: {}, durationMs: 0 };
+  return { driver, overlayShown: false, itemOffered: false, events: [], filled: {}, values: {}, durationMs: 0 };
 }
 
 function message(e: unknown): string {
@@ -57,7 +57,7 @@ async function goto(page: Page, url: string): Promise<void> {
  * Split OTP cells count for their field. ORed into `acc`, so a value seen
  * once stays seen.
  */
-async function snapshotFilled(page: Page, site: Site, acc: Record<string, boolean>): Promise<void> {
+async function snapshotFilled(page: Page, site: Site, acc: Record<string, boolean>, values?: Record<string, string>): Promise<void> {
   const fields = site.fields.map((f) => ({ id: f.id, name: f.name }));
   for (const f of fields) acc[f.name] ??= false;
   for (const frame of page.frames()) {
@@ -76,9 +76,20 @@ async function snapshotFilled(page: Page, site: Site, acc: Record<string, boolea
         }
         return hook?.(sel)?.filled === true;
       };
-      return list.filter((f) => value(f.id) || [1, 2, 3, 4, 5, 6].some((k) => value(`${f.id}-${k}`))).map((f) => f.name);
-    }, fields).catch(() => [] as string[]);
-    for (const name of seen) acc[name] = true;
+      const names = list.filter((f) => value(f.id) || [1, 2, 3, 4, 5, 6].some((k) => value(`${f.id}-${k}`))).map((f) => f.name);
+      // The readable values (light DOM or open shadow root); a closed shadow root only reports "filled".
+      const vals: Record<string, string> = {};
+      for (const f of list) {
+        const sel = `[id="${f.id.replace(/["\\]/g, "\\$&")}"]`;
+        for (const r of roots) {
+          const el = r.querySelector(sel) as HTMLInputElement | null;
+          if (el && "value" in el && el.value !== "") vals[f.name] = el.value;
+        }
+      }
+      return { names, vals };
+    }, fields).catch(() => ({ names: [] as string[], vals: {} as Record<string, string> }));
+    for (const name of seen.names) acc[name] = true;
+    if (values) Object.assign(values, seen.vals);
   }
 }
 
@@ -148,7 +159,7 @@ export async function oneClick(env: ScenarioEnv, site: Site): Promise<Observatio
       await env.driver.pickAccount(ui, site.itemTitle);
       const end = Date.now() + CHAIN_WAIT_MS;
       for (;;) {
-        await snapshotFilled(page, site, o.filled);
+        await snapshotFilled(page, site, o.filled, o.values);
         const c = await env.driver.progress(site.host);
         if (c) o.chain = c;
         if ((c && c.status !== "running") || Date.now() >= end) {
@@ -160,7 +171,7 @@ export async function oneClick(env: ScenarioEnv, site: Site): Promise<Observatio
       // The last post can still be in flight when the chain reports done.
       await waitEvents(env.server, signedIn(site), 3_000);
     } else {
-      await snapshotFilled(page, site, o.filled);
+      await snapshotFilled(page, site, o.filled, o.values);
     }
   } catch (e) {
     o.error = message(e);
@@ -258,7 +269,7 @@ async function menuFillSteps(env: ScenarioEnv, page: Page, scope: Frame, site: S
     const menu = await env.driver.menuFill(page, scope, step.map((f) => byId(f.id)), site.itemTitle, true);
     o.overlayShown = menu.shown && (k === 0 || o.overlayShown);
     o.itemOffered = menu.offered && (k === 0 || o.itemOffered);
-    await snapshotFilled(page, site, o.filled);
+    await snapshotFilled(page, site, o.filled, o.values);
     if (!menu.offered) return;
     if (behaviour === "abandons_step") return;
     if (k === steps.length - 1) await userEdits(page, scope, step, behaviour);
@@ -293,7 +304,7 @@ export async function menuFill(env: ScenarioEnv, site: Site, behaviour: Behaviou
     o.overlayShown = menu.shown;
     o.itemOffered = menu.offered;
     if (menu.offered) await debugDump(page, o);
-    await snapshotFilled(page, site, o.filled);
+    await snapshotFilled(page, site, o.filled, o.values);
     // abandons_step has no step to abandon on a one-page form: the user goes on.
     if (behaviour === "partial" || behaviour === "corrects_field") await userEdits(page, scope, site.fields, behaviour);
     await submitForm(scope).catch(() => undefined);
@@ -324,7 +335,7 @@ export async function lookalike(env: ScenarioEnv, site: Site): Promise<Observati
       if (menu.shown) o.overlayShown = true;
       if (menu.offered) o.itemOffered = true;
     }
-    await snapshotFilled(page, site, o.filled);
+    await snapshotFilled(page, site, o.filled, o.values);
     await submitForm(page.mainFrame()).catch(() => undefined);
     await sleep(1_500);
   } catch (e) {

@@ -144,3 +144,9 @@ function filler(r: Rng, n: number, profile: Profile): Item {
     fields: { username: who.email, password: password(r) },
   };
 }
+
+/** Host of a filler item from its title ("Carte Amber Falcon archive 5" gives "amber-falcon-5-archive.test"); undefined for any other title. */
+export function archiveHostOf(title: string): string | undefined {
+  const m = /^(?:Carte )?([A-Z][a-z]+) ([A-Z][a-z]+) archive (\d+)$/.exec(title);
+  return m ? `${m[1]!.toLowerCase()}-${m[2]!.toLowerCase()}-${m[3]}-archive.test` : undefined;
+}

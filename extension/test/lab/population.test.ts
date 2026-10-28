@@ -11,7 +11,7 @@ import { generate } from "../../lab/gen/generate.ts";
 import type { FixtureFile, Scenario, Site } from "../../lab/gen/model.ts";
 import { DEFAULT_PROFILE, drawProfiles, fixtureFor, type Profile, profileOf } from "../../lab/gen/population.ts";
 import { Rng } from "../../lab/gen/rng.ts";
-import { judge, type Observation } from "../../lab/run/oracle.ts";
+import { fillCheck, judge, type Observation } from "../../lab/run/oracle.ts";
 import { renderReport, summarize } from "../../lab/report.ts";
 import type { Result } from "../../lab/run/oracle.ts";
 
@@ -19,6 +19,7 @@ const FIXED = patternsJson as unknown as Patterns;
 const world = generate("pop", { sites: 60, patterns: FIXED });
 interface Item { type: string; title: string; urls?: { url: string }[]; fields: Record<string, unknown> }
 const itemsOf = (f: FixtureFile) => f.items as Item[];
+const profile_ = (over: Partial<Profile>): Profile => ({ ...DEFAULT_PROFILE, id: "p9", ...over });
 const profile = (over: Partial<Profile>): Profile => ({ ...DEFAULT_PROFILE, id: "p9", ...over });
 
 describe("drawProfiles", () => {
@@ -259,6 +260,50 @@ describe("oracle under a behaviour", () => {
   it("expected_failure_under_a_behaviour_turns_xpass_on_a_full_fill", () => {
     expect(judge(sc(form, "partial", "xfail"), form, obs({ filled: { gn: true, fn: true } }))).toEqual({ verdict: "xpass" });
     expect(judge(sc(form, "partial", "xfail"), form, obs({ filled: { gn: false, fn: false }, overlayShown: false, itemOffered: false })).verdict).toBe("xfail");
+  });
+});
+
+describe("oracle checks the values of the fill", () => {
+  const BEHAVIOURS = ["partial", "corrects_field", "abandons_step"] as const;
+  const w = generate("pop-values", { sites: 80, patterns: FIXED });
+  const multi = w.sites.find((s) => s.flow === "multi_step" && s.steps && s.account)!;
+  const form = w.sites.find((s) => s.flow === "identity")!;
+  const sc = (site: Site, behaviour: Scenario["behaviour"]): Scenario =>
+    ({ id: `${site.index}:menu_fill`, site: site.index, driver: "menu_fill", expect: "pass", behaviour });
+  const base = (site: Site, values: Record<string, string>): Observation => ({
+    driver: "menu_fill", overlayShown: true, itemOffered: true, events: [], durationMs: 1, values,
+    filled: Object.fromEntries(site.fields.map((f) => [f.name, true])),
+  });
+  const fieldOf = (site: Site, role: string) => site.fields.find((f) => f.role === role || (role === "username" && f.role === "email"))!;
+
+  it("second_account_or_duplicate_filled_in_place_of_the_right_item_is_a_wrong_fill_under_each_behaviour", () => {
+    const profile = profile_({ multiAccount: true, duplicates: 3 });
+    const vault = fixtureFor(profile, w.sites, w.fixture);
+    const check = fillCheck(w, multi, vault);
+    const items = (vault.items as { title: string; urls?: { url: string }[]; fields: { username?: string; password?: string } }[])
+      .filter((i) => i.urls?.[0]?.url === `https://${multi.host}`);
+    const second = items.find((i) => i.title.endsWith(" (2)"))!;
+    const id = fieldOf(multi, "username"), pw = fieldOf(multi, "password");
+    for (const b of BEHAVIOURS) {
+      const right = base(multi, { [id.name]: multi.account!.username, [pw.name]: multi.account!.password });
+      const wrong = base(multi, { [id.name]: second.fields.username!, [pw.name]: second.fields.password! });
+      expect(judge(sc(multi, b), multi, right, check)).toEqual({ verdict: "pass" });
+      expect(judge(sc(multi, b), multi, wrong, check)).toEqual({ verdict: "fail", cause: "wrong_fill" });
+    }
+  });
+
+  it("wrong_country_format_is_a_wrong_fill", () => {
+    const jp = profile_({ country: "JP", lang: "ja" });
+    const check = fillCheck(w, form, fixtureFor(jp, w.sites, w.fixture));
+    const want = (v: typeof w.fixture) => (v.items as { title: string; fields: { mobile_phone?: string } }[]).find((i) => i.title === form.identityTitle)!.fields.mobile_phone!;
+    const values = (phone: string) => Object.fromEntries(form.fields.map((f) => [f.name, f.role === "tel" ? phone : ({ given_name: "", family_name: "", email: "", birth_date: "", organization: "" } as Record<string, string>)[f.role] ?? ""]));
+    // Every other field is checked too: take them from the JP vault item.
+    const item = (fixtureFor(jp, w.sites, w.fixture).items as { title: string; fields: Record<string, unknown> }[]).find((i) => i.title === form.identityTitle)!;
+    const full = (phone: string) => ({ ...values(phone), ...Object.fromEntries(form.fields.filter((f) => f.role !== "tel").map((f) => [f.name, String(({ given_name: item.fields.first_name, family_name: item.fields.last_name, email: item.fields.email, birth_date: item.fields.birth_date, organization: item.fields.company } as Record<string, unknown>)[f.role] ?? "")])) });
+    for (const b of ["partial", "corrects_field"] as const) {
+      expect(judge(sc(form, b), form, base(form, full(want(fixtureFor(jp, w.sites, w.fixture)))), check)).toEqual({ verdict: "pass" });
+      expect(judge(sc(form, b), form, base(form, full(want(w.fixture))), check)).toEqual({ verdict: "fail", cause: "wrong_fill" });
+    }
   });
 });
 

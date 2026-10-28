@@ -18,6 +18,7 @@ import { CANARY_PATH } from "../../e2e/server.ts";
 import type { Account, FixtureFile, ProviderId, Site, World } from "../gen/model.ts";
 import { IDP_HOST, renderSitePage } from "../gen/render.ts";
 import { handleIdp } from "./idp.ts";
+import { fixtureFor } from "../gen/population.ts";
 import { Ledger } from "./ledger.ts";
 import type { LabEvent } from "./ledger.ts";
 import { handleSite } from "./rp.ts";
@@ -73,7 +74,7 @@ export interface LabServer {
   events(): LabEvent[];
   /** Back to the world's own vault and a clean log. */
   reset(): void;
-  /** The vault of the simulated user playing the next scenario: expected values and secrets of the checks (until reset). */
+  /** The vault of the simulated user playing the next scenario: the values the forms expect (until reset). Secrets are indexed for every vault at start. */
   useFixture(fixture: FixtureFile): void;
   close(): Promise<void>;
 }
@@ -107,7 +108,7 @@ async function readBody(req: http.IncomingMessage): Promise<Record<string, strin
 
 export async function startLabServer(world: World, cert: TestCert): Promise<LabServer> {
   const nonce = randomBytes(16).toString("hex");
-  const ledger = new Ledger(world);
+  const ledger = new Ledger(world, (world.profiles ?? []).map((p) => fixtureFor(p, world.sites, world.fixture)));
   const sessions = new Map<string, Session>();
   const st: LabState = {
     world, ledger, siteHosts: new Set(world.sites.map((s) => s.host)),
@@ -225,11 +226,9 @@ export async function startLabServer(world: World, cert: TestCert): Promise<LabS
       st.codes.clear();
       ledger.reset();
       st.world = world;
-      ledger.useFixture(world.fixture);
     },
     useFixture(fixture) {
       st.world = { ...world, fixture };
-      ledger.useFixture(fixture);
     },
     close: () =>
       new Promise<void>((resolve) => {

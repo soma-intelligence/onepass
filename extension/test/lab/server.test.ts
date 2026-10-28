@@ -15,7 +15,7 @@ import patternsJson from "../../lab/corpus/patterns.json";
 import type { Patterns } from "../../lab/corpus/types.ts";
 import { generate } from "../../lab/gen/generate.ts";
 import type { Site, World } from "../../lab/gen/model.ts";
-import { DEFAULT_PROFILE, fixtureFor } from "../../lab/gen/population.ts";
+import { fixtureFor } from "../../lab/gen/population.ts";
 import { IDP_HOST } from "../../lab/gen/render.ts";
 import { expectedValues } from "../../lab/server/rp.ts";
 import { startLabServer } from "../../lab/server/server.ts";
@@ -26,7 +26,7 @@ const PATTERNS = patternsJson as unknown as Patterns;
 /** First seed whose 11-site world (every flow) has a lookalike and a honeypot on a password login site. */
 function pickWorld(): World {
   for (let k = 0; k < 500; k++) {
-    const w = generate(`lab-server-${k}`, { sites: 11, patterns: PATTERNS });
+    const w = generate(`lab-server-${k}`, { sites: 11, patterns: PATTERNS, profiles: 12 });
     if (w.sites.some((s) => s.lookalike) && w.sites.some((s) => s.honeypot && s.account?.password)) return w;
   }
   throw new Error("no seed with a lookalike and a honeypot");
@@ -330,7 +330,8 @@ describe("lab server", () => {
   });
 
   it("profile_fixture_sets_the_expected_values_and_the_secrets", async () => {
-    const jp = fixtureFor({ ...DEFAULT_PROFILE, id: "p5", country: "JP", lang: "ja", multiAccount: true }, world.sites, world.fixture);
+    const drawn = world.profiles!.find((p) => p.multiAccount && p.vaultSize > 0)!;
+    const jp = fixtureFor(drawn, world.sites, world.fixture);
     const s = flow("identity");
     const form = (w: World) => Object.fromEntries(s.fields.map((f) => [f.name, expectedValues(w, s)[f.role] ?? ""]));
     // The default vault expects the default phone: the JP one is refused until the server uses the JP vault.
