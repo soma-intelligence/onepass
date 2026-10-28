@@ -217,6 +217,13 @@ private struct BrandCard: View {
                     .mask { Circle().frame(width: d, height: d).offset(x: -d * 0.3) }
             }
             .frame(width: d * 1.6, height: d)
+        } else if brand == "amex" {
+            // The plain word, white on the Amex blue (no boxed logo).
+            Text(verbatim: "AMEX")
+                .font(.system(size: width * 0.15, weight: .black))
+                .tracking(width * 0.006)
+                .foregroundStyle(.white)
+                .fixedSize()
         } else {
             Image("card-\(brand)", bundle: .main)
                 .renderingMode(.template)
