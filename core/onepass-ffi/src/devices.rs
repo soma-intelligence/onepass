@@ -1,12 +1,15 @@
-//! The signed device list, vault deletion and master password change
-//! (milestone 2b). Swift gets the list as plain records and the new Account
-//! Unlock Key after a password change, never a key of the account.
+//! The signed device list, vault deletion, master password change
+//! (milestone 2b) and key rotation (spec 2026-10-28). Swift gets the list as
+//! plain records, the new Account Unlock Key after a password change or a
+//! rotation, and the new Secret Key it drew itself, never a key of the
+//! account.
 
 use std::path::Path;
 
 use onepass_core::account::AccountParams;
 use onepass_core::crypto::SecretKey;
 use onepass_core::devices::{DeviceEntry, DeviceKind, DeviceMode};
+use onepass_core::repo::Repository;
 use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::SyncStore;
 use zeroize::Zeroizing;
@@ -14,6 +17,7 @@ use zeroize::Zeroizing;
 use crate::convert::{id_hex, parse_id};
 use crate::error::OnePassError;
 use crate::session::{Session, find_vault};
+use crate::types::FfiUnlocked;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FfiDeviceKind {
@@ -130,6 +134,69 @@ impl Session {
         })
     }
 
+    /// Rotate every key of the account (spec 2026-10-28): new Secret Key,
+    /// keyset, vault keys, every item re-encrypted, in one write. `current`
+    /// and `secret_key` are checked first (`WrongPassword`, nothing
+    /// written). `new_secret_key` comes from `generate_secret_key`, stored
+    /// as pending by the app before this call and promoted after it
+    /// succeeds (the old Emergency Kit stops working: show the new one).
+    /// `new_password` also changes the master password. Returns the new
+    /// Account Unlock Key, to enroll biometrics again. Refused while the
+    /// Travel Mode is on.
+    pub fn rotate_keys(
+        &self,
+        current: String,
+        secret_key: String,
+        new_secret_key: String,
+        new_password: Option<String>,
+    ) -> Result<Vec<u8>, OnePassError> {
+        let (current, secret_key, new_secret_key) = (
+            Zeroizing::new(current),
+            Zeroizing::new(secret_key),
+            Zeroizing::new(new_secret_key),
+        );
+        let new_password = new_password.map(Zeroizing::new);
+        let secret_key = SecretKey::parse(&secret_key)?;
+        let new_secret_key = SecretKey::parse(&new_secret_key)?;
+        self.with(|repo| {
+            let auk = repo.rotate_keys(
+                &current,
+                &secret_key,
+                &new_secret_key,
+                new_password.as_deref().map(String::as_str),
+            )?;
+            Ok(auk.as_bytes().to_vec())
+        })
+    }
+
+    /// Revoke another device and rotate every key in the same write: the
+    /// revoked device, even if it keeps its data and Secret Key, reads
+    /// nothing written afterwards. Same arguments and result as
+    /// `rotate_keys`; this device cannot revoke itself
+    /// (`Validation("device", "this device")`), an unknown id is
+    /// `NotFound`. Use this instead of `revoke_device`, which only marks
+    /// the device.
+    pub fn revoke_device_rotating(
+        &self,
+        id: String,
+        password: String,
+        secret_key: String,
+        new_secret_key: String,
+    ) -> Result<Vec<u8>, OnePassError> {
+        let id = parse_id(&id)?;
+        let (password, secret_key, new_secret_key) = (
+            Zeroizing::new(password),
+            Zeroizing::new(secret_key),
+            Zeroizing::new(new_secret_key),
+        );
+        let secret_key = SecretKey::parse(&secret_key)?;
+        let new_secret_key = SecretKey::parse(&new_secret_key)?;
+        self.with(|repo| {
+            let auk = repo.revoke_device_rotating(id, &password, &secret_key, &new_secret_key)?;
+            Ok(auk.as_bytes().to_vec())
+        })
+    }
+
     /// The signed device list, revoked devices included, sorted by id.
     pub fn devices(&self) -> Result<Vec<FfiDevice>, OnePassError> {
         self.with(|repo| {
@@ -165,7 +232,9 @@ impl Session {
         })
     }
 
-    /// Mark another device revoked. This device cannot revoke itself from
+    /// Mark another device revoked, without rotating the keys: the device
+    /// is asked to erase itself, nothing more (see `revoke_device_rotating`
+    /// for the cryptographic cut). This device cannot revoke itself from
     /// the list (`Validation("device", "this device")`); revoking twice
     /// changes nothing; an unknown id is `NotFound`.
     pub fn revoke_device(&self, id: String) -> Result<(), OnePassError> {
@@ -229,4 +298,47 @@ pub fn store_params_epoch(db_path: String) -> Result<u64, OnePassError> {
 pub fn pinned_params_epoch(db_path: String) -> Result<u64, OnePassError> {
     let store = SyncStore::open(Path::new(&db_path))?;
     Ok(store.chain_state()?.params_epoch)
+}
+
+/// A new Secret Key, in its display form, for `rotate_keys` and
+/// `revoke_device_rotating`: the app stores it as pending (Keychain) before
+/// the rotation, so a crash between the write and the new Emergency Kit
+/// never locks the account out.
+#[uniffi::export]
+pub fn generate_secret_key() -> Result<String, OnePassError> {
+    Ok(SecretKey::generate()?.to_display())
+}
+
+/// Whether the account at `db_path` is the one this device pinned, now
+/// signed by another identity, without unlocking: its keys were rotated on
+/// another device. The app then asks for the new Secret Key (from the new
+/// Emergency Kit, or by pairing again) and calls `unlock_after_rotation`.
+#[uniffi::export]
+pub fn store_keys_rotated(db_path: String) -> Result<bool, OnePassError> {
+    let store = SyncStore::open(Path::new(&db_path))?;
+    let device = store.device_state()?;
+    Ok(Repository::keys_rotated(&store, &device)?)
+}
+
+/// Unlock after the keys were rotated on another device, with the new
+/// Secret Key the user just typed or received by pairing (never one the
+/// app kept from before): the device follows the new account identity,
+/// keeping its pinned state. The old Secret Key is `WrongPassword`; old
+/// params served again are `Integrity`.
+#[uniffi::export]
+pub fn unlock_after_rotation(
+    db_path: String,
+    password: String,
+    secret_key: String,
+) -> Result<FfiUnlocked, OnePassError> {
+    let (password, secret_key) = (Zeroizing::new(password), Zeroizing::new(secret_key));
+    let store = SyncStore::open(Path::new(&db_path))?;
+    let secret_key = SecretKey::parse(&secret_key)?;
+    let device = store.device_state()?;
+    let (mut repo, auk) = Repository::unlock_after_rotation(store, &password, &secret_key, device)?;
+    repo.persist_device_state()?;
+    Ok(FfiUnlocked {
+        session: Session::new(repo)?,
+        auk: auk.as_bytes().to_vec(),
+    })
 }

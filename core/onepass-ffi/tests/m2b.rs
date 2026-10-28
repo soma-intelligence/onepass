@@ -1,6 +1,6 @@
 //! Milestone 2b over the UniFFI surface, called as plain Rust: QR pairing
-//! (full and public), the signed device list, vault deletion and master
-//! password change. Two temp stores stand for two devices; a "sync" moves
+//! (full and public), the signed device list, vault deletion, master
+//! password change and key rotation. Two temp stores stand for two devices; a "sync" moves
 //! pending rows of one into the base of the other, as the server would.
 //! Synthetic data only. Run with `--features dev-fast-kdf`.
 
@@ -564,6 +564,143 @@ fn ffi_revoke_and_detect() {
             )
             .is_err()
     );
+}
+
+/// A device paired from `a` (personal), its store imported and unlocked.
+fn paired(a: &Device) -> (Arc<PairingNewcomer>, Newcomer, FfiUnlocked) {
+    let (n, ap) = confirmed(FfiDeviceMode::Personal);
+    let frame = ap
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false,
+        )
+        .unwrap();
+    n.open(frame).unwrap();
+    let dev = empty_device();
+    let u = n
+        .import_snapshot(dev.path.clone(), PASSWORD.into())
+        .unwrap();
+    (n, dev, u)
+}
+
+#[test]
+fn ffi_revoke_rotating_and_follow() {
+    let a = approver_device();
+    let (lost, _lost_dev, _lost_session) = paired(&a);
+    let (_, kept_dev, kept) = paired(&a);
+    push(&a.path);
+    kept.session.lock();
+
+    let new_key = generate_secret_key().unwrap();
+    assert_ne!(new_key, a.secret_key);
+    // Wrong password, bad new key, this device: nothing happens.
+    assert_eq!(
+        a.session
+            .revoke_device_rotating(
+                lost.device_id(),
+                "faux".into(),
+                a.secret_key.clone(),
+                new_key.clone()
+            )
+            .err(),
+        Some(OnePassError::WrongPassword)
+    );
+    assert!(
+        a.session
+            .rotate_keys(
+                PASSWORD.into(),
+                a.secret_key.clone(),
+                "pas une cle".into(),
+                None
+            )
+            .is_err()
+    );
+    let me = a.session.this_device_id().unwrap();
+    assert!(
+        a.session
+            .revoke_device_rotating(me, PASSWORD.into(), a.secret_key.clone(), new_key.clone())
+            .is_err()
+    );
+    assert_eq!(a.session.params_epoch().unwrap(), 1);
+
+    let auk = a
+        .session
+        .revoke_device_rotating(
+            lost.device_id(),
+            PASSWORD.into(),
+            a.secret_key.clone(),
+            new_key.clone(),
+        )
+        .unwrap();
+    assert_eq!(auk.len(), 32);
+    assert_eq!(a.session.params_epoch().unwrap(), 2);
+    assert_eq!(a.session.item_summaries().unwrap().len(), 1);
+    let revoked = a
+        .session
+        .devices()
+        .unwrap()
+        .into_iter()
+        .find(|d| d.id == lost.device_id())
+        .unwrap();
+    assert!(revoked.revoked_at.is_some());
+    assert!(!store_keys_rotated(a.path.clone()).unwrap());
+    a.session.lock();
+    assert_eq!(
+        unlock_with_password(a.path.clone(), PASSWORD.into(), a.secret_key.clone()).err(),
+        Some(OnePassError::WrongPassword)
+    );
+    unlock_with_auk(a.path.clone(), auk).unwrap();
+
+    // The device that stays sees the rotation and follows with the new key
+    // only.
+    sync(&a.path, &kept_dev.path);
+    assert!(store_keys_rotated(kept_dev.path.clone()).unwrap());
+    assert!(matches!(
+        unlock_with_password(kept_dev.path.clone(), PASSWORD.into(), new_key.clone()).err(),
+        Some(OnePassError::Integrity { .. })
+    ));
+    assert_eq!(
+        unlock_after_rotation(kept_dev.path.clone(), PASSWORD.into(), a.secret_key.clone()).err(),
+        Some(OnePassError::WrongPassword)
+    );
+    let u = unlock_after_rotation(kept_dev.path.clone(), PASSWORD.into(), new_key.clone()).unwrap();
+    assert_eq!(u.session.item_summaries().unwrap().len(), 1);
+    assert_eq!(u.session.params_epoch().unwrap(), 2);
+    assert!(!store_keys_rotated(kept_dev.path.clone()).unwrap());
+    u.session.lock();
+    unlock_with_password(kept_dev.path.clone(), PASSWORD.into(), new_key.clone()).unwrap();
+}
+
+#[test]
+fn ffi_rotate_keys_with_a_new_password() {
+    let a = approver_device();
+    let new_key = generate_secret_key().unwrap();
+    let auk = a
+        .session
+        .rotate_keys(
+            PASSWORD.into(),
+            a.secret_key.clone(),
+            new_key.clone(),
+            Some(NEW_PASSWORD.into()),
+        )
+        .unwrap();
+    assert_eq!(a.session.params_epoch().unwrap(), 2);
+    a.session.lock();
+    for (pw, key) in [
+        (PASSWORD, &a.secret_key),
+        (NEW_PASSWORD, &a.secret_key),
+        (PASSWORD, &new_key),
+    ] {
+        assert_eq!(
+            unlock_with_password(a.path.clone(), pw.into(), key.clone()).err(),
+            Some(OnePassError::WrongPassword)
+        );
+    }
+    let u = unlock_with_password(a.path.clone(), NEW_PASSWORD.into(), new_key).unwrap();
+    assert_eq!(u.auk, auk);
+    assert_eq!(u.session.item_summaries().unwrap().len(), 1);
 }
 
 #[test]
