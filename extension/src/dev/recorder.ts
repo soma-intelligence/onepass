@@ -8,9 +8,14 @@
 // user edited. Steps are stored under the host alone.
 import { extractFeatures, type FieldFeatures, type PageFeatures, type Visibility } from "../content/detect/features.ts";
 import type { FieldRole } from "../shared/messages.ts";
+import { sanitizeNeighbour, sanitizeText, sanitizeToken } from "../shared/sanitize.ts";
 
 export const RECORDER_KEY = "onepass-lab-recorder";
 export const MAX_STEPS = 2000;
+/** Serialized size above which the oldest steps go (storage.local has ~10 MB without unlimitedStorage). */
+export const MAX_BYTES = 4_000_000;
+/** Values shorter than this are not used to redact page text (they would match everything). */
+export const MIN_ECHO = 3;
 export const MSG_STEP = "lab-recorder-step";
 export const MSG_EXPORT = "lab-recorder-export";
 
@@ -61,18 +66,78 @@ function scrub(f: FieldFeatures, dropText: boolean): FieldFeatures {
   return { ...kept, neighbourLabels: [] };
 }
 
+const fold = (t: string): string => t.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+
+/** Normalized values currently in any field of the document, plus `known` (held in memory by the caller). */
+function echoValues(doc: Document, known: Iterable<string>): string[] {
+  const out = new Set<string>();
+  const add = (v: unknown) => {
+    if (typeof v !== "string") return;
+    const t = fold(v);
+    if (t.length >= MIN_ECHO) out.add(t);
+  };
+  for (const el of Array.from(doc.querySelectorAll(FIELD_SEL))) {
+    if (el instanceof (doc.defaultView ?? window).HTMLSelectElement) {
+      for (const o of Array.from(el.selectedOptions)) {
+        add(o.value);
+        add(o.textContent);
+      }
+    } else {
+      add((el as HTMLInputElement | HTMLTextAreaElement).value);
+    }
+  }
+  for (const v of known) add(v);
+  return [...out];
+}
+
+/** Cleans every string of a field: sanitizer first, then anything that echoes a value is dropped. */
+function clean(f: FieldFeatures, echoes: readonly string[]): FieldFeatures {
+  const bad = (t: string | undefined): boolean => t === undefined || t === "<redacted>" || echoes.some((v) => fold(t).includes(v));
+  const text = (s: string | undefined, fn: (x: string | undefined) => string | undefined = sanitizeText): string | undefined => {
+    const t = fn(s);
+    return bad(t) ? undefined : t;
+  };
+  const list = (a: string[]): string[] => a.map((x) => text(x)).filter((x): x is string => x !== undefined);
+  const tok = (s: string | undefined): string | undefined => {
+    const t = sanitizeToken(s);
+    return bad(t) ? undefined : t;
+  };
+  const out: FieldFeatures = { ...f, formButtons: list(f.formButtons), neighbourLabels: list(f.neighbourLabels) };
+  const set = (k: "label" | "placeholder" | "ariaLabel" | "before" | "after" | "pageTitle", v: string | undefined) => {
+    if (v === undefined) delete out[k];
+    else out[k] = v;
+  };
+  set("label", text(f.label));
+  set("placeholder", text(f.placeholder));
+  set("ariaLabel", text(f.ariaLabel));
+  set("before", text(f.before, sanitizeNeighbour));
+  set("after", text(f.after, sanitizeNeighbour));
+  set("pageTitle", text(f.pageTitle));
+  for (const k of ["name", "id", "autocomplete", "inputmode"] as const) {
+    const v = tok(f[k]);
+    if (v === undefined) delete out[k];
+    else out[k] = v;
+  }
+  return out;
+}
+
 /**
  * The structure of the form step `form` (a <form>, or any container for a page
  * without one), and which of its fields OnePass or the user filled.
  */
-export function recordSubmit(form: HTMLFormElement | Element, filled: { get(el: Element): FilledRole | undefined }): RecordedStep {
+export function recordSubmit(
+  form: HTMLFormElement | Element,
+  filled: { get(el: Element): FilledRole | undefined },
+  known: Iterable<string> = [],
+): RecordedStep {
   const doc = form.ownerDocument;
   const features = extractFeatures(doc);
   const at = groupIndex(doc, form, features);
   const group = at >= 0 ? features.forms[at] : undefined;
   const els = at >= 0 ? groupFields(doc, form) : [];
   const editable = Array.from(doc.querySelectorAll(EDITABLE)).some((e) => (e.textContent ?? "").trim() !== "");
-  const fields = (group?.fields ?? []).map((f) => scrub(f, editable));
+  const echoes = echoValues(doc, known);
+  const fields = (group?.fields ?? []).map((f) => clean(scrub(f, editable), echoes));
   const map: Record<number, FilledRole> = {};
   fields.forEach((f, i) => {
     const el = els[i];
@@ -82,7 +147,10 @@ export function recordSubmit(form: HTMLFormElement | Element, filled: { get(el: 
   return {
     host: doc.defaultView?.location?.hostname ?? "",
     at: Date.now(),
-    form: { fields, buttons: group?.buttons ?? [] },
+    form: {
+      fields,
+      buttons: (group?.buttons ?? []).map((b) => sanitizeText(b)).filter((b): b is string => b !== undefined && b !== "<redacted>" && !echoes.some((v) => fold(b).includes(v))),
+    },
     filled: map,
   };
 }
@@ -170,12 +238,23 @@ export async function readSteps(st: StepStorage): Promise<RecordedStep[]> {
 
 const queues = new WeakMap<object, Promise<unknown>>();
 
-/** Appends a step (read, push, drop the oldest past the cap, write), one at a time per storage. */
-export function appendStep(st: StepStorage, step: RecordedStep): Promise<void> {
+const size = (v: unknown): number => new TextEncoder().encode(JSON.stringify(v)).length;
+
+/**
+ * Appends a step (read, push, drop the oldest past the step cap and the byte
+ * cap, write), one at a time per storage. A write the browser refuses (quota)
+ * drops the oldest half and is retried once.
+ */
+export function appendStep(st: StepStorage, step: RecordedStep, maxBytes = MAX_BYTES): Promise<void> {
   const run = async () => {
-    const all = await readSteps(st);
-    all.push(step);
-    await st.set({ [RECORDER_KEY]: all.slice(-MAX_STEPS) });
+    let all = [...(await readSteps(st)), step].slice(-MAX_STEPS);
+    while (all.length > 1 && size(all) > maxBytes) all = all.slice(Math.ceil(all.length / 10));
+    try {
+      await st.set({ [RECORDER_KEY]: all });
+    } catch {
+      all = all.slice(Math.ceil(all.length / 2));
+      await st.set({ [RECORDER_KEY]: all });
+    }
   };
   const next = (queues.get(st) ?? Promise.resolve()).then(run, run);
   queues.set(st, next.catch(() => undefined));
