@@ -23,8 +23,8 @@ struct ItemListRow: View {
     }
 
     private var secondLine: String {
-        let parts = [signInLine ?? summary.subtitle, vaultName ?? ""].filter { !$0.isEmpty }
-        return parts.isEmpty ? ItemCategory.of(summary.itemType).singular : parts.joined(separator: " · ")
+        let line = signInLine ?? summary.subtitle
+        return line.isEmpty ? ItemCategory.of(summary.itemType).singular : line
     }
 
     var body: some View {
@@ -41,6 +41,13 @@ struct ItemListRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
+            // A list mixing vaults marks each row with its vault's small tile, not its name in
+            // the subtitle (which then stays the account alone).
+            if vaultName != nil, let vault = model.session.vaults.first(where: { $0.id == summary.vaultId }) {
+                VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 16)
+                    .help(vault.meta.name)
+                    .accessibilityLabel(Text("Coffre \(vault.meta.name)"))
+            }
         }
         .padding(.vertical, 3)
         .contentShape(Rectangle())
