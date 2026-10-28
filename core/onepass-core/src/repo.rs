@@ -439,6 +439,8 @@ impl<S: RecordStore> Repository<S> {
         repo.store
             .put_all_if_version_with_chain(writes, &repo.chain)?;
         repo.device.last_seen.insert(vault.id, seen);
+        let identity = repo.account.params.identity_pub.clone();
+        rotation::remember_key(&mut repo.store, id, &identity, &secret_key);
         Ok((repo, secret_key))
     }
 
@@ -463,7 +465,7 @@ impl<S: RecordStore> Repository<S> {
 
     /// Like `unlock`, and also hand back the Account Unlock Key.
     pub fn unlock_exporting_auk(
-        store: S,
+        mut store: S,
         password: &str,
         secret_key: &SecretKey,
         device: DeviceState,
@@ -478,6 +480,13 @@ impl<S: RecordStore> Repository<S> {
             device.pinned.as_ref(),
             chain.params_epoch,
         )?;
+        // This key opened this identity here (ruling K15).
+        rotation::remember_key(
+            &mut store,
+            account.params.account_id,
+            &account.params.identity_pub,
+            secret_key,
+        );
         Ok((
             Self::finish_unlock(store, account, &params, device, chain, &auk)?,
             auk,

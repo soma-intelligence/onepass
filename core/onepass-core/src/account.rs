@@ -398,17 +398,20 @@ impl Account {
     ///   identity (floors kept), the keyset opening under `password` and
     ///   `secret_key` (`Error::WrongPassword` otherwise).
     ///
-    /// A new identity is also refused when `secret_key` is `previous`, the
-    /// Secret Key this device held before (`Validation("secret key")`): the
-    /// revoked device knows the password and that key too, so a "rotation"
-    /// sealed under them proves nothing (ruling K11).
+    /// A new identity is also refused when `known_elsewhere(new identity)`
+    /// says this device already used `secret_key` under another identity
+    /// (`Validation("secret key")`): the revoked device knows the password
+    /// and that key too, so a "rotation" sealed under them proves nothing
+    /// (rulings K11, K15). The caller answers from what the device
+    /// remembers of every Secret Key it used, whatever order it tries keys
+    /// in.
     ///
     /// Returns the account, its Account Unlock Key and the pin to keep: the
     /// new identity, the KDF floor raised to the params accepted.
     pub fn unlock_rotated_at(
         password: &str,
         secret_key: &SecretKey,
-        previous: &SecretKey,
+        known_elsewhere: &dyn Fn(&IdentityVerifyingKey) -> bool,
         params_record: &[u8],
         keyset_record: &[u8],
         pinned: &PinnedAccount,
@@ -426,7 +429,7 @@ impl Account {
             if params.epoch <= min_epoch {
                 return Err(IntegrityError::ParamsUnsigned.into());
             }
-            if secret_key.same_as(previous) {
+            if known_elsewhere(&params.identity_pub) {
                 return Err(ValidationError {
                     field: "secret key".into(),
                     reason: "unchanged",
@@ -550,7 +553,7 @@ pub(crate) fn signed_params(
 
 /// `params_record` decodes and its `identity_sig` verifies under its own
 /// `identity_pub` (`IntegrityError::ParamsUnsigned`), nothing pinned.
-fn self_signed(params_record: &[u8]) -> Result<AccountParams> {
+pub(crate) fn self_signed(params_record: &[u8]) -> Result<AccountParams> {
     let params = AccountParams::decode(params_record)?;
     let msg = signed_message(
         &params.account_id,
@@ -1715,6 +1718,8 @@ mod tests {
         let (key, r) = rotated();
         let old_pin = pin(n);
         let old = &n.secret_key;
+        let always = |_: &IdentityVerifyingKey| true;
+        let never = |_: &IdentityVerifyingKey| false;
         let unsigned = Error::Integrity(IntegrityError::ParamsUnsigned);
         // The normal unlock never follows a new identity, whatever the key.
         for k in [key, &n.secret_key] {
@@ -1733,7 +1738,7 @@ mod tests {
         let (a, _, new_pin) = Account::unlock_rotated_at(
             "pw",
             key,
-            old,
+            &never,
             &r.params_record,
             &r.keyset_record,
             &old_pin,
@@ -1750,7 +1755,7 @@ mod tests {
             Account::unlock_rotated_at(
                 "pw",
                 old,
-                old,
+                &always,
                 &r.params_record,
                 &r.keyset_record,
                 &old_pin,
@@ -1764,7 +1769,7 @@ mod tests {
             Account::unlock_rotated_at(
                 "pw",
                 &guess,
-                old,
+                &never,
                 &r.params_record,
                 &r.keyset_record,
                 &old_pin,
@@ -1778,7 +1783,7 @@ mod tests {
             Account::unlock_rotated_at(
                 "pw",
                 key,
-                old,
+                &never,
                 &r.params_record,
                 &r.keyset_record,
                 &old_pin,
@@ -1794,7 +1799,7 @@ mod tests {
             Account::unlock_rotated_at(
                 "pw",
                 key,
-                old,
+                &never,
                 &r.params_record,
                 &r.keyset_record,
                 &other,
@@ -1809,7 +1814,7 @@ mod tests {
                 Account::unlock_rotated_at(
                     "pw",
                     k,
-                    key,
+                    &never,
                     &n.params_record,
                     &n.keyset_record,
                     &new_pin,
@@ -1823,7 +1828,7 @@ mod tests {
         let (_, _, same) = Account::unlock_rotated_at(
             "pw",
             old,
-            old,
+            &always,
             &n.params_record,
             &n.keyset_record,
             &old_pin,
