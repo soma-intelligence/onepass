@@ -28,6 +28,8 @@ export interface Session {
   user?: string;
   /** Login in progress: the account whose next step (password, OTP) is expected. */
   pending?: string;
+  /** multi_step: index of the step the pending login is expected at. */
+  step?: number;
   /** WebAuthn challenge of the last passkey page. */
   challenge?: string;
   /** Provider sign-in in progress (identity provider hosts only). */

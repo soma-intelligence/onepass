@@ -13,6 +13,10 @@ export function expectationFor(site: Site, driver: DriverId): Expectation {
   // Security expectation first: a cross-site frame must stay empty whatever else is missing.
   if (site.traits.includes("iframe_cross_site")) return { expect: "nofill", reason: "R-10" };
   if (site.flow === "login_passkey" && driver === "one_click") return { expect: "xfail", reason: "R-16 passkeys" };
+  // The sso button is labelled in the label language; the extension reads provider buttons in French and English only.
+  if (site.flow === "sso" && driver === "one_click" && (site.labelLang === "de" || site.labelLang === "es")) {
+    return { expect: "xfail", reason: "provider button fr/en only (shared/providers.ts)" };
+  }
   if (site.traits.includes("shadow_open") || site.traits.includes("shadow_closed")) {
     return { expect: "xfail", reason: "shadow DOM (content/index.ts)" };
   }

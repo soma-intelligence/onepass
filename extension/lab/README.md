@@ -6,8 +6,8 @@ Mesurer ce que l'extension remplit, et ce qu'elle ne doit jamais remplir, sur un
 
 ## Architecture
 
-- `corpus/` : extracteur passif de motifs de formulaires réels, relevés nettoyés et `patterns.json` distillé. Le générateur ne lit que `patterns.json`.
-- `gen/` : générateur de mondes (PRNG `sfc32` + `cyrb128`, déterminisme par graine), rendu HTML des sites et capacités attendues (`capabilities.ts`).
+- `corpus/` : extracteur passif de motifs de formulaires réels, relevés nettoyés et `patterns.json` distillé (version 2 : libellés, suites d'étapes, frameworks, poids des traits). La distillation lit les 59 relevés choisis à la main (`samples/`), le top 1000 (`samples/top1000/`), les pages Common Crawl de `lab/out/commoncrawl/` si elles existent, et les parcours enregistrés de `private/` seulement avec `--with-private` (le `patterns.json` commité n'en dépend jamais). Le générateur ne lit que `patterns.json`.
+- `gen/` : générateur de mondes (PRNG `sfc32` + `cyrb128`, déterminisme par graine), rendu HTML des sites et capacités attendues (`capabilities.ts`). Depuis la version 2 du générateur : formulaires en plusieurs étapes (`multi_step`, une page par étape, `steps.ts`), mises en page (`layouts.ts`) et frameworks simulés en HTML et script simples, sans dépendance (`frameworks.ts`).
 - `server/` : serveur HTTPS local qui sert tous les hôtes `.test`, les trois fournisseurs d'identité (Google, Apple, Microsoft) sous leurs vrais noms d'hôte résolus en local, la partie utilisatrice (mots de passe, TOTP, WebAuthn) et le registre de fuites.
 - `run/` : configuration Playwright, préparation unique (compilation, hôte natif, coffre fictif, certificats), pilotes de scénarios et oracle.
 - `report.ts` et `cli.ts` : rapport Markdown et ligne de commande.
@@ -32,10 +32,11 @@ Le passage du laboratoire lui-même n'utilise aucun réseau externe : tous les h
 | Commande | Effet |
 | --- | --- |
 | `npm run check` | typage, tests unitaires (dont `test/lab/`), compilation. Sans navigateur. |
-| `npm run lab:smoke` | navigateur, graine fixe `lab-smoke-18`, 12 sites couvrant chaque flux et les pièges structurels (cadre inter-sites, shadow DOM fermé, rerendu SPA, OTP découpé, sosie) ; compare au résultat épinglé `smoke-expected.json` |
+| `npm run lab:smoke` | navigateur, graine fixe `lab-smoke-17`, 12 sites couvrant chaque flux (dont `multi_step`) et les pièges structurels (cadre inter-sites, shadow DOM fermé, rerendu SPA, OTP découpé, sosie), avec plusieurs mises en page et frameworks simulés ; compare au résultat épinglé `smoke-expected.json` |
 | `npm run lab -- --seed <s> --sites <n> [--workers 4] [--report <md>]` | passage complet ; rapport dans `lab/out/<s>/report.md`, copié dans `<md>` si demandé. Code de sortie 1 s'il y a une fuite. |
 | `npm run lab:repro -- --seed <s> --site <i> [--sites <n>]` | rejoue un seul site du monde ; résultats dans `lab/out/<s>-repro-<i>/` |
 | `npm run lab:corpus` | relevé du corpus (réseau réel, lent, rarement) puis distillation |
+| `node --experimental-strip-types lab/corpus/distill.ts [--with-private]` | distillation seule, sans réseau : réécrit `patterns.json` |
 | `node --experimental-strip-types lab/cli.ts report --out <dossier> [--md <fichier>]` | refait le rapport d'un dossier de résultats existant |
 
 Le passage complet demande Chromium (Playwright), `cargo` pour l'hôte natif et une dizaine de secondes de préparation.
@@ -63,5 +64,5 @@ Chaque ligne d'échec porte sa commande, par exemple `npm run lab:repro -- --see
 - **Shadow DOM** : les racines fantômes de la page sont un échec attendu (limite documentée dans `extension/src/content/index.ts`).
 - **Iframes d'autres sites** (R-10) : aucune exception, même pour un paiement. Le scénario attend "rien rempli" et réussit si rien n'est rempli ; ce n'est pas un manque.
 - **AutoFill système** (trousseau d'iOS ou de macOS) : non couvert. Le labo pilote l'extension seulement ; un autre pilote (`Driver`) pourra brancher l'AutoFill système plus tard.
-- Corpus : seule la première étape des formulaires en plusieurs étapes est relevée ; les étapes suivantes viennent du catalogue synthétique.
+- Corpus : seule la première étape des formulaires en plusieurs étapes est relevée ; une page qui ne demande que l'identifiant (ou que le mot de passe, ou qu'un code) laisse deviner la suite, et le générateur complète l'étape manquante. Seuls les parcours enregistrés donnent des suites complètes.
 - Les délais de la chaîne (4 s, 60 s) sont réels : un passage de 200 sites dure longtemps, d'où les lots de 10 sites par profil et le parallélisme (`--workers`).

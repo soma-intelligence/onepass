@@ -1,8 +1,14 @@
 // Form building blocks of the autofill lab renderer: escaping, the shared
 // stylesheet, field / honeypot / decoy / relay markup and the two inline
-// runtimes (form behaviours and the passkey ceremony). Pure string builders:
-// no DOM, no clock, no randomness.
-import type { FieldSpec, Honeypot } from "./model.ts";
+// runtimes (form behaviours and the passkey ceremony). Layouts and simulated
+// frameworks (generator version 2) live in layouts.ts and frameworks.ts.
+// Pure string builders: no DOM, no clock, no randomness.
+import { frameworkAttrs, frameworkRoot, hashOf } from "./frameworks.ts";
+import { layoutCss, layoutField, layoutGroup } from "./layouts.ts";
+import type { FieldSpec, FrameworkId, Honeypot, LayoutId, Role } from "./model.ts";
+
+/** Roles a step of a multi-step form can hold: identifier, password, one-time code. */
+export const STEP_ROLES: readonly Role[] = ["username", "email", "password", "otp"];
 
 /** Escapes a value for HTML text and double- or single-quoted attributes. */
 export function esc(value: string): string {
@@ -52,8 +58,8 @@ const HONEYPOT_CSS: Record<Honeypot["style"], string> = {
 
 const attr = (name: string, value: string | undefined) => (value === undefined ? "" : ` ${name}="${esc(value)}"`);
 
-function control(f: FieldSpec, autocomplete: string | undefined): string {
-  const common = `id="${esc(f.id)}" name="${esc(f.name)}"${attr("autocomplete", autocomplete)}`;
+function control(f: FieldSpec, autocomplete: string | undefined, extra = ""): string {
+  const common = `id="${esc(f.id)}" name="${esc(f.name)}"${attr("autocomplete", autocomplete)}${extra}`;
   if (f.type === "select") {
     const values = f.role === "cc_exp_month" ? MONTHS : YEARS;
     const options = values.map((v) => `<option value="${v}">${v}</option>`).join("");
@@ -62,9 +68,9 @@ function control(f: FieldSpec, autocomplete: string | undefined): string {
   return `<input type="${esc(f.type)}" ${common}${NUMERIC.has(f.role) ? ' inputmode="numeric"' : ""}>`;
 }
 
-function otpCells(f: FieldSpec, autocomplete: string | undefined): string {
+function otpCells(f: FieldSpec, autocomplete: string | undefined, extra = ""): string {
   const cells = Array.from({ length: 6 }, (_, k) => `<input type="text" class="otp-cell" id="${esc(f.id)}-${k + 1}"`
-    + ` inputmode="numeric" maxlength="1" aria-label="${k + 1}/6"${k === 0 ? attr("autocomplete", autocomplete) : ""}>`).join("");
+    + ` inputmode="numeric" maxlength="1" aria-label="${k + 1}/6"${k === 0 ? attr("autocomplete", autocomplete) : ""}${extra}>`).join("");
   return `<div class="field"><label for="${esc(f.id)}-1">${esc(f.label)}</label><div class="otp-cells">${cells}</div>`
     + `<input type="hidden" id="${esc(f.id)}" name="${esc(f.name)}" data-lab-otp></div>`;
 }
@@ -87,31 +93,48 @@ export interface FormSpec {
   next?: string;                   // label of the reveal button, or of the submit of a first step
 }
 
+export interface FormLook {
+  layout?: LayoutId;                 // default "stacked": the version 1 markup
+  framework?: FrameworkId;           // default "static": no framework markers
+  labelMarks?: boolean;              // data-lab-field="<index>" on each control (dataset only, Task 9)
+}
+
 /** The main `form#lab-form`, fields in order, honeypot right before the field of its role. */
-export function formHtml(spec: FormSpec): string {
+export function formHtml(spec: FormSpec, opts: FormLook = {}): string {
+  const layout = opts.layout ?? "stacked";
+  const fw = opts.framework ?? "static";
+  const hash = hashOf(`${spec.action}|${spec.fields.map((f) => f.id).join("|")}`);
   const parts: string[] = [];
+  const fieldParts: string[] = [];
   let hpPlaced = false;
   const placeHoneypot = () => {
-    if (spec.honeypot && !hpPlaced) { parts.push(honeypotHtml(spec.honeypot)); hpPlaced = true; }
+    if (spec.honeypot && !hpPlaced) { fieldParts.push(honeypotHtml(spec.honeypot)); hpPlaced = true; }
   };
-  for (const f of spec.fields) {
+  spec.fields.forEach((f, index) => {
     if (spec.honeypot?.role === f.role) placeHoneypot();
     const auto = spec.noAutocomplete ? undefined : f.autocomplete;
     const label = spec.labels?.get(f) ?? f.label;
+    const mark = opts.labelMarks ? ` data-lab-field="${index}"` : "";
     let html = f.role === "otp" && spec.splitOtp
-      ? otpCells({ ...f, label }, auto)
-      : `<div class="field"><label for="${esc(f.id)}">${esc(label)}</label>${control(f, auto)}</div>`;
+      ? otpCells({ ...f, label }, auto, mark)
+      : layoutField(layout, {
+        id: esc(f.id), label: esc(label), select: f.type === "select",
+        control: (extra) => control(f, auto, `${extra}${frameworkAttrs(fw, hash, f.name)}${mark}`),
+      });
     if (spec.reveal && f.role === "password") html = `<div id="lab-pw-step" hidden>${html}</div>`;
-    parts.push(html);
-  }
+    fieldParts.push(html);
+  });
   placeHoneypot();
+  parts.push(layoutGroup(layout, fieldParts.join("")));
   if (spec.reveal) {
     parts.push(`<button type="button" id="lab-next">${esc(spec.next ?? spec.submit)}</button>`);
     parts.push(`<button type="submit" id="lab-submit" hidden>${esc(spec.submit)}</button>`);
   } else {
     parts.push(`<button type="submit" id="lab-submit">${esc(spec.submit)}</button>`);
   }
-  return `<form id="lab-form" method="post" action="${esc(spec.action)}">${parts.join("")}</form>`;
+  const css = layoutCss(layout);
+  const form = `<form id="lab-form" method="post" action="${esc(spec.action)}">${parts.join("")}</form>`;
+  return (css ? `<style>${css}</style>` : "") + frameworkRoot(fw, hash, form);
 }
 
 /** Hidden light-DOM form that carries the values of a form living in a shadow root. */
