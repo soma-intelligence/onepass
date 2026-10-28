@@ -866,6 +866,31 @@ struct AccentCapsuleButtonStyle: ButtonStyle {
     }
 }
 
+/// A toolbar icon button without glass: a secondary glyph in a 30 pt circle that fills softly and
+/// brightens under the pointer.
+struct QuietIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        QuietIconBody(configuration: configuration)
+    }
+
+    private struct QuietIconBody: View {
+        let configuration: Configuration
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .frame(width: 30, height: 30)
+                .background(hovering ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear), in: Circle())
+                .contentShape(Circle())
+                .opacity(configuration.isPressed ? 0.6 : 1)
+                .onHover { hovering = $0 }
+                .animation(.easeOut(duration: 0.12), value: hovering)
+        }
+    }
+}
+
 /// A text-only toolbar button: secondary text that brightens and gets a soft capsule under the
 /// pointer, so "Annuler" sits next to the accent "Enregistrer" without competing with it.
 struct QuietToolbarButtonStyle: ButtonStyle {

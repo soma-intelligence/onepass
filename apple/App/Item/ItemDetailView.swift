@@ -458,27 +458,43 @@ struct ItemDetailView: View {
             }
             .sharedBackgroundVisibility(.hidden)
         }
-        ToolbarItemGroup(placement: .primaryAction) {
-            if item.trashedAt == nil {
+        // No glass pill: three quiet round icon buttons, the same weight as the vault label, each
+        // with a soft circle under the pointer.
+        if item.trashedAt == nil {
+            ToolbarItem(placement: .primaryAction) {
                 ShareLink(item: ItemShare.text(item), subject: Text(item.title)) {
-                    Label("Partager", systemImage: "square.and.arrow.up")
+                    Image(systemName: "square.and.arrow.up")
                 }
+                .buttonStyle(QuietIconButtonStyle())
                 .help("Partager")
+                .accessibilityLabel(Text("Partager"))
                 .accessibilityIdentifier("item.share")
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) {
                 // ⌘E is the "Modifier" menu command (`BrowseCommands`).
-                Button("Modifier", systemImage: "pencil") { startEditing(item) }
+                Button { startEditing(item) } label: { Image(systemName: "pencil") }
+                    .buttonStyle(QuietIconButtonStyle())
                     .help("Modifier (⌘E)")
+                    .accessibilityLabel(Text("Modifier"))
                     .accessibilityIdentifier("item.edit")
             }
+            .sharedBackgroundVisibility(.hidden)
+        }
+        ToolbarItem(placement: .primaryAction) {
             Menu {
                 menuContent(item)
             } label: {
-                Label("Actions", systemImage: "ellipsis")
+                Image(systemName: "ellipsis")
             }
+            .menuStyle(.button)
+            .buttonStyle(QuietIconButtonStyle())
             .menuIndicator(.hidden)
             .help("Actions")
+            .accessibilityLabel(Text("Actions"))
             .accessibilityIdentifier("item.menu")
         }
+        .sharedBackgroundVisibility(.hidden)
         #else
         if item.trashedAt == nil {
             ToolbarItem(placement: .primaryAction) {
