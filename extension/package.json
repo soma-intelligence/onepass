@@ -16,6 +16,8 @@
     "lab:corpus:top": "node --experimental-strip-types lab/corpus/crawl-top.ts",
     "lab:smoke": "playwright test -c lab/run/playwright.config.ts",
     "lab": "node --experimental-strip-types lab/cli.ts lab",
+    "lab:label": "node --experimental-strip-types lab/dataset/label-server.ts",
+    "lab:real": "node --experimental-strip-types lab/dataset/real.ts",
     "lab:dataset": "node --experimental-strip-types lab/cli.ts dataset",
     "lab:repro": "node --experimental-strip-types lab/cli.ts repro",
     "sbom": "mkdir -p sbom && npm sbom --sbom-format cyclonedx --omit dev > sbom/extension.cdx.json"

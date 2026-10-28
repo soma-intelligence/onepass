@@ -49,6 +49,8 @@ Le passage du laboratoire lui-même n'utilise aucun réseau externe : tous les h
 | `npm run lab -- --seed <s> --sites <n> --profiles <p>` | même passage joué par `p` utilisateurs simulés (défaut 1, le profil historique). Chaque profil a son coffre et son navigateur : le temps de passage est multiplié par `p`. Le rapport ajoute le tableau « Par profil ». |
 | `npm run lab:repro -- --seed <s> --site <i> [--sites <n>]` | rejoue un seul site du monde ; résultats dans `lab/out/<s>-repro-<i>/` |
 | `npm run lab:corpus` | relevé du corpus (réseau réel, lent, rarement) puis distillation |
+| `npm run lab:label` | outil d'étiquetage à la main du jeu de test réel : formulaire sur `127.0.0.1` (port libre affiché), 200 pages tirées par graine (`corpus/real-test-hosts.json`), étiquettes dans `corpus/labels/<hôte>.<n>.json` (celles des flux enregistrés dans `corpus/private/labels/`, non commitées) |
+| `npm run lab:real` | compte les champs étiquetés du jeu réel (`real_test: 0 labels` tant qu'aucune étiquette n'existe) ; `-- --pick` retire les 200 hôtes. La distillation écarte ces hôtes (tous les sites des relevés) pour que `patterns.json` ne contienne jamais leurs libellés |
 | `node --experimental-strip-types lab/corpus/distill.ts [--with-private]` | distillation seule, sans réseau : réécrit `patterns.json` |
 | `node --experimental-strip-types lab/cli.ts report --out <dossier> [--md <fichier>]` | refait le rapport d'un dossier de résultats existant |
 
