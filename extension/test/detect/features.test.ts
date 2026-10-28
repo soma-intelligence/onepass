@@ -59,8 +59,9 @@ describe("extractFeatures", () => {
     }
   });
 
-  it("data-lab attributes never leak into features except lab", () => {
-    const p = extractFeatures(load("dataset-marked.html"));
+  it("data-lab attributes never leak into features except lab, read only with labField", () => {
+    expect(extractFeatures(load("dataset-marked.html")).forms[0]!.fields.every((f) => f.lab === undefined)).toBe(true);
+    const p = extractFeatures(load("dataset-marked.html"), { labField: true });
     expect(JSON.stringify(p)).not.toMatch(/data-lab/);
     expect(p.forms[0]!.fields[0]!.lab).toBe("3");
     expect(p.forms[0]!.fields[1]!.lab).toBe("7");

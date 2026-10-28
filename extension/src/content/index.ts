@@ -13,6 +13,7 @@
 import { ext as browserExt } from "../shared/browser";
 import { parseOrigin } from "../shared/domain";
 import type { BgToCs, CsToBg, FieldRole, FrameKind, PageAnalysis } from "../shared/messages";
+import { classifierFor, createModelHook, type ModelHook, remoteSession } from "./detect/classifier";
 import { analyzeDocument } from "./detect/forms";
 import { FormLineage, RefRegistry } from "./detect/refs";
 import { domGeometry, type Geometry } from "./detect/visibility";
@@ -103,9 +104,12 @@ export function createContentScript(o: ContentOptions): ContentScript {
 
   const send = (m: CsToBg): Promise<unknown> => ext.runtime.sendMessage(m).catch(() => null);
 
+  // Model builds only (Task 15): set once the service worker's model answered the handshake.
+  let model: ModelHook | undefined;
+
   const analyze = (): PageAnalysis => {
     refs.prune();
-    const a = analyzeDocument(doc, refs, { url: o.href(), geometry });
+    const a = analyzeDocument(doc, refs, model ? { url: o.href(), geometry, model } : { url: o.href(), geometry });
     lineage.record(a);
     return a;
   };
@@ -242,6 +246,17 @@ export function createContentScript(o: ContentOptions): ContentScript {
           void send({ type: "page_analysis", analysis: a });
         },
       });
+      if (__CLASSIFIER__ !== "heuristic") {
+        const kind = __CLASSIFIER__;
+        void classifierFor(kind, { load: () => remoteSession((m) => ext.runtime.sendMessage(m), kind) }).then((c) => {
+          if (c.kind === "heuristic" || stopped || !parts) return;
+          const refresh = () => {
+            if (parts && !stopped) parts.observer.refresh();
+          };
+          model = createModelHook({ classifier: c, onUpdate: refresh });
+          refresh();
+        });
+      }
       if (__LAB_RECORDER__) {
         void import("../dev/recorder-content").then((m) => {
           if (!stopped) recorder = m.default({ doc, send: (msg) => ext.runtime.sendMessage(msg), isTrusted });

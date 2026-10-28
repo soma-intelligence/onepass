@@ -1,6 +1,8 @@
 // Internal runtime messages (spec 4, 8). `ref` values are opaque ids assigned
 // by the content script; they are never selectors supplied by the page.
 
+import type { FieldFeatures } from "../content/detect/features";
+
 export type ProviderId =
   | "google"
   | "apple"
@@ -84,7 +86,12 @@ export type CsToBg =
       isNew: boolean;
     }
   | { type: "provider_click"; provider: ProviderId; ref: string }
-  | { type: "account_click"; email: string; ref: string };
+  | { type: "account_click"; email: string; ref: string }
+  /**
+   * Model builds only (Task 15): features of one form (never a field value), one label per field
+   * back. An empty list is the handshake: the worker answers its model kind, or null.
+   */
+  | { type: "classify"; fields: FieldFeatures[] };
 
 export type SaveDecision = "save" | "update" | "never" | "dismiss";
 
@@ -159,6 +166,7 @@ const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "submitted_credentials",
   "provider_click",
   "account_click",
+  "classify",
 ]);
 
 /** Cheap discriminant check for messages received from content scripts. */

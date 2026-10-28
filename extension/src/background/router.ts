@@ -9,6 +9,7 @@
 // Anything else, malformed or without a handler, is dropped without a reply.
 // Messages are rebuilt from validated fields only: unknown keys (a forged
 // `origin`, say) never reach a handler.
+import type { FieldFeatures, Visibility } from "../content/detect/features";
 import type { CsToBg, FieldInfo, FieldRole, FormInfo, FormKind, PageAnalysis, ProviderId, SaveEdits, UiToBg } from "../shared/messages";
 import type { BgExt, MessageListener } from "./ext";
 import { type CsContext, type UiContext, contentSender, extensionSender } from "./frames";
@@ -30,6 +31,12 @@ const MAX_BUTTONS = 32;
 const MAX_TITLE = 256;
 const MAX_TAGS = 32;
 const MAX_TAG = 64;
+/** classify: fields per message, buttons and neighbour labels per field, characters per text. */
+export const MAX_CLASSIFY_FIELDS = 256;
+const MAX_FEATURE_BUTTONS = 12;
+const MAX_NEIGHBOURS = 4;
+const MAX_FEATURE_TEXT = 4096;
+const MAX_COUNT = 1_000_000;
 
 const REF_RE = /^[A-Za-z0-9_-]+$/;
 const TOKEN_RE = /^[A-Za-z0-9_-]{22}$/;
@@ -85,6 +92,8 @@ const PROVIDER_IDS: ReadonlySet<string> = new Set<ProviderId>([
   "slack",
 ]);
 
+const VISIBILITIES: ReadonlySet<string> = new Set<Visibility>(["visible", "display_none", "offscreen", "opacity", "zero_size"]);
+
 // ---- validation helpers (throw on any mismatch) ----
 
 class Invalid extends Error {}
@@ -126,6 +135,34 @@ function member<T extends string>(v: unknown, set: ReadonlySet<string>): T {
 function list<T>(v: unknown, max: number, each: (x: unknown) => T): T[] {
   if (!Array.isArray(v) || v.length > max) throw new Invalid();
   return v.map(each);
+}
+
+function count(v: unknown, min = 0): number {
+  if (typeof v !== "number" || !Number.isSafeInteger(v) || v < min || v > MAX_COUNT) throw new Invalid();
+  return v;
+}
+
+const FEATURE_TEXTS = ["type", "name", "id", "autocomplete", "inputmode", "label", "placeholder", "ariaLabel", "before", "after"] as const;
+
+/** Field features of a `classify` message: only what the vectorizer reads; never `lab`, the page title or geometry. */
+function features(v: unknown): FieldFeatures {
+  const o = obj(v);
+  const f: FieldFeatures = {
+    index: count(o.index),
+    tag: str(o.tag, MAX_TAG, 1),
+    hasPattern: bool(o.hasPattern),
+    required: bool(o.required),
+    depth: count(o.depth),
+    siblings: count(o.siblings),
+    visibility: member<Visibility>(o.visibility, VISIBILITIES),
+    width: 0,
+    height: 0,
+    formButtons: list(o.formButtons, MAX_FEATURE_BUTTONS, (s) => str(s, MAX_FEATURE_TEXT)),
+    neighbourLabels: list(o.neighbourLabels, MAX_NEIGHBOURS, (s) => str(s, MAX_FEATURE_TEXT)),
+  };
+  for (const k of FEATURE_TEXTS) if (o[k] !== undefined) f[k] = str(o[k], MAX_FEATURE_TEXT);
+  if (o.maxlength !== undefined) f.maxlength = count(o.maxlength, 1);
+  return f;
 }
 
 function field(v: unknown): FieldInfo {
@@ -193,6 +230,8 @@ export function parseCsToBg(m: unknown): CsToBg | null {
         return { type: "provider_click", provider: member<ProviderId>(o.provider, PROVIDER_IDS), ref: ref(o.ref) };
       case "account_click":
         return { type: "account_click", email: str(o.email, MAX_EMAIL), ref: ref(o.ref) };
+      case "classify":
+        return { type: "classify", fields: list(o.fields, MAX_CLASSIFY_FIELDS, features) };
       default:
         return null;
     }
