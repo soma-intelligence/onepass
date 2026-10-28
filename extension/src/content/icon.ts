@@ -1,4 +1,4 @@
-// In-field icon (spec 8.3): a 20 px indigo tile with the keyhole mark at the right edge of each
+// In-field icon (spec 8.3): a 20 px indigo tile with the Lattice mark at the right edge of each
 // fillable field, inside the closed shadow root. A click opens the menu only
 // when the browser vouches for it (`isTrusted`): a page cannot open the menu
 // with a synthetic click (S2).
@@ -55,18 +55,28 @@ export interface Icons {
 }
 
 function glyph(doc: Document): SVGElement {
-  // The OnePass mark: a white keyhole on the indigo tile (as in the app).
+  // The OnePass mark: the white Lattice on the indigo tile (as in the app).
   const svg = doc.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 12 12");
+  svg.setAttribute("viewBox", "0 0 100 100");
   svg.setAttribute("fill", "currentColor");
   svg.setAttribute("aria-hidden", "true");
-  const circle = doc.createElementNS(SVG_NS, "circle");
-  circle.setAttribute("cx", "6");
-  circle.setAttribute("cy", "4.6");
-  circle.setAttribute("r", "2.3");
-  const path = doc.createElementNS(SVG_NS, "path");
-  path.setAttribute("d", "M5.2 6.2h1.6l.7 3.6H4.5z");
-  svg.append(circle, path);
+  for (const cx of ["23.5", "49.5"]) {
+    for (const cy of ["24", "50", "76"]) {
+      const dot = doc.createElementNS(SVG_NS, "circle");
+      dot.setAttribute("cx", cx);
+      dot.setAttribute("cy", cy);
+      dot.setAttribute("r", "9");
+      dot.setAttribute("fill-opacity", "0.55");
+      svg.appendChild(dot);
+    }
+  }
+  const bar = doc.createElementNS(SVG_NS, "rect");
+  bar.setAttribute("x", "67.5");
+  bar.setAttribute("y", "15");
+  bar.setAttribute("width", "18");
+  bar.setAttribute("height", "70");
+  bar.setAttribute("rx", "9");
+  svg.appendChild(bar);
   return svg;
 }
 
