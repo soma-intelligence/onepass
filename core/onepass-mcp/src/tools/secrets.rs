@@ -100,6 +100,34 @@ fn invalid(m: &str) -> Refusal {
     Refusal::Invalid(m.to_owned())
 }
 
+/// Programs that run code they read from somewhere the approval does not
+/// pin (inline code, `package.json`, a `Makefile`): a grant for one of them
+/// would keep covering that code after it changed, so it is never
+/// remembered.
+const INTERPRETERS: [&str; 21] = [
+    "sh",
+    "bash",
+    "zsh",
+    "dash",
+    "fish",
+    "ksh",
+    "env",
+    "python",
+    "python3",
+    "node",
+    "deno",
+    "bun",
+    "ruby",
+    "perl",
+    "php",
+    "npm",
+    "npx",
+    "pnpm",
+    "yarn",
+    "make",
+    "osascript",
+];
+
 fn label_is(label: &str, seg: &str) -> bool {
     label.to_lowercase() == seg.to_lowercase()
 }
@@ -479,8 +507,27 @@ impl<P: VaultPort> McpTools<P> {
         let refs = env.iter().chain(&files).map(|(_, r)| r.as_str());
         let located = self.locate_for_use(refs, call)?;
 
+        // What runs is the program the workspace resolves now, shown and
+        // bound to the grant, never a later `PATH` lookup: a shim dropped
+        // earlier in `PATH` or an edited script needs a new approval. A
+        // workspace that cannot tell gets no session grant.
+        let identity = self.workspace.program_identity(&argv, cwd.map(Path::new));
+        let interpreter = identity.as_ref().is_none_or(|id| {
+            Path::new(&id.path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_none_or(|n| {
+                    INTERPRETERS.contains(&n)
+                        || n.strip_prefix("python")
+                            .is_some_and(|v| v.chars().all(|c| c.is_ascii_digit() || c == '.'))
+                })
+        });
+
         let mut details = Vec::new();
         push_detail(&mut details, "command", &shown);
+        if let Some(id) = &identity {
+            push_detail(&mut details, "program", &id.path);
+        }
         push_detail(
             &mut details,
             "cwd",
@@ -494,10 +541,10 @@ impl<P: VaultPort> McpTools<P> {
         for ((kind, name), l) in named.zip(&located) {
             push_detail(&mut details, kind, &format!("{name} = {}", l.shown()));
         }
-        let remember = !located.iter().any(|l| l.item.reprompt);
+        let remember = !interpreter && !located.iter().any(|l| l.item.reprompt);
         // Session grants cover exactly this request: argv, both maps (keys
-        // sorted by serde_json), the working directory, and what each
-        // reference resolved to.
+        // sorted by serde_json), the working directory, what each
+        // reference resolved to, and the program and files that run.
         let resolved: Vec<Value> = located.iter().map(Located::key_material).collect();
         let key = json!([
             "run_with_secrets",
@@ -505,7 +552,8 @@ impl<P: VaultPort> McpTools<P> {
             args.get("env"),
             args.get("files"),
             cwd,
-            resolved
+            resolved,
+            identity.as_ref().map(|id| &id.material)
         ]);
         self.approve(
             client,
@@ -528,6 +576,10 @@ impl<P: VaultPort> McpTools<P> {
                 .map(|(n, _)| (n.clone(), values.next().unwrap_or_default()))
                 .collect()
         };
+        let mut argv = argv;
+        if let Some(id) = identity {
+            argv[0] = id.path;
+        }
         let req = RunRequest {
             argv,
             env: take(&env),

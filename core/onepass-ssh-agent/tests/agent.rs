@@ -306,6 +306,7 @@ fn session_grant_is_per_key_and_exe() {
     let mut conn = ConnState::default();
     let anonymous = PeerInfo {
         exe: None,
+        code: None,
         ..peer("x")
     };
     let r = f.handle(&mut conn, &anonymous, sign_req(KeyType::Ed25519, b"d"));
@@ -313,6 +314,78 @@ fn session_grant_is_per_key_and_exe() {
     let call = f.last_call();
     assert!(!call.remember_allowed);
     assert_eq!(call.client, "unknown process");
+}
+
+/// Audit 2026-10-28: a client that execs `ssh` after connecting shows the
+/// same executable path, but not the same code identity. The grant of the
+/// real `ssh` must not cover it.
+#[test]
+fn session_grant_is_keyed_by_code_not_path() {
+    let mut f = fixture(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300));
+        2
+    ]);
+    assert!(is_signature(&f.sign(KeyType::Ed25519, "/usr/bin/ssh")));
+    assert_eq!(f.asked(), 1);
+    let impostor = PeerInfo {
+        code: Some("adhoc:0badc0de".into()),
+        ..peer("/usr/bin/ssh")
+    };
+    let r = f.handle(
+        &mut ConnState::default(),
+        &impostor,
+        sign_req(KeyType::Ed25519, b"d"),
+    );
+    assert!(is_signature(&r.response));
+    assert_eq!(f.asked(), 2);
+    assert!(
+        f.last_call()
+            .details
+            .iter()
+            .any(|(k, v)| k == "code" && v == "adhoc:0badc0de")
+    );
+}
+
+/// A grant given for one destination does not sign for another.
+#[test]
+fn session_grant_is_per_destination() {
+    let mut f = fixture(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300));
+        3
+    ]);
+    let one = AgentKey::generate(KeyType::Ed25519).unwrap();
+    let two = AgentKey::generate(KeyType::Ed25519).unwrap();
+    let ssh = peer("/usr/bin/ssh");
+    let mut a = ConnState::default();
+    bind(&mut f, &mut a, &one, false);
+    assert!(is_signature(
+        &f.handle(&mut a, &ssh, sign_req(KeyType::Ed25519, b"d"))
+            .response
+    ));
+    assert_eq!(f.asked(), 1);
+    let mut again = ConnState::default();
+    bind(&mut f, &mut again, &one, false);
+    assert!(is_signature(
+        &f.handle(&mut again, &ssh, sign_req(KeyType::Ed25519, b"d"))
+            .response
+    ));
+    assert_eq!(f.asked(), 1);
+    let mut b = ConnState::default();
+    bind(&mut f, &mut b, &two, false);
+    assert!(is_signature(
+        &f.handle(&mut b, &ssh, sign_req(KeyType::Ed25519, b"d"))
+            .response
+    ));
+    assert_eq!(f.asked(), 2);
+}
+
+/// On macOS the kernel names the code of a socket peer: this test binary.
+#[cfg(target_os = "macos")]
+#[test]
+fn peer_info_reads_the_code_identity() {
+    let (a, _b) = std::os::unix::net::UnixStream::pair().unwrap();
+    let info = onepass_ssh_agent::server::peer_info(&a);
+    assert!(info.code.is_some(), "{info:?}");
 }
 
 #[test]

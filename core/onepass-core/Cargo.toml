@@ -53,6 +53,11 @@ required-features = ["dev-fast-kdf"]
 name = "travel"
 required-features = ["dev-fast-kdf"]
 
+# Audit 2026-10-28: meta replay and forks behind a seq gap.
+[[test]]
+name = "security_regressions"
+required-features = ["dev-fast-kdf"]
+
 [[test]]
 name = "travel_sync"
 required-features = ["dev-fast-kdf"]

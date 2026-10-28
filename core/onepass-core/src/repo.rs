@@ -854,7 +854,8 @@ impl<S: RecordStore> Repository<S> {
                 vault.open_item(r)?;
             }
             let prev = &loaded.manifest;
-            let mut m = Manifest::next(Some(prev), vault.id, prev.entries.clone())?;
+            let mut m =
+                Manifest::next(Some(prev), vault.id, prev.entries.clone())?.with_meta(&vault.meta);
             m.seq = m.seq.max(floor);
             let head = self.store_manifest(&vault, &m, Some(prev.seq))?;
             self.device.last_seen.insert(vault.id, head.clone());
@@ -1045,8 +1046,10 @@ impl<S: RecordStore> Repository<S> {
     /// Replace the display settings of a vault (name, icon, color, flags).
     /// `vault` is the state the caller read: if the stored meta is no longer
     /// the same, another writer got there first and the result is
-    /// `Error::Conflict`. The write itself is conditional on the version of
-    /// the stored `VaultMeta` record, so two racing updates cannot both win.
+    /// `Error::Conflict`. The meta is written with the next manifest, bound
+    /// to it (`Manifest::with_meta`), in one write conditional on both
+    /// records' versions: two racing updates cannot both win, and a store
+    /// cannot serve an older meta (its flags) under the newer manifest.
     pub fn update_vault_meta(&mut self, vault: &Vault, meta: VaultMeta) -> Result<Vault> {
         self.sync_epoch()?;
         let key = self
@@ -1074,15 +1077,21 @@ impl<S: RecordStore> Repository<S> {
         let blob = seal(vault.key(), BlobKind::VaultMeta, &aad, &plain)?;
         let updated = Vault::open(&self.account, vault.id, &key.data, &blob)?;
         let version = current.version.checked_add(1).ok_or(Error::Conflict)?;
-        self.store.put_if_version(
-            Record {
-                id: vault.id,
-                kind: RecordKind::VaultMeta,
-                version,
-                data: blob,
-            },
-            Some(current.version),
-        )?;
+        let prev = self.served(&stored, Use::Write)?.manifest;
+        let m =
+            Manifest::next(Some(&prev), vault.id, prev.entries.clone())?.with_meta(&updated.meta);
+        let manifest = self.signed_manifest(&updated, &m)?;
+        let meta_record = Record {
+            id: vault.id,
+            kind: RecordKind::VaultMeta,
+            version,
+            data: blob,
+        };
+        self.store.put_all_if_version(vec![
+            (meta_record, Some(current.version)),
+            (manifest, Some(prev.seq)),
+        ])?;
+        self.device.last_seen.insert(vault.id, seen(&m));
         Ok(updated)
     }
 
@@ -1547,7 +1556,7 @@ impl<S: RecordStore> Repository<S> {
         prev: Option<&Manifest>,
         entries: Vec<ManifestEntry>,
     ) -> Result<(Record, SeenManifest)> {
-        let m = Manifest::next(prev, vault.id, entries)?;
+        let m = Manifest::next(prev, vault.id, entries)?.with_meta(&vault.meta);
         Ok((self.signed_manifest(vault, &m)?, seen(&m)))
     }
 
