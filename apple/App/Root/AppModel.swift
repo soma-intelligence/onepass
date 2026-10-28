@@ -877,7 +877,13 @@ final class AppModel {
             return
         }
         #endif
-        _ = await AutoFillStatus.requestActivation()
+        // The system prompt does not always show (already asked within 10 s, or macOS keeps the
+        // choice in System Settings): when the provider is still off, open that page instead of
+        // leaving the button without effect.
+        let enabled = await AutoFillStatus.requestActivation()
+        if !enabled, !(await AutoFillStatus.isEnabled()) {
+            await AutoFillStatus.openProviderSettings()
+        }
         await refreshAutoFillStatus()
     }
 

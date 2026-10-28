@@ -147,10 +147,17 @@ struct Sidebar: View {
                 #endif
                 if model.showsAutoFillTip {
                     #if os(macOS)
+                    // A thick material, not clear glass: rows scrolling under the card must not read
+                    // through it.
                     AutoFillTipCard(compact: true)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.08))
+                        }
+                        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
                         .padding(.horizontal, 10)
                         .padding(.bottom, 4)
                     #else
