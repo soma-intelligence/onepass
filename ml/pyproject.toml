@@ -11,6 +11,10 @@ dependencies = [
     "onnxruntime==1.31.1",
     "pyarrow==21.0.0",
     "scipy==1.18.1",
+    "sentencepiece==0.2.2",
+    "tokenizers==0.23.3",
+    "torch==2.14.1",
+    "transformers==5.19.0",
 ]
 
 [dependency-groups]
@@ -25,3 +29,5 @@ packages = ["onepass_ml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not slow'"
+markers = ["slow: real-size model checks, run with -m slow"]
