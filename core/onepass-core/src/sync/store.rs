@@ -34,6 +34,7 @@ use super::{
 };
 use crate::account::{AccountParams, signed_params};
 use crate::chain::{ChainState, Seen};
+use crate::epoch::{EpochReason, SignedRestoreEpoch};
 use crate::format::STORE_USER_VERSION;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::repo::{DeviceState, split_item_record};
@@ -395,6 +396,79 @@ fn account_pair_pushable(conn: &Connection, id: Id) -> Result<bool> {
     })
 }
 
+/// Whether a key rotation of this device waits to go out: the pending
+/// restore epoch is the rotation's (`EpochReason::KeyRotation`, written in
+/// the same transaction as the rotated params). Decoded, not verified: it
+/// is this device's own row.
+fn rotation_pending(conn: &Connection) -> Result<bool> {
+    let data = conn
+        .query_row(
+            "SELECT data FROM pending WHERE kind = ?1 AND data IS NOT NULL",
+            params![RecordKind::RestoreEpoch.code()],
+            |r| r.get::<_, Vec<u8>>(0),
+        )
+        .optional()
+        .map_err(store_err)?;
+    Ok(data
+        .and_then(|d| SignedRestoreEpoch::decode(&d).ok())
+        .is_some_and(|e| e.epoch.reason == EpochReason::KeyRotation))
+}
+
+/// The ids of the accounts with pending params (with data).
+fn pending_params_ids(conn: &Connection) -> Result<Vec<Id>> {
+    let mut stmt = conn
+        .prepare("SELECT id FROM pending WHERE kind = ?1 AND data IS NOT NULL")
+        .map_err(store_err)?;
+    let rows = stmt
+        .query_map(params![RecordKind::AccountParams.code()], |r| {
+            r.get::<_, Vec<u8>>(0)
+        })
+        .map_err(store_err)?;
+    rows.map(|id| decode_id(id.map_err(store_err)?)).collect()
+}
+
+/// While a rotation waits (`rotation_pending`) and its params have not
+/// reached the server, only the account pair goes out, alone, and only
+/// once it is pushable (ruling K10): vault keys wrapped to the new KEM key,
+/// manifests and lists signed by the new key, re-sealed items, deletions of
+/// the old ones and the epoch all wait until the server holds the new
+/// params. `None` when no such rotation waits.
+fn rotation_changes(tx: &Connection) -> Result<Option<Vec<Change>>> {
+    if !rotation_pending(tx)? {
+        return Ok(None);
+    }
+    let ids = pending_params_ids(tx)?;
+    if ids.is_empty() {
+        return Ok(None);
+    }
+    let mut out = Vec::new();
+    for id in ids {
+        if !account_pair_pushable(tx, id)? {
+            continue;
+        }
+        for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
+            let row = tx
+                .query_row(
+                    "SELECT version, data FROM pending WHERE kind = ?1 AND id = ?2",
+                    params![kind.code(), &id.0[..]],
+                    |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<Vec<u8>>>(1)?)),
+                )
+                .optional()
+                .map_err(store_err)?;
+            if let Some((version, data)) = row {
+                out.push(Change {
+                    kind,
+                    id,
+                    version: u64::try_from(version)
+                        .map_err(|_| Error::InvalidFormat("record version"))?,
+                    data,
+                });
+            }
+        }
+    }
+    Ok(Some(out))
+}
+
 /// After a fetch: a local password change (pending account params and
 /// keyset) that the server params caught up with (epoch at least the
 /// pending one) is dropped, both rows together, so it can never be pushed
@@ -402,7 +476,16 @@ fn account_pair_pushable(conn: &Connection, id: Id) -> Result<bool> {
 /// push confirmed before `mark_pushed`), the change lost a race: the
 /// `password_change_superseded` flag is raised for the app. A pending keyset
 /// left without its pending params is dropped as well.
+///
+/// A pending pair of a key rotation (`rotation_pending`) is never dropped
+/// that way, whatever the server's epoch or identity (ruling K10): the rest
+/// of the rotation waits for it, and dropping it would leave everything
+/// sealed and signed for keys no params name. It goes only once the server
+/// holds this very pair. Otherwise it stays, blocked
+/// (`SyncStore::rotation_blocked`), until the repository signs it again
+/// above the server's epoch (`Repository::rebase`).
 fn settle_account_changes(tx: &Connection) -> Result<()> {
+    let rotating = rotation_pending(tx)?;
     let ids: Vec<Vec<u8>> = {
         let mut stmt = tx
             .prepare("SELECT id FROM pending WHERE kind = ?1 AND data IS NOT NULL")
@@ -420,6 +503,9 @@ fn settle_account_changes(tx: &Connection) -> Result<()> {
         ) else {
             continue;
         };
+        if rotating && pending != base {
+            continue;
+        }
         let (Some(local), Some(remote)) = (params_epoch(&pending), params_epoch(&base)) else {
             continue;
         };
@@ -456,6 +542,9 @@ fn settle_account_changes(tx: &Connection) -> Result<()> {
 
 /// `SyncStore::pending_changes` on a consistent view.
 fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
+    if let Some(pair) = rotation_changes(tx)? {
+        return Ok(pair);
+    }
     let held = held_vaults(tx)?;
     let held_lists = held_lists(tx)?;
     let deleted = deleted_vaults(tx, &[]);
@@ -1404,6 +1493,30 @@ impl SyncStore {
 
     /// The version (epoch number) of the restore epoch written here and not
     /// yet pushed, if any.
+    /// The server's params epoch when a key rotation of this device waits
+    /// and its pending params can no longer go out (the server's epoch is at
+    /// least theirs, ruling K10), `None` otherwise. The repository then signs
+    /// the pair again above that epoch (`Repository::reissue_rotation`).
+    pub(crate) fn rotation_blocked(&self) -> Result<Option<(Id, u64)>> {
+        self.read(|c| {
+            if !rotation_pending(c)? {
+                return Ok(None);
+            }
+            for id in pending_params_ids(c)? {
+                if account_pair_pushable(c, id)? {
+                    continue;
+                }
+                let Some(base) = server_params(c, id)? else {
+                    continue;
+                };
+                if let Some(epoch) = params_epoch(&base) {
+                    return Ok(Some((id, epoch)));
+                }
+            }
+            Ok(None)
+        })
+    }
+
     pub(crate) fn pending_epoch(&self) -> Result<Option<u64>> {
         self.read(|c| {
             c.query_row(

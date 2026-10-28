@@ -617,6 +617,17 @@ fn ffi_revoke_rotating_and_follow() {
             )
             .is_err()
     );
+    assert!(matches!(
+        a.session
+            .rotate_keys(
+                PASSWORD.into(),
+                a.secret_key.clone(),
+                a.secret_key.clone(),
+                None
+            )
+            .err(),
+        Some(OnePassError::Validation { .. })
+    ));
     let me = a.session.this_device_id().unwrap();
     assert!(
         a.session
@@ -654,18 +665,45 @@ fn ffi_revoke_rotating_and_follow() {
     unlock_with_auk(a.path.clone(), auk).unwrap();
 
     // The device that stays sees the rotation and follows with the new key
-    // only.
+    // only. A rotation goes out in two pushes: the account pair alone,
+    // then the rest.
     sync(&a.path, &kept_dev.path);
+    sync(&a.path, &kept_dev.path);
+    assert!(push(&a.path).is_empty());
     assert!(store_keys_rotated(kept_dev.path.clone()).unwrap());
     assert!(matches!(
         unlock_with_password(kept_dev.path.clone(), PASSWORD.into(), new_key.clone()).err(),
         Some(OnePassError::Integrity { .. })
     ));
+    // The key it already held never opens a new identity, a guess is a
+    // wrong password.
+    assert!(matches!(
+        unlock_after_rotation(
+            kept_dev.path.clone(),
+            PASSWORD.into(),
+            a.secret_key.clone(),
+            a.secret_key.clone()
+        )
+        .err(),
+        Some(OnePassError::Validation { .. })
+    ));
     assert_eq!(
-        unlock_after_rotation(kept_dev.path.clone(), PASSWORD.into(), a.secret_key.clone()).err(),
+        unlock_after_rotation(
+            kept_dev.path.clone(),
+            PASSWORD.into(),
+            generate_secret_key().unwrap(),
+            a.secret_key.clone()
+        )
+        .err(),
         Some(OnePassError::WrongPassword)
     );
-    let u = unlock_after_rotation(kept_dev.path.clone(), PASSWORD.into(), new_key.clone()).unwrap();
+    let u = unlock_after_rotation(
+        kept_dev.path.clone(),
+        PASSWORD.into(),
+        new_key.clone(),
+        a.secret_key.clone(),
+    )
+    .unwrap();
     assert_eq!(u.session.item_summaries().unwrap().len(), 1);
     assert_eq!(u.session.params_epoch().unwrap(), 2);
     assert!(!store_keys_rotated(kept_dev.path.clone()).unwrap());

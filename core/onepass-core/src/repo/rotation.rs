@@ -23,13 +23,14 @@ use aws_lc_rs::digest::{SHA256, digest};
 use time::OffsetDateTime;
 
 use super::{DeviceState, Repository, account_records, entry, epoch_floor, pin, seen};
-use crate::account::{Account, Auk, Rekeyed, identity_changed};
+use crate::account::{Account, AccountParams, Auk, Rekeyed, identity_changed};
 use crate::crypto::SecretKey;
 use crate::devices::{DeviceEntry, invalid, now, revoked};
 use crate::epoch::{EpochReason, RestoreEpoch, SignedRestoreEpoch};
 use crate::lists::{ListBody, list_record};
 use crate::manifest::{Manifest, sign_manifest};
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
+use crate::sync::SyncStore;
 use crate::vault::{ItemRecord, Vault};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
@@ -107,6 +108,11 @@ impl<S: RecordStore> Repository<S> {
     ) -> Result<Auk> {
         if !self.travel_parked.is_empty() {
             return Err(Error::InvalidFormat("travel mode active"));
+        }
+        // A "rotation" to the key already in use proves nothing to the
+        // other devices (ruling K11).
+        if new_secret_key.same_as(secret_key) {
+            return Err(invalid("secret key", "unchanged"));
         }
         let account_id = self.account.params.account_id;
 
@@ -314,13 +320,20 @@ impl<S: RecordStore> Repository<S> {
             self.chain.vault_list = Some(s);
         }
         self.account = account;
+        self.auk = Some(Auk::from_bytes(*auk.as_bytes()));
         self.device.epoch = epoch;
         self.replace_last_seen(heads);
-        self.store.set_restore_epoch_mark(epoch, hash)?;
+        // The write is committed: from here on nothing may fail, or a
+        // caller following the contract would discard the new Secret Key of
+        // an account that already uses it (ruling K12). Both steps below
+        // are bookkeeping the next session redoes: the epoch mark is set
+        // again by `sync_epoch`, a kept copy signed by the old key fails its
+        // check and is replaced.
+        let _ = self.store.set_restore_epoch_mark(epoch, hash);
         let vaults: Vec<Id> = self.device.last_seen.keys().copied().collect();
         for v in vaults {
             // The kept copies were signed by the old key: drop them.
-            self.store.vault_event(v, VaultEvent::Clean)?;
+            let _ = self.store.vault_event(v, VaultEvent::Clean);
         }
         Ok(auk)
     }
@@ -334,11 +347,16 @@ impl<S: RecordStore> Repository<S> {
     /// floor, the lists seen and the device id are kept. The normal unlock
     /// functions never follow a new identity (ruling K9).
     ///
-    /// On a device that pinned nothing, this is `unlock_exporting_auk`.
+    /// `previous` is the Secret Key the device held until now (Keychain,
+    /// `device.bin`): a new identity sealed under it is refused
+    /// (`Validation("secret key")`, ruling K11), since the revoked device
+    /// knows it too. On a device that pinned nothing, this is
+    /// `unlock_exporting_auk`.
     pub fn unlock_after_rotation(
         store: S,
         password: &str,
         secret_key: &SecretKey,
+        previous: &SecretKey,
         mut device: DeviceState,
     ) -> Result<(Repository<S>, Auk)> {
         let Some(pinned) = device.pinned.clone() else {
@@ -349,6 +367,7 @@ impl<S: RecordStore> Repository<S> {
         let (account, auk, pin) = Account::unlock_rotated_at(
             password,
             secret_key,
+            previous,
             &params.data,
             &keyset.data,
             &pinned,
@@ -356,16 +375,17 @@ impl<S: RecordStore> Repository<S> {
         )?;
         device.pinned = Some(pin);
         Ok((
-            Self::finish_unlock(store, account, &params, device, chain)?,
+            Self::finish_unlock(store, account, &params, device, chain, &auk)?,
             auk,
         ))
     }
 
     /// Whether the account in `store` is the one `device` pinned, signed by
-    /// another identity than the pinned one (`account::identity_changed`),
-    /// without any unlock: the keys were rotated on another device, and the
-    /// app asks for the new Secret Key (`unlock_after_rotation`). `false`
-    /// without a pin or an account.
+    /// another identity than the pinned one at an epoch above the store's
+    /// pinned params epoch (`account::identity_changed`), without any
+    /// unlock: the keys were rotated on another device, and the app asks
+    /// for the new Secret Key (`unlock_after_rotation`). `false` without a
+    /// pin or an account.
     pub fn keys_rotated(store: &S, device: &DeviceState) -> Result<bool> {
         let Some(pinned) = &device.pinned else {
             return Ok(false);
@@ -375,6 +395,65 @@ impl<S: RecordStore> Repository<S> {
             Err(Error::NotFound) => return Ok(false),
             Err(e) => return Err(e),
         };
-        identity_changed(&params.data, pinned)
+        identity_changed(&params.data, pinned, store.chain_state()?.params_epoch)
+    }
+}
+
+impl Repository<SyncStore> {
+    /// A rotation of this session whose params the server overtook before
+    /// they landed (another device changed the password, or the server
+    /// served params of an epoch at least theirs): sign the same keys
+    /// again at the server's epoch plus one and reseal the keyset under the
+    /// same Account Unlock Key, in place of the pending pair (ruling K10).
+    /// Run by `rebase`. Returns whether it did.
+    ///
+    /// Only for the pair this session wrote (same identity as the session's
+    /// account); it needs the session's Account Unlock Key
+    /// (`InvalidFormat("rotation pending: unlock with the password")`
+    /// without one).
+    pub(crate) fn reissue_rotation(&mut self) -> Result<bool> {
+        let Some((id, server_epoch)) = self.store.rotation_blocked()? else {
+            return Ok(false);
+        };
+        if id != self.account.params.account_id {
+            return Ok(false);
+        }
+        let (params, keyset) = account_records(&self.store)?;
+        let pending = AccountParams::decode(&params.data)?;
+        if pending.identity_pub != self.account.params.identity_pub {
+            return Ok(false);
+        }
+        let auk = self.auk.as_ref().ok_or(Error::InvalidFormat(
+            "rotation pending: unlock with the password",
+        ))?;
+        let epoch = server_epoch
+            .max(pending.epoch)
+            .checked_add(1)
+            .ok_or(Error::InvalidFormat("account params"))?;
+        let (reissued, params_record, keyset_record) = self.account.reissue(epoch, auk)?;
+        self.store.put_all_if_version(vec![
+            (
+                Record {
+                    id,
+                    kind: RecordKind::Keyset,
+                    version: next_version(&keyset)?,
+                    data: keyset_record,
+                },
+                Some(keyset.version),
+            ),
+            (
+                Record {
+                    id,
+                    kind: RecordKind::AccountParams,
+                    version: next_version(&params)?,
+                    data: params_record,
+                },
+                Some(params.version),
+            ),
+        ])?;
+        self.account.params = reissued;
+        self.chain.accept_params_epoch(epoch);
+        self.persist_device_state()?;
+        Ok(true)
     }
 }

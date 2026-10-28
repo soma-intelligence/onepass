@@ -187,6 +187,12 @@ pub struct Repository<S: RecordStore> {
     /// the server's lists): a merging persist keeps the in-memory ones
     /// instead of refusing a fork with the stored ones.
     pub(crate) lists_forced: bool,
+    /// The Account Unlock Key this session opened with (or the one a
+    /// rotation or a password change made): a rotation whose params the
+    /// server overtook is signed again above it and resealed under the same
+    /// key (`reissue_rotation`, ruling K10). The keyset in memory is worth
+    /// more than it, so it adds no exposure.
+    pub(crate) auk: Option<Auk>,
 }
 
 /// A restore epoch record, verified, and the SHA-256 of its data.
@@ -398,6 +404,7 @@ impl<S: RecordStore> Repository<S> {
             chain,
             travel_parked: BTreeSet::new(),
             lists_forced: false,
+            auk: None,
         };
         let (manifest, seen) = repo.manifest_record(&vault, None, vec![])?;
         let me = device_id.map(|d| self_entry(d, None, at));
@@ -472,7 +479,7 @@ impl<S: RecordStore> Repository<S> {
             chain.params_epoch,
         )?;
         Ok((
-            Self::finish_unlock(store, account, &params, device, chain)?,
+            Self::finish_unlock(store, account, &params, device, chain, &auk)?,
             auk,
         ))
     }
@@ -488,7 +495,7 @@ impl<S: RecordStore> Repository<S> {
             device.pinned.as_ref(),
             chain.params_epoch,
         )?;
-        Self::finish_unlock(store, account, &params, device, chain)
+        Self::finish_unlock(store, account, &params, device, chain, auk)
     }
 
     fn finish_unlock(
@@ -497,6 +504,7 @@ impl<S: RecordStore> Repository<S> {
         params: &Record,
         mut device: DeviceState,
         mut chain: ChainState,
+        auk: &Auk,
     ) -> Result<Repository<S>> {
         if account.params.account_id != params.id {
             return Err(IntegrityError::WrongContext.into());
@@ -516,6 +524,7 @@ impl<S: RecordStore> Repository<S> {
             chain,
             travel_parked: BTreeSet::new(),
             lists_forced: false,
+            auk: Some(Auk::from_bytes(*auk.as_bytes())),
         })
     }
 
@@ -590,6 +599,7 @@ impl<S: RecordStore> Repository<S> {
         }
         self.chain.accept_params_epoch(account.params.epoch);
         self.account = account;
+        self.auk = Some(Auk::from_bytes(*auk.as_bytes()));
         Ok(auk)
     }
 

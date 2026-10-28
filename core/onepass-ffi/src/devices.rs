@@ -142,7 +142,15 @@ impl Session {
     /// succeeds (the old Emergency Kit stops working: show the new one).
     /// `new_password` also changes the master password. Returns the new
     /// Account Unlock Key, to enroll biometrics again. Refused while the
-    /// Travel Mode is on.
+    /// Travel Mode is on, and for a new key equal to the current one
+    /// (`Validation`).
+    ///
+    /// Errors: every error is returned before anything is written; once the
+    /// write committed, the call succeeds (a failure to save the device
+    /// state afterwards is not reported). Discard the pending key only on
+    /// `WrongPassword`, `Conflict`, `Validation`, `Locked` or
+    /// `InvalidInput`; on any other error keep both keys and let the next
+    /// unlock try each (ruling K12).
     pub fn rotate_keys(
         &self,
         current: String,
@@ -158,7 +166,7 @@ impl Session {
         let new_password = new_password.map(Zeroizing::new);
         let secret_key = SecretKey::parse(&secret_key)?;
         let new_secret_key = SecretKey::parse(&new_secret_key)?;
-        self.with(|repo| {
+        self.with_committed(|repo| {
             let auk = repo.rotate_keys(
                 &current,
                 &secret_key,
@@ -171,8 +179,8 @@ impl Session {
 
     /// Revoke another device and rotate every key in the same write: the
     /// revoked device, even if it keeps its data and Secret Key, reads
-    /// nothing written afterwards. Same arguments and result as
-    /// `rotate_keys`; this device cannot revoke itself
+    /// nothing written afterwards. Same arguments, result and error contract
+    /// as `rotate_keys`; this device cannot revoke itself
     /// (`Validation("device", "this device")`), an unknown id is
     /// `NotFound`. Use this instead of `revoke_device`, which only marks
     /// the device.
@@ -191,7 +199,7 @@ impl Session {
         );
         let secret_key = SecretKey::parse(&secret_key)?;
         let new_secret_key = SecretKey::parse(&new_secret_key)?;
-        self.with(|repo| {
+        self.with_committed(|repo| {
             let auk = repo.revoke_device_rotating(id, &password, &secret_key, &new_secret_key)?;
             Ok(auk.as_bytes().to_vec())
         })
@@ -321,21 +329,31 @@ pub fn store_keys_rotated(db_path: String) -> Result<bool, OnePassError> {
 }
 
 /// Unlock after the keys were rotated on another device, with the new
-/// Secret Key the user just typed or received by pairing (never one the
-/// app kept from before): the device follows the new account identity,
-/// keeping its pinned state. The old Secret Key is `WrongPassword`; old
-/// params served again are `Integrity`.
+/// Secret Key the user just typed or received by pairing, and
+/// `previous_secret_key`, the one this device held until now (Keychain):
+/// the device follows the new account identity, keeping its pinned state.
+/// A new identity offered with `previous_secret_key` itself is refused
+/// (`Validation`: a revoked device can forge a "rotation" under the old
+/// key); any other key the rotation was not sealed under is
+/// `WrongPassword`; old params served again are `Integrity`.
 #[uniffi::export]
 pub fn unlock_after_rotation(
     db_path: String,
     password: String,
     secret_key: String,
+    previous_secret_key: String,
 ) -> Result<FfiUnlocked, OnePassError> {
-    let (password, secret_key) = (Zeroizing::new(password), Zeroizing::new(secret_key));
+    let (password, secret_key, previous) = (
+        Zeroizing::new(password),
+        Zeroizing::new(secret_key),
+        Zeroizing::new(previous_secret_key),
+    );
     let store = SyncStore::open(Path::new(&db_path))?;
     let secret_key = SecretKey::parse(&secret_key)?;
+    let previous = SecretKey::parse(&previous)?;
     let device = store.device_state()?;
-    let (mut repo, auk) = Repository::unlock_after_rotation(store, &password, &secret_key, device)?;
+    let (mut repo, auk) =
+        Repository::unlock_after_rotation(store, &password, &secret_key, &previous, device)?;
     repo.persist_device_state()?;
     Ok(FfiUnlocked {
         session: Session::new(repo)?,
