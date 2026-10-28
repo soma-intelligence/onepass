@@ -149,8 +149,8 @@ public struct VaultIllustration: View {
             }
             // The keyhole's well, the accent glowing from inside.
             Circle()
-                .fill(RadialGradient(colors: [tint.opacity(0.35), .black.opacity(dark ? 0.5 : 0.12)],
-                    center: .center, startRadius: 0, endRadius: u * 4.8))
+                .fill(LinearGradient(colors: [.black.opacity(dark ? 0.35 : 0.1), ink.opacity(0.06)],
+                    startPoint: .top, endPoint: .bottom))
                 .overlay { Circle().strokeBorder(LinearGradient(colors: [.black.opacity(0.5), ink.opacity(0.15)],
                     startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: max(0.5, u * 0.3)) }
                 .frame(width: u * 9.6, height: u * 9.6)
@@ -171,15 +171,18 @@ public struct VaultIllustration: View {
             .frame(width: u * 5, height: u * 5)
     }
 
+    /// The keyhole as an actual hole: near black, its upper edge in shadow and its lower edge
+    /// catching the light, with only a faint trace of the accent deep inside. No glow.
     private func keyhole(u: CGFloat, scale: CGFloat) -> some View {
-        VStack(spacing: -u * 0.55 * scale) {
-            Circle().fill(accentFill).frame(width: u * 3.1 * scale, height: u * 3.1 * scale)
-            Trapezoid()
-                .fill(accentFill)
-                .frame(width: u * 2.2 * scale, height: u * 3.4 * scale)
-        }
-        .shadow(color: tint.opacity(0.9), radius: u * 1.6 * scale)
-        .shadow(color: tint.opacity(0.4), radius: u * 4 * scale)
+        let shape = KeyholeShape()
+        return shape
+            .fill(LinearGradient(colors: [Color.black.opacity(0.95), Color(white: 0.06), tint.mix(with: .black, by: 0.7)],
+                startPoint: .top, endPoint: .bottom))
+            .overlay {
+                shape.stroke(LinearGradient(colors: [.black.opacity(0.8), .clear, ink.opacity(dark ? 0.35 : 0.6)],
+                    startPoint: .top, endPoint: .bottom), lineWidth: max(0.5, u * 0.25 * scale))
+            }
+            .frame(width: u * 3.6 * scale, height: u * 6.2 * scale)
     }
 
     // MARK: - Floating pieces
@@ -220,35 +223,22 @@ public struct VaultIllustration: View {
             }
     }
 
+    /// A plain machined key: one flat piece (rounded bow with its hole, collar, blade with a cut
+    /// bit), brushed along its length, a thin lit edge on top. Drawn as a single path.
     private func key(u: CGFloat) -> some View {
-        let metal = LinearGradient(colors: [ink.opacity(0.3), ink.opacity(0.1)], startPoint: .top, endPoint: .bottom)
-        return HStack(spacing: -u * 0.6) {
-            // Bow: a ring with a real hole.
-            Circle()
-                .fill(base)
-                .overlay { Circle().fill(metal) }
-                .overlay { Circle().strokeBorder(bevel(1.2), lineWidth: max(0.5, u * 0.3)) }
-                .mask {
-                    Circle().overlay { Circle().frame(width: u * 3.4, height: u * 3.4).blendMode(.destinationOut) }
-                        .compositingGroup()
-                }
-                .frame(width: u * 9.5, height: u * 9.5)
-            // Shaft and its bit.
-            ZStack(alignment: .bottomTrailing) {
-                Capsule()
-                    .fill(base)
-                    .overlay { Capsule().fill(metal) }
-                    .frame(width: u * 14, height: u * 2.4)
-                HStack(alignment: .top, spacing: u * 0.6) {
-                    RoundedRectangle(cornerRadius: u * 0.3).fill(base).overlay { RoundedRectangle(cornerRadius: u * 0.3).fill(metal) }
-                        .frame(width: u * 1.4, height: u * 2.4)
-                    RoundedRectangle(cornerRadius: u * 0.3).fill(base).overlay { RoundedRectangle(cornerRadius: u * 0.3).fill(metal) }
-                        .frame(width: u * 1.4, height: u * 3.4)
-                }
-                .offset(x: -u * 1, y: u * 2.6)
+        let shape = KeyShape()
+        return shape
+            .fill(base, style: FillStyle(eoFill: true))
+            .overlay {
+                shape.fill(LinearGradient(colors: [ink.opacity(dark ? 0.26 : 0.16), ink.opacity(dark ? 0.1 : 0.05)],
+                    startPoint: .top, endPoint: .bottom), style: FillStyle(eoFill: true))
             }
-        }
-        .shadow(color: shadow, radius: u * 3, x: u * 1, y: u * 2.5)
+            .overlay {
+                shape.stroke(LinearGradient(colors: [ink.opacity(dark ? 0.35 : 0.2), ink.opacity(0.02)],
+                    startPoint: .top, endPoint: .bottom), lineWidth: max(0.5, u * 0.22))
+            }
+            .frame(width: u * 26, height: u * 10)
+            .shadow(color: shadow, radius: u * 2.5, x: u * 0.8, y: u * 2)
     }
 
     private func padlock(u: CGFloat) -> some View {
@@ -300,6 +290,65 @@ private struct Shackle: Shape {
         p.addArc(center: CGPoint(x: rect.midX, y: rect.minY + r), radius: r,
             startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
         p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        return p
+    }
+}
+
+/// A classic keyhole: round head over a slot that widens slightly to a flat foot.
+private struct KeyholeShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width
+        let head = w / 2
+        var p = Path()
+        p.addEllipse(in: CGRect(x: rect.midX - head, y: rect.minY, width: w, height: w))
+        let top = rect.minY + w * 0.75
+        p.move(to: CGPoint(x: rect.midX - w * 0.2, y: top))
+        p.addLine(to: CGPoint(x: rect.midX + w * 0.2, y: top))
+        p.addLine(to: CGPoint(x: rect.midX + w * 0.34, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.midX - w * 0.34, y: rect.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// A key seen flat, bow on the left: the bow's hole is a second subpath (even-odd fill).
+private struct KeyShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let h = rect.height
+        let bowR = h * 0.5
+        let bowC = CGPoint(x: rect.minX + bowR, y: rect.midY)
+        let blade = h * 0.22
+        var p = Path()
+        // Bow, slightly squared like a real one.
+        p.addRoundedRect(in: CGRect(x: rect.minX, y: rect.minY, width: bowR * 2, height: h),
+            cornerSize: CGSize(width: bowR * 0.8, height: bowR * 0.8), style: .continuous)
+        // Collar and blade, with the bit's cuts on the lower edge near the tip.
+        let x0 = rect.minX + bowR * 1.85
+        let tip = rect.maxX
+        var b = Path()
+        b.move(to: CGPoint(x: x0, y: rect.midY - blade * 1.2))
+        b.addLine(to: CGPoint(x: x0 + h * 0.35, y: rect.midY - blade * 1.2))
+        b.addLine(to: CGPoint(x: x0 + h * 0.45, y: rect.midY - blade / 2))
+        b.addLine(to: CGPoint(x: tip - h * 0.12, y: rect.midY - blade / 2))
+        b.addQuadCurve(to: CGPoint(x: tip, y: rect.midY), control: CGPoint(x: tip, y: rect.midY - blade / 2))
+        // Bit: a small plate under the blade near the tip, with two cuts.
+        let bitTop = rect.midY + blade / 2
+        let bx = tip - h * 0.18
+        let depth = h * 0.3
+        let profile: [(CGFloat, CGFloat)] = [
+            (0, 0), (0, depth), (-h * 0.1, depth), (-h * 0.1, depth * 0.55), (-h * 0.2, depth * 0.55),
+            (-h * 0.2, depth), (-h * 0.34, depth), (-h * 0.34, 0),
+        ]
+        for (dx, dy) in profile {
+            b.addLine(to: CGPoint(x: bx + dx, y: bitTop + dy))
+        }
+        b.addLine(to: CGPoint(x: x0 + h * 0.45, y: bitTop))
+        b.addLine(to: CGPoint(x: x0 + h * 0.35, y: rect.midY + blade * 1.2))
+        b.addLine(to: CGPoint(x: x0, y: rect.midY + blade * 1.2))
+        b.closeSubpath()
+        p.addPath(b)
+        // The hole (even-odd): a second subpath inside the bow.
+        p.addEllipse(in: CGRect(x: bowC.x - bowR * 0.42, y: bowC.y - bowR * 0.42, width: bowR * 0.84, height: bowR * 0.84))
         return p
     }
 }

@@ -1,3 +1,4 @@
+import DesignKit
 import SwiftUI
 import VaultKit
 
@@ -15,36 +16,50 @@ struct AutoFillTipCard: View {
         if compact { compactBody } else { fullBody }
     }
 
+    @State private var hovering = false
+
+    /// Mac sidebar: the AutoFill tile, a title over a one-line reason, "Activer" as a small accent
+    /// capsule; the close button only shows under the pointer, in the top corner.
     private var compactBody: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "key.viewfinder")
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
-            Text("Remplissage")
-                .font(.subheadline.weight(.medium))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .layoutPriority(1)
+        HStack(spacing: 10) {
+            SymbolTile(symbol: "key.viewfinder", color: Theme.accent, size: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Remplissage auto")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text("Désactivé")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .layoutPriority(1)
             Spacer(minLength: 4)
             Button("Activer") { activate() }
-                .buttonStyle(.glassProminent)
-                .controlSize(.small)
+                .buttonStyle(SmallAccentCapsuleStyle())
                 .fixedSize()
                 .disabled(requesting)
                 .accessibilityIdentifier("autofill.tip.enable")
+        }
+        .overlay(alignment: .topTrailing) {
             Button {
                 withAnimation(.snappy) { model.dismissAutoFillTip() }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.caption2.weight(.bold))
+                    .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20)
-                    .contentShape(.rect)
+                    .frame(width: 16, height: 16)
+                    .background(.regularMaterial, in: Circle())
+                    .overlay { Circle().strokeBorder(Color.primary.opacity(0.1)) }
+                    .contentShape(Circle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
+            .offset(x: 8, y: -12)
+            .opacity(hovering ? 1 : 0)
             .accessibilityLabel(Text("Fermer"))
             .accessibilityIdentifier("autofill.tip.dismiss")
         }
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
         .help("Tes identifiants, codes et passkeys proposés dans les apps et Safari, sans copier-coller.")
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("autofill.tip")
@@ -97,5 +112,20 @@ struct AutoFillTipCard: View {
             await model.requestAutoFillActivation()
             requesting = false
         }
+    }
+}
+
+/// A compact accent capsule for a call to action inside a card.
+private struct SmallAccentCapsuleStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background(Theme.accent, in: Capsule())
+            .overlay { Capsule().strokeBorder(.white.opacity(0.15), lineWidth: 0.5) }
+            .contentShape(Capsule())
+            .opacity(configuration.isPressed ? 0.75 : 1)
     }
 }

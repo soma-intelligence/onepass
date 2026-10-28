@@ -126,25 +126,34 @@ enum VaultStyle {
     }
 }
 
-/// A vault's symbol on a squircle in a soft gradient of its color, with a hairline highlight: the
-/// same family as the sidebar's row tiles.
+/// A vault's mark: a disc in a soft gradient of its color with the symbol in white, a light from
+/// the top left and a hairline rim. Round, so a vault never reads as one of the library's square
+/// rows (Tous les éléments, Favoris...).
 struct VaultIconTile: View {
     let icon: String
     let colorName: String
     var size: CGFloat = 30
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-        shape
-            .fill(VaultBadge.color(named: colorName).gradient)
-            .overlay { shape.strokeBorder(.white.opacity(0.18), lineWidth: 0.5) }
+        let color = VaultBadge.color(named: colorName)
+        Circle()
+            .fill(LinearGradient(colors: [color.mix(with: .white, by: 0.22), color, color.mix(with: .black, by: 0.18)],
+                startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay {
+                // Soft sheen on the upper left.
+                Circle()
+                    .fill(RadialGradient(colors: [.white.opacity(0.28), .clear],
+                        center: UnitPoint(x: 0.3, y: 0.22), startRadius: 0, endRadius: size * 0.55))
+            }
+            .overlay { Circle().strokeBorder(.white.opacity(0.2), lineWidth: 0.5) }
             .frame(width: size, height: size)
             .overlay {
                 Image(systemName: VaultStyle.symbol(icon))
-                    .font(.system(size: size * 0.5, weight: .semibold))
+                    .font(.system(size: size * 0.46, weight: .semibold))
                     .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.12), radius: 0.5, y: 0.5)
+                    .shadow(color: .black.opacity(0.18), radius: 0.6, y: 0.6)
             }
+            .shadow(color: color.opacity(0.25), radius: size * 0.08, y: size * 0.04)
             .accessibilityHidden(true)
     }
 }
@@ -324,7 +333,7 @@ struct VaultEditorView: View {
                 if selected {
                     VaultIconTile(icon: symbol, colorName: color, size: 40)
                 } else {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    Circle()
                         .fill(tint.opacity(0.16))
                         .frame(width: 40, height: 40)
                         .overlay {
@@ -336,7 +345,7 @@ struct VaultEditorView: View {
             }
             .padding(2)
             .overlay {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                Circle()
                     .strokeBorder(selected ? tint : .clear, lineWidth: 2)
             }
             .scaleEffect(selected ? 1.04 : 1)

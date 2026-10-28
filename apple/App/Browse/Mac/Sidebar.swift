@@ -11,6 +11,8 @@ struct Sidebar: View {
     @Environment(AppModel.self) private var model
     @State private var creatingVault = false
     /// Not secret: which sections are folded.
+    /// The account panel under the account row (Mac).
+    @State private var accountMenuOpen = false
     /// The vault whose sheet is open from its row's context menu.
     @State private var editingVaultID: String?
     @AppStorage("onepass.sidebar.vaultsExpanded", store: AppModel.browseDefaults) private var vaultsExpanded = true
@@ -53,7 +55,7 @@ struct Sidebar: View {
         // the window): never under the window buttons, its menu stays clickable.
         VStack(spacing: 0) {
             // The avatar's left edge lines up with the row tiles below.
-            AccountHeader()
+            AccountHeader(menuOpen: $accountMenuOpen)
                 .padding(.horizontal, 15)
                 .padding(.bottom, 6)
             // In a VStack the list asks for the height of all its rows as a minimum, which made the
@@ -62,6 +64,27 @@ struct Sidebar: View {
                 .frame(minHeight: 0, maxHeight: .infinity)
         }
         .background { TitlebarHeightReader(height: $titlebarHeight) }
+        // The account menu: our own panel under the account row (the system menu could not take
+        // the house style). A click anywhere else or Escape closes it.
+        .overlay(alignment: .topLeading) {
+            if accountMenuOpen {
+                ZStack(alignment: .topLeading) {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .onTapGesture { accountMenuOpen = false }
+                    AccountMenuPanel(
+                        newVault: { accountMenuOpen = false; creatingVault = true },
+                        close: { accountMenuOpen = false }
+                    )
+                    .padding(.top, titlebarHeight + 50)
+                    .padding(.horizontal, 12)
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.96, anchor: .top).combined(with: .opacity),
+                        removal: .opacity))
+                }
+            }
+        }
+        .animation(.spring(duration: 0.28, bounce: 0.15), value: accountMenuOpen)
         // The whole column, header included, on the system's translucent sidebar material: the
         // desktop shows through, blurred, behind the account row and the list alike.
         .background { SidebarMaterial().ignoresSafeArea() }
@@ -302,6 +325,8 @@ struct AccountHeader: View {
     #endif
     @State private var creatingVault = false
     @State private var hovering = false
+    /// Mac: the row opens the sidebar's own panel instead of the system menu.
+    var menuOpen: Binding<Bool>?
 
     private var name: String {
         model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
@@ -315,6 +340,46 @@ struct AccountHeader: View {
     }
 
     var body: some View {
+        if let menuOpen {
+            Button {
+                menuOpen.wrappedValue.toggle()
+            } label: {
+                label(open: menuOpen.wrappedValue)
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+            .accessibilityLabel(Text("Compte \(model.settings.displayName)"))
+            .accessibilityIdentifier("account.menu")
+        } else {
+            systemMenu
+        }
+    }
+
+    private func label(open: Bool) -> some View {
+        HStack(spacing: 12) {
+            AccountAvatar(initials: model.initials, photo: model.profileImage, size: 34)
+            Text(name)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(open ? 180 : 0))
+                .animation(.spring(duration: 0.3, bounce: 0.2), value: open)
+        }
+        .padding(5)
+        .padding(.trailing, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(hovering || open ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear),
+            in: .rect(cornerRadius: 14, style: .continuous))
+        .contentShape(.rect(cornerRadius: 14, style: .continuous))
+    }
+
+    /// iPad and visionOS: the system menu.
+    private var systemMenu: some View {
         Menu {
             Section {
                 Button("Nouveau coffre…", systemImage: "plus.rectangle.on.rectangle") { creatingVault = true }
@@ -372,6 +437,104 @@ struct AccountHeader: View {
         }
     }
 }
+
+#if os(macOS)
+/// The account panel (Mac): who is signed in and on which device, then Nouveau coffre, Importer,
+/// Réglages, and Verrouiller apart in red. Glass card, rows highlighted under the pointer with
+/// their shortcut on the right. Escape closes it.
+struct AccountMenuPanel: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openSettings) private var openSettings
+    let newVault: () -> Void
+    let close: () -> Void
+
+    private var name: String {
+        model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 36)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).font(.headline).lineLimit(1)
+                    Text(model.settings.deviceMode == .shared ? "Appareil partagé" : "Appareil personnel")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+            .accessibilityElement(children: .combine)
+            divider
+            AccountMenuRow(title: "Nouveau coffre…", symbol: "plus.circle", shortcut: nil, action: newVault)
+                .accessibilityIdentifier("account.newVault")
+            AccountMenuRow(title: "Importer…", symbol: "square.and.arrow.down", shortcut: "⇧⌘I") {
+                close()
+                model.showImport = true
+            }
+            .accessibilityIdentifier("account.import")
+            AccountMenuRow(title: "Réglages…", symbol: "gearshape", shortcut: "⌘,") {
+                close()
+                openSettings()
+            }
+            .accessibilityIdentifier("account.settings")
+            divider
+            AccountMenuRow(title: "Verrouiller", symbol: "lock", shortcut: "⌘L", destructive: true) {
+                close()
+                model.perform(.lock)
+            }
+            .accessibilityIdentifier("account.lock")
+        }
+        .padding(5)
+        .frame(width: 252)
+        .glassEffect(.regular, in: .rect(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
+        .onExitCommand(perform: close)
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1).padding(.horizontal, 8).padding(.vertical, 4)
+    }
+}
+
+/// A row of the account panel.
+private struct AccountMenuRow: View {
+    let title: LocalizedStringKey
+    let symbol: String
+    let shortcut: String?
+    var destructive = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 18)
+                Text(title).font(.body)
+                Spacer(minLength: 12)
+                if let shortcut {
+                    Text(verbatim: shortcut)
+                        .font(.callout)
+                        .foregroundStyle(hovering ? AnyShapeStyle(.white.opacity(0.75)) : AnyShapeStyle(.tertiary))
+                }
+            }
+            .foregroundStyle(hovering ? AnyShapeStyle(.white) : destructive ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(hovering ? AnyShapeStyle((destructive ? Color.red : Theme.accent).opacity(0.9)) : AnyShapeStyle(.clear),
+                in: .rect(cornerRadius: 10, style: .continuous))
+            .contentShape(.rect(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+#endif
 
 /// The account's photo, or its initials on the accent, in a squircle (sidebar, menus, settings).
 struct AccountAvatar: View {
