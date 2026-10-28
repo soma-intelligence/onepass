@@ -208,11 +208,7 @@ private struct WelcomeStep: View {
 
     var body: some View {
         if Platform.isMac {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Theme.accent)
-                .frame(width: 64, height: 64)
-                .overlay { Image(systemName: "lock.fill").font(.system(size: 28)).foregroundStyle(.white) }
-                .accessibilityHidden(true)
+            AppGlyph(size: 64).accessibilityHidden(true)
         } else {
             AppGlyph(size: 88).padding(.top, 30)
         }

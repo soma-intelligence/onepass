@@ -802,15 +802,7 @@ private struct StepRail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Theme.accent)
-                    .frame(width: 34, height: 34)
-                    .overlay {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                    .accessibilityHidden(true)
+                AppGlyph(size: 34).accessibilityHidden(true)
                 Text("OnePass").font(.title3.bold())
             }
             .padding(.horizontal, 6)
