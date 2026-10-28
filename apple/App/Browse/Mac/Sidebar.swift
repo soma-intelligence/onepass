@@ -11,6 +11,8 @@ struct Sidebar: View {
     @Environment(AppModel.self) private var model
     @State private var creatingVault = false
     /// Not secret: which sections are folded.
+    /// The vault whose sheet is open from its row's context menu.
+    @State private var editingVaultID: String?
     @AppStorage("onepass.sidebar.vaultsExpanded", store: AppModel.browseDefaults) private var vaultsExpanded = true
     @AppStorage("onepass.sidebar.tagsExpanded", store: AppModel.browseDefaults) private var tagsExpanded = true
     #if os(macOS)
@@ -148,6 +150,11 @@ struct Sidebar: View {
         .sheet(isPresented: $creatingVault) {
             VaultEditorView(vault: nil) { creatingVault = false }
         }
+        .sheet(isPresented: Binding(get: { editingVaultID != nil }, set: { if !$0 { editingVaultID = nil } })) {
+            if let vault = session.vaults.first(where: { $0.id == editingVaultID }) {
+                VaultEditorView(vault: vault) { editingVaultID = nil }
+            }
+        }
         #if os(iOS) || os(visionOS)
         .navigationTitle("OnePass")
         #endif
@@ -174,6 +181,11 @@ struct Sidebar: View {
                     }
                     .badge(counts.byVault[vault.id] ?? 0)
                     .tag(Destination.filter(.vault(vault.id)))
+                    // Name, symbol, color and travel safety: the same sheet as "Nouveau coffre".
+                    .contextMenu {
+                        Button("Modifier le coffre…", systemImage: "paintpalette") { editingVaultID = vault.id }
+                            .accessibilityIdentifier("sidebar.vaults.edit.\(vault.id)")
+                    }
                     .accessibilityIdentifier("sidebar.vaults.\(vault.id)")
                 }
             }

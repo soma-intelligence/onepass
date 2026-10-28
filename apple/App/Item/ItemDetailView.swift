@@ -148,6 +148,9 @@ struct ItemDetailView: View {
                             DocumentCard(attachment: attachment)
                         }
                     }
+                    if let link = item.signInProvider {
+                        SignInWithCard(provider: link.provider, accountItemID: link.accountItemID)
+                    }
                     content(item)
                     if item.trashedAt == nil, !item.archived {
                         ItemWatchtowerSection(item: item, report: model.watchtower.report) { check, excluded in
@@ -1421,5 +1424,55 @@ struct ItemWindowRoot: View {
             }
         }
         .frame(minWidth: 480, minHeight: 520)
+    }
+}
+
+/// "Se connecter avec": the login signs in through another account (Apple, Google...). The card shows
+/// that account as its own row (site icon, favorite star, title, username) and opens it on a click.
+/// When the account item is gone, the provider's mark and name stand in.
+private struct SignInWithCard: View {
+    @Environment(AppModel.self) private var model
+    let provider: String
+    let accountItemID: String
+    @State private var hovering = false
+
+    private var account: FfiItemSummary? {
+        model.session.summaries.first { $0.id == accountItemID && $0.trashedAt == nil }
+    }
+
+    var body: some View {
+        EditorCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("se connecter avec")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.accent.mix(with: .white, by: 0.35))
+                if let account {
+                    Button {
+                        model.selectedItem = ItemRef(vaultID: account.vaultId, itemID: account.id)
+                    } label: {
+                        HStack(spacing: 0) {
+                            ItemListRow(summary: account, vaultName: nil)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                                .opacity(hovering ? 1 : 0)
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hovering = $0 }
+                    .help("Ouvrir \(account.title)")
+                    .accessibilityIdentifier("item.signInWith.account")
+                } else {
+                    HStack(spacing: 12) {
+                        ProviderMark(provider: LoginProvider(rawValue: provider), size: 34)
+                        Text(verbatim: LoginProvider.displayName(provider))
+                            .font(.body.weight(.semibold))
+                    }
+                    .accessibilityIdentifier("item.signInWith.provider")
+                }
+            }
+            .editorRowPadding()
+        }
     }
 }

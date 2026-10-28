@@ -7550,6 +7550,16 @@
         }
       }
     },
+    "Modifier le coffre…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Vault…"
+          }
+        }
+      }
+    },
     "Modifié" : {
       "localizations" : {
         "en" : {
@@ -8426,6 +8436,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open ${item}"
+          }
+        }
+      }
+    },
+    "Ouvrir %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open %@"
           }
         }
       }
@@ -12666,6 +12686,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "signs in with"
+          }
+        }
+      }
+    },
+    "se connecter avec" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sign in with"
           }
         }
       }
