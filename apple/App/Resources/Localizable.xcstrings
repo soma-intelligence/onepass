@@ -238,6 +238,16 @@
         }
       }
     },
+    "%@ · utilisée %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · used %2$@"
+          }
+        }
+      }
+    },
     "%@, utilisé %@" : {
       "localizations" : {
         "en" : {
@@ -4780,12 +4790,32 @@
         }
       }
     },
+    "Elle ne pourra plus remplir. Pour la réutiliser, associe-la de nouveau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It won't be able to fill anymore. To use it again, pair it again."
+          }
+        }
+      }
+    },
     "Elle reste sur cet appareil" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "It stays on this device"
+          }
+        }
+      }
+    },
+    "Elles remplissent depuis le coffre ouvert sur ce Mac et se verrouillent avec lui." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "They fill from the vault open on this Mac and lock with it."
           }
         }
       }
@@ -5166,6 +5196,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Expose “%@” to AI agents"
+          }
+        }
+      }
+    },
+    "Extension" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extension"
+          }
+        }
+      }
+    },
+    "Extensions de navigateur" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browser Extensions"
           }
         }
       }
@@ -8340,6 +8390,26 @@
         }
       }
     },
+    "Oublier %@ ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget %@?"
+          }
+        }
+      }
+    },
+    "Oublier l'extension" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget Extension"
+          }
+        }
+      }
+    },
     "Oui" : {
       "localizations" : {
         "en" : {
@@ -8406,6 +8476,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open OnePass to copy the code"
+          }
+        }
+      }
+    },
+    "Ouvre l'extension OnePass dans Safari, Chrome ou Firefox pour l'associer à ce Mac." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the OnePass extension in Safari, Chrome or Firefox to pair it with this Mac."
           }
         }
       }

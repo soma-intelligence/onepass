@@ -1,3 +1,4 @@
+import DesignKit
 import ImageIO
 #if os(iOS)
 import PhotosUI
@@ -112,6 +113,9 @@ private struct ProfileSection: View {
     @Environment(AppModel.self) private var model
     @State private var choosingFile = false
     @State private var failed = false
+    /// The Settings window opens on this page: the name field would take focus with all its text
+    /// selected. It only focuses on a click.
+    @FocusState private var nameFocused: Bool
     #if os(iOS)
     @State private var pick: PhotosPickerItem?
     #endif
@@ -135,6 +139,16 @@ private struct ProfileSection: View {
                     .labelsHidden()
                     .textFieldStyle(.plain)
                     .font(.title3.weight(.semibold))
+                    .focused($nameFocused)
+                    // A real field: a soft well, an accent ring while typing.
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.fill.quaternary, in: .rect(cornerRadius: 8, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(nameFocused ? Theme.accent : Color.primary.opacity(0.08), lineWidth: nameFocused ? 1.5 : 1)
+                    }
+                    .frame(maxWidth: 280, alignment: .leading)
                     .accessibilityIdentifier("settings.profile.name")
                     HStack(spacing: 12) {
                         #if os(iOS)
@@ -164,6 +178,10 @@ private struct ProfileSection: View {
             Text(failed
                 ? "Cette image n'a pas pu être lue. Essaie un JPEG, un PNG ou un HEIC."
                 : "La photo reste sur cet appareil, recadrée en carré, sans ses métadonnées (lieu, date).")
+        }
+        .task {
+            try? await Task.sleep(for: .milliseconds(50))
+            nameFocused = false
         }
         .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.image]) { result in
             guard case .success(let url) = result else { return }

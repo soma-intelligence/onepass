@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// The empty detail column's picture: a vault door seen face on, with a graduated dial ring, a
-/// six-arm wheel and a keyhole that glows in the accent, a few credentials floating behind it
-/// (card, key, padlock) and small sparkles. Soft light from above: gradient faces, hairline
-/// highlights, drop shadows, no hard outlines. Original artwork, drawn entirely in shapes.
+/// six-arm wheel and a keyhole that glows in the accent, a key, a card and a padlock floating
+/// around it, and a few sparkles. One light from the top left: brushed faces, bevels catching
+/// it, soft drop shadows, a faint accent rim on the far side. Original artwork, all shapes.
 public struct VaultIllustration: View {
     private let size: CGFloat
     private let tint: Color
@@ -15,39 +15,48 @@ public struct VaultIllustration: View {
     }
 
     private var dark: Bool { scheme == .dark }
-    /// Face of a surface lit from above: lighter top, darker bottom.
-    private func face(_ top: Double, _ bottom: Double) -> LinearGradient {
-        let ink: Color = dark ? .white : .black
-        return LinearGradient(colors: [ink.opacity(top), ink.opacity(bottom)], startPoint: .top, endPoint: .bottom)
+    private var ink: Color { dark ? .white : .black }
+    /// Opaque ground under the translucent faces, close to the page.
+    private var base: Color { dark ? Color(white: 0.14) : Color(white: 0.965) }
+    private var shadow: Color { .black.opacity(dark ? 0.6 : 0.14) }
+
+    /// A face lit from the top left.
+    private func face(_ lit: Double, _ shade: Double) -> LinearGradient {
+        LinearGradient(colors: [ink.opacity(lit), ink.opacity(shade)], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
-    /// The rim catching the light on top and fading out below.
-    private func rim(_ strength: Double = 1) -> LinearGradient {
-        let ink: Color = dark ? .white : .black
-        return LinearGradient(colors: [ink.opacity((dark ? 0.22 : 0.12) * strength), ink.opacity(0.02)],
+    /// A bevel: bright where the light hits, gone on the far side.
+    private func bevel(_ strength: Double = 1) -> LinearGradient {
+        LinearGradient(colors: [ink.opacity((dark ? 0.3 : 0.16) * strength), ink.opacity(0.03), ink.opacity(0.0)],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+    /// The far side's edge, catching a little of the accent.
+    private var accentRim: LinearGradient {
+        LinearGradient(colors: [.clear, .clear, tint.opacity(dark ? 0.55 : 0.35)],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+    private var accentFill: LinearGradient {
+        LinearGradient(colors: [tint.mix(with: .white, by: 0.45), tint, tint.mix(with: .black, by: 0.15)],
             startPoint: .top, endPoint: .bottom)
     }
-    /// Opaque ground under the translucent faces, close to the page.
-    private var base: Color { dark ? Color(white: 0.135) : Color(white: 0.965) }
-    private var shadow: Color { .black.opacity(dark ? 0.55 : 0.12) }
 
     public var body: some View {
         let u = size / 100
         ZStack {
-            // Accent glow behind everything.
             Circle()
-                .fill(RadialGradient(colors: [tint.opacity(dark ? 0.22 : 0.12), .clear],
-                    center: .center, startRadius: 0, endRadius: u * 50))
-                .frame(width: u * 100, height: u * 100)
+                .fill(RadialGradient(colors: [tint.opacity(dark ? 0.2 : 0.1), tint.opacity(0.03), .clear],
+                    center: .center, startRadius: 0, endRadius: u * 52))
+                .frame(width: u * 104, height: u * 104)
 
-            card(u: u).rotationEffect(.degrees(-16)).offset(x: u * 33, y: -u * 19)
-            key(u: u).rotationEffect(.degrees(-38)).offset(x: -u * 35, y: -u * 18)
+            card(u: u).rotationEffect(.degrees(-15)).offset(x: u * 33, y: -u * 19)
+            key(u: u).rotationEffect(.degrees(-36)).offset(x: -u * 34, y: -u * 19)
+
             door(u: u)
 
-            padlock(u: u).rotationEffect(.degrees(-9)).offset(x: -u * 27, y: u * 25)
+            padlock(u: u).rotationEffect(.degrees(-10)).offset(x: -u * 28, y: u * 26)
 
-            sparkle(u: u, side: 4.2).offset(x: u * 36, y: u * 22)
-            sparkle(u: u, side: 2.8).offset(x: u * 24, y: -u * 34)
-            sparkle(u: u, side: 2.2).offset(x: -u * 38, y: u * 6)
+            sparkle(u: u, side: 4.4).offset(x: u * 37, y: u * 23)
+            sparkle(u: u, side: 2.8).offset(x: u * 25, y: -u * 35)
+            sparkle(u: u, side: 2.1).offset(x: -u * 40, y: u * 6)
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
@@ -57,28 +66,50 @@ public struct VaultIllustration: View {
 
     private func door(u: CGFloat) -> some View {
         ZStack {
-            // Frame, on an opaque base so nothing behind shows through.
+            // Long soft shadow, then the frame.
+            Circle()
+                .fill(shadow)
+                .frame(width: u * 64, height: u * 64)
+                .blur(radius: u * 5)
+                .offset(x: u * 2, y: u * 5)
             Circle()
                 .fill(base)
-                .overlay { Circle().fill(face(0.11, 0.03)) }
-                .overlay { Circle().strokeBorder(rim(), lineWidth: max(1, u * 0.35)) }
+                .overlay { Circle().fill(face(0.12, 0.03)) }
+                .overlay { Circle().strokeBorder(bevel(1.2), lineWidth: max(1, u * 0.45)) }
+                .overlay { Circle().strokeBorder(accentRim, lineWidth: max(1, u * 0.35)) }
                 .frame(width: u * 64, height: u * 64)
-                .shadow(color: shadow, radius: u * 6, y: u * 4)
-            // Graduated dial ring.
-            ForEach(0..<60, id: \.self) { i in
-                let major = i.isMultiple(of: 5)
+            // Graduated dial ring, majors a little brighter.
+            ForEach(0..<72, id: \.self) { i in
+                let major = i.isMultiple(of: 6)
                 Capsule()
-                    .fill((dark ? Color.white : .black).opacity(major ? 0.22 : 0.09))
-                    .frame(width: u * (major ? 0.55 : 0.35), height: u * (major ? 2.4 : 1.4))
-                    .offset(y: -u * 28.6)
-                    .rotationEffect(.degrees(Double(i) * 6))
+                    .fill(ink.opacity(major ? 0.26 : 0.1))
+                    .frame(width: u * (major ? 0.5 : 0.3), height: u * (major ? 2.2 : 1.2))
+                    .offset(y: -u * 28.7)
+                    .rotationEffect(.degrees(Double(i) * 5))
             }
-            // Recessed door: darker on top, as if set back.
+            // A fine groove between the ring and the door.
             Circle()
-                .fill(face(0.015, 0.075))
-                .overlay { Circle().strokeBorder(LinearGradient(colors: [.black.opacity(dark ? 0.6 : 0.15), .clear],
-                    startPoint: .top, endPoint: .bottom), lineWidth: u * 0.8) }
+                .strokeBorder(ink.opacity(dark ? 0.06 : 0.05), lineWidth: max(0.5, u * 0.2))
+                .frame(width: u * 53.5, height: u * 53.5)
+            // Recessed door: lit edge at the bottom right (set back), brushed face.
+            Circle()
+                .fill(base)
+                .overlay {
+                    Circle().fill(AngularGradient(colors: [
+                        ink.opacity(0.05), ink.opacity(0.09), ink.opacity(0.04), ink.opacity(0.08), ink.opacity(0.05),
+                    ], center: .center))
+                }
+                .overlay {
+                    Circle().strokeBorder(LinearGradient(colors: [.black.opacity(dark ? 0.7 : 0.18), .clear, ink.opacity(0.14)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: u * 0.9)
+                }
                 .frame(width: u * 50, height: u * 50)
+            // Specular sheen across the upper left of the door.
+            Circle()
+                .trim(from: 0.55, to: 0.8)
+                .stroke(LinearGradient(colors: [.clear, Color.white.opacity(dark ? 0.16 : 0.95), .clear],
+                    startPoint: .leading, endPoint: .trailing), style: StrokeStyle(lineWidth: u * 0.6, lineCap: .round))
+                .frame(width: u * 45, height: u * 45)
             wheel(u: u)
         }
     }
@@ -89,10 +120,9 @@ public struct VaultIllustration: View {
                 ZStack {
                     Capsule()
                         .fill(base)
-                        .overlay { Capsule().fill(face(0.24, 0.08)) }
-                        .overlay { Capsule().strokeBorder(rim(0.8), lineWidth: max(0.5, u * 0.2)) }
-                        .frame(width: u * 2.6, height: u * 38)
-                    // Grips.
+                        .overlay { Capsule().fill(LinearGradient(colors: [ink.opacity(0.08), ink.opacity(0.26), ink.opacity(0.08)],
+                            startPoint: .leading, endPoint: .trailing)) }
+                        .frame(width: u * 2.2, height: u * 37)
                     VStack {
                         grip(u: u)
                         Spacer()
@@ -101,18 +131,29 @@ public struct VaultIllustration: View {
                     .frame(height: u * 40)
                 }
                 .rotationEffect(.degrees(Double(i) * 60 + 30))
-                .shadow(color: shadow.opacity(0.6), radius: u * 1.5, y: u * 1)
             }
-            // Hub.
+            .shadow(color: shadow.opacity(0.7), radius: u * 1.2, x: u * 0.5, y: u * 1)
+            // Hub with a knurled edge.
             Circle()
                 .fill(base)
-                .overlay { Circle().fill(face(0.26, 0.09)) }
-                .overlay { Circle().strokeBorder(rim(1.2), lineWidth: max(1, u * 0.3)) }
+                .overlay { Circle().fill(face(0.28, 0.08)) }
+                .overlay { Circle().strokeBorder(bevel(1.4), lineWidth: max(1, u * 0.35)) }
                 .frame(width: u * 15, height: u * 15)
-                .shadow(color: shadow, radius: u * 2, y: u * 1.5)
+                .shadow(color: shadow, radius: u * 2, x: u * 0.6, y: u * 1.5)
+            ForEach(0..<36, id: \.self) { i in
+                Capsule()
+                    .fill(ink.opacity(0.1))
+                    .frame(width: u * 0.22, height: u * 0.9)
+                    .offset(y: -u * 6.6)
+                    .rotationEffect(.degrees(Double(i) * 10))
+            }
+            // The keyhole's well, the accent glowing from inside.
             Circle()
-                .fill(face(0.04, 0.14))
-                .frame(width: u * 9.5, height: u * 9.5)
+                .fill(RadialGradient(colors: [tint.opacity(0.35), .black.opacity(dark ? 0.5 : 0.12)],
+                    center: .center, startRadius: 0, endRadius: u * 4.8))
+                .overlay { Circle().strokeBorder(LinearGradient(colors: [.black.opacity(0.5), ink.opacity(0.15)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: max(0.5, u * 0.3)) }
+                .frame(width: u * 9.6, height: u * 9.6)
             keyhole(u: u, scale: 1)
         }
     }
@@ -120,45 +161,58 @@ public struct VaultIllustration: View {
     private func grip(u: CGFloat) -> some View {
         Circle()
             .fill(base)
-            .overlay { Circle().fill(face(0.3, 0.1)) }
-            .overlay { Circle().strokeBorder(rim(1.1), lineWidth: max(0.5, u * 0.25)) }
-            .frame(width: u * 5.2, height: u * 5.2)
+            .overlay { Circle().fill(face(0.34, 0.1)) }
+            .overlay { Circle().strokeBorder(bevel(1.3), lineWidth: max(0.5, u * 0.25)) }
+            // Specular dot.
+            .overlay(alignment: .topLeading) {
+                Circle().fill(Color.white.opacity(dark ? 0.35 : 0.9)).frame(width: u * 1.1, height: u * 1.1)
+                    .blur(radius: u * 0.3).padding(u * 1)
+            }
+            .frame(width: u * 5, height: u * 5)
     }
 
-    /// The keyhole in the accent, lit from inside.
     private func keyhole(u: CGFloat, scale: CGFloat) -> some View {
-        let fill = LinearGradient(colors: [tint.mix(with: .white, by: 0.35), tint], startPoint: .top, endPoint: .bottom)
-        return VStack(spacing: -u * 0.5 * scale) {
-            Circle().fill(fill).frame(width: u * 3.2 * scale, height: u * 3.2 * scale)
-            UnevenRoundedRectangle(topLeadingRadius: u * 0.2, bottomLeadingRadius: u * 0.6,
-                    bottomTrailingRadius: u * 0.6, topTrailingRadius: u * 0.2)
-                .fill(fill)
-                .frame(width: u * 1.8 * scale, height: u * 3.4 * scale)
+        VStack(spacing: -u * 0.55 * scale) {
+            Circle().fill(accentFill).frame(width: u * 3.1 * scale, height: u * 3.1 * scale)
+            Trapezoid()
+                .fill(accentFill)
+                .frame(width: u * 2.2 * scale, height: u * 3.4 * scale)
         }
-        .shadow(color: tint.opacity(0.8), radius: u * 2 * scale)
+        .shadow(color: tint.opacity(0.9), radius: u * 1.6 * scale)
+        .shadow(color: tint.opacity(0.4), radius: u * 4 * scale)
     }
 
     // MARK: - Floating pieces
 
-    private func glassTile(u: CGFloat, width: CGFloat, height: CGFloat, radius: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: u * radius, style: .continuous)
+    private func plate(u: CGFloat, width: CGFloat, height: CGFloat, radius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: u * radius, style: .continuous)
+        return shape
             .fill(base)
-            .overlay { RoundedRectangle(cornerRadius: u * radius, style: .continuous).fill(face(0.13, 0.04)) }
-            .overlay { RoundedRectangle(cornerRadius: u * radius, style: .continuous).strokeBorder(rim(), lineWidth: max(0.5, u * 0.25)) }
+            .overlay { shape.fill(face(0.15, 0.04)) }
+            .overlay { shape.strokeBorder(bevel(1.2), lineWidth: max(0.5, u * 0.3)) }
             .frame(width: u * width, height: u * height)
-            .shadow(color: shadow, radius: u * 3, y: u * 2)
+            .shadow(color: shadow, radius: u * 3.5, x: u * 1, y: u * 2.5)
     }
 
     private func card(u: CGFloat) -> some View {
-        glassTile(u: u, width: 24, height: 15.5, radius: 2.4)
+        plate(u: u, width: 25, height: 16, radius: 2.4)
             .overlay(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: u * 1.6) {
-                    RoundedRectangle(cornerRadius: u * 0.6)
-                        .fill(LinearGradient(colors: [tint.mix(with: .white, by: 0.3), tint], startPoint: .top, endPoint: .bottom))
+                VStack(alignment: .leading, spacing: u * 2) {
+                    // Chip with its contact lines.
+                    RoundedRectangle(cornerRadius: u * 0.7, style: .continuous)
+                        .fill(accentFill)
+                        .overlay {
+                            VStack(spacing: u * 0.55) {
+                                ForEach(0..<3, id: \.self) { _ in Rectangle().fill(.white.opacity(0.25)).frame(height: u * 0.15) }
+                            }
+                            .padding(.horizontal, u * 0.6)
+                        }
                         .frame(width: u * 4.6, height: u * 3.4)
-                    HStack(spacing: u * 1.1) {
+                    HStack(spacing: u * 1.2) {
                         ForEach(0..<4, id: \.self) { _ in
-                            Capsule().fill((dark ? Color.white : .black).opacity(0.16)).frame(width: u * 3, height: u * 0.9)
+                            HStack(spacing: u * 0.45) {
+                                ForEach(0..<4, id: \.self) { _ in Circle().fill(ink.opacity(0.22)).frame(width: u * 0.6) }
+                            }
                         }
                     }
                 }
@@ -167,42 +221,85 @@ public struct VaultIllustration: View {
     }
 
     private func key(u: CGFloat) -> some View {
-        let ink: Color = dark ? .white : .black
-        return HStack(spacing: -u * 0.4) {
+        let metal = LinearGradient(colors: [ink.opacity(0.3), ink.opacity(0.1)], startPoint: .top, endPoint: .bottom)
+        return HStack(spacing: -u * 0.6) {
+            // Bow: a ring with a real hole.
             Circle()
                 .fill(base)
-                .overlay { Circle().fill(face(0.16, 0.05)) }
-                .overlay { Circle().strokeBorder(rim(), lineWidth: max(0.5, u * 0.25)) }
-                .overlay { Circle().fill(dark ? Color(white: 0.13) : Color(white: 0.96)).frame(width: u * 3, height: u * 3) }
-                .frame(width: u * 9, height: u * 9)
-            ZStack(alignment: .bottomTrailing) {
-                Capsule().fill(base).overlay { Capsule().fill(face(0.16, 0.06)) }.frame(width: u * 13, height: u * 2.4)
-                HStack(spacing: u * 1) {
-                    Rectangle().fill(ink.opacity(0.12)).frame(width: u * 1.2, height: u * 2.2)
-                    Rectangle().fill(ink.opacity(0.12)).frame(width: u * 1.2, height: u * 3)
+                .overlay { Circle().fill(metal) }
+                .overlay { Circle().strokeBorder(bevel(1.2), lineWidth: max(0.5, u * 0.3)) }
+                .mask {
+                    Circle().overlay { Circle().frame(width: u * 3.4, height: u * 3.4).blendMode(.destinationOut) }
+                        .compositingGroup()
                 }
-                .offset(x: -u * 1, y: u * 2.4)
+                .frame(width: u * 9.5, height: u * 9.5)
+            // Shaft and its bit.
+            ZStack(alignment: .bottomTrailing) {
+                Capsule()
+                    .fill(base)
+                    .overlay { Capsule().fill(metal) }
+                    .frame(width: u * 14, height: u * 2.4)
+                HStack(alignment: .top, spacing: u * 0.6) {
+                    RoundedRectangle(cornerRadius: u * 0.3).fill(base).overlay { RoundedRectangle(cornerRadius: u * 0.3).fill(metal) }
+                        .frame(width: u * 1.4, height: u * 2.4)
+                    RoundedRectangle(cornerRadius: u * 0.3).fill(base).overlay { RoundedRectangle(cornerRadius: u * 0.3).fill(metal) }
+                        .frame(width: u * 1.4, height: u * 3.4)
+                }
+                .offset(x: -u * 1, y: u * 2.6)
             }
         }
-        .shadow(color: shadow, radius: u * 3, y: u * 2)
+        .shadow(color: shadow, radius: u * 3, x: u * 1, y: u * 2.5)
     }
 
     private func padlock(u: CGFloat) -> some View {
-        VStack(spacing: -u * 1.2) {
-            Circle()
-                .trim(from: 0.5, to: 1)
-                .stroke(face(0.2, 0.08), style: StrokeStyle(lineWidth: u * 1.8, lineCap: .round))
-                .frame(width: u * 8.5, height: u * 8.5)
-                .offset(y: u * 2.2)
-            glassTile(u: u, width: 13, height: 10.5, radius: 2.2)
+        ZStack(alignment: .top) {
+            // Shackle: a U with straight legs going into the body.
+            Shackle()
+                .stroke(LinearGradient(colors: [ink.opacity(0.4), ink.opacity(0.14)], startPoint: .leading, endPoint: .trailing),
+                    style: StrokeStyle(lineWidth: u * 1.7, lineCap: .round))
+                .frame(width: u * 8, height: u * 8)
+            plate(u: u, width: 13.5, height: 10.5, radius: 2.4)
                 .overlay { keyhole(u: u, scale: 0.55) }
+                .offset(y: u * 6)
         }
+        .frame(width: u * 13.5, height: u * 16.5)
     }
 
     private func sparkle(u: CGFloat, side: CGFloat) -> some View {
         Image(systemName: "sparkle")
             .font(.system(size: u * side, weight: .medium))
-            .foregroundStyle(tint.mix(with: .white, by: 0.3).opacity(0.75))
-            .shadow(color: tint.opacity(0.6), radius: u * 1)
+            .foregroundStyle(LinearGradient(colors: [tint.mix(with: .white, by: 0.55), tint.mix(with: .white, by: 0.15)],
+                startPoint: .top, endPoint: .bottom))
+            .shadow(color: tint.opacity(0.7), radius: u * 1.2)
+    }
+}
+
+/// The keyhole's slot: wider at the bottom, rounded foot.
+private struct Trapezoid: Shape {
+    func path(in rect: CGRect) -> Path {
+        let inset = rect.width * 0.22
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX + inset, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - rect.width * 0.25))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX - rect.width * 0.25, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + rect.width * 0.25, y: rect.maxY))
+        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - rect.width * 0.25), control: CGPoint(x: rect.minX, y: rect.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// A padlock's shackle: two legs joined by a half circle on top.
+private struct Shackle: Shape {
+    func path(in rect: CGRect) -> Path {
+        let r = rect.width / 2
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+        p.addArc(center: CGPoint(x: rect.midX, y: rect.minY + r), radius: r,
+            startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        return p
     }
 }
