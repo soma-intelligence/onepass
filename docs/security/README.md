@@ -30,7 +30,7 @@ Le stockage voit en clair exactement ceci :
 
 - un appareil déverrouillé et compromis au niveau système (root, jailbreak) ;
 - un attaquant qui lit la mémoire du processus : les secrets sont effacés à la libération (`zeroize`) mais les pages ne sont pas verrouillées (`mlock` n'est pas implémenté) ;
-- la CLI de développement, qui stocke la Secret Key en clair dans `device.bin` (voir `core/README.md`) ;
+- la CLI lancée avec `--insecure-file-secret-key`, qui garde alors la Secret Key en clair dans `device.bin` par choix explicite (machine sans magasin de secrets, voir `core/README.md`) ; sans cette option, la Secret Key de la CLI est dans le trousseau de session macOS ou le Secret Service sous Linux, que lit tout processus du même utilisateur ;
 - l'analyse de trafic : la taille des blobs est arrondie par paliers, pas masquée ;
 - la liste des vaults du compte n'est pas signée (limite connue du jalon 1) : un stockage peut masquer un vault entier à un appareil qui ne l'a jamais lu. Un appareil qui l'a déjà lu le détecte (`VaultMissing`), et un vault planté est refusé faute de manifeste signé. Une liste de vaults signée est prévue au jalon 2 ;
 - l'appairage d'appareils, le partage entre membres, la révocation, les pièces jointes (le type de blob `Attachment` est réservé, sans flux associé), le modèle formel Tamarin ou ProVerif.
@@ -71,7 +71,7 @@ Chaque blob est scellé par AES-256-GCM-SIV avec un engagement de clé HMAC-SHA2
 | 50 à fin moins 16 | texte chiffré (plaintext paddé) |
 | 16 derniers | tag GCM-SIV |
 
-Types de blob : `Keyset` 1, `VaultKey` 2, `VaultMeta` 3, `ItemKey` 4, `Item` 5, `Manifest` 6, `Attachment` 7, `DeviceState` 8. `Attachment` et `DeviceState` sont réservés : rien ne les produit au jalon 1 (`device.bin` de la CLI est du postcard en clair), mais leurs numéros restent pris.
+Types de blob : `Keyset` 1, `VaultKey` 2, `VaultMeta` 3, `ItemKey` 4, `Item` 5, `Manifest` 6, `Attachment` 7, `DeviceState` 8. `Attachment` et `DeviceState` sont réservés : rien ne les produit au jalon 1 (`device.bin` de la CLI est du postcard en clair, sans la Secret Key sauf `--insecure-file-secret-key`), mais leurs numéros restent pris.
 
 **Données associées.** `AAD_base = en-tête[0..18] || blob_id (16) || vault_id (16, ou 16 octets nuls s'il n'y en a pas) || schéma (u16 big-endian)`, soit 52 octets. L'engagement vaut `HMAC-SHA256(K_com, AAD_base)`. Les données associées passées à GCM-SIV sont `AAD_base || engagement` (84 octets). Elles lient donc le format, l'algorithme, le type, le nonce, l'id du blob, l'id du vault et la version de schéma.
 
@@ -225,7 +225,7 @@ Un fichier d'import est une entrée hostile : un export altéré ou piégé ne d
 4. **Dernier manifeste vu** : la spec mentionne le dernier numéro de séquence. Le code retient le `seq` et le hash du manifeste, ce qui détecte en plus une bifurcation au même `seq`.
 5. **Plafond Argon2id** : le code borne les paramètres venant du stockage à 2 GiB, 16 passes, 16 voies avant de calculer, pour qu'un serveur hostile ne puisse pas épuiser l'appareil. La spec ne le mentionne pas.
 6. **Modèle formel** : la spec prévoit un modèle Tamarin ou ProVerif vérifié en CI. Il n'existe pas encore.
-7. **CLI** : la section 9.1 de la spec prévoit un passage par l'app Mac avec Touch ID. Au jalon 1 la CLI est en mode développement autonome (Secret Key en clair dans `device.bin`), écart assumé.
+7. **CLI** : la section 9.1 de la spec prévoit un passage par l'app Mac avec Touch ID. Au jalon 1 la CLI est en mode développement autonome, écart assumé. Depuis le constat F2 (2026-10-28), sa Secret Key est dans le magasin de secrets du système (trousseau de session macOS, Secret Service sous Linux), plus dans `device.bin` ; en clair seulement avec `--insecure-file-secret-key` (spec `docs/superpowers/specs/2026-10-28-cli-secret-key-design.md`).
 8. **Liste des vaults non signée** : la spec (4.4) protège chaque vault par son manifeste, pas la liste des vaults du compte. Au jalon 1 cette liste n'est pas authentifiée : un vault planté est refusé (pas de manifeste signé valide), un vault déjà lu par l'appareil puis masqué est détecté (`VaultMissing`), mais un vault jamais lu par l'appareil peut être masqué sans détection. Liste signée prévue au jalon 2, reportée au jalon 2b avec la liste signée des appareils (section 10.7).
 9. **Fuzzing** : la spec dit "tous les parseurs". Le jalon 1 fuzze les sept points d'entrée listés en section 4, pas les parseurs d'import et d'export, qui n'existent pas encore. Le jalon 5 ajoute une cible par parseur d'import, d'archive et de réponse externe (section 4).
 
@@ -331,7 +331,7 @@ L'adversaire est un agent IA, ou un contenu qu'il lit (injection de prompt), qui
 - **Audit fermé pour les secrets** : avant un outil secret (`run_with_secrets`, `fill_template`, `create_login`, `totp_code`, `reveal_secret`) et avant une signature SSH, `AuditSink::ready` vérifie sans rien écrire (verrou, dernière ligne et tête) que le journal peut être prolongé ; sinon l'action est refusée. Une écriture qui échoue après l'action rend quand même le résultat (l'action a eu lieu) et le signale sur stderr. Les outils de métadonnées restent ouverts en cas d'échec du journal, faute de secret en jeu. L'ajout ne lit que la fin du fichier ; `verify_log` lit tout sous un verrou partagé, donc jamais un ajout à moitié fait. Une dernière ligne coupée ne se répare que par `onepass mcp audit --rotate`, qui archive le journal et sa tête (`audit.log.<date UTC>.bad`) et en ouvre un vide.
 - **Approbation sur le terminal** : `/dev/tty` n'est ouvert que le temps d'une question, l'entrée en attente est vidée (`tcflush`), puis un code aléatoire de 2 lettres (alphabet `abcdefghjkmnpqrstuvwxyz`, tiré par `aws-lc-rs`) doit être retapé : le code pour une fois, le code suivi de ` s`, ` s15` ou ` s60` pour 5, 15 ou 60 minutes. Une injection de frappes (`TIOCSTI`) faite d'avance est vidée et ne peut pas deviner le code. Risque résiduel : un injecteur qui lit aussi l'écran du terminal voit le code et peut le retaper. Les approbations partagent le terminal du client ; aucune lecture n'est en cours entre deux questions.
 - **Flags de vault** (`mcp_access`, `travel_safe`) fixés à la création : le meta de vault n'est pas versionné, le rendre modifiable permettrait à un stockage hostile de rejouer un ancien meta.
-- **Déverrouillage** : mot de passe sur `/dev/tty` ; en mode développement, la Secret Key reste en clair dans `device.bin` (voir `core/README.md`).
+- **Déverrouillage** : mot de passe sur `/dev/tty` ; Secret Key lue dans le magasin de secrets du système (trousseau de session macOS, Secret Service sous Linux), ou en clair dans `device.bin` avec `--insecure-file-secret-key` (voir `core/README.md`).
 
 ### 11.2 Modèle de menace agent SSH
 
