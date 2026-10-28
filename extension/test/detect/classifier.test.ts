@@ -14,6 +14,7 @@ import {
   roleFitsControl,
   signupContext,
   toFieldRole,
+  TransientRefusal,
 } from "../../src/content/detect/classifier";
 import { extractFeatures, type FieldFeatures } from "../../src/content/detect/features";
 import { classifyField, type FieldElement, isFieldCandidate } from "../../src/content/detect/fields";
@@ -284,6 +285,77 @@ describe("remoteSession", () => {
       }, "gbm");
       await expect(s!.predict([{ tag: "input" } as FieldFeatures])).rejects.toThrow();
     }
+  });
+});
+
+describe("remoteSession refusals (final review M5)", () => {
+  const sessionReplying = (reply: Record<string, unknown>) =>
+    remoteSession(async (m) => {
+      const fields = (m as { fields: unknown[] }).fields;
+      return { ok: fields.length ? { kind: "gbm", crossSite: false, ...reply } : { kind: "gbm", crossSite: false } };
+    }, "gbm");
+
+  it("busy and rate are transient refusals; budget is a plain (definitive) failure", async () => {
+    for (const refused of ["busy", "rate"]) {
+      const s = await sessionReplying({ refused });
+      await expect(s!.predict([{ tag: "input" } as FieldFeatures])).rejects.toBeInstanceOf(TransientRefusal);
+    }
+    const s = await sessionReplying({ refused: "budget" });
+    const e = await s!.predict([{ tag: "input" } as FieldFeatures]).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(Error);
+    expect(e).not.toBeInstanceOf(TransientRefusal);
+  });
+});
+
+describe("createModelHook: only definitive answers are cached (final review M5)", () => {
+  it("a busy or rate refusal is not cached: the form is asked again after the retry pause, then answered", async () => {
+    for (const refused of ["busy", "rate"]) {
+      const timers: { cb: () => void; ms: number }[] = [];
+      let calls = 0;
+      const classifier: FieldClassifier = {
+        kind: "gbm",
+        classify: async (_e, fs) => {
+          calls++;
+          if (calls === 1) throw new TransientRefusal(refused);
+          return fs.map(() => ({ role: "email" as FieldRole, score: 1 }));
+        },
+      };
+      const updated = vi.fn();
+      const hook = createModelHook({ classifier, onUpdate: updated, debounceMs: 5, retryMs: 700, setTimer: (cb, ms) => timers.push({ cb, ms }) });
+      const form = [{ tag: "input", name: "a" } as FieldFeatures];
+      expect(hook.lookup(form)).toBeNull();
+      expect(timers.map((t) => t.ms)).toEqual([5]);
+      timers.shift()!.cb();
+      await vi.waitFor(() => expect(updated).toHaveBeenCalledTimes(1));
+      // Not cached: the next analysis asks again, after the retry pause rather than the debounce.
+      expect(hook.lookup(form)).toBeNull();
+      expect(timers.map((t) => t.ms)).toEqual([700]);
+      timers.shift()!.cb();
+      await vi.waitFor(() => expect(updated).toHaveBeenCalledTimes(2));
+      expect(calls).toBe(2);
+      expect(hook.lookup(form)).toEqual([{ role: "email", score: 1 }]);
+      // Back to the debounce for the next new form.
+      hook.lookup([{ tag: "input", name: "b" } as FieldFeatures]);
+      expect(timers.map((t) => t.ms)).toEqual([5]);
+    }
+  });
+
+  it("a budget refusal (or any other failure) is cached: heuristics, never asked again", async () => {
+    let calls = 0;
+    const s = await remoteSession(async (m) => {
+      const fields = (m as { fields: unknown[] }).fields;
+      if (fields.length) calls++;
+      return { ok: fields.length ? { kind: "gbm", crossSite: false, refused: "budget" } : { kind: "gbm", crossSite: false } };
+    }, "gbm");
+    const classifier = await classifierFor("gbm", { load: async () => s });
+    const updated = vi.fn();
+    const hook = createModelHook({ classifier, onUpdate: updated, debounceMs: 0 });
+    const form = [{ tag: "input", name: "a" } as FieldFeatures];
+    hook.lookup(form);
+    await vi.waitFor(() => expect(updated).toHaveBeenCalledTimes(1));
+    expect(hook.lookup(form)).toBeNull();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(calls).toBe(1);
   });
 });
 
