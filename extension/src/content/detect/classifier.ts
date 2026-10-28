@@ -16,7 +16,7 @@
 // its heuristic roles, and the page is analysed again when the answer arrives.
 
 import type { FieldRole } from "../../shared/messages";
-import { isModelLabel, type ModelLabel } from "../../shared/model-labels";
+import { isModelLabel, MAX_CLASSIFY_FIELDS, type ModelLabel } from "../../shared/model-labels";
 import type { FieldFeatures, Visibility } from "./features";
 import { classifyField, type FieldElement } from "./fields";
 import { PASSWORD_TYPE_ROLES, type ScoredRole } from "./lexicon";
@@ -42,8 +42,6 @@ export interface ModelSessionLike {
   predict(features: FieldFeatures[]): Promise<{ label: ModelLabel; score: number }[]>;
 }
 
-/** Most fields of one form sent to the model (the worker's budget too); bigger forms keep their heuristic roles. */
-export const MAX_CLASSIFY_FIELDS = 64;
 /** Quiet time before a form is sent to the model, so a page that keeps mutating sends at most one request per burst. */
 export const CLASSIFY_DEBOUNCE_MS = 150;
 /** Longest text value sent, in code points (vectorize reads at most 256 after normalization). */
