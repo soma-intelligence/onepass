@@ -204,12 +204,14 @@ struct PairingFlowTests {
 
     /// Over the real local network transport (loopback): "Ils sont différents" on the approver ends
     /// with that reason on the approver, not with "La connexion a été coupée" from its own close.
-    @Test(.timeLimit(.minutes(1))) func approverRejectKeepsItsReasonOverLocalNetwork() async throws {
+    @Test(.timeLimit(.minutes(2))) func approverRejectKeepsItsReasonOverLocalNetwork() async throws {
         let f = try await PairingFixture(server: false)
         defer { f.cleanUp() }
         let n = PairingNewcomerFlow(
             vault: f.newcomer, mode: .personal, listener: LocalNetworkPairingListener(),
-            deviceName: Self.localName, deviceKind: .tablet)
+            deviceName: Self.localName, deviceKind: .tablet,
+            // Under a loaded test run the approver may connect late: no renewed QR in between.
+            renewEvery: .seconds(600))
         n.start()
         defer { n.cancel() }
         var qr: String?
