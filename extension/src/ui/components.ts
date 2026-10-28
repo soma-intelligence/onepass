@@ -73,7 +73,11 @@ const ICONS = {
   edit: ["M9.5 2.2l2.3 2.3-7 7H2.5V9.2z"],
   lock: ["M4 5.5V4a2 2 0 014 0v1.5", "R2.5 5.5 7 5"],
   copy: ["R5 5 8.5 8.5", "M3 10.5H2.5a1 1 0 01-1-1v-7a1 1 0 011-1h7a1 1 0 011 1V3"],
-  keyhole: ["C6 4.5 2.3", "M5 6h2l.8 4H4.2z"],
+  // The OnePass mark: two columns of dots and one bar (render.mjs geometry).
+  lattice: [
+    "C23.5 24 9", "C23.5 50 9", "C23.5 76 9", "C49.5 24 9", "C49.5 50 9", "C49.5 76 9",
+    "M67.5 24a9 9 0 0118 0v52a9 9 0 01-18 0z",
+  ],
   alert: ["M7 1.8l5.6 9.7H1.4z", "M7 5.6v2.6", "M7 10h.01"],
   // Provider marks, drawn here as plain monochrome strokes in the UI's own
   // line style (never the providers' artwork or colours).
@@ -108,7 +112,7 @@ const VIEWBOX: Partial<Record<IconName, string>> = {
   edit: "0 0 14 14",
   lock: "0 0 12 12",
   copy: "0 0 15 15",
-  keyhole: "0 0 12 12",
+  lattice: "0 0 100 100",
   alert: "0 0 14 14",
 };
 
@@ -119,7 +123,7 @@ export function icon(name: IconName, size = 14): SVGSVGElement {
   svg.setAttribute("viewBox", VIEWBOX[name] ?? "0 0 16 16");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("class", `glyph glyph-${name}`);
-  const filled = name === "more" || name === "keyhole";
+  const filled = name === "more" || name === "lattice";
   svg.setAttribute("fill", filled ? "currentColor" : "none");
   if (!filled) {
     svg.setAttribute("stroke", "currentColor");
@@ -135,6 +139,8 @@ export function icon(name: IconName, size = 14): SVGSVGElement {
       el.setAttribute("cx", cx ?? "0");
       el.setAttribute("cy", cy ?? "0");
       el.setAttribute("r", r ?? "0");
+      // The mark's dots sit behind its bar.
+      if (name === "lattice") el.setAttribute("fill-opacity", "0.55");
     } else if (d.startsWith("R")) {
       const [x, y, w, hh] = d.slice(1).split(" ");
       el = document.createElementNS(SVG_NS, "rect");
@@ -188,10 +194,10 @@ export function itemArt(
   return tile(s.icon_letter, "", size, kind);
 }
 
-/** The OnePass mark: indigo tile with a white keyhole. */
+/** The OnePass mark: indigo tile with the white Lattice. */
 export function mark(size: "s" | "m" | "l" = "m"): HTMLSpanElement {
-  const px = size === "s" ? 13 : size === "m" ? 19 : 36;
-  return h("span", { class: `mark mark-${size}`, attrs: { "aria-hidden": "true" } }, icon("keyhole", px));
+  const px = size === "s" ? 12 : size === "m" ? 17 : 34;
+  return h("span", { class: `mark mark-${size}`, attrs: { "aria-hidden": "true" } }, icon("lattice", px));
 }
 
 /** Text only for assistive technologies. */
