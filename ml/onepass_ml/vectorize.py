@@ -238,7 +238,7 @@ def serialize(row: Mapping[str, Any], keys: Sequence[str] = FEATURE_KEYS) -> str
         return "; ".join(_clean(x) for x in (xs or []))
 
     return " | ".join((
-        f"type={_effective_type(f)}", f"ac={_clean(f.get('autocomplete'))}", f"label={_clean(f.get('label'))}",
+        f"type={_effective_type(f)}", f"name={_clean(f.get('name'))}", f"id={_clean(f.get('id'))}", f"ac={_clean(f.get('autocomplete'))}", f"label={_clean(f.get('label'))}",
         f"ph={_clean(f.get('placeholder'))}", f"aria={_clean(f.get('ariaLabel'))}",
         f"before={_clean(f.get('before'))}", f"after={_clean(f.get('after'))}",
         f"near={join(f.get('neighbourLabels'))}", f"buttons={join(f.get('formButtons'))}",
