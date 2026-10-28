@@ -202,6 +202,41 @@ struct PairingFlowTests {
         #expect(try storeState(dbPath: f.newcomerPath) == .empty)
     }
 
+    /// Over the real local network transport (loopback): "Ils sont différents" on the approver ends
+    /// with that reason on the approver, not with "La connexion a été coupée" from its own close.
+    @Test(.timeLimit(.minutes(1))) func approverRejectKeepsItsReasonOverLocalNetwork() async throws {
+        let f = try await PairingFixture(server: false)
+        defer { f.cleanUp() }
+        let n = PairingNewcomerFlow(
+            vault: f.newcomer, mode: .personal, listener: LocalNetworkPairingListener(),
+            deviceName: Self.localName, deviceKind: .tablet)
+        n.start()
+        defer { n.cancel() }
+        var qr: String?
+        #expect(await eventually {
+            if case .showingCode(let text, _) = n.state { qr = text }
+            return qr != nil
+        })
+        let a = PairingApproverFlow(vault: f.approver, connector: LocalNetworkPairingConnector(timeout: .seconds(15)))
+        await a.begin(qrText: try #require(qr))
+        if case .failed(.notFound) = a.state {
+            try Test.cancel("Bonjour unavailable here: the pairing service could not be resolved on this Mac.")
+        }
+        guard case .comparing = a.state else {
+            Issue.record("approver not comparing: \(a.state)")
+            return
+        }
+        a.cancel()
+        // Let the receiver see its own close.
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(a.state == .failed(.codeRejected))
+        #expect(await eventually {
+            if case .failed = n.state { true } else { false }
+        })
+    }
+
+    static let localName = "iPad de test"
+
     @Test func approvalNeedsPresence() async throws {
         let f = try await PairingFixture(server: true)
         defer { f.cleanUp() }

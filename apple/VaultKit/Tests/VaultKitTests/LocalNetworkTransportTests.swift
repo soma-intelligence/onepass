@@ -42,6 +42,31 @@ struct LocalNetworkTransportTests {
         await #expect(throws: PairingTransportError.closed) { _ = try await server.receive() }
     }
 
+    /// The transport contract: a `receive` whose task is cancelled throws `CancellationError`, not
+    /// `closed`. The flows read `closed` as "the other device left" and would replace the reason they
+    /// stopped for ("Ils sont différents") with "La connexion a été coupée".
+    @Test(.timeLimit(.minutes(1))) func localNetworkReceiveCancelledThrowsCancellation() async throws {
+        let service = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        let listening = Task { try await LocalNetworkPairingListener().listen(serviceName: service) }
+        let client: any PairingTransport
+        do {
+            client = try await LocalNetworkPairingConnector(timeout: .seconds(15)).connect(serviceName: service)
+        } catch {
+            listening.cancel()
+            try Test.cancel(
+                "Bonjour unavailable here (\(error)): the service could not be published or resolved on this Mac.")
+        }
+        let server = try await listening.value
+        defer { server.close() }
+
+        let reading = Task { try await client.receive() }
+        try await Task.sleep(for: .milliseconds(200))
+        reading.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await reading.value }
+        // The cancelled read closed the connection: the other side sees it.
+        await #expect(throws: PairingTransportError.closed) { _ = try await server.receive() }
+    }
+
     @Test func inMemoryTransportClosesBothWays() async throws {
         let (a, b) = InMemoryPairingTransport.pair()
         try await a.send(Data([1]))

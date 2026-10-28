@@ -56,20 +56,26 @@ public final class LocalNetworkPairingTransport: PairingTransport, @unchecked Se
         connection.cancel()
     }
 
-    /// Exactly `count` bytes, or `closed`. Cancelling the task cancels the connection.
+    /// Exactly `count` bytes, or `closed`. Cancelling the task cancels the connection and throws
+    /// `CancellationError` (the `PairingTransport` contract): the flows tell their own stop from the
+    /// other device leaving by that.
     private func read(count: Int) async throws -> Data {
         let connection = connection
+        let cancelled = Atomic<Bool>(false)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Data, any Error>) in
                 connection.receive(minimumIncompleteLength: count, maximumLength: count) { data, _, _, error in
                     if let data, data.count == count, error == nil {
                         c.resume(returning: data)
+                    } else if cancelled.load(ordering: .acquiring) {
+                        c.resume(throwing: CancellationError())
                     } else {
                         c.resume(throwing: PairingTransportError.closed)
                     }
                 }
             }
         } onCancel: {
+            cancelled.store(true, ordering: .releasing)
             connection.cancel()
         }
     }

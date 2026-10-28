@@ -259,6 +259,9 @@ public final class PairingApproverFlow {
         case .granting:
             // The grant may already be out; the result decides.
             break
+        case .failed:
+            // Already stopped (the codes differed, a refusal): the first reason stays.
+            break
         default: fail(failure)
         }
     }

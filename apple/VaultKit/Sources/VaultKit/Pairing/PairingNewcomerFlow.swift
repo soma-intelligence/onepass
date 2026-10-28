@@ -276,6 +276,11 @@ public final class PairingNewcomerFlow {
     }
 
     private func stop(_ final: State) {
+        // A flow that already stopped keeps its first reason (its own close reads as a lost connection).
+        switch state {
+        case .failed, .cancelled: return
+        default: break
+        }
         run?.cancel()
         run = nil
         close()
