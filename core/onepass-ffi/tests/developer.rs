@@ -367,10 +367,15 @@ fn programs_pair_and_unpair_and_the_audit_log_rotates() {
         .clone()
         .pair_program(data.clone(), "/usr/bin/true".into())
         .unwrap();
-    assert!(
-        id.starts_with("platform:") || id.starts_with("adhoc:"),
-        "{id}"
-    );
+    // macOS signs /usr/bin/true; other systems have no code signature.
+    if cfg!(target_os = "macos") {
+        assert!(
+            id.starts_with("platform:") || id.starts_with("adhoc:"),
+            "{id}"
+        );
+    } else {
+        assert!(id.starts_with("unsigned:"), "{id}");
+    }
     let clients = fx.session.clone().paired_clients(data.clone()).unwrap();
     assert_eq!(clients.len(), 1);
     assert_eq!(clients[0].surface, "mcp");
