@@ -43,6 +43,7 @@ struct EditorLabel: View {
 /// A rounded block of rows (the editor's cards): rows are separated by `CardDivider`.
 struct EditorCard<Content: View>: View {
     @ViewBuilder var content: Content
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) { content }
@@ -53,9 +54,15 @@ struct EditorCard<Content: View>: View {
             .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: 14))
             .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.06)) }
             #else
-            // See-through over the window material, with a hairline to hold the edge.
-            .background(.fill.quaternary, in: .rect(cornerRadius: 14))
-            .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.07)) }
+            // Dark: see-through over the window, a hairline to hold the edge. Light: white cards
+            // lifted off a soft gray page (`groupedScreen`) by a hairline and a faint shadow.
+            .background(scheme == .dark ? AnyShapeStyle(.fill.quaternary) : AnyShapeStyle(Color.white),
+                in: .rect(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.07))
+            }
+            .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.04), radius: 3, y: 1)
             #endif
     }
 }
@@ -66,11 +73,24 @@ extension View {
     @ViewBuilder func groupedScreen() -> some View {
         #if os(iOS)
         background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        #elseif os(macOS)
+        modifier(MacGroupedScreen())
         #else
         self
         #endif
     }
 }
+
+#if os(macOS)
+/// Mac, light appearance: a soft gray page under the white cards. Dark keeps the window as is.
+private struct MacGroupedScreen: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content.background(scheme == .dark ? Color.clear : Color(white: 0.965))
+    }
+}
+#endif
 
 struct CardDivider: View {
     var body: some View { Divider().padding(.leading, 16) }

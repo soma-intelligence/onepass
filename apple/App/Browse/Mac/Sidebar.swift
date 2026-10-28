@@ -60,8 +60,15 @@ struct Sidebar: View {
                 .padding(.bottom, 6)
             // In a VStack the list asks for the height of all its rows as a minimum, which made the
             // split view taller than the window and pushed every column's top out of sight.
+            // Rows scrolling up fade out under the account row instead of running behind it.
             list
                 .frame(minHeight: 0, maxHeight: .infinity)
+                .mask {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 12)
+                        Rectangle()
+                    }
+                }
         }
         .background { TitlebarHeightReader(height: $titlebarHeight) }
         // The account menu: our own panel under the account row (the system menu could not take
