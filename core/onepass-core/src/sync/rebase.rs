@@ -300,6 +300,11 @@ impl Repository<SyncStore> {
     /// (the stored epoch's rules, the store).
     pub fn rebase_report(&mut self) -> Result<RebaseReport> {
         let mut first_error = None;
+        // A key rotation the server overtook goes out again above it
+        // first: everything else of the rotation waits for its params.
+        if let Err(e) = self.reissue_rotation() {
+            first_error.get_or_insert(e);
+        }
         for (kind, _) in self.store.lists_needing_rebase()? {
             let result = match kind {
                 RecordKind::DeviceList => self.rebase_list::<DeviceEntry>(),

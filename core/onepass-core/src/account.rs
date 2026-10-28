@@ -43,7 +43,7 @@ use crate::crypto::{
     HybridVerifyingKey, IdentityKey, IdentitySignature, IdentityVerifyingKey, KDF_FLOOR, KdfParams,
     SecretKey, SymmetricKey, derive_auk, seal,
 };
-use crate::{Error, Id, IntegrityError, Result};
+use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
 /// Signature domain of the v1 account parameters.
 const PARAMS_DOMAIN: &[u8] = b"account-params";
@@ -356,6 +356,36 @@ impl Account {
         reseal(&self.params, keyset, new_secret_key, password)
     }
 
+    /// The same keys and KDF params signed again at `epoch` by the identity,
+    /// the keyset resealed under `auk` for those params (ruling K10: a
+    /// rotation whose params the server overtook before they landed goes
+    /// out again above the server's epoch). The new pair is opened once
+    /// before it is returned: the params, and the params and keyset
+    /// records. `self` is unchanged.
+    pub(crate) fn reissue(
+        &self,
+        epoch: u64,
+        auk: &Auk,
+    ) -> Result<(AccountParams, Vec<u8>, Vec<u8>)> {
+        let p = &self.params;
+        let params = sign_params(
+            p.account_id,
+            p.kdf.clone(),
+            p.signing_pub.clone(),
+            p.kem_pub.clone(),
+            epoch,
+            &self.keyset.identity,
+        )?;
+        let keyset_record = seal_keyset(
+            &SymmetricKey::from_bytes(*auk.as_bytes()),
+            &params,
+            &self.keyset,
+        )?;
+        let params_record = params.encode()?;
+        Account::unlock_with_auk(auk, &params_record, &keyset_record, None)?;
+        Ok((params, params_record, keyset_record))
+    }
+
     /// Unlock after a key rotation made on another device (spec 2026-10-28,
     /// section 5), with a Secret Key the user just supplied (typed from the
     /// new Emergency Kit, or received by pairing). Unlike `unlock`, the
@@ -368,11 +398,17 @@ impl Account {
     ///   identity (floors kept), the keyset opening under `password` and
     ///   `secret_key` (`Error::WrongPassword` otherwise).
     ///
+    /// A new identity is also refused when `secret_key` is `previous`, the
+    /// Secret Key this device held before (`Validation("secret key")`): the
+    /// revoked device knows the password and that key too, so a "rotation"
+    /// sealed under them proves nothing (ruling K11).
+    ///
     /// Returns the account, its Account Unlock Key and the pin to keep: the
     /// new identity, the KDF floor raised to the params accepted.
     pub fn unlock_rotated_at(
         password: &str,
         secret_key: &SecretKey,
+        previous: &SecretKey,
         params_record: &[u8],
         keyset_record: &[u8],
         pinned: &PinnedAccount,
@@ -389,6 +425,13 @@ impl Account {
         if params.identity_pub != pinned.identity_pub {
             if params.epoch <= min_epoch {
                 return Err(IntegrityError::ParamsUnsigned.into());
+            }
+            if secret_key.same_as(previous) {
+                return Err(ValidationError {
+                    field: "secret key".into(),
+                    reason: "unchanged",
+                }
+                .into());
             }
             pin.identity_pub = params.identity_pub;
         }
@@ -453,12 +496,20 @@ fn reseal(
 }
 
 /// Whether `params_record`, valid under its own identity, is the pinned
-/// account under another identity than the pinned one: the keys were
-/// rotated on another device (or a store forged it; either way the device
-/// needs the new Secret Key). Nothing is derived.
-pub fn identity_changed(params_record: &[u8], pinned: &PinnedAccount) -> Result<bool> {
+/// account under another identity than the pinned one, at an epoch above
+/// `min_epoch` (the device's pinned params epoch): the keys were rotated on
+/// another device. A store can still forge such params (it only costs a
+/// prompt for the new Secret Key, which no forgery opens); one at or below
+/// the pinned epoch is never reported. Nothing is derived.
+pub fn identity_changed(
+    params_record: &[u8],
+    pinned: &PinnedAccount,
+    min_epoch: u64,
+) -> Result<bool> {
     let params = self_signed(params_record)?;
-    Ok(params.account_id == pinned.account_id && params.identity_pub != pinned.identity_pub)
+    Ok(params.account_id == pinned.account_id
+        && params.identity_pub != pinned.identity_pub
+        && params.epoch > min_epoch)
 }
 
 /// The Account Unlock Key: what `derive_auk` yields from the password and
@@ -1663,6 +1714,7 @@ mod tests {
         let n = shared();
         let (key, r) = rotated();
         let old_pin = pin(n);
+        let old = &n.secret_key;
         let unsigned = Error::Integrity(IntegrityError::ParamsUnsigned);
         // The normal unlock never follows a new identity, whatever the key.
         for k in [key, &n.secret_key] {
@@ -1672,21 +1724,47 @@ mod tests {
                 unsigned
             );
         }
-        assert!(identity_changed(&r.params_record, &old_pin).unwrap());
-        assert!(!identity_changed(&n.params_record, &old_pin).unwrap());
+        assert!(identity_changed(&r.params_record, &old_pin, 1).unwrap());
+        // Not above the pinned epoch: never reported.
+        assert!(!identity_changed(&r.params_record, &old_pin, 2).unwrap());
+        assert!(!identity_changed(&n.params_record, &old_pin, 0).unwrap());
         // The rotation path: the new key opens it and the pin moves to the
         // new identity, the floor kept; the old key is a wrong password.
-        let (a, _, new_pin) =
-            Account::unlock_rotated_at("pw", key, &r.params_record, &r.keyset_record, &old_pin, 1)
-                .unwrap();
+        let (a, _, new_pin) = Account::unlock_rotated_at(
+            "pw",
+            key,
+            old,
+            &r.params_record,
+            &r.keyset_record,
+            &old_pin,
+            1,
+        )
+        .unwrap();
         assert_eq!(new_pin.identity_pub, r.account.params.identity_pub);
         assert_eq!(new_pin.account_id, old_pin.account_id);
         assert!(new_pin.kdf_floor.is_at_least(&old_pin.kdf_floor));
         assert_eq!(a.params, r.account.params);
+        // The key the device already held is refused (a revoked device
+        // knows it too), any other wrong key is a wrong password.
+        assert!(matches!(
+            Account::unlock_rotated_at(
+                "pw",
+                old,
+                old,
+                &r.params_record,
+                &r.keyset_record,
+                &old_pin,
+                1,
+            )
+            .unwrap_err(),
+            Error::Validation(_)
+        ));
+        let guess = SecretKey::generate().unwrap();
         assert_eq!(
             Account::unlock_rotated_at(
                 "pw",
-                &n.secret_key,
+                &guess,
+                old,
                 &r.params_record,
                 &r.keyset_record,
                 &old_pin,
@@ -1697,16 +1775,32 @@ mod tests {
         );
         // A new identity at the pinned epoch is a fork, not a rotation.
         assert_eq!(
-            Account::unlock_rotated_at("pw", key, &r.params_record, &r.keyset_record, &old_pin, 2)
-                .unwrap_err(),
+            Account::unlock_rotated_at(
+                "pw",
+                key,
+                old,
+                &r.params_record,
+                &r.keyset_record,
+                &old_pin,
+                2
+            )
+            .unwrap_err(),
             unsigned
         );
         // Another account (other id) is never followed.
         let mut other = old_pin.clone();
         other.account_id = Id::new();
         assert_eq!(
-            Account::unlock_rotated_at("pw", key, &r.params_record, &r.keyset_record, &other, 1)
-                .unwrap_err(),
+            Account::unlock_rotated_at(
+                "pw",
+                key,
+                old,
+                &r.params_record,
+                &r.keyset_record,
+                &other,
+                1
+            )
+            .unwrap_err(),
             unsigned
         );
         // The old params on the rotated pin: refused before any derivation.
@@ -1715,6 +1809,7 @@ mod tests {
                 Account::unlock_rotated_at(
                     "pw",
                     k,
+                    key,
                     &n.params_record,
                     &n.keyset_record,
                     &new_pin,
@@ -1727,7 +1822,8 @@ mod tests {
         // Same identity: the rotation path is a plain unlock.
         let (_, _, same) = Account::unlock_rotated_at(
             "pw",
-            &n.secret_key,
+            old,
+            old,
             &n.params_record,
             &n.keyset_record,
             &old_pin,

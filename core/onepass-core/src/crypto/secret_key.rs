@@ -22,6 +22,11 @@ impl SecretKey {
         Ok(k)
     }
 
+    /// Whether `other` is the same key, compared in constant time.
+    pub fn same_as(&self, other: &SecretKey) -> bool {
+        aws_lc_rs::constant_time::verify_slices_are_equal(&self.0, &other.0).is_ok()
+    }
+
     /// Base32 (RFC 4648, no padding, upper case) plus one check character,
     /// grouped by 4 with `-`.
     pub fn to_display(&self) -> String {
