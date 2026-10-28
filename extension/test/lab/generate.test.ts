@@ -336,7 +336,7 @@ describe("formHtml layouts and frameworks", () => {
   });
 
   it("label_marks_number_the_fields", () => {
-    const fields = extractFeatures(dom(formHtml(spec, { labelMarks: true }))).forms[0]!.fields;
+    const fields = extractFeatures(dom(formHtml(spec, { labelMarks: true })), { labField: true }).forms[0]!.fields;
     expect(fields.map((x) => x.lab)).toEqual(["0", "1"]);
   });
 });

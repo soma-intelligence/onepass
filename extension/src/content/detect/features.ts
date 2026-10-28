@@ -36,7 +36,19 @@ export interface FieldFeatures {
   formButtons: string[];
   pageTitle?: string;
   neighbourLabels: string[];     // labels of the 2 previous and the 2 next fields of the form
-  lab?: string;                  // data-lab-field, dataset only: ml/ingest.py strips it before training
+  lab?: string;                  // data-lab-field, only with the labField option (dataset builder); ml/ingest.py strips it before training
+}
+
+export interface ExtractOptions {
+  /** Most fields emitted (default 300); `truncated` is set past it. */
+  maxFields?: number;
+  /**
+   * Reads the page-supplied `data-lab-field` mark into `lab`. On only in the dataset builder
+   * (lab/dataset/build.ts); the extension never sets it, so a page cannot steer the classifier.
+   */
+  labField?: boolean;
+  /** Called once per emitted field with its element, after the field's features are complete. Never serialized. */
+  onField?: (el: Element, f: FieldFeatures) => void;
 }
 
 export interface PageFeatures {
@@ -52,8 +64,10 @@ export function normalizeText(s: string): string {
   return s.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-export function extractFeatures(doc: Document, opts?: { maxFields?: number }): PageFeatures {
+export function extractFeatures(doc: Document, opts?: ExtractOptions): PageFeatures {
   const maxFields = opts?.maxFields ?? 300;
+  const labField = opts?.labField === true;
+  const onField = opts?.onField;
   const TEXT_CAP = 120;
   const NEIGHBOUR_CAP = 40;
   const FIELD_SEL = "input, select, textarea";
@@ -208,7 +222,7 @@ export function extractFeatures(doc: Document, opts?: { maxFields?: number }): P
         siblings: parent ? kidsOf(parent) - (el.matches(FIELD_SEL) ? 1 : 0) : 0,
         visibility: vis.v, width: vis.w, height: vis.h, formButtons: buttons, pageTitle, neighbourLabels: [],
       };
-      const lab = el.getAttribute("data-lab-field");
+      const lab = labField ? el.getAttribute("data-lab-field") : null;
       if (lab !== null) f.lab = lab;
       return f;
     });
@@ -218,6 +232,7 @@ export function extractFeatures(doc: Document, opts?: { maxFields?: number }): P
       f.neighbourLabels = [own[i - 2], own[i - 1], own[i + 1], own[i + 2]].map(name).filter((x): x is string => !!x);
     });
     fields.push(...own);
+    if (onField) used.forEach((el, i) => onField(el, own[i]!));
     return { fields, buttons };
   }
 

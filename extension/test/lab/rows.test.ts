@@ -34,7 +34,7 @@ describe("rowsFor", () => {
     for (const s of world.sites.filter(staticSite)) {
       datasetPages(s).forEach((p, step) => {
         const html = renderSitePage(s, p.page, p.ctx, { labelMarks: true });
-        const page = extractFeatures(dom(html));
+        const page = extractFeatures(dom(html), { labField: true });
         const got = rowsFor(s, step, page, "ds");
         const flat = page.forms.flatMap((f) => f.fields);
         expect(got).toHaveLength(flat.length);
@@ -70,13 +70,13 @@ describe("rowsFor", () => {
     const honey = world.sites.find((s) => s.honeypot && staticSite(s) && !s.traits.includes("iframe_cross_site"));
     expect(honey).toBeDefined();
     const s = honey!;
-    const rows = datasetPages(s).flatMap((p, step) => rowsFor(s, step, extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true }))), "ds"));
+    const rows = datasetPages(s).flatMap((p, step) => rowsFor(s, step, extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true })), { labField: true }), "ds"));
     expect(rows.filter((r) => r.target === "none").length).toBeGreaterThanOrEqual(1);
     expect(rows.some((r) => r.target !== "none")).toBe(true);
     const decoy = world.sites.find((s2) => s2.traits.includes("decoy_form") && staticSite(s2));
     expect(decoy).toBeDefined();
     const d = decoy!;
-    const page = extractFeatures(dom(renderSitePage(d, datasetPages(d)[0]!.page, {}, { labelMarks: true })));
+    const page = extractFeatures(dom(renderSitePage(d, datasetPages(d)[0]!.page, {}, { labelMarks: true })), { labField: true });
     const lab = page.forms.map((f) => f.fields.map((x) => x.lab !== undefined));
     expect(lab.some((l) => l.every((x) => !x))).toBe(true); // the decoy form: nothing marked
   });
@@ -87,7 +87,7 @@ describe("rowsFor", () => {
     for (const s of ms) {
       datasetPages(s).forEach((p, step) => {
         expect(p.fields).toEqual(s.steps![step]);
-        const page = extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true })));
+        const page = extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true })), { labField: true });
         const roles = rowsFor(s, step, page, "ds").map((r) => r.target).filter((l) => l !== "none");
         expect(roles).toEqual(s.steps![step]!.map((f) => f.role));
       });
@@ -99,7 +99,7 @@ describe("rowsFor", () => {
     expect(originOf(a)).toBe(originOf(a));
     expect(originOf(a)).not.toBe(originOf(world.sites[1]!));
     expect(originOf(a)).toMatch(/^synthetic:/);
-    const page = extractFeatures(dom(renderSitePage(a, datasetPages(a)[0]!.page, {}, { labelMarks: true })));
+    const page = extractFeatures(dom(renderSitePage(a, datasetPages(a)[0]!.page, {}, { labelMarks: true })), { labField: true });
     for (const r of rowsFor(a, 0, page, "ds")) expect(r.split).toBe(splitOf(originOf(a), "ds"));
   });
 });
@@ -110,7 +110,7 @@ describe("target and label text", () => {
     let n = 0;
     for (const s of world.sites.filter(staticSite)) {
       datasetPages(s).forEach((p, step) => {
-        const page = extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true })));
+        const page = extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true })), { labField: true });
         const flat = page.forms.flatMap((f) => f.fields);
         rowsFor(s, step, page, "ds").forEach((r, i) => {
           expect(r.label).toBe(flat[i]!.label);
@@ -121,7 +121,7 @@ describe("target and label text", () => {
     }
     expect(n).toBeGreaterThan(100);
     // Label text that is itself a role word ("email", "password") is the page's real text; most labels are not.
-    const rows = world.sites.filter(staticSite).flatMap((s) => datasetPages(s).flatMap((p, step) => rowsFor(s, step, extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true }))), "ds")));
+    const rows = world.sites.filter(staticSite).flatMap((s) => datasetPages(s).flatMap((p, step) => rowsFor(s, step, extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true })), { labField: true }), "ds")));
     const same = rows.filter((r) => r.label === r.target).length;
     expect(same / rows.length).toBeLessThan(0.2);
     expect(rows.some((r) => r.label !== undefined && r.label !== r.target)).toBe(true);

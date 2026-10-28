@@ -21,12 +21,12 @@
     "lab:dataset": "node --experimental-strip-types lab/cli.ts dataset",
     "lab:repro": "node --experimental-strip-types lab/cli.ts repro",
     "sbom": "mkdir -p sbom && npm sbom --sbom-format cyclonedx --omit dev > sbom/extension.cdx.json"
-
   },
   "dependencies": {
     "@noble/curves": "1.9.7",
     "@noble/hashes": "1.8.0",
     "@noble/post-quantum": "0.5.4",
+    "onnxruntime-web": "1.30.0",
     "tldts": "7.4.19"
   },
   "devDependencies": {

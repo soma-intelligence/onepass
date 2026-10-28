@@ -21,6 +21,7 @@ import { PairingFlow } from "./pairing";
 import { PopupBackend, loginFields } from "./popup";
 import { type Handlers, createRouter } from "./router";
 import { SavePrompts } from "./save";
+import type { ModelSession } from "./model";
 import { BgError, type BridgeLike, Session } from "./session";
 import { IdbPairingStore, type PairingStore, Store } from "./store";
 
@@ -233,6 +234,18 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     },
   };
 
+  // Field classifier model (Task 15): model builds only. In the default build the branch, the
+  // dynamic import and everything behind it (model code, onnxruntime-web) are dropped by esbuild.
+  let modelSession: (() => Promise<ModelSession | null>) | null = null;
+  if (__CLASSIFIER__ !== "heuristic") {
+    const kind = __CLASSIFIER__;
+    const service = import("./model-service");
+    let loaded: Promise<ModelSession | null> | null = null;
+    const load = () => (loaded ??= service.then((m) => m.loadClassifierModel(ext, kind)).catch(() => null));
+    modelSession = load;
+    handlers.cs.classify = async (m, from) => (await service).createClassifyHandler({ kind, frames, session: load })(m, from);
+  }
+
   return {
     store,
     session,
@@ -250,6 +263,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     analyses,
     popup,
     handlers,
+    /** The classifier model of a model build (loaded on first use), null in the default build. */
+    modelSession,
     /** Register every listener; call synchronously at service worker start. */
     install(): void {
       store.restrictLocal();

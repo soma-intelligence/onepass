@@ -17,4 +17,6 @@ bg.install();
   router: createRouter(bgExt.runtime, bg.handlers),
   session: bg.session,
   filler: bg.filler,
+  /** Model builds: the classifier model of the worker (e2e/classifier.spec.ts); null otherwise. */
+  modelSession: bg.modelSession,
 };

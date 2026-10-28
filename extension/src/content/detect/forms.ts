@@ -3,6 +3,8 @@
 import type { FieldInfo, FieldRole, FormInfo, FormKind, PageAnalysis } from "../../shared/messages";
 import { providerForHost } from "../../shared/providers";
 import { detectCaptcha, detectPush } from "./captcha";
+import { applySafetyRules, type ModelHook, type RoleScore } from "./classifier";
+import { extractFeatures, type FieldFeatures } from "./features";
 import { classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate } from "./fields";
 import { AUTOCOMPLETE_SCORE, normalizeText } from "./lexicon";
 import { buttonLabel, detectAccountChooser, detectProviderButtons, providerOfButton } from "./provider";
@@ -81,6 +83,8 @@ export interface AnalyzeOptions {
   url?: string;
   /** Layout function; defaults to the real DOM geometry. */
   geometry?: Geometry;
+  /** Model classifier of a model build (classifier.ts); absent: the heuristics alone, as before. */
+  model?: ModelHook;
 }
 
 interface Classified {
@@ -351,26 +355,56 @@ function documentOrder(a: Element, b: Element): number {
   return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
 }
 
+/**
+ * Model roles of the visible fields, after the safety rules (classifier.ts). Features come from the
+ * shared extractor without the page-supplied lab mark. A field absent from the map keeps its
+ * heuristic role (no features, e.g. a checkbox, or no answer yet); a field mapped to `unknown`
+ * stays unknown. Never consulted in a cross-site frame.
+ */
+function modelRoles(doc: Document, geometry: Geometry, model: ModelHook): Map<Element, RoleScore> {
+  const out = new Map<Element, RoleScore>();
+  if (model.crossSite) return out;
+  const elOf = new Map<FieldFeatures, Element>();
+  const page = extractFeatures(doc, { maxFields: MAX_FIELDS, onField: (el, f) => elOf.set(f, el) });
+  for (const form of page.forms) {
+    const els = form.fields.map((f) => elOf.get(f));
+    // The extractor reads input, select and textarea only; types the detector skips (search...) get a role nobody reads.
+    if (els.some((el) => el === undefined)) continue;
+    const roles = model.lookup(form.fields);
+    if (roles === null || model.crossSite) continue;
+    const safe = applySafetyRules(els as FieldElement[], roles, { crossSite: model.crossSite }, { geometry, features: form.fields });
+    els.forEach((el, i) => out.set(el as Element, safe[i] as RoleScore));
+  }
+  return out;
+}
+
 /** Classified forms and field groups of the document, in document order. `url` defaults to `doc.URL`. */
 export function detectForms(
   doc: Document,
   refs: RefRegistry,
   geometry: Geometry = domGeometry,
   url: string = doc.URL,
+  model?: ModelHook,
 ): FormInfo[] {
   const visible: FieldElement[] = [];
   for (const el of Array.from(doc.querySelectorAll(FIELD_SELECTOR)).slice(0, MAX_FIELDS)) {
     if (isFieldCandidate(el) && isVisible(el, geometry)) visible.push(el);
   }
   const cells = splitOtpCells(visible);
+  // Order (Task 15): features, classifier, safety rules, then the existing logic below.
+  const fromModel = model ? modelRoles(doc, geometry, model) : null;
   const classified: Classified[] = [];
   for (const el of visible) {
     if (cells.has(el)) {
       classified.push({ el, role: "otp", direct: false, cell: true });
       continue;
     }
-    const { role, score } = classifyField(el);
-    if (role !== "unknown") classified.push({ el, role, direct: score === AUTOCOMPLETE_SCORE, cell: false });
+    const heuristic = classifyField(el);
+    const m = fromModel?.get(el);
+    const { role } = m ?? heuristic;
+    // `direct` (autocomplete decided) only when the model agrees with the autocomplete role.
+    const direct = heuristic.score === AUTOCOMPLETE_SCORE && heuristic.role === role;
+    if (role !== "unknown") classified.push({ el, role, direct, cell: false });
   }
 
   const byForm = new Map<HTMLFormElement, Classified[]>();
@@ -427,7 +461,7 @@ export function analyzeDocument(doc: Document, refs: RefRegistry, opts: AnalyzeO
   const onProvider = host !== null && providerForHost(host) !== null;
   return {
     url,
-    forms: detectForms(doc, refs, geometry, url),
+    forms: detectForms(doc, refs, geometry, url, opts.model),
     captcha: detectCaptcha(doc, geometry),
     push: detectPush(doc),
     providerButtons: detectProviderButtons(doc, refs, geometry),

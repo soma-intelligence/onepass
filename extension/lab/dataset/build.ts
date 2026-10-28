@@ -86,7 +86,7 @@ const FAST_TIMERS = `<script>(function(){var st=window.setTimeout.bind(window);w
 const EXTRACT = `(async () => {
   for (let i = 0; i < 200 && document.getElementById("lab-mount"); i++) await new Promise((r) => setTimeout(r, 0));
   await new Promise((r) => setTimeout(r, 0));
-  return (${extractFeatures.toString()})(document);
+  return (${extractFeatures.toString()})(document, { labField: true });
 })()`;
 
 /** Every mark must name a field of the page; unless the form is out of the extractor's reach (shadow root), every field must be marked. */
