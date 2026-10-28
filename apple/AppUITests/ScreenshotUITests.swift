@@ -12,11 +12,18 @@ final class ScreenshotUITests: XCTestCase {
         let arguments: [String]
         /// Shown once the screen is ready.
         let ready: String
+        /// The iPhone tabs (Accueil, Éléments, Watchtower) exist on iPhone only.
+        var phoneOnly = false
     }
 
     /// The list waits for its first row by title (a lazy list only exposes the rows on screen).
     private static let screens: [Screen] = [
         Screen(name: "welcome", arguments: isolated + ["-OnePassUITestReset", "YES"], ready: "onboarding.create"),
+        Screen(name: "home", arguments: demo, ready: "home.profile", phoneOnly: true),
+        Screen(name: "items", arguments: demo + ["-OnePassDemoTab", "items"], ready: "items.vaults.new", phoneOnly: true),
+        Screen(
+            name: "watchtower", arguments: demo + ["-OnePassDemoTab", "watchtower"], ready: "page.watchtower",
+            phoneOnly: true),
         Screen(name: "locked", arguments: demo + ["-OnePassDemoLocked", "YES"], ready: "lock.password"),
         Screen(name: "list", arguments: demo + ["-OnePassDemoTab", "search"], ready: "list.row.API Cartes Atlas"),
         Screen(name: "detail", arguments: demo + ["-OnePassDemoItem", "Forge Atlas"], ready: "item.title"),
@@ -59,7 +66,7 @@ final class ScreenshotUITests: XCTestCase {
 
         for (suffix, appearance) in [("light", XCUIDevice.Appearance.light), ("dark", .dark)] {
             XCUIDevice.shared.appearance = appearance
-            for screen in Self.screens {
+            for screen in Self.screens where device == "iphone" || !screen.phoneOnly {
                 let app = XCUIApplication()
                 app.launchArguments += screen.arguments
                 app.launch()
