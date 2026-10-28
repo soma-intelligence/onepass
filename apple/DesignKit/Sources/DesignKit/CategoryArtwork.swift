@@ -260,6 +260,18 @@ enum Pal {
 
 @MainActor
 enum Art {
+    /// A rendered picture from the app's assets in place of a drawing (the vehicle), when the
+    /// running bundle has it; extensions without the app's assets keep the drawing.
+    static func photo(_ name: String) -> (some View)? {
+        #if os(macOS)
+        let present = NSImage(named: name) != nil
+        #else
+        let present = UIImage(named: name, in: .main, with: nil) != nil
+        #endif
+        guard present else { return nil as AnyView? }
+        return AnyView(Image(name, bundle: .main).resizable().interpolation(.high).scaledToFit())
+    }
+
     static func drawing(_ type: FfiItemType, _ k: ArtKit, monogram: String?) -> AnyView {
         switch type {
         case .login: AnyView(login(k, monogram))
@@ -283,7 +295,7 @@ enum Art {
         case .membership: AnyView(membership(k))
         case .rewardProgram: AnyView(reward(k))
         case .insurance: AnyView(insurance(k))
-        case .vehicle: AnyView(vehicle(k))
+        case .vehicle: photo("category-vehicle").map { AnyView($0) } ?? AnyView(vehicle(k))
         case .accessCode: AnyView(accessCode(k))
         case .secureNote: AnyView(secureNote(k))
         case .document: AnyView(document(k))
