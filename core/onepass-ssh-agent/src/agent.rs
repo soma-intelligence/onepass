@@ -44,8 +44,14 @@ pub struct PeerInfo {
     pub uid: Option<u32>,
     /// Pid of the peer (at connection time).
     pub pid: Option<i32>,
-    /// Executable path of that pid. Informative: a pid can be reused.
+    /// Executable path of that pid. Informative: a pid can be reused, and
+    /// the process can exec another program after connecting.
     pub exe: Option<String>,
+    /// Code-signing client id of the process that connected, read through
+    /// its audit token (`onepass_peer::identify_peer`): the identity grants
+    /// are keyed by. `None` when it cannot be read; such a peer is never
+    /// remembered.
+    pub code: Option<String>,
 }
 
 /// A key the agent offers: public data and settings of one SSH Key item.
@@ -273,9 +279,9 @@ pub struct Agent<K: KeySource> {
     config: AgentConfig,
     /// SHA-256 of the lock passphrase while locked.
     locked: Option<Zeroizing<Vec<u8>>>,
-    /// "Allow for the session" grants: (key fingerprint, executable) to
-    /// expiry.
-    grants: HashMap<(String, String), Instant>,
+    /// "Allow for the session" grants: (key fingerprint, client code id,
+    /// bound destination host key fingerprint) to expiry.
+    grants: HashMap<(String, String, Option<String>), Instant>,
 }
 
 impl<K: KeySource> Agent<K> {
@@ -446,10 +452,21 @@ impl<K: KeySource> Agent<K> {
             return Reply::failure();
         }
 
-        // A grant is only possible for an identified executable: "unknown
-        // process" would share one grant between every unidentified peer.
-        let rememberable = !key.confirm_each_use && !forwarded && peer.exe.is_some();
-        let grant_key = (key.fingerprint.clone(), exe.clone());
+        // A grant is only possible for identified code: "unknown process"
+        // would share one grant between every unidentified peer. It is
+        // keyed by the code the kernel vouches for, never by the path of a
+        // pid (a client can fork, exec `ssh` and keep the connection), and
+        // by the destination the session is bound to.
+        let rememberable = !key.confirm_each_use && !forwarded && peer.code.is_some();
+        let destination = conn
+            .bound
+            .as_ref()
+            .map(|b| fingerprint_of_blob(&b.host_key));
+        let grant_key = (
+            key.fingerprint.clone(),
+            peer.code.clone().unwrap_or_default(),
+            destination,
+        );
         // Fail closed: no signature unless it can be logged.
         if self.audit.ready().is_err() {
             self.record_sign(&exe, Some(&key), "policy", "audit_unusable");
@@ -513,6 +530,12 @@ impl<K: KeySource> Agent<K> {
             ("key".to_owned(), key.title.clone()),
             ("fingerprint".to_owned(), key.fingerprint.clone()),
             ("process".to_owned(), format!("{exe} ({pid})")),
+            (
+                "code".to_owned(),
+                peer.code
+                    .clone()
+                    .unwrap_or_else(|| "unidentified".to_owned()),
+            ),
         ];
         if let Some(bound) = &conn.bound {
             let hosts = self.bookmarked_hosts(&bound.host_key, &key.hosts);

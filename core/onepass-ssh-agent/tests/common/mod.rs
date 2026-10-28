@@ -154,6 +154,7 @@ pub fn peer(exe: &str) -> PeerInfo {
         uid: Some(own_uid()),
         pid: Some(4242),
         exe: Some(exe.into()),
+        code: Some(format!("test:{exe}")),
     }
 }
 

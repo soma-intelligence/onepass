@@ -11,12 +11,15 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use onepass_peer::{effective_uid, exe_path, peer_cred};
+use onepass_peer::{effective_uid, exe_path, identify_peer, peer_cred};
 
 use crate::agent::{Agent, ConnState, KeySource, PeerInfo};
 use crate::wire::{decode_request, encode_response, read_frame};
 
-/// Credentials of the peer of `s`: uid, pid and executable path.
+/// Credentials of the peer of `s`: uid, pid, executable path, and the
+/// code identity read through the audit token the kernel kept from
+/// `connect` (macOS), so a process that execs another program afterwards
+/// is not taken for it.
 pub fn peer_info(s: &UnixStream) -> PeerInfo {
     let cred = peer_cred(s);
     PeerInfo {
@@ -26,6 +29,7 @@ pub fn peer_info(s: &UnixStream) -> PeerInfo {
             .pid
             .and_then(exe_path)
             .and_then(|p| p.into_os_string().into_string().ok()),
+        code: identify_peer(&cred).ok().map(|id| id.code.client_id()),
     }
 }
 
