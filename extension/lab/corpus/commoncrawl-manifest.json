@@ -1,0 +1,75 @@
+{
+  "crawl": "CC-MAIN-2026-43",
+  "records": [
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170053823.21/warc/CC-MAIN-20261005105623-20261005135623-00714.warc.gz",
+      "length": 7138,
+      "offset": 331720205
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170054094.31/warc/CC-MAIN-20261006142707-20261006172707-00490.warc.gz",
+      "length": 53722,
+      "offset": 299954720
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170054273.70/warc/CC-MAIN-20261008030835-20261008060835-00850.warc.gz",
+      "length": 55882,
+      "offset": 55161864
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170054275.57/warc/CC-MAIN-20261008061152-20261008091152-00332.warc.gz",
+      "length": 2793,
+      "offset": 130600417
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170054345.86/warc/CC-MAIN-20261009034247-20261009064247-00951.warc.gz",
+      "length": 14907,
+      "offset": 487951955
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170054362.13/warc/CC-MAIN-20261009095437-20261009125437-00241.warc.gz",
+      "length": 7166,
+      "offset": 344764093
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170054673.9/warc/CC-MAIN-20261012143428-20261012173428-00594.warc.gz",
+      "length": 20105,
+      "offset": 54151601
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170054675.35/warc/CC-MAIN-20261012174155-20261012204155-00151.warc.gz",
+      "length": 7128,
+      "offset": 526399657
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170054701.44/warc/CC-MAIN-20261013055602-20261013085602-00988.warc.gz",
+      "length": 7141,
+      "offset": 228204742
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170054802.34/warc/CC-MAIN-20261013150634-20261013180634-00163.warc.gz",
+      "length": 16055,
+      "offset": 923165696
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170055310.3/warc/CC-MAIN-20261014184637-20261014214637-00735.warc.gz",
+      "length": 2357,
+      "offset": 21260516
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170343870.96/warc/CC-MAIN-20261015191658-20261015221658-00345.warc.gz",
+      "length": 2499,
+      "offset": 33402516
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170343870.96/warc/CC-MAIN-20261015191658-20261015221658-00531.warc.gz",
+      "length": 2705,
+      "offset": 51860427
+    },
+    {
+      "filename": "crawl-data/CC-MAIN-2026-43/segments/1791170350334.91/warc/CC-MAIN-20261017233113-20261018023113-00605.warc.gz",
+      "length": 104079,
+      "offset": 521682758
+    }
+  ]
+}
