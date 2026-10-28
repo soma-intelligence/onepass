@@ -22,12 +22,12 @@ describe("classifierInfo", () => {
 
   it("gbm_reads_size_and_eval_json", () => {
     const d = modelDir({ "gbm.onnx": "x".repeat(1000), "gbm-eval.json": { model: "gbm.onnx", test: { rows: 10, macro_f1: 0.9 }, real_test: "n/a (0 rows)" } });
-    expect(classifierInfo("gbm", d)).toEqual({ classifier: "gbm", modelBytes: 1000, testMacroF1: 0.9, realTestMacroF1: null, realTestRows: 0 });
+    expect(classifierInfo("gbm", d)).toEqual({ classifier: "gbm", modelBytes: 1000, testMacroF1: 0.9, realTestMacroF1: null, realTestMergedF1: null, realTestRows: 0 });
   });
 
   it("encoder_size_adds_the_tokenizer_and_real_test_is_read_when_labelled", () => {
-    const d = modelDir({ "encoder.onnx": "x".repeat(500), "tokenizer.json": "y".repeat(100), "encoder-eval.json": { test: { rows: 10, macro_f1: 0.8 }, real_test: { rows: 200, macro_f1: 0.7 } } });
-    expect(classifierInfo("encoder", d)).toEqual({ classifier: "encoder", modelBytes: 600, testMacroF1: 0.8, realTestMacroF1: 0.7, realTestRows: 200 });
+    const d = modelDir({ "encoder.onnx": "x".repeat(500), "tokenizer.json": "y".repeat(100), "encoder-eval.json": { test: { rows: 10, macro_f1: 0.8 }, real_test: { rows: 200, macro_f1: 0.7, labels: ["password", "new_password"], confusion_matrix: [[1, 1], [1, 1]] }, real_test_digest: "abc" } });
+    expect(classifierInfo("encoder", d)).toEqual({ classifier: "encoder", modelBytes: 600, testMacroF1: 0.8, realTestMacroF1: 0.7, realTestMergedF1: 1, realTestRows: 200, realTestDigest: "abc" });
   });
 
   it("a_model_without_eval_json_leaves_the_metrics_out", () => {

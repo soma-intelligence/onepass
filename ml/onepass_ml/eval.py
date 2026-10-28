@@ -6,6 +6,7 @@ Writes <model dir>/<model stem>-eval.json and prints the headline numbers.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -13,6 +14,7 @@ from typing import Any
 
 import numpy as np
 import onnxruntime as ort
+import pyarrow.parquet as pq
 
 from .features import load_matrix
 from .labels import LABELS
@@ -61,6 +63,17 @@ def _encoder_split(sess: ort.InferenceSession, model: Path, path: Path) -> tuple
     return y, predict_ids(run, seqs)
 
 
+def rows_digest(path: Path) -> str:
+    """SHA-256 of the sorted row identifiers `origin, site, step, index` (tab separated, one per line).
+
+    Same recipe as rowsDigest in extension/lab/dataset/f1.ts: the lab compares it with the heuristic's
+    to know both were scored on the same real_test rows.
+    """
+    t = pq.read_table(path, columns=["origin", "site", "step", "index"]).to_pylist()
+    ids = sorted(f"{r['origin']}\t{r['site']}\t{r['step']}\t{r['index']}" for r in t)
+    return hashlib.sha256("\n".join(ids).encode("utf-8")).hexdigest()
+
+
 def evaluate(model: Path, data: Path) -> dict[str, Any]:
     """Model A (vectorizer features) or model B (`model` metadata "encoder", token ids)."""
     model, data = Path(model), Path(data)
@@ -74,6 +87,8 @@ def evaluate(model: Path, data: Path) -> dict[str, Any]:
             X, y = load_matrix(data / f"{split}.parquet")
             pred = predict(sess, X) if len(y) else None
         report[split] = metrics(y, pred) if len(y) else "n/a (0 rows)"
+        if split == "real_test" and len(y):
+            report["real_test_digest"] = rows_digest(data / f"{split}.parquet")
     (model.parent / f"{model.stem}-eval.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return report
 

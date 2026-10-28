@@ -37,14 +37,15 @@ const passes = (n: number, fails = 0, extra: Partial<Result> = {}): Result[] =>
   Array.from({ length: n + fails }, (_, i) => res(i, i < n ? "pass" : "fail", { cause: i < n ? undefined : "timeout", ...extra }));
 
 const model = (classifier: "gbm" | "encoder", over: Partial<ClassifierInfo> = {}): ClassifierInfo => ({
-  classifier, modelBytes: 1_000_000, testMacroF1: 0.99, realTestMacroF1: 0.8, realTestRows: 200, classifyMs: { forms: 50, median: 0.2, p90: 0.9, max: 1.1 }, ...over,
+  classifier, modelBytes: 1_000_000, testMacroF1: 0.99, realTestMacroF1: 0.8, realTestMergedF1: 0.85, realTestRows: 200, realTestDigest: "dg", classifyMs: { forms: 50, median: 0.2, p90: 0.9, max: 1.1 }, ...over,
 });
-const heuristic: ClassifierInfo = { classifier: "heuristic", testMacroF1: 0.7, realTestMacroF1: 0.6, realTestRows: 200 };
+const heuristic: ClassifierInfo = { classifier: "heuristic", testMacroF1: 0.7, realTestMacroF1: 0.6, realTestMergedF1: 0.65, realTestRows: 200, realTestDigest: "dg" };
 
 function side(kind: "heuristic" | "gbm" | "encoder", pass: number, fail: number, info: ClassifierInfo, leaks = 0): RunSide {
+  info = { ...info, classifier: kind };
   const rs = passes(pass, fail);
   for (let i = 0; i < leaks; i++) rs.push(res(100 + i, "leak", { cause: "leak" }));
-  return { dir: `d-${kind}`, seed: "w", sites: 10, summary: summarize(rs), info };
+  return { dir: `d-${kind}`, seed: "w", sites: 10, summary: summarize(rs), info, profileCount: 1 };
 }
 
 describe("classifier decision rule", () => {
@@ -67,7 +68,7 @@ describe("classifier decision rule", () => {
   });
 
   it("a_real_test_f1_not_above_the_heuristic_is_not_eligible", () => {
-    const d = decide([side("heuristic", 6, 4, heuristic), side("gbm", 9, 1, model("gbm", { realTestMacroF1: 0.6 }))]);
+    const d = decide([side("heuristic", 6, 4, heuristic), side("gbm", 9, 1, model("gbm", { realTestMergedF1: 0.65 }))]);
     expect(d.chosen).toBe("heuristic");
     expect(d.provisional).toBe(false);
     expect(d.models[0]!.reasons.join(" ")).toMatch(/real_test/);
@@ -93,8 +94,8 @@ describe("classifier decision rule", () => {
 
   it("unlabeled_real_test_keeps_the_heuristic_and_the_verdict_is_provisional", () => {
     const d = decide([
-      side("heuristic", 6, 4, { classifier: "heuristic", realTestMacroF1: null, realTestRows: 0 }),
-      side("gbm", 10, 0, model("gbm", { realTestMacroF1: null, realTestRows: 0 })),
+      side("heuristic", 6, 4, { classifier: "heuristic", realTestMergedF1: null, realTestRows: 0 }),
+      side("gbm", 10, 0, model("gbm", { realTestMergedF1: null, realTestRows: 0 })),
     ]);
     expect(d.chosen).toBe("heuristic");
     expect(d.provisional).toBe(true);
@@ -108,6 +109,35 @@ describe("classifier decision rule", () => {
     expect(() => decide([a, b])).toThrow(/même graine/);
   });
 
+  it("runs_must_have_equal_sites_equal_profiles_and_distinct_kinds", () => {
+    const h = side("heuristic", 6, 4, heuristic);
+    expect(() => decide([h, { ...side("gbm", 9, 1, model("gbm")), sites: 11 }])).toThrow(/même nombre de sites/);
+    expect(() => decide([h, { ...side("gbm", 9, 1, model("gbm")), profileCount: 3 }])).toThrow(/même nombre de profils/);
+    expect(() => decide([h, side("gbm", 9, 1, model("gbm")), side("gbm", 9, 1, model("gbm"))])).toThrow(/classifieurs distincts/);
+  });
+
+  it("different_or_unknown_real_test_row_sets_are_not_comparable_and_provisional", () => {
+    for (const over of [{ realTestDigest: "other" }, { realTestDigest: undefined }, { realTestRows: 150 }]) {
+      const d = decide([side("heuristic", 6, 4, heuristic), side("gbm", 9, 1, model("gbm", over))]);
+      expect(d.chosen).toBe("heuristic");
+      expect(d.provisional).toBe(true);
+      expect(d.models[0]!.reasons.join(" ")).toMatch(/real_test non comparable/);
+    }
+  });
+
+  it("criterion_b_uses_the_merged_password_scoring", () => {
+    // plain F1 says the model is worse (0.5 < 0.6), merged says better (0.85 > 0.65): merged decides
+    const d = decide([side("heuristic", 6, 4, heuristic), side("gbm", 9, 1, model("gbm", { realTestMacroF1: 0.5 }))]);
+    expect(d.chosen).toBe("gbm");
+    const md = compareDirs([folder("w", passes(6, 4), heuristic), folder("w", passes(9, 1), model("gbm"))]).markdown;
+    expect(md).toMatch(/fusionn/);
+  });
+
+  it("a_failed_probe_is_reported_and_not_eligible", () => {
+    const d = decide([side("heuristic", 6, 4, heuristic), side("gbm", 9, 1, model("gbm", { classifyMs: undefined, probe: "failed" }))]);
+    expect(d.models[0]!.reasons.join(" ")).toMatch(/sonde.*échoué/);
+  });
+
   it("needs_the_heuristic_run", () => {
     expect(() => decide([side("gbm", 9, 1, model("gbm"))])).toThrow(/heuristic/);
   });
@@ -117,7 +147,7 @@ describe("classifier comparison report", () => {
   const dirs = () => [
     folder("w", passes(6, 4, { flow: "login_single", traits: ["honeypot"], lang: "fr" }), heuristic),
     folder("w", passes(9, 1, { flow: "login_single", traits: ["honeypot"], lang: "fr" }), model("gbm")),
-    folder("w", [...passes(8, 2, { flow: "checkout_card", lang: "en" }), res(50, "leak", { cause: "x", flow: "checkout_card" })], model("encoder", { classifyMs: { forms: 50, median: 70.9, p90: 251, max: 309 }, modelBytes: 16_000_000, realTestMacroF1: null, realTestRows: 0 })),
+    folder("w", [...passes(8, 2, { flow: "checkout_card", lang: "en" }), res(50, "leak", { cause: "x", flow: "checkout_card" })], model("encoder", { classifyMs: { forms: 50, median: 70.9, p90: 251, max: 309 }, modelBytes: 16_000_000, realTestMergedF1: null, realTestMacroF1: null, realTestRows: 0 })),
   ];
 
   it("loadRun_reads_results_world_and_classifier", () => {

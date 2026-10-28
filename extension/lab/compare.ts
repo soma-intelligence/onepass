@@ -22,9 +22,17 @@ export interface ClassifierInfo {
   modelBytes?: number;
   /** Macro F1 on the synthetic test split, from the ml eval JSON next to the model. */
   testMacroF1?: number | null;
-  /** Macro F1 on real_test; null when it has no rows. */
+  /** Plain macro F1 on real_test; null when it has no rows. */
   realTestMacroF1?: number | null;
+  /** Macro F1 on real_test with password, new_password and confirm_password merged (R23): the one criterion (b) uses. */
+  realTestMergedF1?: number | null;
   realTestRows?: number;
+  /** Digest of the real_test row identifiers both sides were scored on (rowsDigest). */
+  realTestDigest?: string;
+  /** Build marker checked before the run: classifier kind and sha256 of the model files. */
+  buildMarker?: { classifier: ClassifierKind; modelSha256?: string };
+  /** "failed" when the classify-time probe did not run to the end. */
+  probe?: "ok" | "failed";
   /** Per-form classify time (worker side), models only. */
   classifyMs?: ClassifyTime;
 }
@@ -35,7 +43,8 @@ export interface RunSide {
   sites: number;
   summary: Summary;
   info: ClassifierInfo;
-  profiles?: boolean;
+  /** Number of simulated users of the world (1 without profiles). */
+  profileCount: number;
 }
 
 export interface ModelVerdict { kind: Exclude<ClassifierKind, "heuristic">; eligible: boolean; labRate: number; reasons: string[] }
@@ -59,7 +68,7 @@ export function loadRun(dir: string): RunSide {
   if (!world) throw new Error(`no world file in ${dir}`);
   const info = readJson<ClassifierInfo>(join(dir, "classifier.json"));
   if (!info) throw new Error(`no classifier.json in ${dir} (run it with --classifier)`);
-  return { dir, seed: world.seed, sites: world.sites.length, summary: summarize(results), info, profiles: (world.profiles?.length ?? 0) > 1 };
+  return { dir, seed: world.seed, sites: world.sites.length, summary: summarize(results), info, profileCount: world.profiles?.length ?? 1 };
 }
 
 /** The decision rule of the spec (sections 1 and 7.3). Throws when the runs are not one seed or lack the heuristic run. */
@@ -67,6 +76,9 @@ export function decide(runs: RunSide[]): Decision {
   const base = runs.find((r) => r.info.classifier === "heuristic");
   if (!base) throw new Error("the comparison needs the heuristic run");
   if (runs.some((r) => r.seed !== base.seed)) throw new Error("les passages doivent avoir la même graine");
+  if (runs.some((r) => r.sites !== base.sites)) throw new Error("les passages doivent avoir le même nombre de sites");
+  if (runs.some((r) => r.profileCount !== base.profileCount)) throw new Error("les passages doivent avoir le même nombre de profils");
+  if (new Set(runs.map((r) => r.info.classifier)).size !== runs.length) throw new Error("les passages doivent être de classifieurs distincts");
   const models: ModelVerdict[] = [];
   let provisional = false;
   const sizeOf = new Map<string, number>();
@@ -75,16 +87,19 @@ export function decide(runs: RunSide[]): Decision {
     const reasons: string[] = [];
     const rate = r.summary.overall.rate;
     if (!(rate > base.summary.overall.rate)) reasons.push(`taux au labo ${pct(rate)} pas au-dessus de l'heuristique (${pct(base.summary.overall.rate)})`);
-    const mine = r.info.realTestMacroF1;
-    const ref = base.info.realTestMacroF1;
+    const mine = r.info.realTestMergedF1;
+    const ref = base.info.realTestMergedF1;
     if (mine == null || ref == null) {
       provisional = true;
       reasons.push("real_test non étiqueté : le critère sur le jeu de test réel ne peut pas être jugé");
-    } else if (!(mine > ref)) reasons.push(`F1 macro sur real_test ${num(mine)} pas au-dessus de l'heuristique (${num(ref)})`);
+    } else if (r.info.realTestDigest === undefined || r.info.realTestDigest !== base.info.realTestDigest || r.info.realTestRows !== base.info.realTestRows) {
+      provisional = true;
+      reasons.push("real_test non comparable : lignes différentes ou empreinte des lignes inconnue (rejouer l'évaluation du modèle et l'option --real-rows sur le même jeu)");
+    } else if (!(mine > ref)) reasons.push(`F1 macro sur real_test (mots de passe fusionnés) ${num(mine)} pas au-dessus de l'heuristique (${num(ref)})`);
     const leaks = r.summary.leaks.length;
     if (leaks > 0) reasons.push(`${leaks} fuite(s) au labo`);
     const ms = r.info.classifyMs;
-    if (!ms) reasons.push("temps de classement non mesuré");
+    if (!ms) reasons.push(r.info.probe === "failed" ? "temps de classement non mesuré : la sonde de mesure a échoué" : "temps de classement non mesuré");
     else if (!(ms.median < MAX_CLASSIFY_MS)) reasons.push(`temps médian ${num(ms.median, 1)} ms par formulaire, au moins ${MAX_CLASSIFY_MS} ms`);
     sizeOf.set(r.info.classifier, r.info.modelBytes ?? Number.POSITIVE_INFINITY);
     models.push({ kind: r.info.classifier as ModelVerdict["kind"], eligible: reasons.length === 0, labRate: rate, reasons });
@@ -124,18 +139,19 @@ export function renderComparison(runsIn: RunSide[], d: Decision): string {
   const seed = runs[0]!.seed;
   l.push(`- Graine du monde : \`${seed}\` (${runs[0]!.sites} sites)`, "- Taux : réussis sur scénarios comptés (hors attendus, inattendus et erreurs du labo), entre parenthèses le détail", "");
   l.push("## Synthèse", "");
-  l.push("| Classifieur | Taux au labo | Fuites | Médiane par formulaire | Taille du modèle | F1 macro test | F1 macro real_test |", "| --- | --- | --- | --- | --- | --- | --- |");
+  l.push("| Classifieur | Taux au labo | Fuites | Médiane par formulaire | Taille du modèle | F1 macro test | F1 macro real_test (mots de passe fusionnés) |", "| --- | --- | --- | --- | --- | --- | --- |");
   for (const r of runs) {
     const i = r.info;
     const model = i.classifier !== "heuristic";
-    l.push(`| ${i.classifier} | ${cell(r.summary.overall)} | ${r.summary.leaks.length} | ${model ? (i.classifyMs ? `${num(i.classifyMs.median, 1)} ms (p90 ${num(i.classifyMs.p90, 1)}, ${i.classifyMs.forms} formulaires)` : "non mesurée") : "n/a"} | ${model && i.modelBytes !== undefined ? mb(i.modelBytes) : "n/a"} | ${f1(i.testMacroF1)} | ${f1(i.realTestMacroF1)} |`);
+    l.push(`| ${i.classifier} | ${cell(r.summary.overall)} | ${r.summary.leaks.length} | ${model ? (i.classifyMs ? `${num(i.classifyMs.median, 1)} ms (p90 ${num(i.classifyMs.p90, 1)}, ${i.classifyMs.forms} formulaires)` : "non mesurée") : "n/a"} | ${model && i.modelBytes !== undefined ? mb(i.modelBytes) : "n/a"} | ${f1(i.testMacroF1)} | ${f1(i.realTestMergedF1)} |`);
   }
   l.push("");
   l.push("## Taux de réussite", "");
   l.push(...breakdown("Par flux", runs, (s) => s.byFlow), ...breakdown("Par trait", runs, (s) => s.byTrait), ...breakdown("Par langue", runs, (s) => s.byLang));
-  if (runs.some((r) => r.profiles || Object.keys(r.summary.byProfile).some((k) => k !== "p0"))) l.push(...breakdown("Par profil", runs, (s) => s.byProfile));
+  if (runs.some((r) => r.profileCount > 1 || Object.keys(r.summary.byProfile).some((k) => k !== "p0"))) l.push(...breakdown("Par profil", runs, (s) => s.byProfile));
   l.push("## Verdict", "");
   l.push(`Verdict : ${d.chosen}${d.provisional ? " (provisoire : real_test non étiqueté)" : ""}`, "");
+  l.push("Le critère sur real_test (b) note l'heuristique et les modèles avec `password`, `new_password` et `confirm_password` fusionnés en une seule classe (décision R23) : la production tranche entre mot de passe actuel et nouveau d'après le formulaire, ce que l'heuristique notée champ par champ ne peut pas faire. Les deux scores doivent porter sur les mêmes lignes de real_test (même nombre, même empreinte).", "");
   l.push("Règle (spec, sections 1 et 7.3) : un modèle est retenable s'il fait mieux que l'heuristique au labo sur la même graine et sur real_test, sans aucune fuite, avec un temps médian sous 5 ms par formulaire. Parmi eux, le meilleur taux au labo ; à égalité, le plus petit fichier. Sinon l'heuristique reste.", "");
   for (const m of d.models) l.push(`- ${m.kind} : ${m.eligible ? "retenable" : "écarté"}${m.reasons.length > 0 ? ` (${m.reasons.join(" ; ")})` : ""}`);
   l.push("");

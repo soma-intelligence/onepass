@@ -7,7 +7,7 @@
 import { classifyField, type FieldElement } from "../../src/content/detect/fields.ts";
 import type { FieldFeatures } from "../../src/content/detect/features.ts";
 import type { FieldRole } from "../../src/shared/messages.ts";
-import { macroF1 } from "./f1.ts";
+import { macroF1, mergedMacroF1 } from "./f1.ts";
 
 const LABEL_OF: Partial<Record<FieldRole, string>> = {
   current_password: "password", new_password: "new_password", confirm_password: "new_password", bday: "birth_date",
@@ -55,8 +55,10 @@ export function heuristicLabel(f: FieldFeatures, doc: Document = document): stri
   }
 }
 
-/** Number of rows scored and the heuristic's macro F1 against their `target` (null without rows). */
-export function heuristicRows(rows: (FieldFeatures & { target: string })[], doc: Document = document): { rows: number; macroF1: number | null } {
-  if (rows.length === 0) return { rows: 0, macroF1: null };
-  return { rows: rows.length, macroF1: macroF1(rows.map((r) => r.target), rows.map((r) => heuristicLabel(r, doc))) };
+/** Rows scored and the heuristic's macro F1 against their `target`, plain and with password classes merged (R23); null without rows. */
+export function heuristicRows(rows: (FieldFeatures & { target: string })[], doc: Document = document): { rows: number; macroF1: number | null; mergedF1: number | null } {
+  if (rows.length === 0) return { rows: 0, macroF1: null, mergedF1: null };
+  const truth = rows.map((r) => r.target);
+  const pred = rows.map((r) => heuristicLabel(r, doc));
+  return { rows: rows.length, macroF1: macroF1(truth, pred), mergedF1: mergedMacroF1(truth, pred) };
 }
