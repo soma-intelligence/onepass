@@ -17,6 +17,7 @@ import { datasetPages, originOf, rowsFor } from "../../lab/dataset/rows.ts";
 import type { DatasetRow } from "../../lab/dataset/rows.ts";
 import { splitOf } from "../../lab/dataset/split.ts";
 import { generate } from "../../lab/gen/generate.ts";
+import { styleOf } from "../../lab/gen/render.ts";
 import type { Site } from "../../lab/gen/model.ts";
 import { renderSitePage } from "../../lab/gen/render.ts";
 
@@ -40,7 +41,7 @@ describe("rowsFor", () => {
         // exactly one label per rendered input, and it is the role of the spec at its mark
         flat.forEach((f, i) => {
           const expected = f.lab === undefined ? "none" : p.fields[Number(f.lab)]!.role;
-          expect(got[i]!.label).toBe(expected);
+          expect(got[i]!.target).toBe(expected);
         });
         // every field of the page is rendered once at least (split OTP cells share a mark)
         const labelled = new Set(flat.filter((f) => f.lab !== undefined).map((f) => Number(f.lab)));
@@ -51,7 +52,7 @@ describe("rowsFor", () => {
     }
     expect(rows.length).toBeGreaterThan(100);
     expect(marked).toBeGreaterThan(50);
-    expect(rows.every((r) => typeof r.label === "string")).toBe(true);
+    expect(rows.every((r) => typeof r.target === "string")).toBe(true);
     expect(rows.every((r) => !("lab" in r) && r.featureVersion >= 1 && r.generator === 2 && r.seed === "ds")).toBe(true);
     const json = JSON.stringify(rows);
     for (const s of world.sites) {
@@ -70,8 +71,8 @@ describe("rowsFor", () => {
     expect(honey).toBeDefined();
     const s = honey!;
     const rows = datasetPages(s).flatMap((p, step) => rowsFor(s, step, extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true }))), "ds"));
-    expect(rows.filter((r) => r.label === "none").length).toBeGreaterThanOrEqual(1);
-    expect(rows.some((r) => r.label !== "none")).toBe(true);
+    expect(rows.filter((r) => r.target === "none").length).toBeGreaterThanOrEqual(1);
+    expect(rows.some((r) => r.target !== "none")).toBe(true);
     const decoy = world.sites.find((s2) => s2.traits.includes("decoy_form") && staticSite(s2));
     expect(decoy).toBeDefined();
     const d = decoy!;
@@ -87,7 +88,7 @@ describe("rowsFor", () => {
       datasetPages(s).forEach((p, step) => {
         expect(p.fields).toEqual(s.steps![step]);
         const page = extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true })));
-        const roles = rowsFor(s, step, page, "ds").map((r) => r.label).filter((l) => l !== "none");
+        const roles = rowsFor(s, step, page, "ds").map((r) => r.target).filter((l) => l !== "none");
         expect(roles).toEqual(s.steps![step]!.map((f) => f.role));
       });
     }
@@ -100,6 +101,54 @@ describe("rowsFor", () => {
     expect(originOf(a)).toMatch(/^synthetic:/);
     const page = extractFeatures(dom(renderSitePage(a, datasetPages(a)[0]!.page, {}, { labelMarks: true })));
     for (const r of rowsFor(a, 0, page, "ds")) expect(r.split).toBe(splitOf(originOf(a), "ds"));
+  });
+});
+
+describe("target and label text", () => {
+  it("keeps the label text of the page in `label` and the role in `target`", () => {
+    const roleNames = new Set<string>(["username", "email", "password", "new_password", "otp", "cc_name", "cc_number", "cc_exp", "cc_exp_month", "cc_exp_year", "cc_csc", "given_name", "family_name", "tel", "birth_date", "organization", "address_line1", "address_line2", "postal_code", "city", "country", "none"]);
+    let n = 0;
+    for (const s of world.sites.filter(staticSite)) {
+      datasetPages(s).forEach((p, step) => {
+        const page = extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true })));
+        const flat = page.forms.flatMap((f) => f.fields);
+        rowsFor(s, step, page, "ds").forEach((r, i) => {
+          expect(r.label).toBe(flat[i]!.label);
+          if (r.label !== undefined && roleNames.has(r.label)) expect(r.label).toBe(flat[i]!.label); // only when the page text is that very word
+          n++;
+        });
+      });
+    }
+    expect(n).toBeGreaterThan(100);
+    // Label text that is itself a role word ("email", "password") is the page's real text; most labels are not.
+    const rows = world.sites.filter(staticSite).flatMap((s) => datasetPages(s).flatMap((p, step) => rowsFor(s, step, extractFeatures(dom(renderSitePage(s, p.page, p.ctx, { labelMarks: true }))), "ds")));
+    const same = rows.filter((r) => r.label === r.target).length;
+    expect(same / rows.length).toBeLessThan(0.2);
+    expect(rows.some((r) => r.label !== undefined && r.label !== r.target)).toBe(true);
+  });
+});
+
+describe("datasetPages follows the routes the lab serves", () => {
+  const bigWorld = generate("pages", { sites: 400, patterns });
+  it("serves /password only to username-first logins, /otp only to sites with a code field, steps only to multi_step", () => {
+    for (const s of bigWorld.sites) {
+      const pages = datasetPages(s).map((p) => p.page);
+      const hasPassword = s.fields.some((f) => f.role === "password");
+      const hasOtp = s.fields.some((f) => f.role === "otp");
+      if (s.steps) {
+        expect(pages.filter((p) => p === "step")).toHaveLength(s.steps.length - 1);
+        expect(pages).not.toContain("password");
+        expect(pages).not.toContain("otp");
+        continue;
+      }
+      expect(pages.includes("password")).toBe(styleOf(s) === "username_first" && hasPassword);
+      expect(pages.includes("otp")).toBe(hasOtp);
+      expect(pages.includes("step")).toBe(false);
+      expect(pages.filter((p) => p === "entry" || p === "frame").length).toBeLessThanOrEqual(1);
+    }
+    // the phantom pages are gone: password-only pages are a minority of pages
+    const all = bigWorld.sites.flatMap((s) => datasetPages(s));
+    expect(all.filter((p) => p.page === "password").length).toBeLessThan(all.length / 5);
   });
 });
 
@@ -119,25 +168,65 @@ describe("label marks", () => {
 });
 
 describe("buildDataset", () => {
-  it("renders in Chromium, writes gzip parts and a manifest, and every field matches its spec", async () => {
+  const readRows = (dir: string): { text: string; rows: DatasetRow[]; files: string[] } => {
+    const files = readdirSync(dir).filter((f) => /^part-\d{4}\.jsonl\.gz$/.test(f)).sort();
+    const text = files.map((f) => gunzipSync(readFileSync(join(dir, f))).toString("utf8")).join("");
+    return { text, rows: text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as DatasetRow), files };
+  };
+
+  it("renders in Chromium, writes gzip parts and a manifest, matches every spec and carries no secret", async () => {
     const out = mkdtempSync(join(tmpdir(), "ds-"));
     try {
-      const m = await buildDataset({ seed: "t9", forms: 60, workers: 2, out, patterns });
-      expect(m.forms).toBeGreaterThanOrEqual(60);
+      const m = await buildDataset({ seed: "t9", forms: 120, workers: 2, out, patterns });
+      expect(m.forms).toBe(120);
       const dir = join(out, "t9-g2");
-      const parts = readdirSync(dir).filter((f) => /^part-\d{4}\.jsonl\.gz$/.test(f));
-      expect(parts.length).toBeGreaterThanOrEqual(1);
-      const rows = parts.flatMap((f) => gunzipSync(readFileSync(join(dir, f))).toString("utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as DatasetRow));
+      const { text, rows } = readRows(dir);
       expect(rows.length).toBe(m.rows);
-      expect(Object.values(m.byRole).reduce((a, b) => a + b, 0)).toBe(rows.length);
+      expect(Object.values(m.byTarget).reduce((a, b) => a + b, 0)).toBe(rows.length);
       expect(m.formsPerSecond).toBeGreaterThan(0);
-      expect(rows.every((r) => r.label && r.split && r.origin.startsWith("synthetic:"))).toBe(true);
-      expect(rows.some((r) => r.label === "none")).toBe(true);
-      expect(rows.some((r) => r.label === "password")).toBe(true);
+      expect(m.skippedForms).toBeGreaterThanOrEqual(0);
+      expect(rows.every((r) => r.target && r.split && r.origin.startsWith("synthetic:"))).toBe(true);
+      expect(rows.some((r) => r.target === "none")).toBe(true);
+      expect(rows.some((r) => r.target === "password")).toBe(true);
       expect(JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")).rows).toBe(rows.length);
-      expect(m.mismatches).toBe(0); // build checks each page against the Site it rendered
+      expect(m.mismatches).toBe(0);
+      // Secrets of the generated world(s) behind these rows, anywhere in the written output.
+      const w = generate("t9/c0", { sites: 400, patterns });
+      const secrets = new Set<string>();
+      for (const s of w.sites) {
+        for (const v of [s.account?.password, s.account?.totpSecret, s.account?.username]) if (v && v.length >= 6) secrets.add(v);
+      }
+      for (const accounts of Object.values(w.idp)) for (const a of accounts) { secrets.add(a.password); secrets.add(a.email); }
+      const short: string[] = [];
+      for (const item of w.fixture.items) {
+        for (const v of Object.values((item as { fields: Record<string, unknown> }).fields)) {
+          if (typeof v === "string" && v.length >= 8) secrets.add(v);
+          else if (typeof v === "string" && /^\d{3,4}$/.test(v)) short.push(v); // card security codes
+        }
+      }
+      for (const v of secrets) expect(text, "secret in output").not.toContain(v);
+      for (const v of short) expect(text, "cvc in output").not.toContain(`"${v}"`);
     } finally {
       rmSync(out, { recursive: true, force: true });
+    }
+  }, 180_000);
+
+  it("writes the same bytes for one worker and for four", async () => {
+    const a = mkdtempSync(join(tmpdir(), "ds-a-"));
+    const b = mkdtempSync(join(tmpdir(), "ds-b-"));
+    try {
+      const ma = await buildDataset({ seed: "ord", forms: 150, workers: 1, out: a, patterns });
+      const mb = await buildDataset({ seed: "ord", forms: 150, workers: 4, out: b, patterns });
+      const ra = readRows(join(a, "ord-g2"));
+      const rb = readRows(join(b, "ord-g2"));
+      expect(ra.files).toEqual(rb.files);
+      expect(ra.text).toBe(rb.text);
+      for (const f of ra.files) expect(readFileSync(join(a, "ord-g2", f)).equals(readFileSync(join(b, "ord-g2", f)))).toBe(true);
+      expect(ma.byTarget).toEqual(mb.byTarget);
+      expect(ma.skippedForms).toBe(mb.skippedForms);
+    } finally {
+      rmSync(a, { recursive: true, force: true });
+      rmSync(b, { recursive: true, force: true });
     }
   }, 180_000);
 });

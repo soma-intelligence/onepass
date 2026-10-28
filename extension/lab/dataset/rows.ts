@@ -10,7 +10,7 @@ import { FEATURE_VERSION } from "../../src/content/detect/features.ts";
 import type { FieldFeatures, PageFeatures } from "../../src/content/detect/features.ts";
 import { GENERATOR_VERSION } from "../gen/model.ts";
 import type { FieldSpec, Lang, Role, Site, TraitId } from "../gen/model.ts";
-import { pageFields } from "../gen/render.ts";
+import { pageFields, styleOf } from "../gen/render.ts";
 import type { PageContext, PageId } from "../gen/render.ts";
 import { splitOf } from "./split.ts";
 import type { Split } from "./split.ts";
@@ -28,7 +28,8 @@ export interface DatasetRow extends Omit<FieldFeatures, "lab"> {
   lang: Lang;
   framework: string;
   traits: TraitId[];
-  label: Role | "none";
+  /** The target: the role the generator drew for the field, or "none". `label` (inherited) stays the label text of the page. */
+  target: Role | "none";
 }
 
 export interface DatasetPage { page: PageId; ctx: PageContext; fields: FieldSpec[] }
@@ -42,9 +43,9 @@ export interface DatasetPage { page: PageId; ctx: PageContext; fields: FieldSpec
 export const originOf = (site: Site): string => `synthetic:${site.seed}`;
 
 /**
- * Pages of a site that hold fields, in flow order: the entry-like page (the
+ * Pages of a site that hold fields, in flow order, as the lab serves them: the entry-like page (the
  * frame page when the form lives in an iframe), the password page of a
- * username-first login, the OTP page, or every step of a multi_step form.
+ * username-first login only, the OTP page, or every step of a multi_step form.
  * The index in this list is the row's `step`.
  */
 export function datasetPages(site: Site): DatasetPage[] {
@@ -60,7 +61,8 @@ export function datasetPages(site: Site): DatasetPage[] {
     return out;
   }
   add(first, {});
-  add("password", {});
+  // The lab serves /password only after a username-first identifier (rp.ts redirects there), /otp only to a TOTP account.
+  if (styleOf(site) === "username_first") add("password", {});
   add("otp", {});
   return out;
 }
@@ -74,17 +76,17 @@ export function rowsFor(site: Site, step: number, page: PageFeatures, seed: stri
   const rows: DatasetRow[] = [];
   for (const form of page.forms) {
     for (const f of form.fields) {
-      let label: Role | "none" = "none";
+      let target: Role | "none" = "none";
       if (f.lab !== undefined) {
         const at = Number(f.lab);
         const field = Number.isInteger(at) ? spec.fields[at] : undefined;
         if (!field) throw new Error(`site ${site.index} page ${step}: mark ${f.lab} has no field`);
-        label = field.role;
+        target = field.role;
       }
       const { lab: _lab, ...features } = f;
       rows.push({
         ...features, seed, generator: GENERATOR_VERSION, featureVersion: FEATURE_VERSION, site: site.index, step,
-        source: "synthetic", origin, split, lang: site.lang, framework: site.framework ?? "static", traits: site.traits, label,
+        source: "synthetic", origin, split, lang: site.lang, framework: site.framework ?? "static", traits: site.traits, target,
       });
     }
   }
