@@ -279,9 +279,10 @@ struct Sidebar: View {
                     Label {
                         Text(tag)
                     } icon: {
-                        Circle()
-                            .fill(TagColor.of(tag))
-                            .frame(width: 9, height: 9)
+                        // A small price tag in the tag's color, its hole cut through.
+                        Image(systemName: "tag.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(TagColor.of(tag).gradient)
                             .frame(width: SymbolTile.sidebarSize, height: SymbolTile.sidebarSize)
                     }
                     .badge(counts.byTag[tag] ?? 0)
