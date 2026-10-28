@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { gzipSync } from "node:zlib";
-import { CcClient, assertAllowedUrl, parseCdxLine, readWarcRecord, sampleFromHtml } from "../../lab/corpus/commoncrawl";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { CcClient, CircuitOpen, assertAllowedUrl, main, parseCdxLine, readWarcRecord, sampleFromHtml } from "../../lab/corpus/commoncrawl";
 
 const LINE = JSON.stringify({
   urlkey: "com,github)/login", timestamp: "20261005110032", url: "https://github.com/login", mime: "text/html", "mime-detected": "text/html",
@@ -40,6 +43,10 @@ describe("readWarcRecord", () => {
     expect(readWarcRecord(warc("https://example.com/x", 200, FORM, "request"))).toBeNull();
     expect(readWarcRecord(new Uint8Array([1, 2, 3]))).toBeNull();
   });
+  it("skips a truncated gzip record without throwing", () => {
+    const gz = warc("https://example.com/login", 200, FORM);
+    expect(readWarcRecord(gz.subarray(0, Math.floor(gz.length / 2)))).toBeNull();
+  });
 });
 
 describe("sampleFromHtml", () => {
@@ -77,7 +84,7 @@ describe("polite client", () => {
     expect(await c.cdx("https://index.commoncrawl.org/x")).toBe("done");
     expect(fetchFn).toHaveBeenCalledTimes(3);
     expect(sleeps.length).toBe(2);
-    expect(sleeps[1]!).toBeGreaterThan(sleeps[0]!);
+    expect(sleeps).toEqual([5000, 10000]);
 
     const always = vi.fn().mockImplementation(async () => res(503));
     const d = new CcClient({ fetch: always as unknown as typeof fetch, sleep: async () => {}, cdxGapMs: 0 });
@@ -111,5 +118,138 @@ describe("polite client", () => {
     expect(peak).toBe(4);
     expect(heads[0]).toBe("bytes=0-49");
     expect(heads[1]).toBe("bytes=100-149");
+  });
+});
+
+describe("redirects, Retry-After and body release", () => {
+  const redirect = () => new Response(null, { status: 301, headers: { location: "https://evil.example.com/x" } });
+
+  it("refuses a redirect from an allowlisted host without requesting the target", async () => {
+    const fetchFn = vi.fn().mockImplementation(async () => redirect());
+    const c = new CcClient({ fetch: fetchFn as unknown as typeof fetch, sleep: async () => {}, cdxGapMs: 0 });
+    await expect(c.cdx("https://index.commoncrawl.org/x")).rejects.toThrow(/redirect refused/);
+    await expect(c.range("a.warc.gz", 0, 10)).rejects.toThrow(/redirect refused/);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(fetchFn.mock.calls.map((x) => String(x[0]))).not.toContain("https://evil.example.com/x");
+    expect(fetchFn.mock.calls[0]![1].redirect).toBe("manual");
+  });
+
+  it("does not retry a redirect TypeError", async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new TypeError("fetch failed", { cause: new Error("unexpected redirect") }));
+    const c = new CcClient({ fetch: fetchFn as unknown as typeof fetch, sleep: async () => {}, cdxGapMs: 0 });
+    await expect(c.cdx("https://index.commoncrawl.org/x")).rejects.toThrow();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("honors Retry-After and cancels the body before retrying", async () => {
+    const sleeps: number[] = [];
+    const cancel = vi.fn();
+    const body = new ReadableStream({ cancel });
+    const first = new Response(body, { status: 429, headers: { "retry-after": "42" } });
+    const fetchFn = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(new Response("ok"));
+    const c = new CcClient({ fetch: fetchFn as unknown as typeof fetch, sleep: async (ms) => { sleeps.push(ms); }, cdxGapMs: 0 });
+    expect(await c.cdx("https://index.commoncrawl.org/x")).toBe("ok");
+    expect(sleeps).toEqual([42000]);
+    expect(cancel).toHaveBeenCalled();
+  });
+});
+
+describe("circuit breaker", () => {
+  it("pauses 5 min then 15 min after 5 failures in a row, then aborts with CircuitOpen", async () => {
+    let t = 0;
+    const sleeps: number[] = [];
+    const fetchFn = vi.fn().mockImplementation(async () => new Response("", { status: 503 }));
+    const c = new CcClient({ fetch: fetchFn as unknown as typeof fetch, now: () => t, sleep: async (ms) => { sleeps.push(ms); t += ms; }, cdxGapMs: 0 });
+    let err: unknown;
+    for (let i = 0; i < 20 && !(err instanceof CircuitOpen); i++) {
+      try { await c.cdx("https://index.commoncrawl.org/x"); } catch (e) { err = e; }
+    }
+    expect(err).toBeInstanceOf(CircuitOpen);
+    expect(sleeps.filter((m) => m >= 300000)).toEqual([300000, 900000]);
+    expect(fetchFn).toHaveBeenCalledTimes(15); // 5 + 5 + 5 failed requests
+  });
+
+  it("a success resets the count", async () => {
+    const answers = [503, 503, 503, 200, 503, 503, 503, 200];
+    const sleeps: number[] = [];
+    const fetchFn = vi.fn().mockImplementation(async () => new Response("x", { status: answers.shift() ?? 200 }));
+    const c = new CcClient({ fetch: fetchFn as unknown as typeof fetch, sleep: async (ms) => { sleeps.push(ms); }, cdxGapMs: 0 });
+    await c.cdx("https://index.commoncrawl.org/a");
+    await c.cdx("https://index.commoncrawl.org/b");
+    expect(sleeps.every((m) => m < 300000)).toBe(true);
+  });
+});
+
+describe("resumable run on a fake index", () => {
+  const CRAWL = "CC-MAIN-2026-43";
+  const FILE = "crawl-data/x/warc/f.warc.gz";
+  const entries: Record<number, { url: string; offset: number }[]> = {
+    0: [{ url: "https://a.fr/login", offset: 1000 }, { url: "https://a.fr/signin", offset: 2000 }],
+    2: [{ url: "https://b.fr/login", offset: 3000 }, { url: "https://t.fr/login", offset: 4000 }],
+    3: [{ url: "https://a.fr/register", offset: 5000 }],
+    1: [{ url: "https://c.fr/login", offset: 6000 }],
+  };
+  const bytes = new Map<number, Uint8Array>();
+  for (const list of Object.values(entries)) for (const e of list) {
+    const gz = warc(e.url, 200, FORM);
+    bytes.set(e.offset, e.url.includes("t.fr") ? gz.subarray(0, 25) : gz); // t.fr is truncated
+  }
+  const line = (e: { url: string; offset: number }) => JSON.stringify({ url: e.url, mime: "text/html", status: "200", length: String(bytes.get(e.offset)!.length), offset: String(e.offset), filename: FILE });
+
+  function fakeIndex(reads: number[], onRead?: (offset: number) => void): typeof fetch {
+    return (async (input: string, init: RequestInit) => {
+      const u = new URL(String(input));
+      if (u.hostname === "data.commoncrawl.org") {
+        const offset = Number(/bytes=(\d+)-/.exec(new Headers(init.headers).get("range")!)![1]);
+        reads.push(offset);
+        onRead?.(offset);
+        return new Response(Buffer.from(bytes.get(offset)!), { status: 206 });
+      }
+      const q = u.searchParams;
+      if (!q.get("url")?.endsWith(".fr")) return new Response('{"message": "No Captures found"}', { status: 404 });
+      if (q.get("showNumPages")) return new Response('{"pages": 4, "pageSize": 5, "blocks": 20}');
+      return new Response((entries[Number(q.get("page"))] ?? []).map(line).join("\n"));
+    }) as unknown as typeof fetch;
+  }
+
+  it("interrupted then resumed: nothing captured twice, nothing overwritten", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cc-test-"));
+    try {
+      const manifest = join(dir, "manifest.json");
+      const argv = ["--crawl", CRAWL, "--extra", "100", "--out", dir, "--manifest", manifest];
+      const reads: number[] = [];
+      const ctl = new AbortController();
+      const first = new CcClient({ fetch: fakeIndex(reads, (o) => { if (o === 3000) ctl.abort(); }), sleep: async () => {}, cdxGapMs: 0 });
+      await main(argv, first, { signal: ctl.signal });
+      const files1 = readdirSync(dir).filter((f) => /^[a-z]\.fr\.\d+\.json$/.test(f)).sort();
+      expect(files1).toEqual(["a.fr.0.json", "a.fr.1.json", "b.fr.0.json"]);
+      const a0 = readFileSync(join(dir, "a.fr.0.json"), "utf8");
+      expect(JSON.parse(readFileSync(join(dir, "commoncrawl-state.json"), "utf8")).cursor).toBe(2);
+
+      const second = new CcClient({ fetch: fakeIndex(reads), sleep: async () => {}, cdxGapMs: 0 });
+      await main(argv, second);
+      const files2 = readdirSync(dir).filter((f) => /^[a-z]\.fr\.\d+\.json$/.test(f)).sort();
+      expect(files2).toEqual(["a.fr.0.json", "a.fr.1.json", "a.fr.2.json", "b.fr.0.json", "c.fr.0.json"]);
+      expect(readFileSync(join(dir, "a.fr.0.json"), "utf8")).toBe(a0); // not overwritten
+      expect(JSON.parse(readFileSync(join(dir, "a.fr.2.json"), "utf8")).source_url).toBe("https://a.fr/register");
+      expect(new Set(reads).size).toBe(reads.length); // no capture read twice
+      const m = JSON.parse(readFileSync(manifest, "utf8")) as { crawl: string; records: { offset: number }[] };
+      expect(m.crawl).toBe(CRAWL);
+      expect(m.records.map((r) => r.offset).sort((a, b) => a - b)).toEqual([1000, 2000, 3000, 5000, 6000]); // truncated t.fr skipped
+      expect(existsSync(join(dir, "t.fr.0.json"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to resume another crawl in the same output directory", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cc-test-"));
+    try {
+      const c = new CcClient({ fetch: fakeIndex([]), sleep: async () => {}, cdxGapMs: 0 });
+      await main(["--crawl", CRAWL, "--extra", "1", "--out", dir, "--manifest", join(dir, "m.json")], c);
+      await expect(main(["--crawl", "CC-MAIN-2026-39", "--out", dir, "--manifest", join(dir, "m.json")], c)).rejects.toThrow(/another --out/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
