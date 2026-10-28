@@ -1,6 +1,6 @@
 // Shapes of the pattern corpus: raw page samples, distilled patterns, and a
 // stable JSON writer shared by the CLIs.
-import type { Lang, ProviderId, Role } from "../gen/model.ts";
+import type { Lang, ProviderId, Role, TraitId } from "../gen/model.ts";
 import type { Framework, Visibility } from "../../src/content/detect/features.ts";
 
 // Single-sourced in the shared extractor, which must stay free of lab imports.
@@ -31,12 +31,23 @@ export interface Sample {
 
 export type ButtonKind = "signin" | "next" | "pay" | "save" | "signup" | "passkey";
 
-export interface Patterns {
-  version: 1; samples: number;
+/** Roles of each page of a multi-step form, in order. */
+export type StepSeq = Role[][];
+
+/** What the hand-written seed lexicon holds (version 1 shape): the baseline distill blends the samples into. */
+export interface Lexicon {
+  version: number; samples: number;
   langs: [Lang, number][];                                   // weight = share of samples
   roles: Record<Role, { labels: Record<Lang, string[]>; tokens: string[]; autocompleteRate: number }>;
   buttons: Record<ButtonKind, Record<Lang, string[]>>;
   structure: { identifierFirst: number; sso: Record<ProviderId, number>; iframe: number; shadow: number; splitOtp: number; webauthn: number };
+}
+
+export interface Patterns extends Lexicon {
+  version: 2;
+  steps: [StepSeq, number][];                                // weight = share of step sequences
+  frameworks: [string, number][];                            // "static", "react", "vue", "angular": share of samples with forms
+  traits: Record<TraitId, number>;                           // relative weight of each lab trait (baseline nudged by the corpus)
 }
 
 function sortKeys(v: unknown): unknown {

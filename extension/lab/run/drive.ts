@@ -11,7 +11,7 @@
 import { createPrivateKey } from "node:crypto";
 import type { Frame, Page } from "@playwright/test";
 import type { FieldSpec, Site } from "../gen/model.ts";
-import { PAGE_PATH } from "../gen/render.ts";
+import { PAGE_PATH, stepPath } from "../gen/render.ts";
 import type { LabEvent } from "../server/ledger.ts";
 import type { LabServer } from "../server/server.ts";
 import { focusField, type PlainBrowser, shadowField, sleep } from "./browser.ts";
@@ -226,6 +226,28 @@ async function submitForm(scope: Frame): Promise<void> {
   });
 }
 
+/**
+ * multi_step: on each page in turn, the menu on that step's fields, the item
+ * picked, then its button ("next" before the last step). Stops at the first
+ * step whose menu does not offer the item (the oracle reads no_menu or
+ * no_menu_item), or when the next page does not come (a refusal the oracle
+ * reads from the server events). The flags hold only if every step reached
+ * showed the menu and offered the item.
+ */
+async function menuFillSteps(env: ScenarioEnv, page: Page, scope: Frame, site: Site, o: Observation): Promise<void> {
+  const steps = site.steps!;
+  for (const [k, step] of steps.entries()) {
+    if (k > 0 && !(await waitPath(scope, stepPath(k), 10_000))) return;
+    const menu = await env.driver.menuFill(page, scope, step.map((f) => byId(f.id)), site.itemTitle, true);
+    o.overlayShown = menu.shown && (k === 0 || o.overlayShown);
+    o.itemOffered = menu.offered && (k === 0 || o.itemOffered);
+    await snapshotFilled(page, site, o.filled);
+    if (!menu.offered) return;
+    await submitForm(scope).catch(() => undefined);
+  }
+  await waitEvents(env.server, signedIn(site), 10_000);
+}
+
 /** menu_fill: focus the first field offering the menu, ArrowDown, pick the item, then submit. */
 export async function menuFill(env: ScenarioEnv, site: Site): Promise<Observation> {
   const started = Date.now();
@@ -235,6 +257,10 @@ export async function menuFill(env: ScenarioEnv, site: Site): Promise<Observatio
     page = await env.newPage();
     await goto(page, `https://${site.host}/`);
     const scope = await formScope(page, site);
+    if (site.steps) {
+      await menuFillSteps(env, page, scope, site, o);
+      return finish(env, page, o, started);
+    }
     const { fields, title } = menuTarget(site);
     if (site.flow === "signup") {
       // Typed by the user before asking for a generated password: never counted as an extension fill.

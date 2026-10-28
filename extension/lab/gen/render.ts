@@ -5,22 +5,30 @@
 // driver and the server rely on: main form `form#lab-form` (POST, action =
 // PAGE_PATH of the page), submit `#lab-submit`, status `#lab-status`, honeypot
 // `[data-lab-honeypot]`, decoy `form[data-lab-decoy]`, provider link
-// `#lab-sso`, passkey button `#lab-passkey`.
+// `#lab-sso`, passkey button `#lab-passkey`. A multi_step site serves its
+// first step at "/" and step k (k >= 1) at `/step/<k>`, one form per page,
+// each submitted by `#lab-submit` (labelled "next" before the last step).
 import type { FieldSpec, IdpAccount, Lang, LoginStyle, ProviderId, Site } from "./model.ts";
+import { frameworkScript } from "./frameworks.ts";
 import {
   CSS, decoyHtml, esc, formHtml, passkeyScript, postedNames, relayHtml, runtimeScript,
 } from "./render-forms.ts";
 import type { FormSpec, RuntimeConfig } from "./render-forms.ts";
 
-export type PageId = "entry" | "password" | "otp" | "passkey" | "home" | "frame" | "trap";
-export interface PageContext { error?: string; challenge?: string; status?: string; asHost?: string }
+export type PageId = "entry" | "password" | "otp" | "passkey" | "home" | "frame" | "trap" | "step";
+/** `step`: index of the multi_step page ("step" pages, 1 and up; entry-like pages are step 0). */
+export interface PageContext { error?: string; challenge?: string; status?: string; asHost?: string; step?: number }
 export type IdpPageId = "chooser" | "identifier" | "password";
 export interface IdpContext { accounts?: IdpAccount[]; email?: string; error?: string; client?: string }
 
 /** Paths the site pages are served at and post to (entry, trap and home share "/"-rooted paths). */
 export const PAGE_PATH = {
   entry: "/", password: "/password", otp: "/otp", passkey: "/passkey", home: "/home", frame: "/frame", decoy: "/decoy",
+  step: "/step",
 } as const;
+
+/** Path of step `k` of a multi_step site ("/" for the first). */
+export const stepPath = (k: number): string => (k === 0 ? PAGE_PATH.entry : `${PAGE_PATH.step}/${k}`);
 /** Paths of the mock identity provider pages; each form posts back to the path of its page. */
 export const IDP_PATH: Record<IdpPageId, string> = {
   chooser: "/o/oauth2/auth", identifier: "/signin/identifier", password: "/signin/password",
@@ -72,7 +80,11 @@ function styleOf(site: Site): LoginStyle {
 }
 
 /** Fields shown by a page, in order. Entry-like pages (entry, frame, trap) hold the first step. */
-function pageFields(site: Site, page: PageId): FieldSpec[] {
+function pageFields(site: Site, page: PageId, step = 0): FieldSpec[] {
+  if (site.steps) {
+    if (page === "step") return site.steps[step] ?? [];
+    return page === "entry" || page === "frame" || page === "trap" ? site.steps[0] ?? [] : [];
+  }
   if (page === "password") return site.fields.filter((f) => f.role === "password");
   if (page === "otp") return site.fields.filter((f) => f.role === "otp");
   if (page !== "entry" && page !== "frame" && page !== "trap") return [];
@@ -98,7 +110,11 @@ function signupLabels(site: Site): Map<FieldSpec, string> {
   return out;
 }
 
-function headingOf(site: Site, page: PageId): string {
+function headingOf(site: Site, page: PageId, step = 0): string {
+  if (page === "step") {
+    const roles = (site.steps?.[step] ?? []).map((f) => f.role);
+    return t(site.lang, roles.includes("password") ? "password" : roles.includes("otp") ? "otp" : "signin");
+  }
   switch (page) {
     case "password": return t(site.lang, "password");
     case "otp": return t(site.lang, "otp");
@@ -141,8 +157,8 @@ ${body}
 }
 
 /** The form of a page with its structural traits (delay, shadow root, rerender) and traps (honeypot, decoy). */
-function mountedForm(site: Site, page: PageId, action: string): string {
-  const fields = pageFields(site, page);
+function mountedForm(site: Site, page: PageId, action: string, step = 0): string {
+  const fields = pageFields(site, page, step);
   const entryLike = page === "entry" || page === "frame" || page === "trap";
   const style = styleOf(site);
   const has = (trait: Site["traits"][number]) => site.traits.includes(trait);
@@ -153,10 +169,12 @@ function mountedForm(site: Site, page: PageId, action: string): string {
   const spec: FormSpec = {
     action, fields, labels: site.flow === "signup" ? signupLabels(site) : undefined, honeypot: hp,
     noAutocomplete: has("no_autocomplete"), splitOtp: page === "otp" && site.totpCells === true, reveal,
-    submit: page === "otp" ? t(site.lang, "verify") : firstStep ? site.buttons.next ?? site.buttons.submit : site.buttons.submit,
+    submit: page === "otp" ? t(site.lang, "verify") : firstStep ? site.buttons.next ?? site.buttons.submit
+      : site.steps && step < site.steps.length - 1 ? site.buttons.next ?? site.buttons.submit : site.buttons.submit,
     next: site.buttons.next,
   };
-  const form = formHtml(spec);
+  const framework = site.framework ?? "static";
+  const form = formHtml(spec, { layout: site.layout ?? "stacked", framework });
   const shadow = has("shadow_open") ? "open" : has("shadow_closed") ? "closed" : undefined;
   const cfg: RuntimeConfig = {
     spa: has("spa_rerender"), reveal, split: spec.splitOtp,
@@ -176,7 +194,7 @@ function mountedForm(site: Site, page: PageId, action: string): string {
     markup = form;
   }
   const scripted = shadow !== undefined || cfg.delayMs !== undefined || cfg.spa || cfg.reveal || cfg.split;
-  return decoy + markup + (scripted ? runtimeScript(cfg) : "");
+  return decoy + markup + (scripted ? runtimeScript(cfg) : "") + frameworkScript(framework);
 }
 
 function passkeyBlock(site: Site, host: string, ctx: PageContext): string {
@@ -190,7 +208,7 @@ function passkeyBlock(site: Site, host: string, ctx: PageContext): string {
 export function renderSitePage(site: Site, page: PageId, ctx: PageContext): string {
   // The lookalike copy keeps the brand (that is the phishing point) but lives on its own host.
   const host = page === "trap" ? ctx.asHost ?? site.lookalike?.host ?? site.host : site.host;
-  const heading = headingOf(site, page);
+  const heading = headingOf(site, page, ctx.step);
   const parts = [`<h1>${esc(heading)}</h1>`, statusHtml(ctx)];
   const framed = site.traits.includes("iframe_same_origin") || site.traits.includes("iframe_cross_site");
   switch (page) {
@@ -205,6 +223,9 @@ export function renderSitePage(site: Site, page: PageId, ctx: PageContext): stri
       break;
     case "otp":
       parts.push(mountedForm(site, page, PAGE_PATH.otp));
+      break;
+    case "step":
+      parts.push(mountedForm(site, page, stepPath(ctx.step ?? 0), ctx.step ?? 0));
       break;
     case "frame":
       parts.push(mountedForm(site, page, `https://${site.frameHost ?? site.host}${PAGE_PATH.frame}`));

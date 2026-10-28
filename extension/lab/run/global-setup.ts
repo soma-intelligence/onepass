@@ -14,9 +14,10 @@ import { buildHost, prebuildFixtureCache, type StagedHost, stageHost } from "../
 import { generate, loadPatterns } from "../gen/generate.ts";
 
 export const EXT_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-// First seed (n >= 2) whose 12 sites hold iframe_cross_site, shadow_closed, spa_rerender and split_otp
-// and keep a lookalike, so the smoke plays the structural traps in a browser.
-export const SMOKE_SEED = "lab-smoke-18";
+// First seed (n >= 2, generator version 2) whose 12 sites hold iframe_cross_site, shadow_closed,
+// spa_rerender and split_otp, keep a lookalike, and show at least four layouts and three frameworks,
+// so the smoke plays the structural traps and the version 2 looks in a browser (multi_step is site 10).
+export const SMOKE_SEED = "lab-smoke-17";
 export const SMOKE_SITES = 12;
 
 export interface LabRunConfig {

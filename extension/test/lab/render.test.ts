@@ -9,6 +9,7 @@ import type { Patterns } from "../../lab/corpus/types.ts";
 import { generate } from "../../lab/gen/generate.ts";
 import type { FieldSpec, HoneypotStyle, LoginStyle, Site } from "../../lab/gen/model.ts";
 import { PAGE_PATH, renderIdpPage, renderSitePage } from "../../lab/gen/render.ts";
+import type { PageContext, PageId } from "../../lab/gen/render.ts";
 
 const FIXED = patternsJson as unknown as Patterns;
 const world = generate("render", { sites: 10, patterns: FIXED });
@@ -37,7 +38,24 @@ function styleOf(site: Site): LoginStyle {
   return site.loginStyle ?? "single";
 }
 
+/** The text naming a field in its layout: its <label for>, the text before it (inline), or its placeholder. */
+function shownLabel(root: ParentNode, f: FieldSpec): string | undefined {
+  const label = root.querySelector(`label[for="${f.id}"]`)?.textContent;
+  if (label) return label;
+  const el = root.querySelector(`[id="${f.id}"]`);
+  const before = el?.previousElementSibling;
+  if (before?.classList.contains("lab-text")) return before.textContent ?? undefined;
+  return el?.getAttribute("placeholder") ?? el?.getAttribute("aria-label") ?? undefined;
+}
+
+/** Pages a site's fields are spread over (the entry-like page first). */
+function sitePages(site: Site, entry: "entry" | "frame"): [PageId, PageContext][] {
+  if (site.steps) return site.steps.map((_, k): [PageId, PageContext] => (k === 0 ? [entry, {}] : ["step", { step: k }]));
+  return [[entry, {}], ...(styleOf(site) === "username_first" ? [["password", {}] as [PageId, PageContext]] : [])];
+}
+
 function expectedEntry(site: Site): FieldSpec[] {
+  if (site.steps) return site.steps[0]!;
   const nonOtp = site.fields.filter((f) => f.role !== "otp");
   if (site.flow === "login_passkey" && site.passkeyOnly) return [];
   if (styleOf(site) === "username_first" && site.fields.some((f) => f.role === "password")) {
@@ -67,7 +85,7 @@ describe("renderSitePage", () => {
       for (const f of want) {
         const el = root.querySelector(`[id="${f.id}"]`);
         expect(el, `${site.index} ${f.id}`).not.toBeNull();
-        expect(root.querySelector(`label[for="${f.id}"]`)).not.toBeNull();
+        expect(shownLabel(root, f), `${site.index} ${site.layout} ${f.id}`).toBeTruthy();
       }
       if (want.length > 0) {
         const form = root.querySelector<HTMLFormElement>("form#lab-form")!;
@@ -90,14 +108,26 @@ describe("renderSitePage", () => {
         const odoc = scope(parse(renderSitePage(site, "otp", {})));
         expect(odoc.querySelector(`input[name="${otp.name}"]`)).not.toBeNull();
       }
+      // A multi_step site shows one step per page, posting to its own path, "next" until the last.
+      for (const [k, step] of (site.steps ?? []).entries()) {
+        if (k === 0) continue;
+        const sdoc = scope(parse(renderSitePage(site, "step", { step: k })));
+        expect(visibleNames(sdoc)).toEqual(step.map((f) => f.name));
+        expect(sdoc.querySelector("form#lab-form")!.getAttribute("action")).toBe(`/step/${k}`);
+        const last = k === site.steps!.length - 1;
+        expect(sdoc.querySelector("#lab-submit")!.textContent).toBe(last ? site.buttons.submit : site.buttons.next);
+      }
     }
+    expect(big.sites.some((s) => s.steps)).toBe(true);
   });
 
   it("signup_new_password_labels_in_order", () => {
     const signups = [...world.sites, ...big.sites].filter((s) => s.flow === "signup");
     expect(signups.length).toBeGreaterThan(3);
-    const confirm = /confirm|bestätig|wiederhol|repeat|again/i;
-    for (const site of signups) {
+    const confirm = /confirm|bestätig|wiederhol|repeat|retype|again/i;
+    for (const drawn of signups) {
+      // Labels are read from <label for>: the stacked layout (other layouts: generate.test.ts).
+      const site = { ...drawn, layout: "stacked" as const };
       const framed = site.traits.some((t) => t.startsWith("iframe_"));
       const root = scope(parse(renderSitePage(site, framed ? "frame" : "entry", {})));
       const [a, b] = site.fields.filter((f) => f.role === "new_password");
@@ -106,11 +136,14 @@ describe("renderSitePage", () => {
       expect(la, `${site.index}`).not.toMatch(confirm);
       expect(lb, `${site.index}`).toMatch(confirm);
     }
-    // Site 6 of the render world drew the confirmation label first: it is swapped.
-    const s6 = world.sites[6]!;
-    const root = scope(parse(renderSitePage(s6, "entry", {})));
-    expect(root.querySelector(`label[for="${s6.fields[1]!.id}"]`)!.textContent).toBe("Crea una contraseña");
-    expect(root.querySelector(`label[for="${s6.fields[2]!.id}"]`)!.textContent).toBe("Confirmar contraseña");
+    // A site that drew the confirmation label first: the labels are swapped.
+    const drawn = signups.find((x) => !x.traits.some((t) => t.startsWith("iframe_") || t.startsWith("shadow_")) && !x.delayMs)!;
+    const [p1, p2] = drawn.fields.filter((f) => f.role === "new_password");
+    const swapped = withTraits(drawn, { layout: "stacked", fields: drawn.fields.map((f) =>
+      f === p1 ? { ...f, label: "Confirmar contraseña" } : f === p2 ? { ...f, label: "Crea una contraseña" } : f) });
+    const root = scope(parse(renderSitePage(swapped, "entry", {})));
+    expect(root.querySelector(`label[for="${p1!.id}"]`)!.textContent).toBe("Crea una contraseña");
+    expect(root.querySelector(`label[for="${p2!.id}"]`)!.textContent).toBe("Confirmar contraseña");
   });
 
   it("honeypot_invisible_style", () => {
@@ -137,8 +170,7 @@ describe("renderSitePage", () => {
     // Every generated honeypot lands in exactly one page of its site.
     for (const site of big.sites.filter((s) => s.honeypot)) {
       const framed = site.traits.some((t) => t.startsWith("iframe_"));
-      const used = [framed ? "frame" : "entry", ...(styleOf(site) === "username_first" ? ["password"] : [])] as const;
-      const pages = used.map((p) => scope(parse(renderSitePage(site, p as "entry", {}))));
+      const pages = sitePages(site, framed ? "frame" : "entry").map(([p, ctx]) => scope(parse(renderSitePage(site, p, ctx))));
       const count = pages.filter((r) => r.querySelector("[data-lab-honeypot]")).length;
       expect(count, `${site.index}`).toBe(1);
     }
@@ -273,6 +305,37 @@ describe("renderSitePage", () => {
     expect(after.querySelector<HTMLInputElement>(`input[name="${site.fields[0]!.name}"]`)!.value).toBe("bob");
     after.querySelector("input")!.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
     expect(doc.querySelector("form#lab-form")).toBe(after);
+  });
+
+  it("framework_controlled_inputs", async () => {
+    const [u, p] = plainLogin.fields as [FieldSpec, FieldSpec];
+    const run = (framework: Site["framework"]) => {
+      const dom = new JSDOM(renderSitePage({ ...plainLogin, framework }, "entry", {}), { runScripts: "dangerously" });
+      const doc = dom.window.document;
+      const input = (f: FieldSpec) => doc.querySelector<HTMLInputElement>(`[id="${f.id}"]`)!;
+      return { dom, doc, input, fire: (f: FieldSpec) => input(f).dispatchEvent(new dom.window.Event("input", { bubbles: true })) };
+    };
+    for (const fw of ["react", "vue"] as const) {
+      const { input, fire } = run(fw);
+      // A value written with its input event survives the rerender; one written silently is set back to its state.
+      input(u).value = "bob";
+      fire(u);
+      input(p).value = "silent";
+      input(u).value = "bobby";
+      fire(u);
+      await Promise.resolve();
+      expect(input(u).value, fw).toBe("bobby");
+      expect(input(p).value, fw).toBe("");
+    }
+    const ng = run("angular");
+    ng.input(p).value = "kept";
+    ng.input(u).value = "bob";
+    ng.fire(u);
+    await Promise.resolve();
+    expect(ng.input(p).value).toBe("kept");
+    expect(ng.input(u).classList.contains("ng-dirty")).toBe(true);
+    // Static pages carry no framework runtime.
+    expect(run("static").doc.querySelectorAll("script").length).toBe(0);
   });
 
   it("delayed_fields_insert_form_later", async () => {
