@@ -304,8 +304,8 @@ Le serveur apprend donc ce que décrit la section 1 (nombre d'items par vault, v
 
 ### 10.7 Limites du jalon 2
 
-- **R1** : pas de connexion par QR code, ni de liste signée des appareils ou de révocation ; un nouvel appareil passe par l'Emergency Kit. Reporté au jalon 2b.
-- **R2** : pas de mode public (session déléguée). Reporté au jalon 2b.
+- **R1** : pas de connexion par QR code, ni de liste signée des appareils ou de révocation ; un nouvel appareil passe par l'Emergency Kit. Reporté au jalon 2b, livré dans les apps (section 15).
+- **R2** : pas de mode public (session déléguée). Reporté au jalon 2b, livré dans les apps (section 15.4).
 - **R8** : la sync CloudKit réelle n'est compilée que dans la configuration signée `Release-CloudKit` et n'a pas été vérifiée faute d'équipe Apple. Les builds non signés tournent en local seulement. La logique de sync est couverte par les tests Rust à deux appareils et par les tests Swift contre `InMemoryRemote` (rejeu, rétention, altération).
 - **R9** : pas de pièces jointes ; le type de blob `Attachment` reste réservé.
 - **R12** : pas de changement du mot de passe maître. Une AUK enveloppée reste valable tant que le mot de passe et la Secret Key ne changent pas ; rien à invalider au jalon 2.
@@ -607,3 +607,36 @@ Au lancement, avant toute ouverture de la base, `SharedContainerMigration` dépl
 ### 14.9 Limites du jalon 3
 
 Voir la section "Limites du jalon 3" de [`apple/README.md`](../apple/README.md). En résumé : l'icône dans le champ n'existe pas (le système n'en permet pas aux fournisseurs), la mémoire d'Argon2id dans l'extension, Face ID dans l'extension et le risque `0xdead10cc` de la base partagée (section 14.2) ne sont vérifiés que sur un appareil, la sync CloudKit d'une passkey demande un build `Release-CloudKit`, et l'import et l'export de passkeys par le flux système (FIDO Credential Exchange) sont reportés avec le jalon 5. Aucun audit externe.
+
+## 15. Jalon 2b dans les apps : appairage, appareils, mode public
+
+Le protocole (QR, échange de clés, code à 6 chiffres, autorisations scellées, liste signée des appareils) est celui de la spec 2b, tenu par le core. Cette section ne décrit que ce que la FFI, VaultKit et les apps ajoutent. Décisions : `docs/superpowers/reviews/2026-10-27-m2b-app/rulings.md`.
+
+### 15.1 Ce que voit Swift
+
+Swift ne tient aucun état cryptographique de l'appairage : `PairingNewcomer` et `PairingApprover` (objets UniFFI) gardent les clés éphémères et le transcript. Swift voit des octets opaques, le texte du QR, le code à 6 chiffres, le type, le nom et le mode demandés par le pair, et pour une session publique les éléments déchiffrés (comme toute la FFI). L'identifiant du nouvel appareil naît dans le Rust ; l'import vérifie que l'autorisation le liste sous ce même id (ruling A12). Le transport (`LocalNetworkPairingTransport`, Bonjour `_onepass-pair._tcp` puis TCP, trames préfixées de 4 octets, 64 Mio au plus) ne fait que déplacer ces octets : un intermédiaire sur le réseau local voit la taille et le moment des trames, rien d'autre.
+
+### 15.2 Import avec le mot de passe (ruling A9)
+
+`importSnapshot` prend le mot de passe maître et déverrouille dans le Rust. L'instantané est importé par le même chemin que la sync (`stage_remote` puis `commit_remote`, vérifications du magasin hostile), dans un magasin vide seulement. Tout échec après le début de l'import, mot de passe faux compris, remet le magasin à vide, et la Secret Key reçue n'est rendue à Swift qu'après un import réussi (`take_secret_key`, ruling A4) : un instantané falsifié, que seul le mot de passe permet de voir, ne laisse aucun secret sur l'appareil. L'autorisation reste en mémoire pour réessayer le mot de passe ; quitter l'écran oblige à recommencer l'appairage.
+
+### 15.3 Ce que contient l'instantané (ruling A10)
+
+Avec une sync, l'approbateur synchronise juste avant de sceller et l'instantané est la vue du serveur (`base`) : le nouvel appareil ne voit jamais une version que le serveur n'a pas eue, ce qui éviterait un rebase incohérent. Si la sync existe mais n'a pas pu pousser, l'appairage est refusé ("Synchronise d'abord cet appareil"). Sans sync (build sans CloudKit, iCloud absent), l'instantané est la vue locale complète (`base` plus écritures en attente), pour qu'un nouvel appareil reste utilisable sans iCloud (spec 2b B10). Plafond : 50 Mio.
+
+### 15.4 Session publique (ruling A11)
+
+Une autorisation publique ne porte que les éléments choisis, sans historique des mots de passe ni clé privée de passkey (`lean` dans `core/onepass-ffi/src/pairing.rs`) : une passkey signerait pour le compte, l'historique n'a aucun usage en lecture sur un ordinateur tiers. Le nouvel appareil n'écrit ni base ni Secret Key (vérifié en bout en bout : la base de test du Mac reste vide pendant et après la session). Le presse-papiers est vidé 30 s après chaque copie et à la fin. La session se termine à l'expiration, sur ordre de l'approbateur, à la perte de connexion, après 5 min sans activité, et quand l'app passe en arrière-plan ou quitte (ruling A7). L'approbateur reçoit un journal chiffré (élément ouvert, champ copié) qui disparaît avec la session.
+
+### 15.5 Injection du QR en Debug (ruling A3)
+
+Le Simulateur n'a pas de caméra. En Debug seulement, `-OnePassPairingQRText <texte>` (argument de lancement ou réglage de l'app) remplace la caméra de l'approbateur, et le nouvel appareil écrit son QR dans la console. Les deux chemins sont sous `#if DEBUG` et absents du build Release : en production, le QR ne s'ouvre qu'avec le scanner de OnePass (seul un texte `OPPAIR1:` passe, jamais une URL que la caméra du système ouvrirait), sans collage possible. L'avertissement "Ne scanne jamais un QR code qu'on t'a envoyé" précède toujours le scanner.
+
+### 15.6 Présence, retrait, effacement
+
+Approuver et retirer demandent une présence fraîche : Face ID ou Touch ID, sinon le mot de passe maître (ruling A8). Après chaque déverrouillage et chaque sync, VaultKit lit la liste signée ; un appareil marqué retiré s'efface par le chemin de `resetForRecovery` (base, Secret Key, enrôlement biométrique, ruling A5). Limites : un appareil retiré resté verrouillé et hors ligne garde ses données jusqu'à son prochain déverrouillage, et sans CloudKit le retrait ne voyage pas du tout (vérifié : un Mac retiré depuis l'iPhone dans un build Debug garde ses données). Le retrait ne change pas les clés : l'app conseille de changer le mot de passe maître si l'appareil a été perdu ou volé.
+
+### 15.7 Limites
+
+- Vérifié seulement sur une machine (Mac et Simulateur, transport en boucle locale) : caméra, AWDL, autorisation "Réseau local" d'iOS, Face ID et propagation du retrait par CloudKit demandent deux vrais appareils signés (voir [`apple/README.md`](../apple/README.md), "Jalon 2b dans les apps").
+- Aucun audit externe de l'appairage.
