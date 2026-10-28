@@ -3,7 +3,15 @@ name = "onepass-ml"
 version = "0.1.0"
 description = "OnePass autofill dataset tooling: ingestion, training, export"
 requires-python = ">=3.12,<3.13"
-dependencies = ["pyarrow==21.0.0"]
+dependencies = [
+    "lightgbm==4.7.0",
+    "numpy==2.5.4",
+    "onnx==1.23.2",
+    "onnxmltools==1.16.0",
+    "onnxruntime==1.31.1",
+    "pyarrow==21.0.0",
+    "scipy==1.18.1",
+]
 
 [dependency-groups]
 dev = ["pytest==8.4.2"]
