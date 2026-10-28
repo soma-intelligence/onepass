@@ -138,6 +138,7 @@ def test_origin_overlap_raises(tmp_path):
 def test_streams_in_small_batches(tmp_path):
     src = make_src(tmp_path)
     shutil.copy(FIXTURE, src / "part-0001.jsonl.gz")
+    (src / "manifest.json").write_text(json.dumps({**MANIFEST, "rows": 600}))
     m = ingest(src, tmp_path / "dst", batch_rows=7)
     assert m["rows"] == 600
     assert pq.read_table(tmp_path / "dst" / "train.parquet").num_rows == m["splits"]["train"]
@@ -153,3 +154,60 @@ def test_unknown_split_raises(tmp_path):
 def test_missing_manifest_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         ingest(make_src(tmp_path, manifest=None), tmp_path / "dst")
+
+
+def _no_output(tmp_path):
+    dst = tmp_path / "dst"
+    assert not list(dst.glob("*.parquet")) if dst.exists() else True
+    assert not (tmp_path / "dst.tmp").exists()
+
+
+def test_failures_leave_no_output(tmp_path):
+    rows = fixture_rows()
+    rows[0]["split"] = "real_test"
+    with pytest.raises(ValueError, match="origin"):
+        ingest(make_src(tmp_path, rows), tmp_path / "dst")
+    _no_output(tmp_path)
+
+
+def test_unknown_split_leaves_no_output(tmp_path):
+    rows = fixture_rows()
+    rows[5]["split"] = "dev"
+    with pytest.raises(ValueError, match="split"):
+        ingest(make_src(tmp_path, rows), tmp_path / "dst")
+    _no_output(tmp_path)
+
+
+@pytest.mark.parametrize("key", ["target", "index", "hasPattern", "origin", "split"])
+def test_missing_required_key_names_key_and_part(tmp_path, key):
+    rows = fixture_rows()
+    del rows[3][key]
+    with pytest.raises(ValueError, match=rf"part-0000.jsonl.gz.*'{key}'"):
+        ingest(make_src(tmp_path, rows), tmp_path / "dst")
+    _no_output(tmp_path)
+
+
+def test_required_fields_not_nullable():
+    assert not SCHEMA.field("target").nullable
+    assert not SCHEMA.field("index").nullable
+    assert SCHEMA.field("maxlength").nullable
+
+
+@pytest.mark.parametrize("key", ["seed", "generator", "featureVersion"])
+def test_manifest_missing_key(tmp_path, key):
+    m = {k: v for k, v in MANIFEST.items() if k != key}
+    with pytest.raises(ValueError, match=key):
+        ingest(make_src(tmp_path, manifest=m), tmp_path / "dst")
+
+
+def test_row_count_mismatch(tmp_path):
+    rows = fixture_rows()[:250]
+    with pytest.raises(ValueError, match="300.*250"):
+        ingest(make_src(tmp_path, rows), tmp_path / "dst")
+    _no_output(tmp_path)
+
+
+def test_replaces_existing_output(tmp_path):
+    ingest(make_src(tmp_path), tmp_path / "dst")
+    m = ingest(tmp_path / "src", tmp_path / "dst")
+    assert m["rows"] == 300 and not (tmp_path / "dst.tmp").exists()

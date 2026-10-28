@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Iterator
@@ -26,8 +28,12 @@ _S = pa.large_string()
 _L = pa.list_(pa.large_string())
 
 # Same names and order as DatasetRow (FieldFeatures without `lab`, then the row fields).
-SCHEMA = pa.schema(
-    [
+_OPTIONAL = {
+    "type", "name", "id", "autocomplete", "inputmode", "maxlength", "label",
+    "placeholder", "ariaLabel", "before", "after", "pageTitle",
+}
+
+_FIELDS = [
         ("index", pa.int32()),
         ("tag", _S),
         ("type", _S),
@@ -63,13 +69,15 @@ SCHEMA = pa.schema(
         ("framework", _S),
         ("traits", _L),
         ("target", _S),
-    ]
-)
+]
+
+SCHEMA = pa.schema([pa.field(n, t, nullable=n in _OPTIONAL) for n, t in _FIELDS])
+REQUIRED = [n for n, _ in _FIELDS if n not in _OPTIONAL]
 
 Manifest = dict[str, Any]
 
 
-def _rows(src: Path) -> Iterator[dict[str, Any]]:
+def _rows(src: Path) -> Iterator[tuple[Path, dict[str, Any]]]:
     parts = sorted(src.glob("part-*.jsonl.gz"))
     if not parts:
         raise FileNotFoundError(f"no part-*.jsonl.gz in {src}")
@@ -77,7 +85,7 @@ def _rows(src: Path) -> Iterator[dict[str, Any]]:
         with gzip.open(part, "rt", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
-                    yield json.loads(line)
+                    yield part, json.loads(line)
 
 
 def _table(rows: list[dict[str, Any]], schema: pa.Schema) -> pa.Table:
@@ -85,14 +93,39 @@ def _table(rows: list[dict[str, Any]], schema: pa.Schema) -> pa.Table:
 
 
 def ingest(src: Path, dst: Path, batch_rows: int = BATCH_ROWS) -> Manifest:
-    """Write dst/{train,val,test,real_test}.parquet and dst/manifest.json, return the manifest."""
+    """Write dst/{train,val,test,real_test}.parquet and dst/manifest.json, return the manifest.
+
+    Output is built in a sibling `<dst>.tmp` directory and moved into place only after every check
+    passed; on any failure the temp directory is removed and dst is left untouched.
+    """
     src, dst = Path(src), Path(dst)
     manifest_path = src / "manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(manifest_path)
     source = json.loads(manifest_path.read_text(encoding="utf-8"))
-    dst.mkdir(parents=True, exist_ok=True)
+    for key in ("seed", "generator", "featureVersion"):
+        if key not in source:
+            raise ValueError(f"{manifest_path}: missing key {key!r}")
 
+    tmp = dst.with_name(dst.name + ".tmp")
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    tmp.mkdir(parents=True)
+    try:
+        manifest = _write(src, tmp, source, batch_rows)
+        if dst.exists():
+            for f in tmp.iterdir():
+                os.replace(f, dst / f.name)
+            tmp.rmdir()
+        else:
+            tmp.rename(dst)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    return manifest
+
+
+def _write(src: Path, out: Path, source: dict[str, Any], batch_rows: int) -> Manifest:
     meta = {
         "seed": str(source["seed"]),
         "generator": str(source["generator"]),
@@ -100,7 +133,7 @@ def ingest(src: Path, dst: Path, batch_rows: int = BATCH_ROWS) -> Manifest:
     }
     schema = SCHEMA.with_metadata(meta)
     known = set(SCHEMA.names)
-    writers = {s: pq.ParquetWriter(dst / f"{s}.parquet", schema, compression="zstd") for s in SPLITS}
+    writers = {s: pq.ParquetWriter(out / f"{s}.parquet", schema, compression="zstd") for s in SPLITS}
     buffers: dict[str, list[dict[str, Any]]] = {s: [] for s in SPLITS}
     counts = {s: 0 for s in SPLITS}
     origins = {s: set() for s in SPLITS}
@@ -111,15 +144,18 @@ def ingest(src: Path, dst: Path, batch_rows: int = BATCH_ROWS) -> Manifest:
             buffers[split] = []
 
     try:
-        for row in _rows(src):
+        for part, row in _rows(src):
             if "lab" in row:
-                raise ValueError("row carries the `lab` mark column; the builder must strip it")
+                raise ValueError(f"{part.name}: row carries the `lab` mark column; the builder must strip it")
+            for key in REQUIRED:
+                if row.get(key) is None:
+                    raise ValueError(f"{part.name}: row is missing required key {key!r}")
             extra = set(row) - known
             if extra:
-                raise ValueError(f"unknown columns: {sorted(extra)}")
-            split = row.get("split")
+                raise ValueError(f"{part.name}: unknown columns: {sorted(extra)}")
+            split = row["split"]
             if split not in counts:
-                raise ValueError(f"unknown split {split!r}")
+                raise ValueError(f"{part.name}: unknown split {split!r}")
             buffers[split].append(row)
             counts[split] += 1
             origins[split].add(row["origin"])
@@ -131,12 +167,15 @@ def ingest(src: Path, dst: Path, batch_rows: int = BATCH_ROWS) -> Manifest:
         for w in writers.values():
             w.close()
 
+    total = sum(counts.values())
+    if "rows" in source and source["rows"] != total:
+        raise ValueError(f"manifest says {source['rows']} rows, parts hold {total}")
     shared = origins["real_test"] & (origins["train"] | origins["val"] | origins["test"])
     if shared:
         raise ValueError(f"origin shared between real_test and synthetic splits: {sorted(shared)[:3]}")
 
-    manifest: Manifest = {**source, "rows": sum(counts.values()), "splits": counts}
-    (dst / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    manifest: Manifest = {**source, "rows": total, "splits": counts}
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
 
 
