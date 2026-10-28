@@ -1230,6 +1230,16 @@
         }
       }
     },
+    "Ajouter une photo…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Photo…"
+          }
+        }
+      }
+    },
     "Ajouté aux favoris" : {
       "localizations" : {
         "en" : {
@@ -2510,6 +2520,16 @@
         }
       }
     },
+    "Cette image n'a pas pu être lue. Essaie un JPEG, un PNG ou un HEIC." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image couldn't be read. Try a JPEG, PNG or HEIC."
+          }
+        }
+      }
+    },
     "Cette liste est signée par ton compte : le serveur ne peut ni ajouter ni cacher un appareil." : {
       "localizations" : {
         "en" : {
@@ -2586,6 +2606,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Change"
+          }
+        }
+      }
+    },
+    "Changer la photo…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Photo…"
           }
         }
       }
@@ -6046,6 +6076,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The watch receives one-time codes, a Login's username, Wi-Fi networks with their password, membership cards, credit cards cut to the last 4 digits, access codes and ID documents. Never a Login's password, the CVV, the PIN, a full card number or notes. Hidden vaults are left out."
+          }
+        }
+      }
+    },
+    "La photo reste sur cet appareil, recadrée en carré, sans ses métadonnées (lieu, date)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo stays on this device, cropped to a square, without its metadata (location, date)."
           }
         }
       }
@@ -10426,6 +10466,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your master password changed on another device. Enter the new one."
+          }
+        }
+      }
+    },
+    "Ton nom" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your name"
           }
         }
       }

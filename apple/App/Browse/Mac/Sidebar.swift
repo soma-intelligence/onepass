@@ -47,25 +47,19 @@ struct Sidebar: View {
     var body: some View {
         #if os(macOS)
         // Mac: the sidebar column reports no top safe area, so a list there starts under the traffic
-        // lights. The account header sits above the list, below the title bar (its height read from
+        // lights. The account row sits above the list, below the title bar (its height read from
         // the window): never under the window buttons, its menu stays clickable.
         VStack(spacing: 0) {
-            // The account sits in the title bar row (toolbar item below); the list starts under it.
-            Color.clear.frame(height: titlebarHeight)
+            // The avatar's left edge lines up with the row tiles below.
+            AccountHeader()
+                .padding(.horizontal, 15)
+                .padding(.bottom, 6)
             // In a VStack the list asks for the height of all its rows as a minimum, which made the
             // split view taller than the window and pushed every column's top out of sight.
             list
                 .frame(minHeight: 0, maxHeight: .infinity)
         }
         .background { TitlebarHeightReader(height: $titlebarHeight) }
-        // The account pill fills the sidebar's title bar row: the system sidebar button sat across
-        // the column edge after it. The sidebar still folds with View > Hide Sidebar (⌃⌘S) or a drag.
-        .toolbar(removing: .sidebarToggle)
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                AccountHeader(compact: true)
-            }
-        }
         #else
         list
         #endif
@@ -80,8 +74,10 @@ struct Sidebar: View {
             }
             #endif
             Section {
-                row("Tous les éléments", systemImage: "square.grid.2x2", count: counts.all, filter: .all, id: "library.all")
-                row("Favoris", systemImage: "star", count: counts.favorites, filter: .favorites, id: "library.favorites")
+                row("Tous les éléments", symbol: "square.grid.2x2.fill", color: Theme.accent, count: counts.all,
+                    filter: .all, id: "library.all")
+                row("Favoris", symbol: "star.fill", color: Self.favoritesColor, count: counts.favorites,
+                    filter: .favorites, id: "library.favorites")
                 pageRow("Watchtower", symbol: "checkmark.shield.fill", color: Self.watchtowerColor, page: .watchtower,
                     id: "sidebar.watchtower")
                 pageRow("Développeur", symbol: "chevron.left.forwardslash.chevron.right", color: Self.developerColor,
@@ -90,7 +86,7 @@ struct Sidebar: View {
                 Label {
                     Text("À proximité")
                 } icon: {
-                    NearbyTile()
+                    NearbyTile(size: SymbolTile.sidebarSize)
                 }
                 .visionHoverEffect()
                 .tag(Destination.filter(.nearby))
@@ -103,8 +99,10 @@ struct Sidebar: View {
             #endif
             tagsSection(counts)
             Section {
-                row("Archive", systemImage: "archivebox", count: counts.archive, filter: .archive, id: "library.archive")
-                row("Supprimés récemment", systemImage: "trash", count: counts.trash, filter: .trash, id: "library.trash")
+                row("Archive", symbol: "archivebox.fill", color: Self.binColor, count: counts.archive,
+                    filter: .archive, id: "library.archive")
+                row("Supprimés récemment", symbol: "trash.fill", color: Self.binColor, count: counts.trash,
+                    filter: .trash, id: "library.trash")
             }
         }
         .listStyle(.sidebar)
@@ -156,7 +154,10 @@ struct Sidebar: View {
     }
 
     static let watchtowerColor = Color(red: 0xE1 / 255, green: 0x4D / 255, blue: 0x3C / 255)
-    static let developerColor = Color(red: 0x5E / 255, green: 0x5C / 255, blue: 0xE6 / 255)
+    /// Graphite, like Terminal: the accent stays for "Tous les éléments".
+    static let developerColor = Color(red: 0x63 / 255, green: 0x63 / 255, blue: 0x66 / 255)
+    static let favoritesColor = Color(red: 0xF5 / 255, green: 0xA6 / 255, blue: 0x23 / 255)
+    static let binColor = Color(red: 0x8E / 255, green: 0x8E / 255, blue: 0x93 / 255)
 
     // MARK: - Sections
 
@@ -166,7 +167,8 @@ struct Sidebar: View {
                 Label {
                     Text(vault.meta.name)
                 } icon: {
-                    VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 18)
+                    VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: SymbolTile.sidebarSize,
+                        tile: true)
                 }
                 .badge(counts.byVault[vault.id] ?? 0)
                 .tag(Destination.filter(.vault(vault.id)))
@@ -223,7 +225,7 @@ struct Sidebar: View {
                         Circle()
                             .fill(TagColor.of(tag))
                             .frame(width: 9, height: 9)
-                            .frame(width: 18, height: 18)
+                            .frame(width: SymbolTile.sidebarSize, height: SymbolTile.sidebarSize)
                     }
                     .badge(counts.byTag[tag] ?? 0)
                     .tag(Destination.filter(.tag(tag)))
@@ -236,9 +238,13 @@ struct Sidebar: View {
     }
 
     private func row(
-        _ title: LocalizedStringKey, systemImage: String, count: Int, filter: ItemFilter, id: String
+        _ title: LocalizedStringKey, symbol: String, color: Color, count: Int, filter: ItemFilter, id: String
     ) -> some View {
-        Label(title, systemImage: systemImage)
+        Label {
+            Text(title)
+        } icon: {
+            SymbolTile(symbol: symbol, color: color, size: SymbolTile.sidebarSize)
+        }
             .badge(count)
             .tag(Destination.filter(filter))
             .accessibilityIdentifier("sidebar.\(id)")
@@ -250,7 +256,7 @@ struct Sidebar: View {
         Label {
             Text(title)
         } icon: {
-            SymbolTile(symbol: symbol, color: color)
+            SymbolTile(symbol: symbol, color: color, size: SymbolTile.sidebarSize)
         }
         .visionHoverEffect()
         .tag(Destination.page(page))
@@ -259,91 +265,19 @@ struct Sidebar: View {
 }
 
 /// Account header at the top of the sidebar: initials on an accent square, local name. A click
-/// opens the account popover (who is signed in, Nouveau coffre, Importer, Réglages, Verrouiller).
+/// The account button: avatar and name. Its native menu says who is signed in and on which kind of
+/// device, then Nouveau coffre, Importer, Réglages, and Verrouiller apart.
 struct AccountHeader: View {
-    @Environment(AppModel.self) private var model
-    @State private var creatingVault = false
-    @State private var showingMenu = false
-    @State private var hovering = false
-    /// Mac title bar: a smaller avatar and name, next to the window buttons.
-    var compact = false
-
-    private var name: String {
-        model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
-    }
-
-    var body: some View {
-        Button {
-            showingMenu.toggle()
-        } label: {
-            // No chevron: the whole name is the button, the popover says the rest.
-            HStack(spacing: compact ? 7 : 10) {
-                AccountAvatar(initials: model.initials, size: compact ? 22 : 28)
-                Text(name)
-                    .font(compact ? .subheadline.weight(.semibold) : .headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                if !compact { Spacer(minLength: 0) }
-            }
-            // Same inset on the avatar's three sides: the circle is concentric with the capsule.
-            .padding(.leading, 5)
-            .padding(.trailing, 12)
-            .padding(.vertical, 5)
-            .background(hovering || showingMenu ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear),
-                in: .capsule)
-            .contentShape(.capsule)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
-        .visionHoverEffect()
-        .accessibilityLabel(Text("Compte \(model.settings.displayName)"))
-        .accessibilityIdentifier("account.menu")
-        .popover(isPresented: $showingMenu, arrowEdge: .bottom) {
-            AccountMenuPopover(name: name) { action in
-                showingMenu = false
-                switch action {
-                case .newVault: creatingVault = true
-                case .importItems: model.showImport = true
-                case .settings: break
-                case .lock: model.perform(.lock)
-                }
-            }
-            .presentationCompactAdaptation(.popover)
-        }
-        .sheet(isPresented: $creatingVault) {
-            VaultEditorView(vault: nil) { creatingVault = false }
-        }
-    }
-}
-
-/// Initials on the accent square (account header and its popover).
-struct AccountAvatar: View {
-    let initials: String
-    var size: CGFloat = 28
-
-    var body: some View {
-        Text(initials.isEmpty ? "?" : initials)
-            .font(.system(size: size * 0.43, weight: .bold, design: .rounded))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            // Round, so it sits concentric in the capsule of the account button.
-            .background(Theme.accent.gradient, in: Circle())
-            .accessibilityHidden(true)
-    }
-}
-
-/// The account popover: who is signed in and on which kind of device, then the account actions with
-/// their shortcut, then Verrouiller in red.
-private struct AccountMenuPopover: View {
-    enum Action { case newVault, importItems, settings, lock }
-
     @Environment(AppModel.self) private var model
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
     #endif
-    let name: String
-    let perform: (Action) -> Void
+    @State private var creatingVault = false
+    @State private var hovering = false
+
+    private var name: String {
+        model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
+    }
 
     private var modeLabel: String {
         switch model.settings.deviceMode {
@@ -353,100 +287,111 @@ private struct AccountMenuPopover: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                AccountAvatar(initials: model.initials, size: 38)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(name).font(.headline).lineLimit(1)
-                    Text(modeLabel).font(.subheadline).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
-            .accessibilityElement(children: .combine)
-
-            Divider().padding(.horizontal, 8)
-            VStack(spacing: 2) {
-                PopoverMenuRow(title: "Nouveau coffre…", symbol: "plus.rectangle.on.rectangle", shortcut: nil) {
-                    perform(.newVault)
-                }
-                .accessibilityIdentifier("account.newVault")
-                PopoverMenuRow(title: "Importer…", symbol: "square.and.arrow.down", shortcut: "⌘⇧I") {
-                    perform(.importItems)
-                }
-                .accessibilityIdentifier("account.import")
-                PopoverMenuRow(title: "Réglages…", symbol: "gearshape", shortcut: "⌘,") {
-                    perform(.settings)
+        Menu {
+            Section {
+                Button("Nouveau coffre…", systemImage: "plus.rectangle.on.rectangle") { creatingVault = true }
+                    .accessibilityIdentifier("account.newVault")
+                Button("Importer…", systemImage: "square.and.arrow.down") { model.showImport = true }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
+                    .accessibilityIdentifier("account.import")
+                Button("Réglages…", systemImage: "gearshape") {
                     #if os(macOS)
                     openSettings()
                     #else
                     model.showSettings = true
                     #endif
                 }
+                .keyboardShortcut(",", modifiers: .command)
                 .accessibilityIdentifier("account.settings")
-                Divider().padding(.horizontal, 6).padding(.vertical, 3)
-                PopoverMenuRow(title: "Verrouiller", symbol: "lock", shortcut: "⌘L", tint: .red) {
-                    perform(.lock)
-                }
-                .accessibilityIdentifier("account.lock")
+            } header: {
+                Text(verbatim: "\(name) · \(modeLabel)")
             }
-            .padding(6)
+            Section {
+                Button("Verrouiller", systemImage: "lock.fill", role: .destructive) { model.perform(.lock) }
+                    .keyboardShortcut("l", modifiers: .command)
+                    .accessibilityIdentifier("account.lock")
+            }
+        } label: {
+            // Photo, name, chevron: one full-width row, the photo's corners echoed by the hover.
+            HStack(spacing: 12) {
+                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 34)
+                Text(name)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(5)
+            .padding(.trailing, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(hovering ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear),
+                in: .rect(cornerRadius: 14, style: .continuous))
+            .contentShape(.rect(cornerRadius: 14, style: .continuous))
         }
-        .frame(width: 270)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .visionHoverEffect()
+        .accessibilityLabel(Text("Compte \(model.settings.displayName)"))
+        .accessibilityIdentifier("account.menu")
+        .sheet(isPresented: $creatingVault) {
+            VaultEditorView(vault: nil) { creatingVault = false }
+        }
     }
 }
-/// A row of a popover menu: icon, title, the shortcut on the right, highlighted under the pointer.
-struct PopoverMenuRow: View {
-    let title: LocalizedStringKey
-    let symbol: String
-    var shortcut: String?
-    var tint: Color?
-    let action: () -> Void
-    @State private var hovering = false
+
+/// The account's photo, or its initials on the accent, in a squircle (sidebar, menus, settings).
+struct AccountAvatar: View {
+    let initials: String
+    var photo: Image?
+    var size: CGFloat = 28
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 20)
-                    .foregroundStyle(hovering ? AnyShapeStyle(.white) : tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
-                Text(title)
-                    .foregroundStyle(hovering ? AnyShapeStyle(.white) : tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.primary))
-                Spacer(minLength: 12)
-                if let shortcut {
-                    Text(shortcut)
-                        .font(.callout.monospaced())
-                        .foregroundStyle(hovering ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.tertiary))
-                }
+        let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+        Group {
+            if let photo {
+                photo.resizable().scaledToFill()
+            } else {
+                Text(initials.isEmpty ? "?" : initials)
+                    .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Theme.accent.gradient)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(hovering ? AnyShapeStyle((tint ?? Theme.accent).opacity(0.85)) : AnyShapeStyle(.clear),
-                in: .rect(cornerRadius: 7))
-            .contentShape(.rect(cornerRadius: 7))
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .frame(width: size, height: size)
+        .clipShape(shape)
+        .overlay { shape.strokeBorder(.white.opacity(0.12), lineWidth: 0.5) }
+        .accessibilityHidden(true)
     }
 }
 
-/// A colored square with a white SF Symbol, the size of a category tile (Watchtower, Développeur).
+/// The house tile, as in System Settings: a squircle in a soft gradient of its color with a white
+/// filled symbol and a hairline highlight. Every sidebar row wears one, so the column reads as one set.
 struct SymbolTile: View {
     let symbol: String
     let color: Color
     var size: CGFloat = 18
 
+    /// Sidebar rows (Mac and iPad).
+    static let sidebarSize: CGFloat = 20
+
     var body: some View {
-        RoundedRectangle(cornerRadius: size * 5 / 18, style: .continuous)
-            .fill(color)
+        let shape = RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+        shape
+            .fill(color.gradient)
+            .overlay { shape.strokeBorder(.white.opacity(0.18), lineWidth: 0.5) }
             .frame(width: size, height: size)
             .overlay {
                 Image(systemName: symbol)
-                    .font(.system(size: size * 0.5, weight: .semibold))
+                    .font(.system(size: size * 0.52, weight: .semibold))
                     .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.12), radius: 0.5, y: 0.5)
             }
             .accessibilityHidden(true)
     }

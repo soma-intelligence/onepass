@@ -166,7 +166,7 @@ struct SettingsView: View {
         let name = model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
         Section {
             HStack(spacing: 14) {
-                AccountAvatar(initials: model.initials, size: 52)
+                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 52)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.title3.weight(.semibold)).lineLimit(1)
                     Text(model.settings.deviceMode == .shared

@@ -1,4 +1,9 @@
+import ImageIO
+#if os(iOS)
+import PhotosUI
+#endif
 import SwiftUI
+import UniformTypeIdentifiers
 import VaultKit
 
 /// Général: automatic lock delay, site icons, the import of other password managers' exports, and
@@ -25,6 +30,7 @@ struct GeneralSettings: View {
         // Read so the page redraws when a setting changes.
         let _ = model.settingsRevision
         Form {
+            ProfileSection()
             Section {
                 Picker("Verrouillage automatique", selection: Binding(
                     get: { delays.contains(settings.autoLockDelay) ? settings.autoLockDelay : .fiveMinutes },
@@ -98,5 +104,122 @@ struct GeneralSettings: View {
         #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+    }
+}
+
+/// Profil: the account's name and photo, shown in the sidebar, the account menu and the settings.
+private struct ProfileSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var choosingFile = false
+    @State private var failed = false
+    #if os(iOS)
+    @State private var pick: PhotosPickerItem?
+    #endif
+
+    var body: some View {
+        let _ = model.settingsRevision
+        Section {
+            HStack(spacing: 16) {
+                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 64)
+                    #if os(macOS)
+                    .dropDestination(for: Data.self) { items, _ in
+                        guard let data = items.first else { return false }
+                        return use(data)
+                    }
+                    #endif
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("Nom", text: Binding(
+                        get: { model.settings.displayName },
+                        set: { name in model.updateSettings { $0.displayName = name } }
+                    ), prompt: Text("Ton nom"))
+                    .labelsHidden()
+                    .textFieldStyle(.plain)
+                    .font(.title3.weight(.semibold))
+                    .accessibilityIdentifier("settings.profile.name")
+                    HStack(spacing: 12) {
+                        #if os(iOS)
+                        PhotosPicker(selection: $pick, matching: .images) {
+                            Text(model.settings.profilePhoto == nil ? "Ajouter une photo…" : "Changer la photo…")
+                        }
+                        .accessibilityIdentifier("settings.profile.photo")
+                        #else
+                        Button(model.settings.profilePhoto == nil ? "Ajouter une photo…" : "Changer la photo…") {
+                            choosingFile = true
+                        }
+                        .accessibilityIdentifier("settings.profile.photo")
+                        #endif
+                        if model.settings.profilePhoto != nil {
+                            Button("Retirer", role: .destructive) {
+                                model.updateSettings { $0.profilePhoto = nil }
+                            }
+                            .accessibilityIdentifier("settings.profile.removePhoto")
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text("Profil")
+        } footer: {
+            Text(failed
+                ? "Cette image n'a pas pu être lue. Essaie un JPEG, un PNG ou un HEIC."
+                : "La photo reste sur cet appareil, recadrée en carré, sans ses métadonnées (lieu, date).")
+        }
+        .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.image]) { result in
+            guard case .success(let url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            if let data = try? Data(contentsOf: url) { _ = use(data) } else { failed = true }
+        }
+        #if os(iOS)
+        .onChange(of: pick) {
+            guard let pick else { return }
+            Task {
+                if let data = try? await pick.loadTransferable(type: Data.self) { _ = use(data) } else { failed = true }
+                self.pick = nil
+            }
+        }
+        #endif
+    }
+
+    @discardableResult private func use(_ data: Data) -> Bool {
+        guard let photo = ProfilePhoto.square(from: data) else {
+            failed = true
+            return false
+        }
+        failed = false
+        model.updateSettings { $0.profilePhoto = photo }
+        return true
+    }
+}
+
+/// Turns any image into the stored profile photo: a centered square of 256 px, as a JPEG written
+/// from the pixels alone (EXIF, GPS and other metadata stay behind).
+enum ProfilePhoto {
+    static let side = 256
+
+    static func square(from data: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: side * 3,
+            ] as CFDictionary)
+        else { return nil }
+        let edge = min(image.width, image.height)
+        let crop = CGRect(x: (image.width - edge) / 2, y: (image.height - edge) / 2, width: edge, height: edge)
+        guard let square = image.cropping(to: crop),
+            let space = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { return nil }
+        context.interpolationQuality = .high
+        context.draw(square, in: CGRect(x: 0, y: 0, width: side, height: side))
+        guard let scaled = context.makeImage() else { return nil }
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, scaled, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? out as Data : nil
     }
 }

@@ -114,18 +114,22 @@ struct LockView: View {
         let initials = model.initials
         let name = model.settings.displayName
         HStack(spacing: 8) {
-            Circle()
-                .fill(Theme.accent)
-                .frame(width: 24, height: 24)
-                .overlay {
-                    if initials.isEmpty {
-                        Image(systemName: "person.fill").font(.system(size: 11)).foregroundStyle(.white)
-                    } else {
-                        Text(verbatim: initials)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.white)
+            if let photo = model.profileImage {
+                AccountAvatar(initials: initials, photo: photo, size: 24)
+            } else {
+                Circle()
+                    .fill(Theme.accent)
+                    .frame(width: 24, height: 24)
+                    .overlay {
+                        if initials.isEmpty {
+                            Image(systemName: "person.fill").font(.system(size: 11)).foregroundStyle(.white)
+                        } else {
+                            Text(verbatim: initials)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
                     }
-                }
+            }
             Group {
                 if name.isEmpty {
                     Text("Compte OnePass")

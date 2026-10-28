@@ -1,15 +1,18 @@
 import SwiftUI
 
-/// Colored disc with the first letter of the vault name.
+/// Colored disc with the first letter of the vault name, or a squircle tile in the sidebar.
 public struct VaultBadge: View {
     private let name: String
     private let colorName: String
     private let size: CGFloat
+    private let tile: Bool
 
-    public init(name: String, colorName: String, size: CGFloat = 24) {
+    /// `tile`: the sidebar's squircle with a gradient, like its other row tiles.
+    public init(name: String, colorName: String, size: CGFloat = 24, tile: Bool = false) {
         self.name = name
         self.colorName = colorName
         self.size = size
+        self.tile = tile
     }
 
     /// The seven vault colors a vault can take, in display order.
@@ -35,8 +38,19 @@ public struct VaultBadge: View {
     }
 
     public var body: some View {
-        Circle()
-            .fill(Self.color(named: colorName))
+        let color = Self.color(named: colorName)
+        Group {
+            if tile {
+                RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+                    .fill(color.gradient)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+                            .strokeBorder(.white.opacity(0.18), lineWidth: 0.5)
+                    }
+            } else {
+                Circle().fill(color)
+            }
+        }
             .frame(width: size, height: size)
             .overlay {
                 Text(Self.initial(of: name))
