@@ -114,12 +114,18 @@ struct LockView: View {
         let initials = model.initials
         let name = model.settings.displayName
         HStack(spacing: 8) {
+            // Round, so it sits concentric in the capsule (a squircle poked out of it).
             if let photo = model.profileImage {
-                AccountAvatar(initials: initials, photo: photo, size: 24)
+                photo
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 26, height: 26)
+                    .clipShape(Circle())
+                    .overlay { Circle().strokeBorder(.white.opacity(0.15), lineWidth: 0.5) }
             } else {
                 Circle()
                     .fill(Theme.accent)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 26, height: 26)
                     .overlay {
                         if initials.isEmpty {
                             Image(systemName: "person.fill").font(.system(size: 11)).foregroundStyle(.white)
@@ -141,10 +147,11 @@ struct LockView: View {
             .foregroundStyle(.secondary)
             .lineLimit(1)
         }
-        .padding(.leading, 4)
+        .padding(.leading, 3)
         .padding(.trailing, 12)
-        .padding(.vertical, 4)
+        .padding(.vertical, 3)
         .background(Capsule().fill(Color.primary.opacity(0.06)))
+        .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(name.isEmpty ? Text("Compte OnePass") : Text(verbatim: name))
         .accessibilityIdentifier("lock.account")
