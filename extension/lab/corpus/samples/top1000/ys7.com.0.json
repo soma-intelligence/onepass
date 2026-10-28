@@ -1,0 +1,39 @@
+{
+  "captured_at": "2026-10-28T00:21:25.402Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "萤石商城官方承诺 × 监控摄像 新品 萤石ai宝宝看护精灵 ¥599 起 cb3",
+          "autocomplete": "off",
+          "before": "发者平台 商业智居 招商加盟 集团客户 我的订单 (0) app下载 登录 注册",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "search",
+          "index": 0,
+          "name": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "ys7.com",
+  "iframes": [],
+  "lang": "zh",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ys7.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

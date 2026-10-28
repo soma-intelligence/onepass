@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:39:39.709Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "yandex.com",
+  "source": "rendered",
+  "source_url": "https://yandex.com/register",
+  "status": "error: http 404"
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:16:36.238Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "mercadolivre.com.br",
+  "source": "rendered",
+  "source_url": "https://mercadolivre.com.br/register",
+  "status": "error: http 404"
+}

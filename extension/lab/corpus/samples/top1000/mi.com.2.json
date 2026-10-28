@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:20:04.703Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "mi.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mi.com/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

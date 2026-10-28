@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T23:56:05.286Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "wp premium wp komentarze wiadomości spor",
+          "depth": 5,
+          "hasPattern": false,
+          "index": 0,
+          "label": "szukaj w wp",
+          "name": "q",
+          "placeholder": "szukaj w wp",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "wp.pl",
+  "iframes": [],
+  "lang": "pl",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://wp.pl/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,50 @@
+{
+  "captured_at": "2026-10-27T22:11:19.437Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "menu close publications what we do all t",
+          "before": "hnology careers shop contact search nist",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "search-form",
+          "index": 0,
+          "label": "search nist",
+          "maxlength": 128,
+          "name": "s",
+          "placeholder": "search nist",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "nist.gov",
+  "iframes": [
+    {
+      "origin": "https://time.gov",
+      "sameSite": false
+    },
+    {
+      "origin": "https://customer-ltx6ylk10sje63q6.cloudflarestream.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://nist.gov/",
+  "status": "ok",
+  "webauthnCalls": []
+}

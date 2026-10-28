@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:14:19.571Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "hubspot.com",
+  "source": "rendered",
+  "source_url": "https://hubspot.com/register",
+  "status": "error: http 404"
+}

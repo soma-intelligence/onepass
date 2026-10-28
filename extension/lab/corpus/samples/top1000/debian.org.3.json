@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:19:01.964Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "debian.org",
+  "source": "rendered",
+  "source_url": "https://debian.org/register",
+  "status": "error: http 404"
+}

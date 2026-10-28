@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:20:08.167Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "repubblica.it",
+  "source": "rendered",
+  "source_url": "https://repubblica.it/signup",
+  "status": "error: http 404"
+}

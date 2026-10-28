@@ -1,0 +1,49 @@
+{
+  "captured_at": "2026-10-27T23:20:36.574Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "about us newsroom staff ethical principl",
+          "ariaLabel": "email address",
+          "before": "ies in the for you section. view for you",
+          "depth": 5,
+          "hasPattern": true,
+          "index": 0,
+          "label": "email address",
+          "name": "email",
+          "placeholder": "email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "usatoday.com",
+  "iframes": [
+    {
+      "origin": "https://cdn.taboola.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://gum.criteo.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://usatoday.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

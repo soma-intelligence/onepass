@@ -1,0 +1,69 @@
+{
+  "captured_at": "2026-10-27T21:59:10.764Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "搜索",
+        "问ai",
+        "调试信息",
+        "[x]"
+      ],
+      "fields": [
+        {
+          "after": "搜索 问ai 邮箱 网页设置 快捷访问 skills服务 new 登录 安装电脑",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "before": "击 恢复音量 画中画 网页全屏 全屏 你可以 刷新 试试 视频信息 1.33.6",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 1,
+          "label": "1.33.6",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "qq.com",
+  "iframes": [
+    {
+      "origin": "https://i.news.qq.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://news.qq.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://video.qq.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://v.qq.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "zh",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://qq.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

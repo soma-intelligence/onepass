@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T22:48:28.448Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "about",
+        "documentation",
+        "community",
+        "events",
+        "support",
+        "got it!"
+      ],
+      "fields": [
+        {
+          "after": "amp is a web component framework to easi",
+          "depth": 5,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "ampproject.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ampproject.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

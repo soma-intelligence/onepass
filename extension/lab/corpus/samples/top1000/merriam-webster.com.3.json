@@ -1,0 +1,156 @@
+{
+  "captured_at": "2026-10-27T23:27:01.720Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search chatbot chatbot games word of the",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "menu toggle merriam-webster logo",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "search-term",
+          "index": 0,
+          "label": "search",
+          "placeholder": "search dictionary",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "create username 3-15 characters see our",
+          "autocomplete": "off",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "ul-email",
+          "index": 0,
+          "label": "email",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "create password 8+ characters",
+          "autocomplete": "off",
+          "before": "3-15 characters see our username policy",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "ul-username",
+          "index": 1,
+          "label": "create username",
+          "maxlength": 15,
+          "name": "username",
+          "placeholder": "yourname",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "show sign up for word of the day email b",
+          "autocomplete": "off",
+          "before": "create password 8+ characters",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "ul-password",
+          "index": 2,
+          "label": "create password",
+          "maxlength": 30,
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "subscribe",
+        ">"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "sign up for merriam-webster's word of the day newsletter",
+          "before": "word every day. delivered to your inbox!",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "sign up for merriam-webster's word of the day newsletter",
+          "name": "email",
+          "placeholder": "your email address",
+          "required": false,
+          "role": "email",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "menu toggle",
+        "search",
+        "more",
+        "subscribe",
+        ">"
+      ],
+      "fields": [
+        {
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "merriam-webster.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://merriam-webster.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

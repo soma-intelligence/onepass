@@ -1,0 +1,67 @@
+{
+  "captured_at": "2026-10-27T21:54:26.480Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up for github"
+      ],
+      "fields": [
+        {
+          "after": "sign up for github download github copil",
+          "autocomplete": "email",
+          "before": "enter your email",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "hero_user_email",
+          "index": 0,
+          "label": "enter your email",
+          "name": "user_email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "sign up for github"
+      ],
+      "fields": [
+        {
+          "after": "sign up for github download github copil",
+          "autocomplete": "email",
+          "before": "enter your email",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "bottom_cta_section_user_email",
+          "index": 0,
+          "label": "enter your email",
+          "name": "user_email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "github.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://github.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

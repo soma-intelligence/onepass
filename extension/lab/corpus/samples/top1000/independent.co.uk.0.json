@@ -1,0 +1,35 @@
+{
+  "captured_at": "2026-10-27T23:39:51.093Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "independent.co.uk",
+  "iframes": [
+    {
+      "origin": "https://static.independent.co.uk",
+      "sameSite": true
+    },
+    {
+      "origin": "https://pbjs.mobkoi.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://pbjs.mobkoi.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://pbjs.mobkoi.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://independent.co.uk/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:02:57.351Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "theverge.com",
+  "source": "rendered",
+  "source_url": "https://theverge.com/signin",
+  "status": "error: http 404"
+}

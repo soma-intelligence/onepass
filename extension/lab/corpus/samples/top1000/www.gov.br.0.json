@@ -1,0 +1,53 @@
+{
+  "captured_at": "2026-10-28T00:04:47.985Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "serviços para você mais acessados 1 assi",
+          "autocomplete": "off",
+          "before": "buscados desenrola brasil assinatura mei",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "searchtext-input",
+          "index": 0,
+          "label": "o que você procura?",
+          "maxlength": 512,
+          "placeholder": "o que você procura?",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.gov.br",
+  "iframes": [
+    {
+      "origin": "https://agenciagov.ebc.com.br",
+      "sameSite": false
+    },
+    {
+      "origin": "https://agenciagov.ebc.com.br",
+      "sameSite": false
+    }
+  ],
+  "lang": "pt",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.gov.br/",
+  "status": "ok",
+  "webauthnCalls": []
+}

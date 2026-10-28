@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-28T00:19:04.638Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "close",
+        "register"
+      ],
+      "fields": [
+        {
+          "after": "(max. 30) close register community tutor",
+          "before": "end on 11/6/26, 10:00 am (est5edt) free",
+          "depth": 14,
+          "hasPattern": true,
+          "index": 0,
+          "inputmode": "numeric",
+          "name": "<redacted>",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "odoo.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://odoo.com/event/accounting-academy-atlanta-ga-12252/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

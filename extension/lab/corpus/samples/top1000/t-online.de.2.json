@@ -1,0 +1,71 @@
+{
+  "captured_at": "2026-10-27T22:02:54.876Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "suchen"
+      ],
+      "fields": [
+        {
+          "after": "suchen e-mail login regional berlin hamb",
+          "autocomplete": "off",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "suche",
+          "index": 0,
+          "label": "suchbegriff eingeben",
+          "name": "q",
+          "placeholder": "suchbegriff eingeben",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "suchen"
+      ],
+      "fields": [
+        {
+          "after": "suchen e-mail login home politik gerhard",
+          "autocomplete": "off",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "label": "suchbegriff eingeben",
+          "name": "q",
+          "placeholder": "suchbegriff eingeben",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "t-online.de",
+  "iframes": [
+    {
+      "origin": "https://consent.t-online.de",
+      "sameSite": true
+    }
+  ],
+  "lang": "de",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://t-online.de/nachrichten/kolumne-gerhard-spoerl/id_101497128/israel-wahl-2026-eisenkot-liegt-vorne-doch-netanjahu-zieht-alle-register.html",
+  "status": "ok",
+  "webauthnCalls": []
+}

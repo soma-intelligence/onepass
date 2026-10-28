@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-27T23:56:25.167Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign in",
+        "sign up"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "email",
+          "depth": 26,
+          "hasPattern": false,
+          "index": 0,
+          "inputmode": "tel",
+          "label": "<redacted>",
+          "name": "login",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "tel",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "vkontakte.ru",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://vkontakte.ru/",
+  "status": "ok",
+  "webauthnCalls": []
+}

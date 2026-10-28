@@ -1,0 +1,47 @@
+{
+  "captured_at": "2026-10-28T00:10:35.438Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "입력 내용 지우기",
+        "입력 도구",
+        "검색"
+      ],
+      "fields": [
+        {
+          "after": "입력 내용 지우기 입력 도구 검색 주요 서비스 지도 금융 메일 스포츠 날",
+          "autocomplete": "off",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "q",
+          "index": 0,
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "daum.net",
+  "iframes": [
+    {
+      "origin": "https://shop-redapi.daum.net",
+      "sameSite": true
+    }
+  ],
+  "lang": "ko",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://daum.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T23:59:12.679Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "support docs login contact sales sign up",
+          "autocomplete": "off",
+          "before": "ner portal pricing search cloudinary.com",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "autocomplete-0-input",
+          "index": 0,
+          "label": "search for...",
+          "maxlength": 512,
+          "placeholder": "search for...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "cloudinary.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cloudinary.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,90 @@
+{
+  "captured_at": "2026-10-27T23:24:23.010Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "ikea.us (en)",
+        "open main menu",
+        "close main menu",
+        "store: ikea.us (en)",
+        "pause video of a frakta carrier bag",
+        "store: ikea.us (en)",
+        "play video",
+        "play video",
+        "play video of a round image of a room transitioning into cir",
+        "pause slideshow of people in their homes with colourful tran",
+        "play video",
+        "play video of a child riding a toy car in a children's bedro"
+      ],
+      "fields": [
+        {
+          "after": "open main menu close main menu go shoppi",
+          "ariaLabel": "search for the online store in your region. when search sugg",
+          "autocomplete": "off",
+          "before": "o search for another store. ikea.us (en)",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "mini-picker-search-input",
+          "index": 0,
+          "label": "search for the online store in your region. when search sugg",
+          "placeholder": "find online store",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "stories jobs newsroom our business welco",
+          "ariaLabel": "search for the online store in your region. when search sugg",
+          "autocomplete": "off",
+          "before": "r store. go shopping store: ikea.us (en)",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "region-picker-search-input",
+          "index": 1,
+          "label": "search for the online store in your region. when search sugg",
+          "placeholder": "find online store",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        },
+        {
+          "after": "the updated frakta bag carrying the blue",
+          "ariaLabel": "search for the online store in your region. when search sugg",
+          "autocomplete": "off",
+          "before": "er store go shopping store: ikea.us (en)",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "region-picker-search-input-8e32d9ddc5c4",
+          "index": 2,
+          "label": "search for the online store in your region. when search sugg",
+          "placeholder": "find online store",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "ikea.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ikea.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

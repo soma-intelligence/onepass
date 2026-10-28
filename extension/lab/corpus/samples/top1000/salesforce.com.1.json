@@ -1,0 +1,72 @@
+{
+  "captured_at": "2026-10-27T22:18:01.539Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "log in"
+      ],
+      "fields": [
+        {
+          "autocomplete": "username",
+          "before": "salesforce login username",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "username",
+          "index": 0,
+          "label": "username",
+          "name": "username",
+          "required": false,
+          "role": "username",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "https:// domain .my.salesforce.com",
+          "before": "ers, periods, and hyphens. custom domain",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "mydomain",
+          "index": 0,
+          "label": "custom domain",
+          "name": "mydomain",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "salesforce.com",
+  "iframes": [
+    {
+      "origin": "https://c.salesforce.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://login.salesforce.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://salesforce.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

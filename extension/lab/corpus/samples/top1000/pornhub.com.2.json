@@ -1,0 +1,92 @@
+{
+  "captured_at": "2026-10-28T00:11:11.513Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "trending searches mewslut ebony homemade",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "ght corner to complete the installation.",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "searchInput",
+          "index": 0,
+          "label": "search",
+          "maxlength": 100,
+          "name": "search",
+          "placeholder": "search pornhub",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "log in with google",
+        "log in with x",
+        "log in"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "email",
+          "autocomplete": "email",
+          "before": "log in with google log in with x or",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "usernameModal",
+          "index": 0,
+          "label": "email",
+          "maxlength": 254,
+          "name": "email",
+          "placeholder": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "ariaLabel": "password",
+          "autocomplete": "current-password",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "passwordModal",
+          "index": 1,
+          "inputmode": "email",
+          "label": "password",
+          "name": "password",
+          "placeholder": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "pornhub.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://pornhub.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

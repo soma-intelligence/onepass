@@ -1,0 +1,269 @@
+{
+  "captured_at": "2026-10-27T22:03:05.259Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "shop phones about why android ai on andr",
+          "autocomplete": "off",
+          "before": "android magazine help center show search",
+          "depth": 6,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "gmail.com",
+        "hotmail.com",
+        "outlook.com",
+        "msn.com",
+        "yahoo.com",
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "name* please enter your name.",
+          "before": "shop phones sign up to stay in the mix.",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "voyager-signup-first-name",
+          "index": 0,
+          "label": "name*",
+          "name": "firstName",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "email address please enter a valid email",
+          "autocomplete": "email",
+          "before": "name* please enter your name.",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "voyager-signup-email",
+          "index": 1,
+          "label": "email address",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        },
+        {
+          "after": "phone number please enter a valid phone",
+          "autocomplete": "tel-national",
+          "before": "ress please enter a valid email address.",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "voyager-signup-phone",
+          "index": 2,
+          "inputmode": "numeric",
+          "label": "phone number",
+          "name": "phone",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "tel",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "gmail.com",
+        "hotmail.com",
+        "outlook.com",
+        "msn.com",
+        "yahoo.com",
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "name* please enter your name.",
+          "before": "ooping video sign up to stay in the mix.",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "voyager-signup-first-name-2",
+          "index": 0,
+          "label": "name*",
+          "name": "firstName",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "email address please enter a valid email",
+          "autocomplete": "email",
+          "before": "name* please enter your name.",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "voyager-signup-email-2",
+          "index": 1,
+          "label": "email address",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        },
+        {
+          "after": "phone number please enter a valid phone",
+          "autocomplete": "tel-national",
+          "before": "ress please enter a valid email address.",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "voyager-signup-phone-2",
+          "index": 2,
+          "inputmode": "numeric",
+          "label": "phone number",
+          "name": "phone",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "tel",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "gmail.com",
+        "hotmail.com",
+        "outlook.com",
+        "msn.com",
+        "yahoo.com",
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "name* please enter your name.",
+          "before": "s, and more. sign up to stay in the mix.",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "voyager-signup-first-name-3",
+          "index": 0,
+          "label": "name*",
+          "name": "firstName",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "email address please enter a valid email",
+          "autocomplete": "email",
+          "before": "name* please enter your name.",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "voyager-signup-email-3",
+          "index": 1,
+          "label": "email address",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        },
+        {
+          "after": "phone number please enter a valid phone",
+          "autocomplete": "tel-national",
+          "before": "ress please enter a valid email address.",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "voyager-signup-phone-3",
+          "index": 2,
+          "inputmode": "numeric",
+          "label": "phone number",
+          "name": "phone",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "tel",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "play silent looping video pause silent looping video",
+        "about",
+        "features",
+        "devices",
+        "learn",
+        "about",
+        "features",
+        "devices",
+        "learn",
+        "gmail.com",
+        "hotmail.com",
+        "outlook.com"
+      ],
+      "fields": [
+        {
+          "after": "1 gemini intelligence features are only",
+          "ariaLabel": "change language or region",
+          "before": "ivacy policy cookies management controls",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "lang-selector",
+          "index": 0,
+          "label": "change language or region",
+          "name": "lang-selector",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "android.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://android.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,69 @@
+{
+  "captured_at": "2026-10-28T00:14:19.123Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "google",
+        "facebook",
+        "x (twitter)",
+        "microsoft",
+        "apple",
+        "login"
+      ],
+      "fields": [
+        {
+          "after": "password*",
+          "ariaLabel": "email or username",
+          "before": "r) microsoft apple or email or username*",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "username-input",
+          "index": 0,
+          "label": "email or username",
+          "name": "username",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "forgot password? login don't have an acc",
+          "ariaLabel": "password",
+          "before": "password*",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "password-input",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "placeholder": "enter your password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "disqus.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://disqus.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

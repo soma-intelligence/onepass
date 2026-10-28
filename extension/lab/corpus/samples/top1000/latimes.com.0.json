@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-28T00:14:21.479Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit search"
+      ],
+      "fields": [
+        {
+          "after": "search query submit search california to",
+          "before": "e or log in profile sign out show search",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search query",
+          "name": "q",
+          "placeholder": "search",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "latimes.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://latimes.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,127 @@
+{
+  "captured_at": "2026-10-27T23:25:32.967Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "submit site search toggle mega menu togg",
+          "autocomplete": "off",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "wp-block-search__input-1",
+          "index": 0,
+          "label": "search",
+          "name": "s",
+          "placeholder": "search...",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "techcrunch daily newsevery weekday and sunday, you can get t",
+        "techcrunch mobilitytechcrunch mobility is your destination f",
+        "startups weeklystartups are the core of techcrunch, so get o",
+        "strictlyvcprovides movers and shakers with the info they nee",
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "ription choices no newsletters selected.",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "name",
+          "index": 0,
+          "label": "name",
+          "name": "name",
+          "placeholder": "name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        },
+        {
+          "after": "subscribe by submitting your email, you",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "email",
+          "index": 1,
+          "label": "email address",
+          "name": "email",
+          "placeholder": "email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "close",
+        "submit",
+        "site search toggle",
+        "mega menu toggle",
+        "techcrunch daily newsevery weekday and sunday, you can get t",
+        "techcrunch mobilitytechcrunch mobility is your destination f",
+        "startups weeklystartups are the core of techcrunch, so get o",
+        "strictlyvcprovides movers and shakers with the info they nee",
+        "subscribe",
+        "✕",
+        "disable my adblocker"
+      ],
+      "fields": [
+        {
+          "before": "adblocker contact support | we're using",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "techcrunch.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://techcrunch.com/2026/10/25/ai-delivers-zero-financial-payoff-to-most-companies-according-to-apollo-economist/",
+  "status": "ok",
+  "webauthnCalls": []
+}

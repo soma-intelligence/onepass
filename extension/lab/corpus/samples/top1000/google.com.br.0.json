@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-27T23:51:43.686Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "google search",
+        "i'm feeling lucky"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "maxlength": 2048,
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "google.com.br",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://google.com.br/",
+  "status": "ok",
+  "webauthnCalls": []
+}

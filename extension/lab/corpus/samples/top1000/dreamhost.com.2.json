@@ -1,0 +1,70 @@
+{
+  "captured_at": "2026-10-27T23:15:40.209Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "$ usd",
+        "english",
+        "back",
+        "register a new domain",
+        "transfer my domain",
+        "@keyframes spin{0%{transform:rotate(0deg)}to{transform:rotat",
+        "continue",
+        "cookies settings",
+        "reject all",
+        "accept all",
+        "back button",
+        "filter button"
+      ],
+      "fields": [
+        {
+          "after": "​ @keyframes spin{0%{transform:rotate(0d",
+          "before": "register a new domain transfer my domain",
+          "depth": 16,
+          "hasPattern": false,
+          "id": ":r4:",
+          "index": 0,
+          "label": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "cookie list search",
+          "before": ". they don’t tra back button cookie list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 1,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "dreamhost.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://dreamhost.com/cart/?serviceType=3638&promo=WH-BF2025&leadSource=%2F",
+  "status": "ok",
+  "webauthnCalls": []
+}

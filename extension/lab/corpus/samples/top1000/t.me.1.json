@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:00:26.638Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "t.me",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://t.me/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

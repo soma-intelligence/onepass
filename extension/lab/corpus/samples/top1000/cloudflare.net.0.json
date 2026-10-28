@@ -1,0 +1,147 @@
+{
+  "captured_at": "2026-10-27T21:56:25.980Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit",
+        "submit"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "search query",
+          "before": "t form investor email alerts site search",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "_ctrl0_ctl18_txtSearchInput",
+          "index": 0,
+          "label": "search query",
+          "maxlength": 256,
+          "name": "_ctrl0$ctl18$txtSearchInput",
+          "placeholder": "search investor relations",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "ariaLabel": "search query",
+          "before": "ation request form investor email alerts",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "_ctrl0_ctl27_txtSearchInput",
+          "index": 1,
+          "label": "search query",
+          "maxlength": 256,
+          "name": "_ctrl0$ctl27$txtSearchInput",
+          "placeholder": "search investor relations",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "investor alert options *",
+          "before": "vestor email * required email address *",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "_ctrl0_ctl36_txtEmail",
+          "index": 2,
+          "label": "email address",
+          "maxlength": 128,
+          "name": "_ctrl0$ctl36$txtEmail",
+          "placeholder": "your email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "submit submit by clicking sign up, i agr",
+          "ariaLabel": "captcha text",
+          "before": "stock quote enter the code shown above.",
+          "depth": 22,
+          "hasPattern": false,
+          "id": "_ctrl0_ctl36_UCCaptcha_txtCode",
+          "index": 3,
+          "label": "captcha text",
+          "name": "_ctrl0$ctl36$UCCaptcha$txtCode",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "submit",
+        "submit",
+        "cookies details‎",
+        "cookies details‎",
+        "cookies details‎",
+        "back button",
+        "filter button",
+        "clear",
+        "apply",
+        "cancel",
+        "confirm my choices",
+        "reject all but necessary"
+      ],
+      "fields": [
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "cookie list search",
+          "before": "cookies details‎ back button cookie list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "cloudflare.net",
+  "iframes": [
+    {
+      "origin": "https://cloudflare.net",
+      "sameSite": true
+    },
+    {
+      "origin": "https://cloudflare.net",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cloudflare.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}

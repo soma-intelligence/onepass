@@ -1,0 +1,67 @@
+{
+  "captured_at": "2026-10-27T21:58:47.258Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "clear"
+      ],
+      "fields": [
+        {
+          "after": "clear en caret down",
+          "autocomplete": "off",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "pv-search-nav",
+          "index": 0,
+          "label": "search",
+          "name": "phrase",
+          "placeholder": "search",
+          "required": true,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "clear"
+      ],
+      "fields": [
+        {
+          "after": "clear en caret down",
+          "autocomplete": "off",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "pv-search-nav",
+          "index": 0,
+          "label": "search",
+          "name": "phrase",
+          "placeholder": "search",
+          "required": true,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "amazonvideo.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amazonvideo.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

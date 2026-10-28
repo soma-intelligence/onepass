@@ -1,0 +1,62 @@
+{
+  "captured_at": "2026-10-28T00:16:18.309Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign in"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "ariaLabel": "username",
+          "before": "main content qualtrics sign in username",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "username",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "sign in forgot your password? reset your",
+          "ariaLabel": "password",
+          "before": "password",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "b300c82b-e42f-4aa8-8b7e-f7db01b4dc47",
+          "index": 1,
+          "label": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "qualtrics.com",
+  "iframes": [
+    {
+      "origin": "https://www.qualtrics.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://qualtrics.com/login/",
+  "status": "ok",
+  "webauthnCalls": []
+}

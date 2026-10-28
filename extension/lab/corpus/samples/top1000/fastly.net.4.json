@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T21:55:29.878Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "fastly.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://fastly.net/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

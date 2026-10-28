@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T23:49:54.056Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "whenadd dates",
+        "whoadd guests"
+      ],
+      "fields": [
+        {
+          "after": "when add dates who add guests become a h",
+          "ariaLabel": "where",
+          "autocomplete": "off",
+          "before": "nces experiences services services where",
+          "depth": 23,
+          "hasPattern": false,
+          "id": "bigsearch-query-location-input",
+          "index": 0,
+          "label": "where",
+          "name": "query",
+          "placeholder": "search destinations",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "airbnb.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://airbnb.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

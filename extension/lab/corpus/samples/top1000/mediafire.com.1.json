@@ -1,0 +1,159 @@
+{
+  "captured_at": "2026-10-27T23:42:03.549Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "be used to help improve google translate",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "goog-gt-votingInputSrcLang",
+          "index": 0,
+          "name": "sl",
+          "required": false,
+          "role": "unknown",
+          "siblings": 4,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 6,
+          "hasPattern": false,
+          "id": "goog-gt-votingInputTrgLang",
+          "index": 1,
+          "name": "tl",
+          "required": false,
+          "role": "unknown",
+          "siblings": 4,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 6,
+          "hasPattern": false,
+          "id": "goog-gt-votingInputSrcText",
+          "index": 2,
+          "name": "query",
+          "required": false,
+          "role": "unknown",
+          "siblings": 4,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 6,
+          "hasPattern": false,
+          "id": "goog-gt-votingInputTrgText",
+          "index": 3,
+          "name": "gtrans",
+          "required": false,
+          "role": "unknown",
+          "siblings": 4,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 6,
+          "hasPattern": false,
+          "id": "goog-gt-votingInputVote",
+          "index": 4,
+          "name": "vote",
+          "required": false,
+          "role": "unknown",
+          "siblings": 4,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "close popup",
+        "close popup",
+        "close",
+        "help",
+        "buy now",
+        "1 tb of long-term storage",
+        "1 tb of ad-free standard transfers",
+        "50 gb per file",
+        "bulk-download multiple files",
+        "direct links to files",
+        "filedrop file requests",
+        "password protected files"
+      ],
+      "fields": [
+        {
+          "after": "2tb choose your space: includes 100 user",
+          "before": "ulti-user administrat choose your space:",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "businessStorageSelect",
+          "index": 0,
+          "label": "choose your space:",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "powered by translate about help close co",
+          "ariaLabel": "language translate widget",
+          "before": "rofessional business support get support",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 1,
+          "label": "language translate widget",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "mediafire.com",
+  "iframes": [
+    {
+      "origin": "https://www.mediafire.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.mediafire.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.mediafire.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.mediafire.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.mediafire.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mediafire.com/upgrade/",
+  "status": "ok",
+  "webauthnCalls": []
+}

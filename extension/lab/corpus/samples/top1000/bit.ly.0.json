@@ -1,0 +1,138 @@
+{
+  "captured_at": "2026-10-27T22:01:43.996Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "platform",
+        "ai",
+        "solutions",
+        "by industry",
+        "by team",
+        "by business",
+        "resources",
+        "platform",
+        "ai",
+        "solutions",
+        "resources",
+        "en"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "affic sources, a back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "2. add your campaign parameters campaign",
+          "before": "add tracking to your link 1. website url",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "bl-utm-fh-base-url",
+          "index": 1,
+          "label": "1. website url",
+          "placeholder": "https://example.com/my-long-url",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "the referrer (e.g. google, newsletter) c",
+          "before": "your campaign parameters campaign source",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "bl-utm-fh-source",
+          "index": 2,
+          "label": "campaign source",
+          "placeholder": "e.g. google, newsletter",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "marketing medium (e.g. cpc, banner, emai",
+          "before": "e.g. google, newsletter) campaign medium",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "bl-utm-fh-medium",
+          "index": 3,
+          "label": "campaign medium",
+          "placeholder": "e.g. cpc, banner, email",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "product, promo code, or slogan campaign",
+          "before": "(e.g. cpc, banner, email) campaign name",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "bl-utm-fh-campaign",
+          "index": 4,
+          "label": "campaign name",
+          "placeholder": "e.g. spring_sale",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "identify the paid keywords generated url",
+          "before": "uct, promo code, or slogan campaign term",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "bl-utm-fh-term",
+          "index": 5,
+          "label": "campaign term",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "bit.ly",
+  "iframes": [
+    {
+      "origin": "https://<redacted>.cdn.optimizely.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 2,
+  "source": "rendered",
+  "source_url": "https://bit.ly/",
+  "status": "ok",
+  "webauthnCalls": []
+}

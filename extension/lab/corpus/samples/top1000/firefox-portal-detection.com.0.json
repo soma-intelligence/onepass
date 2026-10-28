@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:13:10.094Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "firefox-portal-detection.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://firefox-portal-detection.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

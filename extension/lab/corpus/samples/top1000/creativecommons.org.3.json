@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-27T22:08:33.730Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "submit who we are what we do blog suppor",
+          "before": "creative commons search creative commons",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "s",
+          "index": 0,
+          "label": "search creative commons",
+          "name": "s",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "creativecommons.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://creativecommons.org/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

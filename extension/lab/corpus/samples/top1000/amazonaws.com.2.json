@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-10-27T21:53:12.744Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "filter: all sign in to console create ac",
+          "autocomplete": "off",
+          "before": "ducts solutions pricing resources search",
+          "depth": 28,
+          "hasPattern": false,
+          "id": "_1_",
+          "index": 0,
+          "label": "i'm looking for...",
+          "placeholder": "i'm looking for...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "amazonaws.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amazonaws.com/start-here/?nc2=h_dsc_ex_s3",
+  "status": "ok",
+  "webauthnCalls": []
+}

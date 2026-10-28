@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:54:24.673Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "archive.is",
+  "source": "rendered",
+  "source_url": "https://archive.is/2026.10.27-223743/https://www.aftenposten.no/nekrolog/i/AvAVVx/nekrolog-ingolv-pedersen-19402025",
+  "status": "error: http 429"
+}

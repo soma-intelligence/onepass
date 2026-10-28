@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T21:57:47.665Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "digicert.com",
+  "source": "rendered",
+  "source_url": "https://digicert.com/login",
+  "status": "error: http 404"
+}

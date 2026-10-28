@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:04:20.191Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "unpkg.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://unpkg.com/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

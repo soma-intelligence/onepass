@@ -1,0 +1,19 @@
+{
+  "captured_at": "2026-10-28T00:16:50.840Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "jetbrains.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://jetbrains.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

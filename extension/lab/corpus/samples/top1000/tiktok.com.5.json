@@ -1,0 +1,35 @@
+{
+  "captured_at": "2026-10-27T21:57:30.170Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "ady have an account? log in english (us)",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "english (us)",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "tiktok.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://tiktok.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,73 @@
+{
+  "captured_at": "2026-10-27T22:00:52.322Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "english",
+        "f5 sites",
+        "contact f5",
+        "support",
+        "try f5",
+        "under attack?",
+        "solutions",
+        "products",
+        "partners",
+        "resources",
+        "company",
+        "back"
+      ],
+      "fields": [
+        {
+          "after": "platform solutions products partners res",
+          "autocomplete": "off",
+          "before": "contact f5 support try f5 under attack?",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "MobileSearchInput",
+          "index": 0,
+          "label": "search all f5 sites",
+          "placeholder": "search all f5 sites",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "products get f5 have questions? we have",
+          "autocomplete": "off",
+          "before": "ions products partners resources company",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "SearchInput",
+          "index": 1,
+          "label": "search all f5 sites",
+          "placeholder": "search all f5 sites",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "f5.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://f5.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

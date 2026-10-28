@@ -1,0 +1,37 @@
+{
+  "captured_at": "2026-10-27T21:57:50.905Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "ariaLabel": "language",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "footer__lang-selector",
+          "index": 0,
+          "label": "language",
+          "name": "language",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "opera.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://opera.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

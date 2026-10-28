@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:15:14.937Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "latimes.com",
+  "source": "rendered",
+  "source_url": "https://latimes.com/signin",
+  "status": "error: http 404"
+}

@@ -1,0 +1,49 @@
+{
+  "captured_at": "2026-10-27T21:57:59.239Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "skip to navigation skip to main content",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "ybar-sbq",
+          "index": 0,
+          "label": "search for news, tickers or companies",
+          "name": "p",
+          "placeholder": "search for news, tickers or companies",
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "finance.yahoo.com",
+  "iframes": [
+    {
+      "origin": "https://finance.yahoo.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://cdn.yahoofinance.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://finance.yahoo.com/personal-finance/banking/article/att-settlement-payouts-could-reach-5000-for-eligible-customers-170916715.html",
+  "status": "ok",
+  "webauthnCalls": []
+}

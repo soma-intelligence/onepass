@@ -1,0 +1,68 @@
+{
+  "captured_at": "2026-10-27T22:16:06.566Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "tinyurl.com",
+        "add domain",
+        "shorten link"
+      ],
+      "fields": [
+        {
+          "after": "domain tinyurl.com tinyurl.com add domai",
+          "before": "orten a link generate qr code long url *",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "url",
+          "index": 0,
+          "label": "long url *",
+          "placeholder": "paste long url here",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "must be at least 5 characters",
+          "before": "inyurl.com add domain / alias (optional)",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "alias",
+          "index": 1,
+          "label": "alias (optional)",
+          "placeholder": "add alias here",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "tinyurl.com",
+  "iframes": [
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://tinyurl.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

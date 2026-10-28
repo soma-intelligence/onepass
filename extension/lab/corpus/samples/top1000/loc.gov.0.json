@@ -1,0 +1,55 @@
+{
+  "captured_at": "2026-10-27T23:29:34.465Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "filter search by",
+          "before": "skip to main content library of congress",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "searchFormat",
+          "index": 0,
+          "label": "filter search by",
+          "name": "in",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "ariaLabel": "search the library of congress",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "search",
+          "index": 1,
+          "label": "search the library of congress",
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "loc.gov",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://loc.gov/",
+  "status": "ok",
+  "webauthnCalls": []
+}

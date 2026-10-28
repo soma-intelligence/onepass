@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-10-27T22:11:04.175Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "what are you looking for? top resources",
+          "autocomplete": "off",
+          "before": "explore websites, people, and locations",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "es-search-form-input",
+          "index": 0,
+          "label": "explore websites, people, and locations",
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "mit.edu",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mit.edu/",
+  "status": "ok",
+  "webauthnCalls": []
+}

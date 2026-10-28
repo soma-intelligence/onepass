@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:19:46.641Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "classlink.com",
+  "source": "rendered",
+  "source_url": "https://classlink.com/register",
+  "status": "error: http 404"
+}

@@ -1,0 +1,46 @@
+{
+  "captured_at": "2026-10-27T22:57:50.052Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "art biography business children's christ",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "sitesearch_field",
+          "index": 0,
+          "label": "title / author / isbn",
+          "name": "query",
+          "placeholder": "title / author / isbn",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "goodreads.com",
+  "iframes": [
+    {
+      "origin": "https://platform.twitter.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "und",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://goodreads.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

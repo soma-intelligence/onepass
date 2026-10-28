@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-27T23:59:38.543Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "only necessary cookies",
+        "accept all",
+        "more",
+        "dark mode",
+        "english"
+      ],
+      "fields": [
+        {
+          "before": "ve been removed. go back to onlyfans.com",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "safari-page-scroll-hack",
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "onlyfans.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://onlyfans.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

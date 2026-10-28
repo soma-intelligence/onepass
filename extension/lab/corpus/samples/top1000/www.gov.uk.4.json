@@ -1,0 +1,98 @@
+{
+  "captured_at": "2026-10-27T22:17:23.719Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "when search suggestions are available us",
+          "autocomplete": "off",
+          "before": ".uk × search gov.uk search search gov.uk",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "search-main-4ae9acc2",
+          "index": 0,
+          "label": "search gov.uk",
+          "name": "keywords",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "send",
+        "cancel"
+      ],
+      "fields": [
+        {
+          "after": "what were you doing?",
+          "autocomplete": "off",
+          "before": "d is for robots only. please leave blank",
+          "depth": 8,
+          "hasPattern": true,
+          "id": "giraffe",
+          "index": 0,
+          "label": "this field is for robots only. please leave blank",
+          "name": "giraffe",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "what went wrong?",
+          "before": "what were you doing?",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "label": "what were you doing?",
+          "name": "what_doing",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "after": "send cancel",
+          "before": "what went wrong?",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 2,
+          "label": "what went wrong?",
+          "name": "what_wrong",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.gov.uk",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.gov.uk/sign-in-childcare-account",
+  "status": "ok",
+  "webauthnCalls": []
+}

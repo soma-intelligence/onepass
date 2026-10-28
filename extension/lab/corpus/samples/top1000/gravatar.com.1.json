@@ -1,0 +1,46 @@
+{
+  "captured_at": "2026-10-27T22:05:57.992Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "after": "continue one profile, everywhere your av",
+          "before": "your gravatar email address or username",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "label": "enter your email address",
+          "name": "usernameOrEmail",
+          "placeholder": "enter your email address",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "gravatar.com",
+  "iframes": [
+    {
+      "origin": "https://public-api.wordpress.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://gravatar.com/connect",
+  "status": "ok",
+  "webauthnCalls": []
+}

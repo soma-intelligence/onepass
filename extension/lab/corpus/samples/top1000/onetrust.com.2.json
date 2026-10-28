@@ -1,0 +1,106 @@
+{
+  "captured_at": "2026-10-27T23:26:34.178Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search keyword search en english deutsch",
+          "ariaLabel": "search query",
+          "before": "tsch español français italiano português",
+          "depth": 31,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search query",
+          "maxlength": 200,
+          "name": "q",
+          "placeholder": "search keyword",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search keyword search request demo talk",
+          "ariaLabel": "search query",
+          "before": "ano português request demo talk to sales",
+          "depth": 32,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search query",
+          "maxlength": 200,
+          "name": "q",
+          "placeholder": "search keyword",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "solutions",
+        "back",
+        "platform",
+        "back",
+        "resources",
+        "back",
+        "company",
+        "back",
+        "languages",
+        "back",
+        "en",
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "cookies details back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "onetrust.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://onetrust.com/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

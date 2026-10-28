@@ -1,0 +1,55 @@
+{
+  "captured_at": "2026-10-27T23:33:28.970Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "left",
+        "right",
+        "close",
+        "main navigation",
+        "products",
+        "solutions",
+        "developer",
+        "resources",
+        "previous",
+        "1",
+        "2",
+        "3"
+      ],
+      "fields": [
+        {
+          "after": "icon trending 20x20px trending topics wh",
+          "ariaLabel": "language selector",
+          "before": "my info cookie preferences english (us)",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "english (us)",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "box.com",
+  "iframes": [
+    {
+      "origin": "https://segment-box.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://box.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

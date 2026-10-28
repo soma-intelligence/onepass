@@ -1,0 +1,121 @@
+{
+  "captured_at": "2026-10-27T23:32:50.885Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "cancel",
+        "cancel",
+        "ask nikeai"
+      ],
+      "fields": [
+        {
+          "after": "cancel cancel ask nikeai popular search",
+          "ariaLabel": "search products",
+          "autocomplete": "off",
+          "before": "s gear trail run hike explore sportswear",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "gn-search-input",
+          "index": 0,
+          "inputmode": "search",
+          "label": "search products",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "s & orders 4 am - 11 pm pt 7 days a week",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "name": "consumerName",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 14,
+          "hasPattern": false,
+          "index": 1,
+          "name": "consumerEmail",
+          "required": false,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "shop by sport",
+        "sport",
+        "more sports",
+        "cancel",
+        "cancel",
+        "ask nikeai",
+        "searchicon",
+        "join us",
+        "shop nike",
+        "united states"
+      ],
+      "fields": [
+        {
+          "after": "what can we help you with? searchicon wh",
+          "autocomplete": "on",
+          "before": "socks air force 1 soccer cleats get help",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "searchInput",
+          "index": 0,
+          "inputmode": "search",
+          "label": "what can we help you with?",
+          "name": "searchInput",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "www.nike.com",
+  "iframes": [
+    {
+      "origin": "https://www.nike.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://api.nike.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.nike.com/help/a/payment-options",
+  "status": "ok",
+  "webauthnCalls": []
+}

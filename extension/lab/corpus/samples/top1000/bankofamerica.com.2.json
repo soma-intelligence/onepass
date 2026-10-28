@@ -1,0 +1,72 @@
+{
+  "captured_at": "2026-10-28T00:13:54.609Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "topic date(s) time(s) location status ke",
+          "autocomplete": "off",
+          "before": "ia to see the full event listing. search",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "mat-input-0",
+          "index": 0,
+          "label": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "back button",
+        "filter button",
+        "clear",
+        "apply",
+        "cancel",
+        "save settings",
+        "reject all",
+        "allow all"
+      ],
+      "fields": [
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "cookie list search",
+          "before": "nt signed permis back button cookie list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "angular",
+  "host": "bankofamerica.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://bankofamerica.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,58 @@
+{
+  "captured_at": "2026-10-27T22:34:11.981Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "go"
+      ],
+      "fields": [
+        {
+          "after": "search amazon.de",
+          "before": "ect the department you want to search in",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "searchDropdownBox",
+          "index": 0,
+          "label": "select the department you want to search in",
+          "name": "url",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        },
+        {
+          "ariaLabel": "search amazon.de",
+          "autocomplete": "off",
+          "before": "search amazon.de",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "twotabsearchtextbox",
+          "index": 1,
+          "label": "search amazon.de",
+          "name": "field-keywords",
+          "placeholder": "search amazon.de",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "amazon.de",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amazon.de/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T21:57:24.669Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "log in 4 0 4 couldn't find this page che",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "tiktok",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "tiktok.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://tiktok.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

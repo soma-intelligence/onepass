@@ -1,0 +1,62 @@
+{
+  "captured_at": "2026-10-28T00:18:21.704Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "alle kategorien",
+        "ganzer ort",
+        "finden"
+      ],
+      "fields": [
+        {
+          "after": "suchbegriff eingeben. eingabetaste drück",
+          "ariaLabel": "was suchst du?",
+          "autocomplete": "off",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "was suchst du?",
+          "name": "keywords",
+          "placeholder": "was suchst du?",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "plz oder ort eingeben. eingabetaste drüc",
+          "ariaLabel": "plz oder ort",
+          "autocomplete": "off",
+          "before": "h oben/unten durchsuchen alle kategorien",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 1,
+          "label": "plz oder ort",
+          "name": "locationStr",
+          "placeholder": "plz oder ort",
+          "required": false,
+          "role": "postal_code",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "kleinanzeigen.de",
+  "iframes": [],
+  "lang": "de",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://kleinanzeigen.de/",
+  "status": "ok",
+  "webauthnCalls": []
+}

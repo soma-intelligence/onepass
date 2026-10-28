@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:26:33.583Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "huffpost.com",
+  "source": "rendered",
+  "source_url": "https://huffpost.com/signin",
+  "status": "error: http 404"
+}

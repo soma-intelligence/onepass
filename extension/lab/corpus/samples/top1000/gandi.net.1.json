@@ -1,0 +1,181 @@
+{
+  "captured_at": "2026-10-27T21:56:06.998Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "register",
+        "transfer",
+        "renew"
+      ],
+      "fields": [
+        {
+          "after": "domain names selected for you: tlds regi",
+          "ariaLabel": "try a word or do a domain name search",
+          "before": "register transfer renew",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "try a word or do a domain name search",
+          "maxlength": 255,
+          "name": "search",
+          "placeholder": "try a word or do a domain name search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "ok"
+      ],
+      "fields": [
+        {
+          "after": "currency:",
+          "before": "romo $29.23 $7.99 $55.98 $24.36 country:",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "name": "c",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "taxes:",
+          "before": "currency:",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 1,
+          "name": "currency",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "grid:",
+          "before": "taxes:",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 2,
+          "name": "taxes",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "ok pricing options prices for united sta",
+          "before": "grid:",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 3,
+          "name": "grid",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "domains for businesses: tailor-made serv",
+          "ariaLabel": "try a word or a domain name",
+          "before": "site, or your blog in just a few clicks.",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "try a word or a domain name",
+          "maxlength": 255,
+          "name": "search",
+          "placeholder": "try a word or a domain name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "frequently asked questions what’s a doma",
+          "ariaLabel": "try \"mywebsite.com\" or \"sunshine\"",
+          "before": "s can buy a do buy your domain name now.",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "try \"mywebsite.com\" or \"sunshine\"",
+          "maxlength": 255,
+          "name": "search",
+          "placeholder": "try \"mywebsite.com\" or \"sunshine\"",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "subscribe invalid registration confirmat",
+          "ariaLabel": "email address",
+          "before": "publications and best offers. one email",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "email address",
+          "maxlength": 255,
+          "name": "email",
+          "placeholder": "email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "gandi.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://gandi.net/en-US/domain",
+  "status": "ok",
+  "webauthnCalls": []
+}

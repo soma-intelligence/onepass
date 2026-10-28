@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-28T00:22:02.870Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "cerca in corriere",
+          "name": "search",
+          "placeholder": "cerca in corriere",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "corriere.it",
+  "iframes": [
+    {
+      "origin": "https://components2.rcsobjects.it",
+      "sameSite": false
+    }
+  ],
+  "lang": "it",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://corriere.it/",
+  "status": "ok",
+  "webauthnCalls": []
+}

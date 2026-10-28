@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T21:59:51.273Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "msn.com",
+  "source": "rendered",
+  "source_url": "https://msn.com/signin",
+  "status": "error: http 404"
+}

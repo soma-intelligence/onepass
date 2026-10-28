@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T23:17:17.109Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "create a video ai video create a video a",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "site header shop",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "search-input",
+          "index": 0,
+          "label": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "deviantart.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://deviantart.com/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

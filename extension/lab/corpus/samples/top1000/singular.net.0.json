@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:08:57.943Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "singular.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://singular.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}

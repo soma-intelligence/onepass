@@ -1,0 +1,129 @@
+{
+  "captured_at": "2026-10-27T23:00:42.199Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "⌘+k ask research ai en language & databa",
+          "ariaLabel": "statista search",
+          "autocomplete": "off",
+          "depth": 6,
+          "hasPattern": false,
+          "index": 0,
+          "label": "statista search",
+          "name": "q",
+          "placeholder": "search statistics, reports...",
+          "required": true,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "ask research ai products new integration",
+          "ariaLabel": "statista search",
+          "autocomplete": "off",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "statista search",
+          "name": "q",
+          "placeholder": "search statistics, reports...",
+          "required": true,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "statista search"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "find statistics, forecasts and reports",
+          "autocomplete": "off",
+          "before": "across 170 industries and 150+ countries",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "find statistics, forecasts and reports",
+          "maxlength": 1024,
+          "name": "q",
+          "placeholder": "find statistics, forecasts and reports",
+          "required": true,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "products new",
+        "statistics explore 170+ industries",
+        "topics browse curated content by subject",
+        "reports download in-depth research studies",
+        "consumer insights new know your consumers",
+        "market insights size markets & forecast trends",
+        "integrations",
+        "solutions",
+        "who we serve & how we help",
+        "custom research and data-driven content",
+        "resources",
+        "pricing"
+      ],
+      "fields": [
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "vendor list search",
+          "before": "w illustrations back button vendors list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "vendor list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search vendors",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "statista.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://statista.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

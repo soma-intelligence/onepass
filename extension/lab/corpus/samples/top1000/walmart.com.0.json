@@ -1,0 +1,43 @@
+{
+  "captured_at": "2026-10-27T22:55:35.982Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "cancel"
+      ],
+      "fields": [
+        {
+          "after": "cancel reorder my items reorder lists re",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "skip to main content",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search everything at walmart online and in store",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "walmart.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://walmart.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

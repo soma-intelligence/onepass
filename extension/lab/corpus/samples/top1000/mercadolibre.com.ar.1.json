@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:19:48.943Z",
+  "category": "checkout",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "www.mercadolibre.com.ar",
+  "iframes": [],
+  "lang": "es",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.mercadolibre.com.ar/pagar-online-con-mercadopago",
+  "status": "ok",
+  "webauthnCalls": []
+}

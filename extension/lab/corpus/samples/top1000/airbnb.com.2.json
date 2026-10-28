@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:50:56.112Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "airbnb.com",
+  "source": "rendered",
+  "source_url": "https://airbnb.com/signin",
+  "status": "error: http 404"
+}

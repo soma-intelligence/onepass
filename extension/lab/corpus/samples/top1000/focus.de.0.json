@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-10-28T00:03:45.681Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "focus.de",
+  "iframes": [
+    {
+      "origin": "https://cmp.focus.de",
+      "sameSite": true
+    }
+  ],
+  "lang": "de",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://focus.de/",
+  "status": "ok",
+  "webauthnCalls": []
+}

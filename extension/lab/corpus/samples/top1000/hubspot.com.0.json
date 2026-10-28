@@ -1,0 +1,66 @@
+{
+  "captured_at": "2026-10-27T22:13:50.183Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "close search log in about about about us",
+          "before": "contrast customer support contact sales",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search hubspot",
+          "name": "q",
+          "placeholder": "search hubspot",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "close search products products the hubsp",
+          "before": "rted free with hubspot's free tools menu",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search hubspot",
+          "name": "q",
+          "placeholder": "search hubspot",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "hubspot.com",
+  "iframes": [
+    {
+      "origin": "https://app.hubspot.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://hubspot.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

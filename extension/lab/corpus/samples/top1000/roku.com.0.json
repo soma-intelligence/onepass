@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-10-27T22:12:32.949Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "​ take the guesswork out of game day fin",
+          "ariaLabel": "search for movies, shows, or actors",
+          "before": "more name your favorite. we'll find it.",
+          "depth": 14,
+          "hasPattern": false,
+          "id": ":rf:",
+          "index": 0,
+          "label": "search for movies, shows, or actors",
+          "placeholder": "search for movies, shows, or actors",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "roku.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://roku.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

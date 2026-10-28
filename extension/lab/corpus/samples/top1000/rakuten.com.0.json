@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T23:54:24.252Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "join for free",
+        "how does rakuten handle my data?",
+        "how does rakuten make money?",
+        "do i need receipts?",
+        "do i need to link a credit card?",
+        "can i use coupons?"
+      ],
+      "fields": [
+        {
+          "after": "join for free $8.28 cash back your cash",
+          "before": "hen you when you shop online shop online",
+          "depth": 15,
+          "hasPattern": false,
+          "index": 0,
+          "label": "email address",
+          "placeholder": "email address",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "react",
+  "host": "rakuten.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://rakuten.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

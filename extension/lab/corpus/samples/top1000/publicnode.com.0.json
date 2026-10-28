@@ -1,0 +1,66 @@
+{
+  "captured_at": "2026-10-27T22:10:43.492Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "rpc endpoints",
+        "solana gunnew",
+        "node snapshots",
+        "seed service",
+        "contact",
+        "rpc endpoints",
+        "node snapshots",
+        "seed service",
+        "all",
+        "mainnet",
+        "testnet",
+        "all networks"
+      ],
+      "fields": [
+        {
+          "after": "all networks displayed cosmos based only",
+          "before": "ode operators. deploy now blockchains 78",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "blockchain nodes operations in 24h mainn",
+          "before": "archive access archive",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 1,
+          "label": "search blockchains",
+          "placeholder": "search blockchains",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "publicnode.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://publicnode.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

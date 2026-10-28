@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:16:02.423Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "global-navbar-backend.id.hp.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://global-navbar-backend.id.hp.com/api/v1/session/login?final_redirect_url=https%253A%252F%252Fwww.hp.com%252Fus-en%252Fhome.html",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,212 @@
+{
+  "captured_at": "2026-10-27T23:53:25.087Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "english sign in sign up now apps suites",
+          "ariaLabel": "search for product overviews, faqs, and more...",
+          "autocomplete": "off",
+          "before": "expense reporting platform. all products",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "zgh-search-query",
+          "index": 0,
+          "label": "search for product overviews, faqs, and more...",
+          "name": "query",
+          "placeholder": "search for products, solutions, resources...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "submit my request"
+      ],
+      "fields": [
+        {
+          "after": "your full name please enter your full na",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "demo_name",
+          "index": 0,
+          "label": "your full name",
+          "name": "Reported By",
+          "placeholder": "your full name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "your email please enter your email.",
+          "before": "r full name please enter your full name.",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "demo_email",
+          "index": 1,
+          "label": "your email",
+          "name": "Email",
+          "placeholder": "your email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "your phone number please enter your phon",
+          "before": "your email please enter your email.",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "demo_phone",
+          "index": 2,
+          "label": "your phone number",
+          "name": "Phone",
+          "placeholder": "your phone number",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "please select an edition",
+          "before": "e number please enter your phone number.",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "demo_country",
+          "index": 3,
+          "name": "CASECF7",
+          "required": false,
+          "role": "country",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "please select the no. of employees in yo",
+          "before": "please select an edition",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "demo_no_of_employees",
+          "index": 4,
+          "name": "CASECF13",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "how did you hear about zoho payroll? ple",
+          "before": "ect the no. of employees in your payroll",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "demo_previous_payroll_software",
+          "index": 5,
+          "label": "how did you hear about zoho payroll?",
+          "name": "CASECF4",
+          "placeholder": "how did you hear about zoho payroll?",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "after": "explain your requirements please explain",
+          "before": "ase say how you heard about zoho payroll",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "demo_message",
+          "index": 6,
+          "label": "explain your requirements",
+          "placeholder": "explain your requirements",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "after": "enter the captcha type the characters yo",
+          "before": "ements please explain your requirements.",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "enterdigest",
+          "index": 7,
+          "label": "enter the captcha",
+          "maxlength": 80,
+          "name": "enterdigest",
+          "placeholder": "enter the captcha",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "stay here",
+        "english",
+        "<redacted>",
+        "recent launchespress space or enter to display list of optio",
+        "sales press space or enter to display list of options",
+        "marketing press space or enter to display list of options",
+        "commerce and pos press space or enter to display list of opt",
+        "service press space or enter to display list of options",
+        "finance press space or enter to display list of options",
+        "education press space or enter to display list of options",
+        "erp press space or enter to display list of options",
+        "email, storage, and collaboration press space or enter to di"
+      ],
+      "fields": [
+        {
+          "after": "no results found. looking for something",
+          "autocomplete": "off",
+          "before": "-linejoin:round;stroke-width:3px;} close",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "label": "i’m looking for...",
+          "placeholder": "i’m looking for...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "zoho.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://zoho.com/payroll/?src=zGlobalAllProducts&category=finance",
+  "status": "ok",
+  "webauthnCalls": []
+}

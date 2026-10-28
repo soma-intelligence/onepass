@@ -1,0 +1,81 @@
+{
+  "captured_at": "2026-10-27T23:34:52.236Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "log in sign up home browse following eve",
+          "ariaLabel": "search",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "maxlength": 50,
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "log in",
+        "sign up",
+        "following",
+        "powdurjust chatting1.5k",
+        "kleinalexanderirl727",
+        "chenzoirl512",
+        "schneckyirlslots & casino2.4k",
+        "iduncleirllive",
+        "jimbozjust chatting434",
+        "famous4bj3just chatting63",
+        "buddhagrand theft auto v (gta)16k",
+        "mascoobsslots & casino259"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "of our site. th back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "kick.com",
+  "iframes": [
+    {
+      "origin": "https://kick.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://kick.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

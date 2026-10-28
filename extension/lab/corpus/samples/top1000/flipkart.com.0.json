@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:05:59.356Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "flipkart.com",
+  "source": "rendered",
+  "source_url": "https://flipkart.com/",
+  "status": "error: <redacted>"
+}

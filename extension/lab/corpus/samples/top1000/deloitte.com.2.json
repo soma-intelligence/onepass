@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:08:05.085Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "deloitte.com",
+  "source": "rendered",
+  "source_url": "https://deloitte.com/signin",
+  "status": "error: http 404"
+}

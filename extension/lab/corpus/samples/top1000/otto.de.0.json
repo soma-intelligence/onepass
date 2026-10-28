@@ -1,0 +1,47 @@
+{
+  "captured_at": "2026-10-28T00:21:04.507Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "deal des tages deals der woche deals des",
+          "autocomplete": "off",
+          "before": "äge oder deine suchhistorie auszuwählen.",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "label": "verwende die pfeiltasten, um suchvorschläge oder deine suchh",
+          "maxlength": 150,
+          "placeholder": "wonach suchst du?",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "otto.de",
+  "iframes": [
+    {
+      "origin": "https://www.otto.de",
+      "sameSite": true
+    }
+  ],
+  "lang": "de",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 1,
+  "source": "rendered",
+  "source_url": "https://otto.de/",
+  "status": "ok",
+  "webauthnCalls": []
+}

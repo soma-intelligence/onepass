@@ -1,0 +1,78 @@
+{
+  "captured_at": "2026-10-27T23:57:10.428Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "next"
+      ],
+      "fields": [
+        {
+          "after": "email or phone forgot email?",
+          "autocomplete": "username",
+          "before": "google sign in to continue to erome.com",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "identifierId",
+          "index": 0,
+          "label": "email or phone",
+          "name": "identifier",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "before": "email or phone forgot email?",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 1,
+          "name": "hiddenPassword",
+          "required": false,
+          "role": "password",
+          "siblings": 4,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "help privacy terms",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "name": "hl",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.erome.com",
+  "iframes": [
+    {
+      "origin": "https://accounts.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.erome.com/login/google",
+  "status": "ok",
+  "webauthnCalls": []
+}

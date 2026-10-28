@@ -1,0 +1,49 @@
+{
+  "captured_at": "2026-10-27T21:52:46.887Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "shopify",
+        "intercom",
+        "doordash",
+        "discord",
+        "zendesk",
+        "lovable",
+        "npm",
+        "sitegpt",
+        "liveblocks",
+        "leagued",
+        "seated",
+        "people"
+      ],
+      "fields": [
+        {
+          "after": "network & cdn sase / zero trust compute",
+          "before": "not to keep servers warm.) network & cdn",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 0,
+          "label": "network & cdn",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "cloudflare.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 1,
+  "source": "rendered",
+  "source_url": "https://cloudflare.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

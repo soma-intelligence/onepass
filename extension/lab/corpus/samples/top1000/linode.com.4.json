@@ -1,0 +1,97 @@
+{
+  "captured_at": "2026-10-27T23:41:06.030Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue",
+        "log in"
+      ],
+      "fields": [
+        {
+          "before": "ithub log in with cloud manager username",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "username",
+          "index": 0,
+          "label": "username",
+          "maxlength": 128,
+          "name": "username",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "before": "error. please try again later. password",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password",
+          "maxlength": 128,
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "continue",
+        "log in",
+        "manage preferences",
+        "reject cookies",
+        "accept cookies",
+        "allow all",
+        "back button",
+        "filter icon",
+        "clear",
+        "apply",
+        "cancel",
+        "reject all"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "by us or by thir back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "linode.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://linode.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

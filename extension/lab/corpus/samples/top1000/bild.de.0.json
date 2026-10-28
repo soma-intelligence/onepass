@@ -1,0 +1,50 @@
+{
+  "captured_at": "2026-10-27T23:44:46.830Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "handwerker-tipp wann er frühestens zurüc",
+          "ariaLabel": "die bild-ki. fragen sie mich alles!",
+          "before": "ual games kreuzworträtsel solitär sudoku",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "die bild-ki. fragen sie mich alles!",
+          "placeholder": "die bild-ki. fragen sie mich alles!",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "bild.de",
+  "iframes": [
+    {
+      "origin": "https://hey.bild.de",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.bild.de",
+      "sameSite": true
+    }
+  ],
+  "lang": "de",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://bild.de/",
+  "status": "ok",
+  "webauthnCalls": []
+}

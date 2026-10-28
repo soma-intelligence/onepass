@@ -1,0 +1,159 @@
+{
+  "captured_at": "2026-10-27T23:52:10.864Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit search"
+      ],
+      "fields": [
+        {
+          "after": "search query submit search show search m",
+          "before": "account ap news code of conduct sign in",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search query",
+          "maxlength": 650,
+          "name": "q",
+          "placeholder": "keyword search...",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "submit search"
+      ],
+      "fields": [
+        {
+          "after": "world iran war russia-ukraine war españo",
+          "before": "it search show search menu submit search",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "submit search",
+          "maxlength": 650,
+          "name": "q",
+          "placeholder": "keyword search",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "submit search"
+      ],
+      "fields": [
+        {
+          "after": "search query submit search show search m",
+          "before": "account ap news code of conduct sign in",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search query",
+          "maxlength": 650,
+          "name": "q",
+          "placeholder": "keyword search...",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "submit search"
+      ],
+      "fields": [
+        {
+          "after": "world iran war russia-ukraine war españo",
+          "before": "it search show search menu submit search",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "submit search",
+          "maxlength": 650,
+          "name": "q",
+          "placeholder": "keyword search",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "0",
+        "menu",
+        "submit search",
+        "show search",
+        "menu",
+        "submit search",
+        "do not sell or share my personal information",
+        "do not sell or share my personal information",
+        "menu",
+        "submit search",
+        "show search",
+        "menu"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "rough analytics, back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "apnews.com",
+  "iframes": [
+    {
+      "origin": "https://a40.usablenet.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://apnews.com/article/trump-economy-midterms-inflation-prices-96f617e2bbb42be4261a0141f787c6ed",
+  "status": "ok",
+  "webauthnCalls": []
+}

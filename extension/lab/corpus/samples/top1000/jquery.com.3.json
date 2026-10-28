@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:15:31.769Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "jquery.com",
+  "source": "rendered",
+  "source_url": "https://jquery.com/register",
+  "status": "error: http 404"
+}

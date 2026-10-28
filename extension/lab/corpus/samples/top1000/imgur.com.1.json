@@ -1,0 +1,88 @@
+{
+  "captured_at": "2026-10-27T23:46:55.785Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign in"
+      ],
+      "fields": [
+        {
+          "before": "ple continue with openpass or with imgur",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "username",
+          "index": 0,
+          "label": "username or email",
+          "maxlength": 255,
+          "name": "username",
+          "placeholder": "username or email",
+          "required": false,
+          "role": "email",
+          "siblings": 3,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "forgot?",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password",
+          "maxlength": 255,
+          "name": "password",
+          "placeholder": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "sign in"
+      ],
+      "fields": [
+        {
+          "before": "sign in need an account? terms privacy",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "imgur.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://imgur.com/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

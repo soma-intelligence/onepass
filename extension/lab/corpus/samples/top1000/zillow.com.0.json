@@ -1,0 +1,48 @@
+{
+  "captured_at": "2026-10-27T23:50:18.642Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "clear search text button",
+        "submit search"
+      ],
+      "fields": [
+        {
+          "after": "clear search text button submit search n",
+          "ariaLabel": "search",
+          "autocomplete": "new-password",
+          "before": "n in join rentals. homes. agents. loans.",
+          "depth": 22,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "placeholder": "enter an address, neighborhood, city, or zip code",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "password"
+    }
+  ],
+  "framework": "react",
+  "host": "zillow.com",
+  "iframes": [
+    {
+      "origin": "https://www.googletagmanager.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://zillow.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

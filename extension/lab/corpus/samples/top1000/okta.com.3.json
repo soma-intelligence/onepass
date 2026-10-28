@@ -1,0 +1,49 @@
+{
+  "captured_at": "2026-10-27T22:43:52.594Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue",
+        "create an account"
+      ],
+      "fields": [
+        {
+          "after": ".okta.com .okta.com .okta-emea.com .okta",
+          "autocomplete": "off",
+          "before": "r okta organization url organization url",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "subdomain",
+          "index": 0,
+          "label": "company name",
+          "name": "subdomain",
+          "placeholder": "company name",
+          "required": false,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "okta.com",
+  "iframes": [
+    {
+      "origin": "https://login.okta.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://okta.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

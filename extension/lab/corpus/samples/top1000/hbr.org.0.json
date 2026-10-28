@@ -1,0 +1,77 @@
+{
+  "captured_at": "2026-10-28T00:11:28.912Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "subscribe latest podcasts the magazine s",
+          "before": "selections hbr executive search hbr.org",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "text-input_R_iqdrm_",
+          "index": 0,
+          "label": "search hbr.org",
+          "name": "term",
+          "placeholder": "search hbr.org",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign in",
+        "sign in",
+        "sign in",
+        "my library",
+        "topic feeds",
+        "orders",
+        "account settings",
+        "email preferences",
+        "my library",
+        "topic feeds",
+        "orders",
+        "account settings"
+      ],
+      "fields": [
+        {
+          "before": "hing is an affiliate of harvard business",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "hbr.org",
+  "iframes": [
+    {
+      "origin": "https://www.recaptcha.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://hbr.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

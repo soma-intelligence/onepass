@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:02:04.915Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "okcdn.ru",
+  "source": "rendered",
+  "source_url": "https://okcdn.ru/",
+  "status": "error: http 403"
+}

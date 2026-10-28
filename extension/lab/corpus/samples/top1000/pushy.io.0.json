@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-10-27T22:51:30.352Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "pushy.io",
+  "iframes": [
+    {
+      "origin": "https://platform.twitter.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://pushy.io/",
+  "status": "ok",
+  "webauthnCalls": []
+}

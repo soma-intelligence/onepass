@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:12:04.653Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "standup.princeton.edu",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://standup.princeton.edu/",
+  "status": "ok",
+  "webauthnCalls": []
+}

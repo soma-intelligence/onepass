@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T21:56:42.387Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "wordpress.org",
+  "source": "rendered",
+  "source_url": "https://wordpress.org/register",
+  "status": "error: http 404"
+}

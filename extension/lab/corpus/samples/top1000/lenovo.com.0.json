@@ -1,0 +1,106 @@
+{
+  "captured_at": "2026-10-27T23:52:56.370Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "artificial intelligence products busines",
+          "autocomplete": "off",
+          "before": "skip to main content",
+          "depth": 26,
+          "hasPattern": false,
+          "id": "commonHeaderSearch",
+          "index": 0,
+          "label": "what are you looking for today ?",
+          "name": "commonHeaderSearch",
+          "placeholder": "what are you looking for today ?",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "please enter the correct email address!",
+          "autocomplete": "email",
+          "before": "rivacy statement for more details. email",
+          "depth": 25,
+          "hasPattern": false,
+          "id": "account",
+          "index": 0,
+          "label": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "accessibility",
+        "press enter for accessibility for blind people who use scree",
+        "press enter for keyboard navigation",
+        "press enter for accessibility menu",
+        "skip to main content",
+        "<redacted>",
+        "<redacted>",
+        "<redacted>",
+        "<redacted>",
+        "<redacted>",
+        "<redacted>",
+        "safeguard against cyber threats"
+      ],
+      "fields": [
+        {
+          "after": "about lenovo our company news investors",
+          "before": "vo email signup select country / region:",
+          "depth": 24,
+          "hasPattern": false,
+          "index": 0,
+          "label": "select country / region:",
+          "placeholder": "please select a country / region",
+          "required": false,
+          "role": "country",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "lenovo.com",
+  "iframes": [
+    {
+      "origin": "https://www.lenovo.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.lenovo.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://lenovo.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

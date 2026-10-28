@@ -1,0 +1,100 @@
+{
+  "captured_at": "2026-10-27T22:11:12.021Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "ariaLabel": "search input",
+          "autocomplete": "twitch-nav-search",
+          "before": "skip to... alt p browse",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "search input",
+          "maxlength": 65,
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        },
+        {
+          "after": "log in sign up failed to determine conte",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "skip to...altp",
+        "log in",
+        "sign up",
+        "chat"
+      ],
+      "fields": [
+        {
+          "after": "volume",
+          "before": "determine content classification volume",
+          "depth": 29,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "volume",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "opacity"
+        },
+        {
+          "after": "stream chat press escape or shift + tab",
+          "before": "volume",
+          "depth": 27,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "label": "volume",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "twitch.tv",
+  "iframes": [
+    {
+      "origin": "https://k.twitchcdn.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://twitch.tv/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

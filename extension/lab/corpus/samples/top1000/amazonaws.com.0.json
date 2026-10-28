@@ -1,0 +1,110 @@
+{
+  "captured_at": "2026-10-27T21:52:46.887Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "filter: all sign in to console create ac",
+          "autocomplete": "off",
+          "before": "ducts solutions pricing resources search",
+          "depth": 28,
+          "hasPattern": false,
+          "id": "_1_",
+          "index": 0,
+          "label": "i'm looking for...",
+          "placeholder": "i'm looking for...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "displaying 1-8 (18) displaying 1-8 (18)",
+          "ariaLabel": "search",
+          "before": "transform. explore aws for your industry",
+          "depth": 25,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "accept",
+        "decline",
+        "customize",
+        "cancel",
+        "save preferences",
+        "cancel",
+        "save preferences",
+        "dismiss",
+        "english",
+        "support",
+        "my account",
+        "discover aws"
+      ],
+      "fields": [
+        {
+          "after": "retail adidas drives enterprise-wide tra",
+          "before": "nt to see new customer stories in retail",
+          "depth": 25,
+          "hasPattern": false,
+          "index": 0,
+          "label": "retail",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "gain free, hands-on experience sign up f",
+          "before": "shington d.c. i want to try aws for free",
+          "depth": 25,
+          "hasPattern": false,
+          "index": 1,
+          "label": "try aws for free",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "amazonaws.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amazonaws.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

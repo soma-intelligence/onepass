@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:31:56.691Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "elpais.com",
+  "source": "rendered",
+  "source_url": "https://elpais.com/register",
+  "status": "error: http 404"
+}

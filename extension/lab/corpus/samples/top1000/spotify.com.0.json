@@ -1,0 +1,54 @@
+{
+  "captured_at": "2026-10-27T21:58:10.195Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "open app",
+        "try 2 months for $0",
+        "view all plans",
+        "your privacy choices",
+        "english",
+        "premium",
+        "englishenglish",
+        "afrikaansafrikaans",
+        "አማርኛamharic",
+        "azərbaycancaazerbaijani",
+        "българскиbulgarian",
+        "भोजपुरीbhojpuri"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "o share our cont back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "spotify.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://spotify.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

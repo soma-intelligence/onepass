@@ -1,0 +1,109 @@
+{
+  "captured_at": "2026-10-28T00:03:34.615Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "last name",
+          "before": "pdates, subscribe to our newsletter name",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "subscriberFirstName",
+          "index": 0,
+          "label": "name",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "e-mail",
+          "before": "last name",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "subscriberLastName",
+          "index": 1,
+          "label": "last name",
+          "required": false,
+          "role": "family_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "subscribe",
+          "before": "e-mail",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "subscriberEmail",
+          "index": 2,
+          "label": "e-mail",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "about us",
+        "about us",
+        "about us",
+        "about us",
+        "authors",
+        "editors and reviewers",
+        "collaborators",
+        "authors",
+        "authors",
+        "editors and reviewers",
+        "collaborators",
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "no matches to your query could be found.",
+          "before": "tors and reviewers collaborators authors",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search...",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "frontiersin.org",
+  "iframes": [
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://frontiersin.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

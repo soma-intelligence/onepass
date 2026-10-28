@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:11:43.766Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "wyzecam.com",
+  "source": "rendered",
+  "source_url": "https://wyzecam.com/register",
+  "status": "error: http 404"
+}

@@ -1,0 +1,53 @@
+{
+  "captured_at": "2026-10-27T23:33:59.180Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "functional cookies",
+        "required cookies",
+        "advertising cookies",
+        "confirm my choices",
+        "reject all",
+        "accept all",
+        "english",
+        "dansk",
+        "deutsch",
+        "español",
+        "suomi",
+        "français"
+      ],
+      "fields": [
+        {
+          "after": "i want to learn about the trends of the",
+          "ariaLabel": "build with ai prompt input textarea",
+          "before": "d watch your form take shape in seconds.",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "bwai-prompt-input-textarea",
+          "index": 0,
+          "label": "build with ai prompt input textarea",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "surveymonkey.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://surveymonkey.com/use-cases/registration-forms/",
+  "status": "ok",
+  "webauthnCalls": []
+}

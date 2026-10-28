@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-27T22:32:27.694Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "stanford university about about stanford",
+          "ariaLabel": "search query",
+          "autocomplete": "off",
+          "before": "l intelligence see all impact hub topics",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "masthead-search-input-desktop",
+          "index": 0,
+          "label": "search query",
+          "maxlength": 1000,
+          "placeholder": "how can we help?",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "stanford.edu",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 2,
+  "source": "rendered",
+  "source_url": "https://stanford.edu/",
+  "status": "ok",
+  "webauthnCalls": []
+}

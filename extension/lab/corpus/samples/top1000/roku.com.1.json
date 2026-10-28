@@ -1,0 +1,88 @@
+{
+  "captured_at": "2026-10-27T22:12:50.974Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "forgot password?",
+        "sign in",
+        "create account"
+      ],
+      "fields": [
+        {
+          "after": "email * ​ password *",
+          "autocomplete": "email",
+          "before": "d with an asterisk are required. email *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "email *",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "password * ​ forgot password?",
+          "autocomplete": "current-password",
+          "before": "email * ​ password *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password *",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "forgot password?",
+        "sign in",
+        "create account"
+      ],
+      "fields": [
+        {
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "my.roku.com",
+  "iframes": [
+    {
+      "origin": "https://www.recaptcha.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://my.roku.com/signin?next=https%3A%2F%2Fwww.roku.com",
+  "status": "ok",
+  "webauthnCalls": []
+}

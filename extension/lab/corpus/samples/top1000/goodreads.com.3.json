@@ -1,0 +1,240 @@
+{
+  "captured_at": "2026-10-27T22:59:58.746Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "ariaLabel": "search books",
+          "autocomplete": "off",
+          "before": "community ▾ groups quotes ask the author",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search books",
+          "name": "q",
+          "placeholder": "search books",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "report problem",
+        "cancel"
+      ],
+      "fields": [
+        {
+          "after": "details (if other):",
+          "before": "problem:",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "kindle_book_mapping_flag_reason",
+          "index": 0,
+          "label": "problem:",
+          "name": "kindle_book_mapping_flag[reason]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "details (if other):",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "kindle_book_mapping_flag_other_reason",
+          "index": 1,
+          "label": "details (if other):",
+          "name": "kindle_book_mapping_flag[other_reason]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "report problem",
+        "cancel"
+      ],
+      "fields": [
+        {
+          "after": "details (if other):",
+          "before": "problem:",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "kindle_book_mapping_flag_reason",
+          "index": 0,
+          "label": "problem:",
+          "name": "kindle_book_mapping_flag[reason]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "details (if other):",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "kindle_book_mapping_flag_other_reason",
+          "index": 1,
+          "label": "details (if other):",
+          "name": "kindle_book_mapping_flag[other_reason]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "report problem",
+        "cancel"
+      ],
+      "fields": [
+        {
+          "after": "details (if other):",
+          "before": "problem:",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "kindle_book_mapping_flag_reason",
+          "index": 0,
+          "label": "problem:",
+          "name": "kindle_book_mapping_flag[reason]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "details (if other):",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "kindle_book_mapping_flag_other_reason",
+          "index": 1,
+          "label": "details (if other):",
+          "name": "kindle_book_mapping_flag[other_reason]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "report problem",
+        "cancel"
+      ],
+      "fields": [
+        {
+          "after": "details (if other):",
+          "before": "problem:",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "kindle_book_mapping_flag_reason",
+          "index": 0,
+          "label": "problem:",
+          "name": "kindle_book_mapping_flag[reason]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "details (if other):",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "kindle_book_mapping_flag_other_reason",
+          "index": 1,
+          "label": "details (if other):",
+          "name": "kindle_book_mapping_flag[other_reason]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "report problem",
+        "cancel"
+      ],
+      "fields": [
+        {
+          "after": "details (if other):",
+          "before": "problem:",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "kindle_book_mapping_flag_reason",
+          "index": 0,
+          "label": "problem:",
+          "name": "kindle_book_mapping_flag[reason]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "details (if other):",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "kindle_book_mapping_flag_other_reason",
+          "index": 1,
+          "label": "details (if other):",
+          "name": "kindle_book_mapping_flag[other_reason]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "goodreads.com",
+  "iframes": [
+    {
+      "origin": "https://platform.twitter.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://goodreads.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

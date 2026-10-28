@@ -1,0 +1,294 @@
+{
+  "captured_at": "2026-10-28T00:23:11.904Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "all ▾",
+        "all ✓",
+        "videos ✓",
+        "photos ✓",
+        "pornstars ✓",
+        "playlists ✓",
+        "×"
+      ],
+      "fields": [
+        {
+          "after": "all ▾ all ✓ videos ✓ photos ✓ pornstars",
+          "before": "live sex search in:",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "srchtype",
+          "index": 0,
+          "label": "search in:",
+          "name": "searchtype",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "× upload sign in register theme light da",
+          "autocomplete": "off",
+          "before": "photos ✓ pornstars ✓ playlists ✓ search",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "srch",
+          "index": 1,
+          "label": "search",
+          "name": "search",
+          "placeholder": "find your favorite porn...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "verify e-mail address"
+      ],
+      "fields": [
+        {
+          "autocomplete": "one-time-code",
+          "before": "sent to this address: verification code",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "verifyform-code",
+          "index": 0,
+          "label": "verification code",
+          "name": "vercode",
+          "required": false,
+          "role": "otp",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "change e-mail address"
+      ],
+      "fields": [
+        {
+          "after": "retype e-mail",
+          "autocomplete": "email",
+          "before": "back change email new e-mail",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "emailform-email",
+          "index": 0,
+          "inputmode": "email",
+          "label": "new e-mail",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 3,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "current password",
+          "autocomplete": "email",
+          "before": "retype e-mail",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "emailform-email2",
+          "index": 1,
+          "inputmode": "email",
+          "label": "retype e-mail",
+          "name": "email2",
+          "required": false,
+          "role": "email",
+          "siblings": 3,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "autocomplete": "current-password",
+          "before": "current password",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "emailform-pass",
+          "index": 2,
+          "label": "current password",
+          "name": "pass",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign in"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "autocomplete": "username",
+          "before": "ng hotmail and outlook accounts or login",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "loginform-login",
+          "index": 0,
+          "label": "login",
+          "name": "login",
+          "required": false,
+          "role": "username",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "forgot password?",
+          "autocomplete": "current-password",
+          "before": "password",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "loginform-pass",
+          "index": 1,
+          "label": "password",
+          "name": "pass",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "register"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "autocomplete": "off",
+          "before": "ng hotmail and outlook accounts or login",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "createform-login",
+          "index": 0,
+          "label": "login",
+          "name": "login",
+          "required": false,
+          "role": "username",
+          "siblings": 6,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "confirm password",
+          "autocomplete": "off",
+          "before": "password",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "inputpass",
+          "index": 1,
+          "label": "password",
+          "name": "pass",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        },
+        {
+          "after": "email address",
+          "autocomplete": "off",
+          "before": "confirm password",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "inputpass2",
+          "index": 2,
+          "label": "confirm password",
+          "name": "pass2",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        },
+        {
+          "after": "by registering, you agree to our terms o",
+          "autocomplete": "off",
+          "before": "email address",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "inputemail",
+          "index": 3,
+          "inputmode": "email",
+          "label": "email address",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 6,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "recover password"
+      ],
+      "fields": [
+        {
+          "autocomplete": "email",
+          "before": "s how you can reset you password. e-mail",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "forgetform-email",
+          "index": 0,
+          "inputmode": "email",
+          "label": "e-mail",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 3,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "eporner.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://eporner.com/login/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,79 @@
+{
+  "captured_at": "2026-10-27T23:35:20.045Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "menu icon",
+        "products",
+        "plans",
+        "services",
+        "neighbors",
+        "business",
+        "cart iconcart",
+        "shop all products iconproductschevron right icon",
+        "ring protect iconplanschevron right icon",
+        "installation services iconserviceschevron right icon",
+        "neighborhood new iconneighborschevron right icon",
+        "ring for business iconbusinesschevron right icon"
+      ],
+      "fields": [
+        {
+          "after": "thank you for submitting your email. err",
+          "ariaLabel": "enter your email",
+          "autocomplete": "off",
+          "before": "rmation, please see our privacy notice .",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "email-capture-1-ujvzbzua3j",
+          "index": 0,
+          "label": "enter your email",
+          "name": "email",
+          "placeholder": "enter email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "professional installation is available i",
+          "ariaLabel": "enter 5-digit zip code",
+          "autocomplete": "postal-code",
+          "before": "dule your appointment after you zip code",
+          "depth": 11,
+          "hasPattern": true,
+          "id": "zipCodeInput",
+          "index": 1,
+          "inputmode": "numeric",
+          "label": "zip code",
+          "maxlength": 5,
+          "required": false,
+          "role": "postal_code",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "ring.com",
+  "iframes": [
+    {
+      "origin": "https://chatbot.rc3.ring.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ring.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

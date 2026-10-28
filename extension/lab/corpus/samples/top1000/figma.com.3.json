@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:12:20.332Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "figma.com",
+  "source": "rendered",
+  "source_url": "https://figma.com/signin",
+  "status": "error: http 404"
+}

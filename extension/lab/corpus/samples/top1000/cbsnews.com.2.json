@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-10-27T23:36:32.971Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "www.cbsnews.com",
+  "iframes": [
+    {
+      "origin": "https://cbsi.demdex.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.cbsnews.com/news/home-equity-to-pay-off-credit-card-debt-heres-when-it-can-backfire/",
+  "status": "ok",
+  "webauthnCalls": []
+}

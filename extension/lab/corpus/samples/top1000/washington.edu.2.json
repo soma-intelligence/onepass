@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:21:38.218Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "washington.edu",
+  "source": "rendered",
+  "source_url": "https://washington.edu/login",
+  "status": "error: page.goto: net::ERR_TOO_MANY_REDIRECTS at https://washington"
+}

@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-10-28T00:04:16.707Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "focus.de",
+  "iframes": [
+    {
+      "origin": "https://cmp.focus.de",
+      "sameSite": true
+    }
+  ],
+  "lang": "de",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://focus.de/familie/psychologie/psychologin-so-wird-man-in-der-wohnung-des-ex-gluecklich_cce59436-9ffc-4a66-bba1-660a15f9e048.html",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-27T22:04:51.236Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "depth": 4,
+          "hasPattern": false,
+          "id": "g-recaptcha-response",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "archive.org",
+  "iframes": [
+    {
+      "origin": "https://www.recaptcha.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.recaptcha.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://archive.org/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

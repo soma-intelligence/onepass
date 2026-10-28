@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T21:58:50.208Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "ntp.org",
+  "source": "rendered",
+  "source_url": "https://ntp.org/login",
+  "status": "error: http 404"
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:03:30.670Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "cloudflare-dns.com",
+  "source": "rendered",
+  "source_url": "https://cloudflare-dns.com/signin",
+  "status": "error: http 404"
+}

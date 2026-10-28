@@ -1,0 +1,88 @@
+{
+  "captured_at": "2026-10-27T22:11:29.176Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "depth": 5,
+          "hasPattern": false,
+          "id": "edit-search-keys--2",
+          "index": 0,
+          "maxlength": 128,
+          "name": "search_keys",
+          "required": false,
+          "role": "unknown",
+          "siblings": 3,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "after": "last name:",
+          "before": "me, and mit id number below. first name:",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "name": "firstName",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "mit id:",
+          "before": "last name:",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 1,
+          "name": "lastName",
+          "required": false,
+          "role": "family_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "before": "mit id:",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 2,
+          "name": "mitId",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "mit.edu",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mit.edu/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

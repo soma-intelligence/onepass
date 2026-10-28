@@ -1,0 +1,109 @@
+{
+  "captured_at": "2026-10-27T23:14:49.042Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "$ usd",
+        "english",
+        "open navigation menu",
+        "search",
+        "wordpress",
+        "hosting",
+        "apps",
+        "high-performance hosting",
+        "powerful features",
+        "domains",
+        "search",
+        "email"
+      ],
+      "fields": [
+        {
+          "after": "find your perfect domain name... search",
+          "autocomplete": "off",
+          "before": "ur great idea starts with a domain name.",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "nav-domain-search-input",
+          "index": 0,
+          "label": "find your perfect domain name...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "find your perfect domain name... search",
+          "autocomplete": "off",
+          "before": "ur great idea starts with a domain name.",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "drawer-nav-domain-search-input",
+          "index": 1,
+          "label": "find your perfect domain name...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "try our new domain generator! search you",
+          "autocomplete": "off",
+          "before": "yr . includes free private registration",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "domain-search-input",
+          "index": 2,
+          "label": "try our new domain generator!",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "cookie list search",
+          "before": ". they don’t tra back button cookie list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 3,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "dreamhost.com",
+  "iframes": [
+    {
+      "origin": "https://widget.trustpilot.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://dreamhost.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,81 @@
+{
+  "captured_at": "2026-10-27T23:29:45.684Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue",
+        "continue with google"
+      ],
+      "fields": [
+        {
+          "after": "continue or continue with google",
+          "autocomplete": "email",
+          "before": "o credit card needed. your company email",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "inputmode": "email",
+          "label": "your company email",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "continue",
+        "continue with google",
+        "your privacy choices"
+      ],
+      "fields": [
+        {
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "intercom.io",
+  "iframes": [
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://intercom.io/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

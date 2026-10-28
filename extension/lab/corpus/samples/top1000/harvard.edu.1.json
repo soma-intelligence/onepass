@@ -1,0 +1,118 @@
+{
+  "captured_at": "2026-10-27T22:18:51.998Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "go"
+      ],
+      "fields": [
+        {
+          "after": "go profiles of progress experience harva",
+          "before": "demark search search the harvard gazette",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "wp-block-search__input-1",
+          "index": 0,
+          "label": "search the harvard gazette",
+          "name": "s",
+          "placeholder": "type search term here...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "subscribe to the harvard gazette"
+      ],
+      "fields": [
+        {
+          "after": "subscribe to the harvard gazette",
+          "before": "e harvard community, an email (required)",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "input_8_1",
+          "index": 0,
+          "label": "email(required)",
+          "name": "input_1",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "before": "δ",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 1,
+          "label": "δ",
+          "maxlength": 100,
+          "name": "ak_hp_textarea",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "subscribe to findings"
+      ],
+      "fields": [
+        {
+          "after": "subscribe to findings",
+          "before": "harvard’s scientists an email (required)",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "input_6_1",
+          "index": 0,
+          "label": "email(required)",
+          "name": "input_1",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "before": "δ",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 1,
+          "label": "δ",
+          "maxlength": 100,
+          "name": "ak_hp_textarea",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "news.harvard.edu",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://news.harvard.edu/gazette/email-sign-up/",
+  "status": "ok",
+  "webauthnCalls": []
+}

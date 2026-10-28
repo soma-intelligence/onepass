@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-27T23:31:07.213Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "seleccione: - - - españa américa méxico",
+          "before": "esconectar cerrar alto contraste: buscar",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "searchBox",
+          "index": 0,
+          "label": "buscar",
+          "name": "q",
+          "placeholder": "buscar contenido",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "elpais.com",
+  "iframes": [],
+  "lang": "es",
+  "providerButtons": [
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://elpais.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

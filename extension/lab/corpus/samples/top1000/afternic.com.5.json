@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:07:40.639Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "afternic.com",
+  "source": "rendered",
+  "source_url": "https://afternic.com/signup",
+  "status": "error: http 403"
+}

@@ -1,0 +1,51 @@
+{
+  "captured_at": "2026-10-27T23:40:51.915Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "do not sell or share my personal information",
+        "allow all",
+        "back button",
+        "filter icon",
+        "clear",
+        "apply",
+        "cancel",
+        "confirm my choices",
+        "do not sell or share my personal information",
+        "accept cookies"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "before": "button performance cookies vendor search",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "vendor search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "viber.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://viber.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

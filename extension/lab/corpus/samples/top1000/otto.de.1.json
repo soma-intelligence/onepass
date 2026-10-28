@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:21:51.086Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "otto.de",
+  "source": "rendered",
+  "source_url": "https://otto.de/login",
+  "status": "error: http 404"
+}

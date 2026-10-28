@@ -1,0 +1,57 @@
+{
+  "captured_at": "2026-10-27T23:50:47.903Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "english",
+        "log in with google",
+        "log in with facebook",
+        "log in with email",
+        "don't have an account? sign up",
+        "send"
+      ],
+      "fields": [
+        {
+          "after": "send standard messaging fees apply wattp",
+          "before": "the wattpad app. enter your phone number",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "phonenumber",
+          "index": 0,
+          "label": "enter your phone number",
+          "name": "phonenumber",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "wattpad.com",
+  "iframes": [
+    {
+      "origin": "https://www.wattpad.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://ssum.casalemedia.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://wattpad.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

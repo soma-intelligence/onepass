@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T23:14:36.971Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "sign up",
+          "before": "proof in the loop the brief inside time",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "your email",
+          "name": "email",
+          "placeholder": "your email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "time.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://time.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

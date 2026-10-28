@@ -1,0 +1,57 @@
+{
+  "captured_at": "2026-10-27T23:20:40.540Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "skip to main content",
+        "product",
+        "solutions",
+        "resources",
+        "send",
+        "send",
+        "send",
+        "send",
+        "send",
+        "send",
+        "send",
+        "send"
+      ],
+      "fields": [
+        {
+          "after": "search search get a custom domain free f",
+          "autocomplete": "off",
+          "before": "website, get the perfect domain to match",
+          "depth": 24,
+          "hasPattern": false,
+          "id": "input_comp-mole9j9q_r_comp-lybpx1vp",
+          "index": 0,
+          "label": "type the domain you want",
+          "maxlength": 67,
+          "name": "type-the domain you want",
+          "placeholder": "type the domain you want",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "wix.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://wix.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

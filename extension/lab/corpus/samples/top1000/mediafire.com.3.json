@@ -1,0 +1,115 @@
+{
+  "captured_at": "2026-10-27T23:42:26.179Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "log in"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "before": "invalid email or password. email address",
+          "depth": 9,
+          "hasPattern": true,
+          "id": "widget_login_email",
+          "index": 0,
+          "label": "email address",
+          "name": "login_email",
+          "placeholder": "email address",
+          "required": false,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "off",
+          "before": "password",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "widget_login_pass",
+          "index": 1,
+          "label": "password",
+          "maxlength": 30,
+          "name": "login_pass",
+          "placeholder": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 1,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "forgot your password? log in cancel x em",
+          "autocomplete": "off",
+          "before": "ct, unable to log in. mediafire password",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "mf_password",
+          "index": 0,
+          "label": "mediafire password",
+          "maxlength": 30,
+          "name": "mf_password",
+          "placeholder": "mediafire password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "continue cancel already have an account?",
+          "before": "invalid entry for email. x email address",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "tw_email",
+          "index": 0,
+          "label": "x email address",
+          "name": "tw_email",
+          "placeholder": "x email address",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "mediafire.com",
+  "iframes": [
+    {
+      "origin": "https://www.mediafire.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mediafire.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

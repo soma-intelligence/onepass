@@ -1,0 +1,68 @@
+{
+  "captured_at": "2026-10-28T00:20:29.454Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up to chat",
+        "login",
+        "continue with google",
+        "continue with apple",
+        "continue with email",
+        "your privacy choices",
+        "?"
+      ],
+      "fields": [
+        {
+          "before": "arms terms of use your privacy choices ?",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "g-recaptcha-response",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "character.ai",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://character.ai/",
+  "status": "ok",
+  "webauthnCalls": []
+}
