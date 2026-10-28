@@ -63,6 +63,7 @@ use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
 mod local;
+mod rotation;
 pub mod travel;
 
 /// What a device keeps between sessions: the account pinned at first

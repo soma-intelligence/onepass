@@ -1622,8 +1622,14 @@ mod tests {
         let a = Account::unlock("pw", key, &r.params_record, &r.keyset_record, None).unwrap();
         assert_eq!(a.params, *new);
         assert_eq!(
-            Account::unlock("pw", &n.secret_key, &r.params_record, &r.keyset_record, None)
-                .unwrap_err(),
+            Account::unlock(
+                "pw",
+                &n.secret_key,
+                &r.params_record,
+                &r.keyset_record,
+                None
+            )
+            .unwrap_err(),
             Error::WrongPassword
         );
         let a = Account::unlock_with_auk(&r.auk, &r.params_record, &r.keyset_record, None).unwrap();
@@ -1670,15 +1676,9 @@ mod tests {
         assert!(!identity_changed(&n.params_record, &old_pin).unwrap());
         // The rotation path: the new key opens it and the pin moves to the
         // new identity, the floor kept; the old key is a wrong password.
-        let (a, _, new_pin) = Account::unlock_rotated_at(
-            "pw",
-            key,
-            &r.params_record,
-            &r.keyset_record,
-            &old_pin,
-            1,
-        )
-        .unwrap();
+        let (a, _, new_pin) =
+            Account::unlock_rotated_at("pw", key, &r.params_record, &r.keyset_record, &old_pin, 1)
+                .unwrap();
         assert_eq!(new_pin.identity_pub, r.account.params.identity_pub);
         assert_eq!(new_pin.account_id, old_pin.account_id);
         assert!(new_pin.kdf_floor.is_at_least(&old_pin.kdf_floor));
@@ -1697,15 +1697,8 @@ mod tests {
         );
         // A new identity at the pinned epoch is a fork, not a rotation.
         assert_eq!(
-            Account::unlock_rotated_at(
-                "pw",
-                key,
-                &r.params_record,
-                &r.keyset_record,
-                &old_pin,
-                2,
-            )
-            .unwrap_err(),
+            Account::unlock_rotated_at("pw", key, &r.params_record, &r.keyset_record, &old_pin, 2)
+                .unwrap_err(),
             unsigned
         );
         // Another account (other id) is never followed.
