@@ -368,8 +368,6 @@ function modelRoles(doc: Document, geometry: Geometry, model: ModelHook): Map<El
   const elOf = new Map<FieldFeatures, Element>();
   const page = extractFeatures(doc, { maxFields: MAX_FIELDS, onField: (el, f) => elOf.set(f, el) });
   for (const form of page.forms) {
-    // The extractor reads input, select and textarea only; types the detector skips (search...) get a role nobody reads.
-    if (form.fields.some((f) => elOf.get(f) === undefined)) continue;
     // Ruling R21: a recognized autocomplete token decides (spec 8.2); such a field is never sent to the model.
     const asked = form.fields.filter((f) => autocompleteRole(elOf.get(f) as FieldElement) === null);
     if (asked.length === 0) continue;

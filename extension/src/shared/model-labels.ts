@@ -11,6 +11,13 @@ export const MODEL_ROLES = [
 export type ModelRole = (typeof MODEL_ROLES)[number];
 export type ModelLabel = ModelRole | "none";
 
+/**
+ * Most fields of one form sent to the model: the content script never asks for more (bigger forms
+ * keep their heuristic roles), the router drops a bigger `classify` message and the worker's
+ * budget refuses one.
+ */
+export const MAX_CLASSIFY_FIELDS = 64;
+
 export const MODEL_LABELS: readonly ModelLabel[] = [...MODEL_ROLES, "none"];
 
 const LABEL_SET: ReadonlySet<string> = new Set(MODEL_LABELS);

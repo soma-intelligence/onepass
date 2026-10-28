@@ -2,7 +2,7 @@
 // `__CLASSIFIER__ !== "heuristic"` (a dynamic import esbuild drops from the default build), so
 // neither the model code nor onnxruntime-web reaches a default build.
 import { sameSite } from "../shared/domain";
-import type { ModelLabel } from "../shared/model-labels";
+import { MAX_CLASSIFY_FIELDS, type ModelLabel } from "../shared/model-labels";
 import type { BgExt } from "./ext";
 import type { CsContext, Frames } from "./frames";
 import { extensionAssets, loadModel, type ModelKind, type ModelSession } from "./model";
@@ -28,7 +28,7 @@ export interface ClassifyLimits {
   ratePerSecond: number;
 }
 
-export const DEFAULT_LIMITS: ClassifyLimits = { maxFields: 64, maxTokens: 2048, rateBurst: 8, ratePerSecond: 2 };
+export const DEFAULT_LIMITS: ClassifyLimits = { maxFields: MAX_CLASSIFY_FIELDS, maxTokens: 2048, rateBurst: 8, ratePerSecond: 2 };
 /** Tabs whose rate state is kept (oldest dropped first). */
 const MAX_TABS = 512;
 

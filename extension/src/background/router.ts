@@ -10,6 +10,7 @@
 // Messages are rebuilt from validated fields only: unknown keys (a forged
 // `origin`, say) never reach a handler.
 import type { FieldFeatures, Visibility } from "../content/detect/features";
+import { MAX_CLASSIFY_FIELDS } from "../shared/model-labels";
 import type { CsToBg, FieldInfo, FieldRole, FormInfo, FormKind, PageAnalysis, ProviderId, SaveEdits, UiToBg } from "../shared/messages";
 import type { BgExt, MessageListener } from "./ext";
 import { type CsContext, type UiContext, contentSender, extensionSender } from "./frames";
@@ -31,8 +32,7 @@ const MAX_BUTTONS = 32;
 const MAX_TITLE = 256;
 const MAX_TAGS = 32;
 const MAX_TAG = 64;
-/** classify: fields per message, buttons and neighbour labels per field, characters per text. */
-export const MAX_CLASSIFY_FIELDS = 256;
+/** classify: fields per message (MAX_CLASSIFY_FIELDS, shared), buttons and neighbour labels per field, characters per text. */
 const MAX_FEATURE_BUTTONS = 12;
 const MAX_NEIGHBOURS = 4;
 const MAX_FEATURE_TEXT = 4096;

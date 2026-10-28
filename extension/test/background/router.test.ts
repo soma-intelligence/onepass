@@ -3,6 +3,7 @@ import { BridgeAppError } from "../../src/bridge/client";
 import { createBackground } from "../../src/background/app";
 import { parseCsToBg, parseUiToBg } from "../../src/background/router";
 import { MemoryPairingStore, Store } from "../../src/background/store";
+import { MAX_CLASSIFY_FIELDS } from "../../src/shared/model-labels";
 import { type Answer, FakeClient, record } from "./fake-client";
 import { EXT_ID, FakeExt, NO_REPLY, csSender, uiSender } from "./fake-ext";
 
@@ -352,7 +353,8 @@ describe("classify message (Task 15)", () => {
       { ...f, formButtons: [3] },
     ];
     for (const b of bad) expect(parseCsToBg({ type: "classify", fields: [b] }), JSON.stringify(b).slice(0, 80)).toBeNull();
-    expect(parseCsToBg({ type: "classify", fields: Array(257).fill(f) })).toBeNull();
+    expect(parseCsToBg({ type: "classify", fields: Array(MAX_CLASSIFY_FIELDS).fill(f) })).not.toBeNull();
+    expect(parseCsToBg({ type: "classify", fields: Array(MAX_CLASSIFY_FIELDS + 1).fill(f) })).toBeNull();
     expect(parseCsToBg({ type: "classify", fields: f })).toBeNull();
   });
 });
