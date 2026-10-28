@@ -17,8 +17,8 @@ use crate::error::{Error, ValidationError};
 use crate::id::Id;
 use crate::model::checks::base32_secret_valid;
 use crate::model::{
-    Field, FieldType, FieldValue, Item, ItemType, ItemUrl, MatchRule, PasswordHistoryEntry,
-    Section, new_item, template, validate,
+    Field, FieldType, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule,
+    PasswordHistoryEntry, Provider, Section, new_item, template, validate,
 };
 use crate::totp::parse_otpauth;
 pub(crate) use crate::watchtower::host::host_of;
@@ -65,6 +65,11 @@ pub(crate) struct Draft {
     extras: Vec<(String, FieldValue)>,
     /// Warnings raised while filling (`bad_date`, `totp_moved`).
     codes: Vec<&'static str>,
+    /// Sign-in providers of a login (Google, Apple...). Their account item
+    /// is the placeholder `Id([0; 16])` until the parser resolves it.
+    providers: Vec<Provider>,
+    /// The source says this is a login: it stays one without a username.
+    keep_login: bool,
 }
 
 impl Draft {
@@ -85,6 +90,24 @@ impl Draft {
             values: Vec::new(),
             extras: Vec::new(),
             codes: Vec::new(),
+            providers: Vec::new(),
+            keep_login: false,
+        }
+    }
+
+    /// The source format has a login type of its own (1PUX): a login with no
+    /// username stays a login, its username no longer required on this
+    /// item, instead of falling back to a password or a secure note.
+    pub(crate) fn keep_login(&mut self) {
+        self.keep_login = true;
+    }
+
+    /// The login signs in through `p`. Its account item is set by the
+    /// parser once every item is built (see `Import` ids); a login with a
+    /// provider may leave its username blank (`model::validate`).
+    pub(crate) fn provider(&mut self, p: Provider) {
+        if !self.providers.contains(&p) {
+            self.providers.push(p);
         }
     }
 
@@ -247,6 +270,8 @@ impl Draft {
             values,
             extras,
             codes: fill_codes,
+            providers,
+            keep_login,
         } = self;
         codes.extend(fill_codes);
         let title = if title.is_empty() {
@@ -304,6 +329,24 @@ impl Draft {
                 }
             };
             place(&mut item, &id, value);
+        }
+        if kind == ItemType::Login && !providers.is_empty() {
+            if has_value(&item, "password") {
+                item.login_methods.push(LoginMethod::Password);
+            }
+            item.login_methods
+                .extend(providers.into_iter().map(|provider| LoginMethod::Provider {
+                    provider,
+                    account: Id([0; 16]),
+                    relay_email: None,
+                }));
+        }
+        if keep_login
+            && kind == ItemType::Login
+            && !has_value(&item, "username")
+            && let Some(f) = item.field_mut("username")
+        {
+            f.required = false;
         }
         settle(&mut item, codes);
         item
@@ -723,6 +766,9 @@ fn retype(item: &mut Item, t: ItemType, keep: &[&str]) {
         }
     }
     item.item_type = t;
+    if t != ItemType::Login {
+        item.login_methods.clear();
+    }
     item.sections = template(t);
     item.sections.extend(imported);
     for f in moved {

@@ -4,8 +4,12 @@
 //! `accounts[].vaults[] { attrs.name, items[] }`. Every key is optional and
 //! unknown keys are ignored. Each item's `categoryUuid` picks the OnePass
 //! type (annex A) and its section fields are matched by field id through
-//! [`FIELD_MAP`]; anything else lands in the `imported` section. Entries
-//! under `files/` are attachments, skipped with a warning (ruling 19).
+//! [`FIELD_MAP`]; anything else lands in the `imported` section. Fields are
+//! always matched by id, kind or designation, never by their label (labels
+//! follow the language of the 1Password app). A "sign in with" field
+//! (`ssoLogin`) becomes the login's provider method, linked to the item of
+//! that account when it is in the same export. Entries under `files/` are
+//! attachments, skipped with a warning (ruling 19).
 //! Secrets come out of serde_json as `String`s and are moved into
 //! `Zeroizing` without a copy; the parser's transient buffers inside
 //! serde_json are the limit of that guarantee.
@@ -17,7 +21,10 @@ use time::{Date, Month, OffsetDateTime};
 use zeroize::Zeroizing;
 
 use crate::error::{Error, Result};
-use crate::model::{Address, FieldType, FieldValue, ItemType, SshKeyValue, template};
+use crate::id::Id;
+use crate::model::{
+    Address, FieldType, FieldValue, ItemType, LoginMethod, Provider, SshKeyValue, template,
+};
 
 use super::build::Draft;
 use super::json::{Lenient, Slots};
@@ -155,6 +162,8 @@ pub(crate) const FIELD_MAP: &[(&str, &str, &str)] = &[
     ("112", "hostname", "base_url"),
     ("112", "validFrom", "created_on"),
     ("112", "expires", "expires_on"),
+    // Text snippet (no OnePass type of its own): the text is the note.
+    ("116", "snippet", "content"),
     // Medical Record: everything else goes to `imported`.
     ("113", "patient", "patient"),
     // SSH Key
@@ -169,6 +178,11 @@ pub(crate) const FIELD_MAP: &[(&str, &str, &str)] = &[
 /// filled from the title when the source has no value for them.
 const TITLE_FALLBACK: &[(ItemType, &str)] = &[
     (ItemType::MedicalRecord, "patient"),
+    // A Wi-Fi base station saved without its network name: 1Password shows
+    // the title instead, and the item stays a router rather than a note.
+    (ItemType::Router, "ssid"),
+    // A card saved without the holder's name.
+    (ItemType::CreditCard, "cardholder"),
     (ItemType::SoftwareLicense, "software"),
     (ItemType::ApiCredential, "service"),
     (ItemType::CryptoWallet, "name"),
@@ -301,6 +315,9 @@ struct VaultAttrs {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct RawItem {
+    /// 1Password's item id: "sign in with" fields of other items point to it.
+    #[serde(deserialize_with = "lenient")]
+    uuid: Option<String>,
     #[serde(rename = "favIndex", deserialize_with = "lenient")]
     fav_index: Option<String>,
     #[serde(rename = "createdAt", deserialize_with = "lenient")]
@@ -425,6 +442,9 @@ pub(crate) fn parse_1pux(b: &[u8]) -> Result<Import> {
         ..Import::default()
     };
     let mut index: u32 = 0;
+    // Per built item, in `out.items` order: its 1Password uuid and the uuid
+    // of the account its "sign in with" field points to.
+    let mut links: Vec<(Option<String>, Option<String>)> = Vec::new();
     for vault in root.accounts.list.into_iter().flat_map(|a| a.vaults.list) {
         let folder = vault.attrs.name.unwrap_or_default();
         for raw in vault.items.0 {
@@ -452,11 +472,14 @@ pub(crate) fn parse_1pux(b: &[u8]) -> Result<Import> {
                     code: "unsupported_entry",
                 });
             }
-            let mut d = item_draft(raw);
+            let uuid = raw.uuid.as_deref().map(str::trim).map(str::to_owned);
+            let (mut d, account) = item_draft(raw);
             d.folder(&folder);
             d.finish(entry, &mut out);
+            links.push((uuid, account));
         }
     }
+    link_providers(&mut out, &links);
     let attachments = entries
         .iter()
         .filter(|(name, _)| name.starts_with("files/"))
@@ -468,6 +491,54 @@ pub(crate) fn parse_1pux(b: &[u8]) -> Result<Import> {
         });
     }
     Ok(out)
+}
+
+/// Gives every item a provisional id and points each provider method at
+/// the item of its account. The ids are replaced when the import is
+/// written, the accounts remapped with them (`onepass-ffi`). A reference
+/// to an item that is not in the export keeps the placeholder
+/// `Id([0; 16])`: the login keeps its provider, with no account item.
+fn link_providers(out: &mut Import, links: &[(Option<String>, Option<String>)]) {
+    for it in &mut out.items {
+        it.item.id = Id::new();
+    }
+    let ids: Vec<Id> = out.items.iter().map(|it| it.item.id).collect();
+    let id_of = |uuid: &str| {
+        links
+            .iter()
+            .zip(&ids)
+            .find(|((u, _), _)| u.as_deref() == Some(uuid))
+            .map(|(_, id)| *id)
+    };
+    for (it, (_, account)) in out.items.iter_mut().zip(links) {
+        let Some(account) = account.as_deref().and_then(id_of) else {
+            continue;
+        };
+        for m in &mut it.item.login_methods {
+            if let LoginMethod::Provider { account: a, .. } = m {
+                *a = account;
+            }
+        }
+    }
+}
+
+/// OnePass provider of a 1Password `ssoLogin` provider name. An unknown
+/// name is kept as a custom OIDC provider.
+fn provider_of(raw: &str) -> Provider {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "google" => Provider::Google,
+        "apple" => Provider::Apple,
+        "microsoft" => Provider::Microsoft,
+        "github" => Provider::GitHub,
+        "facebook" => Provider::Facebook,
+        "x" | "twitter" => Provider::X,
+        "linkedin" => Provider::LinkedIn,
+        "discord" => Provider::Discord,
+        "slack" => Provider::Slack,
+        "okta" => Provider::Okta,
+        "entra_id" | "entra" | "azure" => Provider::EntraId,
+        _ => Provider::CustomOidc(raw.trim().to_owned()),
+    }
 }
 
 /// Elements of the item's nested lists that did not decode.
@@ -518,8 +589,12 @@ fn slot_kind(t: ItemType, id: &str) -> Option<FieldType> {
         .map(|f| f.kind)
 }
 
-fn item_draft(raw: RawItem) -> Draft {
+/// The draft of one item, and the 1Password uuid of the account its
+/// "sign in with" field points to.
+fn item_draft(raw: RawItem) -> (Draft, Option<String>) {
+    let mut account: Option<String> = None;
     let RawItem {
+        uuid: _,
         fav_index,
         created_at,
         updated_at,
@@ -532,6 +607,10 @@ fn item_draft(raw: RawItem) -> Draft {
     let category = category.trim();
     let kind = category_type(category);
     let mut d = Draft::new(kind);
+    // A 1Password login stays a login, with or without username and password.
+    if kind == ItemType::Login {
+        d.keep_login();
+    }
     let title = some(&overview.title).trim().to_owned();
     d.title(&title);
     let notes = some(&details.notes_plain);
@@ -614,6 +693,17 @@ fn item_draft(raw: RawItem) -> Draft {
             .find(|(c, src, _)| *c == category && *src == id)
             .map(|(_, _, t)| *t);
         let (value, rest) = field_value(field.value);
+        if let Val::Sso { provider, item } = &value {
+            if kind == ItemType::Login {
+                d.provider(provider_of(provider));
+                if account.is_none() {
+                    account.clone_from(item);
+                }
+            } else {
+                d.extra(&label, provider, false);
+            }
+            continue;
+        }
         // Email accounts: the required address is the first user name
         // that looks like one.
         if category == "111"
@@ -655,7 +745,7 @@ fn item_draft(raw: RawItem) -> Draft {
         let when = h.time.as_deref().and_then(unix).unwrap_or(item_time);
         d.history(secret(&h.value), when);
     }
-    d
+    (d, account)
 }
 
 /// A decoded 1PUX field value.
@@ -674,6 +764,12 @@ enum Val {
     BadDate(String),
     Address(Address),
     Ssh(SshKeyValue),
+    /// "Sign in with": the provider name and the 1Password uuid of the
+    /// account item, when the field names one.
+    Sso {
+        provider: String,
+        item: Option<String>,
+    },
     /// Unknown kind: compact JSON, hidden when it is an object.
     Unknown {
         json: Zeroizing<String>,
@@ -694,7 +790,7 @@ impl Val {
 }
 
 /// Value kinds this importer decodes.
-const KNOWN_KINDS: [&str; 15] = [
+const KNOWN_KINDS: [&str; 18] = [
     "string",
     "url",
     "phone",
@@ -710,6 +806,9 @@ const KNOWN_KINDS: [&str; 15] = [
     "address",
     "sshKey",
     "reference",
+    "ssoLogin",
+    "formattedText",
+    "file",
 ];
 
 /// Decodes `{ "<kind>": <inner> }`. The main value comes from the first
@@ -792,6 +891,56 @@ fn decode(kind: &str, inner: Value) -> Val {
             other => text(other, true),
         },
         "reference" => Val::None,
+        "ssoLogin" => match inner {
+            Value::Object(mut m) => {
+                let provider = take(&mut m, "provider");
+                let item = match m.remove("item") {
+                    Some(Value::Object(mut r)) => {
+                        Some(take(&mut r, "itemUuid")).filter(|u| !u.is_empty())
+                    }
+                    _ => None,
+                };
+                if provider.is_empty() {
+                    Val::None
+                } else {
+                    Val::Sso { provider, item }
+                }
+            }
+            other => text(other, false),
+        },
+        // Rich text: its plain form.
+        "formattedText" => match inner {
+            Value::Object(mut m) => {
+                let plain = m
+                    .remove("plain_text_display_value")
+                    .and_then(scalar)
+                    .filter(|t| !t.trim().is_empty())
+                    .or_else(|| m.remove("content").and_then(scalar));
+                match plain {
+                    Some(text) => Val::Text {
+                        text,
+                        hidden: false,
+                    },
+                    None => Val::None,
+                }
+            }
+            other => text(other, false),
+        },
+        // An attached file: its name; the file itself is not imported.
+        "file" => match inner {
+            Value::Object(mut m) => {
+                let name = take(&mut m, "fileName");
+                if name.is_empty() {
+                    Val::None
+                } else {
+                    Val::Text {
+                        text: Zeroizing::new(name),
+                        hidden: false,
+                    }
+                }
+            }
+            other => text(other, false),
+        },
         _ => text(inner, false),
     }
 }
@@ -930,6 +1079,8 @@ fn apply(d: &mut Draft, kind: ItemType, category: &str, target: Option<&str>, la
         }
         (Val::Ssh(k), _) => d.extra(label, &k.private_pem, true),
         (Val::Unknown { json, hidden }, _) => d.extra(label, &json, hidden),
+        // Handled by the caller before `apply`.
+        (Val::Sso { .. }, _) => {}
     }
 }
 
@@ -941,7 +1092,7 @@ mod tests {
     use zip::write::{SimpleFileOptions, ZipWriter};
 
     use super::*;
-    use crate::model::{FieldValue, Item, ItemType, template, validate};
+    use crate::model::{FieldValue, Item, ItemType, LoginMethod, template, validate};
 
     const DATA: &[u8] = include_bytes!("../../tests/fixtures/import/1pux-export.data.json");
 
@@ -1413,19 +1564,21 @@ mod tests {
     fn running_entry_index_across_vaults_with_skips() {
         let trashed = r#"{"state":"trashed","categoryUuid":"001","overview":{"title":"T"}}"#;
         let deleted = r#"{"state":"deleted","categoryUuid":"001","overview":{"title":"D"}}"#;
-        let a = format!("{trashed},{NO_USER}");
-        let b = format!("{deleted},{NO_USER}");
+        // A card with no number cannot be a card: a fallback with a warning to index.
+        let no_number = r#"{"categoryUuid":"002","overview":{"title":"No number"}}"#;
+        let a = format!("{trashed},{no_number}");
+        let b = format!("{deleted},{no_number}");
         let imp = export(&[("A", &a), ("B", &b)]);
         assert_eq!(imp.skipped, 2);
         assert_eq!(imp.items.len(), 2);
         assert!(
             imp.items
                 .iter()
-                .all(|i| i.item.item_type == ItemType::Password)
+                .all(|i| i.item.item_type == ItemType::SecureNote)
         );
         assert_eq!(
             codes(&imp),
-            vec![(1, "login_to_password"), (3, "login_to_password")]
+            vec![(1, "to_secure_note"), (3, "to_secure_note")]
         );
         assert_eq!(imp.items[1].folder.as_deref(), Some("B"));
     }
@@ -1607,5 +1760,244 @@ mod tests {
         let data = r#"{"accounts":[1,{"vaults":["v",{"items":[]}]}]}"#;
         let imp = parse_1pux(&zip_of(&[("export.data", data.as_bytes())])).unwrap();
         assert_eq!(imp.skipped, 2);
+    }
+
+    const APPLE_ACCOUNT: &str = r#"{"uuid":"acct1","categoryUuid":"001","overview":{"title":"Apple"},
+        "details":{"loginFields":[{"value":"someone@example.com","designation":"username"},
+          {"value":"pw","designation":"password"}]}}"#;
+
+    fn sso(title: &str, uuid: &str, provider: &str, target: &str) -> String {
+        format!(
+            r#"{{"uuid":"{uuid}","categoryUuid":"001","overview":{{"title":"{title}","url":"https://{uuid}.example.com"}},
+            "details":{{"loginFields":[],"sections":[{{"fields":[{{"title":"Se connecter avec","id":"sso",
+              "value":{{"ssoLogin":{{"item":{{"itemUuid":"{target}","vaultUuid":"v1"}},"provider":"{provider}"}}}}}}]}}]}}}}"#
+        )
+    }
+
+    fn providers(item: &Item) -> Vec<(crate::model::Provider, Id)> {
+        item.login_methods
+            .iter()
+            .filter_map(|m| match m {
+                LoginMethod::Provider {
+                    provider, account, ..
+                } => Some((provider.clone(), *account)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn sign_in_with_links_the_account_item() {
+        // The account item comes after the login that points to it: the link is resolved once
+        // every item is built.
+        let items = format!(
+            "{},{APPLE_ACCOUNT}",
+            sso("Notes app", "app1", "apple", "acct1")
+        );
+        let imp = export(&[("Personal", &items)]);
+        assert!(codes(&imp).is_empty(), "{:?}", codes(&imp));
+        let account = by_title(&imp, "Apple").item.id;
+        assert_ne!(account, Id([0; 16]));
+        let login = &by_title(&imp, "Notes app").item;
+        assert_eq!(login.item_type, ItemType::Login);
+        assert_eq!(
+            providers(login),
+            vec![(crate::model::Provider::Apple, account)]
+        );
+        // No password: the provider is the only way in, and no raw JSON in `imported`.
+        assert!(!login.login_methods.contains(&LoginMethod::Password));
+        assert!(imported(login).is_empty());
+        validate(login).unwrap();
+        // Ids are unique placeholders, replaced when the import is written.
+        assert_ne!(imp.items[0].item.id, imp.items[1].item.id);
+    }
+
+    #[test]
+    fn sign_in_with_unknown_account_or_provider() {
+        let items = format!(
+            "{},{}",
+            sso("Missing", "m1", "google", "not-in-export"),
+            sso("Custom", "c1", "NotionSSO", "")
+        );
+        let imp = export(&[("Personal", &items)]);
+        let missing = &by_title(&imp, "Missing").item;
+        assert_eq!(missing.item_type, ItemType::Login);
+        assert_eq!(
+            providers(missing),
+            vec![(crate::model::Provider::Google, Id([0; 16]))]
+        );
+        let custom = &by_title(&imp, "Custom").item;
+        assert_eq!(
+            providers(custom),
+            vec![(
+                crate::model::Provider::CustomOidc("NotionSSO".into()),
+                Id([0; 16])
+            )]
+        );
+    }
+
+    #[test]
+    fn sign_in_with_and_password_keeps_both() {
+        let login = r#"{"uuid":"b1","categoryUuid":"001","overview":{"title":"Both"},
+            "details":{"loginFields":[{"value":"pw","designation":"password"}],
+              "sections":[{"fields":[{"id":"x","value":{"ssoLogin":{"provider":"github"}}}]}]}}"#;
+        let imp = export(&[("V", login)]);
+        let item = &imp.items[0].item;
+        assert_eq!(item.item_type, ItemType::Login);
+        assert_eq!(item.login_methods[0], LoginMethod::Password);
+        assert_eq!(providers(item).len(), 1);
+    }
+
+    #[test]
+    fn router_without_network_name_stays_a_router_and_ignores_labels() {
+        // French labels on purpose: mapping is by field id, never by label.
+        let router = r#"{"categoryUuid":"109","overview":{"title":"Borne du salon"},
+            "details":{"sections":[{"fields":[
+              {"title":"nom du réseau","id":"network_name","value":{"string":""}},
+              {"title":"modèle","id":"name","value":{"string":"Base 7"}},
+              {"title":"mot de passe admin","id":"password","value":{"concealed":"admin-pw"}},
+              {"title":"mot de passe sans fil","id":"wireless_password","value":{"concealed":"wifi-pw"}},
+              {"title":"sécurité","id":"wireless_security","value":{"menu":"wpa2p"}},
+              {"title":"mot de passe du disque","id":"disk_password","value":{"concealed":"disk"}}]}]}}"#;
+        let imp = export(&[("V", router)]);
+        assert!(codes(&imp).is_empty(), "{:?}", codes(&imp));
+        let item = &imp.items[0].item;
+        assert_eq!(item.item_type, ItemType::Router);
+        assert_eq!(text(item, "ssid"), "Borne du salon");
+        assert_eq!(text(item, "model"), "Base 7");
+        assert_eq!(text(item, "admin_password"), "admin-pw");
+        assert_eq!(text(item, "wifi_password"), "wifi-pw");
+        assert_eq!(text(item, "security"), "WPA2");
+        // Only the field OnePass has no slot for goes to `imported`.
+        let labels: Vec<_> = imported(item).into_iter().map(|(l, _)| l).collect();
+        assert_eq!(labels, ["mot de passe du disque"]);
+    }
+
+    #[test]
+    fn card_without_holder_stays_a_card() {
+        let card = r#"{"categoryUuid":"002","overview":{"title":"Carte perso"},
+            "details":{"sections":[{"fields":[
+              {"id":"cardholder","value":{"string":""}},
+              {"id":"ccnum","value":{"creditCardNumber":"4111111111111111"}},
+              {"id":"expiry","value":{"monthYear":203001}}]}]}}"#;
+        let imp = export(&[("V", card)]);
+        let item = &imp.items[0].item;
+        assert_eq!(item.item_type, ItemType::CreditCard);
+        assert_eq!(text(item, "cardholder"), "Carte perso");
+    }
+
+    #[test]
+    fn snippet_text_becomes_the_note() {
+        let snippet = r#"{"categoryUuid":"116","overview":{"title":"Signature"},
+            "details":{"sections":[{"fields":[{"id":"snippet","value":{"formattedText":{
+              "content":"<b>Hi</b>","plain_text_display_value":"Hi there","content_format":"html"}}}]}]}}"#;
+        let imp = export(&[("V", snippet)]);
+        assert!(codes(&imp).is_empty(), "{:?}", codes(&imp));
+        let item = &imp.items[0].item;
+        assert_eq!(item.item_type, ItemType::SecureNote);
+        assert_eq!(text(item, "content"), "Hi there");
+        assert!(imported(item).is_empty());
+    }
+
+    #[test]
+    fn file_field_keeps_only_the_file_name() {
+        let login = r#"{"categoryUuid":"001","overview":{"title":"With file"},
+            "details":{"loginFields":[{"value":"u","designation":"username"}],
+              "sections":[{"fields":[{"title":"Scan","id":"f1","value":{"file":{
+                "fileName":"scan.pdf","documentId":"doc9","decryptedSize":12}}}]}]}}"#;
+        let imp = export(&[("V", login)]);
+        let item = &imp.items[0].item;
+        assert_eq!(
+            imported_text(item, "Scan"),
+            Some(("scan.pdf".to_owned(), false))
+        );
+    }
+
+    #[test]
+    fn section_totp_fills_the_login_and_extras_go_to_imported() {
+        let login = r#"{"categoryUuid":"001","overview":{"title":"Two codes"},
+            "details":{"loginFields":[{"value":"u","designation":"username"}],
+              "sections":[{"fields":[
+                {"title":"code","id":"t1","value":{"totp":"JBSWY3DPEHPK3PXP"}},
+                {"title":"backup code","id":"t2","value":{"totp":"otpauth://totp/X?secret=GEZDGNBVGY3TQOJQ"}}]}]}}"#;
+        let imp = export(&[("V", login)]);
+        let item = &imp.items[0].item;
+        assert!(text(item, "totp").starts_with("otpauth://totp/"));
+        assert!(text(item, "totp").contains("JBSWY3DPEHPK3PXP"));
+        assert_eq!(imported(item).len(), 1);
+    }
+
+    #[test]
+    fn credit_card_maps_by_id_whatever_the_labels() {
+        // Labels as a French 1Password app writes them: mapping never reads them.
+        let card = r#"{"categoryUuid":"002","overview":{"title":"Visa perso"},
+            "details":{"sections":[{"name":"details","fields":[
+              {"title":"titulaire","id":"cardholder","value":{"string":"Camille Durand"}},
+              {"title":"type","id":"type","value":{"creditCardType":"visa"}},
+              {"title":"numéro","id":"ccnum","value":{"creditCardNumber":"4111 1111 1111 1111"}},
+              {"title":"code de vérification","id":"cvv","value":{"concealed":"123"}},
+              {"title":"date d'expiration","id":"expiry","value":{"monthYear":203004}},
+              {"title":"valide à partir de","id":"validFrom","value":{"monthYear":202504}},
+              {"title":"plafond de crédit","id":"creditLimit","value":{"string":"1000"}}]},
+              {"name":"contactInfo","fields":[
+              {"title":"banque émettrice","id":"bank","value":{"string":"Banque Exemple"}},
+              {"title":"code PIN","id":"pin","value":{"concealed":"0000"}}]}]}}"#;
+        let imp = export(&[("V", card)]);
+        assert!(codes(&imp).is_empty(), "{:?}", codes(&imp));
+        let item = &imp.items[0].item;
+        assert_eq!(item.item_type, ItemType::CreditCard);
+        assert_eq!(text(item, "cardholder"), "Camille Durand");
+        assert_eq!(text(item, "number").replace(' ', ""), "4111111111111111");
+        assert_eq!(text(item, "cvv"), "123");
+        assert_eq!(text(item, "pin"), "0000");
+        assert_eq!(text(item, "issuer"), "Banque Exemple");
+        assert!(!text(item, "card_type").is_empty());
+        assert_eq!(
+            item.field("expiry").map(|f| f.value.clone()),
+            Some(FieldValue::MonthYear {
+                year: 2030,
+                month: 4
+            })
+        );
+        // Only what OnePass has no slot for is in `imported`, under the source label.
+        let labels: Vec<_> = imported(item).into_iter().map(|(l, _)| l).collect();
+        assert_eq!(labels, ["plafond de crédit"]);
+    }
+
+    #[test]
+    fn login_without_username_or_password_stays_a_login() {
+        // Sign in with Apple (account item not in this export), a TOTP, a website and notes.
+        let login = r#"{"uuid":"l1","categoryUuid":"001",
+            "overview":{"title":"Studio","url":"https://studio.example.com"},
+            "details":{"notesPlain":"Team account","loginFields":[],
+              "sections":[{"fields":[
+                {"title":"se connecter avec","id":"sso","value":{"ssoLogin":{"provider":"apple"}}},
+                {"title":"mot de passe à usage unique","id":"otp","value":{"totp":"JBSWY3DPEHPK3PXP"}}]}]}}"#;
+        let imp = export(&[("Personal", login)]);
+        assert!(codes(&imp).is_empty(), "{:?}", codes(&imp));
+        let item = &imp.items[0].item;
+        assert_eq!(item.item_type, ItemType::Login);
+        assert_eq!(item.notes, "Team account");
+        assert_eq!(item.urls[0].url, "https://studio.example.com");
+        assert!(text(item, "totp").contains("JBSWY3DPEHPK3PXP"));
+        assert_eq!(
+            providers(item),
+            vec![(crate::model::Provider::Apple, Id([0; 16]))]
+        );
+        assert!(imported(item).is_empty());
+        validate(item).unwrap();
+    }
+
+    #[test]
+    fn login_with_only_a_password_or_nothing_stays_a_login() {
+        let bare = r#"{"categoryUuid":"001","overview":{"title":"Bare","url":"https://bare.example.com"},
+            "details":{"sections":[{"fields":[{"title":"code client","id":"c","value":{"string":"42"}}]}]}}"#;
+        let imp = export(&[("V", &format!("{NO_USER},{bare}"))]);
+        assert!(codes(&imp).is_empty(), "{:?}", codes(&imp));
+        for it in &imp.items {
+            assert_eq!(it.item.item_type, ItemType::Login, "{}", it.item.title);
+            validate(&it.item).unwrap();
+        }
+        assert_eq!(text(&by_title(&imp, "No user").item, "password"), "pw");
     }
 }
