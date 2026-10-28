@@ -72,12 +72,13 @@ struct RootView: View {
     #endif
 
     private enum Route: Hashable {
-        case onboarding, lock, unlocked, failed, guest
+        case onboarding, lock, unlocked, failed, guest, revoked
     }
 
     private var route: Route {
         if model.publicSession != nil { return .guest }
         let state = model.session.state
+        if state == .failed(.deviceRevoked) { return .revoked }
         if case .failed = state { return .failed }
         if model.onboardingInProgress || state == .noAccount { return .onboarding }
         // An account is in the store but this device lacks its Secret Key: Emergency Kit.
@@ -95,6 +96,9 @@ struct RootView: View {
                 .transition(.opacity)
         case .unlocked:
             BrowseRoot()
+                .transition(.opacity)
+        case .revoked:
+            RevokedDeviceView()
                 .transition(.opacity)
         case .guest:
             if let guest = model.publicSession {

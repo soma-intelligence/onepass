@@ -128,6 +128,16 @@
         }
       }
     },
+    "%@ est retiré" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is removed"
+          }
+        }
+      }
+    },
     "%@ n'a pas été confirmé : rien n'a été activé." : {
       "localizations" : {
         "en" : {
@@ -168,12 +178,42 @@
         }
       }
     },
+    "%@ · %@ · ajouté le %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · %@ · added on %@"
+          }
+        }
+      }
+    },
+    "%@ · Retiré le %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Removed on %@"
+          }
+        }
+      }
+    },
     "%@ · créée le %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · created %@"
+          }
+        }
+      }
+    },
+    "%@ · demande un accès %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · asks for %@ access"
           }
         }
       }
@@ -304,6 +344,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld min" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld min"
           }
         }
       }
@@ -930,6 +980,16 @@
         }
       }
     },
+    "Ajouter un appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a Device"
+          }
+        }
+      }
+    },
     "Ajouter un lieu" : {
       "localizations" : {
         "en" : {
@@ -1090,6 +1150,16 @@
         }
       }
     },
+    "Appareil ajouté" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Device added"
+          }
+        }
+      }
+    },
     "Appareil de la famille ou du bureau : pas de %@, verrouillage après 5 minutes, coffres visibles au choix." : {
       "localizations" : {
         "en" : {
@@ -1146,6 +1216,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your own device: unlock with %@, adjustable auto-lock."
+          }
+        }
+      }
+    },
+    "Appareils" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Devices"
           }
         }
       }
@@ -1640,6 +1720,16 @@
         }
       }
     },
+    "Caméra indisponible" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera unavailable"
+          }
+        }
+      }
+    },
     "Capture d'écran de ta Secret Key" : {
       "localizations" : {
         "en" : {
@@ -1800,6 +1890,16 @@
         }
       }
     },
+    "Cet appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device"
+          }
+        }
+      }
+    },
     "Cet appareil a %@, mais cette version de OnePass n'est pas signée : le trousseau refuse sa clé de la Secure Enclave (erreur -34018). Le mot de passe maître déverrouille OnePass. %@ marche dans un build signé." : {
       "localizations" : {
         "en" : {
@@ -1846,6 +1946,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Is This Device Yours?"
+          }
+        }
+      }
+    },
+    "Cet appareil ne peut pas lire de QR code." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device can't read QR codes."
           }
         }
       }
@@ -1900,6 +2010,16 @@
         }
       }
     },
+    "Cette liste est signée par ton compte : le serveur ne peut ni ajouter ni cacher un appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This list is signed by your account: the server can neither add nor hide a device."
+          }
+        }
+      }
+    },
     "Champ personnalisé" : {
       "localizations" : {
         "en" : {
@@ -1936,6 +2056,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Template Fields"
+          }
+        }
+      }
+    },
+    "Change ton mot de passe maître si cet appareil a été perdu ou volé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change your master password if this device was lost or stolen."
+          }
+        }
+      }
+    },
+    "Changer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change"
+          }
+        }
+      }
+    },
+    "Changer le mot de passe maître" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Master Password"
           }
         }
       }
@@ -2410,12 +2560,42 @@
         }
       }
     },
+    "Confirme avec ton mot de passe maître pour retirer cet appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm with your master password to remove this device."
+          }
+        }
+      }
+    },
+    "Confirme avec ton mot de passe maître." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm with your master password."
+          }
+        }
+      }
+    },
     "Confirme les codes sur ton autre appareil, puis valide avec Face ID ou ton mot de passe maître." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confirm the codes on your other device, then approve with Face ID or your master password."
+          }
+        }
+      }
+    },
+    "Confirme que les codes sont identiques sur le nouvel appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm that the codes match on the new device."
           }
         }
       }
@@ -2476,6 +2656,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sign in to iCloud in Settings to get your vault back."
+          }
+        }
+      }
+    },
+    "Connexion au nouvel appareil..." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting to the new device..."
           }
         }
       }
@@ -2636,6 +2826,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy “%@” as JSON?"
+          }
+        }
+      }
+    },
+    "Copié : %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied: %@"
           }
         }
       }
@@ -2976,6 +3176,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duplicate…"
+          }
+        }
+      }
+    },
+    "Durée" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duration"
           }
         }
       }
@@ -3360,12 +3570,32 @@
         }
       }
     },
+    "En attente du nouvel appareil..." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the new device..."
+          }
+        }
+      }
+    },
     "En attente du réseau." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Waiting for the network."
+          }
+        }
+      }
+    },
+    "En lecture seule, sans historique des mots de passe ni passkey. Rien n'est enregistré sur le nouvel appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read only, without password history or passkeys. Nothing is saved on the new device."
           }
         }
       }
@@ -3446,6 +3676,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Saved"
+          }
+        }
+      }
+    },
+    "Envoi..." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sending..."
           }
         }
       }
@@ -3980,6 +4220,26 @@
         }
       }
     },
+    "Il disparaît de tous tes appareils, avec les éléments de sa corbeille." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It disappears from all your devices, with the items in its trash."
+          }
+        }
+      }
+    },
+    "Il efface ses données OnePass dès qu'il voit la liste des appareils. Tu pourras l'ajouter de nouveau plus tard." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It erases its OnePass data as soon as it sees the device list. You can add it again later."
+          }
+        }
+      }
+    },
     "Il est partagé" : {
       "localizations" : {
         "en" : {
@@ -3996,6 +4256,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "It's yours: your whole vault, unlocked with %@."
+          }
+        }
+      }
+    },
+    "Il recevra seulement les éléments que tu choisis, en lecture seule, pour un temps limité." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It will only get the items you choose, read only, for a limited time."
+          }
+        }
+      }
+    },
+    "Il recevra tout ton compte et ta Secret Key, puis te demandera ton mot de passe maître." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It will get your whole account and your Secret Key, then ask for your master password."
+          }
+        }
+      }
+    },
+    "Il recevra tout ton compte, sans Face ID, avec les coffres visibles au choix." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It will get your whole account, without Face ID, with the vaults you choose."
+          }
+        }
+      }
+    },
+    "Il te demande maintenant ton mot de passe maître." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It now asks for your master password."
           }
         }
       }
@@ -4290,6 +4590,16 @@
         }
       }
     },
+    "Journal" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log"
+          }
+        }
+      }
+    },
     "L'Emergency Kit n'a pas pu être enregistré." : {
       "localizations" : {
         "en" : {
@@ -4510,6 +4820,16 @@
         }
       }
     },
+    "La session se termine aussi si tu la termines d'ici, si le nouvel appareil passe en arrière-plan ou après 5 min sans activité." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The session also ends if you end it from here, if the new device goes to the background or after 5 min without activity."
+          }
+        }
+      }
+    },
     "La suppression d'un coffre arrive dans une prochaine version." : {
       "localizations" : {
         "en" : {
@@ -4610,6 +4930,16 @@
         }
       }
     },
+    "Le dernier coffre ne peut pas être supprimé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last vault can't be deleted."
+          }
+        }
+      }
+    },
     "Le dernier envoi a échoué. Il sera retenté au prochain changement." : {
       "localizations" : {
         "en" : {
@@ -4680,6 +5010,26 @@
         }
       }
     },
+    "Le journal disparaît à la fin de la session." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The log disappears when the session ends."
+          }
+        }
+      }
+    },
+    "Le mot de passe actuel est incorrect." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The current password is incorrect."
+          }
+        }
+      }
+    },
     "Le mot de passe maître est aussi redemandé après un redémarrage et quand les empreintes ou le visage enregistrés changent." : {
       "localizations" : {
         "en" : {
@@ -4730,12 +5080,32 @@
         }
       }
     },
+    "Le même code doit s'afficher sur le nouvel appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The same code must show on the new device."
+          }
+        }
+      }
+    },
     "Le même code doit s'afficher sur ton autre appareil. S'il est différent, quelqu'un d'autre essaie de se connecter." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "The same code must show on your other device. If it's different, someone else is trying to connect."
+          }
+        }
+      }
+    },
+    "Le nouvel appareil n'a plus accès aux éléments prêtés." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new device no longer has access to the lent items."
           }
         }
       }
@@ -5300,6 +5670,16 @@
         }
       }
     },
+    "Mot de passe actuel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current password"
+          }
+        }
+      }
+    },
     "Mot de passe incorrect (%lld essais)." : {
       "localizations" : {
         "en" : {
@@ -5326,6 +5706,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Master Password"
+          }
+        }
+      }
+    },
+    "Mot de passe maître changé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Master password changed"
           }
         }
       }
@@ -5490,6 +5880,26 @@
         }
       }
     },
+    "Ne scanne jamais un QR code qu'on t'a envoyé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Never scan a QR code someone sent you."
+          }
+        }
+      }
+    },
+    "Nom" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
+          }
+        }
+      }
+    },
     "Nom du coffre" : {
       "localizations" : {
         "en" : {
@@ -5576,6 +5986,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "New Vault…"
+          }
+        }
+      }
+    },
+    "Nouveau mot de passe" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New password"
           }
         }
       }
@@ -5796,6 +6216,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tools > Export Vault, as unencrypted .json or .csv."
+          }
+        }
+      }
+    },
+    "Ouvert" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opened"
           }
         }
       }
@@ -6290,6 +6720,26 @@
         }
       }
     },
+    "Prêter %lld élément" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lend %lld item"
+          }
+        }
+      }
+    },
+    "Prêter %lld éléments" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lend %lld items"
+          }
+        }
+      }
+    },
     "Public" : {
       "localizations" : {
         "en" : {
@@ -6326,6 +6776,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kit QR Code"
+          }
+        }
+      }
+    },
+    "QR code injecté (Debug)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Injected QR code (Debug)"
           }
         }
       }
@@ -6550,6 +7010,26 @@
         }
       }
     },
+    "Renommer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename"
+          }
+        }
+      }
+    },
+    "Renommer l'appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename Device"
+          }
+        }
+      }
+    },
     "Repartir de zéro" : {
       "localizations" : {
         "en" : {
@@ -6670,12 +7150,32 @@
         }
       }
     },
+    "Retirer %@ ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove %@?"
+          }
+        }
+      }
+    },
     "Retirer ce site web" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remove This Website"
+          }
+        }
+      }
+    },
+    "Retirer cet appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove This Device"
           }
         }
       }
@@ -6740,6 +7240,16 @@
         }
       }
     },
+    "Retirés" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removed"
+          }
+        }
+      }
+    },
     "Retour" : {
       "localizations" : {
         "en" : {
@@ -6756,6 +7266,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nothing within %@"
+          }
+        }
+      }
+    },
+    "Rien n'a encore été ouvert." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing opened yet."
           }
         }
       }
@@ -7150,6 +7670,16 @@
         }
       }
     },
+    "Scanne seulement le QR code affiché par ton nouvel appareil, devant toi : « J'ai déjà OnePass sur un autre appareil »." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only scan the QR code shown by your new device, in front of you: \"I already have OnePass on another device\"."
+          }
+        }
+      }
+    },
     "Scanner le QR code du kit" : {
       "localizations" : {
         "en" : {
@@ -7176,6 +7706,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Signs in with %@"
+          }
+        }
+      }
+    },
+    "Se termine dans %lld min" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ends in %lld min"
+          }
+        }
+      }
+    },
+    "Se termine dans %lld s" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ends in %lld s"
           }
         }
       }
@@ -7230,12 +7780,32 @@
         }
       }
     },
+    "Ses données OnePass ont été effacées. Tu peux l'ajouter de nouveau depuis un autre appareil ou avec ton Emergency Kit." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its OnePass data was erased. You can add it again from another device or with your Emergency Kit."
+          }
+        }
+      }
+    },
     "Session invitée" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guest session"
+          }
+        }
+      }
+    },
+    "Session invitée en cours" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guest session in progress"
           }
         }
       }
@@ -7460,6 +8030,26 @@
         }
       }
     },
+    "Supprimer le coffre" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Vault"
+          }
+        }
+      }
+    },
+    "Supprimer « %@ » ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete \"%@\"?"
+          }
+        }
+      }
+    },
     "Supprimés récemment" : {
       "localizations" : {
         "en" : {
@@ -7476,6 +8066,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "On Apple Watch"
+          }
+        }
+      }
+    },
+    "Sur le nouvel appareil, choisis « J'ai déjà OnePass sur un autre appareil » : il affiche un QR code à scanner d'ici." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the new device, choose \"I already have OnePass on another device\": it shows a QR code to scan from here."
+          }
+        }
+      }
+    },
+    "Sur ton compte" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On your account"
           }
         }
       }
@@ -7600,6 +8210,26 @@
         }
       }
     },
+    "Ta Secret Key ne change pas : ton Emergency Kit reste valable." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Secret Key doesn't change: your Emergency Kit stays valid."
+          }
+        }
+      }
+    },
+    "Ta Secret Key ne change pas : ton Emergency Kit reste valable. Tes autres appareils te demanderont le nouveau mot de passe." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Secret Key doesn't change: your Emergency Kit stays valid. Your other devices will ask for the new password."
+          }
+        }
+      }
+    },
     "Tag" : {
       "localizations" : {
         "en" : {
@@ -7666,6 +8296,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "End"
+          }
+        }
+      }
+    },
+    "Terminer la session" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End Session"
           }
         }
       }
@@ -7836,6 +8476,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your master password"
+          }
+        }
+      }
+    },
+    "Ton mot de passe maître a changé sur un autre appareil. Saisis le nouveau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your master password changed on another device. Enter the new one."
           }
         }
       }
@@ -8020,6 +8670,16 @@
         }
       }
     },
+    "Trop faible pour un mot de passe maître : cinq mots tirés au hasard marchent bien." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too weak for a master password: five random words work well."
+          }
+        }
+      }
+    },
     "Tu as terminé la session." : {
       "localizations" : {
         "en" : {
@@ -8100,6 +8760,16 @@
         }
       }
     },
+    "Un coffre vide peut être supprimé depuis sa fiche, sauf le dernier." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An empty vault can be deleted from its editor, except the last one."
+          }
+        }
+      }
+    },
     "Un compte OnePass existe déjà dans ton iCloud, utilise ton Emergency Kit." : {
       "localizations" : {
         "en" : {
@@ -8176,6 +8846,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Use your secrets in the terminal, with Git and your AI agents, without copying them in plain text."
+          }
+        }
+      }
+    },
+    "Utilise ton iPhone ou ton iPad pour approuver un nouvel appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use your iPhone or iPad to approve a new device."
           }
         }
       }
@@ -8346,6 +9026,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Green"
+          }
+        }
+      }
+    },
+    "Vide ce coffre avant de le supprimer. Les éléments à la corbeille partent avec lui." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empty this vault before deleting it. Items in the trash go with it."
           }
         }
       }
@@ -9256,6 +9946,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Expiring Items"
+          }
+        }
+      }
+    },
+    "Éléments à prêter" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Items to lend"
           }
         }
       }
