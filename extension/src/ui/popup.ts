@@ -769,4 +769,5 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 if (typeof document !== "undefined" && ext?.runtime?.id) {
   const root = document.getElementById("root");
   if (root) mountPopup(root, { send: (m) => ext.runtime.sendMessage(m) });
+  if (__LAB_RECORDER__) void import("../dev/recorder-ui").then((m) => m.default(document));
 }
