@@ -55,15 +55,19 @@ jobs:
         run: cargo test --release -p onepass-core --test differential
       - name: Licenses, bans and sources
         run: cargo deny check
-      # Imported audit sets are fetched from the network; exemptions are
-      # recorded in core/supply-chain/config.toml.
+      # --locked: the imported audit sets come from supply-chain/imports.lock,
+      # not the network, so the result depends only on the commit. Refresh
+      # them with `cargo vet regenerate imports`. Exemptions and publisher
+      # trusts are recorded in core/supply-chain/config.toml and audits.toml.
       - name: Supply-chain audits
-        run: cargo vet
-      # Informative only: a new RustSec advisory can turn this red without
-      # any change here. It must not block a merge; read it and act.
+        run: cargo vet --locked
+      # Blocking. Every warning kind fails (core/.cargo/audit.toml), like
+      # cargo deny. A new RustSec advisory can turn this red without any
+      # change here: update or replace the crate, or ignore the advisory in
+      # both core/.cargo/audit.toml and deny.toml with a reason and a review
+      # date.
       - name: Advisories
         run: cargo audit
-        continue-on-error: true
       - name: SBOM (CycloneDX)
         if: matrix.os == 'ubuntu-latest'
         run: make sbom

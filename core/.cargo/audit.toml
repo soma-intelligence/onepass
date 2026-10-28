@@ -1,0 +1,28 @@
+# cargo audit configuration (read from core/, where CI runs it). Kept in step
+# with the [advisories] section of deny.toml: an advisory ignored here is
+# ignored there too, with the same reason and review date.
+#
+# Every warning kind fails the run, like cargo deny does for unmaintained and
+# yanked crates. A new advisory therefore turns CI red with no change here:
+# fix it (update, replace) or add it below with a reason and a review date.
+
+[advisories]
+ignore = [
+    # proc-macro-error2 is unmaintained. Reached only through the libcrux
+    # dev-dependencies (hax-lib-macros), compile time, not shipped code; not a
+    # vulnerability. Review by 2027-01-31.
+    "RUSTSEC-2026-0173",
+    # basic-toml is unmaintained. Reached only through askama_derive, a proc
+    # macro of the uniffi bindings generator (onepass-ffi, feature bindgen),
+    # compile time, not shipped code; not a vulnerability. Review by
+    # 2027-01-31.
+    "RUSTSEC-2026-0374",
+]
+informational_warnings = ["unmaintained", "unsound", "notice"]
+
+[output]
+deny = ["warnings"]
+quiet = false
+
+[yanked]
+enabled = true
