@@ -110,6 +110,10 @@ struct ItemListColumn: View {
                     .accessibilityIdentifier("list.count")
             }
         }
+        #if os(macOS)
+        // No scroll bar parked on the column's edge: the trackpad or wheel still scrolls.
+        .scrollIndicators(.never)
+        #endif
         // A new sidebar filter starts on every type again.
         .onChange(of: model.selection) { categoryFilter = nil }
         .focusedValue(\.itemListFocused, true)
@@ -308,6 +312,8 @@ struct ItemListColumn: View {
                 .tag(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
                 .contextMenu { contextMenu(summary) }
                 .visionHoverEffect()
+                // Rows breathe on their own: the selection and hover capsules mark them, no rules.
+                .listRowSeparator(.hidden)
         }
     }
 

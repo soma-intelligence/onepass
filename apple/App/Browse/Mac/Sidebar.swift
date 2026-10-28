@@ -62,6 +62,9 @@ struct Sidebar: View {
                 .frame(minHeight: 0, maxHeight: .infinity)
         }
         .background { TitlebarHeightReader(height: $titlebarHeight) }
+        // The whole column, header included, on the system's translucent sidebar material: the
+        // desktop shows through, blurred, behind the account row and the list alike.
+        .background { SidebarMaterial().ignoresSafeArea() }
         #else
         list
         #endif
@@ -108,6 +111,10 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        #if os(macOS)
+        .scrollIndicators(.never)
+        .scrollContentBackground(.hidden)
+        #endif
         // The footer sits in the list's bottom safe area (rows end above it when scrolled to the end)
         // on an opaque bar material: rows passing under it never show through "Réglages".
         .sidebarFooter {
@@ -587,6 +594,19 @@ struct SettingsRow: View {
 #if os(macOS)
 /// Reads how much of the window the title bar and the toolbar cover (`contentLayoutRect`). Also used
 /// by the guest session's sidebar (`PublicSessionView`).
+/// AppKit's behind-window sidebar vibrancy, for the parts of the column SwiftUI draws itself.
+struct SidebarMaterial: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
 struct TitlebarHeightReader: NSViewRepresentable {
     @Binding var height: CGFloat
 

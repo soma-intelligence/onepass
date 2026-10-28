@@ -170,6 +170,9 @@ struct ItemDetailView: View {
             .frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.top)
+        #if os(macOS)
+        .scrollIndicators(.never)
+        #endif
         .groupedScreen()
         .environment(\.openURL, OpenURLAction { url in
             // Links in notes and fields open only on a tap, and only web or mail links.

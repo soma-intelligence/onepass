@@ -93,6 +93,7 @@ struct ItemEditorView: View {
             // Fields scrolling up fade out under the toolbar instead of running behind Annuler and
             // Enregistrer (they float without glass of their own).
             .scrollEdgeEffectStyle(.hard, for: .top)
+            .scrollIndicators(.never)
             #endif
             .defaultScrollAnchor(.top)
             .groupedScreen()
