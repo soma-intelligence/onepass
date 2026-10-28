@@ -316,6 +316,7 @@ mod tests {
     fn archive_and_unknown_formats_are_refused() {
         assert!(!import_formats().contains(&"onepass".to_owned()));
         assert!(import_formats().contains(&"nordpass-csv".to_owned()));
+        assert!(import_formats().contains(&"pdf-text".to_owned()));
         assert_eq!(
             preview_import("onepass".into(), b"OPARCH".to_vec()),
             Err(invalid("onepass archive"))
@@ -408,6 +409,23 @@ mod tests {
                 .1,
             0
         );
+    }
+
+    #[test]
+    fn pdf_is_detected_and_its_text_previewed() {
+        assert_eq!(
+            detect_import_format("kit.pdf".into(), b"%PDF-1.7\n".to_vec()).as_deref(),
+            Some("pdf-text")
+        );
+        let text =
+            b"Title: Mail\nUsername: u\nPassword: p\nTitle: Shop\nUsername: v\nPassword: q\n";
+        assert_eq!(
+            preview_import("pdf-text".into(), text.to_vec())
+                .unwrap()
+                .items,
+            2
+        );
+        assert!(preview_import("pdf-text".into(), b"%PDF-1.7\n".to_vec()).is_err());
     }
 
     #[test]

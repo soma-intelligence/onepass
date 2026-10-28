@@ -2450,6 +2450,36 @@
         }
       }
     },
+    "Ce PDF est illisible ou endommagé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This PDF can't be read or is damaged."
+          }
+        }
+      }
+    },
+    "Ce PDF est protégé par un mot de passe. Ouvre-le, enregistre-le sans protection, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This PDF is password protected. Open it, save it without protection, then try again."
+          }
+        }
+      }
+    },
+    "Ce PDF ne contient pas de texte lisible (un scan ou une photo) : rien à importer." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This PDF has no readable text (a scan or a photo): nothing to import."
+          }
+        }
+      }
+    },
     "Ce coffre est vide" : {
       "localizations" : {
         "en" : {
@@ -8660,6 +8690,16 @@
         }
       }
     },
+    "PDF d'identifiants" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credentials PDF"
+          }
+        }
+      }
+    },
     "PIN" : {
       "localizations" : {
         "en" : {
@@ -11806,6 +11846,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A key bound to hosts only signs for them. “Ask at Every Use” refuses grants of a few minutes."
+          }
+        }
+      }
+    },
+    "Une liste de mots de passe imprimée en PDF, ou l'Emergency Kit de 1Password. OnePass lit le texte du PDF sur cet appareil, puis te montre ce qu'il a trouvé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A password list printed to PDF, or a 1Password Emergency Kit. OnePass reads the PDF's text on this device, then shows you what it found."
           }
         }
       }
