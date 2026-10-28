@@ -44,13 +44,13 @@
       "fields": [
         {
           "after": "ask a question help me choose a pc micro",
-          "ariaLabel": "ask a question—get help from ai",
+          "ariaLabel": "ask a question-get help from ai",
           "autocomplete": "off",
           "before": "need faster with ai-powered suggestions",
           "depth": 17,
           "hasPattern": false,
           "index": 0,
-          "label": "ask a question—get help from ai",
+          "label": "ask a question-get help from ai",
           "placeholder": "ask a question",
           "required": false,
           "role": "unknown",
