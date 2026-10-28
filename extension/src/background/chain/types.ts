@@ -6,13 +6,24 @@ import type { ChainView } from "../../shared/ui";
 
 export type { ChainView };
 
+export interface StartOptions {
+  /** The provider account picked by the user (one the page offered); else the default. */
+  accountId?: string;
+  /** Field of the top frame the user clicked from: the progress shows there. */
+  anchorRef?: string;
+}
+
 export interface ChainDriver {
   /** Start a chain in the top frame of `tabId`, after a click in an extension page. */
-  start(tabId: number, itemId: string, viaProvider?: ProviderId): Promise<void>;
+  start(tabId: number, itemId: string, viaProvider?: ProviderId, opts?: StartOptions): Promise<void>;
   /** The user pressed "Arrêter" (reason `user`). */
   stop(tabId: number): Promise<void>;
-  /** What the overlay shows; null when no chain ran in this tab. */
-  state(tabId: number): Promise<ChainView | null>;
+  /**
+   * What the overlay shows; null when no chain ran in this tab. `opening`:
+   * for an overlay that just opened, where a chain that ended a while ago
+   * gives way to the offer of the page.
+   */
+  state(tabId: number, opening?: boolean): Promise<ChainView | null>;
   /** The user closed the overlay of this top document: not offered again there. */
   closed?(tabId: number, origin: string, documentId?: string): Promise<void>;
 }

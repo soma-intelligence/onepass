@@ -282,6 +282,83 @@ describe("chain driver", () => {
     expect(t.client.requests.find((r) => r.op === "fill_provider")).toMatchObject({ account_item_id: "g_perso" });
   });
 
+  it("a picked account is the one chosen on the provider and filled, then remembered for the site", async () => {
+    const t = await setup();
+    const chooser = page(`${GOOGLE}/chooser`, [], {
+      accountChooser: [
+        { email: "alex.perso@example.com", ref: "a1" },
+        { email: "alex.pro@example.com", ref: "a2" },
+      ],
+    });
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [], { providerButtons: [{ provider: "google", ref: "g1" }] }));
+    // Not one of the provider's accounts: refused, nothing clicked.
+    await expect(t.runner.start(7, "it_02", "google", { accountId: "it_01" })).rejects.toMatchObject({ code: "not_found" });
+    expect(toTab(t, "click")).toEqual([]);
+    await t.runner.start(7, "it_02", "google", { accountId: "g_perso" });
+    t.ext.navigate(7, 0, `${GOOGLE}/chooser`, "doc-g");
+    await analyze(t, `${GOOGLE}/chooser`, chooser, "doc-g");
+    expect(toTab(t, "click").at(-1)).toMatchObject({ origin: GOOGLE, ref: "a1" });
+    expect((await t.ext.storage.local.get("signin:atlas-cloud.test|google"))["signin:atlas-cloud.test|google"]).toBe("g_perso");
+
+    // Next time on the site, with no pick: the remembered account, not the method's.
+    await t.runner.stop(7);
+    t.ext.navigate(7, 0, `${SITE}/login`, "doc-2");
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [], { providerButtons: [{ provider: "google", ref: "g1" }] }), "doc-2");
+    await t.runner.start(7, "it_02", "google");
+    t.ext.navigate(7, 0, `${GOOGLE}/chooser`, "doc-g2");
+    await analyze(t, `${GOOGLE}/chooser`, chooser, "doc-g2");
+    expect(toTab(t, "click").at(-1)).toMatchObject({ origin: GOOGLE, ref: "a1" });
+  });
+
+  it("the view says what happens now, and names the account", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [], { providerButtons: [{ provider: "google", ref: "g1" }] }));
+    await t.runner.start(7, "it_02", "google");
+    expect(await t.runner.state(7)).toMatchObject({
+      status: "running",
+      title: "Atlas Pro",
+      provider: "google",
+      email: "alex.pro@example.com",
+      site: "atlas-cloud.test",
+      phase: "opening",
+    });
+    t.ext.navigate(7, 0, `${GOOGLE}/chooser`, "doc-g");
+    await analyze(t, `${GOOGLE}/chooser`, page(`${GOOGLE}/chooser`, [], { accountChooser: [{ email: "alex.pro@example.com", ref: "a2" }] }), "doc-g");
+    expect((await t.runner.state(7))?.phase).toBe("choosing");
+    t.ext.navigate(7, 0, `${GOOGLE}/pwd`, "doc-g2");
+    expect((await t.runner.state(7))?.phase).toBe("provider");
+    await analyze(t, `${GOOGLE}/pwd`, page(`${GOOGLE}/pwd`, [{ ref: "gp", kind: "login", fields: [{ ref: "p", role: "current_password" }] }]), "doc-g2");
+    expect((await t.runner.state(7))?.phase).toBe("back");
+  });
+
+  it("started from the menu, the progress shows under the field; a stop on another domain shows there once", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+    // The overlay offered on that page is replaced by the menu, then by the progress under the field.
+    const shown = () => toTab(t, "show_frame").filter((m) => m.kind === "overlay");
+    const before = shown().length;
+    await t.runner.start(7, "it_01", undefined, { anchorRef: "u1" });
+    expect(shown().length).toBeGreaterThanOrEqual(before);
+    t.ext.navigate(7, 0, "https://evil.test/phish", "doc-x");
+    expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "domain" });
+    // The token died with the page: the next page shows why the chain stopped, once.
+    const n = shown().length;
+    await analyze(t, "https://evil.test/phish", page("https://evil.test/phish"), "doc-x");
+    expect(shown().length).toBe(n + 1);
+    expect(shown().at(-1)?.ref).toBeUndefined();
+    await analyze(t, "https://evil.test/phish", page("https://evil.test/phish", [loginForm]), "doc-x");
+    expect(shown().length).toBe(n + 1);
+    expect(ops(t).filter((o) => o === "fill_login")).toHaveLength(1);
+  });
+
+  it("no overlay offer over an open menu", async () => {
+    const t = await setup();
+    t.ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
+    await t.ext.send({ type: "open_menu", fieldRef: "u1", formRef: "f1", formKind: "login" }, csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }));
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+    expect(toTab(t, "show_frame").filter((m) => m.kind === "overlay")).toEqual([]);
+  });
+
   it("start refuses an item the site does not have, and a provider-only item without its provider", async () => {
     const t = await setup();
     t.ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
