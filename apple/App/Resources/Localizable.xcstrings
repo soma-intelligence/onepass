@@ -2510,6 +2510,16 @@
         }
       }
     },
+    "Ce qui est envoyé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What is sent"
+          }
+        }
+      }
+    },
     "Ce réglage suit le coffre sur tous tes appareils." : {
       "localizations" : {
         "en" : {
@@ -6950,6 +6960,16 @@
         }
       }
     },
+    "Le nombre seulement, jamais le nom d'un élément." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only the count, never an item's name."
+          }
+        }
+      }
+    },
     "Le nouvel appareil n'a plus accès aux éléments prêtés." : {
       "localizations" : {
         "en" : {
@@ -8906,6 +8926,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "To approve a browser, OnePass asks for Touch ID. Turn it on in Settings > Security, then approve: the extension is waiting."
+          }
+        }
+      }
+    },
+    "Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. Les catalogues de 2fa.directory et la liste des sites piratés sont téléchargés en entier et gardés une semaine. Désactivé, aucune requête réseau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The 2fa.directory catalogs and the list of breached sites are downloaded whole and kept for a week. When off, no network request."
           }
         }
       }
@@ -11046,6 +11076,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your logins, codes and passkeys suggested in apps and Safari, no copy and paste."
+          }
+        }
+      }
+    },
+    "Tes mots de passe ne quittent jamais l'appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your passwords never leave this device."
           }
         }
       }

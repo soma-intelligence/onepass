@@ -425,42 +425,68 @@ struct WatchtowerCardView: View {
 
 // MARK: - Setting
 
-/// "Vérifier les fuites" and what it sends, then "Me prévenir" (local notifications).
+/// "Vérifier les fuites" and "Me prévenir": two quiet rows, a short line under each, the switch on
+/// the right. What the check sends is one click away (the info button), not a paragraph.
 struct BreachSettingCard: View {
     @Environment(AppModel.self) private var model
+    @State private var showingDetails = false
 
     var body: some View {
         @Bindable var watchtower = model.watchtower
         EditorCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle(isOn: $watchtower.checkBreaches) {
-                    Text("Vérifier les fuites").font(.headline)
+            VStack(spacing: 0) {
+                row(title: "Vérifier les fuites", detail: "Tes mots de passe ne quittent jamais l'appareil.",
+                    isOn: $watchtower.checkBreaches, id: "watchtower.checkBreaches") {
+                    Button {
+                        showingDetails = true
+                    } label: {
+                        Image(systemName: "info.circle").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Ce qui est envoyé")
+                    .popover(isPresented: $showingDetails, arrowEdge: .bottom) {
+                        Text("""
+                            Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers \
+                            caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et \
+                            compare le reste ici. Les catalogues de 2fa.directory et la liste des sites \
+                            piratés sont téléchargés en entier et gardés une semaine. Désactivé, aucune \
+                            requête réseau.
+                            """)
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(width: 320)
+                            .padding(14)
+                    }
+                    .accessibilityLabel(Text("Ce qui est envoyé"))
+                    .accessibilityIdentifier("watchtower.checkBreaches.info")
                 }
-                .toggleStyle(.switch)
-                .accessibilityIdentifier("watchtower.checkBreaches")
-                Text("""
-                    Tes mots de passe ne quittent jamais l'appareil. Pour chacun, OnePass envoie à \
-                    Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des \
-                    centaines d'autres mots de passe, et compare le reste ici. Les catalogues publics de \
-                    2fa.directory (double authentification et passkeys) et la liste des sites piratés de \
-                    Have I Been Pwned sont téléchargés en entier et gardés une semaine. Désactivé, \
-                    Watchtower ne fait aucune requête réseau.
-                    """)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Divider().padding(.vertical, 4)
-                Toggle(isOn: $watchtower.notify) {
-                    Text("Me prévenir").font(.headline)
-                }
-                .toggleStyle(.switch)
-                .accessibilityIdentifier("watchtower.notify")
-                Text("Une notification quand Watchtower trouve un nouveau mot de passe compromis, un site piraté, un compte de connexion exposé ou un élément qui expire. Elle donne seulement le nombre, jamais le nom d'un élément.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Rectangle().fill(Color.primary.opacity(0.06)).frame(height: 1).padding(.leading, 16)
+                row(title: "Me prévenir", detail: "Le nombre seulement, jamais le nom d'un élément.",
+                    isOn: $watchtower.notify, id: "watchtower.notify") { EmptyView() }
             }
-            .padding(16)
         }
+    }
+
+    private func row<Accessory: View>(
+        title: LocalizedStringKey, detail: LocalizedStringKey, isOn: Binding<Bool>, id: String,
+        @ViewBuilder accessory: () -> Accessory
+    ) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title).font(.body.weight(.medium))
+                    accessory()
+                }
+                Text(detail).font(.footnote).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .accessibilityIdentifier(id)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
     }
 }

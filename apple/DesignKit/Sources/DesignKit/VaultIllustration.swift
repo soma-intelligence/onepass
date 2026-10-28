@@ -171,18 +171,20 @@ public struct VaultIllustration: View {
             .frame(width: u * 5, height: u * 5)
     }
 
-    /// The keyhole as an actual hole: near black, its upper edge in shadow and its lower edge
-    /// catching the light, with only a faint trace of the accent deep inside. No glow.
+    /// The keyhole as an actual cut, lit in the accent from inside: its upper edge in shadow,
+    /// its lower edge catching the light, a soft halo of the accent around it.
     private func keyhole(u: CGFloat, scale: CGFloat) -> some View {
         let shape = KeyholeShape()
         return shape
-            .fill(LinearGradient(colors: [Color.black.opacity(0.95), Color(white: 0.06), tint.mix(with: .black, by: 0.7)],
+            // Lit in the accent from inside: deep at the top, brighter toward the foot.
+            .fill(LinearGradient(colors: [tint.mix(with: .black, by: 0.55), tint, tint.mix(with: .white, by: 0.35)],
                 startPoint: .top, endPoint: .bottom))
             .overlay {
                 shape.stroke(LinearGradient(colors: [.black.opacity(0.8), .clear, ink.opacity(dark ? 0.35 : 0.6)],
                     startPoint: .top, endPoint: .bottom), lineWidth: max(0.5, u * 0.25 * scale))
             }
             .frame(width: u * 3.6 * scale, height: u * 6.2 * scale)
+            .shadow(color: tint.opacity(0.55), radius: u * 1.4 * scale)
     }
 
     // MARK: - Floating pieces
