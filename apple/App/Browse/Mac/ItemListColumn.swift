@@ -317,6 +317,10 @@ struct ItemListColumn: View {
                 .visionHoverEffect()
                 // Rows breathe on their own: the selection and hover capsules mark them, no rules.
                 .listRowSeparator(.hidden)
+                #if os(iOS)
+                // Unfolded iPhone: drag a row to the vault tray.
+                .modifier(ItemRowDrag(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)))
+                #endif
         }
     }
 
