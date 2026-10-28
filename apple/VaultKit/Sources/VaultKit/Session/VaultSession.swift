@@ -35,6 +35,9 @@ public final class VaultSession {
     public internal(set) var devices: [FfiDevice] = []
     /// This device's id in the device list, once known (`refreshDevices`).
     public internal(set) var thisDeviceID: String?
+    /// The device list marks this device revoked and its OnePass data could not be erased yet (L6):
+    /// the revoked screen must not say "effacées". `refresh` tries again.
+    public private(set) var revokedEraseFailed = false
     /// Bumped after the lists were reloaded for a write of another process (the AutoFill extension):
     /// an open item detail reloads, or warns its editor before a save overwrites the new version,
     /// exactly as for a remote change set.
@@ -120,6 +123,7 @@ public final class VaultSession {
                 _ = handle(error, generation: gen)
             }
         } else if state != .unlocking {
+            if settings.revokedErasePending { await retryRevokedErase() }
             evaluateStoredAccount()
         }
     }
@@ -149,6 +153,13 @@ public final class VaultSession {
         if let refusedStore {
             state = .failed(refusedStore)
             lastError = refusedStore
+            return
+        }
+        if settings.revokedErasePending {
+            // Revoked, not erased yet (L6): never the lock screen of a revoked account.
+            state = .failed(.deviceRevoked)
+            lastError = .deviceRevoked
+            revokedEraseFailed = true
             return
         }
         do {
@@ -280,15 +291,25 @@ public final class VaultSession {
         state = .failed(.deviceRevoked)
         lastError = .deviceRevoked
         if wasOpen { notifySync { await $0.sessionLocked() } }
+        // Remembered until the erase completes: a relaunch shows the revoked screen and tries again.
+        settings.revokedErasePending = true
+        await retryRevokedErase()
+        state = .failed(.deviceRevoked)
+        lastError = .deviceRevoked
+    }
+
+    /// The erase of a revoked device (`eraseRevokedDevice`), again after a failure (L6).
+    private func retryRevokedErase() async {
         // Every session on the store is closed before the tables are emptied.
         await releaseChain?.value
         do {
             try await eraseLocalAccount(accountMissing: false)
+            settings.revokedErasePending = false
+            revokedEraseFailed = false
         } catch {
             Self.log.error("revoked device not fully erased")
+            revokedEraseFailed = true
         }
-        state = .failed(.deviceRevoked)
-        lastError = .deviceRevoked
     }
 
     nonisolated static let recoveryRefused =

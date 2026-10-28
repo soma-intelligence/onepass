@@ -7780,6 +7780,16 @@
         }
       }
     },
+    "Ses données OnePass n'ont pas encore pu être effacées. OnePass réessaie à chaque ouverture ; tu peux aussi réessayer maintenant." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its OnePass data could not be erased yet. OnePass tries again each time it opens; you can also try again now."
+          }
+        }
+      }
+    },
     "Ses données OnePass ont été effacées. Tu peux l'ajouter de nouveau depuis un autre appareil ou avec ton Emergency Kit." : {
       "localizations" : {
         "en" : {
