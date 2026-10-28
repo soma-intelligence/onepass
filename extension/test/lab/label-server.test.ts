@@ -16,16 +16,19 @@ const mk = (host: string, priv = false, fields: SampleField[] = [f("Courriel", {
   host, n: 0, category: "login", file: `${host}.0.json`, private: priv,
   sample: { source_url: `https://${host}/`, host, category: "login", captured_at: "", extractor: 2, status: "ok", forms: [{ step: "other", fields, buttons: [] }] },
 });
+const ORIGIN = "http://127.0.0.1:5000";
+const TOKEN = "t0k3n-for-tests";
 const tmp: string[] = [];
 afterEach(() => { while (tmp.length) rmSync(tmp.pop()!, { recursive: true, force: true }); });
 function setup(pages: RealPage[] = [mk("a.com"), mk("b.com"), mk("rec.io", true)]) {
   const root = mkdtempSync(join(tmpdir(), "lbl-"));
   tmp.push(root);
   const d: RealDirs = { samples: join(root, "s"), private: join(root, "p"), labels: join(root, "labels"), privateLabels: join(root, "p", "labels") };
-  return { d, app: createLabelApp({ pages, dirs: d }) };
+  return { d, app: createLabelApp({ pages, dirs: d, origin: ORIGIN, token: TOKEN }) };
 }
 const get = (app: ReturnType<typeof setup>["app"], url: string, host = "127.0.0.1:5000") => app.handle({ method: "GET", url, host });
-const post = (app: ReturnType<typeof setup>["app"], url: string, body: string, host = "127.0.0.1:5000") => app.handle({ method: "POST", url, host, body });
+const post = (app: ReturnType<typeof setup>["app"], url: string, body: string, host = "127.0.0.1:5000") =>
+  app.handle({ method: "POST", url, host, origin: ORIGIN, body: `token=${TOKEN}&${body}` });
 
 describe("label server handlers", () => {
   it("redirects / to the first page without a label file", () => {
@@ -63,7 +66,7 @@ describe("label server handlers", () => {
   it("preselects saved labels (resumable across restarts)", () => {
     const first = setup();
     post(first.app, "/p/0", "f0=email&go=save");
-    const again = createLabelApp({ pages: [mk("a.com"), mk("b.com"), mk("rec.io", true)], dirs: first.d });
+    const again = createLabelApp({ pages: [mk("a.com"), mk("b.com"), mk("rec.io", true)], dirs: first.d, origin: ORIGIN, token: TOKEN });
     expect(get(again, "/p/0").body).toMatch(/<option value="email" selected>/);
     expect(get(again, "/")).toMatchObject({ headers: { location: "/p/1" } });
   });
@@ -87,9 +90,27 @@ describe("label server handlers", () => {
     expect(get(app, "/p/9").status).toBe(404);
     expect(get(app, "/p/abc").status).toBe(404);
     expect(get(app, "/p/0", "evil.example").status).toBe(403);
-    expect(app.handle({ method: "POST", url: "/p/0", host: "127.0.0.1:5000", origin: "https://evil.example", body: "f0=email&go=save" }).status).toBe(403);
+    expect(app.handle({ method: "POST", url: "/p/0", host: "127.0.0.1:5000", origin: "https://evil.example", body: `token=${TOKEN}&f0=email&go=save` }).status).toBe(403);
     expect(get(app, "/nope").status).toBe(404);
     expect(app.handle({ method: "PUT", url: "/p/0", host: "127.0.0.1:5000" }).status).toBe(405);
+  });
+  it("embeds the run token in the form as a hidden field", () => {
+    const { app } = setup();
+    expect(get(app, "/p/0").body).toContain(`<input type="hidden" name="token" value="${TOKEN}">`);
+  });
+  it("refuses a POST without the token, with a wrong one, with Origin null or with another port's origin, and writes nothing", () => {
+    const { app, d } = setup();
+    const send = (body: string, origin: string | undefined) => app.handle({ method: "POST", url: "/p/0", host: "127.0.0.1:5000", origin, body });
+    const ok = "f0=email&go=save";
+    expect(send(ok, ORIGIN).status).toBe(403);
+    expect(send(`token=wrong&${ok}`, ORIGIN).status).toBe(403);
+    expect(send(`token=${TOKEN}x&${ok}`, ORIGIN).status).toBe(403);
+    expect(send(`token=${TOKEN}&${ok}`, "null").status).toBe(403);
+    expect(send(`token=${TOKEN}&${ok}`, "http://127.0.0.1:5001").status).toBe(403);
+    expect(send(`token=${TOKEN}&${ok}`, "http://localhost:5000").status).toBe(403);
+    expect(send(`token=${TOKEN}&${ok}`, undefined).status).toBe(403);
+    expect(existsSync(d.labels)).toBe(false);
+    expect(send(`token=${TOKEN}&${ok}`, ORIGIN).status).toBe(303);
   });
   it("works with zero pages", () => {
     const { app } = setup([]);
@@ -107,7 +128,14 @@ describe("startLabelServer", () => {
       expect(srv.port).toBeGreaterThan(0);
       const res = await fetch(`http://127.0.0.1:${srv.port}/p/0`);
       expect(res.status).toBe(200);
-      expect(await res.text()).toContain("Courriel");
+      const text = await res.text();
+      expect(text).toContain("Courriel");
+      const token = /name="token" value="([0-9a-f]+)"/.exec(text)![1]!;
+      const origin = `http://127.0.0.1:${srv.port}`;
+      const body = `token=${token}&f0=email&go=save`;
+      const headers = { "content-type": "application/x-www-form-urlencoded" };
+      expect((await fetch(`${origin}/p/0`, { method: "POST", headers: { ...headers, origin: "null" }, body, redirect: "manual" })).status).toBe(403);
+      expect((await fetch(`${origin}/p/0`, { method: "POST", headers: { ...headers, origin }, body, redirect: "manual" })).status).toBe(303);
     } finally { await srv.close(); }
   });
 });

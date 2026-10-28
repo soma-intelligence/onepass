@@ -10,6 +10,7 @@
 // (CSP default-src 'none'). The handlers are plain functions of a request
 // object so tests need no browser; Host and Origin are checked against DNS
 // rebinding and cross-site posts.
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { fileURLToPath } from "node:url";
@@ -21,8 +22,14 @@ import { existsSync } from "node:fs";
 
 export interface LabelRequest { method: string; url: string; host?: string; origin?: string; body?: string }
 export interface LabelResponse { status: number; headers: Record<string, string>; body: string }
-export interface LabelApp { handle(req: LabelRequest): LabelResponse }
-export interface LabelAppOptions { pages: RealPage[]; dirs: RealDirs }
+export interface LabelApp {
+  handle(req: LabelRequest): LabelResponse;
+  /** Random per-run secret, embedded in every served form and required on every POST. */
+  token: string;
+  /** Sets the one Origin a POST may carry (`http://127.0.0.1:<port>`), known once the server listens. */
+  setOrigin(origin: string): void;
+}
+export interface LabelAppOptions { pages: RealPage[]; dirs: RealDirs; /** Allowed POST origin; tests only, the server sets its own. */ origin?: string; /** Fixed token; tests only. */ token?: string }
 
 const MAX_BODY = 1_000_000;
 const CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
@@ -62,6 +69,13 @@ function attrs(f: SampleField): [string, string | undefined][] {
 
 export function createLabelApp(opts: LabelAppOptions): LabelApp {
   const { pages, dirs } = opts;
+  const token = opts.token ?? randomBytes(16).toString("hex");
+  let origin = opts.origin;
+  const tokenOk = (given: string | null): boolean => {
+    if (given === null) return false;
+    const a = Buffer.from(given), b = Buffer.from(token);
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
   const total = pages.length;
   const done = (p: RealPage) => existsSync(labelFile(p, dirs));
 
@@ -78,7 +92,7 @@ export function createLabelApp(opts: LabelAppOptions): LabelApp {
     }).join("");
     const body = `<header><h1>Étiquetage du jeu de test réel</h1><span class="sub">${i + 1} / ${total}${done(p) ? " · déjà enregistré" : ""}</span></header>
 <p class="sub">${esc(p.host)} · page ${p.n} · ${esc(p.category)}${p.private ? " · privé" : ""} · ${fields.length} champ(s)</p>
-<form method="post" action="/p/${i}">${blocks}
+<form method="post" action="/p/${i}"><input type="hidden" name="token" value="${esc(token)}">${blocks}
 <nav><button name="go" value="prev">Précédent</button><button name="go" value="save" class="main">Enregistrer</button><button name="go" value="next">Suivant</button></nav></form>`;
     return html(200, page(`${i + 1} / ${total}`, body));
   }
@@ -86,6 +100,7 @@ export function createLabelApp(opts: LabelAppOptions): LabelApp {
   function save(i: number, body: string): LabelResponse {
     const p = pages[i]!;
     const form = new URLSearchParams(body);
+    if (!tokenOk(form.get("token"))) return fail(403, "Jeton refusé");
     const count = flatFields(p.sample).length;
     const labels: Record<number, LabelValue> = {};
     for (let k = 0; k < count; k++) {
@@ -102,9 +117,12 @@ export function createLabelApp(opts: LabelAppOptions): LabelApp {
   }
 
   return {
+    token,
+    setOrigin(o) { origin = o; },
     handle(req) {
       if (!req.host || !LOCAL_HOST.test(req.host)) return fail(403, "Hôte refusé");
-      if (req.origin !== undefined && req.origin !== "null" && !LOCAL_HOST.test(req.origin.replace(/^https?:\/\//, ""))) return fail(403, "Origine refusée");
+      // A POST must come from this server's own page: Origin present and equal to it ("null" and other ports are refused).
+      if (req.method === "POST" && (origin === undefined || req.origin !== origin)) return fail(403, "Origine refusée");
       const path = req.url.split("?")[0]!;
       if (path === "/") {
         if (total === 0) return html(200, page("Aucun échantillon", `<header><h1>Étiquetage</h1><span class="sub">0 / 0</span></header><p>Aucun échantillon à étiqueter.</p>`));
@@ -130,13 +148,20 @@ export function startLabelServer(opts: LabelAppOptions): Promise<LabelServer> {
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     let size = 0;
+    let refused = false;
     req.on("data", (c: Buffer) => {
+      if (refused) return;
       size += c.length;
-      if (size > MAX_BODY) { res.writeHead(413).end(); req.destroy(); return; }
+      if (size > MAX_BODY) {
+        refused = true;
+        if (!res.headersSent) res.writeHead(413).end();
+        req.destroy();
+        return;
+      }
       chunks.push(c);
     });
     req.on("end", () => {
-      if (size > MAX_BODY) return;
+      if (refused) return;
       const r = app.handle({ method: req.method ?? "GET", url: req.url ?? "/", host: req.headers.host, origin: req.headers.origin, body: Buffer.concat(chunks).toString("utf8") });
       res.writeHead(r.status, r.headers).end(r.body);
     });
@@ -146,6 +171,7 @@ export function startLabelServer(opts: LabelAppOptions): Promise<LabelServer> {
     server.listen(0, "127.0.0.1", () => {
       const addr = server.address();
       if (!addr || typeof addr === "string") return reject(new Error("no address"));
+      app.setOrigin(`http://127.0.0.1:${addr.port}`);
       resolve({ host: "127.0.0.1", port: addr.port, server, close: () => new Promise((ok) => { server.close(() => ok()); server.closeAllConnections(); }) });
     });
   });
