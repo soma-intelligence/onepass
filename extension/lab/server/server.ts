@@ -65,7 +65,11 @@ export interface LabState {
   counters: Map<string, number>;
   /** One-time provider codes. */
   codes: Map<string, { email: string; provider: ProviderId; host: string }>;
+  /** Dataset mode: pages carry data-lab-field marks. Never set by the lab (extension) runs. */
+  labelMarks: boolean;
 }
+
+export interface LabServerOptions { labelMarks?: boolean }
 
 export interface LabServer {
   port: number;
@@ -106,13 +110,13 @@ async function readBody(req: http.IncomingMessage): Promise<Record<string, strin
   return Object.fromEntries(new URLSearchParams(raw));
 }
 
-export async function startLabServer(world: World, cert: TestCert): Promise<LabServer> {
+export async function startLabServer(world: World, cert: TestCert, opts: LabServerOptions = {}): Promise<LabServer> {
   const nonce = randomBytes(16).toString("hex");
   const ledger = new Ledger(world, (world.profiles ?? []).map((p) => fixtureFor(p, world.sites, world.fixture)));
   const sessions = new Map<string, Session>();
   const st: LabState = {
     world, ledger, siteHosts: new Set(world.sites.map((s) => s.host)),
-    created: new Map(), counters: new Map(), codes: new Map(),
+    created: new Map(), counters: new Map(), codes: new Map(), labelMarks: opts.labelMarks === true,
   };
   const sites = new Map<string, Site>(world.sites.map((s) => [s.host, s]));
   const traps = new Map<string, Site>();
@@ -182,7 +186,8 @@ export async function startLabServer(world: World, cert: TestCert): Promise<LabS
         ledger.note({ at: Date.now(), host, kind: "submit", form: "trap", ok: false,
           fields: Object.keys(body).filter((k) => body[k]), reason: "trap" });
       }
-      return x.html(renderSitePage(trapped, "trap", { asHost: host, ...(post ? { error: "Identifiant ou mot de passe incorrect" } : {}) }));
+      return x.html(renderSitePage(trapped, "trap", { asHost: host, ...(post ? { error: "Identifiant ou mot de passe incorrect" } : {}) },
+        { labelMarks: st.labelMarks }));
     }
     x.notFound();
   };

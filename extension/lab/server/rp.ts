@@ -144,7 +144,7 @@ function accountOf(site: Site, st: LabState) {
 export function handleSite(site: Site, x: Exchange, st: LabState, mode: "site" | "frame"): void {
   const note = (e: { form: string; ok: boolean; fields: string[]; reason?: string }) =>
     st.ledger.note({ at: Date.now(), host: x.host, kind: "submit", ...e });
-  const page = (id: PageId, ctx: PageContext = {}) => x.html(renderSitePage(site, id, ctx));
+  const page = (id: PageId, ctx: PageContext = {}) => x.html(renderSitePage(site, id, ctx, { labelMarks: st.labelMarks }));
   const challenge = () => {
     const c = randomBytes(32).toString("base64url");
     x.session().challenge = c;
