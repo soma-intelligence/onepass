@@ -74,6 +74,8 @@ public struct ItemIcon: View {
         let content = max(maxX - minX + 1, maxY - minY + 1)
         // Already filling the square: nothing to gain.
         guard content < side * 82 / 100 else { return nil }
+        // A small source cropped and blown up turns to mush: only trim when enough pixels remain.
+        guard CGFloat(content) * CGFloat(max(image.width, image.height)) / CGFloat(side) >= 96 else { return nil }
         let crop = min(side, Int((Double(content) * 1.18).rounded()))
         let centerX = (minX + maxX + 1) / 2, centerY = (minY + maxY + 1) / 2
         let originX = max(0, min(side - crop, centerX - crop / 2))
@@ -95,13 +97,34 @@ public struct ItemIcon: View {
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
+    /// Fewer source pixels than the tile shows on a Retina screen (with a little slack): drawn
+    /// at its own size rather than stretched.
+    static func isLowResolution(_ image: CGImage, side: CGFloat) -> Bool {
+        CGFloat(min(image.width, image.height)) < side * 2 * 0.75
+    }
+
     private var category: ItemCategory { .of(type) }
     private var corner: CGFloat { size * 9 / 38 }
     private var side: CGFloat { size * min(scale, 1.6) }
 
     public var body: some View {
         Group {
-            if let image {
+            if let image, Self.isLowResolution(image, side: side) {
+                // A small favicon is not stretched into a blur: it sits at its own size (one
+                // source pixel per screen pixel on Retina, at most 60% of the tile), crisp, on a
+                // neutral tile.
+                Image(decorative: image, scale: 2)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: min(side * 0.6, CGFloat(image.width) / 2), height: min(side * 0.6, CGFloat(image.height) / 2))
+                    .frame(width: side, height: side)
+                    .background(Color.primary.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: corner, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.08)))
+            } else if let image {
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.high)
