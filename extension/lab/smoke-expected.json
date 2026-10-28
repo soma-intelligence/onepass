@@ -9,7 +9,7 @@
   "3:one_click": "pass",
   "4:one_click": "xfail",
   "4:passkey_control": "pass",
-  "5:one_click": "xfail",
+  "5:one_click": "pass",
   "6:menu_fill": "pass",
   "7:menu_fill": "pass",
   "8:menu_fill": "pass",

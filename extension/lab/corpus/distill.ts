@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { TRAIT_WEIGHTS } from "../gen/generate.ts";
 import type { Lang, ProviderId, Role, TraitId } from "../gen/model.ts";
 import { classifyRole } from "./roles.ts";
+import { readRealTestHosts, withoutHosts } from "./real-test-hosts.ts";
 import { stableJson } from "./types.ts";
 import type { ButtonKind, Lexicon, Patterns, Sample, SampleForm, StepSeq } from "./types.ts";
 
@@ -345,11 +346,21 @@ function isSample(v: unknown): v is Sample {
   return !!o && typeof o.host === "string" && typeof o.status === "string" && typeof o.source_url === "string";
 }
 
+/**
+ * Everything the distiller reads: the corpus files of every source minus the
+ * sites of the real test set (Ruling R13), so patterns.json never holds a label
+ * the real test is scored against.
+ */
+export function distillSamples(dirs: CorpusDirs, withPrivate: boolean, hostsFile?: string): Sample[] {
+  const all = corpusFiles(dirs, withPrivate).map((f) => JSON.parse(readFileSync(f, "utf8")) as unknown).filter(isSample);
+  return withoutHosts(all, readRealTestHosts(hostsFile).hosts);
+}
+
 function main(): void {
   const dir = here();
   const withPrivate = process.argv.includes("--with-private");
   const baseline = JSON.parse(readFileSync(join(dir, "seed-lexicon.json"), "utf8")) as Lexicon;
-  const samples = corpusFiles(corpusDirs(), withPrivate).map((f) => JSON.parse(readFileSync(f, "utf8")) as unknown).filter(isSample);
+  const samples = distillSamples(corpusDirs(), withPrivate);
   const out = distill(samples, baseline, { withPrivate });
   writeFileSync(join(dir, "patterns.json"), stableJson(out));
   console.log(`patterns.json written (${out.samples} samples, ${out.steps.length} step sequences)`);
