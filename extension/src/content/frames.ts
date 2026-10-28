@@ -100,6 +100,8 @@ iframe {
   transition: opacity 160ms cubic-bezier(.23, 1, .32, 1), transform 200ms cubic-bezier(.23, 1, .32, 1);
 }
 iframe.corner { transform-origin: top right; }
+iframe.top-center { transform-origin: top center; transform: translateY(-14px) scale(.96); transition: opacity 180ms cubic-bezier(.23, 1, .32, 1), transform 380ms cubic-bezier(.34, 1.56, .64, 1), border-radius 200ms ease; }
+iframe.top-center.shown { transform: none; }
 iframe.shown { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) {
   iframe { transform: none; transition: opacity 120ms ease; }
@@ -273,20 +275,26 @@ export function createFrames(opts: FramesOptions): Frames {
     const width = Math.min(FRAME_WIDTH, Math.max(0, w - 2 * EDGE));
     let left = w - width - EDGE;
     let top = EDGE;
-    if (anchor && kind !== "save") {
+    if (kind === "overlay") {
+      // The one-click offer and its progress sit centered at the top of the page.
+      left = Math.max(EDGE, Math.round((w - width) / 2));
+    } else if (anchor && kind !== "save") {
       const r: Rect = geometry(anchor).rect;
       left = Math.max(EDGE, Math.min(r.left, w - width - EDGE));
       top = r.top + r.height + GAP;
       const above = r.top - GAP - height;
       if (top + height > vh - EDGE && above >= EDGE) top = above;
     }
-    iframe.classList.toggle("corner", !(anchor && kind !== "save"));
+    iframe.classList.toggle("top-center", kind === "overlay");
+    iframe.classList.toggle("corner", kind !== "overlay" && !(anchor && kind !== "save"));
     const s = iframe.style;
     const prevHeight = parseFloat(s.getPropertyValue("height")) || 0;
     const next = [`${Math.round(left)}px`, `${Math.round(top)}px`, `${width}px`, `${height}px`];
     const props = ["left", "top", "width", "height"];
     const changed = props.slice(0, 3).some((p, i) => s.getPropertyValue(p) !== next[i]) || height > prevHeight;
     props.forEach((p, i) => s.setProperty(p, next[i] as string));
+    // The one-click overlay is a pill while it is one row high, a rounded card when it grows.
+    if (kind === "overlay") s.setProperty("border-radius", `${Math.min(Math.round(height / 2), 34)}px`, "important");
     return changed;
   };
 

@@ -322,6 +322,19 @@ body.frame, body.frame #root { height: auto; }
 .ov-title { flex-grow: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-accounts { padding: 0 6px; display: flex; flex-direction: column; gap: 1px; }
 .ov-row { min-height: 56px; gap: 12px; padding: 8px 10px; }
+.ov-pill { display: flex; align-items: center; gap: 4px; padding: 6px 10px 6px 4px; }
+.ov-pill .ov-accounts { flex-grow: 1; min-width: 0; padding: 0; }
+.ov-pill .ov-row { border-radius: 999px; }
+.ov-pill .pill-primary { border-radius: 999px; padding: 0 16px; height: 32px; }
+.site-icon { flex-shrink: 0; border-radius: 9px; object-fit: contain; }
+.ov-done .ov-who { padding: 8px 14px 8px 10px; }
+.ov-done .ov-status { flex-grow: 0; }
+.ov-site-icon { width: 34px; height: 34px; flex-shrink: 0; border-radius: 9px; object-fit: contain; background: var(--glass); }
+.ov-pill, .ov-who, .ov-result { animation: ov-in 320ms cubic-bezier(.34, 1.56, .64, 1) both; }
+.dot-big { animation: ov-pop 360ms cubic-bezier(.34, 1.56, .64, 1) both; }
+@keyframes ov-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes ov-pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ov-pill, .ov-who, .ov-result, .dot-big { animation: none; } }
 .ov-sub .ov-row { min-height: 48px; }
 /* The row's action: a quiet label, filled on the first way only. */
 .pill {
@@ -342,7 +355,6 @@ body.frame, body.frame #root { height: auto; }
 .pill-primary { padding: 0 12px; background: var(--accent); color: var(--accent-text); font-size: 12.5px; font-weight: 600; }
 .ov-row:hover .pill-primary, .ov-row:focus-visible .pill-primary { background: var(--accent-hover); color: var(--accent-text); }
 .ov-row:active { transform: scale(.99); }
-.ov-help { margin: 0; padding: 6px 16px 12px; font-size: 12px; line-height: 1.45; color: var(--text2); }
 
 /* Progress and result: the account at the top, then one line. */
 .ov-who { display: flex; align-items: center; gap: 12px; padding: 12px 10px 10px 16px; }
@@ -385,6 +397,8 @@ body.frame, body.frame #root { height: auto; }
   color: #FFFFFF;
 }
 .dot-done { background: var(--ok); }
+.dot-big { width: 32px; height: 32px; }
+.ov-status-done { justify-content: center; }
 
 .save { height: 100vh; max-height: 100vh; display: flex; flex-direction: column; }
 /* The prompt and the confirmation: as tall as their content. */
@@ -451,7 +465,9 @@ body.popup.compact .center { height: 100%; padding: 28px 24px; }
 .pp-head { height: 60px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 14px; }
 .brand { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; padding-right: 4px; flex-shrink: 0; }
 .account { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px 0 4px; border-radius: 18px; font-size: 12.5px; font-weight: 500; color: var(--text2); flex-shrink: 0; max-width: 210px; }
-.account > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.account { background: none; border: 0; font: inherit; cursor: pointer; }
+button.account:hover { background: var(--glass); }
 .avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; background: var(--accent-soft); color: var(--accent-label); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .search { flex-grow: 1; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 10px; color: var(--text3); }
 .search:focus-within { outline: 2px solid var(--accent-ring); outline-offset: 0; }

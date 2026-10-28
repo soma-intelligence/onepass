@@ -188,6 +188,28 @@ export function itemArt(
   return tile(s.icon_letter, "", size, kind);
 }
 
+/**
+ * The site's own icon (its /favicon.ico over HTTPS, already in the browser's cache in most
+ * cases), the given tile when the site has none. No third-party icon service, no referrer.
+ */
+export function siteIcon(url: string | null | undefined, fallback: Element, px = 34): Element {
+  let origin: string | null = null;
+  try {
+    const u = url ? new URL(url) : null;
+    origin = u && u.protocol === "https:" ? u.origin : null;
+  } catch {
+    origin = null;
+  }
+  if (!origin) return fallback;
+  const img = h("img", {
+    class: "site-icon",
+    attrs: { src: `${origin}/favicon.ico`, alt: "", referrerpolicy: "no-referrer", decoding: "async", "aria-hidden": "true", width: String(px), height: String(px) },
+  }) as HTMLImageElement;
+  img.style.width = img.style.height = `${px}px`;
+  img.addEventListener("error", () => img.replaceWith(fallback), { once: true });
+  return img;
+}
+
 /** The OnePass mark: indigo tile with a white keyhole. */
 export function mark(size: "s" | "m" | "l" = "m"): HTMLSpanElement {
   const px = size === "s" ? 13 : size === "m" ? 19 : 36;

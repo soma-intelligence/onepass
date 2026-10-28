@@ -27,6 +27,7 @@ import {
   icon,
   mark,
   messageBlock,
+  siteIcon,
   mount,
   observeVisibility,
   otherAccounts,
@@ -277,7 +278,8 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
           h("span", { class: "t2" }, a.subtitle),
           h("span", { class: "meta" }, a.totp ? tr(" · mot de passe et code", " · password and code") : tr(" · mot de passe", " · password")),
         );
-    const art = wayArt({ kind: "login", has_password: !a.provider, methods: [], icon_letter: a.iconLetter }, a.provider, "m");
+    const tileArt = wayArt({ kind: "login", has_password: !a.provider, methods: [], icon_letter: a.iconLetter }, a.provider, "m");
+    const art = a.provider ? tileArt : siteIcon(init?.origin ?? null, tileArt);
     const row = h(
       "div",
       { class: "ov-account", attrs: a.provider ? { "data-provider": a.provider } : {} },
@@ -340,11 +342,9 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     const list = h("div", { class: "ov-accounts" });
     init.accounts.forEach((a, i) => list.append(...wayRow(a, i === 0)));
     if (init.accounts.length === 0) list.append(messageBlock(tr(`Aucun login pour ${hostOf(init.origin)}`, `No login for ${hostOf(init.origin)}`)));
-    show(
-      head(init.origin),
-      list,
-      h("p", { class: "ov-help" }, tr("Un clic suffit. OnePass s'arrête si le domaine change ou sur un CAPTCHA.", "One click is enough. OnePass stops if the domain changes or on a CAPTCHA.")),
-    );
+    // A pill: the site, the account, one button, and the close button at the end.
+    const heading = h("h1", { class: "sr-only" }, tr(`Se connecter à ${hostOf(init.origin)}`, `Sign in to ${hostOf(init.origin)}`));
+    show(h("div", { class: "ov-pill" }, heading, list, closeButton()));
   }
 
   /** The way the chain runs with, as in the offer's row. */
@@ -357,7 +357,9 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     return h(
       "div",
       { class: "ov-who" },
-      wayArt({ kind: "login", has_password: !provider, methods: [], icon_letter: letter }, provider, "m"),
+      provider
+        ? wayArt({ kind: "login", has_password: false, methods: [], icon_letter: letter }, provider, "m")
+        : siteIcon(init?.origin ?? null, wayArt({ kind: "login", has_password: true, methods: [], icon_letter: letter }, undefined, "m")),
       h(
         "span",
         { class: "stack" },
@@ -415,19 +417,21 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     const done = c.status === "done";
     // What was done; the end (done or stop) is the status line above.
     const steps = c.steps.filter((x) => (x.state === "done" || x.state === "stopped") && x.what !== "end" && !(x.what === undefined && x === c.steps.at(-1)));
-    const parts: (Node | null)[] = [whoNode(c, closeButton())];
+    const parts: (Node | null)[] = [];
     if (done) {
-      status.classList.add("ok");
-      status.append(h("span", { class: "dot dot-done", attrs: { "aria-hidden": "true" } }, icon("check", 10)), tr("Connecté", "Signed in"));
-      parts.push(h("div", { class: "ov-result" }, status));
+      // Success is the pill again, its button turned into a check: no text, no steps.
+      status.classList.add("ok", "ov-status-done");
+      status.append(h("span", { class: "dot dot-done dot-big", attrs: { "aria-hidden": "true" } }, icon("check", 14)), srOnly(tr("Connecté", "Signed in")));
+      parts.push(h("div", { class: "ov-pill ov-done" }, whoNode(c, status)));
     } else {
+      parts.push(whoNode(c, closeButton()));
       const reason = c.reason ?? "user";
       status.classList.add("warn");
       status.append(icon("alert", 16), c.reason ? stopText(reason, c.host, c.email, c.provider) : tr("Arrêté", "Stopped"));
       const hint = stopHint(reason, c.site, c.provider);
       parts.push(h("div", { class: "ov-result" }, status, hint ? h("p", { class: "ov-hint" }, hint) : null));
     }
-    if (steps.length > 0) parts.push(h("ul", { class: "ov-steps", attrs: { "aria-label": tr("Étapes faites", "Steps done") } }, ...steps.map(stepNode(c))));
+    if (!done && steps.length > 0) parts.push(h("ul", { class: "ov-steps", attrs: { "aria-label": tr("Étapes faites", "Steps done") } }, ...steps.map(stepNode(c))));
     const again = !done && c.reason && RETRY.has(c.reason) ? retryFor(c) : undefined;
     if (again) {
       parts.push(
