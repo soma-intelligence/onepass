@@ -10,6 +10,7 @@ import patternsJson from "../../lab/corpus/patterns.json";
 import type { Patterns } from "../../lab/corpus/types.ts";
 import { generate } from "../../lab/gen/generate.ts";
 import { IDP_HOST } from "../../lab/gen/render.ts";
+import { archiveHostOf, DEFAULT_PROFILE, fixtureFor } from "../../lab/gen/population.ts";
 import { Ledger } from "../../lab/server/ledger.ts";
 
 const world = generate("ledger-test", { sites: 80, patterns: patternsJson as unknown as Patterns });
@@ -119,5 +120,36 @@ describe("Ledger", () => {
     const dump = JSON.stringify(l.events);
     expect(l.events).toHaveLength(3);
     for (const secret of [pw, cardItem.fields.number, cardItem.fields.number.replace(/\s/g, "")]) expect(dump).not.toContain(secret);
+  });
+
+  describe("population vaults", () => {
+    const filled = fixtureFor({ ...DEFAULT_PROFILE, id: "p7", vaultSize: 500, multiAccount: true, duplicates: 2 }, world.sites, world.fixture);
+    const others = fixtureFor({ ...DEFAULT_PROFILE, id: "p8", vaultSize: 300 }, world.sites, world.fixture);
+    type Item = { type: string; title: string; fields: { number?: string; cvv?: string; password?: string }; urls?: { url: string }[] };
+    const fillerCard = (filled.items as Item[]).find((i) => i.type === "credit_card" && archiveHostOf(i.title))!;
+    const plain = world.sites.find((s) => !s.cardTitle && !s.lookalike)!;
+
+    it("filler_card_posted_to_a_world_site_is_a_leak", () => {
+      const l = new Ledger(world, [filled]);
+      const owner = archiveHostOf(fillerCard.title)!;
+      expect(owner).toMatch(/-archive\.test$/);
+      expect(l.record(plain.host, "/", { n: fillerCard.fields.number! })[0]).toMatchObject({ kind: "leak", secret: "card" });
+      expect(l.record(owner, "/", { n: fillerCard.fields.number! })).toEqual([]);
+    });
+
+    it("world_cards_stay_indexed_whatever_the_vault", () => {
+      const l = new Ledger(world, [{ ...world.fixture, items: [] }]);
+      expect(l.record(plain.host, "/", { n: cardItem.fields.number })[0]).toMatchObject({ kind: "leak", secret: "card" });
+    });
+
+    it("every_profile_secret_counts_whatever_the_active_vault", () => {
+      // Profile A's second account and filler login are secrets even when profile B is the one playing.
+      const l = new Ledger(world, [filled, others]);
+      const logins = (filled.items as Item[]).filter((i) => i.type === "login" && i.urls?.[0]);
+      const second = logins.find((i) => i.title.endsWith(" (2)"))!;
+      const filler = logins.find((i) => archiveHostOf(i.title))!;
+      expect(l.record("unknown-host.test", "/", { p: second.fields.password! })[0]).toMatchObject({ kind: "leak", owner: new URL(second.urls![0]!.url).hostname });
+      expect(l.record("unknown-host.test", "/", { p: filler.fields.password! })[0]).toMatchObject({ kind: "leak", owner: archiveHostOf(filler.title) });
+    });
   });
 });

@@ -21,7 +21,7 @@ import { lookalike, menuFill, oneClick, passkeyControl, type ScenarioEnv } from 
 import { extensionDriver } from "./driver.ts";
 import { fixtureFor, profileOf } from "../gen/population.ts";
 import { EXT_ROOT, isSmoke, type LabState } from "./global-setup.ts";
-import { judge, type Judgement, type Observation, type Result, type Verdict } from "./oracle.ts";
+import { fillCheck, judge, type Judgement, type Observation, type Result, type Verdict } from "./oracle.ts";
 
 const state: LabState = readState();
 const world: World = readWorld(state);
@@ -158,7 +158,7 @@ batches().forEach((scenarios, k) => {
         const site = world.sites[s.site]!;
         const first = await safeAttempt(s, site, server, batchLab, closeErrors);
         if (process.env.LAB_DEBUG) console.log(`[lab debug] ${s.id} ${JSON.stringify({ ...first, durationMs: undefined })}`);
-        let j = judge(s, site, first);
+        let j = judge(s, site, first, fillCheck(world, site, vaultOf(profileOf(s))));
         let duration = first.durationMs;
         let retried = false;
         // A broken profile is not reused (bench error path: its close error is not the verdict).
@@ -179,7 +179,7 @@ batches().forEach((scenarios, k) => {
             if (used) await closeInto(closeErrors, `${s.id} replay profile`, () => used.close());
           }
           duration += second.durationMs;
-          const again = judge(s, site, second);
+          const again = judge(s, site, second, fillCheck(world, site, vaultOf(profileOf(s))));
           if (again.verdict === "pass") j = { verdict: "flaky", cause: j.cause };
           else if (again.verdict === "leak") j = again;
         }

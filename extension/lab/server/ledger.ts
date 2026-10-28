@@ -8,6 +8,7 @@
 // reasons only, never a value.
 import { totp } from "../../e2e/server.ts";
 import type { FixtureFile, ProviderId, Role, Site, World } from "../gen/model.ts";
+import { archiveHostOf } from "../gen/population.ts";
 import { IDP_HOST, PAGE_PATH } from "../gen/render.ts";
 
 export type SecretKind = "password" | "totp" | "card" | "csc";
@@ -45,7 +46,7 @@ export class Ledger {
   /** Site served under a host: its own host, its lookalike copy, its cross-site frame host. */
   private readonly siteOf = new Map<string, Site>();
 
-  constructor(world: World) {
+  constructor(world: World, fixtures: FixtureFile[] = []) {
     for (const s of world.sites) {
       for (const h of [s.host, s.lookalike?.host, s.frameHost]) if (h) this.siteOf.set(h, s);
       if (s.account?.password) own(this.passwords, s.account.password, "password", s.host);
@@ -54,38 +55,22 @@ export class Ledger {
     for (const [p, accounts] of Object.entries(world.idp) as [ProviderId, World["idp"][ProviderId]][]) {
       for (const a of accounts) if (a.password) own(this.passwords, a.password, "password", IDP_HOST[p]);
     }
-    this.world = world;
-    this.useFixture(world.fixture);
+    // The union of every simulated user's vault: what counts as a secret never depends on the active profile.
+    for (const f of [world.fixture, ...fixtures]) this.index(world, f);
   }
 
-  private readonly world: World;
-  /** Passwords of the current vault's extra logins (second accounts, filler), dropped when the vault changes. */
-  private vaultPasswords: { value: string; owner: string }[] = [];
-
   /**
-   * Indexes the secrets of a simulated user's vault: card numbers and CVCs of
-   * the world's card items (by site), and the passwords of every other login
-   * item, owned by the host of its URL. The world's own site passwords stay
-   * indexed from the sites themselves.
+   * Indexes the secrets of one vault: card numbers and CVCs (a world card is owned by its site, a filler card by
+   * its `*-archive.test` host), and the passwords of every login item, owned by the host of its URL.
    */
-  useFixture(fixture: FixtureFile): void {
-    this.cards.clear();
-    this.cscs.clear();
-    for (const v of this.vaultPasswords.splice(0)) {
-      const known = this.passwords.get(v.value);
-      if (!known) continue;
-      known.owners = known.owners.filter((o) => o !== v.owner);
-      if (known.owners.length === 0) this.passwords.delete(v.value);
-    }
+  private index(world: World, fixture: FixtureFile): void {
     for (const raw of fixture.items as CardItem[]) {
       if (raw.type === "login" && raw.fields?.password && raw.urls?.[0]) {
-        const owner = new URL(raw.urls[0].url).hostname;
-        const had = this.passwords.get(raw.fields.password)?.owners.includes(owner) ?? false;
-        own(this.passwords, raw.fields.password, "password", owner);
-        if (!had) this.vaultPasswords.push({ value: raw.fields.password, owner });
+        own(this.passwords, raw.fields.password, "password", new URL(raw.urls[0].url).hostname);
       }
       if (raw.type !== "credit_card") continue;
-      const owner = this.world.sites.find((s) => s.cardTitle !== undefined && s.cardTitle === raw.title)?.host;
+      const owner = world.sites.find((s) => s.cardTitle !== undefined && s.cardTitle === raw.title)?.host
+        ?? (raw.title ? archiveHostOf(raw.title) : undefined);
       if (!owner) continue;
       if (raw.fields?.number) own(this.cards, digitsOf(raw.fields.number), "card", owner);
       if (raw.fields?.cvv) own(this.cscs, raw.fields.cvv, "csc", owner);
