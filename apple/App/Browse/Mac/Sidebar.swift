@@ -800,7 +800,7 @@ struct SettingsRow: View {
 private struct SidebarLightWash: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View {
-        if scheme == .light { Color.white.opacity(0.1) } else { Color.clear }
+        if scheme == .light { Color.white.opacity(0.04) } else { Color.clear }
     }
 }
 
@@ -808,14 +808,17 @@ private struct SidebarLightWash: View {
 struct SidebarMaterial: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        // The lightest behind-window blur: more of the desktop shows through than with `.sidebar`.
-        view.material = .underWindowBackground
+        // Light appearance: the popover's white frosted glass (`.sidebar` and the window
+        // materials read gray in light). Dark keeps the sidebar material.
+        view.material = .sidebar
         view.blendingMode = .behindWindow
         view.state = .followsWindowActiveState
         return view
     }
 
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = context.environment.colorScheme == .light ? .popover : .sidebar
+    }
 }
 
 struct TitlebarHeightReader: NSViewRepresentable {
