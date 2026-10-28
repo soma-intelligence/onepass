@@ -52,7 +52,7 @@ public final class VaultSession {
 
     @ObservationIgnored public let environment: VaultEnvironment
     @ObservationIgnored private var session: Session?
-    @ObservationIgnored private var generation = 0
+    @ObservationIgnored private(set) var generation = 0
     @ObservationIgnored private var autoLock: AutoLock
     @ObservationIgnored private var autoLockTimer: Task<Void, Never>?
     @ObservationIgnored private var syncChain: Task<Void, Never>?
@@ -1217,10 +1217,12 @@ public final class VaultSession {
     /// (released by the core only after a verified import) and ends unlocked, as `restore` does. The
     /// device mode comes from the grant. The approver already listed this device: nothing registers.
     /// A wrong password (or any failure) leaves the store empty and the grant in the core, so the user
-    /// can try again. The caller wipes `password`.
+    /// can try again. Wrong passwords count toward the unlock lockout like an unlock (M3). The caller
+    /// wipes `password`.
     func importPaired(_ newcomer: PairingNewcomer, password: SecretBytes, mode: DeviceMode) async throws {
         try checkStoreUsable()
         guard session == nil, state == .noAccount else { throw fail(.accountExists) }
+        try checkLockout()
         try beginPasswordCheck()
         defer { passwordCheckInFlight = false }
         let path = dbPath
@@ -1250,8 +1252,10 @@ public final class VaultSession {
                 }
             }
         } catch {
+            let failure = VaultError(error)
+            if failure == .wrongPassword { recordFailedUnlock() }
             if gen == generation { evaluateStoredAccount() }
-            throw fail(VaultError(error))
+            throw fail(failure)
         }
         defer {
             opened.opened.auk.wipe()
@@ -1410,11 +1414,14 @@ public final class VaultSession {
         }
     }
 
+    /// Failures before the first lockout.
+    nonisolated public static let lockoutThreshold = 5
+
     /// After 5 failures: 30 s, then 60 s, then 300 s for every later failure.
     func recordFailedUnlock() {
         let count = settings.recordFailedUnlock()
-        guard count >= 5 else { return }
-        let wait: TimeInterval = count == 5 ? 30 : count == 6 ? 60 : 300
+        guard count >= Self.lockoutThreshold else { return }
+        let wait: TimeInterval = count == Self.lockoutThreshold ? 30 : count == Self.lockoutThreshold + 1 ? 60 : 300
         settings.lockoutUntil = environment.clock.now.addingTimeInterval(wait)
     }
 

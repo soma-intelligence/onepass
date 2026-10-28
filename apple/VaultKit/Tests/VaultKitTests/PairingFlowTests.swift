@@ -57,6 +57,10 @@ final class PairingFixture {
     let network = InMemoryPairingNetwork()
     let server: PushingSync?
     var login: FfiItem!
+    /// How long the approver waits for the new device's confirmation after presence (L5).
+    var approverPeerTimeout: Duration = PairingApproverFlow.peerTimeout
+    /// How long the new device keeps a received account without an attempt (M3).
+    var newcomerGrantLifetime: Duration = PairingNewcomerFlow.grantLifetime
 
     static let newcomerName = "iPad de Camille"
 
@@ -83,7 +87,8 @@ final class PairingFixture {
     /// Both flows up to the code comparison, codes checked equal.
     func compare(mode: FfiDeviceMode) async throws -> (PairingNewcomerFlow, PairingApproverFlow, String) {
         let n = PairingNewcomerFlow(
-            vault: newcomer, mode: mode, listener: network, deviceName: Self.newcomerName, deviceKind: .tablet)
+            vault: newcomer, mode: mode, listener: network, deviceName: Self.newcomerName, deviceKind: .tablet,
+            grantLifetime: newcomerGrantLifetime)
         n.start()
         var qr: String?
         #expect(await eventually {
@@ -93,7 +98,7 @@ final class PairingFixture {
         let qrText = try #require(qr)
         #expect(qrText.hasPrefix("OPPAIR1:"))
         let service = try pairingServiceName(qrText: qrText)
-        let a = PairingApproverFlow(vault: approver, connector: network)
+        let a = PairingApproverFlow(vault: approver, connector: network, peerTimeout: approverPeerTimeout)
         await a.begin(qrText: qrText)
         guard case .comparing(let sas, let peer, let requested) = a.state else {
             Issue.record("approver not comparing: \(a.state)")

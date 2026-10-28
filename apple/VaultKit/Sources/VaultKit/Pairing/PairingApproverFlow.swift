@@ -26,7 +26,8 @@ public final class PairingApproverFlow {
         case comparing(sas: String, peer: FfiPeerDevice, requestedMode: FfiDeviceMode)
         /// Approved here; waiting for the new device's confirmation.
         case waitingForPeer
-        /// The grant is being built and sent.
+        /// The grant is being built and sent. `cancel()` is ignored from here: the grant may already
+        /// be out, so nothing may claim that nothing was sent.
         case granting
         /// A public session runs: its journal and end, on this device's clock.
         case publicRunning(journal: [PairingAuditEntry], expiresAt: Date)
@@ -50,16 +51,29 @@ public final class PairingApproverFlow {
     @ObservationIgnored private var peerConfirmed = false
     @ObservationIgnored private var peerWaiters: [CheckedContinuation<Bool, Never>] = []
     @ObservationIgnored private var journal: [PairingAuditEntry] = []
+    @ObservationIgnored private var nextAuditID = 0
     @ObservationIgnored private var publicExpiresAt: Date?
     @ObservationIgnored private var acked = false
+    /// An approval runs (presence, wait, grant): a second one is refused, set before the first await.
+    @ObservationIgnored private var approving = false
+    @ObservationIgnored private let peerTimeout: Duration
+
+    /// How long the approver waits for the new device's confirmation once presence passed (L5).
+    public static let peerTimeout: Duration = .seconds(60)
+    /// Entries a public session's journal keeps: the oldest go first (L3).
+    public static let maxJournalEntries = 500
+    /// Longest field label the journal keeps from the guest (L3).
+    public static let maxAuditLabelLength = 128
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "pairing")
 
     public init(
-        vault: VaultSession, connector: any PairingConnector, now: @escaping @Sendable () -> Date = { Date() }
+        vault: VaultSession, connector: any PairingConnector, peerTimeout: Duration = PairingApproverFlow.peerTimeout,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.vault = vault
         self.connector = connector
+        self.peerTimeout = peerTimeout
         self.now = now
     }
 
@@ -81,8 +95,13 @@ public final class PairingApproverFlow {
         do {
             let service = try pairingServiceName(qrText: qrText)
             let transport = try await connector.connect(serviceName: service)
+            guard state == .connecting else {
+                transport.close()
+                return
+            }
             self.transport = transport
-            let hello = try await transport.receive()
+            // Before the key exchange nothing is authenticated: a Hello is small (M2).
+            let hello = try await transport.receive(maxBytes: PairingFrame.maxHandshakeBytes)
             let nowUnix = Int64(now().timeIntervalSince1970)
             let approver = try await CoreThread.run {
                 try PairingApprover.begin(qrText: qrText, hello: hello, now: nowUnix)
@@ -102,15 +121,23 @@ public final class PairingApproverFlow {
     /// seals the server's view (refused when the account is not on the server yet); without one, its
     /// full local view (ruling A10). The device list it signs is sent to the server after.
     public func approve(mode: FfiDeviceMode, password: SecretBytes? = nil) async {
-        guard case .comparing(_, _, let requested) = state, let approver, mode != .public, mode == requested else {
-            return
-        }
-        guard await presenceConfirmed(password: password) else { return }
-        guard await waitForPeer() else { return }
+        guard !approving, case .comparing(_, _, let requested) = state, let approver, mode != .public,
+            mode == requested
+        else { return }
+        // Set before the first await: a second tap, or a cancel meanwhile, is seen at once (M1, L1).
+        approving = true
+        defer { approving = false }
+        guard await presenceConfirmed(password: password), isComparing, transport != nil else { return }
+        guard await waitForPeer(), state == .waitingForPeer || isComparing, transport != nil else { return }
         state = .granting
         let sync = vault.environment.sync
         let hasServer = sync.syncsWithServer
         if hasServer { await sync.syncNow() }
+        // `cancel()` is ignored while granting, but the connection may have closed meanwhile.
+        guard state == .granting, let transport else {
+            if state == .granting { fail(.connectionLost) }
+            return
+        }
         do {
             let secretKey = try vault.loadSecretKey()
             defer { secretKey.secretKey.wipe() }
@@ -119,9 +146,11 @@ public final class PairingApproverFlow {
                 guard let text = key.string() else { throw VaultError.passwordRequired }
                 return try approver.sealFullGrant(session: session, secretKey: text, mode: mode, includePending: !hasServer)
             }
-            try await transport?.send(frame)
+            try await transport.send(frame)
         } catch {
             fail(PairingFailure(error))
+            // A grant sealed but not sent still listed the device: the list is refreshed.
+            try? await vault.refreshDevices()
             return
         }
         // The device list changed: tell the sync layer, and push it now when there is a server.
@@ -142,19 +171,22 @@ public final class PairingApproverFlow {
     /// Public request: lends `items` read only for `minutes` (1 to 60, 15 by default), after fresh
     /// presence (or `password`) and the new device's confirmation. Then the journal fills in.
     public func approvePublic(items: [FfiItemRef], minutes: UInt32 = 15, password: SecretBytes? = nil) async {
-        guard case .comparing(_, _, .public) = state, let approver else { return }
-        guard await presenceConfirmed(password: password) else { return }
-        guard await waitForPeer() else { return }
+        guard !approving, case .comparing(_, _, .public) = state, let approver else { return }
+        approving = true
+        defer { approving = false }
+        guard await presenceConfirmed(password: password), isComparing, transport != nil else { return }
+        guard await waitForPeer(), state == .waitingForPeer || isComparing, let transport else { return }
         state = .granting
         do {
             let frame = try await vault.readUnmapped { session in
                 try approver.sealPublicGrant(session: session, items: items, minutes: minutes)
             }
-            try await transport?.send(frame)
+            try await transport.send(frame)
         } catch {
             fail(PairingFailure(error))
             return
         }
+        guard state == .granting else { return }
         let expires = vault.environment.clock.now.addingTimeInterval(TimeInterval(minutes) * 60)
         publicExpiresAt = expires
         remaining = TimeInterval(minutes) * 60
@@ -179,9 +211,10 @@ public final class PairingApproverFlow {
     }
 
     /// Stops before the grant ("Ils sont différents", or leaving the screen): nothing is granted.
+    /// Ignored while the grant is being built and sent (`granting`): it may already be out.
     public func cancel() {
         switch state {
-        case .done, .failed: return
+        case .done, .failed, .granting: return
         case .publicRunning:
             Task { await endPublicSession() }
             return
@@ -192,20 +225,34 @@ public final class PairingApproverFlow {
 
     // MARK: - Steps
 
+    private var isComparing: Bool {
+        if case .comparing = state { true } else { false }
+    }
+
     private func presenceConfirmed(password: SecretBytes?) async -> Bool {
         approvalError = nil
         do {
             try await vault.confirmPresence(password: password, prompt: VaultSession.approvePrompt)
             return true
         } catch {
-            approvalError = VaultError(error)
+            // A refusal keeps the comparison open, unless the pairing stopped meanwhile.
+            if isComparing { approvalError = VaultError(error) }
             return false
         }
     }
 
+    /// The new device's confirmation, at most `peerTimeout` after presence passed (L5): a fresh
+    /// presence must not stay valid while nobody answers. Then the pairing fails.
     private func waitForPeer() async -> Bool {
         if peerConfirmed { return true }
         state = .waitingForPeer
+        let timeout = peerTimeout
+        let timer = Task { [weak self] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled, let self, self.state == .waitingForPeer else { return }
+            self.fail(.peerTimedOut)
+        }
+        defer { timer.cancel() }
         return await withCheckedContinuation { peerWaiters.append($0) }
     }
 
@@ -239,10 +286,18 @@ public final class PairingApproverFlow {
             acked = true
         case .audit(let at, let itemID, let action):
             let title = vault.summaries.first { $0.id == itemID }?.title ?? ""
+            // What the guest sends is bounded (L3): a cut label, the last entries only.
+            let bounded: FfiAuditAction =
+                switch action {
+                case .copied(let label): .copied(label: String(label.prefix(Self.maxAuditLabelLength)))
+                default: action
+                }
             journal.append(
                 PairingAuditEntry(
-                    id: journal.count, at: Date(timeIntervalSince1970: TimeInterval(at)), itemID: itemID,
-                    title: title, action: action))
+                    id: nextAuditID, at: Date(timeIntervalSince1970: TimeInterval(at)), itemID: itemID,
+                    title: title, action: bounded))
+            nextAuditID += 1
+            if journal.count > Self.maxJournalEntries { journal.removeFirst(journal.count - Self.maxJournalEntries) }
             if case .publicRunning(_, let expires) = state { state = .publicRunning(journal: journal, expiresAt: expires) }
         case .end:
             if case .publicRunning = state { finish() } else { peerGone(.cancelledByPeer) }

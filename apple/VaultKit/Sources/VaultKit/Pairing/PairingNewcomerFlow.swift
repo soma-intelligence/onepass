@@ -1,12 +1,17 @@
 import Foundation
 import Observation
 import os
+import Synchronization
 
 /// The new device's side of a pairing (spec 2b 5.1, ruling A1: the new device shows the QR, the
-/// unlocked device scans it). While no approver connects, the QR is renewed every 30 s (new session,
-/// new key, new service). Then: Hello, KeyExchange, the 6-digit code on both screens, the user's
+/// unlocked device scans it). While no approver completed the key exchange, the QR is renewed every
+/// 30 s (new session, new key, new service). The service stays published while connections are
+/// checked (M2): each one gets the Hello and must answer a key exchange of at most 16 KiB within
+/// `handshakeTimeout` (and before the QR expires), else it is closed; a key exchange the core refuses
+/// ends that QR and a new one is published. Then: the 6-digit code on both screens, the user's
 /// confirmation (`confirmCode`), the approver's grant. A full grant ends with `importAndUnlock`; a
-/// public one hands over a `PublicSession`.
+/// public one hands over a `PublicSession`. A full grant waits at most `grantLifetime` without an
+/// attempt and `maxImportAttempts` wrong passwords, then it is dropped (M3).
 @MainActor
 @Observable
 public final class PairingNewcomerFlow {
@@ -44,6 +49,15 @@ public final class PairingNewcomerFlow {
     }
 
     public static let renewInterval: Duration = .seconds(30)
+    /// How long a connection has to send its key exchange after the Hello (M2).
+    public static let handshakeTimeout: Duration = .seconds(10)
+    /// Connections checked at the same time; more are closed at once (M2).
+    static let maxPendingHandshakes = 4
+    /// Wrong master passwords before the received account is dropped: the count at which the
+    /// unlock lockout starts (M3).
+    public static let maxImportAttempts = VaultSession.lockoutThreshold
+    /// How long a received account waits for the master password without an attempt (M3).
+    public static let grantLifetime: Duration = .seconds(300)
 
     public private(set) var state: State = .idle
     /// The mode asked for (first question of "J'ai déjà OnePass sur un autre appareil").
@@ -56,6 +70,10 @@ public final class PairingNewcomerFlow {
     @ObservationIgnored private let deviceName: String
     @ObservationIgnored private let deviceKind: FfiDeviceKind
     @ObservationIgnored private let renewEvery: Duration
+    @ObservationIgnored private let handshakeTimeout: Duration
+    @ObservationIgnored private let grantLifetime: Duration
+    @ObservationIgnored private var failedImports = 0
+    @ObservationIgnored private var grantTimer: Task<Void, Never>?
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private var newcomer: PairingNewcomer?
     @ObservationIgnored private var transport: (any PairingTransport)?
@@ -71,6 +89,8 @@ public final class PairingNewcomerFlow {
         vault: VaultSession, mode: FfiDeviceMode, listener: any PairingListener,
         deviceName: String? = nil, deviceKind: FfiDeviceKind? = nil,
         renewEvery: Duration = PairingNewcomerFlow.renewInterval,
+        handshakeTimeout: Duration = PairingNewcomerFlow.handshakeTimeout,
+        grantLifetime: Duration = PairingNewcomerFlow.grantLifetime,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.vault = vault
@@ -79,12 +99,16 @@ public final class PairingNewcomerFlow {
         self.deviceName = String((deviceName ?? VaultSession.currentDeviceName()).prefix(VaultSession.maxDeviceNameLength))
         self.deviceKind = deviceKind ?? VaultSession.currentDeviceKind
         self.renewEvery = renewEvery
+        self.handshakeTimeout = handshakeTimeout
+        self.grantLifetime = grantLifetime
         self.now = now
     }
 
     isolated deinit {
         run?.cancel()
+        grantTimer?.cancel()
         transport?.close()
+        if case .receivedFull = state { newcomer?.discardGrant() }
     }
 
     /// Shows a first QR and waits for the approver.
@@ -115,7 +139,8 @@ public final class PairingNewcomerFlow {
         stop(.failed(.codeRejected))
     }
 
-    /// Stops the pairing. After the code exchange, the approver is told (`End`).
+    /// Stops the pairing. After the code exchange, the approver is told (`End`). A received account
+    /// not imported yet is dropped (leaving the screen, the app going to the background on iOS).
     public func cancel() {
         switch state {
         case .done, .receivedPublic, .cancelled, .failed: return
@@ -136,18 +161,29 @@ public final class PairingNewcomerFlow {
 
     /// Full grant: imports the snapshot with the master password, stores the received Secret Key and
     /// unlocks `vault`. A wrong password keeps the grant (`importError`, state `receivedFull`) for
-    /// another try. The caller wipes `password`.
+    /// another try, up to `maxImportAttempts`: then the grant is dropped (`tooManyAttempts`). Wrong
+    /// passwords count toward this device's unlock lockout. The caller wipes `password`.
     public func importAndUnlock(password: SecretBytes) async {
         guard state == .receivedFull, let newcomer, let mode = grantedMode else { return }
         state = .importing
         importError = nil
+        grantTimer?.cancel()
         do {
             try await vault.importPaired(newcomer, password: password, mode: mode)
             state = .done
+            self.newcomer = nil
             close()
         } catch {
-            importError = VaultError(error)
+            let failure = VaultError(error)
+            guard state == .importing else { return }
+            if failure == .wrongPassword { failedImports += 1 }
+            if failedImports >= Self.maxImportAttempts {
+                stop(.failed(.tooManyAttempts))
+                return
+            }
+            importError = failure
             state = .receivedFull
+            startGrantTimer()
         }
     }
 
@@ -161,7 +197,7 @@ public final class PairingNewcomerFlow {
     // MARK: - Steps
 
     private func pair() async {
-        let connection: (newcomer: PairingNewcomer, transport: any PairingTransport)
+        let connection: (newcomer: PairingNewcomer, transport: any PairingTransport, sas: String)
         do {
             connection = try await waitForApprover()
         } catch is CancellationError {
@@ -170,28 +206,19 @@ public final class PairingNewcomerFlow {
             stop(.failed(PairingFailure(error)))
             return
         }
-        newcomer = connection.newcomer
-        transport = connection.transport
-        let (newcomer, transport) = connection
-        let nowUnix = Int64(now().timeIntervalSince1970)
-        do {
-            try await transport.send(newcomer.hello())
-            let exchange = try await transport.receive()
-            let sas = try await CoreThread.run { try newcomer.onKeyExchange(bytes: exchange, now: nowUnix) }
-            guard !Task.isCancelled else { return }
-            state = .comparing(sas: sas)
-        } catch is CancellationError {
-            return
-        } catch {
-            stop(.failed(PairingFailure(error)))
+        guard !Task.isCancelled else {
+            connection.transport.close()
             return
         }
-        await receiveGrant(newcomer: newcomer, transport: transport)
+        newcomer = connection.newcomer
+        transport = connection.transport
+        state = .comparing(sas: connection.sas)
+        await receiveGrant(newcomer: connection.newcomer, transport: connection.transport)
     }
 
-    /// Publishes a QR, renewed every `renewEvery` until an approver connects.
-    private func waitForApprover() async throws -> (PairingNewcomer, any PairingTransport) {
-        let listener = listener
+    /// Publishes a QR until an approver's key exchange is validated, a new QR every `renewEvery`
+    /// (or after a refused key exchange).
+    private func waitForApprover() async throws -> (PairingNewcomer, any PairingTransport, String) {
         while true {
             try Task.checkCancellation()
             let nowUnix = Int64(now().timeIntervalSince1970)
@@ -199,22 +226,126 @@ public final class PairingNewcomerFlow {
             let newcomer = try await CoreThread.run {
                 try PairingNewcomer(name: name, kind: kind, mode: mode, now: nowUnix)
             }
-            state = .showingCode(
-                qrText: newcomer.qrText(), expiresAt: Date(timeIntervalSince1970: TimeInterval(newcomer.expiresAt())))
-            let service = newcomer.serviceName()
-            let renew = renewEvery
-            let connected: (any PairingTransport)? = try await withThrowingTaskGroup(
-                of: (any PairingTransport)?.self
-            ) { group in
-                group.addTask { try await listener.listen(serviceName: service) }
-                group.addTask {
-                    try await Task.sleep(for: renew)
+            if let found = try await publish(newcomer) { return found }
+        }
+    }
+
+    private enum HandshakeEvent: Sendable {
+        case keyExchange(id: Int, Data)
+        case failed(id: Int)
+        case renew
+    }
+
+    /// One QR on screen and its service published. Every connection gets the Hello and must send a
+    /// key exchange (16 KiB at most) before its deadline; the first one the core accepts wins, the
+    /// others are closed and the service is withdrawn. Nil: renew the QR (time, or a refused key
+    /// exchange, which ends this session in the core).
+    private func publish(_ newcomer: PairingNewcomer) async throws -> (PairingNewcomer, any PairingTransport, String)? {
+        let expiresAt = Date(timeIntervalSince1970: TimeInterval(newcomer.expiresAt()))
+        state = .showingCode(qrText: newcomer.qrText(), expiresAt: expiresAt)
+        let hello = newcomer.hello()
+        let connections = listener.connections(serviceName: newcomer.serviceName())
+        let (events, sink) = AsyncStream<HandshakeEvent>.makeStream()
+        /// Connections of this QR not handed over yet, by id.
+        let open = Mutex<[Int: any PairingTransport]>([:])
+        let closeAll: @Sendable () -> Void = {
+            for t in open.withLock({ o in defer { o = [:] }; return Array(o.values) }) { t.close() }
+        }
+        let timeout = handshakeTimeout
+        let clock = self.now
+        let accepting = Task {
+            var next = 0
+            do {
+                for try await transport in connections {
+                    let id = next
+                    next += 1
+                    let admitted = open.withLock { o -> Bool in
+                        guard o.count < Self.maxPendingHandshakes else { return false }
+                        o[id] = transport
+                        return true
+                    }
+                    guard admitted else {
+                        transport.close()
+                        continue
+                    }
+                    // Never past the QR's expiry: the core refuses a late key exchange anyway.
+                    let left = Duration.seconds(max(0, expiresAt.timeIntervalSince(clock())))
+                    let deadline = min(timeout, left)
+                    Task {
+                        do {
+                            let exchange = try await Self.handshake(transport, hello: hello, within: deadline)
+                            sink.yield(.keyExchange(id: id, exchange))
+                        } catch {
+                            sink.yield(.failed(id: id))
+                        }
+                    }
+                }
+            } catch {
+                // The listener stopped: the renewal publishes again.
+            }
+        }
+        let renew = renewEvery
+        let renewal = Task {
+            try? await Task.sleep(for: renew)
+            sink.yield(.renew)
+        }
+        defer {
+            // Withdraws the service and closes every connection not handed over.
+            accepting.cancel()
+            renewal.cancel()
+            sink.finish()
+            closeAll()
+        }
+        var renewDue = false
+        for await event in events {
+            switch event {
+            case .renew:
+                // A connection being checked keeps this QR until its deadline.
+                if open.withLock({ $0.isEmpty }) { return nil }
+                renewDue = true
+            case .failed(let id):
+                open.withLock { $0.removeValue(forKey: id) }?.close()
+                if renewDue, open.withLock({ $0.isEmpty }) { return nil }
+            case .keyExchange(let id, let exchange):
+                guard let transport = open.withLock({ $0.removeValue(forKey: id) }) else { continue }
+                let nowUnix = Int64(clock().timeIntervalSince1970)
+                do {
+                    let sas = try await CoreThread.run { try newcomer.onKeyExchange(bytes: exchange, now: nowUnix) }
+                    try Task.checkCancellation()
+                    return (newcomer, transport, sas)
+                } catch is CancellationError {
+                    transport.close()
+                    throw CancellationError()
+                } catch {
+                    // Refused (or late): this QR is spent in the core. A new one is published.
+                    Self.log.notice("pairing key exchange refused, new code")
+                    transport.close()
                     return nil
                 }
-                defer { group.cancelAll() }
-                return try await group.next() ?? nil
             }
-            if let connected { return (newcomer, connected) }
+        }
+        throw CancellationError()
+    }
+
+    /// Sends the Hello and reads the key exchange, both within `deadline`. Throws on a frame above
+    /// `PairingFrame.maxHandshakeBytes`, a closed connection or the deadline; the caller closes.
+    nonisolated private static func handshake(
+        _ transport: any PairingTransport, hello: Data, within deadline: Duration
+    ) async throws -> Data {
+        try await withThrowingTaskGroup(of: Data?.self) { group in
+            group.addTask {
+                try await transport.send(hello)
+                return try await transport.receive(maxBytes: PairingFrame.maxHandshakeBytes)
+            }
+            group.addTask {
+                try await Task.sleep(for: deadline)
+                return nil
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next(), let exchange = first else {
+                throw PairingTransportError.closed
+            }
+            return exchange
         }
     }
 
@@ -247,6 +378,7 @@ public final class PairingNewcomerFlow {
                 transport.close()
                 self.transport = nil
                 state = .receivedFull
+                startGrantTimer()
                 return
             case .publicGrant(let expiresAt, let items):
                 do {
@@ -284,7 +416,30 @@ public final class PairingNewcomerFlow {
         run?.cancel()
         run = nil
         close()
+        dropGrant()
         state = final
+    }
+
+    /// The received account waits at most `grantLifetime` for the next attempt (M3).
+    private func startGrantTimer() {
+        grantTimer?.cancel()
+        let lifetime = grantLifetime
+        grantTimer = Task { [weak self] in
+            try? await Task.sleep(for: lifetime)
+            guard !Task.isCancelled, let self, self.state == .receivedFull else { return }
+            self.stop(.failed(.grantExpired))
+        }
+    }
+
+    /// Forgets a full grant not imported: the Secret Key and the snapshot leave memory (M3). On the
+    /// core thread: an import holding the grant may still run.
+    private func dropGrant() {
+        grantTimer?.cancel()
+        grantTimer = nil
+        guard grantedMode != nil, let newcomer else { return }
+        self.newcomer = nil
+        grantedMode = nil
+        Task { _ = try? await CoreThread.run { newcomer.discardGrant() } }
     }
 
     private func close() {

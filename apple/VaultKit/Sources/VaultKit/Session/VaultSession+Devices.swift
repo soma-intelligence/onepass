@@ -169,15 +169,27 @@ extension VaultSession {
 
     // MARK: - Presence
 
-    /// A fresh check of the user (rulings A8): Face ID or Touch ID when enrolled, else the master
-    /// password. Without a password and without biometrics, throws `.passwordRequired` (the UI then
+    /// A fresh check of the user (ruling A8): Face ID or Touch ID when enrolled, else the master
+    /// password, never the device passcode (L4: a passcode seen over the shoulder must not add a
+    /// device). Without a password and without biometrics, throws `.passwordRequired` (the UI then
     /// asks the password and calls again).
     func confirmPresence(password: SecretBytes?, prompt: String) async throws {
         if let password {
             try await verifyMasterPassword(password)
-        } else if await !confirmUserPresence(prompt: prompt) {
+        } else if await !confirmBiometricPresence(prompt: prompt) {
             throw fail(.passwordRequired)
         }
+    }
+
+    /// Face ID or Touch ID only, when biometric unlock is enrolled. False means: ask the master
+    /// password.
+    func confirmBiometricPresence(prompt: String) async -> Bool {
+        guard state == .unlocked, canUseBiometrics else { return false }
+        let gen = generation
+        let confirmed = await environment.presence.confirmWithBiometrics(prompt: prompt)
+        guard confirmed, gen == generation, state == .unlocked else { return false }
+        noteActivity()
+        return true
     }
 
     nonisolated static var revokePrompt: String {

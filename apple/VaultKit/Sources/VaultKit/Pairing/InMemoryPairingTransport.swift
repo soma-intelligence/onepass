@@ -93,8 +93,13 @@ public final class InMemoryPairingTransport: PairingTransport {
         onSend(frame)
     }
 
-    public func receive() async throws -> Data {
-        try await inbox.next()
+    public func receive(maxBytes: Int) async throws -> Data {
+        let frame = try await inbox.next()
+        guard frame.count <= min(maxBytes, PairingFrame.maxBytes) else {
+            close()
+            throw PairingTransportError.frameTooLarge
+        }
+        return frame
     }
 
     public func close() {
@@ -103,15 +108,15 @@ public final class InMemoryPairingTransport: PairingTransport {
     }
 }
 
-/// An in-memory "local network": a listener publishes a service name, a connector reaches it. A
-/// connector that comes before the listener is held until the name is published. Records every
-/// frame each side sent (tests check what left a device).
+/// An in-memory "local network": a listener publishes a service name, connectors reach it (several
+/// may, like on a real network). A connector that comes while nothing accepts is held until the
+/// listener takes it. Records every frame each side sent (tests check what left a device).
 public final class InMemoryPairingNetwork: PairingListener, PairingConnector {
     public enum Side: Sendable { case listener, connector }
 
     private struct State {
         var listeners: [String: (id: UUID, continuation: CheckedContinuation<any PairingTransport, any Error>)] = [:]
-        var waiting: [String: InMemoryPairingTransport] = [:]
+        var waiting: [String: [InMemoryPairingTransport]] = [:]
         var sent: [(service: String, side: Side, frame: Data)] = []
         var published: [String] = []
         var connections: [String: InMemoryPairingTransport] = [:]
@@ -133,14 +138,38 @@ public final class InMemoryPairingNetwork: PairingListener, PairingConnector {
         state.withLock { $0.sent.filter { $0.service == service && $0.side == side }.map(\.frame) }
     }
 
-    public func listen(serviceName: String) async throws -> any PairingTransport {
+    public func connections(serviceName: String) -> AsyncThrowingStream<any PairingTransport, any Error> {
+        let (stream, continuation) = AsyncThrowingStream<any PairingTransport, any Error>.makeStream()
+        let accepting = Task {
+            do {
+                while true {
+                    let transport = try await accept(serviceName: serviceName)
+                    if case .terminated = continuation.yield(transport) {
+                        transport.close()
+                        return
+                    }
+                }
+            } catch {
+                continuation.finish()
+            }
+        }
+        continuation.onTermination = { _ in accepting.cancel() }
+        return stream
+    }
+
+    /// The next connection to `serviceName`.
+    private func accept(serviceName: String) async throws -> any PairingTransport {
         let id = UUID()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<any PairingTransport, any Error>) in
                 let ready = state.withLock { s -> Result<any PairingTransport, any Error>? in
                     if Task.isCancelled { return .failure(CancellationError()) }
-                    s.published.append(serviceName)
-                    if let waiting = s.waiting.removeValue(forKey: serviceName) { return .success(waiting) }
+                    if s.published.last != serviceName { s.published.append(serviceName) }
+                    if var queue = s.waiting[serviceName], !queue.isEmpty {
+                        let first = queue.removeFirst()
+                        s.waiting[serviceName] = queue
+                        return .success(first)
+                    }
                     s.listeners[serviceName] = (id, c)
                     return nil
                 }
@@ -166,7 +195,7 @@ public final class InMemoryPairingNetwork: PairingListener, PairingConnector {
         let listener = state.withLock { s -> CheckedContinuation<any PairingTransport, any Error>? in
             s.connections[serviceName] = mine
             if let l = s.listeners.removeValue(forKey: serviceName) { return l.continuation }
-            s.waiting[serviceName] = theirs
+            s.waiting[serviceName, default: []].append(theirs)
             return nil
         }
         listener?.resume(returning: theirs)

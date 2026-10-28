@@ -790,3 +790,33 @@ fn oversized_full_grant_lists_nothing() {
     assert_eq!(listed.len(), 2);
     assert!(listed.iter().any(|d| d.id == n.device_id()));
 }
+
+#[test]
+fn discarded_grant_cannot_be_imported() {
+    // Too many wrong passwords, inactivity or leaving the screen drop the
+    // received grant (M3): the Secret Key and the snapshot are gone.
+    let a = approver_device();
+    let (n, ap) = confirmed(FfiDeviceMode::Personal);
+    let frame = ap
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false,
+        )
+        .unwrap();
+    n.open(frame).unwrap();
+    let dev = empty_device();
+    assert_eq!(
+        n.import_snapshot(dev.path.clone(), "mauvais-mot-de-passe".into())
+            .err(),
+        Some(OnePassError::WrongPassword)
+    );
+    n.discard_grant();
+    assert!(
+        n.import_snapshot(dev.path.clone(), PASSWORD.into())
+            .is_err()
+    );
+    assert_eq!(n.take_secret_key(), None);
+    assert_eq!(store_state(dev.path.clone()).unwrap(), FfiStoreState::Empty);
+}

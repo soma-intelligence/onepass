@@ -6,7 +6,8 @@ import Synchronization
 /// service `_onepass-pair._tcp` named by the session id in hex, the approver finds it by the session id
 /// of the scanned QR and connects over TCP. Peer-to-peer links are allowed (`includePeerToPeer`: Wi-Fi
 /// or AWDL when the two devices are close). Frames carry a 4-byte big-endian length prefix and are
-/// refused above 64 MiB. One connection per session; closing cancels it.
+/// refused above the reader's cap (64 MiB, 16 KiB before the key exchange) before their body is
+/// read. Closing cancels the connection.
 public final class LocalNetworkPairingTransport: PairingTransport, @unchecked Sendable {
     public static let serviceType = "_onepass-pair._tcp"
 
@@ -42,10 +43,10 @@ public final class LocalNetworkPairingTransport: PairingTransport, @unchecked Se
         }
     }
 
-    public func receive() async throws -> Data {
+    public func receive(maxBytes: Int) async throws -> Data {
         let header = try await read(count: 4)
         let length = header.reduce(0) { ($0 << 8) | Int($1) }
-        guard length <= PairingFrame.maxBytes else {
+        guard length <= min(maxBytes, PairingFrame.maxBytes) else {
             close()
             throw PairingTransportError.frameTooLarge
         }
@@ -120,49 +121,71 @@ public final class LocalNetworkPairingTransport: PairingTransport, @unchecked Se
     }
 }
 
-/// The new device's side: a Bonjour listener that keeps the first connection and refuses the others.
+/// The new device's side: a Bonjour listener that stays published while the flow checks the
+/// connections it hands over (M2: a silent or hostile first connection does not take the service
+/// away from the approver). The service is withdrawn when the consumer stops.
 public struct LocalNetworkPairingListener: PairingListener {
+    /// How long a new connection may take to become ready.
+    static let readyTimeout: Duration = .seconds(15)
+
     public init() {}
 
-    public func listen(serviceName: String) async throws -> any PairingTransport {
+    public func connections(serviceName: String) -> AsyncThrowingStream<any PairingTransport, any Error> {
+        let (stream, continuation) = AsyncThrowingStream<any PairingTransport, any Error>.makeStream(
+            bufferingPolicy: .bufferingNewest(4))
         let queue = DispatchQueue(label: "me.somalabs.onepass.pairing.listener")
-        let listener = try NWListener(using: LocalNetworkPairingTransport.parameters())
+        let listener: NWListener
+        do {
+            listener = try NWListener(using: LocalNetworkPairingTransport.parameters())
+        } catch {
+            continuation.finish(throwing: error)
+            return stream
+        }
         listener.service = NWListener.Service(name: serviceName, type: LocalNetworkPairingTransport.serviceType)
-        let once = Mutex<CheckedContinuation<NWConnection, any Error>?>(nil)
-        let finish: @Sendable (Result<NWConnection, any Error>) -> Void = { result in
-            let c = once.withLock { c -> CheckedContinuation<NWConnection, any Error>? in
-                defer { c = nil }
-                return c
+        /// Connections accepted but not ready yet, cancelled when the stream ends.
+        let starting = Mutex<(ended: Bool, connections: [ObjectIdentifier: NWConnection])>((false, [:]))
+        listener.newConnectionHandler = { connection in
+            let id = ObjectIdentifier(connection)
+            let accepted = starting.withLock { s -> Bool in
+                guard !s.ended else { return false }
+                s.connections[id] = connection
+                return true
             }
-            if let c {
-                c.resume(with: result)
-            } else if case .success(let late) = result {
-                late.cancel()
+            guard accepted else {
+                connection.cancel()
+                return
+            }
+            Task {
+                let transport = try? await LocalNetworkPairingTransport.start(
+                    connection, queue: queue, timeout: Self.readyTimeout)
+                starting.withLock { _ = $0.connections.removeValue(forKey: id) }
+                guard let transport else { return }
+                switch continuation.yield(transport) {
+                case .enqueued: break
+                case .dropped(let older): older.close()
+                case .terminated: transport.close()
+                @unknown default: transport.close()
+                }
             }
         }
-        let connection = try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (c: CheckedContinuation<NWConnection, any Error>) in
-                once.withLock { $0 = c }
-                listener.newConnectionHandler = { connection in
-                    // One connection only: the service goes away with the first one.
-                    listener.cancel()
-                    finish(.success(connection))
-                }
-                listener.stateUpdateHandler = { state in
-                    switch state {
-                    case .failed, .cancelled: finish(.failure(PairingTransportError.closed))
-                    default: break
-                    }
-                }
-                listener.start(queue: queue)
+        listener.stateUpdateHandler = { state in
+            switch state {
+            case .failed: continuation.finish(throwing: PairingTransportError.closed)
+            case .cancelled: continuation.finish()
+            default: break
             }
-        } onCancel: {
+        }
+        continuation.onTermination = { _ in
             listener.cancel()
-            finish(.failure(CancellationError()))
+            let pending = starting.withLock { s -> [NWConnection] in
+                s.ended = true
+                defer { s.connections = [:] }
+                return Array(s.connections.values)
+            }
+            for connection in pending { connection.cancel() }
         }
-        listener.newConnectionHandler = nil
-        listener.stateUpdateHandler = nil
-        return try await LocalNetworkPairingTransport.start(connection, queue: queue, timeout: .seconds(15))
+        listener.start(queue: queue)
+        return stream
     }
 }
 

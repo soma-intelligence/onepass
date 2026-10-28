@@ -324,6 +324,15 @@ impl PairingNewcomer {
         }
     }
 
+    /// Forget the received full grant (its Secret Key and snapshot) and a
+    /// Secret Key not taken yet: too many wrong passwords, inactivity, or
+    /// the user left the screen. A later `import_snapshot` is refused.
+    pub fn discard_grant(&self) {
+        let mut s = lock(&self.state);
+        s.grant = None;
+        s.released = None;
+    }
+
     /// The received Secret Key, once, after a successful import; `None`
     /// before, after a failed import, and once taken.
     pub fn take_secret_key(&self) -> Option<String> {

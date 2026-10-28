@@ -20,6 +20,12 @@ public enum PairingFailure: Error, Equatable, Sendable {
     case accountExists
     /// A frame or a QR the core refused (tampered, replayed, foreign).
     case refused
+    /// Approved here, but the new device did not confirm in time (L5).
+    case peerTimedOut
+    /// Too many wrong master passwords on the new device: the received account was dropped (M3).
+    case tooManyAttempts
+    /// The received account waited too long for the master password and was dropped (M3).
+    case grantExpired
     /// Any other error, already in French.
     case other(String)
 
@@ -46,6 +52,18 @@ public enum PairingFailure: Error, Equatable, Sendable {
         case .refused:
             String(
                 localized: "L'appairage a été refusé. Recommence depuis le début.", bundle: VaultKitStrings.bundle)
+        case .peerTimedOut:
+            String(
+                localized: "Le nouvel appareil n'a pas confirmé à temps. Recommence l'appairage.",
+                bundle: VaultKitStrings.bundle)
+        case .tooManyAttempts:
+            String(
+                localized: "Trop d'essais. Le compte reçu a été effacé de cet appareil : recommence l'appairage.",
+                bundle: VaultKitStrings.bundle)
+        case .grantExpired:
+            String(
+                localized: "Le délai est dépassé. Le compte reçu a été effacé de cet appareil : recommence l'appairage.",
+                bundle: VaultKitStrings.bundle)
         case .other(let message):
             message
         }

@@ -913,6 +913,22 @@
         }
       }
     },
+    "Le délai est dépassé. Le compte reçu a été effacé de cet appareil : recommence l'appairage." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time is up. The received account was erased from this device: start the pairing again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le délai est dépassé. Le compte reçu a été effacé de cet appareil : recommence l'appairage."
+          }
+        }
+      }
+    },
     "Le mot de passe maître est demandé après un redémarrage." : {
       "localizations" : {
         "en" : {
@@ -941,6 +957,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le mot de passe maître est demandé régulièrement."
+          }
+        }
+      }
+    },
+    "Le nouvel appareil n'a pas confirmé à temps. Recommence l'appairage." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new device did not confirm in time. Start the pairing again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le nouvel appareil n'a pas confirmé à temps. Recommence l'appairage."
           }
         }
       }
@@ -1457,6 +1489,22 @@
         }
       }
     },
+    "Trop d'essais. Le compte reçu a été effacé de cet appareil : recommence l'appairage." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many attempts. The received account was erased from this device: start the pairing again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trop d'essais. Le compte reçu a été effacé de cet appareil : recommence l'appairage."
+          }
+        }
+      }
+    },
     "Trop d'essais. Réessaie après %@." : {
       "localizations" : {
         "en" : {
@@ -1677,6 +1725,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Une vérification du mot de passe est déjà en cours."
+          }
+        }
+      }
+    },
+    "Utiliser le mot de passe maître" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use the master password"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utiliser le mot de passe maître"
           }
         }
       }
