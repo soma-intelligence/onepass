@@ -28,7 +28,7 @@ public struct ItemIcon: View {
     static func brandColor(_ brand: String) -> Color? {
         switch brand {
         case "visa": Color(red: 0x1A / 255, green: 0x1F / 255, blue: 0x71 / 255)
-        case "mastercard": Color(red: 0x25 / 255, green: 0x25 / 255, blue: 0x25 / 255)
+        case "mastercard": Color(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255)
         case "amex": Color(red: 0x2E / 255, green: 0x77 / 255, blue: 0xBC / 255)
         case "discover": Color(red: 0xF2 / 255, green: 0x65 / 255, blue: 0x1E / 255)
         case "jcb": Color(red: 0x0B / 255, green: 0x4E / 255, blue: 0xA2 / 255)
@@ -128,23 +128,7 @@ public struct ItemIcon: View {
     public var body: some View {
         Group {
             if image == nil, let brand, let color = Self.brandColor(brand) {
-                // The network's mark in white on its color, like the card itself.
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .fill(color.gradient)
-                    .overlay {
-                        Image("card-\(brand)", bundle: .main)
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .foregroundStyle(brand == "mastercard" ? AnyShapeStyle(LinearGradient(
-                                colors: [Color(red: 0.92, green: 0.0, blue: 0.11), Color(red: 0.97, green: 0.62, blue: 0.11)],
-                                startPoint: .leading, endPoint: .trailing)) : AnyShapeStyle(.white))
-                            .padding(side * 0.18)
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: corner, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.12))
-                    }
+                BrandCard(brand: brand, color: color, width: side)
                     .frame(width: side, height: side)
             } else if let image, Self.isLowResolution(image, side: side) {
                 // A small favicon is not stretched into a blur: it sits at its own size (one
@@ -188,4 +172,58 @@ public struct ItemIcon: View {
         ItemIcon(type: .router, title: "Wi-Fi Maison", siteIcon: nil, size: 52)
     }
     .padding()
+}
+
+/// A credit card seen face on (ISO proportions) in its network's color: a chip on the left and the
+/// network's mark in the lower right, Mastercard drawn in its own three colors.
+private struct BrandCard: View {
+    let brand: String
+    let color: Color
+    let width: CGFloat
+
+    var body: some View {
+        let height = width / 1.586
+        let shape = RoundedRectangle(cornerRadius: width * 0.09, style: .continuous)
+        shape
+            .fill(LinearGradient(colors: [color.mix(with: .white, by: 0.12), color, color.mix(with: .black, by: 0.2)],
+                startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay(alignment: .topLeading) {
+                // Chip.
+                RoundedRectangle(cornerRadius: width * 0.025, style: .continuous)
+                    .fill(LinearGradient(colors: [Color(red: 0.95, green: 0.83, blue: 0.5), Color(red: 0.78, green: 0.62, blue: 0.3)],
+                        startPoint: .top, endPoint: .bottom))
+                    .frame(width: width * 0.17, height: width * 0.13)
+                    .padding(.leading, width * 0.1)
+                    .padding(.top, height * 0.22)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                mark
+                    .padding(.trailing, width * 0.08)
+                    .padding(.bottom, height * 0.12)
+            }
+            .overlay { shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5) }
+            .frame(width: width, height: height)
+            .shadow(color: .black.opacity(0.25), radius: width * 0.04, y: width * 0.02)
+    }
+
+    @ViewBuilder private var mark: some View {
+        if brand == "mastercard" {
+            // The real mark: red and yellow circles, orange where they overlap.
+            let d = width * 0.22
+            ZStack {
+                Circle().fill(Color(red: 0xEB / 255, green: 0x00 / 255, blue: 0x1B / 255)).frame(width: d, height: d).offset(x: -d * 0.3)
+                Circle().fill(Color(red: 0xF7 / 255, green: 0x9E / 255, blue: 0x1B / 255)).frame(width: d, height: d).offset(x: d * 0.3)
+                Circle().fill(Color(red: 0xFF / 255, green: 0x5F / 255, blue: 0x00 / 255)).frame(width: d, height: d).offset(x: d * 0.3)
+                    .mask { Circle().frame(width: d, height: d).offset(x: -d * 0.3) }
+            }
+            .frame(width: d * 1.6, height: d)
+        } else {
+            Image("card-\(brand)", bundle: .main)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(.white)
+                .frame(width: width * (brand == "visa" ? 0.34 : 0.26), height: width * 0.16)
+        }
+    }
 }
