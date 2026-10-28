@@ -138,22 +138,20 @@ struct ItemListColumn: View {
         #if os(macOS)
         // Mockup `Main`: the list names its filter above the rows; the toolbar keeps search and actions.
         .toolbar(removing: .title)
-        // Search on top of its list (the detail column keeps its own actions on the right), then
-        // the filter's name. On a bar material: rows scrolling up pass under it, never through it
-        // (the list has no background of its own any more).
-        .safeAreaInset(edge: .top, spacing: 0) {
-            // One compact row: the search field (always there, it names the category it searches),
-            // then the category filter and the sort order as quiet round icons.
-            HStack(spacing: 4) {
-                searchField
-                categoryPill
-                sortMenu
+        // One row in the title bar above the list: the search field (it names the category it
+        // searches), then the category filter, the sort order and "Nouvel élément" as quiet round
+        // icons. No glass behind it, no second row under the title bar.
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                HStack(spacing: 4) {
+                    searchField
+                        .frame(minWidth: 150, idealWidth: 210, maxWidth: 320)
+                    categoryPill
+                    sortMenu
+                    newItemButton
+                }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
-            .background(.bar)
-            .overlay(alignment: .bottom) { Divider().opacity(0.5) }
+            .sharedBackgroundVisibility(.hidden)
         }
         #else
         .navigationBarTitleDisplayMode(.inline)
@@ -173,24 +171,17 @@ struct ItemListColumn: View {
         .onChange(of: model.searchFocusRequest) { searchFocused = true }
         #endif
         .toolbar {
+            #if !os(macOS)
             ToolbarItem(placement: .primaryAction) {
                 // The add sheet (common types first, search, every category, import), like ⌘N.
                 Button {
                     model.showNewItemPicker = true
                 } label: {
                     Label("Nouvel élément", systemImage: "plus")
-                        #if os(macOS)
-                        .labelStyle(.iconOnly)
-                        #endif
                 }
-                #if os(macOS)
-                .buttonStyle(QuietIconButtonStyle())
-                #endif
                 .help("Nouvel élément (⌘N)")
                 .accessibilityIdentifier("items.new")
             }
-            #if os(macOS)
-            .sharedBackgroundVisibility(.hidden)
             #endif
             #if !os(macOS)
             ToolbarItem(placement: .primaryAction) {
@@ -248,6 +239,20 @@ struct ItemListColumn: View {
                 DispatchQueue.main.async { categoryFilter = type }
             }
         }
+    }
+
+    /// The add sheet (common types first, search, every category, import), like ⌘N: the last
+    /// icon of the list's one header row.
+    private var newItemButton: some View {
+        Button {
+            model.showNewItemPicker = true
+        } label: {
+            Image(systemName: "plus")
+        }
+        .buttonStyle(QuietIconButtonStyle())
+        .help("Nouvel élément (⌘N)")
+        .accessibilityLabel(Text("Nouvel élément"))
+        .accessibilityIdentifier("items.new")
     }
 
     private var sortMenu: some View {
