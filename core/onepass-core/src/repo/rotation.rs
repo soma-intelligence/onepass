@@ -22,13 +22,18 @@ use std::collections::BTreeMap;
 use aws_lc_rs::digest::{SHA256, digest};
 use time::OffsetDateTime;
 
-use super::{DeviceState, Repository, account_records, entry, epoch_floor, pin, seen};
+use super::{
+    DeviceState, Repository, account_records, entry, epoch_floor, pin, seen, split_item_record,
+};
 use crate::account::{Account, AccountParams, Auk, Rekeyed, identity_changed};
-use crate::crypto::SecretKey;
+use crate::crypto::key::hkdf32;
+use crate::crypto::{IdentityVerifyingKey, SecretKey};
 use crate::devices::{DeviceEntry, invalid, now, revoked};
 use crate::epoch::{EpochReason, RestoreEpoch, SignedRestoreEpoch};
 use crate::lists::{ListBody, list_record};
-use crate::manifest::{Manifest, sign_manifest};
+use crate::manifest::{
+    Manifest, SeenManifest, SignedManifest, record_hash, sign_manifest, verify_manifest,
+};
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
 use crate::sync::SyncStore;
 use crate::vault::{ItemRecord, Vault};
@@ -50,6 +55,68 @@ fn item_record(vault_id: Id, rec: &ItemRecord) -> Result<Record> {
 
 fn next_version(r: &Record) -> Result<u64> {
     r.version.checked_add(1).ok_or(Error::Conflict)
+}
+
+/// Most a waiting rotation's params epoch may be signed again above its
+/// own (ruling K14): a server that serves signed params far above it gets
+/// an alert, not a signature at the epoch it picked.
+pub(crate) const MAX_REISSUE_LEAP: u64 = 16;
+
+/// The epoch a waiting rotation is signed again at, above the server's
+/// `server` epoch: refused (`ParamsEpochJump`) more than
+/// `MAX_REISSUE_LEAP` above the rotation's own `pending` epoch.
+pub(crate) fn reissue_epoch(pending: u64, server: u64) -> Result<u64> {
+    if server > pending.saturating_add(MAX_REISSUE_LEAP) {
+        return Err(IntegrityError::ParamsEpochJump.into());
+    }
+    server
+        .max(pending)
+        .checked_add(1)
+        .ok_or(IntegrityError::ParamsEpochJump.into())
+}
+
+/// The fingerprint a device keeps of a Secret Key it used (ruling K15):
+/// HKDF-SHA256 keyed by the key itself, salted by the account id, so the
+/// stored value is no oracle for anything.
+pub(crate) fn key_fingerprint(account_id: Id, key: &SecretKey) -> Result<[u8; 32]> {
+    Ok(*hkdf32(&account_id.0, &key.0, &[b"onepass/known-secret-key/v1"])?.expose())
+}
+
+/// SHA-256 of an identity public key's postcard encoding.
+pub(crate) fn identity_fingerprint(identity: &IdentityVerifyingKey) -> [u8; 32] {
+    let bytes = postcard::to_allocvec(identity).unwrap_or_default();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(digest(&SHA256, &bytes).as_ref());
+    out
+}
+
+/// Remember that this device used `key` with `account` (best effort: a
+/// failure only loses the memory, never the unlock).
+pub(crate) fn remember_key<S: RecordStore>(
+    store: &mut S,
+    account_id: Id,
+    identity: &IdentityVerifyingKey,
+    key: &SecretKey,
+) {
+    if let Ok(fp) = key_fingerprint(account_id, key) {
+        let _ = store.remember_secret_key(fp, identity_fingerprint(identity));
+    }
+}
+
+/// Whether `store` remembers `key` used with another identity than
+/// `identity`.
+fn known_elsewhere<S: RecordStore>(
+    store: &S,
+    account_id: Id,
+    key: &SecretKey,
+    identity: &IdentityVerifyingKey,
+) -> bool {
+    let (Ok(fp), Ok(known)) = (key_fingerprint(account_id, key), store.known_secret_keys()) else {
+        // Fail closed: what cannot be checked is treated as known.
+        return true;
+    };
+    let id = identity_fingerprint(identity);
+    known.iter().any(|(k, i)| *k == fp && *i != id)
 }
 
 impl<S: RecordStore> Repository<S> {
@@ -115,6 +182,7 @@ impl<S: RecordStore> Repository<S> {
             return Err(invalid("secret key", "unchanged"));
         }
         let account_id = self.account.params.account_id;
+        let old_identity = self.account.params.identity_pub.clone();
 
         // The lists, up to date (migration, registration), and the device
         // to revoke.
@@ -330,6 +398,9 @@ impl<S: RecordStore> Repository<S> {
         // again by `sync_epoch`, a kept copy signed by the old key fails its
         // check and is replaced.
         let _ = self.store.set_restore_epoch_mark(epoch, hash);
+        remember_key(&mut self.store, account_id, &old_identity, secret_key);
+        let new_identity = self.account.params.identity_pub.clone();
+        remember_key(&mut self.store, account_id, &new_identity, new_secret_key);
         let vaults: Vec<Id> = self.device.last_seen.keys().copied().collect();
         for v in vaults {
             // The kept copies were signed by the old key: drop them.
@@ -347,16 +418,18 @@ impl<S: RecordStore> Repository<S> {
     /// floor, the lists seen and the device id are kept. The normal unlock
     /// functions never follow a new identity (ruling K9).
     ///
-    /// `previous` is the Secret Key the device held until now (Keychain,
-    /// `device.bin`): a new identity sealed under it is refused
-    /// (`Validation("secret key")`, ruling K11), since the revoked device
-    /// knows it too. On a device that pinned nothing, this is
+    /// A new identity offered with a Secret Key this device already used
+    /// under another identity is refused (`Validation("secret key")`,
+    /// rulings K11 and K15), whatever order the app tries keys in: the
+    /// revoked device knows the password and the old key too. The device
+    /// remembers every key it unlocked or rotated with
+    /// (`RecordStore::known_secret_keys`; a store that keeps none, as the
+    /// CLI's, checks nothing). On a device that pinned nothing, this is
     /// `unlock_exporting_auk`.
     pub fn unlock_after_rotation(
-        store: S,
+        mut store: S,
         password: &str,
         secret_key: &SecretKey,
-        previous: &SecretKey,
         mut device: DeviceState,
     ) -> Result<(Repository<S>, Auk)> {
         let Some(pinned) = device.pinned.clone() else {
@@ -364,15 +437,24 @@ impl<S: RecordStore> Repository<S> {
         };
         let (params, keyset) = account_records(&store)?;
         let chain = store.chain_state()?;
+        let known = |identity: &IdentityVerifyingKey| {
+            known_elsewhere(&store, pinned.account_id, secret_key, identity)
+        };
         let (account, auk, pin) = Account::unlock_rotated_at(
             password,
             secret_key,
-            previous,
+            &known,
             &params.data,
             &keyset.data,
             &pinned,
             chain.params_epoch,
         )?;
+        remember_key(
+            &mut store,
+            account.params.account_id,
+            &account.params.identity_pub,
+            secret_key,
+        );
         device.pinned = Some(pin);
         Ok((
             Self::finish_unlock(store, account, &params, device, chain, &auk)?,
@@ -426,10 +508,7 @@ impl Repository<SyncStore> {
         let auk = self.auk.as_ref().ok_or(Error::InvalidFormat(
             "rotation pending: unlock with the password",
         ))?;
-        let epoch = server_epoch
-            .max(pending.epoch)
-            .checked_add(1)
-            .ok_or(Error::InvalidFormat("account params"))?;
+        let epoch = reissue_epoch(pending.epoch, server_epoch)?;
         let (reissued, params_record, keyset_record) = self.account.reissue(epoch, auk)?;
         self.store.put_all_if_version(vec![
             (
@@ -453,7 +532,139 @@ impl Repository<SyncStore> {
         ])?;
         self.account.params = reissued;
         self.chain.accept_params_epoch(epoch);
+        // Verified params of another identity at an epoch at least the
+        // rotation's: a password change made elsewhere, now overtaken.
+        self.store.note_password_change_overtaken()?;
         self.persist_device_state()?;
         Ok(true)
+    }
+
+    /// While this device's rotation is not whole on the server
+    /// (`SyncStore::rotation_marked`), resolve every held vault whose
+    /// server manifest the session's signing key did not sign (a write made
+    /// with the old keys reached the server first): this device's rotated
+    /// copy wins, the item records the server holds for that vault outside
+    /// the local manifest are deleted, and the local manifest is made to
+    /// build on the server's, so key, meta, manifest and items go out
+    /// together (ruling K13). The concurrent write is lost; a manifest the
+    /// new key signed is left to the normal rebase.
+    pub(crate) fn resolve_rotated_vaults(&mut self) -> Result<()> {
+        for v in self.store.vaults_needing_rebase()? {
+            let Some(base) = self.store.base_record(RecordKind::Manifest, v)? else {
+                continue;
+            };
+            let vault = self.open_vault(v)?;
+            let signing = &self.account.params.signing_pub;
+            let foreign = SignedManifest::decode(&base.data)
+                .and_then(|sm| verify_manifest(&vault, signing, &sm, None))
+                .is_err();
+            if !foreign {
+                continue;
+            }
+            let ours = self
+                .store
+                .get(RecordKind::Manifest, v)?
+                .ok_or(IntegrityError::ManifestMissingItem)?;
+            let m = verify_manifest(&vault, signing, &SignedManifest::decode(&ours.data)?, None)?;
+            for r in self.store.list(RecordKind::Item)? {
+                let (prefix, body) = split_item_record(&r.data)?;
+                if prefix != v {
+                    continue;
+                }
+                let listed = ItemRecord::decode(body).is_ok_and(|rec| {
+                    m.entries.iter().any(|e| {
+                        e.item_id == rec.item_id
+                            && e.version == rec.version
+                            && e.record_hash == record_hash(&rec)
+                    })
+                });
+                if !listed {
+                    self.store.delete(RecordKind::Item, r.id)?;
+                }
+            }
+            self.store.rebuild_ancestors_on_base(&[v])?;
+        }
+        Ok(())
+    }
+
+    /// Issue the rotation's restore epoch again when a rebase would have
+    /// dropped it (the server took another epoch, or vaults were rebased
+    /// and renumbered): same reason, the current heads of its vaults, at
+    /// the next number above it and the server's (capped as for the params,
+    /// ruling K14), signed by the session's key, built on the server's
+    /// record (ruling K13).
+    pub(crate) fn reissue_rotation_epoch(&mut self) -> Result<()> {
+        let Some(pending) = self.store.pending_rotation_epoch()? else {
+            return Ok(());
+        };
+        let current = pending.epoch.epoch;
+        let server = self.store.server_epoch_number()?.unwrap_or(0);
+        let epoch = reissue_epoch(current, server)?;
+        let heads: BTreeMap<Id, SeenManifest> = pending
+            .epoch
+            .heads
+            .keys()
+            .filter_map(|v| self.device.last_seen.get(v).map(|s| (*v, s.clone())))
+            .collect();
+        let account_id = self.account.params.account_id;
+        let issued = RestoreEpoch {
+            account_id,
+            epoch,
+            issued_at: OffsetDateTime::now_utc().unix_timestamp(),
+            heads: heads.clone(),
+            reason: EpochReason::KeyRotation,
+        };
+        let data = SignedRestoreEpoch::sign(issued, &self.account.keyset().signing)?.encode();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(digest(&SHA256, &data).as_ref());
+        self.store.put_if_version(
+            Record {
+                id: account_id,
+                kind: RecordKind::RestoreEpoch,
+                version: epoch,
+                data,
+            },
+            Some(current),
+        )?;
+        self.store
+            .rebuild_ancestor_on_base(RecordKind::RestoreEpoch, account_id)?;
+        self.device.epoch = epoch;
+        self.replace_last_seen(heads);
+        self.store.set_restore_epoch_mark(epoch, hash)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_reissue_epoch_is_capped_above_the_rotation() {
+        assert_eq!(reissue_epoch(2, 1).unwrap(), 3);
+        assert_eq!(reissue_epoch(2, 2).unwrap(), 3);
+        assert_eq!(
+            reissue_epoch(2, 2 + MAX_REISSUE_LEAP).unwrap(),
+            3 + MAX_REISSUE_LEAP
+        );
+        let jump = Error::Integrity(IntegrityError::ParamsEpochJump);
+        for server in [3 + MAX_REISSUE_LEAP, u64::MAX - 1, u64::MAX] {
+            assert_eq!(reissue_epoch(2, server).unwrap_err(), jump);
+        }
+        assert_eq!(reissue_epoch(u64::MAX, u64::MAX).unwrap_err(), jump);
+    }
+
+    #[test]
+    fn key_fingerprints_depend_on_the_key_and_the_account() {
+        let (a, b) = (
+            SecretKey::generate().unwrap(),
+            SecretKey::generate().unwrap(),
+        );
+        let (x, y) = (Id::new(), Id::new());
+        let fp = key_fingerprint(x, &a).unwrap();
+        assert_eq!(fp, key_fingerprint(x, &a).unwrap());
+        assert_ne!(fp, key_fingerprint(x, &b).unwrap());
+        assert_ne!(fp, key_fingerprint(y, &a).unwrap());
+        assert_ne!(&fp, &a.0);
     }
 }

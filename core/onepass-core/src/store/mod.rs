@@ -157,6 +157,20 @@ pub trait RecordStore {
         Ok(())
     }
 
+    /// The Secret Keys this device used to open the account, as
+    /// `(key fingerprint, identity fingerprint)` pairs (ruling K15, see
+    /// `repo::rotation`): a new identity offered with a key this device used
+    /// under another identity is refused. Only `SyncStore` keeps them
+    /// across sessions; the default remembers nothing.
+    fn known_secret_keys(&self) -> Result<Vec<([u8; 32], [u8; 32])>> {
+        Ok(Vec::new())
+    }
+
+    /// Remember a pair for `known_secret_keys` (bounded, oldest out).
+    fn remember_secret_key(&mut self, _key: [u8; 32], _identity: [u8; 32]) -> Result<()> {
+        Ok(())
+    }
+
     /// Write every record only if the stored record with its key has the
     /// version paired with it (`None`: no such record), all or nothing:
     /// on a conflict nothing is written (`Error::Conflict`). The default

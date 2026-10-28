@@ -329,34 +329,37 @@ pub fn store_keys_rotated(db_path: String) -> Result<bool, OnePassError> {
 }
 
 /// Unlock after the keys were rotated on another device, with the new
-/// Secret Key the user just typed or received by pairing, and
-/// `previous_secret_key`, the one this device held until now (Keychain):
-/// the device follows the new account identity, keeping its pinned state.
-/// A new identity offered with `previous_secret_key` itself is refused
-/// (`Validation`: a revoked device can forge a "rotation" under the old
-/// key); any other key the rotation was not sealed under is
-/// `WrongPassword`; old params served again are `Integrity`.
+/// Secret Key the user just typed or received by pairing: the device
+/// follows the new account identity, keeping its pinned state. A new
+/// identity offered with a Secret Key this device already used under
+/// another identity is refused (`Validation`: a revoked device can forge a
+/// "rotation" under the old key), whatever order the app tries keys in;
+/// any other key the rotation was not sealed under is `WrongPassword`; old
+/// params served again are `Integrity`.
 #[uniffi::export]
 pub fn unlock_after_rotation(
     db_path: String,
     password: String,
     secret_key: String,
-    previous_secret_key: String,
 ) -> Result<FfiUnlocked, OnePassError> {
-    let (password, secret_key, previous) = (
-        Zeroizing::new(password),
-        Zeroizing::new(secret_key),
-        Zeroizing::new(previous_secret_key),
-    );
+    let (password, secret_key) = (Zeroizing::new(password), Zeroizing::new(secret_key));
     let store = SyncStore::open(Path::new(&db_path))?;
     let secret_key = SecretKey::parse(&secret_key)?;
-    let previous = SecretKey::parse(&previous)?;
     let device = store.device_state()?;
-    let (mut repo, auk) =
-        Repository::unlock_after_rotation(store, &password, &secret_key, &previous, device)?;
+    let (mut repo, auk) = Repository::unlock_after_rotation(store, &password, &secret_key, device)?;
     repo.persist_device_state()?;
     Ok(FfiUnlocked {
         session: Session::new(repo)?,
         auk: auk.as_bytes().to_vec(),
     })
+}
+
+/// Whether this device's key rotation overtook a password change made on
+/// another device since the last call (reading clears it): that password no
+/// longer opens the account, the rotation's does. The app says so with the
+/// new Emergency Kit.
+#[uniffi::export]
+pub fn take_password_change_overtaken(db_path: String) -> Result<bool, OnePassError> {
+    let mut store = SyncStore::open(Path::new(&db_path))?;
+    Ok(store.take_password_change_overtaken()?)
 }

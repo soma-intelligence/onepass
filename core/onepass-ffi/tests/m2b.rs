@@ -675,35 +675,22 @@ fn ffi_revoke_rotating_and_follow() {
         unlock_with_password(kept_dev.path.clone(), PASSWORD.into(), new_key.clone()).err(),
         Some(OnePassError::Integrity { .. })
     ));
-    // The key it already held never opens a new identity, a guess is a
+    // The key it already used never opens a new identity, a guess is a
     // wrong password.
     assert!(matches!(
-        unlock_after_rotation(
-            kept_dev.path.clone(),
-            PASSWORD.into(),
-            a.secret_key.clone(),
-            a.secret_key.clone()
-        )
-        .err(),
+        unlock_after_rotation(kept_dev.path.clone(), PASSWORD.into(), a.secret_key.clone()).err(),
         Some(OnePassError::Validation { .. })
     ));
     assert_eq!(
         unlock_after_rotation(
             kept_dev.path.clone(),
             PASSWORD.into(),
-            generate_secret_key().unwrap(),
-            a.secret_key.clone()
+            generate_secret_key().unwrap()
         )
         .err(),
         Some(OnePassError::WrongPassword)
     );
-    let u = unlock_after_rotation(
-        kept_dev.path.clone(),
-        PASSWORD.into(),
-        new_key.clone(),
-        a.secret_key.clone(),
-    )
-    .unwrap();
+    let u = unlock_after_rotation(kept_dev.path.clone(), PASSWORD.into(), new_key.clone()).unwrap();
     assert_eq!(u.session.item_summaries().unwrap().len(), 1);
     assert_eq!(u.session.params_epoch().unwrap(), 2);
     assert!(!store_keys_rotated(kept_dev.path.clone()).unwrap());

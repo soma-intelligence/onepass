@@ -132,12 +132,12 @@ fn revoked_device_reads_nothing_after_rotation() {
     // The rotation path refuses the key the device already held, and any
     // other key the rotation was not sealed under is a wrong password.
     assert!(matches!(
-        Repository::unlock_after_rotation(b.store(), PASSWORD, &sk, &sk, state.clone()),
+        Repository::unlock_after_rotation(b.store(), PASSWORD, &sk, state.clone()),
         Err(Error::Validation(_))
     ));
     let guess = SecretKey::generate().unwrap();
     assert!(matches!(
-        Repository::unlock_after_rotation(b.store(), PASSWORD, &guess, &sk, state),
+        Repository::unlock_after_rotation(b.store(), PASSWORD, &guess, state),
         Err(Error::WrongPassword)
     ));
 }
@@ -207,11 +207,11 @@ fn remaining_device_follows_only_with_the_new_secret_key() {
     }
     // The rotation path with the key it already held: refused.
     assert!(matches!(
-        Repository::unlock_after_rotation(c.store(), PASSWORD, &sk, &sk, state.clone()),
+        Repository::unlock_after_rotation(c.store(), PASSWORD, &sk, state.clone()),
         Err(Error::Validation(_))
     ));
     let (repo, _auk) =
-        Repository::unlock_after_rotation(c.store(), PASSWORD, &new_sk, &sk, state).unwrap();
+        Repository::unlock_after_rotation(c.store(), PASSWORD, &new_sk, state).unwrap();
     c.repo = Some(repo);
     c.repo().persist_device_state().unwrap();
     let store = c.store();
@@ -255,9 +255,7 @@ fn store_cannot_roll_back_to_the_old_keyset() {
         let store = a.store();
         let state = store.device_state().unwrap();
         assert_eq!(
-            integrity(
-                Repository::unlock_after_rotation(store, PASSWORD, key, &new_sk, state).map(|_| ())
-            ),
+            integrity(Repository::unlock_after_rotation(store, PASSWORD, key, state).map(|_| ())),
             IntegrityError::ParamsRollback
         );
     }
@@ -422,8 +420,7 @@ fn a_concurrent_password_change_does_not_undo_the_rotation() {
     let store = c.store();
     let state = store.device_state().unwrap();
     assert!(Repository::keys_rotated(&store, &state).unwrap());
-    let (repo, _) =
-        Repository::unlock_after_rotation(c.store(), PASSWORD, &new_sk, &sk, state).unwrap();
+    let (repo, _) = Repository::unlock_after_rotation(c.store(), PASSWORD, &new_sk, state).unwrap();
     c.repo = Some(repo);
     assert_eq!(c.items(), before);
 }
@@ -483,7 +480,7 @@ fn a_forged_rotation_under_the_old_secret_key_is_refused() {
     // C sees a rotation, but the old key it already holds never opens it.
     assert!(Repository::keys_rotated(&store, &state).unwrap());
     assert!(matches!(
-        Repository::unlock_after_rotation(c.store(), PASSWORD, &sk, &sk, state.clone()),
+        Repository::unlock_after_rotation(c.store(), PASSWORD, &sk, state.clone()),
         Err(Error::Validation(_))
     ));
     assert_eq!(c.store().device_state().unwrap(), state);
@@ -666,4 +663,163 @@ fn a_failure_after_the_write_is_not_an_error() {
         Account::unlock(PASSWORD, &sk, &params.data, &keyset.data, None),
         Err(Error::WrongPassword)
     ));
+}
+
+/// One round as the app runs it (`SyncCoordinator.round`): fetch, rebase
+/// (its error reported, not fatal), push.
+fn app_round(server: &mut Server, dev: &mut Device) {
+    pull(server, dev);
+    let _ = dev.repo().rebase_report();
+    let _ = push(server, dev);
+}
+
+#[test]
+fn a_dropped_rotation_epoch_does_not_reopen_the_pair_drop() {
+    let mut server = Server::default();
+    let (mut a, _b, mut c, sk, _) = three_devices(&mut server);
+    let id = account_id(&mut a);
+    let v = a.vault().id;
+    let before = a.items();
+    let new_sk = SecretKey::generate().unwrap();
+    a.repo().rotate_keys(PASSWORD, &sk, &new_sk, None).unwrap();
+    a.repo().persist_device_state().unwrap();
+    // C, still on the old keys, writes into the vault and pushes before
+    // the rotation lands: A's vault is held.
+    c.save(&login(v, "ipad.concurrent@exemple.fr", T0 + 30));
+    sync_all(&mut server, &mut c);
+    pull(&server, &mut a);
+    let _ = a.repo().rebase_report();
+    // C changes the password and pushes before A pushes anything.
+    c.repo()
+        .change_password(PASSWORD, &sk, NEW_PASSWORD)
+        .unwrap();
+    c.repo().persist_device_state().unwrap();
+    sync_all(&mut server, &mut c);
+    for _ in 0..4 {
+        app_round(&mut server, &mut a);
+    }
+    assert!(outbox(&a).is_empty());
+
+    // The rotation is what the server holds, whole.
+    let held = server_params(&server, id);
+    assert_eq!(held.identity_pub, a.repo().account().params.identity_pub);
+    assert!(held.epoch > 2);
+    a.lock();
+    a.try_unlock(PASSWORD, &new_sk).unwrap();
+    assert_eq!(a.items(), before);
+    let mut fresh = Device::empty();
+    pull(&server, &mut fresh);
+    assert!(matches!(
+        fresh.try_unlock(NEW_PASSWORD, &sk),
+        Err(Error::WrongPassword)
+    ));
+    fresh.try_unlock(PASSWORD, &new_sk).unwrap();
+    assert_eq!(fresh.repo().vaults().unwrap().len(), 1);
+    // C's write under the old keys lost the race to the rotation.
+    assert_eq!(fresh.items(), before);
+}
+
+#[test]
+fn a_server_cannot_pick_the_reissue_epoch() {
+    for forged in [u64::MAX - 1, u64::MAX] {
+        let mut server = Server::default();
+        let (mut a, _b, _c, sk, _) = three_devices(&mut server);
+        let id = account_id(&mut a);
+        let old = server.get(RecordKind::AccountParams, id).unwrap();
+        let new_sk = SecretKey::generate().unwrap();
+        a.repo().rotate_keys(PASSWORD, &sk, &new_sk, None).unwrap();
+        a.repo().persist_device_state().unwrap();
+        // The server serves the old params with a forged epoch (its
+        // signature no longer holds) before the rotation lands.
+        let mut p = AccountParams::decode(&old.data).unwrap();
+        p.epoch = forged;
+        server.replay(Record {
+            data: p.encode().unwrap(),
+            ..old.clone()
+        });
+        for _ in 0..4 {
+            app_round(&mut server, &mut a);
+        }
+        assert!(outbox(&a).is_empty());
+        // The forged epoch was never taken: the rotation landed at epoch
+        // 2, and the account can still change its password and rotate.
+        assert_eq!(server_params(&server, id).epoch, 2);
+        assert_eq!(a.repo().chain().params_epoch, 2);
+        a.repo()
+            .change_password(PASSWORD, &new_sk, NEW_PASSWORD)
+            .unwrap();
+        let again = SecretKey::generate().unwrap();
+        a.repo()
+            .rotate_keys(NEW_PASSWORD, &new_sk, &again, None)
+            .unwrap();
+        assert_eq!(a.repo().account().params.epoch, 4);
+    }
+}
+
+#[test]
+fn a_known_secret_key_never_opens_a_new_identity() {
+    let mut server = Server::default();
+    let (mut a, mut b, mut c, sk, b_id) = three_devices(&mut server);
+    a.repo().revoke_device(b_id).unwrap();
+    a.repo().persist_device_state().unwrap();
+    sync_all(&mut server, &mut a);
+    c.lock();
+    // The revoked device forges a rotation sealed under the old key.
+    let id = account_id(&mut b);
+    let detour = SecretKey::generate().unwrap();
+    b.repo().rotate_keys(PASSWORD, &sk, &detour, None).unwrap();
+    b.repo().rotate_keys(PASSWORD, &detour, &sk, None).unwrap();
+    for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
+        server.replay(b.store().get(kind, id).unwrap().unwrap());
+    }
+    pull(&server, &mut c);
+    let state = c.store().device_state().unwrap();
+    // C used the old key: refused whatever order the app tries keys in,
+    // there is no other argument to swap.
+    assert!(matches!(
+        Repository::unlock_after_rotation(c.store(), PASSWORD, &sk, state.clone()),
+        Err(Error::Validation(_))
+    ));
+    assert_eq!(c.store().device_state().unwrap(), state);
+}
+
+#[test]
+fn a_crash_after_the_rotation_still_lets_the_device_follow_its_own_key() {
+    let mut server = Server::default();
+    let (mut a, _b, _c, sk, _) = three_devices(&mut server);
+    let new_sk = SecretKey::generate().unwrap();
+    a.repo().rotate_keys(PASSWORD, &sk, &new_sk, None).unwrap();
+    // Crash: the session ends without persisting the device state, so
+    // the stored pin is still the old identity.
+    a.repo = None;
+    let store = a.store();
+    let state = store.device_state().unwrap();
+    assert!(Repository::keys_rotated(&store, &state).unwrap());
+    // The app tries the old key first: refused, then the new one: accepted.
+    assert!(matches!(
+        Repository::unlock_after_rotation(a.store(), PASSWORD, &sk, state.clone()),
+        Err(Error::Validation(_))
+    ));
+    let (repo, _) = Repository::unlock_after_rotation(a.store(), PASSWORD, &new_sk, state).unwrap();
+    a.repo = Some(repo);
+    a.repo().persist_device_state().unwrap();
+    sync_all(&mut server, &mut a);
+}
+
+#[test]
+fn the_rotating_device_learns_it_overtook_a_password_change() {
+    let mut server = Server::default();
+    let (mut a, _b, mut c, sk, _) = three_devices(&mut server);
+    c.repo()
+        .change_password(PASSWORD, &sk, NEW_PASSWORD)
+        .unwrap();
+    c.repo().persist_device_state().unwrap();
+    sync_all(&mut server, &mut c);
+    let new_sk = SecretKey::generate().unwrap();
+    a.repo().rotate_keys(PASSWORD, &sk, &new_sk, None).unwrap();
+    a.repo().persist_device_state().unwrap();
+    assert!(!a.store().take_password_change_overtaken().unwrap());
+    sync_all(&mut server, &mut a);
+    assert!(a.store().take_password_change_overtaken().unwrap());
+    assert!(!a.store().take_password_change_overtaken().unwrap());
 }

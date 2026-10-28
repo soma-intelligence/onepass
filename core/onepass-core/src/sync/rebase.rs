@@ -305,6 +305,15 @@ impl Repository<SyncStore> {
         if let Err(e) = self.reissue_rotation() {
             first_error.get_or_insert(e);
         }
+        // While this device's rotation is not whole on the server, a vault
+        // the server holds under a manifest the new key did not sign (a
+        // write made with the old keys) takes this device's copy
+        // (ruling K13).
+        if self.store.rotation_marked()?
+            && let Err(e) = self.resolve_rotated_vaults()
+        {
+            first_error.get_or_insert(e);
+        }
         for (kind, _) in self.store.lists_needing_rebase()? {
             let result = match kind {
                 RecordKind::DeviceList => self.rebase_list::<DeviceEntry>(),
@@ -320,7 +329,11 @@ impl Repository<SyncStore> {
         let held = self.store.vaults_needing_rebase()?;
         let pending_epoch = self.store.pending_epoch()?;
         let lost_epoch = pending_epoch.is_some() && (self.store.epoch_held()? || !held.is_empty());
-        if let (true, Some(issued)) = (lost_epoch, pending_epoch) {
+        // A key rotation's epoch is never dropped: it alone is signed by
+        // the new key, and the server's is not. It is issued again below,
+        // once the vaults are rebased (ruling K13).
+        let rotation_epoch = self.store.pending_rotation_epoch()?.is_some();
+        if let (true, false, Some(issued)) = (lost_epoch, rotation_epoch, pending_epoch) {
             self.store.drop_pending_epoch()?;
             // `issue_restore_epoch` takes the epoch accepted plus one, so
             // the one before is what this device had accepted.
@@ -350,10 +363,16 @@ impl Repository<SyncStore> {
                 },
             }
         }
+        if lost_epoch
+            && rotation_epoch
+            && let Err(e) = self.reissue_rotation_epoch()
+        {
+            first_error.get_or_insert(e);
+        }
         if let Err(e) = self.persist_device_state() {
             first_error.get_or_insert(e);
         }
-        let error = if lost_epoch {
+        let error = if lost_epoch && !rotation_epoch {
             Some(Error::Conflict)
         } else {
             first_error
@@ -490,7 +509,7 @@ impl Repository<SyncStore> {
 
     /// The vault from its key and meta records, without reading its
     /// manifest (that is the rebase's job).
-    fn open_vault(&self, v: Id) -> Result<Vault> {
+    pub(crate) fn open_vault(&self, v: Id) -> Result<Vault> {
         let key = self
             .store
             .get(RecordKind::VaultKey, v)?
