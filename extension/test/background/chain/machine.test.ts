@@ -198,12 +198,16 @@ describe("provider chain (Google, two accounts)", () => {
     ]);
   });
 
-  it("no chooser entry for the linked email hands off (unknown)", () => {
+  it("no chooser entry for the linked email hands off (account), naming the account", () => {
     let s = start(site, { provider: "google", providerAccount: account });
     s = step(s, page([], { providerButtons: [{ provider: "google", ref: "g1" }] }), SITE, T0 + 100).state;
     s = navigated(s, `${GOOGLE}/chooser`, T0 + 200);
     const r = step(s, page([], { accountChooser: [{ email: "alex.perso@example.com", ref: "a1" }] }), GOOGLE, T0 + 300);
-    expect(r.actions).toEqual([{ type: "stop", reason: "unknown" }]);
+    expect(r.actions).toEqual([{ type: "stop", reason: "account" }]);
+    expect(r.state.status).toBe("handoff");
+    expect(r.state.steps.at(-1)).toMatchObject({ kind: "stop", detail: account.subtitle });
+    // Nothing was clicked on the chooser.
+    expect(r.actions.some((a) => a.type === "click")).toBe(false);
   });
 
   it("back on the site with a login form after the provider: not signed in (unknown), never done", () => {

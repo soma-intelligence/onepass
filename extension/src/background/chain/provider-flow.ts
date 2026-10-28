@@ -147,7 +147,7 @@ export class ProviderFlows {
     if (await this.deps.chainRunning?.(f.tabId)) return;
     const site = parseOrigin(f.siteOrigin)?.site;
     if (!site || (await this.deps.neverSave.has(site))) return;
-    let r: { accounts: { item_id: string; subtitle: string }[]; linked_item_id?: string };
+    let r: { accounts: { item_id: string; subtitle: string; title: string }[]; linked_item_id?: string };
     try {
       r = await this.deps.session.request({ op: "provider_accounts", ctx: "save_prompt", provider: f.provider, origin: f.siteOrigin });
     } catch {
@@ -166,7 +166,7 @@ export class ProviderFlows {
       status: "new" as const,
       username: email,
       password: "",
-      provider: { id: f.provider, accountItemId: account.item_id, email },
+      provider: { id: f.provider, accountItemId: account.item_id, email, title: account.title },
       // Origin pin of the top document when no documentId is known (Firefox).
       topOrigin: cs.origin,
     };

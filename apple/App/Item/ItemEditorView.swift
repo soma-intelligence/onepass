@@ -8,6 +8,7 @@ import VaultKit
 /// its field and the form scrolls to it. "Annuler" asks before dropping changes.
 struct ItemEditorView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editor: ItemEditorModel
     @State private var confirmDiscard = false
     /// The generator asked by a password field (presented here, not from the field's row).
@@ -330,15 +331,15 @@ struct ItemEditorView: View {
                 },
                 showAll: {
                     addingField = false
-                    withAnimation(.snappy) { showAllFields = true }
+                    withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { showAllFields = true }
                 },
                 reveal: { key in
                     addingField = false
-                    withAnimation(.snappy) { _ = pinnedKeys.insert(key) }
+                    withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { _ = pinnedKeys.insert(key) }
                 },
                 addCustom: { kind in
                     addingField = false
-                    withAnimation(.snappy) { editor.addCustomField(kind: kind) }
+                    withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { editor.addCustomField(kind: kind) }
                 })
             .presentationCompactAdaptation(.popover)
         }
@@ -390,7 +391,7 @@ struct ItemEditorView: View {
             ForEach(Array(item.locations.enumerated()), id: \.offset) { index, location in
                 PlaceBlock(location: location) {
                     RemoveRowButton {
-                        withAnimation(.snappy) {
+                        withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) {
                             guard editor.draft.item.locations.indices.contains(index) else { return }
                             editor.draft.item.locations.remove(at: index)
                         }
@@ -408,7 +409,7 @@ struct ItemEditorView: View {
         }
         .sheet(isPresented: $searchingPlace) {
             LocationSearchSheet { place in
-                withAnimation(.snappy) { editor.draft.item.locations.append(place) }
+                withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { editor.draft.item.locations.append(place) }
             }
         }
     }

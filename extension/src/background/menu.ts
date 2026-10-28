@@ -9,7 +9,7 @@
 // after 10 minutes, on a navigation of their frame, on tab removal, and when
 // a new menu opens in the same frame.
 import type { Summary } from "../bridge/client";
-import type { FormKind, ProviderId } from "../shared/messages";
+import type { FormKind, MenuKey, ProviderId } from "../shared/messages";
 import { newToken } from "../shared/tokens";
 import type { BgExt, StorageArea } from "./ext";
 import type { CsContext, UiContext } from "./frames";
@@ -33,8 +33,10 @@ export interface MenuRecord extends MenuField {
   createdAt: number;
   /** Items shown by `menu_init`, with their kind as reported by the host. */
   offered?: Record<string, Summary["kind"]>;
-  /** Provider methods shown per item ("Se connecter avec ..."). */
+  /** Provider methods shown per item ("Continuer avec ..."). */
   methods?: Record<string, ProviderId[]>;
+  /** Provider accounts shown per provider (inline picker); a picked one must be among them. */
+  accounts?: Record<string, string[]>;
 }
 
 export class MenuTokens {
@@ -94,13 +96,45 @@ export class MenuTokens {
     token: string,
     offered: Record<string, Summary["kind"]>,
     methods: Record<string, ProviderId[]> = {},
+    accounts: Record<string, string[]> = {},
   ): Promise<void> {
     const rec = await this.load(token);
     if (!rec) return;
     rec.offered = offered;
     rec.methods = methods;
+    rec.accounts = accounts;
     this.mem.set(token, rec);
     await this.area.set({ [PREFIX + token]: rec });
+  }
+
+  /** The live menu token of a frame (one per frame), for keys relayed by its content script. */
+  async forFrame(tabId: number, frameId: number, documentId?: string): Promise<string | null> {
+    for (const [t, r] of await this.all()) {
+      if (r.tabId !== tabId || r.frameId !== frameId) continue;
+      if (documentId !== undefined && r.documentId !== undefined && r.documentId !== documentId) continue;
+      if (this.now() - r.createdAt > MENU_TTL_MS || this.now() < r.createdAt) continue;
+      return t;
+    }
+    return null;
+  }
+
+  /** A live menu token exists in this tab (the overlay is not offered over it). */
+  async hasTab(tabId: number): Promise<boolean> {
+    for (const [, r] of await this.all()) {
+      if (r.tabId === tabId && this.now() - r.createdAt <= MENU_TTL_MS && this.now() >= r.createdAt) return true;
+    }
+    return false;
+  }
+
+  private async all(): Promise<[string, MenuRecord][]> {
+    const out = new Map<string, MenuRecord>(this.mem);
+    for (const [k, v] of Object.entries(await this.area.get(null))) {
+      if (!k.startsWith(PREFIX)) continue;
+      const t = k.slice(PREFIX.length);
+      const r = out.has(t) ? null : parseRecord(v);
+      if (r) out.set(t, r);
+    }
+    return [...out];
   }
 
   revokeFrame(tabId: number, frameId: number): Promise<void> {
@@ -148,4 +182,65 @@ function parseRecord(raw: unknown): MenuRecord | null {
   for (const k of ["origin", "formRef", "fieldRef", "formKind"]) if (typeof r[k] !== "string") return null;
   if (r.documentId !== undefined && typeof r.documentId !== "string") return null;
   return r as unknown as MenuRecord;
+}
+
+/** A `menu_keys` request is answered empty after this long without a key. */
+export const KEY_WAIT_MS = 20_000;
+/** Keys kept for a menu that is not asking right now. */
+const MAX_QUEUED = 8;
+
+/**
+ * Keys relayed from a field to the menu under it (spec 8.3, keyboard): the
+ * content script reports trusted keys (`menu_key`), the menu page asks for
+ * them (`menu_keys`, answered when one arrives). Keyed by menu token; no
+ * secret, memory only (a lost key after a worker restart is harmless).
+ */
+export class KeyRelay {
+  private readonly waiting = new Map<string, (keys: MenuKey[]) => void>();
+  private readonly queued = new Map<string, MenuKey[]>();
+
+  constructor(
+    private readonly timers: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(id: unknown): void } = {
+      setTimeout: (fn, ms) => setTimeout(fn, ms),
+      clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+    },
+    private readonly waitMs = KEY_WAIT_MS,
+  ) {}
+
+  push(token: string, key: MenuKey): void {
+    const w = this.waiting.get(token);
+    if (w) {
+      this.waiting.delete(token);
+      w([key]);
+      return;
+    }
+    const q = this.queued.get(token) ?? [];
+    if (q.length < MAX_QUEUED) q.push(key);
+    this.queued.set(token, q);
+  }
+
+  wait(token: string): Promise<MenuKey[]> {
+    const q = this.queued.get(token);
+    if (q && q.length > 0) {
+      this.queued.delete(token);
+      return Promise.resolve(q);
+    }
+    // One request per menu: an older one gets an empty answer.
+    this.waiting.get(token)?.([]);
+    return new Promise((resolve) => {
+      const done = (keys: MenuKey[]) => {
+        this.timers.clearTimeout(timer);
+        if (this.waiting.get(token) === done) this.waiting.delete(token);
+        resolve(keys);
+      };
+      const timer = this.timers.setTimeout(() => done([]), this.waitMs);
+      this.waiting.set(token, done);
+    });
+  }
+
+  drop(token: string): void {
+    this.queued.delete(token);
+    this.waiting.get(token)?.([]);
+    this.waiting.delete(token);
+  }
 }

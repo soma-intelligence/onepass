@@ -3,7 +3,7 @@ import { NATIVE_HOST, nativeTransport } from "../../src/background/native";
 import { FakeExt } from "./fake-ext";
 
 describe("nativeTransport", () => {
-  it("connects to the dev host and passes envelopes as objects", () => {
+  it("connects to the app host by default and passes envelopes as objects", () => {
     const ext = new FakeExt();
     const names: string[] = [];
     const runtime = {
@@ -14,7 +14,7 @@ describe("nativeTransport", () => {
       },
     };
     const t = nativeTransport(NATIVE_HOST, runtime);
-    expect(names).toEqual(["me.somalabs.onepass.dev"]);
+    expect(names).toEqual(["me.somalabs.onepass"]);
     const port = ext.ports[0]!;
     // A message received before a listener is registered is not lost.
     port.onMessage.emit({ v: 1, t: "pair_sas" });

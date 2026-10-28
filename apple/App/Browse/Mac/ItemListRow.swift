@@ -30,6 +30,21 @@ struct ItemListRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon, size: 34)
+                #if os(iOS)
+                // iPhone and iPad: a favorite carries a small star on its icon's corner.
+                .overlay(alignment: .bottomTrailing) {
+                    if summary.favorite {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 15, height: 15)
+                            .background(Color.orange, in: Circle())
+                            .overlay { Circle().strokeBorder(Color(uiColor: .secondarySystemGroupedBackground), lineWidth: 1.5) }
+                            .offset(x: 4, y: 4)
+                            .accessibilityLabel(Text("Favori"))
+                    }
+                }
+                #endif
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.title)
                     .font(.body.weight(.semibold))
@@ -40,12 +55,14 @@ struct ItemListRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
+            #if !os(iOS)
             if summary.favorite {
                 Image(systemName: "star.fill")
                     .font(.caption)
                     .foregroundStyle(.yellow)
                     .accessibilityLabel(Text("Favori"))
             }
+            #endif
         }
         .padding(.vertical, 3)
         .contentShape(Rectangle())

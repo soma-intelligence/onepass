@@ -23,6 +23,11 @@ final class AppModel {
     /// Widget snapshot (and, from Task 8, the watch payload) while unlocked.
     @ObservationIgnored let companion: CompanionCoordinator
     @ObservationIgnored let iconLoader: SiteIconLoader
+    #if os(macOS)
+    /// The browser extensions' bridge (Safari, Chrome, Firefox): signed builds with their App Group
+    /// container only; never with demo data or a UI test store.
+    let browserBridge: BrowserBridge?
+    #endif
     @ObservationIgnored private let remote: (any RemoteRecordStore)?
 
     /// Built with `ONEPASS_CLOUDKIT` (signed Release-CloudKit configuration, ruling R8).
@@ -212,6 +217,11 @@ final class AppModel {
         self.remote = remote
         session = VaultSession(environment: environment)
         if storeSplit { session.refuseStore(.other(Self.storeSplitMessage)) }
+        #if os(macOS)
+        browserBridge =
+            demo == nil && !isolated && !storeSplit && resolved.isShared
+            ? BrowserBridge(session: session, container: resolved) : nil
+        #endif
         // Demo data never reaches the widgets.
         companion = CompanionCoordinator(
             session: session, glanceStore: demo == nil && !isolated ? GlanceStore.shared() : nil,
@@ -295,6 +305,17 @@ final class AppModel {
         lockIfRequested()
         #endif
         companion.start()
+        #if os(macOS)
+        if let browserBridge {
+            browserBridge.start()
+            // "Déverrouiller dans OnePass" from an extension: the app comes forward on its lock screen.
+            tasks.append(Task {
+                for await _ in NotificationCenter.default.notifications(named: BrowserBridge.unlockRequestedNotification) {
+                    NSApplication.shared.activate()
+                }
+            })
+        }
+        #endif
         tasks.append(Task { [weak self] in await self?.refreshAutoFillStatus() })
         guard let coordinator else { return }
         tasks.append(Task { [weak self] in

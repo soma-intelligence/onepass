@@ -74,6 +74,7 @@
 		81B5B3F5574765BBFB58EB77 /* ItemEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF78448AAEC42C44F2E16FB /* ItemEntity.swift */; };
 		88252B461F361E3E77E3BC1A /* SyncSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E7C87AC5BA6F2B579609522 /* SyncSettings.swift */; };
 		8DA415577E16E2A2EC1F29F0 /* VaultEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 530DC4BC2A94EFF67DD9F0EF /* VaultEditorView.swift */; };
+		914EB56D92941137E477FBE9 /* BrowserBridgeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 815AF1A53D95850ADA3D7263 /* BrowserBridgeViews.swift */; };
 		92506BF8D288BB8AE298D980 /* VisibleVaultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BFEBDCF2AC2C6C2D8E999C5 /* VisibleVaultsView.swift */; };
 		928F96C444AB1DC3468E09CA /* VisionGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29FAC83196CF84E1C4C92CA5 /* VisionGlass.swift */; };
 		9320F3B7178A6EBB186C26AA /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0225137765C7E51FD0667F /* AppRoute.swift */; };
@@ -302,6 +303,7 @@
 		79113AA7B53A92888B8DEF34 /* SecretFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretFieldEditor.swift; sourceTree = "<group>"; };
 		7A9506E7AEA529E14EF1B426 /* IntentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentBridge.swift; sourceTree = "<group>"; };
 		7FE4F3CB0CFA4BB2988A5A3B /* DesignKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignKit; path = DesignKit; sourceTree = SOURCE_ROOT; };
+		815AF1A53D95850ADA3D7263 /* BrowserBridgeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserBridgeViews.swift; sourceTree = "<group>"; };
 		82139C419F351C3FDA076EE8 /* UnlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockView.swift; sourceTree = "<group>"; };
 		8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandidateListView.swift; sourceTree = "<group>"; };
 		87D0707F2A1FF871B7D086F5 /* GlanceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceViews.swift; sourceTree = "<group>"; };
@@ -730,6 +732,7 @@
 			children = (
 				89863609CCDE5B045CFDE000 /* AboutSettings.swift */,
 				46BB0DFE499C7B52D15F7EA0 /* AutoFillSettings.swift */,
+				815AF1A53D95850ADA3D7263 /* BrowserBridgeViews.swift */,
 				257C8A4056D753F50F27FF62 /* GeneralSettings.swift */,
 				2F45C46BA4FEB08CD8A7C5FE /* ImportSheet.swift */,
 				73396E5534184EF7CE76A170 /* SecuritySettings.swift */,
@@ -826,6 +829,7 @@
 				BEF0711806BF64102FB9DA30 /* Frameworks */,
 				8332D7C9C44DBF496583CC6C /* Embed Foundation Extensions */,
 				6A2741E9AD67E21DC1480F06 /* Embed Watch Content */,
+				19E4785A5606B8F0F841B9C2 /* Embed browser relay */,
 			);
 			buildRules = (
 			);
@@ -1090,6 +1094,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		19E4785A5606B8F0F841B9C2 /* Embed browser relay */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed browser relay";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PROJECT_DIR}/scripts/embed-relay.sh\"";
+		};
 		9C93E23A904F14C09DEFC551 /* Copy web extension */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -1206,6 +1229,7 @@
 				03459B41D154F2E30DA9186B /* AutoFillTipCard.swift in Sources */,
 				B2F387C1CCCBB83AC30E1E16 /* BarcodeEditor.swift in Sources */,
 				3B5912DB886A1E8510C4F27E /* BrowseRoot.swift in Sources */,
+				914EB56D92941137E477FBE9 /* BrowserBridgeViews.swift in Sources */,
 				C4550C8291E1A38748E6FC67 /* CategoryListView.swift in Sources */,
 				D5C5B1A5817808ED47A986E0 /* Commands.swift in Sources */,
 				80FA3B25AF70952D5B793680 /* CompanionCoordinator.swift in Sources */,
@@ -1806,11 +1830,12 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.1.4;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
+				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -2083,11 +2108,12 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.1.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
+				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2191,11 +2217,12 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.1.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
+				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2410,11 +2437,12 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.1.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
+				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;

@@ -26,7 +26,7 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
-    MARKETING_VERSION: "0.2.0"
+    MARKETING_VERSION: "0.1.4"
     CURRENT_PROJECT_VERSION: "1"
     DEAD_CODE_STRIPPING: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
@@ -34,6 +34,10 @@ settings:
     # App Group shared by the app and the AutoFill extension (Info.plist key `OnePassAppGroup`).
     ONEPASS_APP_GROUP: group.me.somalabs.onepass
     "ONEPASS_APP_GROUP[sdk=macosx*]": $(TeamIdentifierPrefix)me.somalabs.onepass
+    # Chrome and Firefox extension ids the Mac app's bridge serves (Info.plist key
+    # `OnePassBrowserExtensions`, space separated; Safari is always served). Add the Chrome id
+    # (Web Store, or the unpacked one while testing) here.
+    ONEPASS_BROWSER_EXTENSIONS: onepass@somalabs.me
 
 packages:
   VaultKit:
@@ -75,6 +79,11 @@ targets:
       # Safari Web Extension: Mac only for now (the iOS one needs the bridge in the app, R-17).
       - target: OnePassSafari
         destinationFilters: [macOS]
+    # Chrome and Firefox native messaging host (Contents/Helpers/onepass-relay): signed Mac builds.
+    postBuildScripts:
+      - name: Embed browser relay
+        basedOnDependencyAnalysis: false
+        script: '"${PROJECT_DIR}/scripts/embed-relay.sh"'
     info:
       path: App/Support/Info.plist
       properties:
@@ -83,6 +92,7 @@ targets:
         LSApplicationCategoryType: public.app-category.productivity
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
+        OnePassBrowserExtensions: $(ONEPASS_BROWSER_EXTENSIONS)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # The app ships its own cryptography; export compliance is settled before submission (README).
@@ -225,10 +235,11 @@ targets:
   # Safari Web Extension (spec milestone 4, R-02, R-08), embedded in OnePass.app/PlugIns on the
   # Mac. Resources = extension/dist/safari (`cd extension && npm run build` first). Its handler
   # relays `browser.runtime.sendNativeMessage` to the bridge host with the same frames as Chrome's
-  # native messaging. Until the app serves the bridge over XPC (R-17), Debug embeds the
-  # development native host (core/onepass-native-host) and Release configurations embed none.
+  # native messaging: the app's bridge socket in its App Group container (signed builds, spec
+  # 2026-10-27-release-bridge-design), and in Debug first the embedded development native host
+  # (core/onepass-native-host). Release configurations embed no development host.
   # Entitlements: Debug and Release sandbox only; Release-CloudKit and Release-Signed add the App
-  # Group (the future XPC rendezvous with the app).
+  # Group (the rendezvous with the app).
   OnePassSafari:
     type: app-extension
     platform: macOS

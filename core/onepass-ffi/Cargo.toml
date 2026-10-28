@@ -23,6 +23,15 @@ time = { version = "0.3", default-features = false, features = ["std"] }
 # Domain matching of AutoFill: the Public Suffix List and URL parsing.
 psl = "2"
 url = "2"
+# The production bridge (spec 2026-10-27-release-bridge-design): the host loop
+# of the extension protocol, and its JSON audit journal.
+onepass-bridge = { path = "../onepass-bridge" }
+serde_json.workspace = true
+data-encoding.workspace = true
+
+# The bridge's socket and the code-signature checks of its clients: Mac only.
+[target.'cfg(target_os = "macos")'.dependencies]
+onepass-relay = { path = "../onepass-relay" }
 
 [features]
 # The Swift binding generator (`cargo run --features bindgen --bin uniffi-bindgen`).

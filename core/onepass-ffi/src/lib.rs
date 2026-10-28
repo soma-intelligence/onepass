@@ -6,6 +6,7 @@
 #![deny(unsafe_code)]
 
 mod autofill;
+mod bridge;
 mod companion;
 mod convert;
 mod error;
@@ -29,6 +30,7 @@ use onepass_core::sync::{AccountState, SyncStore};
 use onepass_core::totp;
 use zeroize::Zeroizing;
 
+pub use bridge::*;
 pub use companion::*;
 use convert::{sections_to_ffi, type_label};
 pub use error::OnePassError;

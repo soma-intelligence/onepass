@@ -1584,7 +1584,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "onepass-bridge"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -1600,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-cli"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -1623,7 +1623,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-core"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "argon2",
  "aws-lc-rs",
@@ -1654,11 +1654,15 @@ dependencies = [
 
 [[package]]
 name = "onepass-ffi"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "aws-lc-rs",
+ "data-encoding",
+ "onepass-bridge",
  "onepass-core",
+ "onepass-relay",
  "psl",
+ "serde_json",
  "tempfile",
  "time",
  "uniffi",
@@ -1668,7 +1672,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-guard"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "aws-lc-rs",
  "block2",
@@ -1685,7 +1689,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-mcp"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -1699,7 +1703,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-native-host"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "data-encoding",
  "onepass-bridge",
@@ -1714,7 +1718,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-peer"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "aws-lc-rs",
  "core-foundation",
@@ -1727,8 +1731,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "onepass-relay"
+version = "0.1.4"
+dependencies = [
+ "libc",
+ "onepass-bridge",
+ "onepass-peer",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "onepass-ssh-agent"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "aws-lc-rs",
  "bcrypt-pbkdf",

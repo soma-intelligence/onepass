@@ -11,8 +11,18 @@ import { type Geometry, type Rect } from "./detect/visibility";
 export const Z_MAX = "2147483647";
 /** Width of every extension frame (spec 8.3 "360 px de large"). */
 export const FRAME_WIDTH = 360;
-/** Fixed frame heights: extension pages scroll inside when they need more. */
-export const FRAME_HEIGHT: Readonly<Record<FrameKind, number>> = { menu: 320, overlay: 440, save: 520 };
+/**
+ * Largest frame heights: each page asks for its content height (a resize
+ * message vouched by the worker) and scrolls inside past these.
+ */
+export const FRAME_HEIGHT: Readonly<Record<FrameKind, number>> = { menu: 420, overlay: 440, save: 520 };
+/** Smallest height a page may ask for. */
+export const FRAME_MIN_HEIGHT = 44;
+/**
+ * A frame stays transparent until its page reported its height, so it never
+ * shows at a guessed size and then jumps; past this delay it shows anyway.
+ */
+export const REVEAL_TIMEOUT_MS = 400;
 /** Gap between the anchor field and the menu, and from the viewport edges. */
 const GAP = 4;
 const EDGE = 12;
@@ -84,6 +94,15 @@ iframe {
   color-scheme: normal;
   pointer-events: auto;
   box-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 16px 40px rgba(0,0,0,.28);
+  opacity: 0;
+  transform: translateY(-4px) scale(.98);
+  transform-origin: top left;
+  transition: opacity 160ms cubic-bezier(.23, 1, .32, 1), transform 200ms cubic-bezier(.23, 1, .32, 1);
+}
+iframe.corner { transform-origin: top right; }
+iframe.shown { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  iframe { transform: none; transition: opacity 120ms ease; }
 }
 `;
 
@@ -178,8 +197,18 @@ export const MOVE_GUARD_MS = 300;
 export interface Frames {
   /** Shows (or replaces) the `kind` frame at an already checked extension URL. */
   showFrame(kind: FrameKind, url: string, anchor?: Element | null): void;
+  /**
+   * Removes the frame. When the focus was inside it (the user was in the
+   * menu), it goes back to the field the frame was anchored to.
+   */
   removeFrame(kind: FrameKind): void;
   has(kind: FrameKind): boolean;
+  /** Sizes the frame to its page's content (clamped), and shows it. */
+  resize(kind: FrameKind, height: number): void;
+  /** Moves the keyboard focus into the frame (the user pressed a key to enter it). */
+  focus(kind: FrameKind): void;
+  /** The element the frame is anchored to, if any. */
+  anchorOf(kind: FrameKind): Element | null;
   /** Follows anchors after a scroll or resize. */
   reposition(): void;
   /** Rings the element (chain step), or clears the ring. */
@@ -189,7 +218,7 @@ export interface Frames {
 
 export function createFrames(opts: FramesOptions): Frames {
   const { shell, doc, geometry } = opts;
-  const frames = new Map<FrameKind, { iframe: HTMLIFrameElement; anchor: Element | null }>();
+  const frames = new Map<FrameKind, { iframe: HTMLIFrameElement; anchor: Element | null; height: number; reveal: ReturnType<typeof setTimeout> | null }>();
   let ring: { box: HTMLElement; el: Element } | null = null;
   const guards = new Map<HTMLIFrameElement, ReturnType<typeof setTimeout>>();
 
@@ -216,6 +245,14 @@ export function createFrames(opts: FramesOptions): Frames {
     guards.delete(iframe);
     iframe.remove();
   };
+  const show = (f: { iframe: HTMLIFrameElement; reveal: ReturnType<typeof setTimeout> | null }) => {
+    if (f.reveal !== null) clearTimeout(f.reveal);
+    f.reveal = null;
+    if (f.iframe.classList.contains("shown")) return;
+    f.iframe.classList.add("shown");
+    // Appearing under the pointer counts as a move.
+    guard(f.iframe);
+  };
   shell.onReattach(() => {
     for (const f of frames.values()) guard(f.iframe);
   });
@@ -225,20 +262,30 @@ export function createFrames(opts: FramesOptions): Frames {
     return { w: view?.innerWidth ?? 1024, h: view?.innerHeight ?? 768 };
   };
 
-  const place = (kind: FrameKind, iframe: HTMLIFrameElement, anchor: Element | null) => {
-    const { w } = viewport();
+  /**
+   * Under the anchor (the menu, or the overlay of a chain started from a
+   * field), or above it when the viewport has no room below; else the top
+   * right. True when the position, the width or a larger height changed (a
+   * smaller height brings nothing new under the pointer).
+   */
+  const place = (kind: FrameKind, iframe: HTMLIFrameElement, anchor: Element | null, height: number) => {
+    const { w, h: vh } = viewport();
     const width = Math.min(FRAME_WIDTH, Math.max(0, w - 2 * EDGE));
     let left = w - width - EDGE;
     let top = EDGE;
-    if (kind === "menu" && anchor) {
+    if (anchor && kind !== "save") {
       const r: Rect = geometry(anchor).rect;
       left = Math.max(EDGE, Math.min(r.left, w - width - EDGE));
       top = r.top + r.height + GAP;
+      const above = r.top - GAP - height;
+      if (top + height > vh - EDGE && above >= EDGE) top = above;
     }
+    iframe.classList.toggle("corner", !(anchor && kind !== "save"));
     const s = iframe.style;
-    const next = [`${Math.round(left)}px`, `${Math.round(top)}px`, `${width}px`, `${FRAME_HEIGHT[kind]}px`];
+    const prevHeight = parseFloat(s.getPropertyValue("height")) || 0;
+    const next = [`${Math.round(left)}px`, `${Math.round(top)}px`, `${width}px`, `${height}px`];
     const props = ["left", "top", "width", "height"];
-    const changed = props.some((p, i) => s.getPropertyValue(p) !== next[i]);
+    const changed = props.slice(0, 3).some((p, i) => s.getPropertyValue(p) !== next[i]) || height > prevHeight;
     props.forEach((p, i) => s.setProperty(p, next[i] as string));
     return changed;
   };
@@ -266,24 +313,53 @@ export function createFrames(opts: FramesOptions): Frames {
       iframe.setAttribute("scrolling", "no");
       iframe.setAttribute("title", "OnePass");
       iframe.setAttribute("src", url);
-      place(kind, iframe, anchor);
+      const height = FRAME_HEIGHT[kind];
+      place(kind, iframe, anchor, height);
       shell.layer.appendChild(iframe);
-      frames.set(kind, { iframe, anchor });
+      const f = { iframe, anchor, height, reveal: null as ReturnType<typeof setTimeout> | null };
+      f.reveal = setTimeout(() => show(f), REVEAL_TIMEOUT_MS);
+      frames.set(kind, f);
     },
     removeFrame(kind) {
       const f = frames.get(kind);
-      if (f) drop(f.iframe);
+      if (!f) return;
+      const focused = shell.root.activeElement === f.iframe;
+      if (f.reveal !== null) clearTimeout(f.reveal);
+      drop(f.iframe);
       frames.delete(kind);
+      if (focused && f.anchor?.isConnected && typeof (f.anchor as HTMLElement).focus === "function") {
+        (f.anchor as HTMLElement).focus({ preventScroll: true });
+      }
     },
     has: (kind) => frames.has(kind),
+    resize(kind, height) {
+      const f = frames.get(kind);
+      if (!f || !Number.isFinite(height)) return;
+      f.height = Math.round(Math.min(FRAME_HEIGHT[kind], Math.max(FRAME_MIN_HEIGHT, height)));
+      const moved = place(kind, f.iframe, f.anchor, f.height);
+      if (f.iframe.classList.contains("shown")) {
+        if (moved) guard(f.iframe);
+      } else {
+        show(f);
+      }
+    },
+    focus(kind) {
+      frames.get(kind)?.iframe.focus({ preventScroll: true });
+    },
+    anchorOf: (kind) => frames.get(kind)?.anchor ?? null,
     reposition() {
       for (const [kind, f] of frames) {
         if (f.anchor && !f.anchor.isConnected) {
-          drop(f.iframe);
-          frames.delete(kind);
-          continue;
+          if (kind === "menu") {
+            if (f.reveal !== null) clearTimeout(f.reveal);
+            drop(f.iframe);
+            frames.delete(kind);
+            continue;
+          }
+          // The progress outlives the field it started from: to the top right.
+          f.anchor = null;
         }
-        if (place(kind, f.iframe, f.anchor)) guard(f.iframe);
+        if (place(kind, f.iframe, f.anchor, f.height)) guard(f.iframe);
       }
       placeRing();
     },
@@ -298,7 +374,10 @@ export function createFrames(opts: FramesOptions): Frames {
       placeRing();
     },
     destroy() {
-      for (const f of frames.values()) drop(f.iframe);
+      for (const f of frames.values()) {
+        if (f.reveal !== null) clearTimeout(f.reveal);
+        drop(f.iframe);
+      }
       frames.clear();
       ring?.box.remove();
       ring = null;

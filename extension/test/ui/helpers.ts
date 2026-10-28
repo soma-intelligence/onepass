@@ -15,8 +15,9 @@ export class FakeWorker {
     this.sent.push(structuredClone(m));
     return this.answer(m);
   };
+  /** Requests the page sent, without its housekeeping (asking for relayed keys, reporting its height). */
   types(): string[] {
-    return this.sent.map((m) => m.type);
+    return this.sent.map((m) => m.type).filter((t) => t !== "menu_keys" && !t.endsWith("_resize"));
   }
 }
 

@@ -1,0 +1,28 @@
+[package]
+name = "onepass-relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+# The rendezvous between the browser extensions and the Mac app (production
+# bridge): the socket in the App Group container, the opening frame, who may
+# talk to whom by code signature, the app's listener, and the binary that
+# Chrome and Firefox launch (`onepass-relay`, a byte-for-byte frame relay).
+
+[[bin]]
+name = "onepass-relay"
+path = "src/main.rs"
+
+[dependencies]
+onepass-bridge = { path = "../onepass-bridge" }
+onepass-peer = { path = "../onepass-peer" }
+serde.workspace = true
+serde_json.workspace = true
+# The user's home directory from the password database (getpwuid_r): a
+# sandboxed relay's HOME is its container.
+libc = "0.2.191"
+
+[dev-dependencies]
+tempfile = "3"

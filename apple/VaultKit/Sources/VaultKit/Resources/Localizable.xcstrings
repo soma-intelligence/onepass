@@ -17,6 +17,22 @@
         }
       }
     },
+    "Associer %@ à OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair %@ with OnePass"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Associer %@ à OnePass"
+          }
+        }
+      }
+    },
     "Aucun compte iCloud n'est disponible." : {
       "localizations" : {
         "en" : {
@@ -1053,6 +1069,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pour ajouter un nouvel appareil, ouvre OnePass, choisis « J'ai mon Emergency Kit », puis saisis ou scanne la Secret Key et entre ton mot de passe maître."
+          }
+        }
+      }
+    },
+    "Remplir un élément protégé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fill a protected item"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplir un élément protégé"
           }
         }
       }

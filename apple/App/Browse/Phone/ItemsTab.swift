@@ -3,16 +3,20 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Éléments (spec 6.2, mockup `PhoneItems`), the Mac sidebar as cards: foldable blocks Coffres
-/// (letter disc and count, "Nouveau coffre"), Catégories (types present only, illustrated
-/// artwork) and Tags (colored dots), then Archive and Supprimés récemment ("N · 30 jours"). Each row
-/// opens its filtered list.
+/// Éléments (spec 6.2, mockup `PhoneItems`): the large title, the account name under it, "Tous
+/// les éléments", then foldable blocks with large headers: Coffres (letter disc and count, "Nouveau
+/// coffre"), Catégories (types present only, illustrated artwork) and Tags (colored dots), then À
+/// proximité, Archive and Supprimés récemment ("N · 30 jours"). Each row opens its filtered list.
+/// The options button of the navigation bar picks the blocks shown.
 struct ItemsTab: View {
     @Environment(AppModel.self) private var model
     @State private var creatingVault = false
     @AppStorage("onepass.items.vaultsOpen", store: AppModel.browseDefaults) private var vaultsOpen = true
     @AppStorage("onepass.items.categoriesOpen", store: AppModel.browseDefaults) private var categoriesOpen = true
     @AppStorage("onepass.items.tagsOpen", store: AppModel.browseDefaults) private var tagsOpen = true
+    @AppStorage("onepass.items.showsCategories", store: AppModel.browseDefaults) private var showsCategories = true
+    @AppStorage("onepass.items.showsTags", store: AppModel.browseDefaults) private var showsTags = true
+    @AppStorage("onepass.items.showsOthers", store: AppModel.browseDefaults) private var showsOthers = true
 
     private var session: VaultSession { model.session }
 
@@ -21,6 +25,23 @@ struct ItemsTab: View {
         let categories = ItemCategory.all.filter { (counts.byType[$0.type] ?? 0) > 0 }
         let tags = counts.byTag.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         List {
+            Section {
+                row(.all, id: "items.all") {
+                    SymbolTile(symbol: "square.grid.2x2.fill", color: Theme.accent, size: 30)
+                } label: {
+                    Text("Tous les éléments")
+                } count: {
+                    Text(counts.all, format: .number)
+                }
+            } header: {
+                Text(accountName)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(nil)
+                    .lineLimit(1)
+                    .padding(.leading, -4)
+                    .accessibilityAddTraits(.isHeader)
+            }
             SyncRefusalSection()
             AccountChangedSection()
             Section {
@@ -49,9 +70,9 @@ struct ItemsTab: View {
                     .accessibilityIdentifier("items.vaults.new")
                 }
             } header: {
-                FoldHeader(title: "coffres", isOpen: $vaultsOpen, id: "items.vaults")
+                FoldHeader(title: "Coffres", isOpen: $vaultsOpen, id: "items.vaults")
             }
-            if !categories.isEmpty {
+            if showsCategories, !categories.isEmpty {
                 Section {
                     if categoriesOpen {
                         ForEach(categories) { category in
@@ -65,10 +86,10 @@ struct ItemsTab: View {
                         }
                     }
                 } header: {
-                    FoldHeader(title: "catégories", isOpen: $categoriesOpen, id: "items.categories")
+                    FoldHeader(title: "Catégories", isOpen: $categoriesOpen, id: "items.categories")
                 }
             }
-            if !tags.isEmpty {
+            if showsTags, !tags.isEmpty {
                 Section {
                     if tagsOpen {
                         ForEach(tags, id: \.self) { tag in
@@ -86,36 +107,38 @@ struct ItemsTab: View {
                         }
                     }
                 } header: {
-                    FoldHeader(title: "tags", isOpen: $tagsOpen, id: "items.tags")
+                    FoldHeader(title: "Tags", isOpen: $tagsOpen, id: "items.tags")
                 }
             }
-            Section {
-                row(.nearby, id: "items.nearby") {
-                    NearbyTile(size: 30)
-                } label: {
-                    Text("À proximité")
-                } count: {
-                    Text("2 km")
+            if showsOthers {
+                Section {
+                    row(.nearby, id: "items.nearby") {
+                        NearbyTile(size: 30)
+                    } label: {
+                        Text("À proximité")
+                    } count: {
+                        Text("2 km")
+                    }
                 }
-            }
-            Section {
-                row(.archive, id: "items.archive") {
-                    SymbolTile(symbol: "archivebox.fill", color: Color(white: 0.55), size: 30)
-                        .accessibilityHidden(true)
-                } label: {
-                    Text("Archive")
-                } count: {
-                    Text(counts.archive, format: .number)
+                Section {
+                    row(.archive, id: "items.archive") {
+                        SymbolTile(symbol: "archivebox.fill", color: Color(white: 0.55), size: 30)
+                            .accessibilityHidden(true)
+                    } label: {
+                        Text("Archive")
+                    } count: {
+                        Text(counts.archive, format: .number)
+                    }
                 }
-            }
-            Section {
-                row(.trash, id: "items.trash") {
-                    SymbolTile(symbol: "trash.fill", color: .red, size: 30)
-                        .accessibilityHidden(true)
-                } label: {
-                    Text("Supprimés récemment")
-                } count: {
-                    Text("\(counts.trash) · 30 jours")
+                Section {
+                    row(.trash, id: "items.trash") {
+                        SymbolTile(symbol: "trash.fill", color: .red, size: 30)
+                            .accessibilityHidden(true)
+                    } label: {
+                        Text("Supprimés récemment")
+                    } count: {
+                        Text("\(counts.trash) · 30 jours")
+                    }
                 }
             }
         }
@@ -125,10 +148,22 @@ struct ItemsTab: View {
         .background(PhoneBackground())
         .navigationTitle("Éléments")
         .navigationBarTitleDisplayMode(.large)
-        .toolbar { PhoneRootToolbar() }
+        .toolbar {
+            PhoneRootToolbar {
+                Section("Afficher") {
+                    Toggle("Catégories", systemImage: "square.grid.2x2", isOn: $showsCategories)
+                    Toggle("Tags", systemImage: "tag", isOn: $showsTags)
+                    Toggle("À proximité, Archive et Supprimés", systemImage: "archivebox", isOn: $showsOthers)
+                }
+            }
+        }
         .sheet(isPresented: $creatingVault) {
             VaultEditorView(vault: nil) { creatingVault = false }
         }
+    }
+
+    private var accountName: String {
+        model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
     }
 
     private func row(
@@ -152,26 +187,28 @@ struct ItemsTab: View {
     }
 }
 
-/// Section title of the Éléments tab: the small accent label of the Mac cards and a chevron that
-/// folds the block.
+/// Section title of the Éléments tab: a large title and an accent chevron that folds the block.
 struct FoldHeader: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: LocalizedStringKey
     @Binding var isOpen: Bool
     let id: String
 
     var body: some View {
         Button {
-            withAnimation(.snappy) { isOpen.toggle() }
+            withAnimation(Motion.fold(reduceMotion: reduceMotion)) { isOpen.toggle() }
         } label: {
             HStack {
-                PhoneSectionLabel(title)
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
                 Spacer()
                 Image(systemName: "chevron.down")
-                    .font(.footnote.weight(.bold))
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Theme.readableAccent)
                     .rotationEffect(.degrees(isOpen ? 0 : -90))
             }
-            .contentShape(Rectangle())
+            .tapTarget()
         }
         .buttonStyle(.plain)
         .textCase(nil)
