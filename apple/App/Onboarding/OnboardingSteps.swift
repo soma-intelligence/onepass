@@ -17,6 +17,8 @@ struct OnboardingStepContent: View {
             case .visibleVaults: VisibleVaultsStep(model: model)
             case .restore: RestoreStep(model: model)
             case .done: DoneStep(model: model)
+            case .pairMode: PairingModeStep(model: model)
+            case .pairing: PairingStep(model: model)
             }
             if let busy = model.busyMessage {
                 HStack(spacing: 10) {
@@ -43,7 +45,7 @@ struct OnboardingStepContent: View {
 
 // MARK: - Shared pieces
 
-private struct StepTitle: View {
+struct StepTitle: View {
     let title: LocalizedStringResource
     let subtitle: LocalizedStringResource?
     var centered = false
@@ -122,11 +124,11 @@ private struct CardBackground: ViewModifier {
 }
 
 extension View {
-    fileprivate func card(selected: Bool = false) -> some View { modifier(CardBackground(selected: selected)) }
+    func card(selected: Bool = false) -> some View { modifier(CardBackground(selected: selected)) }
 }
 
 /// Text or secure field in the mockup style (filled on iPhone, bordered on Mac).
-private struct OnboardingField: View {
+struct OnboardingField: View {
     let label: LocalizedStringResource
     let prompt: LocalizedStringResource
     @Binding var text: String
@@ -234,8 +236,8 @@ private struct WelcomeStep: View {
             ) { model.choose(.restore) }
             choice(
                 "J'ai déjà OnePass sur un autre appareil", "Connexion par QR code", symbol: "qrcode",
-                soon: true, identifier: "onboarding.pair"
-            ) {}
+                identifier: "onboarding.pair"
+            ) { model.choose(.pair) }
         }
         .padding(.top, 8)
     }

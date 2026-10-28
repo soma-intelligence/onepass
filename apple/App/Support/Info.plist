@@ -37,10 +37,16 @@
 	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_onepass-pair._tcp</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>OnePass utilise la caméra pour lire le QR code de ton Emergency Kit.</string>
+	<string>OnePass utilise la caméra pour lire le QR code de ton Emergency Kit ou celui d'un nouvel appareil.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur.</string>
 	<key>NSLocationUsageDescription</key>
 	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

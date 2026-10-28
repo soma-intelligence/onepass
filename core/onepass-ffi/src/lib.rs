@@ -5,16 +5,21 @@
 // This crate writes no `unsafe` (the UniFFI scaffolding builds under the lint).
 #![deny(unsafe_code)]
 
+mod archive;
 mod autofill;
 mod bridge;
 mod companion;
 mod convert;
+mod developer;
+mod devices;
 mod error;
 mod hardening;
 mod import;
+mod pairing;
 mod rules;
 mod session;
 pub mod timeline;
+mod travel;
 mod types;
 pub mod watchtower;
 
@@ -30,15 +35,20 @@ use onepass_core::sync::{AccountState, SyncStore};
 use onepass_core::totp;
 use zeroize::Zeroizing;
 
+pub use archive::*;
 pub use bridge::*;
 pub use companion::*;
 use convert::{sections_to_ffi, type_label};
+pub use developer::*;
+pub use devices::*;
 pub use error::OnePassError;
 use error::invalid;
 pub use hardening::*;
 pub use import::*;
+pub use pairing::*;
 pub use rules::password_from_rules;
 pub use session::{Session, SyncStoreHandle};
+pub use travel::{FfiTravelPlanEntry, FfiTravelStatus};
 pub use types::*;
 
 uniffi::setup_scaffolding!();

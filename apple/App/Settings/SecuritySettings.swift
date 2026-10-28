@@ -23,6 +23,7 @@ struct SecuritySettings: View {
     @State private var prompt: Prompt?
     @State private var pendingMode: DeviceMode?
     @State private var errorMessage: String?
+    @State private var changingPassword = false
 
     private var session: VaultSession { model.session }
     private var settings: VaultSettings { model.settings }
@@ -35,6 +36,12 @@ struct SecuritySettings: View {
         let _ = model.settingsRevision
         Form {
             unlockSection
+            Section {
+                Button("Changer le mot de passe maître", systemImage: "key") { changingPassword = true }
+                    .accessibilityIdentifier("settings.changePassword")
+            } footer: {
+                Text("Ta Secret Key ne change pas : ton Emergency Kit reste valable.")
+            }
             deviceModeSection
             Section {
                 Button("Verrouiller maintenant", systemImage: "lock") {
@@ -57,6 +64,7 @@ struct SecuritySettings: View {
         #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .sheet(isPresented: $changingPassword) { ChangePasswordSheet() }
         .sheet(item: $prompt) { current in
             PasswordPromptSheet(title: promptTitle(current), footer: promptFooter(current)) { password in
                 try await confirm(current, password: password)

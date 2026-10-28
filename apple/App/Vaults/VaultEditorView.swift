@@ -62,7 +62,7 @@ struct VaultIconTile: View {
 }
 
 /// Creates a vault (`vault` nil) or renames and restyles one: name, symbol among twelve, color
-/// among seven. A vault cannot be deleted in this version (ruling R14).
+/// among seven. An existing vault is deleted here when it is empty and not the last (R14).
 struct VaultEditorView: View {
     @Environment(AppModel.self) private var model
     let vault: FfiVault?
@@ -71,8 +71,11 @@ struct VaultEditorView: View {
     @State private var name: String
     @State private var icon: String
     @State private var color: String
+    /// Stays on the device in Travel Mode (synced with the vault).
+    @State private var travelSafe: Bool
     @State private var saving = false
     @State private var errorMessage: String?
+    @State private var confirmDelete = false
     @FocusState private var nameFocused: Bool
 
     init(vault: FfiVault?, onDone: @escaping () -> Void) {
@@ -81,6 +84,7 @@ struct VaultEditorView: View {
         _name = State(initialValue: vault?.meta.name ?? "")
         _icon = State(initialValue: vault?.meta.icon ?? "folder")
         _color = State(initialValue: vault?.meta.color ?? "blue")
+        _travelSafe = State(initialValue: vault?.meta.travelSafe ?? false)
     }
 
     private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -115,6 +119,15 @@ struct VaultEditorView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                Section {
+                    Toggle("Sûr en voyage", isOn: $travelSafe)
+                        .accessibilityIdentifier("vault.editor.travelSafe")
+                } footer: {
+                    Text("En Travel Mode, les coffres qui ne sont pas sûrs en voyage quittent tes appareils jusqu'à ton retour.")
+                }
+                if let vault {
+                    deleteSection(vault)
+                }
                 if let errorMessage {
                     Section {
                         Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -145,6 +158,52 @@ struct VaultEditorView: View {
         .frame(minWidth: 420, minHeight: 440)
         #endif
         .interactiveDismissDisabled(saving)
+    }
+
+    // MARK: - Suppression
+
+    /// No live or archived item left (trashed ones go with the vault).
+    private func isEmpty(_ vault: FfiVault) -> Bool {
+        !model.session.summaries.contains { $0.vaultId == vault.id && $0.trashedAt == nil }
+    }
+
+    private func deleteSection(_ vault: FfiVault) -> some View {
+        let last = model.session.allVaults.count <= 1
+        let empty = isEmpty(vault)
+        return Section {
+            Button("Supprimer le coffre", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                .disabled(last || !empty || saving)
+                .accessibilityIdentifier("vault.editor.delete")
+        } footer: {
+            if last {
+                Text("Le dernier coffre ne peut pas être supprimé.")
+            } else if !empty {
+                Text("Vide ce coffre avant de le supprimer. Les éléments à la corbeille partent avec lui.")
+            }
+        }
+        .confirmationDialog(
+            Text("Supprimer « \(vault.meta.name) » ?"), isPresented: $confirmDelete, titleVisibility: .visible
+        ) {
+            Button("Supprimer le coffre", role: .destructive) { delete(vault) }
+                .accessibilityIdentifier("vault.editor.delete.confirm")
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text("Il disparaît de tous tes appareils, avec les éléments de sa corbeille.")
+        }
+    }
+
+    private func delete(_ vault: FfiVault) {
+        saving = true
+        errorMessage = nil
+        Task {
+            defer { saving = false }
+            do {
+                try await model.session.deleteVault(vault.id)
+                onDone()
+            } catch {
+                errorMessage = VaultError(error).localizedMessage
+            }
+        }
     }
 
     private func iconButton(_ symbol: String) -> some View {
@@ -193,10 +252,10 @@ struct VaultEditorView: View {
         guard canSave else { return }
         saving = true
         errorMessage = nil
-        // A rename keeps the flags this editor does not show.
+        // The MCP flag is set from Réglages > Développeur, with the signed policy: kept as is here.
         let meta = FfiVaultMeta(
             name: trimmed, icon: icon, color: color,
-            travelSafe: vault?.meta.travelSafe ?? false, mcpAccess: vault?.meta.mcpAccess ?? false)
+            travelSafe: travelSafe, mcpAccess: vault?.meta.mcpAccess ?? false)
         Task {
             defer { saving = false }
             do {

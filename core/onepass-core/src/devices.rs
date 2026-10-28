@@ -25,6 +25,7 @@ use crate::chain::{ChainState, Seen};
 use crate::lists::{AccountList, MonotoneEntry, Stored};
 use crate::repo::Repository;
 use crate::store::{RecordKind, RecordStore};
+use crate::sync::SyncStore;
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, Result, ValidationError};
 
@@ -439,6 +440,46 @@ impl<S: RecordStore> Repository<S> {
             return Ok(());
         }
         self.write_list(Some(&current), entries)
+    }
+}
+
+impl Repository<SyncStore> {
+    /// `add_device`, then `then` on the repository that lists it, in one
+    /// store transaction with the device state: an error of `then` (a
+    /// pairing grant that cannot be sealed, a snapshot above its cap)
+    /// rolls the addition back, in the store and in memory, so a device is
+    /// listed only once its grant exists.
+    pub fn add_device_then<T, E: From<Error>>(
+        &mut self,
+        entry: DeviceEntry,
+        then: impl FnOnce(&mut Self) -> std::result::Result<T, E>,
+    ) -> std::result::Result<T, E> {
+        let device = self.device.clone();
+        let chain = self.chain.clone();
+        let dropped = self.dropped.clone();
+        let epoch_rewound = self.epoch_rewound;
+        let lists_forced = self.lists_forced;
+        self.store.begin_batch()?;
+        let result = self
+            .add_device(entry)
+            .and_then(|()| self.persist_device_state())
+            .map_err(E::from)
+            .and_then(|()| then(self))
+            .and_then(|out| {
+                self.store.commit_batch()?;
+                Ok(out)
+            });
+        if result.is_err() {
+            self.device = device;
+            self.chain = chain;
+            self.dropped = dropped;
+            self.epoch_rewound = epoch_rewound;
+            self.lists_forced = lists_forced;
+            // The original error wins; SQLite undoes an open transaction
+            // when the connection closes anyway.
+            let _ = self.store.rollback_batch();
+        }
+        result
     }
 }
 

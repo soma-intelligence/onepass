@@ -149,6 +149,7 @@ Compilés seulement en Debug (`#if DEBUG`), absents des builds Release.
 - `-OnePassDemoData YES` : compte de démonstration dans une base temporaire (Camille Durand, mot de passe `demo-onepass-2026`), items fictifs des 26 types dans trois vaults (Personnel, Projet Atlas, Famille), Secret Key dans un Keychain en mémoire, réglages dans leur propre suite, aucune sync. Avec : `-OnePassDemoItem <titre>`, `-OnePassDebugEdit YES`, `-OnePassDemoLocked YES`, `-OnePassDemoAccountMissing YES` (écran "compte disparu" et ses actions), `-OnePassDemoAccountChanged YES` (bandeau "Le compte iCloud a changé"), `-OnePassDemoTab items|watchtower|search`, `-OnePassDemoQuery <texte>`, `-OnePassDemoSettings YES` et `-OnePassDemoSettingsPage <page>`, `-OnePassDemoVaultEditor YES`, `-OnePassDemoSidebar YES` (iPad), `-OnePassDemoLandscape YES` (iPad, refusé par le système dans les modes de fenêtrage de iPadOS 26).
 - `-OnePassSnapshot <dossier>` (Mac) : données de démonstration, PNG de la fenêtre en clair et en sombre, puis l'app quitte.
 - `-OnePassOnboardingStep device|password|restore` : ouvre directement une étape de l'onboarding.
+- `-OnePassPairingQRText <texte>` : l'approbateur prend ce texte au lieu de la caméra (Simulateur, ruling A3 du jalon 2b). Le nouvel appareil Debug écrit son QR dans la console (`OnePassPairingQRText ...`).
 - `-OnePassDebugSeedAccount YES` : crée un compte fictif dans la base de test (l'isolation est forcée) puis verrouille. `-OnePassDebugItem login|card|note|reward` et `-OnePassDebugNewItem <type>` (isolation forcée aussi), `-OnePassDebugAutoSave YES`, `-OnePassDebugGenerator YES` : voir `App/Root/DebugItems.swift`.
 
 ## Build non signé ou signé
@@ -159,7 +160,7 @@ Compilés seulement en Debug (`#if DEBUG`), absents des builds Release.
 
 ## Simulateurs dédiés
 
-Utiliser uniquement `OnePass M2 iPhone` (iPhone 18 Pro, iOS 27.0), `OnePass M2 iPad` (iPad mini, iOS 27.0), `OnePass M3 iPhone` (iPhone 18 Pro, iOS 27.0) pour le test de l'AutoFill, `OnePass M6 Watch` (Apple Watch Series 12 46 mm, watchOS 27.0) et `OnePass M6 Vision Pro` (Apple Vision Pro, visionOS 27.0, ruling W16). Ne jamais démarrer, arrêter ou effacer un autre Simulateur : d'autres sessions s'en servent.
+Utiliser uniquement `OnePass M2 iPhone` (iPhone 18 Pro, iOS 27.0), `OnePass M2 iPad` (iPad mini, iOS 27.0), `OnePass M3 iPhone` (iPhone 18 Pro, iOS 27.0) pour le test de l'AutoFill, `OnePass M2b iPhone` (et `OnePass M2b iPad` s'il existe) pour l'appairage du jalon 2b, `OnePass M6 Watch` (Apple Watch Series 12 46 mm, watchOS 27.0) et `OnePass M6 Vision Pro` (Apple Vision Pro, visionOS 27.0, ruling W16). Ne jamais démarrer, arrêter ou effacer un autre Simulateur : d'autres sessions s'en servent.
 
 ## Limites du jalon 2
 
@@ -169,7 +170,7 @@ Hors périmètre (spec, section 12) :
 - Extension de navigateur : jalon 4.
 - Watchtower (onglet présent avec un état vide), pack d'icônes de marques, import, export, sauvegarde, pièces jointes : jalon 5.
 - Apple Watch (app), Vision Pro, widgets, Contrôles, Raccourcis, Spotlight, Handoff : jalon 6 (Apple Watch, Vision Pro, widgets, Contrôles et Raccourcis livrés, voir Jalon 6).
-- MCP, agent SSH, génération de clés SSH, Travel Mode : jalon 7.
+- MCP, agent SSH, génération de clés SSH, Travel Mode : jalon 7 (livrés, voir Jalon 7).
 - Changement du mot de passe maître, suppression de vault, option Secret Key dans le trousseau iCloud.
 
 Décisions qui limitent ce jalon (spec, section 13) :
@@ -193,6 +194,58 @@ Autres limites connues :
 - Mac : pas de scan du QR de l'Emergency Kit, la Secret Key se tape (R19).
 - Une modification locale d'un item supprimé sur un autre appareil le fait revenir (une suppression ne porte pas de date) ; un déplacement local concurrent d'une modification distante peut laisser l'item dans les deux vaults, sans perte.
 - Une réinitialisation de la zone iCloud (zone supprimée) est réparée par le prochain appareil qui synchronise, qui renvoie tout son contenu : un effacement volontaire des données iCloud est donc défait. Un vrai réglage "Effacer les données iCloud" arrive au jalon 5.
+
+## Jalon 2b dans les apps : appairage, appareils, retrait, mode public
+
+Spec : `docs/specs/2026-10-27-m2b-app-design.md` (sur la spec normative `2026-10-26-milestone-2b-pairing-design.md`). Décisions : `(internal notes, not published)`. Sécurité : section 15 de [`docs/security/README.md`](../docs/security/README.md).
+
+### Ce qui marche
+
+- **Nouvel appareil** (iPhone, iPad, Mac) : accueil > "J'ai déjà OnePass sur un autre appareil", choix du mode (personnel, partagé, public), puis un QR code renouvelé toutes les 30 s (chacun valable 120 s), "Sur ton iPhone ou ton iPad : Réglages > Appareils > Ajouter un appareil". Le QR engage la clé éphémère du nouvel appareil : c'est lui qui l'affiche, l'appareil déverrouillé le scanne (ruling A1).
+- **Approbation** (iPhone, iPad seulement, ruling A2) : Réglages > Appareils > Ajouter un appareil. Avertissement "Ne scanne jamais un QR code qu'on t'a envoyé", scanner de OnePass (seul un texte `OPPAIR1:` passe), type, nom et mode demandés, code à 6 chiffres, "Les codes sont identiques", présence fraîche (Face ID, sinon mot de passe maître, ruling A8), envoi. Rien ne part avant les deux confirmations. "Ils sont différents" arrête tout, rien n'est envoyé.
+- **Personnel ou partagé** : le nouvel appareil reçoit le compte et la Secret Key, demande le mot de passe maître et importe l'instantané dans le Rust (ruling A9) ; un échec vide le magasin et garde la Secret Key retenue (A4). Il apparaît dans la liste signée des appareils des deux côtés.
+- **Public** : l'approbateur choisit les éléments et la durée (15 min par défaut, 60 au plus). Le nouvel appareil ouvre une session invitée en mémoire : bandeau "Session invitée · se termine dans 14 min", liste et détail en lecture seule, copie effacée du presse-papiers après 30 s, "Terminer". Fin à l'expiration, depuis l'approbateur, à la perte de connexion, après 5 min sans activité, quand l'app passe en arrière-plan ou quitte (ruling A7). L'approbateur suit la session : compte à rebours, journal (ouvert, copié), "Terminer la session". Rien n'est écrit sur le disque du nouvel appareil.
+- **Réglages > Appareils** (iPhone, iPad, Mac) : liste signée (nom, type, mode, date d'ajout, "Cet appareil", "Retiré le ..."), renommer, "Retirer cet appareil" avec présence fraîche puis le conseil "Change ton mot de passe maître si cet appareil a été perdu ou volé." L'appareil courant ne se retire pas lui-même (A6). Sur Mac, "Utilise ton iPhone ou ton iPad pour approuver un nouvel appareil."
+- **Réglages > Sécurité** : "Changer le mot de passe maître". **Réglages > Coffres** : supprimer un coffre vide, sauf le dernier.
+- Un appareil retiré s'efface à son prochain déverrouillage ou à sa prochaine sync qui voit la liste (ruling A5) : base, Secret Key, enrôlement biométrique.
+- Le premier appareil d'un compte s'inscrit sous son vrai nom et son type (le core le crée sous "Appareil", type autre).
+
+### L'essayer sur cette machine (Mac et Simulateur)
+
+Le Simulateur n'a pas de caméra : en Debug seulement, `-OnePassPairingQRText <texte>` remplace la caméra de l'approbateur (ruling A3, sous `#if DEBUG`, absent des builds Release). Le nouvel appareil Debug écrit son QR dans la console : `OnePassPairingQRText OPPAIR1:...`. Les deux apps passent par le vrai transport réseau local (Bonjour `_onepass-pair._tcp`, TCP) de la machine. Toujours en isolation de test (`-OnePassTestIsolation YES`), jamais sur les données réelles.
+
+```sh
+make -C apple build-mac
+# Mac, nouvel appareil, base de test vide ; la console affiche le QR
+apple/DerivedData/Build/Products/Debug/OnePass.app/Contents/MacOS/OnePass \
+  -OnePassTestIsolation YES -OnePassUITestReset YES
+# iPhone, approbateur : build Debug signé ad hoc (un build non signé n'a pas de Keychain)
+cd apple && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
+  -destination 'platform=iOS Simulator,name=OnePass M2b iPhone' -derivedDataPath DerivedData \
+  CODE_SIGN_IDENTITY=- build
+xcrun simctl install "OnePass M2b iPhone" DerivedData/Build/Products/Debug-iphonesimulator/OnePass.app
+# compte fictif déverrouillé (isolation forcée), QR du Mac injecté
+xcrun simctl launch "OnePass M2b iPhone" me.somalabs.onepass \
+  -OnePassDebugItem login -OnePassPairingQRText 'OPPAIR1:...'
+```
+
+Puis Réglages > Appareils > Ajouter un appareil sur l'iPhone, dans les 30 s qui suivent l'affichage de ce QR (au-delà, le Mac publie une nouvelle session et l'ancienne n'écoute plus). Le texte est lu quand l'écran du scanner s'affiche : il peut aussi venir des réglages de l'app (`xcrun simctl spawn "OnePass M2b iPhone" defaults write me.somalabs.onepass OnePassPairingQRText 'OPPAIR1:...'`, à supprimer ensuite), ce qui évite de relancer l'iPhone à chaque QR. Sans compte iCloud ni build signé, la présence passe par le mot de passe maître du compte fictif. Bout en bout vérifié le 2026-10-27 : mode personnel (le Mac déverrouille avec les éléments de l'iPhone, la liste montre les deux appareils), mode public (bandeau, éléments, copie, journal, fin depuis l'iPhone, depuis le Mac et en quittant le Mac ; la base du Mac reste vide), retrait du Mac depuis l'iPhone.
+
+### Ce qui demande deux vrais appareils
+
+- Caméra : le scanner AVFoundation de l'approbateur (le Simulateur n'en a pas, d'où A3).
+- AWDL (Wi-Fi pair à pair entre deux appareils proches, `includePeerToPeer`) : sur une seule machine, le transport passe par la boucle locale.
+- Autorisation "Réseau local" d'iOS (`NSLocalNetworkUsageDescription`, `NSBonjourServices`) : le Simulateur ne la demande pas ; à vérifier au premier appairage sur un iPhone, y compris le refus.
+- Retrait propagé : sans CloudKit (builds Debug et ad hoc), la liste signée ne voyage pas. Le Mac retiré depuis l'iPhone n'en sait rien et garde ses données ; il ne s'efface qu'à la première sync qui lui apporte la liste. Il faut deux appareils signés `Release-CloudKit` sur le même compte iCloud.
+- Face ID ou Touch ID comme présence pour approuver et retirer (le Simulateur et un build ad hoc passent par le mot de passe maître).
+- Approbation avec sync : "Synchronise d'abord cet appareil" et l'instantané pris sur la vue du serveur (A10) demandent CloudKit.
+
+### Limites
+
+- Le Mac n'approuve pas (A2) : un utilisateur qui n'a que des Mac ajoute le second par l'Emergency Kit.
+- Un appareil retiré resté verrouillé et hors ligne garde ses données jusqu'à son prochain déverrouillage (A5).
+- Le nom du compte ("Camille Durand") est un réglage local : un appareil appairé affiche "Mon compte", comme après une restauration par l'Emergency Kit.
+- La session invitée affiche les notes en texte brut (pas de Markdown ni de liens).
 
 ## Jalon 3 : AutoFill, passkeys et codes à usage unique
 
@@ -305,3 +358,11 @@ Rien de ce qui suit n'a été vérifié au jalon 6 (spec, section 13) :
 - Widgets : seulement les 8 premiers favoris par titre ; un TOTP non favori n'y est pas (W6) ; codes valables 12 h (W4). Un widget peut afficher l'état verrouillé jusqu'à son prochain rafraîchissement après le déverrouillage.
 - Pas de widgets Mac ni visionOS (W5), pas de Spotlight ni de Handoff (W10), pas de Contrôle "Scanner un QR TOTP" (W11), pas de widget "À proximité" (R11).
 - Vision Pro : le titre de la colonne de liste est tronqué ("Tous les él...") quand la fenêtre est à sa taille par défaut.
+
+## Jalon 7 : agent SSH, serveur MCP et Travel Mode
+
+Spec : `docs/specs/2026-10-27-m7-app-design.md`.
+
+- **Agent SSH (Mac)** : Réglages > Développeur. L'app sert les clés SSH de ses coffres sur `~/Library/Containers/me.somalabs.onepass/Data/.onepass/ssh.sock` (ligne `IdentityAgent` et `export SSH_AUTH_SOCK` copiables), approbation dans un panneau flottant plus Touch ID à chaque signature (réglable), autorisations de 5, 15 ou 60 minutes, connexions transférées refusées par défaut, `known_hosts` choisi par l'utilisateur pour nommer les destinations. Génération et import de clés (« Nouvelle clé SSH… »). L'agent s'arrête au verrouillage.
+- **Serveur MCP (Mac)** : le client MCP lance `OnePass.app/Contents/Helpers/onepass-mcp --socket <conteneur>/.onepass/mcp.sock` (bloc `mcpServers` copiable). Le relais (crate `core/onepass-mcp-relay`, copié et signé par `scripts/embed-mcp-relay.sh`) identifie son client et exécute pour l'app les commandes et fichiers des outils à secrets ; l'app ne sert que le relais de son propre paquet. Coffres exposés seulement s'ils sont dans la politique signée, clients appairés (panneau et Touch ID pour un client signé, « Appairer un programme… » pour un outil ad hoc), portées par coffre, autorisations révocables, journal d'audit vérifié.
+- **Travel Mode (Mac et iOS)** : Réglages > Travel Mode, et « Sûr en voyage » dans l'éditeur de coffre (synchronisé). Les coffres qui partent quittent l'appareil sans être supprimés d'iCloud ; au retour, OnePass les recharge depuis iCloud et les vérifie contre les derniers manifestes vus. Une synchro réussie est exigée avant d'entrer.

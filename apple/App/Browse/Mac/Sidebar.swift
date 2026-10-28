@@ -591,8 +591,9 @@ struct SettingsRow: View {
 }
 
 #if os(macOS)
-/// Reads how much of the window the title bar and the toolbar cover (`contentLayoutRect`).
-private struct TitlebarHeightReader: NSViewRepresentable {
+/// Reads how much of the window the title bar and the toolbar cover (`contentLayoutRect`). Also used
+/// by the guest session's sidebar (`PublicSessionView`).
+struct TitlebarHeightReader: NSViewRepresentable {
     @Binding var height: CGFloat
 
     func makeNSView(context: Context) -> ReaderView {

@@ -20,7 +20,7 @@
 </div>
 
 > [!WARNING]
-> OnePass is **pre-release software (v0.1.x)**. It has not had an external security audit yet (planned for milestone 8). The dev CLI and the dev native messaging host keep secrets in a form meant for development only. Do not store real secrets in OnePass until the first audited release.
+> OnePass is **pre-release software (v0.2.x)**. It has not had an external security audit yet (planned for milestone 8). The dev CLI and the dev native messaging host keep secrets in a form meant for development only. Do not store real secrets in OnePass until the first audited release.
 
 ## Why OnePass
 
@@ -339,10 +339,10 @@ onepass/
 | ✅ | M2 | Apple apps, unlock, CloudKit sync | Done (real iCloud verification pending) |
 | ✅ | M3 | System AutoFill, passkeys, one-time codes | Done |
 | ✅ | M4 | Browser extension, encrypted native messaging | Done (Safari extension in the Mac app, Debug builds only until the app serves the bridge) |
-| 🟡 | M5 | Watchtower, import, export, signed backups | Done in core and CLI, app UI in progress |
+| ✅ | M5 | Watchtower, import, export, signed backups | Done |
 | ✅ | M6 | Apple Watch, Vision Pro, widgets, Shortcuts | Done |
-| 🟡 | M7 | MCP server, SSH agent, Travel Mode | Done in CLI |
-| 🟡 | M2b | QR device linking, signed device list, revocation, public computer mode | Done in core |
+| ✅ | M7 | MCP server, SSH agent, Travel Mode | Done |
+| ✅ | M2b | QR device linking, signed device list, revocation, public computer mode | Done (two-device iCloud verification pending) |
 | ⬜ | M8 | External audit, public launch | Planned |
 | ⬜ | Later | Self-hosted server, sharing and organizations, web app (WASM), recovery codes | Planned |
 

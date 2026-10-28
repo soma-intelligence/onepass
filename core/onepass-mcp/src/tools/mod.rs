@@ -21,6 +21,7 @@ use crate::guards::{ClientContext, LivenessFn, McpGuards, RegistryFn};
 use crate::policy::{ClientScopes, Narrowing, Policy, Scope, effective_for_client};
 use crate::port::{PortError, VaultInfo, VaultPort};
 use crate::protocol::{ClientInfo, ToolHost, ToolOutcome, ToolSpec};
+use crate::workspace::{LocalWorkspace, Workspace, WorkspaceRefusal};
 use onepass_core::Id;
 use onepass_core::model::Item;
 use onepass_core::reference::{SecretRef, parse_ref};
@@ -140,6 +141,12 @@ impl Approver for SharedApprover {
     }
 }
 
+impl From<WorkspaceRefusal> for Refusal {
+    fn from(e: WorkspaceRefusal) -> Self {
+        Refusal::Invalid(e.message().to_owned())
+    }
+}
+
 impl From<PortError> for Refusal {
     fn from(e: PortError) -> Self {
         match e {
@@ -162,6 +169,12 @@ pub(crate) enum Failure {
 impl From<Refusal> for Failure {
     fn from(r: Refusal) -> Self {
         Failure::Refused(r)
+    }
+}
+
+impl From<WorkspaceRefusal> for Failure {
+    fn from(e: WorkspaceRefusal) -> Self {
+        Failure::Refused(e.into())
     }
 }
 
@@ -263,6 +276,9 @@ pub struct McpTools<P: VaultPort> {
     gate: PromptGate<SharedApprover>,
     audit: Box<dyn AuditSink>,
     forbidden_dir: Option<PathBuf>,
+    /// Runs the commands and reads and writes the files of the secret
+    /// tools ([`LocalWorkspace`] unless replaced).
+    workspace: Box<dyn Workspace + Send>,
     client: ClientContext,
     registry: RegistryFn,
     grants: Arc<Mutex<GrantStore>>,
@@ -279,7 +295,15 @@ pub struct McpTools<P: VaultPort> {
     /// When the last refusals before pairing (unpaired client, unusable
     /// registry) were audited, within the last minute.
     unpaired_audited: VecDeque<Instant>,
+    /// Reads the policy and its narrowing again before each call (a host
+    /// whose settings change while a session is open); `None` keeps the
+    /// ones given at construction.
+    policy_source: Option<PolicySource>,
 }
+
+/// Reads the policy in force and its narrowing, verified. An error (a
+/// tampered or unreadable file) exposes nothing for that call.
+pub type PolicySource = Box<dyn FnMut() -> Result<(Policy, Narrowing), String> + Send>;
 
 /// Most audit entries per minute for refusals before pairing: an unpaired
 /// client looping on calls must not flood the log (it is still refused).
@@ -305,6 +329,7 @@ impl<P: VaultPort> McpTools<P> {
             gate: PromptGate::new(SharedApprover(approver), guards.prompt_wait),
             audit,
             forbidden_dir,
+            workspace: Box::new(LocalWorkspace),
             client: guards.client,
             registry: guards.registry,
             grants: guards.grants,
@@ -316,6 +341,7 @@ impl<P: VaultPort> McpTools<P> {
             client_scopes: None,
             quarantined: BTreeSet::new(),
             unpaired_audited: VecDeque::new(),
+            policy_source: None,
         }
     }
 
@@ -336,6 +362,42 @@ impl<P: VaultPort> McpTools<P> {
         }
         self.unpaired_audited.push_back(now);
         true
+    }
+
+    /// The same host with its side effects (commands of
+    /// `run_with_secrets`, files of `fill_template`) done by `workspace`
+    /// instead of [`LocalWorkspace`].
+    pub fn with_workspace(mut self, workspace: Box<dyn Workspace + Send>) -> Self {
+        self.workspace = workspace;
+        self
+    }
+
+    /// Reads the policy and its narrowing from `source` before every tool
+    /// call, so a change applies to an open session at its next call.
+    pub fn with_policy_source(mut self, source: PolicySource) -> Self {
+        self.policy_source = Some(source);
+        self
+    }
+
+    /// The policy of `policy_source` for the coming call. A failed read
+    /// keeps the policy but narrows it to no vault (fail closed).
+    fn refresh_policy(&mut self) {
+        let Some(source) = self.policy_source.as_mut() else {
+            return;
+        };
+        match source() {
+            Ok((policy, narrowing)) => {
+                self.policy = policy;
+                self.narrowing = narrowing;
+            }
+            Err(_) => {
+                self.policy.allow_generate = false;
+                self.narrowing = Narrowing {
+                    vaults: Some(BTreeSet::new()),
+                    scopes: Some(BTreeSet::new()),
+                };
+            }
+        }
     }
 
     /// The identity of the client this server serves.
@@ -552,6 +614,7 @@ impl<P: VaultPort> ToolHost for McpTools<P> {
     }
 
     fn call(&mut self, client: &ClientInfo, name: &str, args: &Map<String, Value>) -> ToolOutcome {
+        self.refresh_policy();
         let known = schema::all().iter().any(|t| t.name == name);
         let mut call = Call::default();
         let mut before_pairing = false;

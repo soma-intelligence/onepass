@@ -47,6 +47,14 @@ public final class VaultSettings: @unchecked Sendable {
         static let displayName = "onepass.displayName"
         static let quickType = "onepass.quickTypeSuggestions"
         static let autofillTip = "onepass.autofillTipDismissed"
+        static let revokedErase = "onepass.revokedErasePending"
+    }
+
+    /// This device was found revoked and its erase has not completed yet (L6): the app shows the
+    /// revoked screen, never the lock screen, and tries the erase again.
+    public var revokedErasePending: Bool {
+        get { defaults.bool(forKey: Key.revokedErase) }
+        set { defaults.set(newValue, forKey: Key.revokedErase) }
     }
 
     public var deviceMode: DeviceMode {

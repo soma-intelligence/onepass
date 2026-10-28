@@ -6,10 +6,12 @@ import VaultKit
 
 enum OnboardingStep: Hashable, Sendable {
     case welcome, device, password, secretKey, biometrics, visibleVaults, restore, done
+    /// "J'ai déjà OnePass sur un autre appareil": the mode, then the QR, code and password.
+    case pairMode, pairing
 }
 
 enum OnboardingPath: Sendable {
-    case create, restore
+    case create, restore, pair
 }
 
 /// The onboarding state machine (spec 7): create an account, or restore one with the Emergency Kit.
@@ -55,6 +57,11 @@ final class OnboardingModel {
     /// The creation was refused because this iCloud already holds an account (R13).
     private(set) var offerRestore = false
 
+    /// The mode asked for on "J'ai déjà OnePass sur un autre appareil" (public included).
+    var pairDeviceMode: FfiDeviceMode = .personal
+    /// The running pairing (new device side), from the QR step on.
+    private(set) var pairing: PairingNewcomerFlow?
+
     @ObservationIgnored private let model: AppModel
 
     init(model: AppModel, restoreOnly: Bool) {
@@ -98,6 +105,15 @@ final class OnboardingModel {
     var biometricsOffered: Bool { mode.biometricsAllowed && session.environment.biometrics.isAvailable }
 
     var steps: [OnboardingStep] {
+        if path == .pair {
+            var steps: [OnboardingStep] = [.welcome, .pairMode, .pairing]
+            // A guest session opens its own screen: nothing follows.
+            guard pairDeviceMode != .public else { return steps }
+            if biometricsOffered { steps.append(.biometrics) }
+            if mode == .shared { steps.append(.visibleVaults) }
+            steps.append(.done)
+            return steps
+        }
         var steps: [OnboardingStep] = restoreOnly ? [] : [.welcome, .device]
         steps.append(contentsOf: path == .create ? [.password, .secretKey] : [.restore])
         if biometricsOffered { steps.append(.biometrics) }
@@ -112,8 +128,14 @@ final class OnboardingModel {
     var canGoBack: Bool {
         guard !busy else { return false }
         switch step {
-        case .device, .password: return true
+        case .device, .password, .pairMode: return true
         case .restore: return !restoreOnly
+        case .pairing:
+            // Until the account arrives: going back stops the pairing.
+            switch pairing?.state {
+            case .comparing, .waitingForApproval, .receivedFull, .importing, .done, .receivedPublic: return false
+            default: return true
+            }
         default: return false
         }
     }
@@ -123,6 +145,7 @@ final class OnboardingModel {
         offerRestore = false
         let index = stepIndex
         guard canGoBack, index > 0 else { return }
+        if step == .pairing { stopPairing() }
         step = steps[index - 1]
     }
 
@@ -138,7 +161,7 @@ final class OnboardingModel {
         self.path = path
         errorMessage = nil
         offerRestore = false
-        step = .device
+        step = path == .pair ? .pairMode : .device
     }
 
     // MARK: - Primary action
@@ -180,6 +203,13 @@ final class OnboardingModel {
     var primaryLabel: String? {
         switch step {
         case .welcome: nil
+        case .pairMode: String(localized: "Afficher le QR code")
+        case .pairing:
+            switch pairing?.state {
+            case .receivedFull, .importing: String(localized: "Déverrouiller")
+            case .failed, .cancelled: String(localized: "Recommencer")
+            default: nil
+            }
         case .biometrics: String(localized: "Activer \(biometryName)")
         case .restore: String(localized: "Déverrouiller")
         case .done: String(localized: "Ouvrir OnePass")
@@ -193,6 +223,9 @@ final class OnboardingModel {
         case .password: return passwordAccepted
         case .secretKey: return kitStoredOffline
         case .restore: return !restoreKey.trimmingCharacters(in: .whitespaces).isEmpty && !restorePassword.isEmpty
+        case .pairing:
+            if pairing?.state == .receivedFull { return !restorePassword.isEmpty }
+            return true
         default: return true
         }
     }
@@ -210,6 +243,15 @@ final class OnboardingModel {
         case .visibleVaults: advance()
         case .restore: await restore()
         case .done: finish()
+        case .pairMode:
+            startPairing()
+            advance()
+        case .pairing:
+            if pairing?.state == .receivedFull {
+                await unlockPaired()
+            } else {
+                startPairing()
+            }
         }
     }
 
@@ -328,6 +370,61 @@ final class OnboardingModel {
         advance()
     }
 
+    // MARK: - Pairing (new device)
+
+    /// Shows a first QR (renewed every 30 s by the flow) and waits for the approver.
+    private func startPairing() {
+        stopPairing()
+        errorMessage = nil
+        if pairDeviceMode != .public { mode = pairDeviceMode == .shared ? .shared : .personal }
+        let flow = PairingNewcomerFlow(vault: session, mode: pairDeviceMode, listener: LocalNetworkPairingListener())
+        pairing = flow
+        flow.start()
+    }
+
+    private func stopPairing() {
+        pairing?.cancel()
+        pairing = nil
+        restorePassword = ""
+    }
+
+    /// iOS: the app went to the background. A received account not unlocked yet is dropped (M3): the
+    /// screen shows "Recommencer".
+    func sceneWentToBackground() {
+        guard pairing?.state == .receivedFull else { return }
+        pairing?.cancel()
+        restorePassword = ""
+    }
+
+    /// The approver granted the account: imports it with the master password. A wrong password keeps
+    /// the grant for another try (ruling A9).
+    private func unlockPaired() async {
+        guard let pairing else { return }
+        busyMessage = String(localized: "Déverrouillage...")
+        defer { busyMessage = nil }
+        errorMessage = nil
+        // Emptied on submission, whatever the outcome; crosses the FFI as bytes.
+        let typed = credentials.submitRestore()
+        defer { typed.wipe() }
+        await pairing.importAndUnlock(password: typed)
+        guard pairing.state == .done else {
+            errorMessage = pairing.importError.map { $0.restoreMessage } ?? VaultError.wrongPassword.localizedMessage
+            return
+        }
+        // The mode comes from the grant.
+        mode = model.settings.deviceMode
+        credentials.restored(password: typed, keepPasswordForBiometrics: biometricsOffered)
+        advance()
+    }
+
+    /// A public grant arrived: the guest session takes the whole window (nothing on disk).
+    func pairingStateChanged(_ state: PairingNewcomerFlow.State) {
+        if case .receivedPublic(let guest) = state {
+            pairing = nil
+            model.publicSession = guest
+        }
+    }
+
     /// "Créer un nouveau coffre" on the Emergency Kit screen of a device without the Secret Key,
     /// confirmed by typing EFFACER: the unreadable local copy is cleared, the onboarding starts over.
     func startOver() async throws {
@@ -347,6 +444,7 @@ final class OnboardingModel {
     /// restored: the Secret Key and the master password leave memory, the Emergency Kit file is
     /// deleted and the lock screen replaces the onboarding. The Secret Key stays in the keychain.
     func sessionLocked() {
+        stopPairing()
         deleteKit()
         credentials.clear()
         clearGeneratedPassword()
@@ -355,6 +453,7 @@ final class OnboardingModel {
     }
 
     private func finish() {
+        pairing = nil
         credentials.clear()
         clearGeneratedPassword()
         model.onboardingInProgress = false
@@ -472,6 +571,8 @@ final class OnboardingModel {
         case .visibleVaults: String(localized: "Coffres visibles")
         case .restore: "Emergency Kit"
         case .done: String(localized: "Terminé")
+        case .pairMode: String(localized: "Type d'appareil")
+        case .pairing: String(localized: "QR code")
         }
     }
 }
@@ -480,6 +581,7 @@ final class OnboardingModel {
 /// sidebar on Mac (mockups `PhoneOnboarding` and `Onboarding`).
 struct OnboardingFlow: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model: OnboardingModel?
 
     var body: some View {
@@ -519,6 +621,11 @@ struct OnboardingFlow: View {
             // A lock after the creation or restore unlocked the session (spec 4 point 5).
             if old == .unlocked, new != .unlocked, new != .unlocking { model?.sessionLocked() }
         }
+        #if os(iOS)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { model?.sceneWentToBackground() }
+        }
+        #endif
     }
 }
 

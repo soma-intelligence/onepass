@@ -21,6 +21,8 @@ struct BrowseCommands: Commands {
             Button("Importer…") { model.showImport = true }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(!unlocked)
+            Button("Restaurer une sauvegarde…") { model.showRestore = true }
+                .disabled(!unlocked)
         }
         // Replaces the standard Find submenu, whose ⌘F would compete with this one.
         CommandGroup(replacing: .textEditing) {

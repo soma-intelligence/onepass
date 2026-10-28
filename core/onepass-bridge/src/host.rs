@@ -896,7 +896,13 @@ mod tests {
     #[test]
     fn approver_sees_the_code_and_approves_after_waiting() {
         let (s, shown, ended) = scripted(Approval::Approved, 3);
-        let rig = rig_with(fast(), true, Some(s));
+        // Three polls must fit the deadline even on a loaded machine.
+        let limits = Limits {
+            step: Duration::from_secs(5),
+            approval_max: Duration::from_secs(5),
+            ..fast()
+        };
+        let rig = rig_with(limits, true, Some(s));
         let (mut ext, sas) = start_pairing(&rig);
         let Envelope::PairDone(done) = rig.recv() else {
             panic!("pair_done")

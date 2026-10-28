@@ -29,5 +29,5 @@ pub use agent::{
 };
 pub use knownhosts::{matching_hosts, pattern_matches};
 pub use server::peer_info;
-pub use server::{bind_socket, serve};
+pub use server::{bind_socket, serve, serve_with_stack};
 pub use sshsig::sshsig_namespace;

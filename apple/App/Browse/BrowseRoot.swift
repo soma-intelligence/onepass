@@ -34,6 +34,10 @@ struct BrowseRoot: View {
             .sheet(isPresented: $model.showImport) {
                 ImportSheet()
             }
+            // Fichier > Restaurer une sauvegarde…: a OnePass archive (.onepass).
+            .sheet(isPresented: $model.showRestore) {
+                RestoreSheet()
+            }
             // "Copier le code à usage unique" when the device cannot confirm the user itself.
             .sheet(item: $model.totpPasswordRequest) { ref in
                 PasswordPromptSheet(

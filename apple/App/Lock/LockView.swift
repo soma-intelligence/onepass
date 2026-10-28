@@ -227,6 +227,14 @@ struct LockView: View {
     }
 
     @ViewBuilder private var status: some View {
+        if session.passwordChangedElsewhere, message == nil {
+            Text("Ton mot de passe maître a changé sur un autre appareil. Saisis le nouveau.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 8)
+                .accessibilityIdentifier("lock.passwordChangedElsewhere")
+        }
         if let message {
             Text(message)
                 .font(.footnote)

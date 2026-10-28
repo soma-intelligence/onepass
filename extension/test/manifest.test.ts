@@ -34,7 +34,7 @@ describe.each(BROWSERS)("manifest %s", (b) => {
     const m = load(b);
     expect(m.manifest_version).toBe(3);
     expect(m.name).toBe("OnePass");
-    expect(m.version).toBe("0.1.4");
+    expect(m.version).toBe("0.2.0");
     expect([...m.permissions].sort()).toEqual(
       ["activeTab", "nativeMessaging", "scripting", "storage", "webNavigation"].sort(),
     );

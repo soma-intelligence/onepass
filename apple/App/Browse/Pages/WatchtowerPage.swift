@@ -23,7 +23,10 @@ struct WatchtowerPage: View {
                     StrengthCard(levels: report.strength.map(Int.init))
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 14)], spacing: 14) {
                         ForEach(WatchtowerCard.all) { card in
-                            WatchtowerCardView(card: card, report: report, checkBreaches: watchtower.checkBreaches) {
+                            WatchtowerCardView(
+                                card: card, report: report, checkBreaches: watchtower.checkBreaches,
+                                breachCatalog: watchtower.breachCatalogUsed
+                            ) {
                                 model.showWatchtowerItems(title: card.title, itemIDs: card.itemIDs(in: report))
                             }
                         }
@@ -255,6 +258,8 @@ struct WatchtowerCard: Identifiable {
         case breaches
         /// Needs the 2FA and passkey catalogs.
         case sites
+        /// Needs the HIBP breach catalog.
+        case breachCatalog
     }
 
     let id: String
@@ -269,12 +274,49 @@ struct WatchtowerCard: Identifiable {
         Set(report.checks.filter { checks.contains($0.check) }.flatMap(\.itemIds))
     }
 
+    /// Why the card has no figure: its data source did not run. Nil when it did.
+    func unavailableNote(report: FfiWatchtowerReport, checkBreaches: Bool, breachCatalog: Bool) -> String? {
+        switch source {
+        case .local:
+            return nil
+        case .breaches:
+            switch report.pwned {
+            case .disabled: return String(localized: "Vérification des fuites désactivée.")
+            case .unavailable: return checkBreaches ? String(localized: "En attente du réseau.") : nil
+            case .checked, .partial: return nil
+            }
+        case .sites:
+            return report.sitesChecked ? nil
+                : checkBreaches ? String(localized: "Catalogue des sites pas encore téléchargé.")
+                : String(localized: "Active « Vérifier les fuites » pour télécharger le catalogue des sites.")
+        case .breachCatalog:
+            return breachCatalog ? nil
+                : checkBreaches ? String(localized: "Catalogue des fuites pas encore téléchargé.")
+                : String(localized: "Active « Vérifier les fuites » pour télécharger le catalogue des sites piratés.")
+        }
+    }
+
+    /// The card holding `check`, for the item detail.
+    static func of(check: String) -> WatchtowerCard? {
+        all.first { $0.checks.contains(check) }
+    }
+
     static let all: [WatchtowerCard] = [
         WatchtowerCard(
             id: "compromised", checks: ["compromised"],
             title: String(localized: "Mots de passe compromis"),
             message: String(localized: "Ils apparaissent dans des fuites de données connues. Change-les en priorité."),
             symbol: "exclamationmark.octagon.fill", color: .red, source: .breaches),
+        WatchtowerCard(
+            id: "breached_site", checks: ["breached_site"],
+            title: String(localized: "Sites piratés"),
+            message: String(localized: "Ces sites ont subi une fuite depuis ton dernier changement de mot de passe. Change-le sur chacun."),
+            symbol: "exclamationmark.shield.fill", color: .red, source: .breachCatalog),
+        WatchtowerCard(
+            id: "provider_exposed", checks: ["provider_exposed"],
+            title: String(localized: "Comptes de connexion exposés"),
+            message: String(localized: "Un compte qui te sert à te connecter ailleurs est compromis, faible, réutilisé ou sans double authentification : tous les sites qui en dépendent sont exposés."),
+            symbol: "person.crop.circle.badge.exclamationmark", color: .red, source: .local),
         WatchtowerCard(
             id: "reused", checks: ["reused"],
             title: String(localized: "Mots de passe réutilisés"),
@@ -306,6 +348,26 @@ struct WatchtowerCard: Identifiable {
             message: String(localized: "Cartes, documents et licences expirés ou qui expirent dans les 30 jours."),
             symbol: "calendar.badge.exclamationmark", color: .pink, source: .local),
         WatchtowerCard(
+            id: "wifi", checks: ["wifi_insecure"],
+            title: String(localized: "Wi-Fi peu protégés"),
+            message: String(localized: "Ces réseaux utilisent WEP ou aucun chiffrement. Passe-les en WPA2 ou WPA3 sur le routeur."),
+            symbol: "wifi.exclamationmark", color: .orange, source: .local),
+        WatchtowerCard(
+            id: "ssh", checks: ["ssh_weak"],
+            title: String(localized: "Clés SSH faibles"),
+            message: String(localized: "Clés RSA de moins de 3 072 bits ou DSA. Remplace-les par une clé Ed25519."),
+            symbol: "terminal.fill", color: .orange, source: .local),
+        WatchtowerCard(
+            id: "wallet", checks: ["wallet_no_backup"],
+            title: String(localized: "Portefeuilles sans sauvegarde"),
+            message: String(localized: "Indique où est rangée la copie physique de la phrase de récupération de ces portefeuilles."),
+            symbol: "archivebox.fill", color: .yellow, source: .local),
+        WatchtowerCard(
+            id: "duplicate", checks: ["duplicate"],
+            title: String(localized: "Doublons"),
+            message: String(localized: "Même site et même identifiant dans plusieurs éléments. Garde-en un seul."),
+            symbol: "square.on.square", color: .gray, source: .local),
+        WatchtowerCard(
             id: "old", checks: ["old_password"],
             title: String(localized: "Vieux mots de passe"),
             message: String(localized: "Inchangés depuis plus d'un an. Pense à les renouveler."),
@@ -324,24 +386,11 @@ struct WatchtowerCardView: View {
     let card: WatchtowerCard
     let report: FfiWatchtowerReport
     let checkBreaches: Bool
+    let breachCatalog: Bool
     let onShow: () -> Void
 
-    /// Why the card has no figure: its data source did not run.
     private var unavailable: String? {
-        switch card.source {
-        case .local:
-            return nil
-        case .breaches:
-            switch report.pwned {
-            case .disabled: return String(localized: "Vérification des fuites désactivée.")
-            case .unavailable: return checkBreaches ? String(localized: "En attente du réseau.") : nil
-            case .checked, .partial: return nil
-            }
-        case .sites:
-            return report.sitesChecked ? nil
-                : checkBreaches ? String(localized: "Catalogue des sites pas encore téléchargé.")
-                : String(localized: "Active « Vérifier les fuites » pour télécharger le catalogue des sites.")
-        }
+        card.unavailableNote(report: report, checkBreaches: checkBreaches, breachCatalog: breachCatalog)
     }
 
     var body: some View {
@@ -376,7 +425,7 @@ struct WatchtowerCardView: View {
 
 // MARK: - Setting
 
-/// "Vérifier les fuites" and what it sends.
+/// "Vérifier les fuites" and what it sends, then "Me prévenir" (local notifications).
 struct BreachSettingCard: View {
     @Environment(AppModel.self) private var model
 
@@ -393,9 +442,20 @@ struct BreachSettingCard: View {
                     Tes mots de passe ne quittent jamais l'appareil. Pour chacun, OnePass envoie à \
                     Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des \
                     centaines d'autres mots de passe, et compare le reste ici. Les catalogues publics de \
-                    2fa.directory (double authentification et passkeys) sont téléchargés en entier et \
-                    gardés une semaine. Désactivé, Watchtower ne fait aucune requête réseau.
+                    2fa.directory (double authentification et passkeys) et la liste des sites piratés de \
+                    Have I Been Pwned sont téléchargés en entier et gardés une semaine. Désactivé, \
+                    Watchtower ne fait aucune requête réseau.
                     """)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Divider().padding(.vertical, 4)
+                Toggle(isOn: $watchtower.notify) {
+                    Text("Me prévenir").font(.headline)
+                }
+                .toggleStyle(.switch)
+                .accessibilityIdentifier("watchtower.notify")
+                Text("Une notification quand Watchtower trouve un nouveau mot de passe compromis, un site piraté, un compte de connexion exposé ou un élément qui expire. Elle donne seulement le nombre, jamais le nom d'un élément.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

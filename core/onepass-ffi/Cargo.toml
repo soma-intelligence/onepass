@@ -17,6 +17,17 @@ required-features = ["bindgen"]
 
 [dependencies]
 onepass-core = { path = "../onepass-core" }
+# Milestone 7 in the apps: the SSH agent and the MCP server served by the
+# app, with the hardened guards (approvals, grants, registry, audit log).
+onepass-guard = { path = "../onepass-guard" }
+onepass-mcp = { path = "../onepass-mcp" }
+# The relay's wire messages (the relay itself is a separate binary).
+onepass-mcp-relay = { path = "../onepass-mcp-relay" }
+onepass-peer = { path = "../onepass-peer" }
+onepass-ssh-agent = { path = "../onepass-ssh-agent" }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+serde_json.workspace = true
+data-encoding.workspace = true
 uniffi = { version = "=0.32.2" }
 zeroize.workspace = true
 time = { version = "0.3", default-features = false, features = ["std"] }
@@ -26,8 +37,6 @@ url = "2"
 # The production bridge (spec 2026-10-27-release-bridge-design): the host loop
 # of the extension protocol, and its JSON audit journal.
 onepass-bridge = { path = "../onepass-bridge" }
-serde_json.workspace = true
-data-encoding.workspace = true
 
 # The bridge's socket and the code-signature checks of its clients: Mac only.
 [target.'cfg(target_os = "macos")'.dependencies]

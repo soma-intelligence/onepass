@@ -146,17 +146,53 @@ final class RecordingSync: SyncTrigger {
     func sessionLocked() async { log.withLock { $0.append(.locked) } }
 }
 
-/// Answers the presence prompt with a preset result and counts the prompts.
+/// Answers the presence prompt with a preset result and counts the prompts: `prompts` for the
+/// device owner check (biometrics or passcode), `biometricPrompts` for the biometrics-only one. After
+/// `hold()`, a prompt waits until `release()` (a user still looking at Face ID).
 final class FakePresence: PresenceChecker {
-    private let state = Mutex<(answer: Bool, prompts: Int)>((true, 0))
+    private struct State {
+        var answer = true
+        var prompts = 0
+        var biometricPrompts = 0
+        var held = false
+        var waiting: [CheckedContinuation<Void, Never>] = []
+    }
+    private let state = Mutex(State())
     var prompts: Int { state.withLock { $0.prompts } }
+    var biometricPrompts: Int { state.withLock { $0.biometricPrompts } }
+    /// Prompts waiting for `release()`.
+    var pending: Int { state.withLock { $0.waiting.count } }
     func answer(_ value: Bool) { state.withLock { $0.answer = value } }
+    func hold() { state.withLock { $0.held = true } }
+    func release() {
+        let waiting = state.withLock { s in
+            s.held = false
+            defer { s.waiting = [] }
+            return s.waiting
+        }
+        for w in waiting { w.resume() }
+    }
 
     func confirm(prompt: String) async -> Bool {
-        state.withLock {
-            $0.prompts += 1
-            return $0.answer
+        state.withLock { $0.prompts += 1 }
+        return await answered()
+    }
+
+    func confirmWithBiometrics(prompt: String) async -> Bool {
+        state.withLock { $0.biometricPrompts += 1 }
+        return await answered()
+    }
+
+    private func answered() async -> Bool {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            let go = state.withLock { s -> Bool in
+                guard s.held else { return true }
+                s.waiting.append(c)
+                return false
+            }
+            if go { c.resume() }
         }
+        return state.withLock { $0.answer }
     }
 }
 
