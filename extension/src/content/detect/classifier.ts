@@ -5,7 +5,9 @@
 //
 // Safety: the model only proposes. applySafetyRules runs after it and before the existing logic
 // (formKind, look-alikes, origin checks, all unchanged): invisible fields and fields of a
-// cross-site frame are forced to `unknown`, and an `unknown` is final. In a cross-site frame the
+// cross-site frame are forced to `unknown`, and an `unknown` is final. A role the control type
+// cannot hold (a password role off a type=password input, an email in one...) falls back to the
+// field's heuristic role, which applies the same control-type rules. In a cross-site frame the
 // model is not consulted at all (the frame keeps today's roles, and the service worker refuses
 // every fill there, R-10).
 //
@@ -17,6 +19,7 @@ import type { FieldRole } from "../../shared/messages";
 import { isModelLabel, type ModelLabel } from "../../shared/model-labels";
 import type { FieldFeatures, Visibility } from "./features";
 import { classifyField, type FieldElement } from "./fields";
+import { PASSWORD_TYPE_ROLES, type ScoredRole } from "./lexicon";
 import { domGeometry, type Geometry, isVisible } from "./visibility";
 
 export type ClassifierKind = "heuristic" | "gbm" | "encoder";
@@ -89,11 +92,39 @@ export function signupContext(labels: readonly ModelLabel[]): boolean {
 
 const HIDDEN: ReadonlySet<Visibility> = new Set<Visibility>(["display_none", "offscreen", "opacity", "zero_size"]);
 
+const PASSWORD_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>(["current_password", "new_password", "confirm_password"]);
+/** Roles the heuristic reads only on a text-entry input (TYPE_WEIGHTS: text, tel, number; otp on password). */
+const TEXT_ENTRY_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>(["cc_number", "cc_csc", "otp"]);
+const TEXT_ENTRY_TYPES: ReadonlySet<string> = new Set(["text", "tel", "number", "password"]);
+
+function controlType(el: FieldElement): string {
+  if (el instanceof HTMLSelectElement) return "select";
+  if (el instanceof HTMLTextAreaElement) return "textarea";
+  return el.type;
+}
+
+/**
+ * True when the control type may hold `role`, by the heuristic's own rules (fields.ts scoreField):
+ * a type=password input takes only PASSWORD_TYPE_ROLES; the password roles need a type=password
+ * input; card number, card security code and one-time code need a text-entry input (never a
+ * select, a textarea, an email or date input); a checkbox is only "remember me".
+ */
+export function roleFitsControl(el: FieldElement, role: FieldRole): boolean {
+  const type = controlType(el);
+  if (type === "checkbox") return role === "remember_me";
+  if (type === "password") return PASSWORD_TYPE_ROLES.has(role as ScoredRole);
+  if (PASSWORD_ROLES.has(role)) return false;
+  if (TEXT_ENTRY_ROLES.has(role)) return TEXT_ENTRY_TYPES.has(type);
+  return true;
+}
+
 /**
  * Runs after the classifier, before the existing logic: `unknown` on every invisible field (the
  * fill-time visibility check of visibility.ts, and any non-visible `visibility` of the features),
  * on every field of a cross-site frame, and on any field the classifier gave no role. Never turns
- * an `unknown` into anything else.
+ * an `unknown` into anything else. A role the control cannot hold (roleFitsControl) is replaced by
+ * the field's heuristic role, so a model never writes a password into a clear-text control nor
+ * another value into a type=password one.
  */
 export function applySafetyRules(
   fields: FieldElement[],
@@ -111,7 +142,8 @@ export function applySafetyRules(
       frame.crossSite ||
       (v !== undefined && HIDDEN.has(v)) ||
       !isVisible(el, geometry);
-    return refused ? { role: "unknown", score: 0 } : { role: r.role, score: r.score };
+    if (refused) return { role: "unknown", score: 0 };
+    return roleFitsControl(el, r.role) ? { role: r.role, score: r.score } : classifyField(el);
   });
 }
 

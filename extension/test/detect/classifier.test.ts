@@ -11,11 +11,13 @@ import {
   heuristicClassifier,
   type ModelSessionLike,
   remoteSession,
+  roleFitsControl,
   signupContext,
   toFieldRole,
 } from "../../src/content/detect/classifier";
 import { extractFeatures, type FieldFeatures } from "../../src/content/detect/features";
-import { type FieldElement, isFieldCandidate } from "../../src/content/detect/fields";
+import { classifyField, type FieldElement, isFieldCandidate } from "../../src/content/detect/fields";
+import { PASSWORD_TYPE_ROLES, type ScoredRole } from "../../src/content/detect/lexicon";
 import { analyzeDocument } from "../../src/content/detect/forms";
 import { RefRegistry } from "../../src/content/detect/refs";
 import type { FieldRole, PageAnalysis } from "../../src/shared/messages";
@@ -144,6 +146,70 @@ describe("applySafetyRules", () => {
     const fields = fieldsOf(`<form><input id="a" disabled><input id="b" readonly><div aria-hidden="true"><input id="c"></div></form>`);
     const said = fields.map(() => ({ role: "email" as FieldRole, score: 1 }));
     expect(applySafetyRules(fields, said, { crossSite: false }, { geometry: testGeometry }).map((r) => r.role)).toEqual(["unknown", "unknown", "unknown"]);
+  });
+});
+
+describe("applySafetyRules: control type (final review I1)", () => {
+  const ROLE_CASES = `<form>
+    <input id="text" name="display">
+    <textarea id="area" name="bio"></textarea>
+    <input id="pw" name="secret" type="password">
+    <input id="mail" name="contact" type="email">
+    <select id="sel" name="choice"><option>a</option></select>
+    <input id="tel" name="phone" type="tel">
+  </form>`;
+  const byId = (fields: FieldElement[], id: string) => fields.find((f) => f.id === id)!;
+  const one = (el: FieldElement, role: FieldRole) =>
+    applySafetyRules([el], [{ role, score: 0.99 }], { crossSite: false }, { geometry: testGeometry })[0]!;
+
+  it.each(["current_password", "new_password", "confirm_password"] as const)("%s from the model never lands on a text input or a textarea", (role) => {
+    const fields = fieldsOf(ROLE_CASES);
+    for (const id of ["text", "area", "mail", "sel", "tel"]) {
+      const el = byId(fields, id);
+      const out = one(el, role);
+      expect(out.role, id).not.toBe(role);
+      expect(out, id).toEqual(classifyField(el));
+    }
+    expect(one(byId(fields, "pw"), role).role).toBe(role);
+  });
+
+  it("a password input takes only the roles the heuristic allows there (PASSWORD_TYPE_ROLES)", () => {
+    const pw = byId(fieldsOf(ROLE_CASES), "pw");
+    for (const role of FIELD_ROLES) {
+      if (role === "unknown") continue;
+      const out = one(pw, role);
+      if (PASSWORD_TYPE_ROLES.has(role as ScoredRole)) expect(out.role, role).toBe(role);
+      else expect(out, role).toEqual(classifyField(pw));
+    }
+    expect(one(pw, "email").role).not.toBe("email");
+    expect(one(pw, "cc_number").role).not.toBe("cc_number");
+  });
+
+  it("card number, card security code and one-time code only on text-entry inputs", () => {
+    const fields = fieldsOf(ROLE_CASES);
+    for (const role of ["cc_number", "cc_csc", "otp"] as const) {
+      for (const id of ["text", "tel"]) expect(one(byId(fields, id), role).role, `${role} ${id}`).toBe(role);
+      for (const id of ["area", "sel", "mail"]) {
+        const el = byId(fields, id);
+        expect(one(el, role), `${role} ${id}`).toEqual(classifyField(el));
+      }
+    }
+    expect(one(byId(fields, "pw"), "otp").role).toBe("otp");
+  });
+
+  it("an incompatible model role falls back to the field's heuristic role", () => {
+    const fields = fieldsOf(`<form><input id="u" name="username"><input id="p" name="password" type="password"></form>`);
+    const out = applySafetyRules(fields, [{ role: "current_password", score: 0.99 }, { role: "email", score: 0.99 }], { crossSite: false }, { geometry: testGeometry });
+    expect(out.map((r) => r.role)).toEqual(["username", "current_password"]);
+  });
+
+  it("roles the control holds pass unchanged", () => {
+    const fields = fieldsOf(ROLE_CASES);
+    expect(one(byId(fields, "mail"), "email").role).toBe("email");
+    expect(one(byId(fields, "sel"), "country").role).toBe("country");
+    expect(one(byId(fields, "area"), "address_line1").role).toBe("address_line1");
+    expect(roleFitsControl(byId(fields, "text"), "username")).toBe(true);
+    expect(roleFitsControl(byId(fields, "text"), "current_password")).toBe(false);
   });
 });
 
@@ -345,7 +411,9 @@ describe("detectForms with a model", () => {
     ["cc-number", "text", "cc_number", "cc_exp"],
   ] as const)("R21: autocomplete=%s keeps its role whatever the model says, and is never sent to it", (ac, type, expected, companion) => {
     // The companion field (no autocomplete) makes a form of the right kind; the model disagrees on the autocomplete field.
-    const html = `<form><input id="u" name="q1"><input id="x" name="zz" type="${type}" autocomplete="${ac}"><button type="submit">Go</button></form>`;
+    // The companion's control holds its role (a password role needs a type=password input, I1).
+    const ctype = companion === "current_password" ? "password" : "text";
+    const html = `<form><input id="u" name="q1" type="${ctype}"><input id="x" name="zz" type="${type}" autocomplete="${ac}"><button type="submit">Go</button></form>`;
     const { hook, seen } = syncHook((f) => (f.autocomplete !== undefined ? (expected === "current_password" ? "new_password" : "current_password") : companion));
     const { a, refs } = analyze(html, hook);
     expect(rolesById(a, refs).x).toBe(expected);
@@ -394,6 +462,36 @@ describe("detectForms with a model", () => {
     const { hook } = syncHook((f) => (f.type === "email" ? "unknown" : "current_password"));
     const { a, refs } = analyze(html, hook);
     expect(rolesById(a, refs)).toEqual({ p: "current_password", r: "remember_me" });
+  });
+
+  it("a model password on a text input or a textarea never makes it a password field (I1)", () => {
+    const html = `<form><input id="u" name="user"><input id="n" name="display_name"><textarea id="t" name="bio"></textarea><input id="p" name="pw" type="password"><button type="submit">Go</button></form>`;
+    const { hook } = syncHook((f) => (f.name === "user" ? "username" : "current_password"));
+    const { a, refs } = analyze(html, hook);
+    const roles = rolesById(a, refs);
+    expect(roles.p).toBe("current_password");
+    for (const id of ["n", "t"]) expect(["current_password", "new_password", "confirm_password"]).not.toContain(roles[id]);
+  });
+
+  it("a model email or card number on a password input never lands there (I1)", () => {
+    const html = `<form><input id="u" name="user"><input id="p" name="pw" type="password"><button type="submit">Go</button></form>`;
+    for (const said of ["email", "cc_number"] as const) {
+      const { hook } = syncHook((f) => (f.type === "password" ? said : "username"));
+      const { a, refs } = analyze(html, hook);
+      expect(rolesById(a, refs).p, said).toBe("current_password");
+    }
+  });
+
+  it("the heuristic path is unchanged by the control-type rules (no model)", () => {
+    const html = `<form><input id="u" name="username"><input id="n" name="password_hint"><textarea id="t" name="notes"></textarea><input id="p" name="password" type="password"><button type="submit">Sign in</button></form>`;
+    const expected: Record<string, FieldRole> = {};
+    for (const el of fieldsOf(html)) {
+      const r = classifyField(el).role;
+      if (r !== "unknown") expected[el.id] = r;
+    }
+    const plain = analyze(html);
+    expect(rolesById(plain.a, plain.refs)).toEqual(expected);
+    expect(expected).toEqual({ u: "username", p: "current_password" });
   });
 
   it("without a model the analysis is today's, and extractFeatures is never run", () => {
