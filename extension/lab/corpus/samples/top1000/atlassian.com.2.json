@@ -10,7 +10,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://id.atlassian.com/login?continue=https%3A%2F%2Fwww.atlassian.com%2Fgateway%2Fapi%2Fstart%2Fauthredirect&application=wac--ic",
+  "source_url": "https://id.atlassian.com/login",
   "status": "ok",
   "webauthnCalls": []
 }

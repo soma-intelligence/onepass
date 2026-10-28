@@ -102,7 +102,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/auth?client_id=rhcom&redirect_uri=https%3A%2F%2Fwww.redhat.com%2Fen%2Fdashboard&response_type=code&scope=openid+profile_level.rh_events+id.email+id.idp+id.job.title+id.job.department+id.name+id.organization+id.sub+id.username+roles+profile+api.graphql+api.console+api.ask_red_hat&state=bf0d9943d91e4168b2f5f86c22acd8f2&code_challenge=FWGgk8b1iSD7ARk8pMXD1oCH-UDHska9yWn6qm0PxhA&code_challenge_method=S256",
+  "source_url": "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/auth",
   "status": "ok",
   "webauthnCalls": []
 }

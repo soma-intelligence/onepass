@@ -103,7 +103,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://amazon.fr/-/en/gp/help/customer/display.html?nodeId=201267600&ref_=footer_payment",
+  "source_url": "https://amazon.fr/-/en/gp/help/customer/display.html",
   "status": "ok",
   "webauthnCalls": []
 }

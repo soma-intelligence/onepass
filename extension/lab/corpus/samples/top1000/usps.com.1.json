@@ -10,7 +10,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://verified.usps.com/login?goto=https%3A%2F%2Fwww.usps.com%2F",
+  "source_url": "https://verified.usps.com/login",
   "status": "ok",
   "webauthnCalls": []
 }

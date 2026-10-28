@@ -72,7 +72,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://accounts.google.com/ServiceLogin?hl=en&passive=true&continue=https://www.google.com/&ec=GAZAmgQ",
+  "source_url": "https://accounts.google.com/ServiceLogin",
   "status": "ok",
   "webauthnCalls": []
 }

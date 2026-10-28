@@ -108,7 +108,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://bandcamp.com/login?from=menubar",
+  "source_url": "https://bandcamp.com/login",
   "status": "ok",
   "webauthnCalls": []
 }

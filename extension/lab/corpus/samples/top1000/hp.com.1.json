@@ -10,7 +10,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://global-navbar-backend.id.hp.com/api/v1/session/login?final_redirect_url=https%253A%252F%252Fwww.hp.com%252Fus-en%252Fhome.html",
+  "source_url": "https://global-navbar-backend.id.hp.com/api/v1/session/login",
   "status": "ok",
   "webauthnCalls": []
 }

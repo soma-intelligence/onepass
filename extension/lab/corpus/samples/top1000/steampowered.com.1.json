@@ -131,7 +131,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://store.steampowered.com/login/?redir=&redir_ssl=1&snr=1_4_4__global-header",
+  "source_url": "https://store.steampowered.com/login/",
   "status": "ok",
   "webauthnCalls": []
 }

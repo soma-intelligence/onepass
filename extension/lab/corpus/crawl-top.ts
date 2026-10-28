@@ -70,10 +70,16 @@ export async function guardContext(ctx: any, allowed: (u: URL) => Promise<boolea
   return state;
 }
 
+/** The URL a sample keeps: origin and path only. A query or fragment can carry values a site issued to the crawler's session (tokens, OAuth state). */
+export function sourceUrlOf(url: string): string {
+  const u = new URL(url);
+  return `${u.origin}${u.pathname}`;
+}
+
 /** Renders one URL. Returns the sample and, when asked, the rendered HTML. Never throws except BrowserGone. */
 async function capture(browser: any, url: string, wantHtml: boolean, pacer: HostPacer): Promise<{ sample: Sample; html?: string; http4xx?: boolean }> {
   const u = new URL(url);
-  const base: Sample = { source_url: url, host: u.hostname, category: guess(url), captured_at: new Date().toISOString(), extractor: 2, source: "rendered", status: "ok" };
+  const base: Sample = { source_url: sourceUrlOf(url), host: u.hostname, category: guess(url), captured_at: new Date().toISOString(), extractor: 2, source: "rendered", status: "ok" };
   const gate = (h: string) => pacer.wait(h);
   const allowed = (x: URL) => urlAllowed(x, gate);
   if (!(await allowed(u))) return { sample: { ...base, status: "skipped: robots" } };

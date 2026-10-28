@@ -50,7 +50,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://blackberry.com/api/saml/login?returnUrl=%2Fen",
+  "source_url": "https://blackberry.com/api/saml/login",
   "status": "ok",
   "webauthnCalls": []
 }

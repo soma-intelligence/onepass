@@ -75,7 +75,7 @@
   ],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://auth0.com/signup?place=header&type=button&text=sign%20up",
+  "source_url": "https://auth0.com/signup",
   "status": "ok",
   "webauthnCalls": []
 }

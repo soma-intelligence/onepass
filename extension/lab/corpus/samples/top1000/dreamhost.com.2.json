@@ -64,7 +64,7 @@
   "providerButtons": [],
   "shadowFields": 0,
   "source": "rendered",
-  "source_url": "https://dreamhost.com/cart/?serviceType=3638&promo=WH-BF2025&leadSource=%2F",
+  "source_url": "https://dreamhost.com/cart/",
   "status": "ok",
   "webauthnCalls": []
 }

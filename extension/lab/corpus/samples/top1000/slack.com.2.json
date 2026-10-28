@@ -4,6 +4,6 @@
   "extractor": 2,
   "host": "slack.com",
   "source": "rendered",
-  "source_url": "https://slack.com/mweb-signin-start?dest=signin",
+  "source_url": "https://slack.com/mweb-signin-start",
   "status": "error: http 403"
 }

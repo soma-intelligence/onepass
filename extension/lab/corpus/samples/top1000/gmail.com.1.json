@@ -4,6 +4,6 @@
   "extractor": 2,
   "host": "gmail.com",
   "source": "rendered",
-  "source_url": "https://gmail.com/lifecycle/flows/signup?continue=https://mail.google.com/mail/u/0/&dsh=S-1742783849:1793139594621680&emr=1&flowEntry=SignUp&flowName=GlifWebSignIn&followup=https://mail.google.com/mail/u/0/&osid=1&service=mail",
+  "source_url": "https://gmail.com/lifecycle/flows/signup",
   "status": "error: http 404"
 }
