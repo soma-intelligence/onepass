@@ -242,6 +242,11 @@ criteria = "safe-to-deploy"
 version = "2.11.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.dbus-secret-service]]
+version = "4.1.0"
+criteria = "safe-to-deploy"
+notes = "Linux Secret Service store of the CLI Secret Key (spec 2026-10-28-cli-secret-key-design). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.der]]
 version = "0.8.3"
 criteria = "safe-to-run"
@@ -477,6 +482,11 @@ criteria = "safe-to-deploy"
 [[exemptions.libcrux-traits]]
 version = "0.0.9"
 criteria = "safe-to-deploy"
+
+[[exemptions.libdbus-sys]]
+version = "0.2.7"
+criteria = "safe-to-deploy"
+notes = "FFI to the system libdbus-1, pulled by dbus-secret-service for the CLI on Linux (spec 2026-10-28-cli-secret-key-design). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.libloading]]
 version = "0.8.9"

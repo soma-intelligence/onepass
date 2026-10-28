@@ -1,5 +1,6 @@
 use std::fs;
 
+use onepass_core::Id;
 use onepass_core::crypto::SecretKey;
 use onepass_core::repo::Repository;
 use onepass_core::store::SqliteStore;
@@ -17,7 +18,10 @@ fn exists(ctx: &Ctx) -> Result<(), CliError> {
 }
 
 /// Remove what `build` created: the account did not exist before.
-fn remove_account(ctx: &Ctx) {
+fn remove_account(ctx: &Ctx, account: Option<Id>) {
+    if let Some(account) = account {
+        session::forget_key(ctx, account);
+    }
     for suffix in ["", "-wal", "-shm"] {
         let mut p = ctx.store_path().into_os_string();
         p.push(suffix);
@@ -49,9 +53,9 @@ pub fn create(ctx: &Ctx) -> Result<(), CliError> {
     exists(ctx)?;
     let result = build(ctx, &password, kdf);
     if result.is_err() {
-        remove_account(ctx);
+        remove_account(ctx, None);
     }
-    let key = result?;
+    let (key, account) = result?;
     // Still under the lock: the account becomes usable only once its key
     // was shown.
     let shown = if ctx.json {
@@ -64,7 +68,7 @@ pub fn create(ctx: &Ctx) -> Result<(), CliError> {
         session::write_line(format_args!("Secret Key: {}", *key))
     };
     if let Err(e) = shown {
-        remove_account(ctx);
+        remove_account(ctx, Some(account));
         return Err(CliError::usage(format!(
             "cannot show the Secret Key (i/o error: {}): the account was not created",
             e.kind()
@@ -77,13 +81,22 @@ fn build(
     ctx: &Ctx,
     password: &str,
     kdf: onepass_core::crypto::KdfParams,
-) -> Result<zeroize::Zeroizing<String>, CliError> {
+) -> Result<(zeroize::Zeroizing<String>, Id), CliError> {
     let store = SqliteStore::open(&ctx.store_path())?;
     session::harden(ctx)?;
-    let (repo, key) = Repository::create_account(store, password, kdf)?;
+    let fast = session::fast_kdf_requested().as_deref() == Some("1");
+    let (repo, key) = Repository::create_account(store, password, kdf)
+        .map_err(|e| session::account_kdf_error(e, fast))?;
     let key_text = zeroize::Zeroizing::new(key.to_display());
-    Session::created(ctx, repo, &key).persist()?;
-    Ok(key_text)
+    let account = repo.account_id();
+    // Stores the Secret Key (or refuses without a store); on a failure
+    // after that, the entry goes with the account.
+    let session = Session::create(ctx, repo, &key)?;
+    if let Err(e) = session.persist() {
+        session::forget_key(ctx, account);
+        return Err(e);
+    }
+    Ok((key_text, account))
 }
 
 /// Test-only source of the current Secret Key (`read_secret`).
@@ -124,8 +137,7 @@ pub fn rotate_keys(ctx: &Ctx, change_password: bool) -> Result<(), CliError> {
         None
     };
     let _lock = session::lock(ctx)?;
-    let open = Session::open(ctx, &password)?;
-    let mut repo = open.repo;
+    let mut open = Session::open(ctx, &password)?;
     let new_key = SecretKey::generate()?;
     let shown = if ctx.json {
         session::write_line(format_args!(
@@ -146,13 +158,14 @@ pub fn rotate_keys(ctx: &Ctx, change_password: bool) -> Result<(), CliError> {
             e.kind()
         )));
     }
-    repo.rotate_keys(
-        &password,
-        &current_key,
-        &new_key,
-        new_password.as_deref().map(String::as_str),
-    )
-    .inspect_err(|_| eprintln!("The keys did not change: the old Secret Key stays valid."))?;
+    open.repo
+        .rotate_keys(
+            &password,
+            &current_key,
+            &new_key,
+            new_password.as_deref().map(String::as_str),
+        )
+        .inspect_err(|_| eprintln!("The keys did not change: the old Secret Key stays valid."))?;
     session::harden(ctx)?;
-    Session::created(ctx, repo, &new_key).persist()
+    open.replace_key(ctx, &new_key)
 }

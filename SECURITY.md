@@ -56,7 +56,7 @@ The threat model and the guarantees we aim for are described in [docs/security/R
 - Platform flaws (iOS, macOS, browsers, CloudKit) unrelated to our code: report those to the vendor.
 - Reports from automated tools without a demonstrated impact, and headers or settings without a demonstrated consequence.
 - Phishing and social engineering.
-- Limits already documented in `docs/security/README.md` and in the design specs under `docs/specs/`, such as the dev CLI keeping its Secret Key in clear.
+- Limits already documented in `docs/security/README.md` and in the design specs under `docs/specs/`, such as the CLI keeping its Secret Key in clear in `device.bin` when run with `--insecure-file-secret-key` (machines without a system secret store).
 
 ## Supported versions
 
