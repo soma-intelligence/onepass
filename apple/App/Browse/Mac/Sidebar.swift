@@ -800,7 +800,7 @@ struct SettingsRow: View {
 private struct SidebarLightWash: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View {
-        if scheme == .light { Color.white.opacity(0.32) } else { Color.clear }
+        if scheme == .light { Color.white.opacity(0.1) } else { Color.clear }
     }
 }
 
