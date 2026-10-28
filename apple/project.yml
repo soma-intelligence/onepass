@@ -274,6 +274,10 @@ targets:
       - name: Copy web extension
         basedOnDependencyAnalysis: false
         script: '"${PROJECT_DIR}/SafariExtension/scripts/copy-web-extension.sh"'
+        # Declared so the appex is signed again after the copy: without it an incremental build
+        # that only changes extension/dist left the seal broken and Safari did not load it.
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/manifest.json
       - name: Embed development native host
         basedOnDependencyAnalysis: false
         script: '"${PROJECT_DIR}/SafariExtension/scripts/embed-dev-host.sh"'
