@@ -12,12 +12,17 @@ function isSensitive(t: string): boolean {
   return EMAIL.test(t) || /\d{4,}/.test(digits) || LONG_TOKEN.test(t);
 }
 
+/** The em dash (U+2014), folded to "-" in kept text (the repo never carries the character). */
+const EM_DASH = /\u2014/g;
+
 export function sanitizeText(s: string | null | undefined): string | undefined {
   if (s == null) return undefined;
   const t = s.replace(/\s+/g, " ").trim();
   if (!t) return undefined;
   if (isSensitive(t)) return "<redacted>";
-  return t.length > MAX_TEXT ? t.slice(0, MAX_TEXT) : t;
+  // After the sensitive check (unchanged by the fold), same length, so the cap cuts at the same place.
+  const kept = t.replace(EM_DASH, "-");
+  return kept.length > MAX_TEXT ? kept.slice(0, MAX_TEXT) : kept;
 }
 
 /** Text next to a field: sanitizeText, then capped at 40 characters. */

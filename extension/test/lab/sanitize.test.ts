@@ -48,3 +48,14 @@ describe("sanitize", () => {
     expect(sanitizeNeighbour("  ")).toBeUndefined();
   });
 });
+
+describe("sanitizeText: em dash (final review M1)", () => {
+  it("folds U+2014 to a hyphen, after the sensitive check and before the cap", () => {
+    expect(sanitizeText("Sign in \u2014 Example")).toBe("Sign in - Example");
+    expect(sanitizeText("a\u2014b\u2014c")).toBe("a-b-c");
+    expect(sanitizeText("10\u201412")).toBe("10-12");
+    const long = `${"x ".repeat(29)}\u2014tail`;
+    expect(sanitizeText(long)).toBe(`${"x ".repeat(29)}-t`.slice(0, 60));
+    expect(sanitizeNeighbour("Email \u2014 required")).toBe("Email - required");
+  });
+});

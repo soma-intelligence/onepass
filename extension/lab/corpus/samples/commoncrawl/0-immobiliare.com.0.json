@@ -1284,7 +1284,7 @@
           "visibility": "display_none"
         },
         {
-          "after": "← indietro verifica e attiva step 3 — sa",
+          "after": "← indietro verifica e attiva step 3 - sa",
           "before": "6 cifre mostrato nell'app authenticator",
           "depth": 7,
           "hasPattern": false,
@@ -2730,7 +2730,7 @@
           "visibility": "display_none"
         },
         {
-          "after": "logo (png, jpg, svg — max 2mb)",
+          "after": "logo (png, jpg, svg - max 2mb)",
           "before": "0 0 immobiliare gestionale nome azienda",
           "depth": 8,
           "hasPattern": false,
@@ -3128,12 +3128,12 @@
         },
         {
           "after": "pv tenure città mq vendita canone oneri",
-          "before": "30gg — portfolio — costo di occupazione",
+          "before": "30gg - portfolio - costo di occupazione",
           "depth": 8,
           "hasPattern": false,
           "id": "dr-occ-filter",
           "index": 220,
-          "label": "portfolio — costo di occupazione",
+          "label": "portfolio - costo di occupazione",
           "required": false,
           "role": "unknown",
           "siblings": 0,

@@ -175,7 +175,7 @@ describe("classifier comparison report", () => {
 
   it("is_french_free_of_the_em_dash_and_names_each_model_reasons", () => {
     const { markdown } = compareDirs(dirs());
-    expect(markdown).not.toContain("—");
+    expect(markdown).not.toContain("\u2014");
     expect(markdown).toMatch(/## Verdict/);
     expect(markdown).toMatch(/gbm/);
     expect(markdown).toMatch(/encoder/);
