@@ -103,7 +103,7 @@ def ingest(src: Path, dst: Path, batch_rows: int = BATCH_ROWS) -> Manifest:
     if not manifest_path.exists():
         raise FileNotFoundError(manifest_path)
     source = json.loads(manifest_path.read_text(encoding="utf-8"))
-    for key in ("seed", "generator", "featureVersion"):
+    for key in ("seed", "generator", "featureVersion", "rows"):
         if key not in source:
             raise ValueError(f"{manifest_path}: missing key {key!r}")
 
@@ -113,16 +113,28 @@ def ingest(src: Path, dst: Path, batch_rows: int = BATCH_ROWS) -> Manifest:
     tmp.mkdir(parents=True)
     try:
         manifest = _write(src, tmp, source, batch_rows)
-        if dst.exists():
-            for f in tmp.iterdir():
-                os.replace(f, dst / f.name)
-            tmp.rmdir()
-        else:
-            tmp.rename(dst)
+        _swap(tmp, dst)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     return manifest
+
+
+def _swap(tmp: Path, dst: Path) -> None:
+    """Put tmp at dst. An existing dst is set aside as `<dst>.old` and restored if the swap fails."""
+    if not dst.exists():
+        os.rename(tmp, dst)
+        return
+    old = dst.with_name(dst.name + ".old")
+    if old.exists():
+        shutil.rmtree(old)
+    os.rename(dst, old)
+    try:
+        os.rename(tmp, dst)
+    except BaseException:
+        os.rename(old, dst)
+        raise
+    shutil.rmtree(old, ignore_errors=True)
 
 
 def _write(src: Path, out: Path, source: dict[str, Any], batch_rows: int) -> Manifest:
@@ -133,7 +145,7 @@ def _write(src: Path, out: Path, source: dict[str, Any], batch_rows: int) -> Man
     }
     schema = SCHEMA.with_metadata(meta)
     known = set(SCHEMA.names)
-    writers = {s: pq.ParquetWriter(out / f"{s}.parquet", schema, compression="zstd") for s in SPLITS}
+    writers: dict[str, pq.ParquetWriter] = {}
     buffers: dict[str, list[dict[str, Any]]] = {s: [] for s in SPLITS}
     counts = {s: 0 for s in SPLITS}
     origins = {s: set() for s in SPLITS}
@@ -144,6 +156,8 @@ def _write(src: Path, out: Path, source: dict[str, Any], batch_rows: int) -> Man
             buffers[split] = []
 
     try:
+        for s in SPLITS:
+            writers[s] = pq.ParquetWriter(out / f"{s}.parquet", schema, compression="zstd")
         for part, row in _rows(src):
             if "lab" in row:
                 raise ValueError(f"{part.name}: row carries the `lab` mark column; the builder must strip it")
@@ -168,7 +182,7 @@ def _write(src: Path, out: Path, source: dict[str, Any], batch_rows: int) -> Man
             w.close()
 
     total = sum(counts.values())
-    if "rows" in source and source["rows"] != total:
+    if source["rows"] != total:
         raise ValueError(f"manifest says {source['rows']} rows, parts hold {total}")
     shared = origins["real_test"] & (origins["train"] | origins["val"] | origins["test"])
     if shared:
