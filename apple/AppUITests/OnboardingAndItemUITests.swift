@@ -157,6 +157,89 @@ final class OnboardingAndItemUITests: XCTestCase {
         XCTAssertTrue(row(relaunched).waitForExistence(timeout: Self.uiTimeout), "row missing after relaunch")
     }
 
+    /// Search, open a result, come back: the field keeps "atlas" and the filtered results stay
+    /// under it, never the Accueil dashboard (with its "Activer OnePass" card) below a live query.
+    /// Debug seed: `-OnePassDebugItem none` unlocks the fictional account and adds its items.
+    func testSearchResultBackKeepsResults() throws {
+        let app = XCUIApplication()
+        app.launchArguments += Self.isolated + ["-OnePassUITestReset", "YES", "-OnePassDebugItem", "none"]
+        app.launch()
+
+        let search = tabButton(app, id: "tab.search", label: "Rechercher")
+        XCTAssertTrue(search.waitForExistence(timeout: Self.kdfTimeout), "debug account not unlocked")
+        let seeded = app.descendants(matching: .any)["list.row.Forge Atlas"].firstMatch
+        tap(search)
+        XCTAssertTrue(seeded.waitForExistence(timeout: Self.kdfTimeout), "debug items not seeded")
+
+        let field = app.searchFields.firstMatch
+        if !field.waitForExistence(timeout: 3) { search.tap() }
+        tap(field)
+        field.typeText("atlas")
+        let other = app.descendants(matching: .any)["list.row.Codes du portail"].firstMatch
+        XCTAssertTrue(seeded.waitForExistence(timeout: Self.uiTimeout), "search did not find the item")
+        XCTAssertTrue(other.waitForNonExistence(timeout: Self.uiTimeout), "query not applied")
+
+        // Open the result, then come back with the navigation bar's back button.
+        tap(seeded)
+        XCTAssertTrue(app.staticTexts["item.title"].waitForExistence(timeout: Self.uiTimeout), "detail not shown")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        // Still the search: the query, its results, no dashboard and no AutoFill card below it.
+        XCTAssertTrue(seeded.waitForExistence(timeout: Self.uiTimeout), "results gone after coming back")
+        XCTAssertTrue((field.value as? String ?? "").localizedCaseInsensitiveContains("atlas"), "query lost")
+        XCTAssertFalse(other.exists, "unfiltered list under the query")
+        XCTAssertFalse(app.descendants(matching: .any)["autofill.tip"].exists, "AutoFill card shown during a search")
+        XCTAssertFalse(app.descendants(matching: .any)["account.menu"].firstMatch.isHittable, "Accueil shown during a search")
+
+        // The tab button left of the field leaves the search for Accueil: the tab bar comes back
+        // and the search stays closed, even after moving inside Accueil (a stale search state
+        // used to show the field again over the dashboard, keyboard up, tab bar hidden).
+        let previousTab = app.buttons["Accueil"].firstMatch
+        XCTAssertTrue(previousTab.waitForExistence(timeout: Self.uiTimeout), "no tab button beside the field")
+        previousTab.tap()
+        let menu = app.descendants(matching: .any)["account.menu"].firstMatch
+        let pop = app.navigationBars.buttons.element(boundBy: 0)
+        var pops = 0
+        while !menu.waitForExistence(timeout: 2), pop.exists, pops < 4 {
+            pop.tap()
+            pops += 1
+        }
+        XCTAssertTrue(menu.waitForExistence(timeout: Self.uiTimeout), "Accueil not shown")
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "accueil-after-search"
+        shot.lifetime = .keepAlways
+        add(shot)
+        XCTAssertTrue(search.waitForExistence(timeout: Self.uiTimeout) && search.isHittable, "tab bar hidden on Accueil")
+        let liveQuery = app.searchFields.matching(NSPredicate(format: "value CONTAINS[c] %@", "atlas")).firstMatch
+        XCTAssertFalse(liveQuery.exists, "search query still shown over Accueil")
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "keyboard up on Accueil")
+
+        // An item opened from Accueil, then back: still Accueil, no search coming back over it.
+        let homeRow = app.descendants(matching: .any)["list.row.Forge Atlas"].firstMatch
+        if homeRow.waitForExistence(timeout: 3), homeRow.isHittable {
+            homeRow.tap()
+            XCTAssertTrue(app.staticTexts["item.title"].waitForExistence(timeout: Self.uiTimeout))
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            XCTAssertTrue(menu.waitForExistence(timeout: Self.uiTimeout))
+        }
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(menu.waitForExistence(timeout: Self.uiTimeout), "Accueil not shown after coming back")
+        let again = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        again.name = "accueil-after-item-and-background"
+        again.lifetime = .keepAlways
+        add(again)
+        XCTAssertFalse(liveQuery.exists, "search query back over Accueil")
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "keyboard up on Accueil")
+        XCTAssertTrue(search.isHittable, "tab bar hidden on Accueil")
+
+        // Rechercher again: the search opens on its own tab, with its results.
+        search.tap()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: Self.uiTimeout), "search did not open")
+        XCTAssertFalse(app.descendants(matching: .any)["autofill.tip"].exists, "AutoFill card shown during a search")
+        XCTAssertFalse(menu.isHittable, "Accueil shown during a search")
+    }
+
     // MARK: - Lock screen
 
     /// Exactly one secure field (the master password), no Secret Key field, no Emergency Kit screen.

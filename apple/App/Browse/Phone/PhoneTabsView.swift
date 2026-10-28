@@ -24,6 +24,8 @@ enum PhoneTab: String, Hashable {
 extension EnvironmentValues {
     /// Switches the iPhone tab bar to a tab.
     @Entry var openPhoneTab: @MainActor (PhoneTab) -> Void = { _ in }
+    /// The iPhone search is presented: Accueil keeps its banners for when it is really on screen.
+    @Entry var phoneSearchActive = false
 }
 
 /// iPhone, and iPad in compact width (spec 6.2, mockups `PhoneHome`, `PhoneItems`, `PhoneSearch`):
@@ -67,6 +69,11 @@ struct PhoneTabsView: View {
         .searchable(text: $searchQuery, isPresented: $searching, placement: .toolbar, prompt: Text("Titre, site, identifiant, tag"))
         .tabViewSearchActivation(.searchTabSelection)
         .tabBarMinimizeBehavior(.onScrollDown)
+        // A search is only ever shown on its own tab, whatever presented it.
+        .onChange(of: searching) { _, presented in
+            if presented, tab != .search { tab = .search }
+        }
+        .environment(\.phoneSearchActive, searching)
         .environment(\.openPhoneTab) { tab = $0 }
         .sheet(isPresented: newItemShown) {
             PhoneNewItemSheet()
@@ -75,6 +82,10 @@ struct PhoneTabsView: View {
         .onChange(of: tab) { _, newTab in
             // The search field shows only while presented: choosing Rechercher opens it.
             if newTab == .search, openSearchOnSelect, paths[.search]?.isEmpty ?? true { searching = true }
+            // Leaving the search tab (the tab button beside the field) does not write
+            // `isPresented` back: a search still "presented" here came back later over the other
+            // tab (field and keyboard over Accueil, tab bar hidden). It ends with its tab.
+            if newTab != .search, searching { searching = false }
             let ref = paths[newTab]?.last?.itemRef
             if model.selectedItem != ref { model.perform(.select(ref)) }
             model.session.noteActivity()

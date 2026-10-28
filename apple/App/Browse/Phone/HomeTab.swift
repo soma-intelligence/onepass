@@ -11,6 +11,7 @@ import VaultKit
 /// navigation bar picks the cards shown. An empty vault shows "Créer ton premier élément".
 struct HomeTab: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.phoneSearchActive) private var searchActive
     @AppStorage("onepass.home.favoritesOpen", store: AppModel.browseDefaults) private var favoritesOpen = true
     @AppStorage("onepass.home.recentsOpen", store: AppModel.browseDefaults) private var recentsOpen = true
     @AppStorage("onepass.home.showsNearby", store: AppModel.browseDefaults) private var showsNearby = true
@@ -39,7 +40,7 @@ struct HomeTab: View {
                         // Banners: these are list sections elsewhere, plain blocks here.
                         SyncRefusalSection()
                         AccountChangedSection()
-                        if model.showsAutoFillTip {
+                        if model.showsAutoFillTip, !searchActive {
                             AutoFillTipCard()
                                 .padding(16)
                                 .phoneCard()
