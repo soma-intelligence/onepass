@@ -177,7 +177,7 @@ private struct ProfileSection: View {
         } footer: {
             Text(failed
                 ? "Cette image n'a pas pu être lue. Essaie un JPEG, un PNG ou un HEIC."
-                : "La photo reste sur cet appareil, recadrée en carré, sans ses métadonnées (lieu, date).")
+                : "Reste sur cet appareil, sans ses métadonnées.")
         }
         .task {
             try? await Task.sleep(for: .milliseconds(50))

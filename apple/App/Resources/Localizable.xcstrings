@@ -9590,6 +9590,16 @@
         }
       }
     },
+    "Reste sur cet appareil, sans ses métadonnées." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stays on this device, without its metadata."
+          }
+        }
+      }
+    },
     "Reste sur l'appareil" : {
       "localizations" : {
         "en" : {

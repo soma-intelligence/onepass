@@ -494,10 +494,9 @@ struct ItemDetailView: View {
         }
         .sharedBackgroundVisibility(.hidden)
         #else
+        // iPhone and iPad: three icons in one group. The vault is already under the title (its
+        // badge), and "Déplacer…" sits in the actions menu.
         if item.trashedAt == nil {
-            ToolbarItem(placement: .primaryAction) {
-                VaultToolbarMenu(currentVaultID: item.vaultId) { vault in move(item, to: vault) }
-            }
             ToolbarItem(placement: .primaryAction) {
                 ShareLink(item: ItemShare.text(item), subject: Text(item.title)) {
                     Label("Partager", systemImage: "square.and.arrow.up")
@@ -505,8 +504,7 @@ struct ItemDetailView: View {
                 .accessibilityIdentifier("item.share")
             }
             ToolbarItem(placement: .primaryAction) {
-                // ⌘E is the "Modifier" menu command (`BrowseCommands`).
-                Button("Modifier") { startEditing(item) }
+                Button("Modifier", systemImage: "pencil") { startEditing(item) }
                     .accessibilityIdentifier("item.edit")
             }
         }

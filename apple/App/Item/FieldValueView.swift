@@ -332,7 +332,10 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
                 if showsMenu { menu }
             } label: {
                 // Right after a copy the glyph turns into a check for a moment, then back.
-                Image(systemName: showsCopied ? "checkmark.circle.fill" : "ellipsis.circle")
+                // A quiet glyph, not an accent ring on every row; the check after a copy keeps the accent.
+                Image(systemName: showsCopied ? "checkmark.circle.fill" : "ellipsis")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(showsCopied ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.tertiary))
                     .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
                     .frame(width: 44, height: 44)
                     .contentShape(.rect)
