@@ -67,6 +67,28 @@ impl Session {
     }
 }
 
+impl Session {
+    /// `with` for a write that, once `f` succeeds, is committed and must
+    /// never be reported as failed (key rotation, ruling K12): the caller
+    /// would discard a Secret Key the account already uses. A failure to
+    /// persist the device state afterwards is ignored here; the next unlock
+    /// recovers (the new Secret Key, then `unlock_after_rotation` if the
+    /// pin was not saved).
+    pub(crate) fn with_committed<R>(
+        &self,
+        mut f: impl FnMut(&mut Repo) -> Result<R, OnePassError>,
+    ) -> Result<R, OnePassError> {
+        let mut guard = self.guard();
+        let repo = guard.as_mut().ok_or(OnePassError::Locked)?;
+        let out = match f(repo) {
+            Err(OnePassError::Conflict) => f(repo)?,
+            other => other?,
+        };
+        let _ = repo.persist_device_state();
+        Ok(out)
+    }
+}
+
 pub(crate) fn find_vault(repo: &Repo, id: Id) -> Result<Vault, OnePassError> {
     repo.vaults()?
         .into_iter()
