@@ -4,7 +4,7 @@ import VaultKit
 
 /// One row of an item list (Mac and iPad list column, iPhone lists): icon (site icon when loaded,
 /// otherwise the category tile), title, subtitle, the vault name when the list mixes vaults, and a
-/// star for favorites. Platform neutral: the host list handles selection or navigation.
+/// star on the icon's corner for favorites. Platform neutral: the host list handles selection or navigation.
 struct ItemListRow: View {
     @Environment(AppModel.self) private var model
     private let summary: FfiItemSummary
@@ -30,21 +30,7 @@ struct ItemListRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon, size: 34)
-                #if os(iOS)
-                // iPhone and iPad: a favorite carries a small star on its icon's corner.
-                .overlay(alignment: .bottomTrailing) {
-                    if summary.favorite {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 15, height: 15)
-                            .background(Color.orange, in: Circle())
-                            .overlay { Circle().strokeBorder(Color(uiColor: .secondarySystemGroupedBackground), lineWidth: 1.5) }
-                            .offset(x: 4, y: 4)
-                            .accessibilityLabel(Text("Favori"))
-                    }
-                }
-                #endif
+                .favoriteBadge(summary.favorite, iconSize: 34)
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.title)
                     .font(.body.weight(.semibold))
@@ -55,14 +41,6 @@ struct ItemListRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            #if !os(iOS)
-            if summary.favorite {
-                Image(systemName: "star.fill")
-                    .font(.caption)
-                    .foregroundStyle(.yellow)
-                    .accessibilityLabel(Text("Favori"))
-            }
-            #endif
         }
         .padding(.vertical, 3)
         .contentShape(Rectangle())
@@ -75,5 +53,47 @@ struct ItemListRow: View {
             }
             siteIcon = await model.iconLoader.icon(for: url)
         }
+    }
+}
+
+extension View {
+    /// A favorite's star on the bottom-right corner of an item icon: an amber star cut into the
+    /// icon (a transparent outline around it, so it reads on any row background, selected or not).
+    func favoriteBadge(_ isFavorite: Bool, iconSize: CGFloat) -> some View {
+        modifier(FavoriteBadge(isOn: isFavorite, iconSize: iconSize))
+    }
+}
+
+private struct FavoriteBadge: ViewModifier {
+    let isOn: Bool
+    let iconSize: CGFloat
+
+    static let amber = Color(red: 0xF5 / 255, green: 0xA6 / 255, blue: 0x23 / 255)
+
+    private var starSize: CGFloat { (iconSize * 0.42).rounded() }
+    /// The star's center sits on the icon's corner, pulled in a little so most of it overlaps.
+    private var inset: CGFloat { iconSize * 0.1 }
+
+    func body(content: Content) -> some View {
+        if isOn {
+            content
+                .mask {
+                    Rectangle()
+                        .overlay(alignment: .bottomTrailing) { star.scaleEffect(1.45).blendMode(.destinationOut) }
+                        .compositingGroup()
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    star.foregroundStyle(Self.amber).accessibilityLabel(Text("Favori"))
+                }
+        } else {
+            content
+        }
+    }
+
+    private var star: some View {
+        Image(systemName: "star.fill")
+            .font(.system(size: starSize, weight: .semibold))
+            .frame(width: starSize * 1.2, height: starSize * 1.2)
+            .offset(x: starSize * 0.6 - inset, y: starSize * 0.6 - inset)
     }
 }

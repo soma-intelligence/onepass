@@ -39,18 +39,13 @@ struct ItemHeader: View {
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon, size: 64)
+                .favoriteBadge(item.favorite, iconSize: 64)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(item.title)
                         .font(.title.weight(.bold))
                         .lineLimit(2)
                         .accessibilityIdentifier("item.title")
-                    if item.favorite {
-                        Image(systemName: "star.fill")
-                            .font(.callout)
-                            .foregroundStyle(.yellow)
-                            .accessibilityLabel(Text("Favori"))
-                    }
                 }
                 #if os(iOS)
                 // iPhone: the subtitle on its own line when the vault badge would cut it.
