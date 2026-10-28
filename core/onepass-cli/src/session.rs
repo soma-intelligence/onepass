@@ -1,22 +1,28 @@
 //! Development session: the data directory, `device.bin` and unlocking.
 //!
-//! Dev mode keeps the Secret Key in clear in `<data-dir>/device.bin`
-//! (mode 0600), next to the `DeviceState`. This is the assumed limit of the
-//! milestone 1 CLI: the Mac app with Touch ID replaces it in milestone 2.
+//! `<data-dir>/device.bin` (mode 0600) holds the `DeviceState` and says
+//! where the Secret Key is: in the secret store of the system
+//! (`secret_store.rs`), or, only when the user chose it with
+//! `--insecure-file-secret-key`, in clear in the file itself. A Secret Key
+//! still in clear from an older CLI moves into the store at the next unlock
+//! (spec `docs/superpowers/specs/2026-10-28-cli-secret-key-design.md`).
 
 use std::fmt;
 use std::fs;
-use std::io::{IsTerminal, Write};
+use std::io::{IsTerminal, Seek, Write};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use onepass_core::Error;
 use onepass_core::crypto::{KdfParams, SecretKey};
 use onepass_core::repo::travel::SEALED_TRAVEL_STATE_LEN;
 use onepass_core::repo::{DeviceState, Repository};
 use onepass_core::store::SqliteStore;
+use onepass_core::{Error, Id};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
+
+use crate::secret_store::{SecretStore, StoreError, entry_name};
 
 const DEVICE_FILE: &str = "device.bin";
 const STORE_FILE: &str = "vault.sqlite";
@@ -30,10 +36,18 @@ pub const SERVER_RUNNING: &str =
 /// Refusal of a server request once `travel.bin` appeared or vanished.
 pub const TRAVEL_CHANGED: &str = "Travel Mode changed while this server was running; restart it";
 
+/// The global option keeping the Secret Key in clear in `device.bin`.
+pub const INSECURE_FILE_KEY_OPTION: &str = "--insecure-file-secret-key";
+
 /// Global options shared by every command.
 pub struct Ctx {
     pub data_dir: PathBuf,
     pub json: bool,
+    /// Where Secret Keys are kept.
+    pub secrets: Arc<dyn SecretStore>,
+    /// `--insecure-file-secret-key`: keep the Secret Key in clear in
+    /// `device.bin`, never in the store.
+    pub insecure_file_key: bool,
 }
 
 impl Ctx {
@@ -67,9 +81,19 @@ impl Ctx {
 
     pub fn banner(&self) {
         eprintln!(
-            "DEV MODE: secrets stored unprotected in {}",
+            "DEV MODE: development CLI, data in {}",
             self.data_dir.display()
         );
+    }
+
+    /// The same options, for a server that outlives the command.
+    pub fn clone_options(&self) -> Ctx {
+        Ctx {
+            data_dir: self.data_dir.clone(),
+            json: self.json,
+            secrets: Arc::clone(&self.secrets),
+            insecure_file_key: self.insecure_file_key,
+        }
     }
 }
 
@@ -174,6 +198,8 @@ macro_rules! out {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::secret_store::memory::MemoryStore;
+    use crate::secret_store::{NoStore, StoreError, entry_name};
 
     #[test]
     fn fast_kdf_switch_is_debug_only() {
@@ -256,15 +282,16 @@ mod tests {
     fn legacy_device_bin_reads() {
         let mut bytes = from_hex(LEGACY_DEVICE_BIN_HEX);
         let file = decode(&bytes).unwrap();
-        assert_eq!(file.secret_key.as_str(), "sk");
+        assert_eq!(file.key, Stored::Legacy(Zeroizing::new("sk".to_owned())));
         assert_eq!(file.state, fixed_state());
         assert_eq!(file.state.epoch, 0);
-        // Rewritten in the current layout, which reads back the same.
-        let new = encode(&file.secret_key, &file.state).unwrap();
-        assert_eq!(&new[..3], b"\x02sk");
-        assert_eq!(&new[4..8], b"ODS\x02");
-        let again = decode(&new).unwrap();
+        // The version 2 layout reads back the same.
+        let v2 = encode_v2("sk", &file.state);
+        assert_eq!(&v2[..3], b"\x02sk");
+        assert_eq!(&v2[4..8], b"ODS\x02");
+        let again = decode(&v2).unwrap();
         assert_eq!(again.state, file.state);
+        assert_eq!(again.key, Stored::Legacy(Zeroizing::new("sk".to_owned())));
         bytes.push(0);
         assert!(decode(&bytes).is_err());
     }
@@ -273,13 +300,252 @@ mod tests {
     fn device_bin_roundtrips() {
         let mut state = fixed_state();
         state.epoch = 9;
-        let key = Zeroizing::new("sk".to_string());
-        let mut bytes = encode(&key, &state).unwrap();
-        let file = decode(&bytes).unwrap();
-        assert_eq!(file.secret_key.as_str(), "sk");
-        assert_eq!(file.state, state);
-        bytes.push(0);
-        assert!(decode(&bytes).is_err());
+        for key in [
+            KeyAt::Store {
+                account_id: onepass_core::Id([7; 16]),
+            },
+            KeyAt::File {
+                secret_key: Zeroizing::new("sk".to_owned()),
+            },
+        ] {
+            let mut bytes = encode(&key, &state).unwrap();
+            assert_eq!(&bytes[..4], DEVICE_MAGIC);
+            let file = decode(&bytes).unwrap();
+            assert_eq!(file.state, state);
+            assert_eq!(file.key, Stored::from(key));
+            bytes.push(0);
+            assert!(decode(&bytes).is_err());
+        }
+    }
+
+    /// The version 2 layout (Secret Key in clear, then the versioned
+    /// state), as every CLI before this one wrote it.
+    fn encode_v2(secret_key: &str, state: &DeviceState) -> Vec<u8> {
+        #[derive(Serialize)]
+        struct V2<'a> {
+            secret_key: &'a str,
+            #[serde(with = "onepass_core::format::device_state_bytes")]
+            state: &'a DeviceState,
+        }
+        postcard::to_allocvec(&V2 { secret_key, state }).unwrap()
+    }
+
+    const PASSWORD: &str = "correct horse battery staple";
+
+    fn ctx(dir: &Path, store: Arc<dyn SecretStore>, insecure: bool) -> Ctx {
+        Ctx {
+            data_dir: dir.to_owned(),
+            json: false,
+            secrets: store,
+            insecure_file_key: insecure,
+        }
+    }
+
+    fn fast_kdf() -> KdfParams {
+        kdf_params_with(true, Some("1")).unwrap()
+    }
+
+    /// A new account in `ctx`, saved like `account create` does; returns
+    /// its Secret Key as shown.
+    fn new_account(ctx: &Ctx) -> Result<Zeroizing<String>, CliError> {
+        ensure_dir(&ctx.data_dir)?;
+        let store = SqliteStore::open(&ctx.store_path())?;
+        let (repo, key) = Repository::create_account(store, PASSWORD, fast_kdf())?;
+        let shown = Zeroizing::new(key.to_display());
+        Session::create(ctx, repo, &key)?.persist()?;
+        Ok(shown)
+    }
+
+    /// Whether `bytes` hold the Secret Key in any of its text forms.
+    fn holds_key(bytes: &[u8], shown: &str) -> bool {
+        let bare: String = shown.chars().filter(|c| *c != '-').collect();
+        [
+            shown.to_owned(),
+            bare.clone(),
+            bare.to_lowercase(),
+            shown.to_lowercase(),
+        ]
+        .iter()
+        .any(|form| bytes.windows(form.len()).any(|w| w == form.as_bytes()))
+    }
+
+    /// Rewrite `device.bin` of `ctx` in the version 2 layout, key in clear.
+    fn write_legacy(ctx: &Ctx, shown: &str) -> Vec<u8> {
+        let state = read_device_state(ctx).unwrap();
+        let bytes = encode_v2(shown, &state);
+        fs::write(ctx.device_path(), &bytes).unwrap();
+        bytes
+    }
+
+    fn memory() -> Arc<MemoryStore> {
+        Arc::new(MemoryStore::default())
+    }
+
+    fn entries(store: &MemoryStore) -> Vec<(String, String)> {
+        let mut v: Vec<_> = store
+            .entries
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_str().to_owned()))
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn device_bin_of_a_new_account_holds_no_secret_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = memory();
+        let c = ctx(tmp.path(), store.clone(), false);
+        let shown = new_account(&c).unwrap();
+        let bytes = fs::read(c.device_path()).unwrap();
+        assert!(!holds_key(&bytes, &shown));
+        let id = match decode(&bytes).unwrap().key {
+            Stored::Store(id) => id,
+            other => panic!("expected the store layout, got {other:?}"),
+        };
+        assert_eq!(
+            entries(&store),
+            vec![(entry_name(id), shown.as_str().to_owned())]
+        );
+        // The store's key unlocks; nothing else changes on disk.
+        let session = Session::open(&c, PASSWORD).unwrap();
+        assert_eq!(session.repo.account_id(), id);
+        session.persist().unwrap();
+        assert!(!holds_key(&fs::read(c.device_path()).unwrap(), &shown));
+    }
+
+    #[test]
+    fn a_new_account_without_a_store_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let none: Arc<dyn SecretStore> = Arc::new(NoStore::new("no store here"));
+        let e = new_account(&ctx(tmp.path(), none, false)).unwrap_err();
+        assert_eq!(e.code, 1);
+        assert!(e.msg.contains("no store here"), "{}", e.msg);
+        assert!(e.msg.contains("--insecure-file-secret-key"), "{}", e.msg);
+        assert!(!tmp.path().join(DEVICE_FILE).exists());
+    }
+
+    #[test]
+    fn insecure_file_key_is_an_explicit_choice() {
+        let tmp = tempfile::tempdir().unwrap();
+        let none: Arc<dyn SecretStore> = Arc::new(NoStore::new("no store here"));
+        let c = ctx(tmp.path(), none.clone(), true);
+        let shown = new_account(&c).unwrap();
+        let bytes = fs::read(c.device_path()).unwrap();
+        assert!(holds_key(&bytes, &shown));
+        assert!(matches!(decode(&bytes).unwrap().key, Stored::File(_)));
+        // Still no store: a later command without the option keeps going
+        // on the explicit choice, and keeps the file as it is.
+        let session = Session::open(&ctx(tmp.path(), none, false), PASSWORD).unwrap();
+        session.persist().unwrap();
+        assert_eq!(fs::read(c.device_path()).unwrap(), bytes);
+    }
+
+    #[test]
+    fn a_legacy_device_bin_moves_into_the_store_on_unlock() {
+        let tmp = tempfile::tempdir().unwrap();
+        let first = memory();
+        let c = ctx(tmp.path(), first.clone(), false);
+        let shown = new_account(&c).unwrap();
+        let legacy = write_legacy(&c, &shown);
+        // Another link to the old file: the old content must be wiped,
+        // not only unlinked.
+        let old_link = tmp.path().join("device.bin.old-link");
+        fs::hard_link(c.device_path(), &old_link).unwrap();
+
+        // A machine whose store does not know the key yet.
+        let store = memory();
+        let c = ctx(tmp.path(), store.clone(), false);
+        let session = Session::open(&c, PASSWORD).unwrap();
+        let id = session.repo.account_id();
+        assert_eq!(
+            entries(&store),
+            vec![(entry_name(id), shown.as_str().to_owned())]
+        );
+        let bytes = fs::read(c.device_path()).unwrap();
+        assert!(!holds_key(&bytes, &shown));
+        assert_eq!(decode(&bytes).unwrap().key, Stored::Store(id));
+        let old = fs::read(&old_link).unwrap();
+        assert_eq!(old.len(), legacy.len());
+        assert!(old.iter().all(|b| *b == 0), "old device.bin not wiped");
+        // The state survived the move, and the next unlock reads the store.
+        assert_eq!(
+            decode(&bytes).unwrap().state,
+            decode(&legacy).unwrap().state
+        );
+        drop(session);
+        Session::open(&c, PASSWORD).unwrap();
+    }
+
+    #[test]
+    fn a_legacy_device_bin_without_a_store_is_refused_and_left_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let c = ctx(tmp.path(), memory(), false);
+        let shown = new_account(&c).unwrap();
+        let legacy = write_legacy(&c, &shown);
+        for store in [
+            Arc::new(MemoryStore::failing(StoreError::Unavailable(
+                "no store here".to_owned(),
+            ))),
+            Arc::new(MemoryStore::failing(StoreError::Failed(
+                "keychain locked".to_owned(),
+            ))),
+        ] {
+            let e = Session::open(&ctx(tmp.path(), store, false), PASSWORD)
+                .err()
+                .unwrap();
+            assert_eq!(e.code, 1);
+            assert!(e.msg.contains("--insecure-file-secret-key"), "{}", e.msg);
+            assert_eq!(fs::read(c.device_path()).unwrap(), legacy);
+        }
+    }
+
+    #[test]
+    fn a_legacy_device_bin_with_the_option_becomes_an_explicit_file_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let c = ctx(tmp.path(), memory(), false);
+        let shown = new_account(&c).unwrap();
+        write_legacy(&c, &shown);
+        let store = memory();
+        let session = Session::open(&ctx(tmp.path(), store.clone(), true), PASSWORD).unwrap();
+        session.persist().unwrap();
+        let bytes = fs::read(c.device_path()).unwrap();
+        assert_eq!(
+            decode(&bytes).unwrap().key,
+            Stored::File(Zeroizing::new(shown.as_str().to_owned()))
+        );
+        assert!(entries(&store).is_empty(), "the option keeps the store out");
+    }
+
+    #[test]
+    fn a_file_key_moves_into_the_store_once_one_is_reachable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let none: Arc<dyn SecretStore> = Arc::new(NoStore::new("no store here"));
+        let shown = new_account(&ctx(tmp.path(), none, true)).unwrap();
+        let store = memory();
+        let c = ctx(tmp.path(), store.clone(), false);
+        let session = Session::open(&c, PASSWORD).unwrap();
+        assert_eq!(entries(&store).len(), 1);
+        let bytes = fs::read(c.device_path()).unwrap();
+        assert!(!holds_key(&bytes, &shown));
+        assert_eq!(
+            decode(&bytes).unwrap().key,
+            Stored::Store(session.repo.account_id())
+        );
+    }
+
+    #[test]
+    fn a_store_key_missing_from_the_store_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        new_account(&ctx(tmp.path(), memory(), false)).unwrap();
+        let e = Session::open(&ctx(tmp.path(), memory(), false), PASSWORD)
+            .err()
+            .unwrap();
+        assert_eq!(e.code, 1);
+        assert!(e.msg.contains("secretkey."), "{}", e.msg);
+        assert!(e.msg.contains("is not in the memory store"), "{}", e.msg);
     }
 
     #[test]
@@ -302,53 +568,189 @@ mod tests {
     }
 }
 
-/// What `device.bin` holds, encoded with postcard: the Secret Key, then the
-/// device state as the byte string of `DeviceState::encode` (versioned).
+/// Header of the version 3 `device.bin`. The older layouts start with the
+/// length of the Secret Key in clear (53 characters, `0x35`), never `O`.
+const DEVICE_MAGIC: &[u8; 4] = b"ODF\x03";
+
+/// Where the Secret Key is, as `device.bin` version 3 records it.
 #[derive(Serialize, Deserialize)]
+enum KeyAt {
+    /// In the secret store, entry `secretkey.<account_id>`.
+    Store { account_id: Id },
+    /// In clear in `device.bin` (`--insecure-file-secret-key`).
+    File { secret_key: Zeroizing<String> },
+}
+
+/// `device.bin` version 3, after its header, encoded with postcard: the
+/// device state first (as the byte string of `DeviceState::encode`), so a
+/// reader that only wants the state need not know the rest.
+#[derive(Deserialize)]
 struct DeviceFile {
+    #[serde(with = "onepass_core::format::device_state_bytes")]
+    state: DeviceState,
+    secret_key: KeyAt,
+}
+
+/// `device.bin` version 2: the Secret Key in clear, then the versioned
+/// state. Read only; the Secret Key moves into the store on unlock.
+#[derive(Deserialize)]
+struct DeviceFileV2 {
     secret_key: Zeroizing<String>,
     #[serde(with = "onepass_core::format::device_state_bytes")]
     state: DeviceState,
 }
 
-/// `device.bin` before the versioned state: the version 1 state inline.
-/// Read only, migrated with `epoch = 0`; the next write uses `DeviceFile`.
+/// `device.bin` version 1: the Secret Key in clear, then the version 1
+/// state inline. Read only, migrated with `epoch = 0`.
 #[derive(Deserialize)]
-struct LegacyDeviceFile {
+struct DeviceFileV1 {
     secret_key: Zeroizing<String>,
     #[serde(deserialize_with = "onepass_core::format::device_state_v1_inline::deserialize")]
     state: DeviceState,
 }
 
-/// Decode `device.bin`: the current layout (whole buffer), else the legacy
-/// one.
-fn decode(bytes: &[u8]) -> Result<DeviceFile, CliError> {
-    if let Ok((file, [])) = postcard::take_from_bytes::<DeviceFile>(bytes) {
-        return Ok(file);
-    }
-    match postcard::take_from_bytes::<LegacyDeviceFile>(bytes) {
-        Ok((old, [])) => Ok(DeviceFile {
-            secret_key: old.secret_key,
-            state: old.state,
-        }),
-        _ => Err(CliError::usage("device.bin is unreadable")),
+/// Where a decoded `device.bin` says the Secret Key is.
+#[derive(PartialEq, Eq)]
+enum Stored {
+    Store(Id),
+    /// In clear, by explicit choice (`--insecure-file-secret-key`).
+    File(Zeroizing<String>),
+    /// In clear, written by an older CLI (version 1 or 2).
+    Legacy(Zeroizing<String>),
+}
+
+impl fmt::Debug for Stored {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Stored::Store(id) => write!(f, "Store({id})"),
+            Stored::File(_) => f.write_str("File(..)"),
+            Stored::Legacy(_) => f.write_str("Legacy(..)"),
+        }
     }
 }
 
-fn encode(
-    secret_key: &Zeroizing<String>,
-    state: &DeviceState,
-) -> Result<Zeroizing<Vec<u8>>, CliError> {
-    // Borrowed copy of the fields, so the secret is encoded without a clone.
+impl From<KeyAt> for Stored {
+    fn from(k: KeyAt) -> Stored {
+        match k {
+            KeyAt::Store { account_id } => Stored::Store(account_id),
+            KeyAt::File { secret_key } => Stored::File(secret_key),
+        }
+    }
+}
+
+/// A decoded `device.bin`.
+struct Decoded {
+    state: DeviceState,
+    key: Stored,
+}
+
+/// Decode `device.bin`: version 3 behind its header (whole buffer), else
+/// version 2, else version 1.
+fn decode(bytes: &[u8]) -> Result<Decoded, CliError> {
+    let unreadable = || CliError::usage("device.bin is unreadable");
+    if let Some(body) = bytes.strip_prefix(DEVICE_MAGIC) {
+        return match postcard::take_from_bytes::<DeviceFile>(body) {
+            Ok((file, [])) => Ok(Decoded {
+                state: file.state,
+                key: file.secret_key.into(),
+            }),
+            _ => Err(unreadable()),
+        };
+    }
+    if let Ok((file, [])) = postcard::take_from_bytes::<DeviceFileV2>(bytes) {
+        return Ok(Decoded {
+            state: file.state,
+            key: Stored::Legacy(file.secret_key),
+        });
+    }
+    match postcard::take_from_bytes::<DeviceFileV1>(bytes) {
+        Ok((old, [])) => Ok(Decoded {
+            state: old.state,
+            key: Stored::Legacy(old.secret_key),
+        }),
+        _ => Err(unreadable()),
+    }
+}
+
+/// Encode `device.bin` version 3.
+fn encode(key: &KeyAt, state: &DeviceState) -> Result<Zeroizing<Vec<u8>>, CliError> {
+    // Borrowed copy of the fields, so the state is encoded without a clone.
     #[derive(Serialize)]
     struct Ref<'a> {
-        secret_key: &'a str,
         #[serde(with = "onepass_core::format::device_state_bytes")]
         state: &'a DeviceState,
+        secret_key: &'a KeyAt,
     }
-    let bytes = postcard::to_allocvec(&Ref { secret_key, state })
-        .map_err(|_| CliError::usage("cannot encode device.bin"))?;
-    Ok(Zeroizing::new(bytes))
+    let body = Zeroizing::new(
+        postcard::to_allocvec(&Ref {
+            state,
+            secret_key: key,
+        })
+        .map_err(|_| CliError::usage("cannot encode device.bin"))?,
+    );
+    let mut bytes = Zeroizing::new(Vec::with_capacity(DEVICE_MAGIC.len() + body.len()));
+    bytes.extend_from_slice(DEVICE_MAGIC);
+    bytes.extend_from_slice(&body);
+    Ok(bytes)
+}
+
+/// The refusal of a Secret Key that has no store to go to.
+fn no_store(ctx: &Ctx, e: &StoreError, what: &str) -> CliError {
+    let store = match e {
+        StoreError::Unavailable(why) => why.clone(),
+        StoreError::Failed(why) => format!("{}: {why}", ctx.secrets.name()),
+    };
+    CliError::usage(format!(
+        "{store}; {what}. Make a secret store reachable, or pass \
+         {INSECURE_FILE_KEY_OPTION} to keep the Secret Key in clear in device.bin \
+         (anyone who reads that file then needs only the password)"
+    ))
+}
+
+/// Say on stderr that the Secret Key sits in clear in `device.bin`.
+fn warn_file_key(ctx: &Ctx) {
+    eprintln!(
+        "WARNING: the Secret Key is in clear in {} ({INSECURE_FILE_KEY_OPTION}): \
+         anyone who reads that file needs only the password",
+        ctx.device_path().display()
+    );
+}
+
+/// Write `key` to the store under the entry of `account`, then read it
+/// back: a key the store does not give back unchanged is not stored.
+fn put_key(ctx: &Ctx, account: Id, key: &str) -> Result<(), StoreError> {
+    let entry = entry_name(account);
+    ctx.secrets.set(&entry, key)?;
+    match ctx.secrets.get(&entry)? {
+        Some(back) if back.as_str() == key => Ok(()),
+        _ => Err(StoreError::Failed(
+            "the stored Secret Key did not read back unchanged".to_owned(),
+        )),
+    }
+}
+
+/// The Secret Key of `account` from the store.
+fn fetch_key(ctx: &Ctx, account: Id) -> Result<Zeroizing<String>, CliError> {
+    let entry = entry_name(account);
+    match ctx.secrets.get(&entry) {
+        Ok(Some(key)) => Ok(key),
+        Ok(None) => Err(CliError::usage(format!(
+            "the Secret Key of this account is not in the {} (entry {entry}, service {}); \
+             was the data directory copied from another machine?",
+            ctx.secrets.name(),
+            crate::secret_store::SERVICE
+        ))),
+        Err(e) => Err(CliError::usage(format!(
+            "cannot read the Secret Key from the {}: {e}",
+            ctx.secrets.name()
+        ))),
+    }
+}
+
+/// Remove the store entry of `account`, best effort: for an account
+/// creation being undone.
+pub fn forget_key(ctx: &Ctx, account: Id) {
+    let _ = ctx.secrets.delete(&entry_name(account));
 }
 
 /// Errors of a repository call on stored data. A corrupted or tampered
@@ -445,52 +847,100 @@ pub fn harden(ctx: &Ctx) -> Result<(), CliError> {
 /// An unlocked repository plus what is needed to save the device state.
 pub struct Session {
     pub repo: Repository<SqliteStore>,
-    secret_key: Zeroizing<String>,
+    key_at: KeyAt,
     device_path: PathBuf,
     /// The bytes on disk, so an unchanged state is not rewritten.
     on_disk: Option<Zeroizing<Vec<u8>>>,
 }
 
 impl Session {
-    /// Session of a freshly created account: nothing is on disk yet.
-    pub fn created(ctx: &Ctx, repo: Repository<SqliteStore>, key: &SecretKey) -> Session {
-        Session {
+    /// Session of a freshly created account: its Secret Key goes into the
+    /// store (or, with `--insecure-file-secret-key`, stays for
+    /// `device.bin`). Nothing is on disk yet: `persist` writes it. The
+    /// caller removes the store entry ([`forget_key`]) if the creation is
+    /// undone.
+    pub fn create(
+        ctx: &Ctx,
+        repo: Repository<SqliteStore>,
+        key: &SecretKey,
+    ) -> Result<Session, CliError> {
+        let shown = Zeroizing::new(key.to_display());
+        let key_at = if ctx.insecure_file_key {
+            warn_file_key(ctx);
+            KeyAt::File { secret_key: shown }
+        } else {
+            let account = repo.account_id();
+            if let Err(e) = put_key(ctx, account, &shown) {
+                forget_key(ctx, account);
+                return Err(no_store(ctx, &e, "the account was not created"));
+            }
+            KeyAt::Store {
+                account_id: account,
+            }
+        };
+        Ok(Session {
             repo,
-            secret_key: Zeroizing::new(key.to_display()),
+            key_at,
             device_path: ctx.device_path(),
             on_disk: None,
-        }
+        })
     }
 
     /// Unlock the account of the data directory with `password`. The
     /// caller holds the data directory lock: this reads `device.bin` and
-    /// the store.
+    /// the store. A Secret Key in clear moves into the store here, once
+    /// the unlock proved it right (unless `--insecure-file-secret-key`).
     pub fn open(ctx: &Ctx, password: &str) -> Result<Session, CliError> {
         let device_path = ctx.device_path();
         if !ctx.has_account() {
             return Err(no_account(ctx));
         }
         let bytes = Zeroizing::new(fs::read(&device_path)?);
-        let file = decode(&bytes)?;
-        let key = SecretKey::parse(&file.secret_key)?;
+        let Decoded {
+            state,
+            key: at_rest,
+        } = decode(&bytes)?;
+        let key_text = match &at_rest {
+            Stored::Store(account) => fetch_key(ctx, *account)?,
+            Stored::File(k) | Stored::Legacy(k) => k.clone(),
+        };
+        let key = SecretKey::parse(&key_text)?;
         let store = stored(SqliteStore::open(&ctx.store_path()))?;
         harden(ctx)?;
-        let mut repo = stored(Repository::unlock(store, password, &key, file.state))?;
+        let mut repo = stored(Repository::unlock(store, password, &key, state))?;
         resume_travel(ctx, &mut repo);
-        Ok(Session {
+        let (key_at, moved) = settle_key(ctx, at_rest, &key_text, repo.account_id())?;
+        let mut session = Session {
             repo,
-            secret_key: file.secret_key,
+            key_at,
             device_path,
             on_disk: Some(bytes),
-        })
+        };
+        if moved {
+            session.on_disk = Some(session.write(true)?);
+            eprintln!(
+                "The Secret Key moved from device.bin into the {}. Copies of device.bin \
+                 made before now (backups, snapshots, synced folders) still hold it in clear.",
+                ctx.secrets.name()
+            );
+        }
+        Ok(session)
     }
 
     /// Write `device.bin` (0600, atomically, file and directory synced) if
     /// the device state changed.
     pub fn persist(&self) -> Result<(), CliError> {
-        let bytes = encode(&self.secret_key, self.repo.device_state())?;
+        self.write(false).map(|_| ())
+    }
+
+    /// Write `device.bin` unless unchanged, and return what is on disk.
+    /// With `wipe`, the replaced file is overwritten with zeros once the
+    /// new one is in place: through a descriptor opened before the rename,
+    /// so `device.bin` is whole at every instant.
+    fn write(&self, wipe: bool) -> Result<Zeroizing<Vec<u8>>, CliError> {
+        let bytes = encode(&self.key_at, self.repo.device_state())?;
         if self.on_disk.as_deref() == Some(&*bytes) {
-            return Ok(());
+            return Ok(bytes);
         }
         let tmp = self.device_path.with_extension("bin.tmp");
         let _ = fs::remove_file(&tmp);
@@ -501,6 +951,14 @@ impl Session {
             .open(&tmp)?;
         f.write_all(&bytes)?;
         f.sync_all()?;
+        let old = if wipe {
+            fs::OpenOptions::new()
+                .write(true)
+                .open(&self.device_path)
+                .ok()
+        } else {
+            None
+        };
         fs::rename(&tmp, &self.device_path)?;
         // The rename lives in the directory: sync it too, or a power loss
         // can bring back the old device.bin (and an older last seen state).
@@ -509,7 +967,65 @@ impl Session {
             _ => Path::new("."),
         };
         fs::File::open(dir)?.sync_all()?;
-        Ok(())
+        if let Some(mut old) = old {
+            let len = usize::try_from(old.metadata()?.len())
+                .map_err(|_| CliError::usage("device.bin is too large"))?;
+            old.rewind()?;
+            old.write_all(&vec![0u8; len])?;
+            old.sync_all()?;
+        }
+        Ok(bytes)
+    }
+}
+
+/// Where the Secret Key goes after an unlock with `key`, and whether it
+/// just moved into the store (`device.bin` must then be rewritten and the
+/// old file wiped).
+fn settle_key(
+    ctx: &Ctx,
+    stored: Stored,
+    key: &str,
+    account: Id,
+) -> Result<(KeyAt, bool), CliError> {
+    let (in_clear, legacy) = match stored {
+        Stored::Store(account_id) => return Ok((KeyAt::Store { account_id }, false)),
+        Stored::File(k) => (k, false),
+        Stored::Legacy(k) => (k, true),
+    };
+    if ctx.insecure_file_key {
+        warn_file_key(ctx);
+        return Ok((
+            KeyAt::File {
+                secret_key: in_clear,
+            },
+            false,
+        ));
+    }
+    match put_key(ctx, account, key) {
+        Ok(()) => Ok((
+            KeyAt::Store {
+                account_id: account,
+            },
+            true,
+        )),
+        // An older CLI wrote this key in clear: keeping it there needs
+        // the explicit choice.
+        Err(e) if legacy => Err(no_store(
+            ctx,
+            &e,
+            "the Secret Key in clear in device.bin cannot move into it",
+        )),
+        // An earlier explicit choice: keep it, and keep saying so.
+        Err(e) => {
+            eprintln!("WARNING: {e}");
+            warn_file_key(ctx);
+            Ok((
+                KeyAt::File {
+                    secret_key: in_clear,
+                },
+                false,
+            ))
+        }
     }
 }
 
@@ -711,7 +1227,8 @@ pub fn read_password_tty(prompt: &str) -> Result<Zeroizing<String>, CliError> {
 }
 
 /// The device state saved in `device.bin`. The caller holds the lock.
-pub fn read_device_state(ctx: &Ctx) -> Result<DeviceState, CliError> {
+#[cfg(test)]
+fn read_device_state(ctx: &Ctx) -> Result<DeviceState, CliError> {
     let bytes = Zeroizing::new(fs::read(ctx.device_path())?);
     Ok(decode(&bytes)?.state)
 }
@@ -755,10 +1272,7 @@ impl LongSession {
         servers.lock_shared()?;
         Ok(LongSession {
             session,
-            ctx: Ctx {
-                data_dir: ctx.data_dir.clone(),
-                json: ctx.json,
-            },
+            ctx: ctx.clone_options(),
             travel_at_unlock,
             travel_changed: false,
             _servers: servers,
@@ -796,11 +1310,17 @@ impl LongSession {
             self.travel_changed = true;
             return Err(CliError::usage(TRAVEL_CHANGED));
         }
-        let state = read_device_state(&self.ctx)?;
+        let bytes = Zeroizing::new(fs::read(self.ctx.device_path())?);
+        let Decoded { state, key } = decode(&bytes)?;
+        // Another command moved the Secret Key into the store: never write
+        // it back in clear.
+        if let Stored::Store(account_id) = key {
+            self.session.key_at = KeyAt::Store { account_id };
+        }
         stored(self.session.repo.adopt_device_state(&state))?;
         // What is on disk now (same encoding, same key), so an unchanged
         // state is not rewritten and a changed one always is.
-        self.session.on_disk = Some(encode(&self.session.secret_key, &state)?);
+        self.session.on_disk = Some(encode(&self.session.key_at, &state)?);
         let result = f(&mut self.session.repo);
         save_after(&self.ctx, &self.session, result)
     }

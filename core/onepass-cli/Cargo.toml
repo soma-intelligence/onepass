@@ -26,6 +26,17 @@ postcard = { version = "1", default-features = false, features = ["alloc"] }
 serde_json = "1"
 time = { version = "0.3", default-features = false, features = ["std"] }
 
+# The Secret Key lives in the secret store of the system (secret_store.rs):
+# the login keychain on macOS (same crate and version as onepass-peer)...
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { version = "3.7", default-features = false }
+
+# ...and the Secret Service over the session D-Bus on Linux (links
+# libdbus-1: building needs libdbus-1-dev and pkg-config). No crypto
+# feature: plain session over the user's own bus.
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus-secret-service = { version = "4.1.0", default-features = false }
+
 [features]
 # Lets ONEPASS_DEV_FAST_KDF=1 create accounts at the dev Argon2id floor, in
 # debug builds only (see onepass-core). Off by default: a plain
