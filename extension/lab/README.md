@@ -53,6 +53,8 @@ Le passage du laboratoire lui-même n'utilise aucun réseau externe : tous les h
 | `npm run lab:real` | compte les champs étiquetés du jeu réel (`real_test: 0 labels` tant qu'aucune étiquette n'existe) ; `-- --pick` retire les hôtes (200 pages au moins). La distillation écarte ces hôtes (tous les sites des relevés) pour que `patterns.json` ne contienne jamais leurs libellés |
 | `node --experimental-strip-types lab/corpus/distill.ts [--with-private]` | distillation seule, sans réseau : réécrit `patterns.json` |
 | `node --experimental-strip-types lab/cli.ts report --out <dossier> [--md <fichier>]` | refait le rapport d'un dossier de résultats existant |
+| `npm run lab -- --seed <s> --sites <n> --classifier heuristic\|gbm\|encoder [--model-dir <dossier>]` | même passage avec ce classifieur de champs (construction `ONEPASS_CLASSIFIER`, modèle pris dans `--model-dir`, obligatoire sauf pour `heuristic`) ; résultats dans `lab/out/<s>-<classifieur>/`, avec `classifier.json` (taille du modèle, F1 hors ligne lus dans `<modèle>-eval.json`, temps de classement médian par formulaire mesuré dans le service worker) |
+| `node --experimental-strip-types lab/cli.ts compare --out <dossier1> <dossier2> <dossier3> --md <fichier> [--real-rows <lignes.jsonl>]` | comparaison des trois classifieurs sur la même graine : tableaux par flux, trait, langue (et profil), fuites, métriques hors ligne, puis verdict de la règle de la spec (7.3). `--real-rows` donne les lignes `real_test` sur lesquelles l'heuristique est notée ; sans lignes étiquetées le verdict reste « heuristic », provisoire |
 
 Le passage complet demande Chromium (Playwright), `cargo` pour l'hôte natif et une dizaine de secondes de préparation.
 
