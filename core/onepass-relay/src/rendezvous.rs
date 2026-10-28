@@ -133,23 +133,23 @@ mod tests {
 
     #[test]
     fn socket_path_in_the_group_container() {
-        let p = socket_path(Path::new("/Users/alex"), "2RFY9Z4UVH").unwrap();
+        let p = socket_path(Path::new("/Users/alex"), "ABCDE12345").unwrap();
         assert_eq!(
             p,
             Path::new(
-                "/Users/alex/Library/Group Containers/2RFY9Z4UVH.me.somalabs.onepass/bridge.sock"
+                "/Users/alex/Library/Group Containers/ABCDE12345.me.somalabs.onepass/bridge.sock"
             )
         );
-        assert!(socket_path(Path::new("/Users/alex"), "2rfy9z4uvh").is_none());
+        assert!(socket_path(Path::new("/Users/alex"), "abcde12345").is_none());
         assert!(socket_path(Path::new("/Users/alex"), "../../tmp/x").is_none());
         // Too long for sun_path: refused rather than truncated.
         let long = format!("/Users/{}", "a".repeat(40));
-        assert!(socket_path(Path::new(&long), "2RFY9Z4UVH").is_none());
+        assert!(socket_path(Path::new(&long), "ABCDE12345").is_none());
     }
 
     #[test]
     fn only_the_two_clients_of_the_same_team() {
-        let t = "2RFY9Z4UVH";
+        let t = "ABCDE12345";
         assert_eq!(
             classify_client(&team(t, SAFARI_ID), t),
             Some(Client::Safari)
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn app_is_exact() {
-        let t = "2RFY9Z4UVH";
+        let t = "ABCDE12345";
         assert!(is_app(&team(t, APP_ID), t));
         assert!(!is_app(&team("AAAAAAAAAA", APP_ID), t));
         assert!(!is_app(&team(t, RELAY_ID), t));

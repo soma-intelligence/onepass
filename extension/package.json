@@ -1,6 +1,6 @@
 {
   "name": "onepass-extension",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "type": "module",
@@ -16,7 +16,6 @@
     "lab": "node --experimental-strip-types lab/cli.ts lab",
     "lab:repro": "node --experimental-strip-types lab/cli.ts repro",
     "sbom": "mkdir -p sbom && npm sbom --sbom-format cyclonedx --omit dev > sbom/extension.cdx.json"
-
   },
   "dependencies": {
     "@noble/curves": "1.9.7",

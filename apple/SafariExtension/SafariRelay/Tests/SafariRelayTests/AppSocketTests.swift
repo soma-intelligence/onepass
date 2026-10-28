@@ -94,9 +94,9 @@ struct AppSocketTests {
 
     @Test func requirementPinsTeamAndIdentifier() {
         #expect(
-            AppSocket.requirement(team: "2RFY9Z4UVH")
-                == #"anchor apple generic and certificate leaf[subject.OU] = "2RFY9Z4UVH" and identifier "me.somalabs.onepass""#)
-        #expect(AppSocket.requirement(team: "2rfy9z4uvh") == nil)
+            AppSocket.requirement(team: "ABCDE12345")
+                == #"anchor apple generic and certificate leaf[subject.OU] = "ABCDE12345" and identifier "me.somalabs.onepass""#)
+        #expect(AppSocket.requirement(team: "abcde12345") == nil)
         #expect(AppSocket.requirement(team: #"X" or anchor"#) == nil)
     }
 
@@ -111,7 +111,7 @@ struct AppSocketTests {
         #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
         defer { close(fds[0]); close(fds[1]) }
         // The peer is this ad hoc test process: never the app.
-        let req = AppSocket.requirement(team: "2RFY9Z4UVH")!
+        let req = AppSocket.requirement(team: "ABCDE12345")!
         #expect(AppSocket.checkPeer(fd: fds[0], requirement: req) == .refused)
         #expect(AppSocket.checkPeer(fd: -1, requirement: req) == .refused)
     }

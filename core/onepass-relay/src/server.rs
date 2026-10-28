@@ -249,7 +249,7 @@ mod tests {
 
     use crate::rendezvous::{APP_ID, RELAY_ID, SAFARI_ID};
 
-    const TEAM: &str = "2RFY9Z4UVH";
+    const TEAM: &str = "ABCDE12345";
 
     fn team(id: &str) -> CodeIdentity {
         CodeIdentity::Team {
@@ -412,9 +412,11 @@ mod tests {
         let rig = rig(team(RELAY_ID), 1);
         let _first = connect(&rig.path, TEAM, &app(), &Preamble::new(Some("a".into()))).unwrap();
         rig.accepted.recv_timeout(Duration::from_secs(2)).unwrap();
-        let mut second =
-            connect(&rig.path, TEAM, &app(), &Preamble::new(Some("b".into()))).unwrap();
-        assert!(matches!(read_frame(&mut second), Ok(None) | Err(_)));
+        // The server may close the extra connection before the client's
+        // preamble is written (BrokenPipe on Linux) or right after it.
+        if let Ok(mut second) = connect(&rig.path, TEAM, &app(), &Preamble::new(Some("b".into()))) {
+            assert!(matches!(read_frame(&mut second), Ok(None) | Err(_)));
+        }
         assert!(rig.accepted.try_recv().is_err());
     }
 
