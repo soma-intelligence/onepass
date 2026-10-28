@@ -79,7 +79,9 @@ fn build(
 ) -> Result<zeroize::Zeroizing<String>, CliError> {
     let store = SqliteStore::open(&ctx.store_path())?;
     session::harden(ctx)?;
-    let (repo, key) = Repository::create_account(store, password, kdf)?;
+    let fast = session::fast_kdf_requested().as_deref() == Some("1");
+    let (repo, key) = Repository::create_account(store, password, kdf)
+        .map_err(|e| session::account_kdf_error(e, fast))?;
     let key_text = zeroize::Zeroizing::new(key.to_display());
     Session::created(ctx, repo, &key).persist()?;
     Ok(key_text)

@@ -176,6 +176,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fast_kdf_switch_is_debug_only() {
+        let fast = |kdf: KdfParams| (kdf.m_kib, kdf.t, kdf.p);
+        assert_eq!(
+            fast(kdf_params_with(true, Some("1")).unwrap()),
+            (8192, 1, 1)
+        );
+        let floor = fast(KdfParams::new_default().unwrap());
+        assert_eq!(fast(kdf_params_with(true, None).unwrap()), floor);
+        assert_eq!(fast(kdf_params_with(true, Some("0")).unwrap()), floor);
+        let e = kdf_params_with(false, Some("1")).unwrap_err();
+        assert_eq!(e.msg, "ONEPASS_DEV_FAST_KDF is refused in a release build");
+    }
+
+    #[test]
+    fn fast_kdf_refused_by_the_core_names_the_feature() {
+        let e = account_kdf_error(Error::InvalidFormat("kdf params"), true);
+        assert_eq!(e.code, 1);
+        assert_eq!(
+            e.msg,
+            "ONEPASS_DEV_FAST_KDF needs a build with the dev-fast-kdf feature \
+             (cargo run -p onepass-cli --features dev-fast-kdf)"
+        );
+        // Without the switch, the core error stays as it is.
+        let e = account_kdf_error(Error::InvalidFormat("kdf params"), false);
+        assert_ne!(e.msg, "");
+        assert!(!e.msg.contains("dev-fast-kdf"));
+        let e = account_kdf_error(Error::WrongPassword, true);
+        assert_eq!(e.code, 2);
+    }
+
+    #[test]
     fn env_password_switch_is_debug_only() {
         assert!(env_secrets_allowed_with(true, Some("1")).unwrap());
         assert!(!env_secrets_allowed_with(true, None).unwrap());
@@ -608,11 +639,22 @@ pub fn read_secret(prompt: &str, env_var: &str) -> Result<Zeroizing<String>, Cli
 }
 
 /// Argon2 parameters of a new account: the floor, or the fast test ones
-/// when `ONEPASS_DEV_FAST_KDF=1` (debug builds only).
+/// when `ONEPASS_DEV_FAST_KDF=1` (debug builds only; the core accepts them
+/// only with its `dev-fast-kdf` feature, see [`account_kdf_error`]).
 pub fn kdf_params() -> Result<KdfParams, CliError> {
+    kdf_params_with(cfg!(debug_assertions), fast_kdf_requested().as_deref())
+}
+
+/// The value of `ONEPASS_DEV_FAST_KDF`.
+pub fn fast_kdf_requested() -> Option<String> {
+    std::env::var("ONEPASS_DEV_FAST_KDF").ok()
+}
+
+/// [`kdf_params`] with the build kind and the switch value given.
+pub fn kdf_params_with(debug: bool, var: Option<&str>) -> Result<KdfParams, CliError> {
     let mut kdf = KdfParams::new_default()?;
-    if std::env::var("ONEPASS_DEV_FAST_KDF").as_deref() == Ok("1") {
-        if !cfg!(debug_assertions) {
+    if var == Some("1") {
+        if !debug {
             return Err(CliError::usage(
                 "ONEPASS_DEV_FAST_KDF is refused in a release build",
             ));
@@ -622,6 +664,19 @@ pub fn kdf_params() -> Result<KdfParams, CliError> {
         kdf.p = 1;
     }
     Ok(kdf)
+}
+
+/// The error of an account creation. With `ONEPASS_DEV_FAST_KDF=1`, a core
+/// built without `dev-fast-kdf` (the default of the CLI) refuses the fast
+/// parameters as `InvalidFormat("kdf params")`: say which feature is missing.
+pub fn account_kdf_error(e: Error, fast_requested: bool) -> CliError {
+    match e {
+        Error::InvalidFormat("kdf params") if fast_requested => CliError::usage(
+            "ONEPASS_DEV_FAST_KDF needs a build with the dev-fast-kdf feature \
+             (cargo run -p onepass-cli --features dev-fast-kdf)",
+        ),
+        other => CliError::from(other),
+    }
 }
 
 /// The password of a server whose stdin and stdout carry a protocol:

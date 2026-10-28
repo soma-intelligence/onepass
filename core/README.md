@@ -54,7 +54,7 @@ La suite couvre :
 - l'archive OnePass : aller-retour, refus, encodage figé (`tests/archive.rs`, feature `dev-fast-kdf`) ;
 - les commandes du jalon 5 de la CLI : import, export, watchtower, backup (`onepass-cli/tests/m5.rs`).
 
-La suite "stockage malveillant" déverrouille des comptes créés avec des paramètres Argon2id rapides : elle demande la feature `dev-fast-kdf` de `onepass-core`, que `onepass-cli` active, donc `cargo test --workspace` (et `make test`) la lance. Seule : `cargo test -p onepass-core --features dev-fast-kdf --test malicious_store`. Cette feature n'abaisse le plancher Argon2id que dans un build avec assertions de debug ; un build release impose toujours le plancher de la spec.
+La suite "stockage malveillant" déverrouille des comptes créés avec des paramètres Argon2id rapides : elle demande la feature `dev-fast-kdf` de `onepass-core`, que les dépendances de développement de `onepass-cli`, `onepass-mcp`, `onepass-ssh-agent` et `onepass-ffi` activent, donc `cargo test --workspace` (et `make test`) la lance. Seule : `cargo test -p onepass-core --features dev-fast-kdf --test malicious_store`. Cette feature n'abaisse le plancher Argon2id que dans un build avec assertions de debug ; un build release impose toujours le plancher de la spec.
 
 La signature SLH-DSA est lente (environ 15 s en optimisé, plus en debug). Le profil `dev` compile donc `sha2` avec `opt-level = 3`.
 
@@ -167,7 +167,7 @@ Au jalon 1 la CLI fonctionne en **mode développement autonome**. C'est un écar
 
 - La Secret Key est écrite **en clair** dans `<data-dir>/device.bin` (droits `0600`, dossier en `0700`). Quiconque lit ce fichier et connaît le mot de passe maître déverrouille le compte, et la Secret Key ne protège plus contre une fuite du mot de passe.
 - Chaque commande qui touche au dossier de données affiche la bannière `DEV MODE` sur stderr.
-- Le mot de passe est lu sur le terminal, masqué. Il n'existe pas de mode non interactif réel. Pour les tests seulement, `ONEPASS_DEV_ALLOW_ENV_PASSWORD=1` autorise `ONEPASS_PASSWORD`, et `ONEPASS_DEV_FAST_KDF=1` abaisse le coût d'Argon2id (refusé dans un build release).
+- Le mot de passe est lu sur le terminal, masqué. Il n'existe pas de mode non interactif réel. Pour les tests seulement, `ONEPASS_DEV_ALLOW_ENV_PASSWORD=1` autorise `ONEPASS_PASSWORD`, et `ONEPASS_DEV_FAST_KDF=1` abaisse le coût d'Argon2id (refusé dans un build release). Ce plancher rapide n'existe que si la CLI est construite avec sa feature `dev-fast-kdf`, désactivée par défaut (`cargo run -p onepass-cli --features dev-fast-kdf`) ; `cargo test` l'active pour les tests de la CLI. Sans elle, `ONEPASS_DEV_FAST_KDF=1` est refusé avec un message qui nomme la feature, et un `cargo build -p onepass-cli` ne lie pas le plancher de développement.
 - Variables de développement du jalon 7, acceptées seulement dans un build avec assertions de debug : `ONEPASS_DEV_AUTO_APPROVE=once|session|deny` (approbateur à réponse fixe, pour les tests de bout en bout ; refusé dans un build release), `ONEPASS_DEV_NO_TTY=1` (se comporte comme s'il n'y avait pas de terminal), `ONEPASS_DEV_SSH_PASSPHRASE` (phrase de passe d'une clé importée par `ssh-key import`, lue seulement avec `ONEPASS_DEV_ALLOW_ENV_PASSWORD=1`).
 - Pas de verrouillage automatique, pas de biométrie, pas de synchronisation, pas de `mlock` des pages secrètes.
 - Ne mettez pas de vrais secrets dans un compte de développement.
