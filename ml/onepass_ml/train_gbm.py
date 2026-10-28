@@ -63,10 +63,17 @@ def train_gbm(
     best = booster.best_iteration or booster.current_iteration()
     booster.save_model(str(out / "gbm.lgb.txt"), num_iteration=best)
     booster = lgb.Booster(model_file=str(out / "gbm.lgb.txt"))
-    return export_onnx(
+    path = export_onnx(
         booster, out / "gbm.onnx",
         feature_version=int(manifest["featureVersion"]), dataset_seed=str(manifest["seed"]),
     )
+    size = path.stat().st_size
+    if size >= MAX_BYTES:
+        path.unlink()
+        raise ValueError(
+            f"model is {size} bytes, over the {MAX_BYTES} byte target: lower num_leaves or n_estimators"
+        )
+    return path
 
 
 def main(argv: list[str]) -> int:
@@ -84,11 +91,7 @@ def main(argv: list[str]) -> int:
         a.data, a.out, a.seed, num_threads=a.threads, num_leaves=a.num_leaves,
         n_estimators=a.n_estimators, learning_rate=a.learning_rate,
     )
-    size = path.stat().st_size
-    print(f"{path} {size} bytes, {time.time() - t0:.1f} s")
-    if size >= MAX_BYTES:
-        print(f"model is {size} bytes, over the {MAX_BYTES} byte target: lower --num-leaves or --n-estimators", file=sys.stderr)
-        return 3
+    print(f"{path} {path.stat().st_size} bytes, {time.time() - t0:.1f} s")
     return 0
 
 

@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { FieldFeatures } from "../../src/content/detect/features";
 import { cyrb128 } from "../../src/shared/hash";
 import { cyrb128 as labCyrb128 } from "../../lab/gen/rng";
-import { HASH_DIM, INDICATORS, NUM_INDICATORS, serialize, tokenize, vectorize, VECTOR_DIM } from "../../src/content/detect/vectorize";
+import { VECTORIZER_VERSION, HASH_DIM, INDICATORS, NUM_INDICATORS, serialize, tokenize, vectorize, VECTOR_DIM } from "../../src/content/detect/vectorize";
 
 const FILE = join(__dirname, "..", "vectors", "vectorize.json");
 
@@ -86,6 +86,10 @@ describe("vectorize", () => {
     expect(() => serialize(o)).not.toThrow();
   });
 
+  it("vectorizer version equals the shared file's", () => {
+    expect(file().vectorizerVersion).toBe(VECTORIZER_VERSION);
+  });
+
   it("tokenize: words, CJK bigrams, marks stay with their word", () => {
     expect(tokenize("E-mail address 2")).toEqual(["e", "mail", "address", "2"]);
     expect(tokenize("メールアドレス")).toEqual(["メー", "ール", "ルア", "アド", "ドレ", "レス"]);
@@ -94,7 +98,7 @@ describe("vectorize", () => {
     expect(tokenize("")).toEqual([]);
   });
 
-  const file = (): { cases: { name: string; features: FieldFeatures; nonzero: [number, number][]; serialize: string }[]; hashes: { input: string; words: number[] }[] } =>
+  const file = (): { vectorizerVersion: number; cases: { name: string; features: FieldFeatures; nonzero: [number, number][]; serialize: string }[]; hashes: { input: string; words: number[] }[] } =>
     JSON.parse(readFileSync(FILE, "utf8"));
 
   if (process.env.UPDATE_VECTORS) {
@@ -106,7 +110,7 @@ describe("vectorize", () => {
         return { name: c.name, features: c.features, nonzero, serialize: serialize(c.features) };
       });
       const hashes = HASH_INPUTS.map((input) => ({ input, words: [...cyrb128(input)] }));
-      writeFileSync(FILE, JSON.stringify({ cases, hashes }, null, 1) + "\n");
+      writeFileSync(FILE, JSON.stringify({ vectorizerVersion: VECTORIZER_VERSION, cases, hashes }, null, 1) + "\n");
     });
   }
 

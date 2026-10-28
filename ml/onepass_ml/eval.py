@@ -42,6 +42,7 @@ def metrics(y: np.ndarray, pred: np.ndarray) -> dict[str, Any]:
         "rows": int(len(y)),
         "accuracy": float(tp.sum() / len(y)),
         "macro_f1": float(f1[present].mean()),
+        "macro_f1_classes": [LABELS[i] for i in range(n) if present[i]],
         "per_role_f1": {LABELS[i]: float(f1[i]) for i in range(n) if present[i]},
         "support": {LABELS[i]: int(support[i]) for i in range(n) if present[i]},
         "labels": list(LABELS),

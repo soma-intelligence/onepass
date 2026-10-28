@@ -1,3 +1,7 @@
+// ANY change to the layout (namespaces, indicator order, TEXT_CAP, tokenization, hashing) must bump
+// VECTORIZER_VERSION and regenerate extension/test/vectors/vectorize.json (UPDATE_VECTORS=1), and the
+// same bump goes in ml/onepass_ml/vectorize.py. Trained models carry it as ONNX `vectorizer_version`.
+//
 // Shared field vectorizer. The model is trained in Python (ml/onepass_ml/vectorize.py, an exact port)
 // and runs here, so both sides must turn a field into the same vector and the same text.
 // extension/test/vectors/vectorize.json holds the cases both sides assert.
@@ -21,6 +25,7 @@
 import { normalizeText, type FieldFeatures } from "./features";
 import { cyrb128 } from "../../shared/hash";
 
+export const VECTORIZER_VERSION = 1;
 export const VECTOR_DIM = 4096;
 export const TEXT_CAP = 256;
 
