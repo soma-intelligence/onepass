@@ -84,7 +84,8 @@ struct Sidebar: View {
                         close: { accountMenuOpen = false }
                     )
                     .padding(.top, titlebarHeight + 50)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.96, anchor: .top).combined(with: .opacity),
                         removal: .opacity))
@@ -504,7 +505,8 @@ struct AccountMenuPanel: View {
             .accessibilityIdentifier("account.lock")
         }
         .padding(5)
-        .frame(width: 252)
+        // Never wider than the sidebar column (the panel was cut at its edge when it is narrow).
+        .frame(maxWidth: 252)
         .glassEffect(.regular, in: .rect(cornerRadius: 16, style: .continuous))
         .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
         .onExitCommand(perform: close)
