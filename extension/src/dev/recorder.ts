@@ -90,15 +90,40 @@ function echoValues(doc: Document, known: Iterable<string>): string[] {
   return [...out];
 }
 
-/** Cleans every string of a field: sanitizer first, then anything that echoes a value is dropped. */
-function clean(f: FieldFeatures, echoes: readonly string[]): FieldFeatures {
-  const bad = (t: string | undefined): boolean => t === undefined || t === "<redacted>" || echoes.some((v) => fold(t).includes(v));
+/** True when `t` ends with the first `n` (or starts with the last `n`) characters of `v`, for some MIN_ECHO <= n < |v|. */
+function cutShort(t: string, v: string): boolean {
+  for (let n = Math.min(v.length - 1, t.length); n >= MIN_ECHO; n--) {
+    if (t.endsWith(v.slice(0, n)) || t.startsWith(v.slice(v.length - n))) return true;
+  }
+  return false;
+}
+
+/**
+ * True when the page text holds one of the values, whole or cut at either end: the extractor
+ * caps texts (neighbours at 40, buttons at 60, labels at 120) and the sanitizer at 60, so a value
+ * echoed at a boundary may only be there in part.
+ */
+const echoes = (t: string | undefined, values: readonly string[]): boolean => {
+  if (t === undefined) return false;
+  const f = fold(t);
+  return values.some((v) => f.includes(v) || cutShort(f, v));
+};
+
+/**
+ * Cleans every string of a field: anything that echoes a value is dropped, checked on the full
+ * text first (the sanitizer cuts at 60 or 40 characters, which could leave a value cut short),
+ * then the sanitizer, then the same check on what it kept.
+ */
+function clean(f: FieldFeatures, values: readonly string[]): FieldFeatures {
+  const bad = (t: string | undefined): boolean => t === undefined || t === "<redacted>" || echoes(t, values);
   const text = (s: string | undefined, fn: (x: string | undefined) => string | undefined = sanitizeText): string | undefined => {
+    if (echoes(s, values)) return undefined;
     const t = fn(s);
     return bad(t) ? undefined : t;
   };
   const list = (a: string[]): string[] => a.map((x) => text(x)).filter((x): x is string => x !== undefined);
   const tok = (s: string | undefined): string | undefined => {
+    if (echoes(s, values)) return undefined;
     const t = sanitizeToken(s);
     return bad(t) ? undefined : t;
   };
@@ -136,8 +161,8 @@ export function recordSubmit(
   const group = at >= 0 ? features.forms[at] : undefined;
   const els = at >= 0 ? groupFields(doc, form) : [];
   const editable = Array.from(doc.querySelectorAll(EDITABLE)).some((e) => (e.textContent ?? "").trim() !== "");
-  const echoes = echoValues(doc, known);
-  const fields = (group?.fields ?? []).map((f) => clean(scrub(f, editable), echoes));
+  const values = echoValues(doc, known);
+  const fields = (group?.fields ?? []).map((f) => clean(scrub(f, editable), values));
   const map: Record<number, FilledRole> = {};
   fields.forEach((f, i) => {
     const el = els[i];
@@ -149,7 +174,10 @@ export function recordSubmit(
     at: Date.now(),
     form: {
       fields,
-      buttons: (group?.buttons ?? []).map((b) => sanitizeText(b)).filter((b): b is string => b !== undefined && b !== "<redacted>" && !echoes.some((v) => fold(b).includes(v))),
+      buttons: (group?.buttons ?? [])
+        .filter((b) => !echoes(b, values))
+        .map((b) => sanitizeText(b))
+        .filter((b): b is string => b !== undefined && b !== "<redacted>" && !echoes(b, values)),
     },
     filled: map,
   };

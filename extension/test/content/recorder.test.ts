@@ -162,6 +162,22 @@ describe("page text that echoes values", () => {
     expect(sent[0]!.step.form.fields[0]!.name).toBe("pw");
   });
 
+  it("a value cut short by the 60-character text cap or the 40-character neighbour cap is still dropped (final review M2)", () => {
+    // 55 and 35 characters of filler: the value straddles the 60 (label, placeholder, button) and 40 (neighbour) cuts.
+    const at60 = `${"word ".repeat(11)}Quentin Carlier`;
+    const at40 = `${"word ".repeat(7)}Quentin Carlier`;
+    expect(at60.indexOf("Quentin")).toBeLessThan(60);
+    expect(at60.indexOf("Quentin") + "Quentin Carlier".length).toBeGreaterThan(60);
+    expect(at40.indexOf("Quentin")).toBeLessThan(40);
+    expect(at40.indexOf("Quentin") + "Quentin Carlier".length).toBeGreaterThan(40);
+    document.body.innerHTML = `<form><input id="n" name="n"><span>${at40}</span><input name="p" placeholder="${at60}" aria-label="${at60}"><label for="q">${at60}</label><input id="q" name="q"><button>${at60}</button></form>`;
+    (document.getElementById("n") as HTMLInputElement).value = "Quentin Carlier";
+    const st = step();
+    const json = JSON.stringify(st).toLowerCase();
+    expect(json).not.toContain("quent");
+    expect(st.form.fields.map((f) => f.name)).toEqual(["n", "p", "q"]);
+  });
+
   it("values shorter than 3 characters do not redact everything", () => {
     document.body.innerHTML = '<form><input id="a" name="a"><label>a name</label><input name="b"></form>';
     (document.getElementById("a") as HTMLInputElement).value = "a";
