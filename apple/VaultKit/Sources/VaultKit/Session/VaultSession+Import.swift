@@ -30,9 +30,21 @@ extension VaultSession {
         }
     }
 
-    /// Imports the export into `vaultID`: every item gets a new id (nothing is overwritten), the
-    /// source folder becomes a tag, and nothing is written when one item does not validate. Reloads
-    /// the lists and tells the sync layer, like any write.
+    /// Counts what importing the export into `vaultID` would do: the preview's counts plus
+    /// `updated`, the items that would replace their copy from an earlier import of the same
+    /// export (1Password 1PUX). Writes nothing.
+    public func previewImport(format: String, data: Data, vaultID: String) async throws -> FfiImportSummary {
+        do {
+            return try await read { try $0.previewImportInto(format: format, bytes: data, vaultId: vaultID) }
+        } catch {
+            throw VaultError(error)
+        }
+    }
+
+    /// Imports the export into `vaultID`. An item an earlier import of the same export already
+    /// made is updated in place (1Password 1PUX); every other item gets a new id. The source folder
+    /// becomes a tag, and nothing is written when one item does not validate. Reloads the lists and
+    /// tells the sync layer, like any write.
     public func importItems(format: String, data: Data, vaultID: String) async throws -> FfiImportSummary {
         try await write { try $0.importItems(format: format, bytes: data, vaultId: vaultID) }
     }

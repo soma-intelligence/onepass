@@ -1674,6 +1674,7 @@ dependencies = [
  "uniffi",
  "url",
  "zeroize",
+ "zip",
 ]
 
 [[package]]

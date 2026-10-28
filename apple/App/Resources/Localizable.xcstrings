@@ -492,6 +492,16 @@
         }
       }
     },
+    "%lld élément(s) déjà importé(s) mis à jour, %lld nouveau(x)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld already imported item(s) updated, %2$lld new"
+          }
+        }
+      }
+    },
     "%lld élément(s) gardé(s) comme note sécurisée" : {
       "localizations" : {
         "en" : {
