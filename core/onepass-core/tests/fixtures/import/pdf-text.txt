@@ -1,0 +1,13 @@
+Passwords (printed from a password manager, invented values)
+
+Example Mail
+Website: https://mail.example.com
+Username: alice@example.com
+Password: Invented-Pass-1
+
+Example Shop
+Website: shop.example.net
+Username: alice
+Password: Invented-Pass-2
+Notes: gift card on file
+Page 1 of 1

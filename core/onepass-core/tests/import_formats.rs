@@ -257,6 +257,23 @@ fn parse_every_fixture_validates() {
 }
 
 #[test]
+fn pdf_is_detected_and_its_text_parsed() {
+    assert_eq!(
+        detect("kit.pdf", b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n"),
+        Some(Format::PdfText)
+    );
+    assert!(parse(Format::PdfText, b"%PDF-1.7\n").is_err());
+    let import = parse(Format::PdfText, fixture!("pdf-text.txt")).unwrap();
+    assert_eq!(import.items.len(), 2);
+    for it in &import.items {
+        assert_eq!(it.item.item_type, ItemType::Login);
+        validate(&it.item).unwrap();
+    }
+    assert_eq!(import.items[1].item.title, "Example Shop");
+    assert_eq!(import.items[1].item.notes, "gift card on file");
+}
+
+#[test]
 fn oversized_input_rejected() {
     let big = vec![b'a'; 256 * 1024 * 1024 + 1];
     for f in Format::ALL {

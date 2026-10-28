@@ -13,6 +13,8 @@ import VaultKit
 ///   shows the validation error under the first required field.
 /// - `-OnePassDebugAutoSave YES`: the editor presses Enregistrer once it is shown.
 /// - `-OnePassDebugGenerator YES`: the first password field opens the generator.
+/// - `-OnePassDebugImport <path>`: unlocks the fictional account and opens the import sheet on that
+///   file (its preview); `-OnePassDebugImportConfirm YES` also imports it into the first vault.
 extension AppModel {
     static let debugPassword = "ruisseau-tapis-orage-comete"
 
@@ -20,10 +22,16 @@ extension AppModel {
         let defaults = UserDefaults.standard
         let wanted = defaults.string(forKey: "OnePassDebugItem")
         let newType = defaults.string(forKey: "OnePassDebugNewItem")
-        guard wanted != nil || newType != nil else { return }
+        let importPath = defaults.string(forKey: "OnePassDebugImport")
+        guard wanted != nil || newType != nil || importPath != nil else { return }
         Task {
             do {
                 try await debugUnlock()
+                if let importPath {
+                    debugImportURL = URL(fileURLWithPath: importPath)
+                    showImport = true
+                    return
+                }
                 let titles = try await debugSeed()
                 if let newType, let type = Self.debugType(newType) {
                     guard let vault = session.vaults.first else { return }

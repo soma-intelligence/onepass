@@ -86,6 +86,9 @@ struct ImportSource: Identifiable, Hashable {
         ImportSource(
             id: "onepass", name: String(localized: "OnePass (export CSV)"), formats: ["onepass-csv"],
             hint: String(localized: "Le fichier CSV en clair exporté par OnePass.")),
+        ImportSource(
+            id: "pdf", name: String(localized: "PDF d'identifiants"), formats: ["pdf-text"],
+            hint: String(localized: "Une liste de mots de passe imprimée en PDF, ou l'Emergency Kit de 1Password. OnePass lit le texte du PDF sur cet appareil, puis te montre ce qu'il a trouvé.")),
     ]
 
     /// Display name of a core format, for the preview.
@@ -179,6 +182,18 @@ struct ImportSheet: View {
         .onAppear {
             if vaultID.isEmpty { vaultID = defaultVaultID }
         }
+        #if DEBUG
+        .task {
+            // `-OnePassDebugImport <path>` (`DebugItems`): reads that file as if it had been dropped.
+            guard let url = model.debugImportURL else { return }
+            model.debugImportURL = nil
+            source = .automatic
+            await load(url)
+            if UserDefaults.standard.bool(forKey: "OnePassDebugImportConfirm"), preview != nil {
+                await runImport()
+            }
+        }
+        #endif
         .sheet(item: $restoreRequest) { request in
             RestoreSheet(request: request)
         }
@@ -724,8 +739,25 @@ struct ImportSheet: View {
             buffer.wipe()
             return
         }
+        if detected == "pdf-text" {
+            // A PDF: PDFKit reads its text here, and the core parses that text. The PDF bytes are
+            // wiped once the text replaces them.
+            let pdf = buffer.data
+            let text: Result<Data, PDFImportError> = await Task.detached {
+                Result { () throws(PDFImportError) -> Data in try VaultSession.pdfImportText(pdf) }
+            }.value
+            switch text {
+            case .success(let t): buffer.replace(with: t)
+            case .failure(let e):
+                errorMessage = Self.pdfMessage(e)
+                buffer.wipe()
+                return
+            }
+        }
         let chosen: String?
-        if let source, !source.formats.isEmpty {
+        if detected == "pdf-text" {
+            chosen = "pdf-text"
+        } else if let source, !source.formats.isEmpty {
             chosen = detected.flatMap { source.formats.contains($0) ? $0 : nil } ?? source.formats.first
         } else {
             chosen = detected
@@ -825,6 +857,14 @@ struct ImportSheet: View {
         }
     }
 
+    private static func pdfMessage(_ e: PDFImportError) -> String {
+        switch e {
+        case .unreadable: String(localized: "Ce PDF est illisible ou endommagé.")
+        case .locked: String(localized: "Ce PDF est protégé par un mot de passe. Ouvre-le, enregistre-le sans protection, puis réessaie.")
+        case .noText: String(localized: "Ce PDF ne contient pas de texte lisible (un scan ou une photo) : rien à importer.")
+        }
+    }
+
     private static func skippedLine(_ n: UInt32) -> String {
         String(localized: "\(Int(n)) ligne(s) vide(s), dossier(s) ou élément(s) supprimé(s) ignoré(s)")
     }
@@ -889,6 +929,7 @@ private struct ImportSourceGlyph: View {
         case "otpauth": "timer"
         case "wifi": "wifi"
         case "onepass": "lock.fill"
+        case "pdf": "doc.richtext"
         default: nil
         }
     }

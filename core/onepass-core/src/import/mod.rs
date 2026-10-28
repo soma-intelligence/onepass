@@ -23,6 +23,7 @@ pub(crate) mod lastpass;
 pub(crate) mod limits;
 pub(crate) mod nordpass;
 pub(crate) mod onepux;
+pub(crate) mod pdf_text;
 pub(crate) mod roboform;
 pub mod text;
 
@@ -62,11 +63,14 @@ pub enum Format {
     KeeperCsv,
     EnpassJson,
     RoboFormCsv,
+    /// Text extracted from a PDF by the app (`pdf_text`). `detect` reports
+    /// a PDF file as this format; `parse` refuses the PDF bytes themselves.
+    PdfText,
 }
 
 impl Format {
     /// Every format, in declaration order.
-    pub const ALL: [Format; 21] = [
+    pub const ALL: [Format; 22] = [
         Format::OnePasswordPux,
         Format::OnePasswordCsv,
         Format::BitwardenJson,
@@ -88,6 +92,7 @@ impl Format {
         Format::KeeperCsv,
         Format::EnpassJson,
         Format::RoboFormCsv,
+        Format::PdfText,
     ];
 
     /// Stable kebab-case name (CLI flag value).
@@ -114,6 +119,7 @@ impl Format {
             Format::KeeperCsv => "keeper-csv",
             Format::EnpassJson => "enpass-json",
             Format::RoboFormCsv => "roboform-csv",
+            Format::PdfText => "pdf-text",
         }
     }
 
@@ -162,6 +168,9 @@ const HEADER_PROBE: usize = 64 * 1024;
 pub fn detect(_file_name: &str, bytes: &[u8]) -> Option<Format> {
     if bytes.starts_with(b"OPARCH") {
         return Some(Format::OnePassArchive);
+    }
+    if bytes.starts_with(b"%PDF-") {
+        return Some(Format::PdfText);
     }
     if bytes.starts_with(b"PK\x03\x04") {
         return detect_zip(bytes);
@@ -408,6 +417,7 @@ pub fn parse(format: Format, bytes: &[u8]) -> Result<Import> {
         Format::KeeperCsv => keeper::parse_keeper_csv(bytes),
         Format::EnpassJson => enpass::parse_enpass_json(bytes),
         Format::RoboFormCsv => roboform::parse_roboform_csv(bytes),
+        Format::PdfText => pdf_text::parse_pdf_text(bytes),
     }?;
     if import.items.len() > limits::MAX_RECORDS {
         return Err(Error::InvalidFormat("too many items"));
@@ -421,7 +431,7 @@ mod tests {
 
     #[test]
     fn format_names_roundtrip() {
-        assert_eq!(Format::ALL.len(), 21);
+        assert_eq!(Format::ALL.len(), 22);
         for f in Format::ALL {
             assert_eq!(Format::from_name(f.name()), Some(f));
         }

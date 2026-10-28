@@ -80,6 +80,10 @@ final class AppModel {
     var showNewItemPicker = false
     /// ⌘⇧I (Fichier > Importer…): the import sheet.
     var showImport = false
+    #if DEBUG
+    /// `-OnePassDebugImport <path>`: the file the import sheet reads once it opens.
+    var debugImportURL: URL?
+    #endif
     /// Fichier > Restaurer une sauvegarde… (and Réglages > Général).
     var showRestore = false
     // Menu commands handled by the views on screen (bumped, observed with `onChange`).
@@ -1081,13 +1085,14 @@ enum TestIsolation {
     static let suiteName = UITestIsolation.suiteName
 
     /// Also forced by the Debug helpers that create or unlock a fictional account
-    /// (`-OnePassDebugItem`, `-OnePassDebugNewItem`, `-OnePassDebugSeedAccount`): they never touch
+    /// (`-OnePassDebugItem`, `-OnePassDebugNewItem`, `-OnePassDebugImport`, `-OnePassDebugSeedAccount`): they never touch
     /// the user's store.
     static var isActive: Bool {
         let defaults = UserDefaults.standard
         return defaults.bool(forKey: "OnePassTestIsolation") || defaults.bool(forKey: "OnePassDebugSeedAccount")
             || defaults.string(forKey: "OnePassDebugItem") != nil
             || defaults.string(forKey: "OnePassDebugNewItem") != nil
+            || defaults.string(forKey: "OnePassDebugImport") != nil
     }
 
     static var folder: URL { UITestIsolation.folder(container: .resolve()) }
