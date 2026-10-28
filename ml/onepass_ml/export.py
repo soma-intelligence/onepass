@@ -11,7 +11,7 @@ from onnxmltools.convert.common.data_types import FloatTensorType
 import onnx
 
 from .labels import LABELS
-from .vectorize import VECTOR_DIM
+from .vectorize import VECTORIZER_VERSION, VECTOR_DIM
 
 
 def export_onnx(booster: lgb.Booster, path: Path, *, feature_version: int, dataset_seed: str, model: str = "gbm") -> Path:
@@ -26,6 +26,7 @@ def export_onnx(booster: lgb.Booster, path: Path, *, feature_version: int, datas
     meta = {
         "feature_version": str(feature_version),
         "vector_dim": str(VECTOR_DIM),
+        "vectorizer_version": str(VECTORIZER_VERSION),
         "labels": json.dumps(list(LABELS)),
         "dataset_seed": str(dataset_seed),
         "model": model,

@@ -12,7 +12,7 @@ from onepass_ml.features import load_matrix
 from onepass_ml.ingest import ingest
 from onepass_ml.labels import LABELS
 from onepass_ml.train_gbm import train_gbm
-from onepass_ml.vectorize import VECTOR_DIM
+from onepass_ml.vectorize import VECTORIZER_VERSION, VECTOR_DIM
 
 FIXTURE = Path(__file__).parent / "data" / "mini.jsonl.gz"
 MANIFEST = {"seed": "mini", "generator": 2, "featureVersion": 1, "rows": 300, "parts": 1}
@@ -56,6 +56,7 @@ def test_onnx_reloads_with_contract(trained):
     assert meta["feature_version"] == "1"
     assert meta["vector_dim"] == str(VECTOR_DIM)
     assert json.loads(meta["labels"]) == list(LABELS)
+    assert meta["vectorizer_version"] == str(VECTORIZER_VERSION)
     assert meta["dataset_seed"] == "mini"
     assert meta["model"] == "gbm"
 
@@ -83,6 +84,7 @@ def test_evaluate_reports_and_real_test_empty(trained, data):
     t = report["test"]
     assert 0.0 <= t["accuracy"] <= 1.0
     assert 0.0 <= t["macro_f1"] <= 1.0
+    assert t["macro_f1_classes"] == sorted(t["per_role_f1"], key=LABELS.index)
     assert set(t["per_role_f1"]) <= set(LABELS)
     cm = np.array(t["confusion_matrix"])
     assert cm.shape == (len(LABELS), len(LABELS))
@@ -98,3 +100,12 @@ def test_target_is_not_a_feature(data):
     rows = pq.read_table(data / "train.parquet").to_pylist()
     assert X.shape == (len(rows), VECTOR_DIM)
     assert [LABELS[i] for i in y] == [r["target"] for r in rows]
+
+
+def test_train_raises_and_removes_file_over_size(data, tmp_path, monkeypatch):
+    import onepass_ml.train_gbm as t
+
+    monkeypatch.setattr(t, "MAX_BYTES", 1000)
+    with pytest.raises(ValueError, match="over"):
+        train_gbm(data, tmp_path, n_estimators=5, num_threads=2)
+    assert not (tmp_path / "gbm.onnx").exists()

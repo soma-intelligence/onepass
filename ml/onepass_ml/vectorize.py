@@ -1,4 +1,8 @@
-"""Shared field vectorizer: exact Python port of extension/src/content/detect/vectorize.ts.
+"""ANY change to the layout (namespaces, indicator order, TEXT_CAP, tokenization, hashing) must bump
+VECTORIZER_VERSION and regenerate extension/test/vectors/vectorize.json (UPDATE_VECTORS=1 on the
+TypeScript side), and the same bump goes in vectorize.ts. Models carry it as ONNX `vectorizer_version`.
+
+Shared field vectorizer: exact Python port of extension/src/content/detect/vectorize.ts.
 
 The model is trained here and runs in the extension, so a field must become the same vector and the
 same text on both sides. extension/test/vectors/vectorize.json (written by the TypeScript side) is
@@ -26,6 +30,7 @@ import unicodedata
 from array import array
 from typing import Any, Iterable, Mapping, Sequence
 
+VECTORIZER_VERSION = 1
 VECTOR_DIM = 4096
 TEXT_CAP = 256
 

@@ -78,3 +78,9 @@ def test_normalize_matches_js_rules():
     assert normalize_text("ΟΔΥΣΣΕΥΣ") == "οδυσσευς"
     assert normalize_text("STRAẞE") == "straße"
     assert normalize_text("a  b﻿ c\x1cd ") == "a b c\x1cd"
+
+
+def test_vectorizer_version_matches_shared_file():
+    from onepass_ml.vectorize import VECTORIZER_VERSION
+
+    assert DATA["vectorizerVersion"] == VECTORIZER_VERSION
