@@ -953,9 +953,9 @@ mod tests {
             cdhash: h.into(),
             hardened: true,
         };
-        let relay = team("2RFY9Z4UVH", "me.somalabs.onepass.mcp-relay");
+        let relay = team("ABCDE12345", "me.somalabs.onepass.mcp-relay");
         assert!(is_relay(
-            &team("2RFY9Z4UVH", "me.somalabs.onepass.mcp-relay"),
+            &team("ABCDE12345", "me.somalabs.onepass.mcp-relay"),
             &relay
         ));
         assert!(!is_relay(
@@ -963,7 +963,7 @@ mod tests {
             &relay
         ));
         assert!(!is_relay(
-            &team("2RFY9Z4UVH", "me.somalabs.onepass"),
+            &team("ABCDE12345", "me.somalabs.onepass"),
             &relay
         ));
         assert!(!is_relay(&adhoc("ab"), &relay));
