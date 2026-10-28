@@ -113,7 +113,7 @@
      1
     ]
    ],
-   "serialize": "type=email | ac=email | label=email address | ph=you@example.com | aria= | before= | after= | near= | buttons=sign in"
+   "serialize": "type=email | name=email | id=user_email | ac=email | label=email address | ph=you@example.com | aria= | before= | after= | near= | buttons=sign in"
   },
   {
    "name": "password_login",
@@ -217,7 +217,7 @@
      1
     ]
    ],
-   "serialize": "type=password | ac=current-password | label=password | ph= | aria= | before= | after= | near=email address | buttons=sign in; forgot password?"
+   "serialize": "type=password | name=pwd | id= | ac=current-password | label=password | ph= | aria= | before= | after= | near=email address | buttons=sign in; forgot password?"
   },
   {
    "name": "japanese",
@@ -332,7 +332,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=お名前 | ph=山田太郎 | aria= | before=メールアドレス | after=必須 | near= | buttons=送信"
+   "serialize": "type=text | name=mei | id= | ac= | label=お名前 | ph=山田太郎 | aria= | before=メールアドレス | after=必須 | near= | buttons=送信"
   },
   {
    "name": "japanese_katakana_halfwidth",
@@ -406,7 +406,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=カタカナ | ph=カタカナ | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name= | id= | ac= | label=カタカナ | ph=カタカナ | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "arabic",
@@ -482,7 +482,7 @@
      1
     ]
    ],
-   "serialize": "type=email | ac= | label=البريد الإلكتروني | ph=أدخل بريدك | aria= | before= | after= | near= | buttons=تسجيل الدخول"
+   "serialize": "type=email | name= | id= | ac= | label=البريد الإلكتروني | ph=أدخل بريدك | aria= | before= | after= | near= | buttons=تسجيل الدخول"
   },
   {
    "name": "korean",
@@ -591,7 +591,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=이메일 주소 | ph=이메일주소를 입력 | aria= | before=회원가입 | after= | near= | buttons=로그인"
+   "serialize": "type=text | name= | id= | ac= | label=이메일 주소 | ph=이메일주소를 입력 | aria= | before=회원가입 | after= | near= | buttons=로그인"
   },
   {
    "name": "chinese_no_spaces",
@@ -708,7 +708,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=电子邮件地址 | ph=请输入您的电子邮件 | aria= | before= | after=必填项 | near= | buttons=登录"
+   "serialize": "type=text | name= | id= | ac= | label=电子邮件地址 | ph=请输入您的电子邮件 | aria= | before= | after=必填项 | near= | buttons=登录"
   },
   {
    "name": "chinese_single_char",
@@ -761,7 +761,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=姓 | ph= | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name= | id= | ac= | label=姓 | ph= | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "turkish_dotted_capital_i",
@@ -828,7 +828,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=i̇smi̇ni̇z | ph=i̇stanbul | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name=i̇sim | id= | ac= | label=i̇smi̇ni̇z | ph=i̇stanbul | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "turkish_dotless",
@@ -885,7 +885,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=soyadı iı | ph= | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name= | id= | ac= | label=soyadı iı | ph= | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "german_sharp_s",
@@ -960,7 +960,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=straße und hausnummer | ph=straße | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name=straße | id= | ac= | label=straße und hausnummer | ph=straße | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "greek_final_sigma",
@@ -1026,7 +1026,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=οδυσσευς ονομας | ph=ας σς | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name= | id= | ac= | label=οδυσσευς ονομας | ph=ας σς | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "emoji",
@@ -1086,7 +1086,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=😀 name 👨‍👩‍👧 | ph=📧 | aria= | before= | after= | near= | buttons=🚀 go"
+   "serialize": "type=text | name= | id= | ac= | label=😀 name 👨‍👩‍👧 | ph=📧 | aria= | before= | after= | near= | buttons=🚀 go"
   },
   {
    "name": "empty_input",
@@ -1133,7 +1133,7 @@
      1
     ]
    ],
-   "serialize": "type=input | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
+   "serialize": "type=input | name= | id= | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "empty_strings_everywhere",
@@ -1192,7 +1192,7 @@
      1
     ]
    ],
-   "serialize": "type= | ac= | label= | ph= | aria= | before= | after= | near=;  | buttons=; "
+   "serialize": "type= | name= | id= | ac= | label= | ph= | aria= | before= | after= | near=;  | buttons=; "
   },
   {
    "name": "whitespace_and_nbsp",
@@ -1262,7 +1262,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=first name last name | ph= | aria= | before=line sep​ | after= | near= | buttons="
+   "serialize": "type=text | name= | id= | ac= | label=first name last name | ph= | aria= | before=line sep​ | after= | near= | buttons="
   },
   {
    "name": "very_long_label",
@@ -1468,7 +1468,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 | ph=ああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name= | id= | ac= | label=word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 | ph=ああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "fullwidth_and_compat",
@@ -1542,7 +1542,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=email find 1 1⁄2 | ph= | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name=name | id= | ac= | label=email find 1 1⁄2 | ph= | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "select_country",
@@ -1618,7 +1618,7 @@
      1
     ]
    ],
-   "serialize": "type=select | ac=country-name | label=country | ph= | aria= | before= | after= | near= | buttons=continue"
+   "serialize": "type=select | name=country | id= | ac=country-name | label=country | ph= | aria= | before= | after= | near= | buttons=continue"
   },
   {
    "name": "textarea_message",
@@ -1692,7 +1692,7 @@
      1
     ]
    ],
-   "serialize": "type=textarea | ac= | label= | ph= | aria=your message | before= | after= | near= | buttons="
+   "serialize": "type=textarea | name=message | id= | ac= | label= | ph= | aria=your message | before= | after= | near= | buttons="
   },
   {
    "name": "number_otp",
@@ -1772,7 +1772,7 @@
      1
     ]
    ],
-   "serialize": "type=tel | ac=one-time-code | label=verification code | ph= | aria= | before= | after= | near= | buttons="
+   "serialize": "type=tel | name= | id= | ac=one-time-code | label=verification code | ph= | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "unknown_autocomplete_section",
@@ -1846,7 +1846,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac=section-billing shipping given-name | label= | ph= | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name=fn | id= | ac=section-billing shipping given-name | label= | ph= | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "autocomplete_off_unknown",
@@ -1901,7 +1901,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac=off | label= | ph= | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name= | id= | ac=off | label= | ph= | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "neighbours_and_buttons",
@@ -2007,7 +2007,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label= | ph= | aria= | before=card number | after=hint | near=name on card; expiry; cvc | buttons=pay now; cancel; back"
+   "serialize": "type=text | name= | id= | ac= | label= | ph= | aria= | before=card number | after=hint | near=name on card; expiry; cvc | buttons=pay now; cancel; back"
   },
   {
    "name": "combining_marks_hindi",
@@ -2069,7 +2069,7 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=नाम ईमेल | ph=émail | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name= | id= | ac= | label=नाम ईमेल | ph=émail | aria= | before= | after= | near= | buttons="
   },
   {
    "name": "ignored_fields_do_not_matter",
@@ -2124,7 +2124,568 @@
      1
     ]
    ],
-   "serialize": "type=text | ac= | label=x | ph= | aria= | before= | after= | near= | buttons="
+   "serialize": "type=text | name= | id= | ac= | label=x | ph= | aria= | before= | after= | near= | buttons="
+  },
+  {
+   "name": "numeric_indicators_absent",
+   "features": {
+    "tag": "input",
+    "hasPattern": false,
+    "required": false,
+    "visibility": "visible",
+    "width": 0,
+    "height": 0,
+    "formButtons": [],
+    "neighbourLabels": [],
+    "type": "text",
+    "label": "x"
+   },
+   "nonzero": [
+    [
+     1616,
+     1
+    ],
+    [
+     1685,
+     1
+    ],
+    [
+     1996,
+     1
+    ],
+    [
+     4052,
+     1
+    ],
+    [
+     4070,
+     1
+    ],
+    [
+     4075,
+     1
+    ],
+    [
+     4087,
+     1
+    ]
+   ],
+   "serialize": "type=text | name= | id= | ac= | label=x | ph= | aria= | before= | after= | near= | buttons="
+  },
+  {
+   "name": "maxlength_2",
+   "features": {
+    "index": 0,
+    "tag": "input",
+    "hasPattern": false,
+    "required": false,
+    "depth": 3,
+    "siblings": 0,
+    "visibility": "visible",
+    "width": 0,
+    "height": 0,
+    "formButtons": [],
+    "neighbourLabels": [],
+    "type": "text",
+    "maxlength": 2
+   },
+   "nonzero": [
+    [
+     1616,
+     1
+    ],
+    [
+     1996,
+     1
+    ],
+    [
+     4052,
+     1
+    ],
+    [
+     4070,
+     1
+    ],
+    [
+     4076,
+     1
+    ],
+    [
+     4082,
+     0.1875
+    ],
+    [
+     4087,
+     1
+    ]
+   ],
+   "serialize": "type=text | name= | id= | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
+  },
+  {
+   "name": "maxlength_3",
+   "features": {
+    "index": 0,
+    "tag": "input",
+    "hasPattern": false,
+    "required": false,
+    "depth": 3,
+    "siblings": 0,
+    "visibility": "visible",
+    "width": 0,
+    "height": 0,
+    "formButtons": [],
+    "neighbourLabels": [],
+    "type": "text",
+    "maxlength": 3
+   },
+   "nonzero": [
+    [
+     1616,
+     1
+    ],
+    [
+     1996,
+     1
+    ],
+    [
+     4052,
+     1
+    ],
+    [
+     4070,
+     1
+    ],
+    [
+     4077,
+     1
+    ],
+    [
+     4082,
+     0.1875
+    ],
+    [
+     4087,
+     1
+    ]
+   ],
+   "serialize": "type=text | name= | id= | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
+  },
+  {
+   "name": "maxlength_4",
+   "features": {
+    "index": 0,
+    "tag": "input",
+    "hasPattern": false,
+    "required": false,
+    "depth": 3,
+    "siblings": 0,
+    "visibility": "visible",
+    "width": 0,
+    "height": 0,
+    "formButtons": [],
+    "neighbourLabels": [],
+    "type": "text",
+    "maxlength": 4
+   },
+   "nonzero": [
+    [
+     1616,
+     1
+    ],
+    [
+     1996,
+     1
+    ],
+    [
+     4052,
+     1
+    ],
+    [
+     4070,
+     1
+    ],
+    [
+     4077,
+     1
+    ],
+    [
+     4082,
+     0.1875
+    ],
+    [
+     4087,
+     1
+    ]
+   ],
+   "serialize": "type=text | name= | id= | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
+  },
+  {
+   "name": "maxlength_8",
+   "features": {
+    "index": 0,
+    "tag": "input",
+    "hasPattern": false,
+    "required": false,
+    "depth": 3,
+    "siblings": 0,
+    "visibility": "visible",
+    "width": 0,
+    "height": 0,
+    "formButtons": [],
+    "neighbourLabels": [],
+    "type": "text",
+    "maxlength": 8
+   },
+   "nonzero": [
+    [
+     1616,
+     1
+    ],
+    [
+     1996,
+     1
+    ],
+    [
+     4052,
+     1
+    ],
+    [
+     4070,
+     1
+    ],
+    [
+     4078,
+     1
+    ],
+    [
+     4082,
+     0.1875
+    ],
+    [
+     4087,
+     1
+    ]
+   ],
+   "serialize": "type=text | name= | id= | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
+  },
+  {
+   "name": "maxlength_9",
+   "features": {
+    "index": 0,
+    "tag": "input",
+    "hasPattern": false,
+    "required": false,
+    "depth": 3,
+    "siblings": 0,
+    "visibility": "visible",
+    "width": 0,
+    "height": 0,
+    "formButtons": [],
+    "neighbourLabels": [],
+    "type": "text",
+    "maxlength": 9
+   },
+   "nonzero": [
+    [
+     1616,
+     1
+    ],
+    [
+     1996,
+     1
+    ],
+    [
+     4052,
+     1
+    ],
+    [
+     4070,
+     1
+    ],
+    [
+     4079,
+     1
+    ],
+    [
+     4082,
+     0.1875
+    ],
+    [
+     4087,
+     1
+    ]
+   ],
+   "serialize": "type=text | name= | id= | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
+  },
+  {
+   "name": "maxlength_16",
+   "features": {
+    "index": 0,
+    "tag": "input",
+    "hasPattern": false,
+    "required": false,
+    "depth": 3,
+    "siblings": 0,
+    "visibility": "visible",
+    "width": 0,
+    "height": 0,
+    "formButtons": [],
+    "neighbourLabels": [],
+    "type": "text",
+    "maxlength": 16
+   },
+   "nonzero": [
+    [
+     1616,
+     1
+    ],
+    [
+     1996,
+     1
+    ],
+    [
+     4052,
+     1
+    ],
+    [
+     4070,
+     1
+    ],
+    [
+     4079,
+     1
+    ],
+    [
+     4082,
+     0.1875
+    ],
+    [
+     4087,
+     1
+    ]
+   ],
+   "serialize": "type=text | name= | id= | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
+  },
+  {
+   "name": "maxlength_64",
+   "features": {
+    "index": 0,
+    "tag": "input",
+    "hasPattern": false,
+    "required": false,
+    "depth": 3,
+    "siblings": 0,
+    "visibility": "visible",
+    "width": 0,
+    "height": 0,
+    "formButtons": [],
+    "neighbourLabels": [],
+    "type": "text",
+    "maxlength": 64
+   },
+   "nonzero": [
+    [
+     1616,
+     1
+    ],
+    [
+     1996,
+     1
+    ],
+    [
+     4052,
+     1
+    ],
+    [
+     4070,
+     1
+    ],
+    [
+     4080,
+     1
+    ],
+    [
+     4082,
+     0.1875
+    ],
+    [
+     4087,
+     1
+    ]
+   ],
+   "serialize": "type=text | name= | id= | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
+  },
+  {
+   "name": "maxlength_65",
+   "features": {
+    "index": 0,
+    "tag": "input",
+    "hasPattern": false,
+    "required": false,
+    "depth": 3,
+    "siblings": 0,
+    "visibility": "visible",
+    "width": 0,
+    "height": 0,
+    "formButtons": [],
+    "neighbourLabels": [],
+    "type": "text",
+    "maxlength": 65
+   },
+   "nonzero": [
+    [
+     1616,
+     1
+    ],
+    [
+     1996,
+     1
+    ],
+    [
+     4052,
+     1
+    ],
+    [
+     4070,
+     1
+    ],
+    [
+     4081,
+     1
+    ],
+    [
+     4082,
+     0.1875
+    ],
+    [
+     4087,
+     1
+    ]
+   ],
+   "serialize": "type=text | name= | id= | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
+  },
+  {
+   "name": "maxlength_1",
+   "features": {
+    "index": 0,
+    "tag": "input",
+    "hasPattern": false,
+    "required": false,
+    "depth": 3,
+    "siblings": 0,
+    "visibility": "visible",
+    "width": 0,
+    "height": 0,
+    "formButtons": [],
+    "neighbourLabels": [],
+    "type": "text",
+    "maxlength": 1
+   },
+   "nonzero": [
+    [
+     1616,
+     1
+    ],
+    [
+     1996,
+     1
+    ],
+    [
+     4052,
+     1
+    ],
+    [
+     4070,
+     1
+    ],
+    [
+     4076,
+     1
+    ],
+    [
+     4082,
+     0.1875
+    ],
+    [
+     4087,
+     1
+    ]
+   ],
+   "serialize": "type=text | name= | id= | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
+  },
+  {
+   "name": "name_and_id_long_and_cjk",
+   "features": {
+    "index": 0,
+    "tag": "input",
+    "hasPattern": false,
+    "required": false,
+    "depth": 3,
+    "siblings": 0,
+    "visibility": "visible",
+    "width": 0,
+    "height": 0,
+    "formButtons": [],
+    "neighbourLabels": [],
+    "type": "text",
+    "name": "  First NAME  ",
+    "id": "姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名"
+   },
+   "nonzero": [
+    [
+     4,
+     127
+    ],
+    [
+     52,
+     1
+    ],
+    [
+     273,
+     1
+    ],
+    [
+     369,
+     128
+    ],
+    [
+     1616,
+     1
+    ],
+    [
+     1996,
+     1
+    ],
+    [
+     2821,
+     1
+    ],
+    [
+     3685,
+     1
+    ],
+    [
+     4052,
+     1
+    ],
+    [
+     4070,
+     1
+    ],
+    [
+     4075,
+     1
+    ],
+    [
+     4082,
+     0.1875
+    ],
+    [
+     4087,
+     1
+    ]
+   ],
+   "serialize": "type=text | name=first name | id=姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名姓名 | ac= | label= | ph= | aria= | before= | after= | near= | buttons="
   }
  ],
  "hashes": [

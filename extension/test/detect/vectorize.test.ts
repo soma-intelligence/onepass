@@ -46,6 +46,17 @@ const CASES: { name: string; features: FieldFeatures }[] = [
   { name: "neighbours_and_buttons", features: f({ type: "text", before: "card number", after: "hint", neighbourLabels: ["name on card", "expiry", "cvc"], formButtons: ["pay now", "cancel", "back"], visibility: "zero_size" }) },
   { name: "combining_marks_hindi", features: f({ type: "text", label: "नाम ईमेल", placeholder: "émail" }) },
   { name: "ignored_fields_do_not_matter", features: f({ type: "text", label: "x", width: 999, height: 77, pageTitle: "A Page Title", lab: "email" }) },
+  { name: "numeric_indicators_absent", features: (({ depth, index, siblings, ...rest }) => rest as unknown as FieldFeatures)(f({ type: "text", label: "x" })) },
+  { name: "maxlength_2", features: f({ type: "text", maxlength: 2 }) },
+  { name: "maxlength_3", features: f({ type: "text", maxlength: 3 }) },
+  { name: "maxlength_4", features: f({ type: "text", maxlength: 4 }) },
+  { name: "maxlength_8", features: f({ type: "text", maxlength: 8 }) },
+  { name: "maxlength_9", features: f({ type: "text", maxlength: 9 }) },
+  { name: "maxlength_16", features: f({ type: "text", maxlength: 16 }) },
+  { name: "maxlength_64", features: f({ type: "text", maxlength: 64 }) },
+  { name: "maxlength_65", features: f({ type: "text", maxlength: 65 }) },
+  { name: "maxlength_1", features: f({ type: "text", maxlength: 1 }) },
+  { name: "name_and_id_long_and_cjk", features: f({ type: "text", name: "  First\u00a0NAME  ", id: "\u59d3\u540d".repeat(200) }) },
 ];
 
 describe("hash", () => {
@@ -116,6 +127,17 @@ describe("vectorize", () => {
 
   it("shared hash words", () => {
     for (const h of file().hashes) expect([...cyrb128(h.input)], h.input).toEqual(h.words);
+  });
+
+  it("absent depth, index and siblings count as 0, never NaN", () => {
+    const { depth, index, siblings, ...rest } = f({ label: "x" });
+    const v = vectorize(rest as unknown as FieldFeatures);
+    expect(v.some(Number.isNaN)).toBe(false);
+    expect(v).toEqual(vectorize(f({ label: "x", depth: 0, index: 0, siblings: 0 })));
+  });
+
+  it("serialize carries name and id", () => {
+    expect(serialize(f({ type: "email", name: "Mail", id: "u1" }))).toMatch(/^type=email \| name=mail \| id=u1 \| ac=/);
   });
 
   it("same features give the same vector, ignored fields change nothing", () => {

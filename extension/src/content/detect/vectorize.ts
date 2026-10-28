@@ -155,9 +155,9 @@ export function vectorize(f: FieldFeatures): Float32Array {
     mb = mb < 0 ? MAXLENGTH_BOUNDS.length + 1 : mb + 1;
   }
   v[at("maxlength") + mb] = 1;
-  v[at("depth")] = Math.min(Math.max(f.depth, 0), 16) / 16;
-  v[at("index")] = Math.min(Math.max(f.index, 0), 15) / 16;
-  v[at("siblings")] = Math.min(Math.max(f.siblings, 0), 15) / 16;
+  v[at("depth")] = Math.min(Math.max(f.depth ?? 0, 0), 16) / 16;
+  v[at("index")] = Math.min(Math.max(f.index ?? 0, 0), 15) / 16;
+  v[at("siblings")] = Math.min(Math.max(f.siblings ?? 0, 0), 15) / 16;
   if (f.hasPattern) v[at("has_pattern")] = 1;
   if (f.required) v[at("required")] = 1;
   const im = clean(f.inputmode);
@@ -170,7 +170,7 @@ export function vectorize(f: FieldFeatures): Float32Array {
 export function serialize(f: FieldFeatures): string {
   const list = (xs: string[] | undefined): string => (xs ?? []).map(clean).join("; ");
   return [
-    `type=${effectiveType(f)}`, `ac=${clean(f.autocomplete)}`, `label=${clean(f.label)}`,
+    `type=${effectiveType(f)}`, `name=${clean(f.name)}`, `id=${clean(f.id)}`, `ac=${clean(f.autocomplete)}`, `label=${clean(f.label)}`,
     `ph=${clean(f.placeholder)}`, `aria=${clean(f.ariaLabel)}`, `before=${clean(f.before)}`,
     `after=${clean(f.after)}`, `near=${list(f.neighbourLabels)}`, `buttons=${list(f.formButtons)}`,
   ].join(" | ");
