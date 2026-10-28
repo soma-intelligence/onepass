@@ -21,6 +21,7 @@ import { checkFrameUrl, createFrames, createShell, type Shell } from "./frames";
 import { createIcons, type IconTarget } from "./icon";
 import { createObserver, OBSERVER_DELAY_MS } from "./observer";
 import { createSubmitWatcher } from "./submit";
+import type { RecorderHooks } from "../dev/recorder-content";
 
 type Sender = { id?: string };
 
@@ -91,6 +92,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
   let shell: Shell | null = null;
   let stopped = false;
   const cleanups: (() => void)[] = [];
+  // Dev-only form flow recorder: loaded only when the build defines it.
+  let recorder: RecorderHooks | null = null;
 
   /** Normalized origin of the frame right now (null when not HTTPS). */
   const currentOrigin = (): string | null => {
@@ -239,7 +242,18 @@ export function createContentScript(o: ContentOptions): ContentScript {
           void send({ type: "page_analysis", analysis: a });
         },
       });
-      const filler = createFiller({ refs, geometry, analyze: () => observer.refresh(), resolve: (ref, a) => lineage.resolve(ref, a) });
+      if (__LAB_RECORDER__) {
+        void import("../dev/recorder-content").then((m) => {
+          if (!stopped) recorder = m.default({ doc, send: (msg) => ext.runtime.sendMessage(msg), isTrusted });
+        });
+      }
+      const filler = createFiller({
+        refs,
+        geometry,
+        analyze: () => observer.refresh(),
+        resolve: (ref, a) => lineage.resolve(ref, a),
+        onFill: (el, role) => recorder?.noteFilled(el, role),
+      });
       const submit = createSubmitWatcher({
         doc,
         refs,
@@ -249,6 +263,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         analyze: () => observer.refresh(),
         resolve: (ref, a) => lineage.resolve(ref, a),
         onCredentials: (c) => void send(c),
+        onStep: (c) => recorder?.step(c),
       });
       parts = { shell: sh, frames, icons, observer, filler, submit };
 
@@ -325,6 +340,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         parts.icons.destroy();
         parts.frames.destroy();
       }
+      recorder?.stop();
       shell?.destroy();
       parts = null;
     },

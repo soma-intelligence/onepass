@@ -37,8 +37,8 @@ export function mergeManifest(browser, dir = join(root, "manifests")) {
   return merged;
 }
 
-async function buildBrowser(browser, dev, e2e = false) {
-  const out = join(root, "dist", e2e ? `${browser}-e2e` : browser);
+async function buildBrowser(browser, dev, e2e = false, dist = join(root, "dist")) {
+  const out = join(dist, e2e ? `${browser}-e2e` : browser);
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   const common = {
@@ -47,6 +47,10 @@ async function buildBrowser(browser, dev, e2e = false) {
     sourcemap: dev ? "inline" : false,
     minify: false,
     logLevel: "warning",
+    // The dev-only form flow recorder (src/dev) exists only in a build made
+    // with ONEPASS_LAB_RECORDER=1; otherwise esbuild drops every branch and
+    // import behind the flag.
+    define: { __LAB_RECORDER__: String(process.env.ONEPASS_LAB_RECORDER === "1") },
   };
   await esbuild({
     ...common,
@@ -77,8 +81,8 @@ async function buildBrowser(browser, dev, e2e = false) {
   );
 }
 
-export async function buildAll(browsers = BROWSERS, dev = false, e2e = false) {
-  for (const b of browsers) await buildBrowser(b, dev, e2e);
+export async function buildAll(browsers = BROWSERS, dev = false, e2e = false, dist = join(root, "dist")) {
+  for (const b of browsers) await buildBrowser(b, dev, e2e, dist);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

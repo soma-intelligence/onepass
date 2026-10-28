@@ -16,3 +16,6 @@ extension/lab/out/
 
 # ProVerif (formal/run.sh logs and intermediate files)
 formal/out/
+
+# Recorded form flows (private corpus)
+extension/lab/corpus/private/

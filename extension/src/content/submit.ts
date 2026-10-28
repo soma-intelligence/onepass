@@ -52,6 +52,8 @@ export interface SubmitOptions {
   /** Where form `ref` is in `a`: itself, or the copy a re-render put in its place. */
   resolve: (ref: string, a: PageAnalysis) => FormInfo | null;
   onCredentials: (c: Extract<CsToBg, { type: "submitted_credentials" }>) => void;
+  /** A trusted submission of any form (or, without a form, of the page): the container. Tooling only. */
+  onStep?: (container: Element) => void;
 }
 
 export interface SubmitWatcher {
@@ -178,8 +180,12 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     if (f) gesture = { formRef: f.ref, at: Date.now() };
   };
 
+  /** The form a gesture belongs to, or the document element for a page without forms. */
+  const stepContainer = (el: Element): Element => ownerForm(el) ?? el.closest("form") ?? doc.documentElement;
+
   const onSubmit = (e: Event) => {
     if (!isTrusted(e) || !(e.target instanceof Element)) return;
+    if (e.target instanceof HTMLFormElement) opts.onStep?.(e.target);
     const f = formOf(e.target);
     if (f && activated(f)) report(read(f));
   };
@@ -189,6 +195,7 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     noteGesture(e.target);
     const button = e.target.closest(BUTTONS);
     if (!button) return;
+    if (isSubmitType(button)) opts.onStep?.(stepContainer(button));
     const f = formOf(button);
     if (!f) return;
     const snapshot = read(f);
@@ -202,6 +209,7 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     if (e.target instanceof Element) noteGesture(e.target);
     if (e.key !== "Enter" || e.isComposing) return;
     if (!(e.target instanceof HTMLInputElement)) return;
+    opts.onStep?.(stepContainer(e.target));
     const f = formOf(e.target);
     if (f) report(read(f));
   };
