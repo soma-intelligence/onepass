@@ -15,12 +15,12 @@
 ![Platforms](https://img.shields.io/badge/iOS%20·%20iPadOS%20·%20macOS%20·%20watchOS%20·%20visionOS-26%2B-1D1D2B?logo=apple&logoColor=white)
 ![Post-quantum](https://img.shields.io/badge/crypto-ML--KEM--1024%20·%20ML--DSA--87%20·%20SLH--DSA-1D1D2B)
 
-**[Features](#features)** · **[Security](#security-model)** · **[Screenshots](#a-look-around)** · **[Getting started](#getting-started)** · **[Roadmap](#roadmap)** · **[Contributing](#contributing)**
+**[Features](#features)** · **[Security](#security-model)** · **[Screenshots](#a-look-around)** · **[Install](#install)** · **[Build from source](#build-from-source)** · **[Roadmap](#roadmap)** · **[Contributing](#contributing)**
 
 </div>
 
 > [!WARNING]
-> OnePass is **pre-release software (v0.2.x)**. It has not had an external security audit yet (planned for milestone 8). The dev CLI and the dev native messaging host keep secrets in a form meant for development only. Do not store real secrets in OnePass until the first audited release.
+> OnePass is **pre-release software (v0.2.x)**. It has not had an external security audit yet (planned for milestone 8). The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the Mac app is the way to use OnePass day to day. Do not store real secrets in OnePass until the first audited release.
 
 ## Why OnePass
 
@@ -49,13 +49,13 @@ Your key comes from your master password **and** a 256-bit Secret Key generated 
 <td valign="top">
 
 **Native everywhere**<br>
-One SwiftUI app target for iOS, iPadOS, macOS (native, not Catalyst) and visionOS, plus a standalone Apple Watch app, widgets, Controls and Shortcuts.
+One SwiftUI app target for iOS, iPadOS, macOS (native, not Catalyst) and visionOS, plus a standalone Apple Watch app, widgets, Controls and Shortcuts. On iPhone: Home, Items and Watchtower tabs, with search one tap away.
 
 </td>
 <td valign="top">
 
 **At home in a terminal**<br>
-A CLI, an SSH agent with per-signature approval, and an MCP server so AI agents can *use* a credential without ever *seeing* it.
+The Mac app serves an SSH agent with Touch ID on every signature, and an MCP server so AI agents can *use* a credential without ever *seeing* it. A CLI too.
 
 </td>
 <td valign="top">
@@ -74,23 +74,29 @@ Fuzzing, NIST ACVP vectors, differential tests between two crypto libraries, Pro
   <img alt="Architecture: the Apple apps, the browser extension and the terminal tools all talk to one Rust core; sync storage only ever holds ciphertext and is treated as hostile" src="docs/assets/readme/architecture-light.svg" width="100%">
 </picture>
 
-One Rust core holds every piece of crypto and vault logic. The Apple apps reach it through UniFFI, the browser extension through an end-to-end encrypted native messaging channel, and the terminal tools through `onepass-guard`, which asks for your approval and keeps a signed audit log. Sync storage only ever sees padded ciphertext, and everything it returns is verified before use.
+One Rust core holds every piece of crypto and vault logic, and the Apple apps reach it through UniFFI. On the Mac, the unlocked app is also the hub for everything outside it:
+
+- **Browsers.** The app serves the extension bridge on a Unix socket in its App Group container. Safari's extension ships inside the app. Chrome and Firefox launch `onepass-relay`, a signed helper inside `OnePass.app`. Both ends check each other's code signature through the kernel audit token (`onepass-peer`), and the extension's traffic is end-to-end encrypted with a post-quantum key paired by a 6-digit code.
+- **Terminals and AI agents.** The SSH agent and the MCP server run in the app. MCP clients launch the bundled `onepass-mcp` relay, which identifies its caller and forwards lines without reading them. Every secret needs your approval in a floating panel, with Touch ID, and lands in a signed, hash-chained audit log.
+- **Other devices.** A new device joins by showing a QR code that an unlocked iPhone or iPad scans. Both screens show a 6-digit code before anything is sent, and the device list is signed.
+
+Sync storage only ever sees padded ciphertext, and everything it returns is verified before use.
 
 ## A look around
 
 <table>
 <tr>
-<td align="center" width="25%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/iphone-welcome-dark.png"><img alt="Welcome screen" src="docs/assets/readme/iphone-welcome-light.png"></picture><br><sub>Welcome</sub></td>
-<td align="center" width="25%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/iphone-home-dark.png"><img alt="Home screen with item counts, Watchtower and favorites" src="docs/assets/readme/iphone-home-light.png"></picture><br><sub>Home</sub></td>
+<td align="center" width="25%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/iphone-home-dark.png"><img alt="Home tab: Nearby, profile and Favorites as cards" src="docs/assets/readme/iphone-home-light.png"></picture><br><sub>Home</sub></td>
+<td align="center" width="25%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/iphone-items-dark.png"><img alt="Items tab: vaults, categories and tags" src="docs/assets/readme/iphone-items-light.png"></picture><br><sub>Items</sub></td>
 <td align="center" width="25%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/iphone-detail-dark.png"><img alt="Login item with password strength and a live TOTP code" src="docs/assets/readme/iphone-detail-light.png"></picture><br><sub>Item with TOTP</sub></td>
-<td align="center" width="25%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/iphone-settings-dark.png"><img alt="Settings" src="docs/assets/readme/iphone-settings-light.png"></picture><br><sub>Settings</sub></td>
+<td align="center" width="25%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/iphone-watchtower-dark.png"><img alt="Watchtower tab: score dial and one card per check" src="docs/assets/readme/iphone-watchtower-light.png"></picture><br><sub>Watchtower</sub></td>
 </tr>
 </table>
 
 <table>
 <tr>
 <td align="center" width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/ipad-dark.png"><img alt="OnePass on iPad: sidebar, item list and item detail" src="docs/assets/readme/ipad-light.png"></picture><br><sub>iPad, three columns</sub></td>
-<td align="center" width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/mac-dark.png"><img alt="OnePass on the Mac: onboarding" src="docs/assets/readme/mac-light.png"></picture><br><sub>Mac, native SwiftUI (not Catalyst)</sub></td>
+<td align="center" width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/mac-dark.png"><img alt="OnePass on the Mac: onboarding, with sign-in from another device by QR code" src="docs/assets/readme/mac-light.png"></picture><br><sub>Mac, native SwiftUI (not Catalyst)</sub></td>
 </tr>
 </table>
 
@@ -105,8 +111,18 @@ One Rust core holds every piece of crypto and vault logic. The Apple apps reach 
 - Multiple vaults, fast search, favorites, TOTP codes, `onepass://vault/item/field` secret references.
 - Password and passphrase generator (EFF word lists).
 - Auto-lock, unlock with Face ID, Touch ID or Apple Watch on Mac. The master password is required again after a reboot or after 14 days.
+- Home shows what matters now: Nearby items on a map, Favorites, Recents. Change your master password and delete empty vaults from Settings.
 - Emergency Kit PDF with a QR code, generated on device.
 - Personal and shared device modes.
+
+</details>
+
+<details>
+<summary><b>Devices</b></summary>
+
+- **Add a device from another one.** The new iPhone, iPad or Mac shows a QR code, renewed every 30 seconds. An unlocked iPhone or iPad scans it, both screens show the same 6-digit code, and you confirm with Face ID or your master password. Nothing leaves before both confirmations.
+- **Signed device list** in Settings > Devices: rename, or remove a device. A removed device erases its data, Secret Key and biometric enrollment the next time it unlocks or syncs.
+- **Public computer mode.** Lend a few items to a borrowed device for 15 to 60 minutes. The guest session lives in memory only, is read-only, and ends on expiry, from your phone, after 5 idle minutes or when the app leaves the screen.
 
 </details>
 
@@ -121,7 +137,7 @@ One Rust core holds every piece of crypto and vault logic. The Apple apps reach 
 <details>
 <summary><b>AutoFill and passkeys</b></summary>
 
-- System AutoFill provider on iPhone, iPad and Mac: QuickType suggestions, one-time codes in verification fields.
+- System AutoFill provider on iPhone, iPad and Mac: QuickType suggestions, one-time codes in verification fields, unlock right inside the AutoFill sheet.
 - **Passkeys** created and used inside the Rust core. The private key never reaches Swift.
 - Save new passwords and suggest strong ones (iOS 26.2+).
 
@@ -130,16 +146,18 @@ One Rust core holds every piece of crypto and vault logic. The Apple apps reach 
 <details>
 <summary><b>Browser extension</b></summary>
 
-- Manifest V3, TypeScript, no framework.
-- Builds for Chromium, Firefox and Safari. Talks to the app over native messaging, through an end-to-end encrypted, post-quantum channel paired with a 6-digit code you compare on both screens.
-- HTTPS origins only. Inline fill menu, save prompts, never-save list.
+- Manifest V3, TypeScript, no framework, in the app's look, French and English.
+- **Safari** extension built into the Mac app. **Chrome and Firefox** builds talk to the same app through its signed relay. One end-to-end encrypted, post-quantum channel, paired with a 6-digit code you compare on both screens and approve with Touch ID.
+- Inline menu under the focused field, keyboard included. **One-click sign-in** that walks multi-step logins and "Sign in with Google, Apple, Microsoft or GitHub" chains, remembers which provider account you use on each site, and stops as soon as a step leaves the allowed domains.
+- Save and update prompts, never-save list, HTTPS origins only. Payment iframes from other sites are never filled.
 
 </details>
 
 <details>
 <summary><b>Watchtower</b></summary>
 
-- Weak, reused and old passwords. Sites that support 2FA or passkeys but where you have not turned them on. Breached sites.
+- A score dial and one card per check: weak, reused and old passwords, sites that support 2FA or passkeys where you have not turned them on, breached sites, exposed accounts.
+- Notifications for new findings, and per-item exclusions.
 - Leaked password check through Have I Been Pwned **k-anonymity** (5-character hash prefix, padded responses). Offline modes available.
 
 </details>
@@ -177,9 +195,13 @@ Export to a signed, encrypted `.onepass` archive (passphrase or account recipien
 <details>
 <summary><b>Developer tools</b></summary>
 
-- **`onepass mcp`**: an MCP server (stdio JSON-RPC) with scoped tools (`metadata`, `use`, `write`, `totp`, `reveal`). Every secret request needs your approval in the terminal. Commands run with secrets injected and masked in output. Signed policy and a hash-chained, signed audit log.
-- **`onepass ssh-agent`**: Ed25519, ECDSA P-256/384/521 and RSA 3072/4096 keys. Approval for every signature. Agent forwarding refused by default.
-- **Travel Mode**: remove vaults from a device before crossing a border, bring them back after.
+All in Settings > Developer on the Mac, and stopped as soon as the app locks.
+
+- **MCP server**: AI clients launch `OnePass.app/Contents/Helpers/onepass-mcp` (a copyable `mcpServers` block is in the app). Scoped tools (`metadata`, `use`, `write`, `totp`, `reveal`), vaults exposed only if a signed policy lists them, per-client grants you can revoke. Commands run with secrets injected and masked in output. Every secret request asks you in a floating panel, with Touch ID.
+- **SSH agent**: Ed25519, ECDSA P-256/384/521 and RSA 3072/4096 keys from your vaults, generated or imported in the app. Approval for every signature, or for 5, 15 or 60 minutes. Agent forwarding refused by default.
+- **Audit log**: hash-chained and signed, readable in the app.
+- **Travel Mode** (Mac and iOS): mark vaults "Safe for Travel", and the others leave the device before you cross a border without being deleted from iCloud. Back home, they come back and are checked against the last manifests seen.
+- **`onepass` CLI** with `onepass mcp` and `onepass ssh-agent` for development and Linux.
 
 </details>
 
@@ -236,7 +258,17 @@ Crypto comes from `aws-lc-rs`, `argon2` and `slh-dsa` in Rust, and from WebCrypt
 
 Found a vulnerability? Please do not open a public issue. See [Reporting a vulnerability](#reporting-a-vulnerability).
 
-## Getting started
+## Install
+
+Pre-release builds are on the [Releases](https://github.com/soma-intelligence/onepass/releases) page: a notarized Mac app (`OnePass-<version>-mac.zip`), the Chrome extension, and `SHA256SUMS`. Move OnePass to Applications, open it once, then turn the extension on in Safari > Settings > Extensions.
+
+For Chrome or Firefox, point the browser at the app's relay from a clone of this repository:
+```bash
+node extension/scripts/install-app-host.mjs --app /Applications/OnePass.app --browser firefox
+```
+Chrome pairing needs the extension's ID in the app's allow list (`ONEPASS_BROWSER_EXTENSIONS` in `apple/project.yml`) until the Web Store listing is live. iPhone and iPad builds will come through TestFlight.
+
+## Build from source
 
 ### Requirements
 
@@ -309,16 +341,19 @@ onepass/
 │   ├── onepass-guard          approvals, signed config, chained audit log
 │   ├── onepass-mcp            MCP server
 │   ├── onepass-ssh-agent      SSH agent
-│   ├── onepass-bridge         extension ↔ app protocol (no I/O)
-│   ├── onepass-native-host    native messaging host (dev)
+│   ├── onepass-bridge         extension ↔ app protocol and host connection loop
+│   ├── onepass-relay          bridge socket rendezvous, and the relay Chrome and Firefox launch
+│   ├── onepass-mcp-relay      the `onepass-mcp` relay between an MCP client and the Mac app
+│   ├── onepass-native-host    native messaging host (development only)
 │   ├── onepass-peer           checks which local process is calling (code signature, hardened runtime)
 │   └── fuzz/                  cargo-fuzz targets
 ├── apple/                     SwiftUI apps (XcodeGen)
-│   ├── VaultKit               Swift package over the Rust core
-│   ├── DesignKit              colors, icons, shared components
+│   ├── VaultKit               Swift package over the Rust core: session, sync, pairing, bridge
+│   ├── DesignKit              colors, icons, motion, shared components
 │   ├── CompanionKit           widgets and iPhone ↔ Watch link
-│   ├── App/                   iOS, iPadOS, macOS and visionOS app
+│   ├── App/                   iOS, iPadOS, macOS and visionOS app (Browse, Pairing, Developer, …)
 │   ├── AutoFill/              system AutoFill provider
+│   ├── SafariExtension/       Safari Web Extension shipped inside the Mac app
 │   └── Watch/, Widgets/, …    Apple Watch app, widgets, Controls
 ├── extension/                 MV3 browser extension (TypeScript, esbuild)
 │   ├── src/                   background, content scripts, bridge, UI
@@ -338,11 +373,11 @@ onepass/
 | ✅ | M1 | Rust core, crypto, 26 item types, dev CLI | Done |
 | ✅ | M2 | Apple apps, unlock, CloudKit sync | Done (real iCloud verification pending) |
 | ✅ | M3 | System AutoFill, passkeys, one-time codes | Done |
-| ✅ | M4 | Browser extension, encrypted native messaging | Done (Safari extension in the Mac app, Debug builds only until the app serves the bridge) |
+| ✅ | M4 | Browser extension, encrypted native messaging | Done, served by the Mac app (Chrome Web Store listing pending) |
 | ✅ | M5 | Watchtower, import, export, signed backups | Done |
 | ✅ | M6 | Apple Watch, Vision Pro, widgets, Shortcuts | Done |
-| ✅ | M7 | MCP server, SSH agent, Travel Mode | Done |
-| ✅ | M2b | QR device linking, signed device list, revocation, public computer mode | Done (two-device iCloud verification pending) |
+| ✅ | M7 | MCP server, SSH agent, Travel Mode | Done, in the Mac app |
+| ✅ | M2b | QR device linking, signed device list, revocation, public computer mode | Done, in the apps (two-device iCloud verification pending) |
 | ⬜ | M8 | External audit, public launch | Planned |
 | ⬜ | Later | Self-hosted server, sharing and organizations, web app (WASM), recovery codes | Planned |
 
