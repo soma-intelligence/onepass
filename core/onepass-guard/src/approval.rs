@@ -111,15 +111,21 @@ pub trait Approver: Send + Sync {
 /// and `o`, which are easy to misread.
 pub const CHALLENGE_ALPHABET: &str = "abcdefghjkmnpqrstuvwxyz";
 
-/// Draws a fresh 2-character challenge from [`CHALLENGE_ALPHABET`] with the
-/// system random generator. `None` if the generator fails (the caller denies).
+/// Length of a challenge: 23^4 = 279,841 codes, so keystrokes injected
+/// blind into the terminal (a client that owns it, `TIOCSTI`) do not guess
+/// one within the request limits (2 letters gave 529).
+pub const CHALLENGE_LEN: usize = 4;
+
+/// Draws a fresh [`CHALLENGE_LEN`]-character challenge from
+/// [`CHALLENGE_ALPHABET`] with the system random generator. `None` if the
+/// generator fails (the caller denies).
 pub fn challenge_code() -> Option<String> {
     let alphabet = CHALLENGE_ALPHABET.as_bytes();
     let n = alphabet.len();
     // Rejection sampling keeps the draw uniform.
     let limit = (256 / n * n) as u8;
     let mut out = String::new();
-    while out.len() < 2 {
+    while out.len() < CHALLENGE_LEN {
         let mut b = [0u8; 1];
         aws_lc_rs::rand::fill(&mut b).ok()?;
         if b[0] < limit {
@@ -274,7 +280,7 @@ fn read_line_with_timeout(f: &File, timeout: Duration) -> Option<String> {
 /// Approver that talks to the user on `/dev/tty`.
 ///
 /// The terminal is opened only for the duration of one prompt: pending input
-/// is flushed, the prompt (with a fresh 2-character challenge) is written, one
+/// is flushed, the prompt (with a fresh 4-character challenge) is written, one
 /// line is read with a timeout, and the terminal is closed. No reader is left
 /// behind, so between prompts every keystroke goes to the program that shares
 /// the terminal (for example the MCP client). Any error denies.
@@ -533,11 +539,13 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for _ in 0..200 {
             let c = challenge_code().expect("random source");
-            assert_eq!(c.chars().count(), 2);
+            assert_eq!(c.chars().count(), CHALLENGE_LEN);
             assert!(c.chars().all(|ch| CHALLENGE_ALPHABET.contains(ch)));
             seen.insert(c);
         }
-        assert!(seen.len() > 50);
+        // 200 draws among 279,841 codes: a repeat is unlikely, and many
+        // would mean the generator is not uniform.
+        assert!(seen.len() > 190);
         assert!(!CHALLENGE_ALPHABET.contains(['i', 'l', 'o']));
     }
 
