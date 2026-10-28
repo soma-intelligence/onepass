@@ -139,6 +139,7 @@ struct PhoneTabsView: View {
     private func stack<Root: View>(_ which: PhoneTab, @ViewBuilder root: () -> Root) -> some View {
         NavigationStack(path: path(which)) {
             root()
+                .topBlurFade()
                 .navigationDestination(for: PhoneRoute.self) { route in
                     switch route {
                     case .list(let filter):
@@ -276,5 +277,42 @@ struct PhoneNewItemSheet: View {
     private var stepTransition: AnyTransition {
         reduceMotion ? .opacity : .push(from: .trailing)
     }
+}
+
+/// Content scrolling up under the status bar and the navigation bar fades into a blur: a material
+/// masked by a gradient, strongest at the top edge, gone by the bar's bottom. Over the content,
+/// under the bar's own controls; never takes a touch.
+private struct TopBlurFade: ViewModifier {
+    @MainActor static var statusBarHeight: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first { $0.activationState == .foregroundActive } as? UIWindowScene
+        return scene?.keyWindow?.safeAreaInsets.top ?? 59
+    }
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            GeometryReader { _ in
+                // The status bar plus the compact navigation bar: the large title and the search
+                // field below stay sharp.
+                let height = Self.statusBarHeight + 64
+                Rectangle()
+                    .fill(.regularMaterial)
+                    .mask {
+                        LinearGradient(stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 0.45),
+                            .init(color: .black.opacity(0), location: 1),
+                        ], startPoint: .top, endPoint: .bottom)
+                    }
+                    .frame(height: height)
+                    .ignoresSafeArea(edges: .top)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+extension View {
+    fileprivate func topBlurFade() -> some View { modifier(TopBlurFade()) }
 }
 #endif
