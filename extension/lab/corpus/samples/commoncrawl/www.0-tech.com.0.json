@@ -1,0 +1,100 @@
+{
+  "captured_at": "2026-10-28T00:56:41.626Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "新闻 深度 智库 评测 热评 技术 登录/注册 搜索",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "td-header-search-mob",
+          "index": 0,
+          "label": "搜索",
+          "name": "s",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "搜索"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "td-header-search",
+          "index": 0,
+          "name": "s",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "登录"
+      ],
+      "fields": [
+        {
+          "after": "密码 *",
+          "before": "深度 智库 评测 热评 技术 登录/注册 首页 登录 登录 用户名或邮箱地址 *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "username",
+          "index": 0,
+          "label": "用户名或邮箱地址 *",
+          "name": "username",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        },
+        {
+          "before": "密码 *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "密码 *",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.0-tech.com",
+  "iframes": [],
+  "lang": "zh",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "commoncrawl",
+  "source_url": "https://www.0-tech.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

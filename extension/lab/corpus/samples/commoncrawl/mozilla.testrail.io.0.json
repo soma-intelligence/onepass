@@ -1,0 +1,58 @@
+{
+  "captured_at": "2026-10-28T01:06:07.207Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "log in"
+      ],
+      "fields": [
+        {
+          "after": "email",
+          "before": "our account single sign on or login with",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "name",
+          "index": 0,
+          "label": "email",
+          "name": "name",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        },
+        {
+          "after": "password forgot your password? log in v1",
+          "autocomplete": "off",
+          "before": "email",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "mozilla.testrail.io",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "commoncrawl",
+  "source_url": "https://mozilla.testrail.io/index.php",
+  "status": "ok",
+  "webauthnCalls": []
+}
