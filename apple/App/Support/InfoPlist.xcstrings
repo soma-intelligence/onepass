@@ -21,13 +21,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass uses the camera to read the QR code on your Emergency Kit."
+            "value" : "OnePass uses the camera to read the QR code on your Emergency Kit or the one shown by a new device."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit."
+            "value" : "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit ou celui d'un nouvel appareil."
           }
         }
       }
@@ -46,6 +46,24 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription" : {
+      "comment" : "",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass uses the local network to add a device to your account, without going through a server."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
           }
         }
       }

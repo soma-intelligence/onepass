@@ -105,6 +105,27 @@ pub fn serve<K: KeySource + 'static>(
     agent: Arc<Mutex<Agent<K>>>,
     stop: Arc<AtomicBool>,
 ) -> io::Result<()> {
+    serve_on(listener, agent, stop, None)
+}
+
+/// [`serve`] with connection threads of `stack_size` bytes: a key source
+/// that verifies vault signatures on the connection thread (the app's
+/// session) needs more than the default stack.
+pub fn serve_with_stack<K: KeySource + 'static>(
+    listener: UnixListener,
+    agent: Arc<Mutex<Agent<K>>>,
+    stop: Arc<AtomicBool>,
+    stack_size: usize,
+) -> io::Result<()> {
+    serve_on(listener, agent, stop, Some(stack_size))
+}
+
+fn serve_on<K: KeySource + 'static>(
+    listener: UnixListener,
+    agent: Arc<Mutex<Agent<K>>>,
+    stop: Arc<AtomicBool>,
+    stack_size: Option<usize>,
+) -> io::Result<()> {
     listener.set_nonblocking(true)?;
     while !stop.load(Ordering::SeqCst) {
         match listener.accept() {
@@ -116,9 +137,11 @@ pub fn serve<K: KeySource + 'static>(
                     continue;
                 }
                 let agent = Arc::clone(&agent);
-                let spawned = thread::Builder::new()
-                    .name("ssh-agent-conn".into())
-                    .spawn(move || connection(stream, &agent));
+                let mut builder = thread::Builder::new().name("ssh-agent-conn".into());
+                if let Some(size) = stack_size {
+                    builder = builder.stack_size(size);
+                }
+                let spawned = builder.spawn(move || connection(stream, &agent));
                 drop(spawned);
             }
             Err(e) if e.kind() == io::ErrorKind::Interrupted => {}

@@ -11,6 +11,8 @@ public enum VaultError: Error, Equatable, Sendable {
     case conflict
     case biometricsUnavailable
     case passwordRequired
+    /// The signed device list marks this device revoked: everything was erased from it.
+    case deviceRevoked
     case other(String)
 
     /// Maps a core, biometric or keychain error. Anything else becomes `.other` with a generic message.
@@ -65,6 +67,8 @@ public enum VaultError: Error, Equatable, Sendable {
             String(localized: "La biométrie n'est pas disponible sur cet appareil.", bundle: VaultKitStrings.bundle)
         case .passwordRequired:
             String(localized: "Saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
+        case .deviceRevoked:
+            String(localized: "Cet appareil a été retiré de ton compte OnePass.", bundle: VaultKitStrings.bundle)
         case .other(let message):
             message
         }
@@ -95,6 +99,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case "is not a valid national number": String(localized: "Numéro invalide", bundle: VaultKitStrings.bundle)
         case "must not be empty": String(localized: "Ne peut pas être vide", bundle: VaultKitStrings.bundle)
         case "too weak": String(localized: "Trop facile à deviner : allonge-la ou ajoute des mots.", bundle: VaultKitStrings.bundle)
+        case "this device": String(localized: "Cet appareil ne peut pas se retirer lui-même.", bundle: VaultKitStrings.bundle)
         default: String(localized: "Valeur invalide", bundle: VaultKitStrings.bundle)
         }
     }
@@ -106,7 +111,58 @@ public enum VaultError: Error, Equatable, Sendable {
         case "date", "month", "timestamp": String(localized: "Date invalide.", bundle: VaultKitStrings.bundle)
         case "recipe": String(localized: "Réglages du générateur invalides.", bundle: VaultKitStrings.bundle)
         case "passphrase": String(localized: "Phrase de passe illisible.", bundle: VaultKitStrings.bundle)
-        default: importMessage(what) ?? String(localized: "Valeur invalide.", bundle: VaultKitStrings.bundle)
+        case "last vault": String(localized: "Le dernier coffre ne peut pas être supprimé.", bundle: VaultKitStrings.bundle)
+        case "vault not empty": String(localized: "Vide ce coffre avant de le supprimer.", bundle: VaultKitStrings.bundle)
+        case "account not synced": String(localized: "Synchronise d'abord cet appareil.", bundle: VaultKitStrings.bundle)
+        case "pairing snapshot too large":
+            String(localized: "Ce compte est trop gros pour être copié par appairage.", bundle: VaultKitStrings.bundle)
+        default: developerMessage(what) ?? importMessage(what) ?? String(localized: "Valeur invalide.", bundle: VaultKitStrings.bundle)
+        }
+    }
+
+    /// French text for a refusal of Travel Mode, the SSH agent or the MCP server (milestone 7). `nil`
+    /// when `what` is none of them.
+    public static func developerMessage(_ what: String) -> String? {
+        if what.hasPrefix("SSH key: ") {
+            let reason = what.dropFirst("SSH key: ".count)
+            if reason == "wrong passphrase" {
+                return String(localized: "Phrase de passe incorrecte.", bundle: VaultKitStrings.bundle)
+            }
+            if reason.hasPrefix("the key is encrypted") {
+                return String(localized: "Cette clé est chiffrée : saisis sa phrase de passe.", bundle: VaultKitStrings.bundle)
+            }
+            if reason.hasPrefix("unsupported") {
+                return String(localized: "Ce type de clé SSH n'est pas pris en charge.", bundle: VaultKitStrings.bundle)
+            }
+            return String(localized: "Clé SSH illisible.", bundle: VaultKitStrings.bundle)
+        }
+        switch what {
+        case "unsynced changes":
+            return String(localized: "Des modifications de ces coffres ne sont pas encore dans iCloud. Synchronise, puis réessaie.", bundle: VaultKitStrings.bundle)
+        case "upstream does not hold the vault":
+            return String(localized: "iCloud n'a pas encore une copie complète de ces coffres. Synchronise, puis réessaie : rien n'a été retiré.", bundle: VaultKitStrings.bundle)
+        case "no vault leaves":
+            return String(localized: "Tous tes coffres sont marqués sûrs en voyage : aucun ne quitterait cet appareil.", bundle: VaultKitStrings.bundle)
+        case "travel mode already on":
+            return String(localized: "Le Travel Mode est déjà activé.", bundle: VaultKitStrings.bundle)
+        case "travel mode off":
+            return String(localized: "Le Travel Mode n'est pas activé.", bundle: VaultKitStrings.bundle)
+        case "another agent is serving this socket":
+            return String(localized: "Un autre agent SSH utilise déjà ce socket.", bundle: VaultKitStrings.bundle)
+        case "socket path too long":
+            return String(localized: "Le chemin du socket est trop long pour macOS.", bundle: VaultKitStrings.bundle)
+        case "cannot listen on the agent socket", "cannot listen on the MCP socket":
+            return String(localized: "Impossible d'ouvrir le socket.", bundle: VaultKitStrings.bundle)
+        case "program identity":
+            return String(localized: "Impossible de vérifier la signature de ce programme.", bundle: VaultKitStrings.bundle)
+        case "scope":
+            return String(localized: "Autorisation inconnue.", bundle: VaultKitStrings.bundle)
+        case "host bookmark":
+            return String(localized: "Un hôte s'écrit en un seul mot, sans espace ni guillemet.", bundle: VaultKitStrings.bundle)
+        case "key comment":
+            return String(localized: "Le commentaire de la clé ne doit pas contenir de caractère de contrôle.", bundle: VaultKitStrings.bundle)
+        default:
+            return nil
         }
     }
 

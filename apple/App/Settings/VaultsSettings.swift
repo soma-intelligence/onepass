@@ -2,8 +2,8 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Coffres: the list, rename, symbol and color of each, new vault. No deletion in this version
-/// (ruling R14).
+/// Coffres: the list, rename, symbol and color of each, new vault. An empty vault that is not the
+/// last one is deleted from its editor (R14, milestone 2b).
 struct VaultsSettings: View {
     @Environment(AppModel.self) private var model
 
@@ -61,7 +61,7 @@ struct VaultsSettings: View {
                 }
                 .accessibilityIdentifier("settings.vaults.new")
             } footer: {
-                Text("La suppression d'un coffre arrive dans une prochaine version.")
+                Text("Un coffre vide peut être supprimé depuis sa fiche, sauf le dernier.")
             }
         }
         .formStyle(.grouped)

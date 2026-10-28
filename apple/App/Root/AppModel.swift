@@ -23,10 +23,13 @@ final class AppModel {
     /// Widget snapshot (and, from Task 8, the watch payload) while unlocked.
     @ObservationIgnored let companion: CompanionCoordinator
     @ObservationIgnored let iconLoader: SiteIconLoader
+    /// The SSH agent and the MCP server the Mac app serves (milestone 7), and their questions.
+    let developer = DeveloperHosts()
     #if os(macOS)
     /// The browser extensions' bridge (Safari, Chrome, Firefox): signed builds with their App Group
     /// container only; never with demo data or a UI test store.
     let browserBridge: BrowserBridge?
+    @ObservationIgnored private var approvalPanel: ApprovalPanelController?
     #endif
     @ObservationIgnored private let remote: (any RemoteRecordStore)?
 
@@ -42,6 +45,8 @@ final class AppModel {
     /// The onboarding stays on screen until "Ouvrir OnePass", even though the account creation
     /// already unlocked the session.
     var onboardingInProgress = false
+    /// A guest session lent by another device (spec 2b 5.4): its own root, nothing on disk.
+    var publicSession: PublicSession?
 
     // Navigation (filled by the browse screens).
     var selection: ItemFilter = .all {
@@ -66,6 +71,8 @@ final class AppModel {
     var pendingDiscard: GuardedAction?
     /// iPhone and iPad: the settings sheet (the Mac has its own `Settings` window).
     var showSettings = false
+    /// The settings page to show next time the settings open (Développeur page cards).
+    var settingsPageRequest: SettingsPage?
     /// Bumped on every settings change made through `updateSettings`, so views that show a setting
     /// (stored in `UserDefaults`, not observable) redraw.
     private(set) var settingsRevision = 0
@@ -73,6 +80,8 @@ final class AppModel {
     var showNewItemPicker = false
     /// ⌘⇧I (Fichier > Importer…): the import sheet.
     var showImport = false
+    /// Fichier > Restaurer une sauvegarde… (and Réglages > Général).
+    var showRestore = false
     // Menu commands handled by the views on screen (bumped, observed with `onChange`).
     var editRequest = 0
     var saveRequest = 0
@@ -351,6 +360,8 @@ final class AppModel {
         case .inactive:
             session.scenePhaseChanged(.inactive)
         case .background:
+            // A guest session never survives the app leaving the screen (ruling A7).
+            publicSession?.end()
             session.scenePhaseChanged(.background)
             #if os(iOS) || os(visionOS)
             lockWhileBackgroundTimeLasts()
@@ -512,6 +523,7 @@ final class AppModel {
     private static func sweepEmergencyKits() {
         EmergencyKitFile.sweep(in: FileManager.default.temporaryDirectory)
         EncryptedBackupFile.sweep(in: FileManager.default.temporaryDirectory)
+        PlaintextExportFile.sweep(in: FileManager.default.temporaryDirectory)
     }
 
     /// Spec 7: the creation is refused when this iCloud already holds an account (ruling R13).
@@ -668,10 +680,21 @@ final class AppModel {
     func sessionStateChanged(_ state: VaultSession.State) {
         if state == .unlocked {
             consumePendingRoute()
+            // "Me prévenir": a report after each unlock, so new findings are notified even when the
+            // Watchtower page stays closed. Off: Watchtower runs only when its page is shown.
+            if watchtower.notify { watchtower.refreshIfNeeded(session) }
         } else {
             resetNavigation()
         }
         companion.sessionChanged()
+        #if os(macOS)
+        if approvalPanel == nil { approvalPanel = ApprovalPanelController(hosts: developer) }
+        if state == .unlocked {
+            Task { await developer.sessionUnlocked(session) }
+        } else {
+            developer.sessionLocked()
+        }
+        #endif
     }
 
     // MARK: - Routes from outside the app
@@ -811,6 +834,7 @@ final class AppModel {
         pendingDiscard = nil
         showNewItemPicker = false
         showImport = false
+        showRestore = false
         // The offer holds the typed password: never kept past a lock.
         biometricOffer = nil
         showSettings = false

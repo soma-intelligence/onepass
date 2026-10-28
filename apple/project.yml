@@ -26,7 +26,7 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
-    MARKETING_VERSION: "0.1.4"
+    MARKETING_VERSION: "0.2.0"
     CURRENT_PROJECT_VERSION: "1"
     DEAD_CODE_STRIPPING: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
@@ -84,6 +84,10 @@ targets:
       - name: Embed browser relay
         basedOnDependencyAnalysis: false
         script: '"${PROJECT_DIR}/scripts/embed-relay.sh"'
+      # The MCP relay MCP clients launch (Contents/Helpers/onepass-mcp, macOS only).
+      - name: Embed MCP relay
+        basedOnDependencyAnalysis: false
+        script: '"${PROJECT_DIR}/scripts/embed-mcp-relay.sh"'
     info:
       path: App/Support/Info.plist
       properties:
@@ -98,7 +102,10 @@ targets:
         # The app ships its own cryptography; export compliance is settled before submission (README).
         ITSAppUsesNonExemptEncryption: true
         NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
-        NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit."
+        NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit ou celui d'un nouvel appareil."
+        # Pairing (milestone 2b): the new device publishes a Bonjour service, the approver finds it.
+        NSLocalNetworkUsageDescription: "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
+        NSBonjourServices: [_onepass-pair._tcp]
         # Asked only on "Utiliser ma position" or when "À proximité" opens (macOS reads NSLocationUsageDescription).
         NSLocationWhenInUseUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
         NSLocationUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."

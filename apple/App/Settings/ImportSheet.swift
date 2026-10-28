@@ -137,12 +137,20 @@ struct ImportSheet: View {
     @State private var vaultID = ""
     @State private var busy = false
     @State private var errorMessage: String?
+    /// A OnePass archive was chosen: it goes to the restore sheet.
+    @State private var restoreRequest: RestoreRequest?
+    /// What the import wrote, shown before the sheet closes.
+    @State private var done: FfiImportSummary?
+    @State private var doneVaultName = ""
 
     private static let calloutID = "import.callout"
 
     var body: some View {
         ZStack {
-            if let preview, let format {
+            if let done {
+                doneStep(done)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else if let preview, let format {
                 previewStep(preview, format: format)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
@@ -170,6 +178,9 @@ struct ImportSheet: View {
         #endif
         .onAppear {
             if vaultID.isEmpty { vaultID = defaultVaultID }
+        }
+        .sheet(item: $restoreRequest) { request in
+            RestoreSheet(request: request)
         }
         .onDisappear { buffer.wipe() }
     }
@@ -433,6 +444,44 @@ struct ImportSheet: View {
         .padding(.horizontal, 4)
     }
 
+    // MARK: - Step 3: result
+
+    /// What was written, by type, with the warnings of the file: the per-item outcome of the import.
+    private func doneStep(_ d: FfiImportSummary) -> some View {
+        VStack(spacing: 0) {
+            header("Import terminé", showsCancel: false)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    EditorCard {
+                        Label(Self.doneLine(d.items, vault: doneVaultName), systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.headline)
+                            .editorRowPadding()
+                    }
+                    .accessibilityIdentifier("import.done")
+                    contentSection(d, done: true)
+                }
+                .padding(20)
+            }
+            Divider()
+            HStack {
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Terminé").frame(minWidth: 64)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.accent)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("import.finish")
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+        }
+    }
+
     // MARK: - Step 2: preview
 
     private func previewStep(_ p: FfiImportSummary, format: String) -> some View {
@@ -485,7 +534,7 @@ struct ImportSheet: View {
         .accessibilityElement(children: .combine)
     }
 
-    @ViewBuilder private func contentSection(_ p: FfiImportSummary) -> some View {
+    @ViewBuilder private func contentSection(_ p: FfiImportSummary, done: Bool = false) -> some View {
         let notes: [(symbol: String, text: String)] =
             p.warnings.map { ("info.circle", Self.warningLine($0)) }
             + (p.skipped > 0 ? [("arrow.uturn.right", Self.skippedLine(p.skipped))] : [])
@@ -517,7 +566,9 @@ struct ImportSheet: View {
                     }
                 }
             }
-            Text("Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans OnePass n'est remplacé. Le dossier d'origine devient un tag.")
+            Text(done
+                ? "Les éléments rangés autrement que dans la source sont dans la section « Importé » de chaque élément."
+                : "Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans OnePass n'est remplacé. Le dossier d'origine devient un tag.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -667,7 +718,9 @@ struct ImportSheet: View {
         let name = url.lastPathComponent
         let detected = await VaultSession.detectImportFormat(fileName: name, data: buffer.data)
         if detected == "onepass" {
-            errorMessage = VaultError.importMessage("onepass archive")
+            // An encrypted OnePass backup or export: restored, not imported. The restore sheet owns
+            // the bytes from here (and wipes them); the buffer's copy is wiped now.
+            restoreRequest = RestoreRequest(data: buffer.data, fileName: name)
             buffer.wipe()
             return
         }
@@ -702,10 +755,11 @@ struct ImportSheet: View {
         defer { busy = false }
         let vaultName = model.session.vaults.first { $0.id == vaultID }?.meta.name ?? ""
         do {
-            let done = try await model.session.importItems(format: format, data: buffer.data, vaultID: vaultID)
+            let written = try await model.session.importItems(format: format, data: buffer.data, vaultID: vaultID)
             buffer.wipe()
-            model.showToast(Self.doneLine(done.items, vault: vaultName))
-            dismiss()
+            model.showToast(Self.doneLine(written.items, vault: vaultName))
+            doneVaultName = vaultName
+            done = written
         } catch {
             errorMessage = VaultError(error).localizedMessage
         }

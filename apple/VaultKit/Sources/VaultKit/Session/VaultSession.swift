@@ -28,6 +28,16 @@ public final class VaultSession {
     public private(set) var hiddenVaultIDs: Set<String>
     /// The store holds an account but this device has no Secret Key for it: use `restore`.
     public private(set) var needsSecretKey = false
+    /// Locked, and the store holds account params newer than the ones this device last unlocked: the
+    /// master password changed on another device (the lock screen says so).
+    public internal(set) var passwordChangedElsewhere = false
+    /// The signed device list, revoked devices included (`refreshDevices`). Emptied on lock.
+    public internal(set) var devices: [FfiDevice] = []
+    /// This device's id in the device list, once known (`refreshDevices`).
+    public internal(set) var thisDeviceID: String?
+    /// The device list marks this device revoked and its OnePass data could not be erased yet (L6):
+    /// the revoked screen must not say "effacées". `refresh` tries again.
+    public private(set) var revokedEraseFailed = false
     /// Bumped after the lists were reloaded for a write of another process (the AutoFill extension):
     /// an open item detail reloads, or warns its editor before a save overwrites the new version,
     /// exactly as for a remote change set.
@@ -52,20 +62,20 @@ public final class VaultSession {
     @ObservationIgnored public var coreSessionChanged: ((Session?) -> Void)?
     /// Told when the vaults hidden from AutoFill change (the bridge hides them too).
     @ObservationIgnored public var hiddenVaultsChanged: ((Set<String>) -> Void)?
-    @ObservationIgnored private var generation = 0
+    @ObservationIgnored private(set) var generation = 0
     @ObservationIgnored private var autoLock: AutoLock
     @ObservationIgnored private var autoLockTimer: Task<Void, Never>?
     @ObservationIgnored private var syncChain: Task<Void, Never>?
     @ObservationIgnored private let clipboard: Clipboard
     /// A master password check (Argon2id) is running: a second one waits its turn, so concurrent
     /// calls cannot slip past the failure throttle.
-    @ObservationIgnored private var passwordCheckInFlight = false
+    @ObservationIgnored var passwordCheckInFlight = false
     /// Tests: runs on the core thread before each core call, to hold a call in flight.
     @ObservationIgnored var coreWorkHook: (@Sendable () -> Void)?
     /// Sessions being locked on the core thread, in order.
     @ObservationIgnored private var releaseChain: Task<Void, Never>?
     /// Bumped when the biometric enrollment may have changed (`canUseBiometrics` reads the keychain).
-    private var biometricsRevision = 0
+    var biometricsRevision = 0
     /// Publishes the AutoFill identities to the system store (debounced).
     @ObservationIgnored private let identitySync: IdentityStoreSync
     /// Identity store requests (refresh, clear), forwarded in order.
@@ -82,7 +92,7 @@ public final class VaultSession {
     static let unlockPrompt = "Déverrouiller OnePass"
     nonisolated static let personalVault = FfiVaultMeta(
         name: "Personnel", icon: "person", color: "blue", travelSafe: false, mcpAccess: false)
-    private static let log = Logger(subsystem: "me.somalabs.onepass", category: "session")
+    nonisolated private static let log = Logger(subsystem: "me.somalabs.onepass", category: "session")
 
     public init(environment: VaultEnvironment) {
         self.environment = environment
@@ -98,10 +108,12 @@ public final class VaultSession {
         storeChangeObserver?.cancel()
     }
 
-    private var settings: VaultSettings { environment.settings }
-    private var biometrics: BiometricUnlock { environment.biometrics }
-    private var secretKeys: SecretKeyVault { SecretKeyVault(keychain: environment.keychain) }
-    private var dbPath: String { environment.databaseURL.path }
+    var settings: VaultSettings { environment.settings }
+    var biometrics: BiometricUnlock { environment.biometrics }
+    var secretKeys: SecretKeyVault { SecretKeyVault(keychain: environment.keychain) }
+    var dbPath: String { environment.databaseURL.path }
+    /// The unlocked core session (nil while locked), for the servers of milestone 7 and Travel Mode.
+    var coreSession: Session? { session }
 
     // MARK: - State
 
@@ -111,12 +123,16 @@ public final class VaultSession {
         if state == .unlocked, let session {
             let gen = generation
             do {
-                let snapshot = try await background { try Self.load(session, purge: false) }
+                // After a sync commit too (`reload`): a device the list now marks revoked is erased.
+                let snapshot = try await background { try Self.load(session, purge: false, checkRevoked: true) }
                 if gen == generation { apply(snapshot) }
+            } catch VaultError.deviceRevoked {
+                if gen == generation { await eraseRevokedDevice() }
             } catch {
                 _ = handle(error, generation: gen)
             }
         } else if state != .unlocking {
+            if settings.revokedErasePending { await retryRevokedErase() }
             evaluateStoredAccount()
         }
     }
@@ -148,6 +164,13 @@ public final class VaultSession {
             lastError = refusedStore
             return
         }
+        if settings.revokedErasePending {
+            // Revoked, not erased yet (L6): never the lock screen of a revoked account.
+            state = .failed(.deviceRevoked)
+            lastError = .deviceRevoked
+            revokedEraseFailed = true
+            return
+        }
         do {
             var found = FfiStoreState.empty
             if FileManager.default.fileExists(atPath: dbPath) { found = try storeState(dbPath: dbPath) }
@@ -155,6 +178,7 @@ public final class VaultSession {
             case .account:
                 state = .locked
                 needsSecretKey = secretKeyPresence() == .missing
+                passwordChangedElsewhere = Self.paramsChangedElsewhere(dbPath: dbPath)
             case .pinnedButMissing:
                 enterAccountMissing()
             case .empty:
@@ -218,22 +242,33 @@ public final class VaultSession {
     public func resetForRecovery() async throws {
         let missing = isAccountMissing
         guard missing || (state == .locked && needsSecretKey) else { throw fail(.other(Self.recoveryRefused)) }
-        let path = dbPath
         generation &+= 1
         do {
-            try await environment.sync.resetStore {
-                if missing { try resetStoreForRecovery(dbPath: path) } else { try resetStore(dbPath: path) }
-            }
+            try await eraseLocalAccount(accountMissing: missing)
         } catch {
             Self.log.error("store not reset for recovery")
             evaluateStoredAccount()
             throw fail(VaultError(error))
         }
+        evaluateStoredAccount()
+        if state == .noAccount { lastError = nil }
+    }
+
+    /// The erasure `resetForRecovery` runs, shared with a revoked device (ruling A5): the store is
+    /// emptied, device state included, with the sync layer holding it (`accountMissing`: through
+    /// `reset_store_for_recovery`, which refuses a store that still shows an account), then the Secret Key, the biometric
+    /// enrollment, the account id, name, failure throttle and biometric wish are removed and the system
+    /// identity store is emptied. A failed store reset throws before anything else is removed.
+    private func eraseLocalAccount(accountMissing: Bool) async throws {
+        let path = dbPath
+        try await environment.sync.resetStore {
+            if accountMissing { try resetStoreForRecovery(dbPath: path) } else { try resetStore(dbPath: path) }
+        }
         if let accountID = settings.accountID {
             do {
                 try secretKeys.remove(accountID: accountID)
             } catch {
-                Self.log.error("Secret Key of the missing account not removed")
+                Self.log.error("Secret Key of the erased account not removed")
             }
             biometrics.disable(accountID: accountID)
         }
@@ -243,9 +278,47 @@ public final class VaultSession {
         settings.resetFailedUnlocks()
         settings.lockoutUntil = nil
         biometricsRevision += 1
+        passwordChangedElsewhere = false
         clearAutofillIdentities()
-        evaluateStoredAccount()
-        if state == .noAccount { lastError = nil }
+    }
+
+    /// The signed device list marks this device revoked (after an unlock or a sync commit, ruling A5):
+    /// the session is dropped, then the store, the Secret Key and the biometric enrollment are erased
+    /// like `resetForRecovery` does, and the state ends in `.failed(.deviceRevoked)`. `refresh` then
+    /// shows the onboarding. If the store cannot be emptied now, the failure stays and the next unlock
+    /// tries again.
+    func eraseRevokedDevice() async {
+        let wasOpen = session != nil
+        generation &+= 1
+        if let session {
+            self.session = nil
+            release(session)
+        }
+        clearMemory()
+        clipboard.clear()
+        concealRevealed()
+        state = .failed(.deviceRevoked)
+        lastError = .deviceRevoked
+        if wasOpen { notifySync { await $0.sessionLocked() } }
+        // Remembered until the erase completes: a relaunch shows the revoked screen and tries again.
+        settings.revokedErasePending = true
+        await retryRevokedErase()
+        state = .failed(.deviceRevoked)
+        lastError = .deviceRevoked
+    }
+
+    /// The erase of a revoked device (`eraseRevokedDevice`), again after a failure (L6).
+    private func retryRevokedErase() async {
+        // Every session on the store is closed before the tables are emptied.
+        await releaseChain?.value
+        do {
+            try await eraseLocalAccount(accountMissing: false)
+            settings.revokedErasePending = false
+            revokedEraseFailed = false
+        } catch {
+            Self.log.error("revoked device not fully erased")
+            revokedEraseFailed = true
+        }
     }
 
     nonisolated static let recoveryRefused =
@@ -280,7 +353,7 @@ public final class VaultSession {
 
     /// The stored Secret Key for an unlock, in a wipeable buffer (the caller wipes it). Missing:
     /// `needsSecretKey`. Keychain error: thrown as is.
-    private func loadSecretKey() throws -> (accountID: String, secretKey: SecretBytes) {
+    func loadSecretKey() throws -> (accountID: String, secretKey: SecretBytes) {
         let missing = VaultError.other("La Secret Key de ce compte n'est pas sur cet appareil : utilise ton Emergency Kit.")
         guard let accountID = knownAccountID() else {
             needsSecretKey = true
@@ -323,6 +396,7 @@ public final class VaultSession {
         if session != nil || state == .locked { throw fail(.accountExists) }
         let path = dbPath
         let kdf = environment.accountKdf
+        let device = Self.deviceIdentity(mode: mode)
         let gen = beginUnlocking()
         let created: Created
         do {
@@ -341,7 +415,7 @@ public final class VaultSession {
                     }
                     return Created(
                         session: account.session, secretKey: secretKey, accountID: account.accountId,
-                        snapshot: try Self.load(account.session, purge: false))
+                        snapshot: try Self.load(account.session, purge: false, register: device))
                 } catch {
                     secretKey.wipe()
                     account.session.lock()
@@ -456,6 +530,7 @@ public final class VaultSession {
         try beginPasswordCheck()
         defer { passwordCheckInFlight = false }
         let path = dbPath
+        let device = Self.deviceIdentity(mode: settings.deviceMode)
         let gen = beginUnlocking()
         let opened: Opened
         do {
@@ -467,13 +542,17 @@ public final class VaultSession {
                 do {
                     return Opened(
                         session: unlocked.session, accountID: unlocked.session.accountId(),
-                        snapshot: try Self.load(unlocked.session, purge: true), auk: auk)
+                        snapshot: try Self.load(unlocked.session, purge: true, checkRevoked: true, register: device),
+                        auk: auk)
                 } catch {
                     auk.wipe()
                     unlocked.session.lock()
                     throw error
                 }
             }
+        } catch VaultError.deviceRevoked {
+            if gen == generation { await eraseRevokedDevice() }
+            throw fail(.deviceRevoked)
         } catch {
             throw unlockFailed(error, generation: gen)
         }
@@ -540,17 +619,21 @@ public final class VaultSession {
         guard gen == generation else { return }
 
         let path = dbPath
+        let device = Self.deviceIdentity(mode: settings.deviceMode)
         let opened: (session: Session, snapshot: Snapshot)
         do {
             opened = try await background {
                 let session = try key.withData { try unlockWithAuk(dbPath: path, auk: $0) }
                 do {
-                    return (session, try Self.load(session, purge: true))
+                    return (session, try Self.load(session, purge: true, checkRevoked: true, register: device))
                 } catch {
                     session.lock()
                     throw error
                 }
             }
+        } catch VaultError.deviceRevoked {
+            if gen == generation { await eraseRevokedDevice() }
+            throw fail(.deviceRevoked)
         } catch {
             let failure = VaultError(error)
             if case .integrity = failure, gen == generation { throw enterFailed(failure) }
@@ -681,6 +764,7 @@ public final class VaultSession {
     }
 
     private func clearMemory() {
+        devices = []
         summaries = []
         allVaults = []
         recents = []
@@ -987,6 +1071,15 @@ public final class VaultSession {
         }
     }
 
+    /// "Exporter en CSV non chiffré": every secret of `vaultIDs` (all vaults when empty) in clear,
+    /// trashed items left out. Asks the master password first. The caller wipes the bytes once
+    /// written. Nothing changes in the store.
+    public func exportPlaintextCSV(password: SecretBytes, vaultIDs: [String]) async throws -> Data {
+        try await withConfirmedSession(password: password, reopen: false) { session in
+            try session.exportPlaintextCsv(vaultIds: vaultIDs)
+        }
+    }
+
     /// Publishes the AutoFill identities now, without the debounce, and returns once the system store
     /// was replaced (after every identity request sent before). For the AutoFill extension after a
     /// write: its session locks right after, and a debounced refresh would then find it locked, leaving
@@ -1163,6 +1256,85 @@ public final class VaultSession {
         return value
     }
 
+    // MARK: - Pairing
+
+    /// New device, full grant received (spec 2b 5.4, rulings A4 and A9): imports the snapshot into the
+    /// empty store and unlocks it with `password` in the core, then stores the received Secret Key
+    /// (released by the core only after a verified import) and ends unlocked, as `restore` does. The
+    /// device mode comes from the grant. The approver already listed this device: nothing registers.
+    /// A wrong password (or any failure) leaves the store empty and the grant in the core, so the user
+    /// can try again. Wrong passwords count toward the unlock lockout like an unlock (M3). The caller
+    /// wipes `password`.
+    func importPaired(_ newcomer: PairingNewcomer, password: SecretBytes, mode: DeviceMode) async throws {
+        try checkStoreUsable()
+        guard session == nil, state == .noAccount else { throw fail(.accountExists) }
+        try checkLockout()
+        try beginPasswordCheck()
+        defer { passwordCheckInFlight = false }
+        let path = dbPath
+        let gen = beginUnlocking()
+        let opened: (opened: Opened, secretKey: SecretBytes)
+        do {
+            opened = try await background {
+                guard let typed = password.string() else { throw VaultError.wrongPassword }
+                var unlocked = try newcomer.importSnapshot(dbPath: path, password: typed)
+                let auk = SecretBytes(taking: &unlocked.auk)
+                let session = unlocked.session
+                guard let released = newcomer.takeSecretKey() else {
+                    auk.wipe()
+                    session.lock()
+                    try? resetStore(dbPath: path)
+                    throw VaultError.other(Self.secretKeyNotStoredOnRestore)
+                }
+                let secretKey = SecretBytes(utf8: released)
+                do {
+                    let snapshot = try Self.load(session, purge: false)
+                    return (Opened(session: session, accountID: session.accountId(), snapshot: snapshot, auk: auk), secretKey)
+                } catch {
+                    auk.wipe()
+                    secretKey.wipe()
+                    session.lock()
+                    throw error
+                }
+            }
+        } catch {
+            let failure = VaultError(error)
+            if failure == .wrongPassword { recordFailedUnlock() }
+            if gen == generation { evaluateStoredAccount() }
+            throw fail(failure)
+        }
+        defer {
+            opened.opened.auk.wipe()
+            opened.secretKey.wipe()
+        }
+        let accountID = opened.opened.accountID
+        do {
+            try secretKeys.store(opened.secretKey, accountID: accountID)
+        } catch {
+            // Without its Secret Key the account could never open again here: the import is undone.
+            Self.log.error("Secret Key not stored in the keychain, pairing import undone")
+            let session = opened.opened.session
+            _ = try? await environment.sync.resetStore {
+                session.lock()
+                try resetStore(dbPath: path)
+            }
+            if gen == generation { evaluateStoredAccount() }
+            throw fail(.other(Self.secretKeyNotStoredOnRestore))
+        }
+        settings.accountID = accountID
+        settings.deviceMode = mode
+        if !mode.biometricsAllowed { disableBiometrics() }
+        settings.resetFailedUnlocks()
+        settings.lockoutUntil = nil
+        afterPasswordUnlock(accountID: accountID, auk: opened.opened.auk)
+        needsSecretKey = secretKeyPresence() == .missing
+        guard gen == generation else {
+            release(opened.opened.session)
+            return
+        }
+        install(opened.opened.session, opened.opened.snapshot)
+    }
+
     // MARK: - Plumbing
 
     /// Lists loaded after an unlock or a write.
@@ -1193,12 +1365,39 @@ public final class VaultSession {
         try first.withData { a in try second.withData { b in try body(a, b) } }
     }
 
-    nonisolated private static func load(_ session: Session, purge: Bool) throws -> Snapshot {
+    /// The lists of an unlocked session. `checkRevoked` (after an unlock or a sync commit): throws
+    /// `VaultError.deviceRevoked` when the signed device list reads and marks this device revoked. `register`
+    /// (after an unlock): a device without an id in the list registers itself; a refusal (revoked,
+    /// public mode) leaves it unlisted and the unlock goes on.
+    nonisolated private static func load(
+        _ session: Session, purge: Bool, checkRevoked: Bool = false, register device: DeviceIdentity? = nil
+    ) throws -> Snapshot {
+        // Only a list that reads as revoked erases; one that cannot be read now (the server behind
+        // after a lost zone, for example) never blocks the unlock or the reload.
+        if checkRevoked, (try? session.isThisDeviceRevoked()) == true { throw VaultError.deviceRevoked }
+        if let device, needsRegistration(session) {
+            do {
+                _ = try session.registerThisDevice(name: device.name, kind: device.kind, mode: device.mode)
+            } catch {
+                log.notice("this device not registered in the device list")
+            }
+        }
         let purged = purge ? try session.purgeTrash(olderThanDays: trashRetentionDays) : 0
         return Snapshot(vaults: try session.vaults(), summaries: try session.itemSummaries(), purged: purged)
     }
 
-    private func background<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+    /// The core's default name of a device that listed itself (`devices::DEFAULT_DEVICE_NAME`).
+    nonisolated static let defaultDeviceName = "Appareil"
+
+    /// This device has no id yet, or the core listed it under its default name and type (the first
+    /// device of a new account, a migrated store): it registers its real name and type.
+    nonisolated private static func needsRegistration(_ session: Session) -> Bool {
+        guard session.thisDeviceId() != nil else { return true }
+        guard let me = (try? session.devices())?.first(where: { $0.isThisDevice }) else { return false }
+        return me.revokedAt == nil && me.name == defaultDeviceName && me.kind == .other
+    }
+
+    func background<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
         let hook = coreWorkHook
         return try await CoreThread.run {
             hook?()
@@ -1237,6 +1436,7 @@ public final class VaultSession {
     private func install(_ session: Session, _ snapshot: Snapshot) {
         self.session = session
         apply(snapshot)
+        passwordChangedElsewhere = false
         state = .unlocked
         lastError = nil
         autoLock = AutoLock(now: environment.clock.now)
@@ -1254,17 +1454,20 @@ public final class VaultSession {
         recents.removeAll { !known.contains($0) }
     }
 
-    private func checkLockout() throws {
+    func checkLockout() throws {
         if let until = settings.lockoutUntil, until > environment.clock.now {
             throw fail(.lockedOut(until: until))
         }
     }
 
+    /// Failures before the first lockout.
+    nonisolated public static let lockoutThreshold = 5
+
     /// After 5 failures: 30 s, then 60 s, then 300 s for every later failure.
-    private func recordFailedUnlock() {
+    func recordFailedUnlock() {
         let count = settings.recordFailedUnlock()
-        guard count >= 5 else { return }
-        let wait: TimeInterval = count == 5 ? 30 : count == 6 ? 60 : 300
+        guard count >= Self.lockoutThreshold else { return }
+        let wait: TimeInterval = count == Self.lockoutThreshold ? 30 : count == Self.lockoutThreshold + 1 ? 60 : 300
         settings.lockoutUntil = environment.clock.now.addingTimeInterval(wait)
     }
 
@@ -1281,7 +1484,7 @@ public final class VaultSession {
         return fail(failure)
     }
 
-    private func beginPasswordCheck() throws {
+    func beginPasswordCheck() throws {
         guard !passwordCheckInFlight else {
             throw fail(.other(String(localized: "Une vérification du mot de passe est déjà en cours.", bundle: VaultKitStrings.bundle)))
         }
@@ -1289,7 +1492,7 @@ public final class VaultSession {
     }
 
     /// Records the error for the UI and returns it.
-    private func fail(_ failure: VaultError) -> VaultError {
+    func fail(_ failure: VaultError) -> VaultError {
         lastError = failure
         return failure
     }
@@ -1332,6 +1535,50 @@ public final class VaultSession {
         return value
     }
 
+    /// A core call on an archive (restore, preview, header). Its errors are about the file, so an
+    /// integrity error never puts the vault in "Données refusées" (unlike `read` and `write`). With
+    /// `writes`, the lists are reloaded and the sync layer told, like `write`.
+    func onArchive<T: Sendable>(
+        writes: Bool, _ op: @escaping @Sendable (Session) throws -> T
+    ) async throws(ArchiveError) -> T {
+        guard let session else { throw .other(fail(.passwordRequired)) }
+        let gen = generation
+        noteActivity()
+        let result: (value: T, snapshot: Snapshot?)
+        do {
+            result = try await background {
+                let value = try op(session)
+                return (value, writes ? try Self.load(session, purge: false) : nil)
+            }
+        } catch {
+            throw ArchiveError(error)
+        }
+        guard gen == generation else { throw .other(fail(.passwordRequired)) }
+        if let snapshot = result.snapshot {
+            apply(snapshot)
+            notifySync { await $0.localChangesWritten() }
+            refreshAutofillIdentities()
+        }
+        return result.value
+    }
+
+    /// `read` that throws the core's error as is (the pairing flows map it themselves). An integrity
+    /// error still ends in "Données refusées".
+    func readUnmapped<T: Sendable>(_ op: @escaping @Sendable (Session) throws -> T) async throws -> T {
+        guard let session else { throw fail(.passwordRequired) }
+        let gen = generation
+        noteActivity()
+        let value: T
+        do {
+            value = try await background { try op(session) }
+        } catch {
+            if case .integrity = VaultError(error) { _ = handle(error, generation: gen) }
+            throw error
+        }
+        guard gen == generation else { throw fail(.passwordRequired) }
+        return value
+    }
+
     /// Runs a write, reloads the lists, tells the sync layer.
     @discardableResult
     func write<T: Sendable>(_ op: @escaping @Sendable (Session) throws -> T) async throws -> T {
@@ -1356,7 +1603,7 @@ public final class VaultSession {
     }
 
     /// Sync notifications run in order, off the caller.
-    private func notifySync(_ op: @escaping @Sendable (any SyncTrigger) async -> Void) {
+    func notifySync(_ op: @escaping @Sendable (any SyncTrigger) async -> Void) {
         let previous = syncChain
         let sync = environment.sync
         syncChain = Task {

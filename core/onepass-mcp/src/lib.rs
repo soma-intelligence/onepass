@@ -2,7 +2,8 @@
 //! [`protocol`]; tools plug in behind the [`ToolHost`] trait. [`tools`]
 //! holds the OnePass tools, which reach the vaults only through a
 //! [`VaultPort`] and under a signed [`Policy`]. [`runner`], [`mask`] and
-//! [`template`] serve the secret tools.
+//! [`template`] serve the secret tools, whose side effects go through a
+//! [`Workspace`].
 
 pub mod guards;
 pub mod mask;
@@ -12,6 +13,7 @@ pub mod protocol;
 pub mod runner;
 pub mod template;
 pub mod tools;
+pub mod workspace;
 
 pub use guards::{
     ClientContext, DEFAULT_PROMPT_WAIT, LivenessFn, McpGuards, RegistryFn, file_registry,
@@ -26,4 +28,5 @@ pub use protocol::{
     ClientInfo, MAX_LINE, PROTOCOL_VERSIONS, Session, ToolHost, ToolOutcome, ToolSpec, handle_line,
     serve,
 };
-pub use tools::McpTools;
+pub use tools::{McpTools, PolicySource};
+pub use workspace::{LocalWorkspace, MAX_TEMPLATE, Workspace, WorkspaceRefusal};

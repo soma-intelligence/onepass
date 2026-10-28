@@ -33,7 +33,13 @@ pub(crate) fn account_id_of(repo: &Repo) -> Result<Id, OnePassError> {
 }
 
 impl Session {
-    pub(crate) fn new(repo: Repo) -> Result<Arc<Session>, OnePassError> {
+    /// A session over an unlocked repository. A store in Travel Mode keeps
+    /// its parked vaults parked (`resume_travel`), so `vaults()` does not
+    /// expect them; a sealed state that does not verify fails the unlock.
+    pub(crate) fn new(mut repo: Repo) -> Result<Arc<Session>, OnePassError> {
+        if let Some(state) = crate::travel::open_state(&repo)? {
+            repo.resume_travel(&state);
+        }
         Ok(Arc::new(Session {
             account_id: id_hex(account_id_of(&repo)?),
             inner: Mutex::new(Some(repo)),

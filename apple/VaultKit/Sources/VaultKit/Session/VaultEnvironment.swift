@@ -12,10 +12,19 @@ public protocol SyncTrigger: Sendable {
     /// A safe exit issued its restore epoch on the session handed over by `sessionUnlocked`: the sync
     /// layer pushes it and follows it until the server serves this device's state. Default: nothing.
     func safeExitIssued(_ exit: SafeExit) async
+    /// Whether a server holds this account (CloudKit on a signed build). Pairing seals the server's
+    /// view when true and this device's full local view when false (ruling A10). Default: false.
+    var syncsWithServer: Bool { get }
+    /// Runs a round now and returns when it is done. Default: nothing.
+    func syncNow() async
 }
 
 extension SyncTrigger {
     public func safeExitIssued(_ exit: SafeExit) async {}
+
+    public var syncsWithServer: Bool { false }
+
+    public func syncNow() async {}
 
     public func resetStore(with reset: @escaping @Sendable () throws -> Void) async throws {
         try await CoreThread.run(reset)
