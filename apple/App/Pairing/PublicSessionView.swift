@@ -26,6 +26,9 @@ private struct PublicSessionBrowser: View {
     let session: PublicSession
     @State private var selection: String?
     @State private var query = ""
+    #if os(macOS)
+    @State private var titlebarHeight: CGFloat = 52
+    #endif
 
     private var items: [FfiItem] {
         let sorted = session.items.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
@@ -35,48 +38,84 @@ private struct PublicSessionBrowser: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        // On the Mac a top inset of the whole split view reaches neither column (rows and the item's
+        // header sat under the banner and the title bar): the banner is an inset of the detail column,
+        // as the item list's header is in the main window, and the sidebar clears the title bar itself.
+        split
+            .onChange(of: selection) { session.noteActivity() }
+            .onChange(of: query) { session.noteActivity() }
+        #else
+        split
+            .safeAreaInset(edge: .top, spacing: 0) {
+                PublicSessionBanner(session: session)
+            }
+            .onChange(of: selection) { session.noteActivity() }
+            .onChange(of: query) { session.noteActivity() }
+        #endif
+    }
+
+    private var split: some View {
         NavigationSplitView {
-            List(selection: $selection) {
-                ForEach(items, id: \.id) { item in
-                    NavigationLink(value: item.id) {
-                        HStack(spacing: 12) {
-                            ItemIcon(type: item.itemType, title: item.title, siteIcon: nil, size: 34)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(item.title).lineLimit(1)
-                                Text(ItemCategory.of(item.itemType).singular)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
+            sidebar
+        } detail: {
+            Group {
+                if let item = session.items.first(where: { $0.id == selection }) {
+                    PublicItemDetail(item: item, session: session)
+                        .id(item.id)
+                } else {
+                    ContentUnavailableView(
+                        "Choisis un élément", systemImage: "list.bullet.rectangle",
+                        description: Text("Lecture seule. Tes copies s'effacent du presse-papiers après 30 s."))
+                }
+            }
+            #if os(macOS)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                PublicSessionBanner(session: session)
+            }
+            #endif
+        }
+    }
+
+    /// The lent items. Mac: the sidebar column reports no top safe area (`Sidebar`), so the list starts
+    /// below the title bar, its height read from the window.
+    @ViewBuilder private var sidebar: some View {
+        #if os(macOS)
+        VStack(spacing: 0) {
+            Color.clear.frame(height: titlebarHeight)
+            itemList.frame(minHeight: 0, maxHeight: .infinity)
+        }
+        .background { TitlebarHeightReader(height: $titlebarHeight) }
+        .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 340)
+        #else
+        itemList
+        #endif
+    }
+
+    private var itemList: some View {
+        List(selection: $selection) {
+            ForEach(items, id: \.id) { item in
+                NavigationLink(value: item.id) {
+                    HStack(spacing: 12) {
+                        ItemIcon(type: item.itemType, title: item.title, siteIcon: nil, size: 34)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(item.title).lineLimit(1)
+                            Text(ItemCategory.of(item.itemType).singular)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .accessibilityIdentifier("guest.item.\(item.id)")
                 }
-            }
-            .overlay {
-                if items.isEmpty {
-                    ContentUnavailableView.search(text: query)
-                }
-            }
-            .searchable(text: $query, prompt: Text("Rechercher"))
-            .navigationTitle("Éléments prêtés")
-            #if os(macOS)
-            .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 340)
-            #endif
-        } detail: {
-            if let item = session.items.first(where: { $0.id == selection }) {
-                PublicItemDetail(item: item, session: session)
-                    .id(item.id)
-            } else {
-                ContentUnavailableView(
-                    "Choisis un élément", systemImage: "list.bullet.rectangle",
-                    description: Text("Lecture seule. Tes copies s'effacent du presse-papiers après 30 s."))
+                .accessibilityIdentifier("guest.item.\(item.id)")
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            PublicSessionBanner(session: session)
+        .overlay {
+            if items.isEmpty {
+                ContentUnavailableView.search(text: query)
+            }
         }
-        .onChange(of: selection) { session.noteActivity() }
-        .onChange(of: query) { session.noteActivity() }
+        .searchable(text: $query, prompt: Text("Rechercher"))
+        .navigationTitle("Éléments prêtés")
     }
 }
 
