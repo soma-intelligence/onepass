@@ -29,7 +29,11 @@ const summary = (id: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+/** The vault has nothing for any site (a click into a field must not open an empty menu). */
+let emptyVault = false;
+
 const answer: Answer = (r) => {
+  if (emptyVault && (r.op === "list_for_origin" || r.op === "list_fillable")) return { items: [] };
   switch (r.op) {
     case "list_for_origin":
       return {
@@ -51,6 +55,14 @@ const answer: Answer = (r) => {
     case "save_login":
     case "link_provider":
       return { item_id: "it_new" };
+    case "provider_accounts":
+      return {
+        accounts: [
+          summary("g_perso", { title: "Google perso", subtitle: "alex.perso@example.com" }),
+          summary("g_pro", { title: "Google pro", subtitle: "alex.pro@example.com" }),
+        ],
+        linked_item_id: "g_perso",
+      };
     default:
       return {};
   }
@@ -58,9 +70,11 @@ const answer: Answer = (r) => {
 
 class FakeChain implements ChainDriver {
   readonly calls: unknown[][] = [];
+  readonly opts: unknown[] = [];
   view: ChainView | null = null;
-  async start(tabId: number, itemId: string, viaProvider?: string) {
+  async start(tabId: number, itemId: string, viaProvider?: string, opts?: unknown) {
     this.calls.push(["start", tabId, itemId, viaProvider]);
+    this.opts.push(opts);
   }
   async stop(tabId: number) {
     this.calls.push(["stop", tabId]);
@@ -108,13 +122,62 @@ describe("menu extras", () => {
     const { token, ui } = await menu(ext);
     expect(await ext.send({ type: "menu_signin", token, itemId: "it_02", provider: "google" }, ui)).toEqual({ ok: {} });
     expect(chain.calls).toEqual([["start", 7, "it_02", "google"]]);
-    expect(ext.sentToTabs.at(-1)).toEqual({
+    // The progress shows where the menu was: under its field.
+    expect(chain.opts).toEqual([{ anchorRef: "e1" }]);
+    expect(ext.sentToTabs.filter((x) => (x.message as { type: string }).type === "remove_frame").at(-1)).toEqual({
       tabId: 7,
       message: { type: "remove_frame", kind: "menu" },
       options: { documentId: "doc-1" },
     });
     // The token is spent.
     expect(await ext.send({ type: "menu_init", token }, ui)).toEqual({ err: "invalid" });
+  });
+
+  it("menu_signin takes a picked account only among those the menu showed, and anchors the progress", async () => {
+    const { ext, chain } = await setup();
+    const { token, ui } = await menu(ext);
+    expect(await ext.send({ type: "menu_signin", token, itemId: "it_02", provider: "google", accountId: "it_01" }, ui)).toEqual({ err: "invalid" });
+    expect(await ext.send({ type: "menu_signin", token, itemId: "it_02", provider: "google", accountId: "g_pro" }, ui)).toEqual({ ok: {} });
+    expect(chain.opts).toEqual([{ accountId: "g_pro", anchorRef: "e1" }]);
+  });
+
+  it("menu_init gives each provider method its default account and the others", async () => {
+    const { ext } = await setup();
+    const r = (await ext.send(
+      { type: "open_menu", fieldRef: "e1", formRef: "f1", formKind: "login" },
+      csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }),
+    )) as { ok: { url: string } };
+    const token = hashOf(r.ok.url);
+    const init = (await ext.send({ type: "menu_init", token }, uiSender(`menu.html#${token}`, 7))) as { ok: { choices: unknown } };
+    expect(init.ok.choices).toEqual([
+      {
+        itemId: "it_02",
+        provider: "google",
+        accountId: "g_perso",
+        accounts: [
+          { itemId: "g_perso", email: "alex.perso@example.com", title: "Google perso" },
+          { itemId: "g_pro", email: "alex.pro@example.com", title: "Google pro" },
+        ],
+      },
+    ]);
+  });
+
+  it("keys from the field reach the menu of that very frame", async () => {
+    const { ext } = await setup();
+    const { token, ui } = await menu(ext);
+    const field = csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" });
+    expect(await ext.send({ type: "menu_key", key: "down" }, field)).toEqual({ ok: {} });
+    expect(await ext.send({ type: "menu_keys", token }, ui)).toEqual({ ok: { keys: ["down"] } });
+    // Waiting: answered by the next key.
+    const waiting = ext.send({ type: "menu_keys", token }, ui);
+    await ext.send({ type: "menu_key", key: "enter" }, field);
+    expect(await waiting).toEqual({ ok: { keys: ["enter"] } });
+    // Another frame's keys do not reach it.
+    await ext.send({ type: "menu_key", key: "up" }, csSender(`${SITE}/login`, 7, 3, { documentId: "doc-9" }));
+    const other = ext.send({ type: "menu_keys", token }, ui);
+    await ext.send({ type: "menu_close", token }, ui);
+    expect(await other).toEqual({ ok: { keys: [] } });
+    expect(await ext.send({ type: "menu_keys", token }, ui)).toEqual({ err: "invalid" });
   });
 
   it("menu_signin refuses a provider the item does not use", async () => {
@@ -150,6 +213,14 @@ describe("overlay", () => {
         options: { documentId: "doc-1" },
       },
     ]);
+    // Under the field the user clicked from, when given.
+    const again = await bg.overlays.open(top, "e1");
+    expect(ext.sentToTabs.at(-1)?.message).toEqual({
+      type: "show_frame",
+      kind: "overlay",
+      url: `chrome-extension://${EXT_ID}/overlay.html#${again}`,
+      ref: "e1",
+    });
   });
 
   it("init lists password and provider sign-ins; start must be one of them", async () => {
@@ -157,7 +228,10 @@ describe("overlay", () => {
     const token = await bg.overlays.open(top);
     const ui = uiSender(`overlay.html#${token}`, 7);
     const init = (await ext.send({ type: "overlay_init", token }, ui)) as { ok: Record<string, unknown> };
-    expect(client.requests).toEqual([{ op: "list_for_origin", ctx: "overlay", origin: SITE }]);
+    expect(client.requests).toEqual([
+      { op: "list_for_origin", ctx: "overlay", origin: SITE },
+      { op: "provider_accounts", ctx: "overlay", provider: "google", origin: SITE },
+    ]);
     expect(init.ok).toEqual({
       origin: SITE,
       chain: null,
@@ -165,25 +239,86 @@ describe("overlay", () => {
         { itemId: "it_01", title: "Atlas Cloud", subtitle: "alex@atlas.dev", iconLetter: "A", iconColor: "#14532D" },
         {
           itemId: "it_02",
-          title: "Atlas Perso via Google",
-          subtitle: "Se connecter avec Google (alex.perso@example.com)",
+          title: "Atlas Perso",
+          subtitle: "alex.perso@example.com",
           iconLetter: "A",
           iconColor: "#14532D",
           provider: "google",
           email: "alex.perso@example.com",
+          accountId: "g_perso",
+          accounts: [
+            { itemId: "g_perso", email: "alex.perso@example.com", title: "Google perso" },
+            { itemId: "g_pro", email: "alex.pro@example.com", title: "Google pro" },
+          ],
         },
       ],
     });
     expect(await ext.send({ type: "overlay_start", token, itemId: "it_02" }, ui)).toEqual({ err: "invalid" });
     expect(await ext.send({ type: "overlay_start", token, itemId: "it_99" }, ui)).toEqual({ err: "invalid" });
+    // A picked account must be one the overlay showed for that provider.
+    expect(await ext.send({ type: "overlay_start", token, itemId: "it_02", provider: "google", accountId: "it_01" }, ui)).toEqual({ err: "invalid" });
+    // A password sign-in takes no account: dropped by the router.
+    expect(await ext.send({ type: "overlay_start", token, itemId: "it_01", accountId: "g_pro" }, ui)).toBe((await import("./fake-ext")).NO_REPLY);
     expect(await ext.send({ type: "overlay_start", token, itemId: "it_02", provider: "google" }, ui)).toEqual({ ok: {} });
+    expect(await ext.send({ type: "overlay_start", token, itemId: "it_02", provider: "google", accountId: "g_pro" }, ui)).toEqual({ ok: {} });
     expect(await ext.send({ type: "overlay_start", token, itemId: "it_01" }, ui)).toEqual({ ok: {} });
     expect(await ext.send({ type: "overlay_stop", token }, ui)).toEqual({ ok: {} });
     expect(chain.calls).toEqual([
       ["start", 7, "it_02", "google"],
+      ["start", 7, "it_02", "google"],
       ["start", 7, "it_01", undefined],
       ["stop", 7],
     ]);
+    expect(chain.opts).toEqual([{}, { accountId: "g_pro" }, {}]);
+  });
+
+  it("the provider account last picked on a site is the default there", async () => {
+    const { ext, bg, top } = await setup();
+    await ext.storage.local.set({ "signin:atlas-cloud.test|google": "g_pro" });
+    const token = await bg.overlays.open(top);
+    const ui = uiSender(`overlay.html#${token}`, 7);
+    const init = (await ext.send({ type: "overlay_init", token }, ui)) as { ok: { accounts: { accountId?: string; email?: string }[] } };
+    expect(init.ok.accounts[1]).toMatchObject({ accountId: "g_pro", email: "alex.pro@example.com" });
+  });
+
+  it("one surface: opening the menu removes an offered overlay, and is refused while a chain runs", async () => {
+    const { ext, bg, top, chain } = await setup();
+    await bg.overlays.open(top);
+    const open = () =>
+      ext.send({ type: "open_menu", fieldRef: "e1", formRef: "f1", formKind: "login" }, csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }));
+    expect(await open()).toEqual({ ok: { url: expect.stringContaining("menu.html#") } });
+    expect(ext.sentToTabs.at(-1)).toEqual({ tabId: 7, message: { type: "remove_frame", kind: "overlay" }, options: { documentId: "doc-1" } });
+    expect(await bg.overlays.tokens.hasTab(7)).toBe(false);
+    // While a chain runs, its progress stays and no menu opens over it.
+    await bg.overlays.open(top);
+    chain.view = { itemId: "it_01", status: "running", steps: [] };
+    expect(await open()).toEqual({ err: "not_allowed" });
+    expect(await bg.overlays.tokens.hasTab(7)).toBe(true);
+  });
+
+  it("a click into an empty field opens the menu only when it has something to offer", async () => {
+    const { ext } = await setup();
+    const auto = (formKind: string) =>
+      ext.send({ type: "open_menu", fieldRef: "e1", formRef: "f1", formKind, auto: true }, csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }));
+    expect(await auto("login")).toEqual({ ok: { url: expect.stringContaining("menu.html#") } });
+    emptyVault = true;
+    try {
+      expect(await auto("login")).toEqual({ err: "not_found" });
+      expect(await auto("card")).toEqual({ err: "not_found" });
+      // A new password form always offers to generate one.
+      expect(await auto("signup")).toEqual({ ok: { url: expect.stringContaining("menu.html#") } });
+    } finally {
+      emptyVault = false;
+    }
+  });
+
+  it("resize relays the page's height to its own frame only", async () => {
+    const { ext, bg, top } = await setup();
+    const token = await bg.overlays.open(top);
+    expect(await ext.send({ type: "overlay_resize", token, height: 188 }, uiSender(`overlay.html#${token}`, 7))).toEqual({ ok: {} });
+    expect(ext.sentToTabs.at(-1)).toEqual({ tabId: 7, message: { type: "resize_frame", kind: "overlay", height: 188 }, options: { documentId: "doc-1" } });
+    expect(await ext.send({ type: "overlay_resize", token, height: 188 }, uiSender(`overlay.html#${token}`, 8))).toEqual({ err: "invalid" });
+    expect(await ext.send({ type: "overlay_resize", token, height: 1.5 }, uiSender(`overlay.html#${token}`, 7))).toBe((await import("./fake-ext")).NO_REPLY);
   });
 
   it("state relays the chain view; other tabs and other pages are refused", async () => {
