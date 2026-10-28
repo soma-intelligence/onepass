@@ -19,3 +19,7 @@ formal/out/
 
 # Recorded form flows (private corpus)
 extension/lab/corpus/private/
+
+# ML project
+ml/.venv/
+ml/out/
