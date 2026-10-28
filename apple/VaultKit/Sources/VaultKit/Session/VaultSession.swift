@@ -987,6 +987,15 @@ public final class VaultSession {
         }
     }
 
+    /// "Exporter en CSV non chiffré": every secret of `vaultIDs` (all vaults when empty) in clear,
+    /// trashed items left out. Asks the master password first. The caller wipes the bytes once
+    /// written. Nothing changes in the store.
+    public func exportPlaintextCSV(password: SecretBytes, vaultIDs: [String]) async throws -> Data {
+        try await withConfirmedSession(password: password, reopen: false) { session in
+            try session.exportPlaintextCsv(vaultIds: vaultIDs)
+        }
+    }
+
     /// Publishes the AutoFill identities now, without the debounce, and returns once the system store
     /// was replaced (after every identity request sent before). For the AutoFill extension after a
     /// write: its session locks right after, and a debounced refresh would then find it locked, leaving
@@ -1330,6 +1339,33 @@ public final class VaultSession {
         }
         guard gen == generation else { throw fail(.passwordRequired) }
         return value
+    }
+
+    /// A core call on an archive (restore, preview, header). Its errors are about the file, so an
+    /// integrity error never puts the vault in "Données refusées" (unlike `read` and `write`). With
+    /// `writes`, the lists are reloaded and the sync layer told, like `write`.
+    func onArchive<T: Sendable>(
+        writes: Bool, _ op: @escaping @Sendable (Session) throws -> T
+    ) async throws(ArchiveError) -> T {
+        guard let session else { throw .other(fail(.passwordRequired)) }
+        let gen = generation
+        noteActivity()
+        let result: (value: T, snapshot: Snapshot?)
+        do {
+            result = try await background {
+                let value = try op(session)
+                return (value, writes ? try Self.load(session, purge: false) : nil)
+            }
+        } catch {
+            throw ArchiveError(error)
+        }
+        guard gen == generation else { throw .other(fail(.passwordRequired)) }
+        if let snapshot = result.snapshot {
+            apply(snapshot)
+            notifySync { await $0.localChangesWritten() }
+            refreshAutofillIdentities()
+        }
+        return result.value
     }
 
     /// Runs a write, reloads the lists, tells the sync layer.

@@ -10,6 +10,7 @@
 		0283FD5F51CA58AA05D74578 /* GeneratorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F2B5C4E147CBDF5F09CD14 /* GeneratorSheet.swift */; };
 		03459B41D154F2E30DA9186B /* AutoFillTipCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4F2C8E0964CF60998372520 /* AutoFillTipCard.swift */; };
 		034D7CB79ABF3119AE380303 /* CodesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7AEF89D2CEB58AAF425BA2C /* CodesWidget.swift */; };
+		05B744F29F1CC79754FD70F5 /* BackupSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 158EE03D2DB4AA7F9C4EFA4D /* BackupSheets.swift */; };
 		06396E8300D4CC9C6331BE4A /* AboutSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89863609CCDE5B045CFDE000 /* AboutSettings.swift */; };
 		0653DC989198E82BBBFF45B3 /* OnePassWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45B0A2E7E89981FFB0AA858 /* OnePassWidgetsBundle.swift */; };
 		0B6E58B02964EE1E945B9C16 /* SearchTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */; };
@@ -247,6 +248,7 @@
 		1219B00FDE8D6A6B54AEC7ED /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		123B03A83CDA95FC02A7BE8C /* OnePassShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassShortcuts.swift; sourceTree = "<group>"; };
 		129B81D637BE1364C28F598B /* LocationEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationEditor.swift; sourceTree = "<group>"; };
+		158EE03D2DB4AA7F9C4EFA4D /* BackupSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupSheets.swift; sourceTree = "<group>"; };
 		15DA91325D7B74C10AFBA3A6 /* OnePassUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OnePassUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		17FDCEFF95D8CB4ED8362F26 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
 		19D9899D8B640FB4F5F8B0E6 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
@@ -732,6 +734,7 @@
 			children = (
 				89863609CCDE5B045CFDE000 /* AboutSettings.swift */,
 				46BB0DFE499C7B52D15F7EA0 /* AutoFillSettings.swift */,
+				158EE03D2DB4AA7F9C4EFA4D /* BackupSheets.swift */,
 				815AF1A53D95850ADA3D7263 /* BrowserBridgeViews.swift */,
 				257C8A4056D753F50F27FF62 /* GeneralSettings.swift */,
 				2F45C46BA4FEB08CD8A7C5FE /* ImportSheet.swift */,
@@ -1227,6 +1230,7 @@
 				9320F3B7178A6EBB186C26AA /* AppRoute.swift in Sources */,
 				B40C7D0CDCD426EAD789C8DA /* AutoFillSettings.swift in Sources */,
 				03459B41D154F2E30DA9186B /* AutoFillTipCard.swift in Sources */,
+				05B744F29F1CC79754FD70F5 /* BackupSheets.swift in Sources */,
 				B2F387C1CCCBB83AC30E1E16 /* BarcodeEditor.swift in Sources */,
 				3B5912DB886A1E8510C4F27E /* BrowseRoot.swift in Sources */,
 				914EB56D92941137E477FBE9 /* BrowserBridgeViews.swift in Sources */,

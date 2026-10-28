@@ -73,6 +73,8 @@ final class AppModel {
     var showNewItemPicker = false
     /// ⌘⇧I (Fichier > Importer…): the import sheet.
     var showImport = false
+    /// Fichier > Restaurer une sauvegarde… (and Réglages > Général).
+    var showRestore = false
     // Menu commands handled by the views on screen (bumped, observed with `onChange`).
     var editRequest = 0
     var saveRequest = 0
@@ -512,6 +514,7 @@ final class AppModel {
     private static func sweepEmergencyKits() {
         EmergencyKitFile.sweep(in: FileManager.default.temporaryDirectory)
         EncryptedBackupFile.sweep(in: FileManager.default.temporaryDirectory)
+        PlaintextExportFile.sweep(in: FileManager.default.temporaryDirectory)
     }
 
     /// Spec 7: the creation is refused when this iCloud already holds an account (ruling R13).
@@ -668,6 +671,9 @@ final class AppModel {
     func sessionStateChanged(_ state: VaultSession.State) {
         if state == .unlocked {
             consumePendingRoute()
+            // "Me prévenir": a report after each unlock, so new findings are notified even when the
+            // Watchtower page stays closed. Off: Watchtower runs only when its page is shown.
+            if watchtower.notify { watchtower.refreshIfNeeded(session) }
         } else {
             resetNavigation()
         }
@@ -811,6 +817,7 @@ final class AppModel {
         pendingDiscard = nil
         showNewItemPicker = false
         showImport = false
+        showRestore = false
         // The offer holds the typed password: never kept past a lock.
         biometricOffer = nil
         showSettings = false

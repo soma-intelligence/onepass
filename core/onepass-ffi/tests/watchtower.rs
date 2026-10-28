@@ -67,6 +67,7 @@ fn options(ranges: Option<Vec<FfiRangeResponse>>) -> FfiWatchtowerOptions {
         twofa_directory: None,
         passkeys_directory: None,
         excluded_vault_ids: vec![],
+        breach_catalog: None,
     }
 }
 
@@ -163,4 +164,28 @@ fn locked_session_refuses() {
         fx.session.watchtower_report(options(None)),
         Err(OnePassError::Locked)
     ));
+}
+
+#[test]
+fn breach_catalog_feeds_breached_site() {
+    let fx = fixture();
+    let item = login(
+        &fx,
+        "A",
+        "Tq7#vLr9-pXw2!mZ8kEa-Hs4",
+        "https://compte.exemple.fr",
+    );
+    let without = fx.session.watchtower_report(options(None)).unwrap();
+    assert!(ids(&without, "breached_site").is_empty());
+    // A breach dated after the password was set: the password predates it.
+    let catalog = br#"[{"Name":"Exemple","Domain":"exemple.fr","BreachDate":"2099-01-01","IsVerified":true}]"#;
+    let mut opts = options(None);
+    opts.breach_catalog = Some(catalog.to_vec());
+    let with = fx.session.watchtower_report(opts.clone()).unwrap();
+    assert_eq!(ids(&with, "breached_site"), std::slice::from_ref(&item.id));
+    // A catalog that does not parse turns the check off, nothing else.
+    opts.breach_catalog = Some(b"not json".to_vec());
+    let bad = fx.session.watchtower_report(opts).unwrap();
+    assert!(ids(&bad, "breached_site").is_empty());
+    assert_eq!(bad.items_analyzed, 1);
 }

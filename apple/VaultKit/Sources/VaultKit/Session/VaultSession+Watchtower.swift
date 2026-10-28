@@ -18,7 +18,7 @@ extension VaultSession {
     /// One analysis of the visible vaults (hidden ones are left out). `ranges` nil turns breach
     /// lookups off; an empty array runs the offline pass that lists the prefixes to fetch.
     public func watchtowerReport(
-        ranges: [FfiRangeResponse]?, twofaDirectory: Data?, passkeysDirectory: Data?
+        ranges: [FfiRangeResponse]?, twofaDirectory: Data?, passkeysDirectory: Data?, breachCatalog: Data? = nil
     ) async throws -> FfiWatchtowerReport {
         let options = FfiWatchtowerOptions(
             expiryWarningDays: Self.watchtowerExpiryWarningDays,
@@ -26,18 +26,22 @@ extension VaultSession {
             ranges: ranges,
             twofaDirectory: twofaDirectory,
             passkeysDirectory: passkeysDirectory,
-            excludedVaultIds: hiddenVaultIDs.sorted())
+            excludedVaultIds: hiddenVaultIDs.sorted(),
+            breachCatalog: breachCatalog)
         return try await read { try $0.watchtowerReport(options: options) }
     }
 }
 
 /// Download of the public Watchtower data: HIBP password ranges (kept in memory, for one hour, and
-/// dropped by `clear` on lock) and the 2fa.directory catalogs (kept on disk in Caches for a week).
+/// dropped by `clear` on lock), the 2fa.directory catalogs and the HIBP breach catalog (kept on disk
+/// in Caches for a week).
 /// Ephemeral `URLSession`: no cookie, no URL cache, no credential.
 public actor WatchtowerFetcher {
     public static let rangeBase = "https://api.pwnedpasswords.com/range/"
     public static let twofaDirectoryURL = URL(string: "https://api.2fa.directory/v4/all.json")!
     public static let passkeysDirectoryURL = URL(string: "https://passkeys-api.2fa.directory/v1/all.json")!
+    /// The public breach catalog of Have I Been Pwned (no key): downloaded whole.
+    public static let breachCatalogURL = URL(string: "https://haveibeenpwned.com/api/v3/breaches")!
     /// Largest range body the core reads (spec 3.3) and largest catalog (spec 3.4).
     public static let maxRangeBytes = 4 << 20
     public static let maxCatalogBytes = 16 << 20
@@ -164,6 +168,11 @@ public actor WatchtowerFetcher {
         async let twofa = catalog(Self.twofaDirectoryURL, file: "2fa-directory.json", allowNetwork: allowNetwork)
         async let passkeys = catalog(Self.passkeysDirectoryURL, file: "passkeys-directory.json", allowNetwork: allowNetwork)
         return await (twofa, passkeys)
+    }
+
+    /// The breach catalog: same cache rules as the site catalogs.
+    public func breachCatalog(allowNetwork: Bool) async -> Data? {
+        await catalog(Self.breachCatalogURL, file: "hibp-breaches.json", allowNetwork: allowNetwork)
     }
 
     private func catalog(_ url: URL, file: String, allowNetwork: Bool) async -> Data? {

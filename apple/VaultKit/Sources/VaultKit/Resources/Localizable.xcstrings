@@ -1,6 +1,166 @@
 {
   "sourceLanguage" : "fr",
   "strings" : {
+    "%lld comptes de connexion sont exposés." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sign-in accounts are exposed."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld comptes de connexion sont exposés."
+          }
+        }
+      }
+    },
+    "%lld mots de passe apparaissent dans des fuites." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld passwords appear in breaches."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld mots de passe apparaissent dans des fuites."
+          }
+        }
+      }
+    },
+    "%lld sites ont été piratés depuis ton dernier changement de mot de passe." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sites were breached since you last changed your password."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sites ont été piratés depuis ton dernier changement de mot de passe."
+          }
+        }
+      }
+    },
+    "%lld éléments expirent bientôt." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld items expire soon."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld éléments expirent bientôt."
+          }
+        }
+      }
+    },
+    "%lld éléments ont expiré." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld items have expired."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld éléments ont expiré."
+          }
+        }
+      }
+    },
+    "1 compte de connexion est exposé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 sign-in account is exposed."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 compte de connexion est exposé."
+          }
+        }
+      }
+    },
+    "1 mot de passe apparaît dans une fuite." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 password appears in a breach."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 mot de passe apparaît dans une fuite."
+          }
+        }
+      }
+    },
+    "1 site a été piraté depuis ton dernier changement de mot de passe." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 site was breached since you last changed your password."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 site a été piraté depuis ton dernier changement de mot de passe."
+          }
+        }
+      }
+    },
+    "1 élément a expiré." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 item has expired."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 élément a expiré."
+          }
+        }
+      }
+    },
+    "1 élément expire bientôt." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 item expires soon."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 élément expire bientôt."
+          }
+        }
+      }
+    },
     "Ancienne version rejouée." : {
       "localizations" : {
         "en" : {
@@ -113,6 +273,22 @@
         }
       }
     },
+    "Ce fichier n'est pas une sauvegarde OnePass." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is not a OnePass backup."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier n'est pas une sauvegarde OnePass."
+          }
+        }
+      }
+    },
     "Ce fichier ne correspond pas au format choisi, ou il est abîmé." : {
       "localizations" : {
         "en" : {
@@ -221,6 +397,70 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette clé s'ajoute à ton mot de passe maître pour protéger ton coffre. Elle est stockée sur tes appareils et n'est jamais envoyée à personne."
+          }
+        }
+      }
+    },
+    "Cette sauvegarde a été modifiée ou abîmée : sa signature ou son contenu ne correspond pas. Rien n'a été restauré." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This backup was changed or damaged: its signature or its content does not match. Nothing was restored."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette sauvegarde a été modifiée ou abîmée : sa signature ou son contenu ne correspond pas. Rien n'a été restauré."
+          }
+        }
+      }
+    },
+    "Cette sauvegarde appartient à un autre compte et n'a pas de phrase de passe : elle ne s'ouvre qu'avec ce compte." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This backup belongs to another account and has no passphrase: it opens only with that account."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette sauvegarde appartient à un autre compte et n'a pas de phrase de passe : elle ne s'ouvre qu'avec ce compte."
+          }
+        }
+      }
+    },
+    "Cette sauvegarde vient d'un autre compte : saisis sa phrase de passe." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This backup comes from another account: enter its passphrase."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette sauvegarde vient d'un autre compte : saisis sa phrase de passe."
+          }
+        }
+      }
+    },
+    "Cette sauvegarde vient d'une version plus récente de OnePass. Mets l'app à jour, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This backup comes from a newer version of OnePass. Update the app, then try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette sauvegarde vient d'une version plus récente de OnePass. Mets l'app à jour, puis réessaie."
           }
         }
       }
@@ -1037,6 +1277,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phrase de passe illisible."
+          }
+        }
+      }
+    },
+    "Phrase de passe incorrecte." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wrong passphrase."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phrase de passe incorrecte."
           }
         }
       }

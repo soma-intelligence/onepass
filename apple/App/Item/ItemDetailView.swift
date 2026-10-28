@@ -139,8 +139,9 @@ struct ItemDetailView: View {
                 if locked(item) {
                     repromptSection(item)
                 } else {
-                    if item.trashedAt == nil, !item.archived, let offer = PasskeyOffer.offer(for: item) {
-                        PasskeyOfferBanner(offer: offer) { dismissPasskeyOffer(item) }
+                    if item.trashedAt == nil, !item.archived,
+                        let offer = PasskeyOffer.offer(for: item, report: model.watchtower.report) {
+                        PasskeyOfferBanner(offer: offer) { setWatchtowerExclusion(PasskeyOffer.checkID, excluded: true, item) }
                     }
                     if item.itemType == .document {
                         ForEach(DocumentCard.attachments(of: item), id: \.id) { attachment in
@@ -148,6 +149,11 @@ struct ItemDetailView: View {
                         }
                     }
                     content(item)
+                    if item.trashedAt == nil, !item.archived {
+                        ItemWatchtowerSection(item: item, report: model.watchtower.report) { check, excluded in
+                            setWatchtowerExclusion(check, excluded: excluded, item)
+                        }
+                    }
                 }
                 footer(item)
             }
@@ -580,11 +586,12 @@ struct ItemDetailView: View {
         }
     }
 
-    /// "Ignorer" on the passkey banner: the check is excluded for this item, saved like an edit.
-    private func dismissPasskeyOffer(_ item: FfiItem) {
+    /// "Ignorer" (passkey banner, Watchtower section) or "Rétablir": the check is excluded for this
+    /// item, or no longer, saved like an edit. The next report follows.
+    private func setWatchtowerExclusion(_ check: String, excluded: Bool, _ item: FfiItem) {
         var changed = item
-        guard !changed.watchtowerExclusions.contains(PasskeyOffer.checkID) else { return }
-        changed.watchtowerExclusions.append(PasskeyOffer.checkID)
+        WatchtowerExclusions.set(check, excluded: excluded, in: &changed.watchtowerExclusions)
+        guard changed.watchtowerExclusions != item.watchtowerExclusions else { return }
         Task {
             do {
                 self.item = try await session.save(changed)
@@ -1141,21 +1148,83 @@ enum ItemJSON {
 
 // MARK: - Passkey banner
 
-/// A login whose site accepts passkeys and that has none. The core's passkey directory check
-/// (`passkey_available`) loads its catalog from bytes the caller supplies, and the app bundles no
-/// catalog yet: `offer(for:)` returns nil until it does, so the banner stays hidden (never faked).
+/// A login whose site accepts passkeys and that has none: the last Watchtower report flagged it
+/// (`passkey_available`, from the passkeys directory Watchtower downloads). Without a report, or
+/// when the check did not run, there is no banner (never faked).
 struct PasskeyOffer: Equatable {
     static let checkID = "passkey_available"
     let host: String
-    /// The site's account settings page from the directory, else the site.
+    /// The site of the item's main address, where its passkey settings live.
     let url: URL
 
-    static func offer(for item: FfiItem) -> PasskeyOffer? {
+    static func offer(for item: FfiItem, report: FfiWatchtowerReport?) -> PasskeyOffer? {
         guard item.itemType == .login, !item.watchtowerExclusions.contains(checkID),
-            !item.loginMethods.contains(.passkey)
+            !item.loginMethods.contains(.passkey),
+            let report, WatchtowerExclusions.checks(of: item.id, in: report).contains(checkID)
         else { return nil }
-        // No directory in the app: nothing to look the host up in.
-        return nil
+        let main = item.urls.first { $0.primary } ?? item.urls.first
+        guard let raw = main?.url, let host = URL(string: raw)?.host() ?? URL(string: "https://" + raw)?.host(),
+            let url = URL(string: "https://\(host)")
+        else { return nil }
+        return PasskeyOffer(host: host, url: url)
+    }
+}
+
+/// "Watchtower" in an item's detail: what the last report flagged for this item, each with "Ignorer
+/// pour cet élément", and the checks ignored for it, each with "Rétablir". Hidden when both are empty.
+struct ItemWatchtowerSection: View {
+    let item: FfiItem
+    let report: FfiWatchtowerReport?
+    let onSet: (_ check: String, _ excluded: Bool) -> Void
+
+    private var flagged: [String] {
+        guard let report else { return [] }
+        // The report may predate an exclusion just saved: an ignored check is listed once, as ignored.
+        return WatchtowerExclusions.checks(of: item.id, in: report).filter {
+            WatchtowerCard.of(check: $0) != nil && !item.watchtowerExclusions.contains($0)
+        }
+    }
+
+    var body: some View {
+        let ignored = item.watchtowerExclusions.filter { WatchtowerCard.of(check: $0) != nil }
+        if !flagged.isEmpty || !ignored.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("WATCHTOWER")
+                    .font(.caption.weight(.bold))
+                    .tracking(0.6)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 16)
+                    .accessibilityAddTraits(.isHeader)
+                EditorCard {
+                    let rows = flagged.map { ($0, false) } + ignored.map { ($0, true) }
+                    ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                        if index > 0 { CardDivider() }
+                        line(check: row.0, ignored: row.1)
+                    }
+                }
+            }
+            .accessibilityIdentifier("item.watchtower")
+        }
+    }
+
+    @ViewBuilder private func line(check: String, ignored: Bool) -> some View {
+        if let card = WatchtowerCard.of(check: check) {
+            HStack(spacing: 12) {
+                PageTile(symbol: card.symbol, color: ignored ? .gray : card.color, size: 26)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(card.title).font(.subheadline.weight(.medium))
+                    Text(ignored ? String(localized: "Ignoré pour cet élément") : card.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Button(ignored ? LocalizedStringKey("Rétablir") : "Ignorer") { onSet(check, !ignored) }
+                    .buttonStyle(.borderless)
+                    .accessibilityIdentifier("item.watchtower.\(ignored ? "restore" : "ignore").\(check)")
+            }
+            .editorRowPadding()
+        }
     }
 }
 
