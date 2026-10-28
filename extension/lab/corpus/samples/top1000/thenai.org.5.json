@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-10-28T00:25:54.327Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "thenai.org",
+  "iframes": [
+    {
+      "origin": "https://static.addtoany.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://thenai.org/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

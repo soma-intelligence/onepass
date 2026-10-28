@@ -1,0 +1,25 @@
+{
+  "captured_at": "2026-10-27T22:29:18.501Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "espn.com",
+  "iframes": [
+    {
+      "origin": "https://cdn.registerdisney.go.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.espn.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://espn.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

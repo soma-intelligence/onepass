@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:53:44.214Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "archive.is",
+  "source": "rendered",
+  "source_url": "https://archive.is/2026.10.27-224418/https://thedixieshop.com/login.php?from=account.php%3Faction%3Dorder_status",
+  "status": "error: http 429"
+}

@@ -1,0 +1,72 @@
+{
+  "captured_at": "2026-10-27T22:56:48.385Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "find your domain"
+      ],
+      "fields": [
+        {
+          "after": "gluten-free-gutenberg.com pool-request.c",
+          "ariaLabel": "search for a domain",
+          "autocomplete": "off",
+          "before": "emember, easy to share, and sure to stan",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search for a domain",
+          "maxlength": 60,
+          "name": "new",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "products",
+        "resources",
+        "menu",
+        "back",
+        "find your domain",
+        "do not sell or share my personal information",
+        "help"
+      ],
+      "fields": [
+        {
+          "after": "deutsch español français bahasa indonesi",
+          "before": "act company about careers partners press",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "language-picker-select",
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "wp.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://wp.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

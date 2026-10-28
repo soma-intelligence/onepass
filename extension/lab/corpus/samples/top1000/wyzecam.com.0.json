@@ -1,0 +1,317 @@
+{
+  "captured_at": "2026-10-28T00:10:42.294Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "ask wyze assistant"
+      ],
+      "fields": [
+        {
+          "after": "search",
+          "autocomplete": "off",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "WyzeSearch-In-Modal",
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "email by entering your email address and",
+          "autocomplete": "email",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "email",
+          "name": "contact[email]",
+          "placeholder": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "accept",
+        "deny non-essential",
+        "united states /english",
+        "back",
+        "us/en",
+        "ask wyze assistant",
+        "cart",
+        "go to [suggested_country_short] site",
+        "stay on u.s. site",
+        "chat with us",
+        "add to cart",
+        "add to cart"
+      ],
+      "fields": [
+        {
+          "before": "$89.98 regular price $89.98 add to cart",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 16,
+          "hasPattern": false,
+          "index": 1,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "wyze battery video doorbell black / no c",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 2,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "$65.98 regular price $85.96 add to cart",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 3,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "wyze solar panel solar panel deal $28.98",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 4,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "wyze sense entry sensor 3 pack deal $49.",
+          "before": "$28.98 regular price $28.98 add to cart",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 5,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "wyze battery cam pro white / 1-pack / no",
+          "before": "ck deal $49.98 regular price add to cart",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 6,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "$89.98 regular price $89.98 add to cart",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 7,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 16,
+          "hasPattern": false,
+          "index": 8,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "wyze battery video doorbell black / no c",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 9,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "$65.98 regular price $85.96 add to cart",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 10,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "wyze solar panel solar panel deal $28.98",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 11,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "wyze sense entry sensor 3 pack deal $49.",
+          "before": "$28.98 regular price $28.98 add to cart",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 12,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "added to your cart free shipping on orde",
+          "before": "ck deal $49.98 regular price add to cart",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 13,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "wyze sense entry sensor 3 pack deal $49.",
+          "before": "$28.98 regular price $28.98 add to cart",
+          "depth": 17,
+          "hasPattern": false,
+          "index": 14,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "wyze battery cam pro white / 1-pack / no",
+          "before": "ck deal $49.98 regular price add to cart",
+          "depth": 17,
+          "hasPattern": false,
+          "index": 15,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "$89.98 regular price $89.98 add to cart",
+          "depth": 17,
+          "hasPattern": false,
+          "index": 16,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 17,
+          "hasPattern": false,
+          "index": 17,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "wyze battery video doorbell black / no c",
+          "depth": 17,
+          "hasPattern": false,
+          "index": 18,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "$65.98 regular price $85.96 add to cart",
+          "depth": 17,
+          "hasPattern": false,
+          "index": 19,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 17,
+          "hasPattern": false,
+          "index": 20,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "wyzecam.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://wyzecam.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

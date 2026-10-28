@@ -1,0 +1,65 @@
+{
+  "captured_at": "2026-10-27T22:46:01.944Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "start publishing sign in",
+          "autocomplete": "off",
+          "before": "resources creators explore",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search substack...",
+          "maxlength": 512,
+          "name": "query",
+          "placeholder": "search substack...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "explore substack app discover featured s",
+          "autocomplete": "off",
+          "before": "start publishing sign in",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search substack...",
+          "maxlength": 512,
+          "name": "query",
+          "placeholder": "search substack...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "substack.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://substack.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

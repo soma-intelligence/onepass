@@ -1,0 +1,88 @@
+{
+  "captured_at": "2026-10-27T21:56:11.071Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search search terms",
+          "ariaLabel": "register a domain name",
+          "autocomplete": "off",
+          "before": "transfer",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "search",
+          "index": 0,
+          "label": "register a domain name",
+          "name": "search",
+          "placeholder": "enter one word or a domain name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "domains",
+        "hosting",
+        "certificates",
+        "$ usd",
+        "search",
+        "multiple search",
+        "english"
+      ],
+      "fields": [
+        {
+          "after": "domain",
+          "before": "tes custom mailboxes $ usd log in domain",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "domain-process-nav-switch",
+          "index": 0,
+          "label": "domain",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "registration periods",
+          "autocomplete": "off",
+          "before": "hide extensions select...",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "tld",
+          "index": 1,
+          "label": "extensions",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "shop.gandi.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://shop.gandi.net/en/domain/suggest",
+  "status": "ok",
+  "webauthnCalls": []
+}

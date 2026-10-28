@@ -1,0 +1,255 @@
+{
+  "captured_at": "2026-10-27T23:58:02.556Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "ome. start click-n-ship. search usps.com",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "global-header--search-track-mail-ship",
+          "index": 0,
+          "label": "search usps.com",
+          "maxlength": 256,
+          "name": "q",
+          "placeholder": "search or enter a tracking number",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "es mail for the deceased search usps.com",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "global-header--search-track-track-manage",
+          "index": 0,
+          "label": "search usps.com",
+          "maxlength": 256,
+          "name": "q",
+          "placeholder": "search or enter a tracking number",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "search the postal store: keyword or sku",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "global-header--search-track-store",
+          "index": 0,
+          "label": "search the postal store: keyword or sku",
+          "maxlength": 256,
+          "name": "q",
+          "placeholder": "search the postal store: keyword or sku",
+          "required": false,
+          "role": "postal_code",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "& web tools apis prices search usps.com",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "global-header--search-track-business",
+          "index": 0,
+          "label": "search usps.com",
+          "maxlength": 256,
+          "name": "q",
+          "placeholder": "search or enter a tracking number",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "an international refund search usps.com",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "<long>",
+          "index": 0,
+          "label": "search usps.com",
+          "maxlength": 256,
+          "name": "q",
+          "placeholder": "search or enter a tracking number",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "usps.com search usps.com search usps.com",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "global-header--search-track-search",
+          "index": 0,
+          "label": "search usps.com",
+          "maxlength": 256,
+          "name": "q",
+          "placeholder": "search or enter a tracking number",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "es enter search term for search usps.com",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "global-header--search-track-mob-search",
+          "index": 0,
+          "label": "enter search term for search usps.com",
+          "maxlength": 256,
+          "name": "q",
+          "placeholder": "search or enter a tracking number",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search see incoming mail in your email s",
+          "ariaLabel": "usps.com search bar",
+          "autocomplete": "off",
+          "before": "ackage search or enter a tracking number",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "home-input-mob",
+          "index": 0,
+          "label": "usps.com search bar",
+          "maxlength": 256,
+          "name": "keyword",
+          "placeholder": "search usps.com or enter tracking number(s)",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search click-n-ship ® pay for and print",
+          "ariaLabel": "usps.com search bar",
+          "autocomplete": "off",
+          "before": "ckages search or enter a tracking number",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "home-input",
+          "index": 0,
+          "label": "usps.com search bar",
+          "maxlength": 256,
+          "name": "keyword",
+          "placeholder": "search usps.com or enter tracking number(s)",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "usps.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://usps.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

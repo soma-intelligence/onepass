@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-10-27T23:46:00.403Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "typeahead-search-field-input",
+          "index": 0,
+          "label": "what can we help you find today?",
+          "name": "keyword",
+          "placeholder": "what can we help you find today?",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "go"
+      ],
+      "fields": [
+        {
+          "after": "go our other sites the home depot canada",
+          "autocomplete": "off",
+          "before": "ign up for emails with savings and tips.",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "footer-email-input",
+          "index": 0,
+          "label": "enter email address",
+          "placeholder": "enter email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "react",
+  "host": "homedepot.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://homedepot.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

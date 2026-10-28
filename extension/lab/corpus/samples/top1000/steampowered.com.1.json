@@ -1,0 +1,137 @@
+{
+  "captured_at": "2026-10-27T22:17:27.501Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "advanced search sign in sign in with acc",
+          "autocomplete": "off",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search the store",
+          "name": "term",
+          "placeholder": "search the store",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign in"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "before": "search sign in sign in with account name",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "«r4»",
+          "index": 0,
+          "label": "sign in with account name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "remember me sign in help, i can't sign i",
+          "before": "password",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "«r5»",
+          "index": 1,
+          "label": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "password"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "contact steam support for help with acco",
+          "before": "te claims for help with account access a",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "authcode",
+          "index": 0,
+          "label": "enter your code here",
+          "placeholder": "enter your code here",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "before": "ed, give the browser a friendly name - a",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "friendlyname",
+          "index": 1,
+          "label": "enter a friendly name here",
+          "placeholder": "enter a friendly name here",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "contact steam support for help with acco",
+          "autocomplete": "off",
+          "before": "r assistance from a member of our staff.",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "twofactorcode_entry",
+          "index": 0,
+          "label": "enter your code here",
+          "placeholder": "enter your code here",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "store.steampowered.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://store.steampowered.com/login/?redir=&redir_ssl=1&snr=1_4_4__global-header",
+  "status": "ok",
+  "webauthnCalls": []
+}

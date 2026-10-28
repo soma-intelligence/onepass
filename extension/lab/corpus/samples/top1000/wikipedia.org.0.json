@@ -1,0 +1,60 @@
+{
+  "captured_at": "2026-10-27T21:54:37.882Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "en",
+          "autocomplete": "off",
+          "before": "search wikipedia",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "searchInput",
+          "index": 0,
+          "label": "search wikipedia",
+          "name": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        },
+        {
+          "after": "search",
+          "before": "en",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "searchLanguage",
+          "index": 1,
+          "label": "en",
+          "name": "language",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "wikipedia.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://wikipedia.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

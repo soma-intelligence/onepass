@@ -1,0 +1,54 @@
+{
+  "captured_at": "2026-10-27T23:16:07.166Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "need help?",
+        "cookies settings",
+        "reject all",
+        "accept all",
+        "back button",
+        "filter button",
+        "clear",
+        "apply",
+        "cancel",
+        "confirm my choices",
+        "reject all",
+        "accept all"
+      ],
+      "fields": [
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "cookie list search",
+          "before": ". they don’t tra back button cookie list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "dreamhost.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://dreamhost.com/cart/?serviceType=1871&promo=VPSNEW&leadSource=%2F",
+  "status": "ok",
+  "webauthnCalls": []
+}

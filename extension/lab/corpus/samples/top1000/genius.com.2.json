@@ -1,0 +1,50 @@
+{
+  "captured_at": "2026-10-28T00:17:16.298Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "featured 0 followers 0 following @signin",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "charts videos promote your music sign up",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search lyrics & more",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "genius.com",
+  "iframes": [
+    {
+      "origin": "https://dialog.filepicker.io",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.filepicker.io",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://genius.com/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-27T23:35:53.444Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "log in sign up home browse following eve",
+          "ariaLabel": "search",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "maxlength": 50,
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "kick.com",
+  "iframes": [
+    {
+      "origin": "https://kick.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://kick.com/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,79 @@
+{
+  "captured_at": "2026-10-28T00:18:43.024Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "tailscale on azure marketplace last vali",
+          "ariaLabel": "search",
+          "before": "se cases invite only features feedback ↗",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "platform",
+        "solutions",
+        "customers",
+        "community",
+        "partnerships",
+        "toggle",
+        "toggle",
+        "toggle",
+        "toggle",
+        "toggle",
+        "toggle",
+        "toggle"
+      ],
+      "fields": [
+        {
+          "before": "gistered trademark of jason a. donenfeld",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "tailscale.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://tailscale.com/docs/account/billing/azure-marketplace-for-billing",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,62 @@
+{
+  "captured_at": "2026-10-28T00:12:12.451Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue with google",
+        "log in"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "autocomplete": "username",
+          "before": "n to figma continue with google or email",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "email",
+          "name": "email",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "log in use single sign-on reset password",
+          "autocomplete": "current-password",
+          "before": "password",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "current-password",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "figma.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://figma.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

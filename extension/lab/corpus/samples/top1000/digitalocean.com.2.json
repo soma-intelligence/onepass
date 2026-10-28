@@ -1,0 +1,110 @@
+{
+  "captured_at": "2026-10-27T23:21:01.118Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "last name *",
+          "before": "hear about the next deploy! first name *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "firstName",
+          "index": 0,
+          "label": "first name*",
+          "required": true,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "company *",
+          "before": "last name *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "lastName",
+          "index": 1,
+          "label": "last name*",
+          "required": true,
+          "role": "family_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "business email address *",
+          "before": "company *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "company",
+          "index": 2,
+          "label": "company*",
+          "required": true,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "country * select a country",
+          "before": "business email address *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "email",
+          "index": 3,
+          "label": "business email address*",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "off",
+          "before": "country * select a country",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "react-select-_r_1_-input",
+          "index": 4,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 14,
+          "hasPattern": false,
+          "index": 5,
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "digitalocean.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://digitalocean.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

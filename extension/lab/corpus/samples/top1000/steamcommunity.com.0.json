@@ -1,0 +1,90 @@
+{
+  "captured_at": "2026-10-27T22:44:42.779Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "appHubsSearchText",
+          "index": 0,
+          "maxlength": 128,
+          "name": "searchAppName",
+          "required": false,
+          "role": "unknown",
+          "siblings": 3,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "find people",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "SearchPlayers",
+          "index": 0,
+          "name": "text",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "1,358 people found this review helpful65 people found this r",
+        "1,340 people found this review helpful3 people found this re",
+        "772 people found this review helpful1 person found this revi",
+        "team fortress 2: guide the aspiring medic boyfriend's handbo",
+        "garry's mod: workshop item routine type 05 | a.s.n. & player",
+        "rimworld: workshop item the dead man's switch - taktikmagier",
+        "counter-strike 2: workshop item wars desert | танки, вертолё",
+        "demon slayer -kimetsu no yaiba- the hinokami chronicles 2: v",
+        ": guide ‎ ‎ ‎ ‎ ‎ ‎ 157 ratings 2 1 realm view all guides",
+        "team fortress 2: guide how to upgrade to premium in tf2 | a",
+        "<redacted>",
+        "total war: warhammer iii: workshop item actually animated or"
+      ],
+      "fields": [
+        {
+          "after": "viewing most popular most recent",
+          "before": "asts videos workshop news guides reviews",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "steamcommunity.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://steamcommunity.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

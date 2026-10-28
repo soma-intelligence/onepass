@@ -1,0 +1,93 @@
+{
+  "captured_at": "2026-10-27T21:54:48.721Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "english",
+        "platform",
+        "solutions",
+        "resources",
+        "company",
+        "english",
+        "menuclose",
+        "usa today co.",
+        "jetblue",
+        "shutterstock",
+        "itvx",
+        "deliver"
+      ],
+      "fields": [
+        {
+          "after": "sorry, no results found. fastly platform",
+          "autocomplete": "off",
+          "before": "s italiano login customer support search",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "combobox-input-desktop-nav-search",
+          "index": 0,
+          "label": "search",
+          "placeholder": "search fastly.com",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "sorry, no results found. menu close plat",
+          "autocomplete": "off",
+          "before": "mérica) deutsch français italiano search",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "combobox-input-mobile-nav-search",
+          "index": 1,
+          "label": "search",
+          "placeholder": "search fastly.com",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "u while you are back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 2,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "fastly.net",
+  "iframes": [
+    {
+      "origin": "https://fastlyinc.widget.insent.ai",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://fastly.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}

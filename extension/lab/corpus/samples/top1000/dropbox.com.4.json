@@ -1,0 +1,72 @@
+{
+  "captured_at": "2026-10-27T22:03:52.364Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "autocomplete": "username webauthn",
+          "before": "h apple continue with microsoft or email",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "inputmode": "text",
+          "label": "email",
+          "name": "susi_email",
+          "required": false,
+          "role": "username",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "continue dropbox desktop app mobile app",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "credential-autofill-hint",
+          "index": 1,
+          "name": "autofill-password",
+          "required": false,
+          "role": "password",
+          "siblings": 1,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "dropbox.com",
+  "iframes": [
+    {
+      "origin": "https://dropboxcaptcha.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.dropbox.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://marketing.dropbox.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://dropbox.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T21:54:22.282Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "amazon.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amazon.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

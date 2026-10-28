@@ -1,0 +1,48 @@
+{
+  "captured_at": "2026-10-27T22:02:32.852Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "clear",
+        "search.common.labels.close"
+      ],
+      "fields": [
+        {
+          "after": "clear search.common.labels.close no sugg",
+          "before": "search form",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "gnb-search-v2-keyword",
+          "index": 0,
+          "label": "search",
+          "name": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "samsung.com",
+  "iframes": [
+    {
+      "origin": "https://live-chat-static.sprinklr.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://samsung.com/us/support/register-product/",
+  "status": "ok",
+  "webauthnCalls": []
+}

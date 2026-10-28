@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-27T23:46:05.619Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "latest rfcs looking for works in progres",
+          "ariaLabel": "find an rfc (number, subseries, title, author, etc.)",
+          "autocomplete": "off",
+          "before": "form the authoritative source for rfcs.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "search",
+          "index": 0,
+          "label": "find an rfc (number, subseries, title, author, etc.)",
+          "name": "q",
+          "placeholder": "find an rfc (number, subseries, title, author, etc.)",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "rfc-editor.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://rfc-editor.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

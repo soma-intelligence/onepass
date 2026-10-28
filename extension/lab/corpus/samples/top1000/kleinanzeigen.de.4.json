@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:19:33.608Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "kleinanzeigen.de",
+  "source": "rendered",
+  "source_url": "https://kleinanzeigen.de/register",
+  "status": "error: http 404"
+}

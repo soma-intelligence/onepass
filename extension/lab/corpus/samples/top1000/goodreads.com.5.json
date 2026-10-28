@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T23:01:07.300Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "ariaLabel": "search books",
+          "autocomplete": "off",
+          "before": "community ▾ groups quotes ask the author",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search books",
+          "name": "q",
+          "placeholder": "search books",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "goodreads.com",
+  "iframes": [
+    {
+      "origin": "https://platform.twitter.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://goodreads.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,69 @@
+{
+  "captured_at": "2026-10-27T22:03:41.481Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "filter by products console sign in globa",
+          "autocomplete": "off",
+          "before": "rt community forums c++ at adobe console",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "search-input",
+          "index": 0,
+          "label": "search...",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "community",
+        "sign in",
+        "community",
+        "what adobe apis and sdks are available",
+        "how do i get credentials",
+        "what is adobe developer app builder",
+        "firefly services and how can i use them"
+      ],
+      "fields": [
+        {
+          "after": "ai-generated responses. please double-ch",
+          "ariaLabel": "enter a question for the ai assistant",
+          "before": "firefly services and how can i use them",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "enter a question for the ai assistant",
+          "placeholder": "what question would you like to ask today?",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "adobe.io",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://adobe.io/",
+  "status": "ok",
+  "webauthnCalls": []
+}

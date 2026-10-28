@@ -1,0 +1,101 @@
+{
+  "captured_at": "2026-10-27T21:56:32.385Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "log in"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "before": "d review theme username or email address",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "user_login",
+          "index": 0,
+          "label": "username or email address",
+          "name": "log",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "before": "password",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "user_pass",
+          "index": 1,
+          "label": "password",
+          "name": "pwd",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "select the language:",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "language-switcher-locales",
+          "index": 0,
+          "label": "select the language:",
+          "name": "locale",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "log in"
+      ],
+      "fields": [
+        {
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "wordpress.org",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://wordpress.org/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

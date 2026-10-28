@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:12:02.781Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "bbc.co.uk",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://bbc.co.uk/travel/article/20261022-when-is-premium-economy-worth-the-extra-cost-we-compare-five-of-the-worlds-best-rated-airlines",
+  "status": "ok",
+  "webauthnCalls": []
+}

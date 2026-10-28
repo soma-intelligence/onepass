@@ -1,0 +1,81 @@
+{
+  "captured_at": "2026-10-28T00:20:51.062Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search scope",
+          "ariaLabel": "search scope",
+          "before": "skip to content",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "mobile-search-select",
+          "index": 0,
+          "label": "search scope",
+          "required": false,
+          "role": "tel",
+          "siblings": 1,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "autocomplete": "off",
+          "before": "current site enter search text",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "uw-search-bar",
+          "index": 1,
+          "label": "enter search text",
+          "name": "s",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "menu academics colleges & schools academ",
+          "autocomplete": "off",
+          "before": "myuw search the university of washington",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "uw-header-search",
+          "index": 0,
+          "label": "search the university of washington",
+          "name": "s",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "washington.edu",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://washington.edu/",
+  "status": "ok",
+  "webauthnCalls": []
+}

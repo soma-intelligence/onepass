@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-10-27T22:20:16.121Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "ownloads documentation get involved help",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "navbar__search-input",
+          "index": 0,
+          "label": "search docs",
+          "name": "pattern",
+          "placeholder": "search docs",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search docs"
+      ],
+      "fields": [
+        {
+          "after": "↑ and ↓ to navigate • enter to select •",
+          "ariaLabel": "search docs",
+          "before": "php.net sites privacy policy view source",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "search-modal__input",
+          "index": 0,
+          "label": "search docs",
+          "placeholder": "search docs",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "php.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://php.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}

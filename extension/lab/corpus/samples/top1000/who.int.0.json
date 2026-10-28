@@ -1,0 +1,65 @@
+{
+  "captured_at": "2026-10-27T22:14:43.354Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "when autocomplete results are available",
+          "before": "pe eastern mediterranean western pacific",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "opacity"
+        },
+        {
+          "before": "select language",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "language-selector",
+          "index": 1,
+          "label": "select language",
+          "name": "language-selector",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "before": "pe eastern mediterranean western pacific",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 2,
+          "name": "language-selector",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "who.int",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://who.int/",
+  "status": "ok",
+  "webauthnCalls": []
+}

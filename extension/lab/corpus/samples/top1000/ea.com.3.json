@@ -1,0 +1,145 @@
+{
+  "captured_at": "2026-10-27T22:23:12.013Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "g accounts, or start from the beginning.",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "login-with-first-party-form-verification",
+          "index": 0,
+          "name": "verification",
+          "required": false,
+          "role": "username",
+          "siblings": 8,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "next",
+        "verify identity"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "or",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "reg-form-verification",
+          "index": 0,
+          "name": "verification",
+          "required": false,
+          "role": "unknown",
+          "siblings": 11,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        },
+        {
+          "after": "united states of america date of birth",
+          "before": "country/region",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "clientreg_country-selctrl",
+          "index": 1,
+          "label": "country/region",
+          "name": "country",
+          "required": false,
+          "role": "country",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        },
+        {
+          "after": "month",
+          "ariaLabel": "month of birth",
+          "before": "united states of america date of birth",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "clientreg_dobmonth-selctrl",
+          "index": 2,
+          "label": "month of birth",
+          "name": "dobMonth",
+          "required": false,
+          "role": "birth_date",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        },
+        {
+          "after": "day",
+          "ariaLabel": "day of birth",
+          "before": "month",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "clientreg_dobday-selctrl",
+          "index": 3,
+          "label": "day of birth",
+          "name": "dobDay",
+          "required": false,
+          "role": "birth_date",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        },
+        {
+          "after": "year verify your identity",
+          "ariaLabel": "year of birth",
+          "before": "day",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "clientreg_dobyear-selctrl",
+          "index": 4,
+          "label": "year of birth",
+          "name": "dobYear",
+          "required": false,
+          "role": "birth_date",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "signin-form-verification",
+          "index": 0,
+          "name": "verification",
+          "required": false,
+          "role": "unknown",
+          "siblings": 8,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "ea.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ea.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:19:58.644Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "mercadolibre.com.ar",
+  "source": "rendered",
+  "source_url": "https://mercadolibre.com.ar/login",
+  "status": "error: http 404"
+}

@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-27T23:50:34.721Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "after": "we’ll send a confirmation code by text o",
+          "autocomplete": "tel-national",
+          "before": "log in or sign up phone number or email",
+          "depth": 31,
+          "hasPattern": false,
+          "id": "phone-or-email",
+          "index": 0,
+          "inputmode": "email",
+          "label": "phone number or email",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "airbnb.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://airbnb.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

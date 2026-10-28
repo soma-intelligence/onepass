@@ -1,0 +1,61 @@
+{
+  "captured_at": "2026-10-27T23:17:54.147Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "guage language 日本語 english 繁體中文 简体中文 한국어",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "common-header-search-input",
+          "index": 0,
+          "label": "キーワード検索",
+          "name": "sitem",
+          "placeholder": "キーワード検索",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "送対応のみ account.s(アカウントエス) 4.57 ( 8,256 件)",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 0,
+          "label": "ショップ内の商品を探す",
+          "name": "sitem",
+          "placeholder": "ショップ内の商品を探す",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "rakuten.co.jp",
+  "iframes": [],
+  "lang": "ja",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://rakuten.co.jp/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

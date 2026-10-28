@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T23:53:15.968Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "検索"
+      ],
+      "fields": [
+        {
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "label": "ブログ内を検索",
+          "maxlength": 255,
+          "name": "q",
+          "placeholder": "ブログ内を検索",
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "ameblo.jp",
+  "iframes": [
+    {
+      "origin": "https://blog-embed.ameba.jp",
+      "sameSite": false
+    }
+  ],
+  "lang": "ja",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ameblo.jp/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

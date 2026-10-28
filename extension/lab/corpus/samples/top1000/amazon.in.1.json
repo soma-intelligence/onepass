@@ -1,0 +1,65 @@
+{
+  "captured_at": "2026-10-27T23:32:38.451Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "go"
+      ],
+      "fields": [
+        {
+          "after": "search amazon.in",
+          "before": "ect the department you want to search in",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "searchDropdownBox",
+          "index": 0,
+          "label": "select the department you want to search in",
+          "name": "url",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        },
+        {
+          "ariaLabel": "search amazon.in",
+          "autocomplete": "off",
+          "before": "search amazon.in",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "twotabsearchtextbox",
+          "index": 1,
+          "label": "search amazon.in",
+          "name": "field-keywords",
+          "placeholder": "search amazon.in",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "amazon.in",
+  "iframes": [
+    {
+      "origin": "https://aax-eu.amazon-adsystem.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amazon.in/gp/sva/dashboard?ref_=nav_cs_apay",
+  "status": "ok",
+  "webauthnCalls": []
+}

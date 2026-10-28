@@ -1,0 +1,101 @@
+{
+  "captured_at": "2026-10-27T21:58:14.101Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up",
+        "your privacy choices",
+        "english (united states)▼"
+      ],
+      "fields": [
+        {
+          "before": "n sign up and start having fun! birthday",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "MonthDropdown",
+          "index": 0,
+          "name": "birthdayMonth",
+          "required": false,
+          "role": "birth_date",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "depth": 17,
+          "hasPattern": false,
+          "id": "DayDropdown",
+          "index": 1,
+          "name": "birthdayDay",
+          "required": false,
+          "role": "birth_date",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "username",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "YearDropdown",
+          "index": 2,
+          "name": "birthdayYear",
+          "required": false,
+          "role": "birth_date",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "password",
+          "autocomplete": "signup-username",
+          "before": "username",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "signup-username",
+          "index": 3,
+          "label": "username",
+          "name": "signupUsername",
+          "placeholder": "don't use your real name",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "gender (optional) by clicking sign up, y",
+          "autocomplete": "new-password",
+          "before": "password",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "signup-password",
+          "index": 4,
+          "label": "at least 8 characters",
+          "name": "signupPassword",
+          "placeholder": "at least 8 characters",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "roblox.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://roblox.com/CreateAccount",
+  "status": "ok",
+  "webauthnCalls": []
+}

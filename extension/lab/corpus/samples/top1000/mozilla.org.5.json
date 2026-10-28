@@ -1,0 +1,63 @@
+{
+  "captured_at": "2026-10-27T22:00:22.249Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "after": "continue by proceeding, you agree to the",
+          "autocomplete": "email",
+          "before": "il address to get started. email address",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "fxa-email-field",
+          "index": 0,
+          "label": "email address",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "donate to the not-for-profit mozilla fou",
+          "before": "(@firefox) donate all languages language",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "page-language-select",
+          "index": 0,
+          "label": "language",
+          "name": "lang",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "mozilla.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mozilla.org/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

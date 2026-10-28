@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T22:53:29.107Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "nature background flowers sunset forest",
+          "autocomplete": "off",
+          "before": "ideos music sound effects 3d models gifs",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "inputmode": "search",
+          "label": "search for free images, videos, music & more",
+          "name": "search",
+          "placeholder": "search for free images, videos, music & more",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "pixabay.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://pixabay.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

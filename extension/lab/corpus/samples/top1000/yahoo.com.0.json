@@ -1,0 +1,84 @@
+{
+  "captured_at": "2026-10-27T21:57:35.173Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search with yahoo scout",
+        "search the web"
+      ],
+      "fields": [
+        {
+          "after": "search with yahoo scout search the web s",
+          "autocomplete": "off",
+          "before": "oo scout search query for search the web",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "uh-sbq",
+          "index": 0,
+          "label": "search query for search the web",
+          "placeholder": "search the web",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "yahoo.com",
+  "iframes": [
+    {
+      "origin": "https://ads.pubmatic.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js-sec.indexww.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://eus.rubiconproject.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://eb2.3lift.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://gum.criteo.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://ads.yieldmo.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://acdn.adnxs.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://u.openx.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://sync.cootlogix.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://cdn.taboola.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://yahoo.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

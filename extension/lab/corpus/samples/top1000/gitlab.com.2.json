@@ -1,0 +1,52 @@
+{
+  "captured_at": "2026-10-27T22:32:46.836Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "menu",
+        "search or go to... /",
+        "menu",
+        "pinned",
+        "feature catalog",
+        "manage",
+        "plan",
+        "code",
+        "build",
+        "deploy",
+        "operate",
+        "monitor"
+      ],
+      "fields": [
+        {
+          "after": "1 result searching dws-log-inspector fin",
+          "ariaLabel": "search by git revision",
+          "depth": 27,
+          "hasPattern": false,
+          "id": "listbox-search-input-35",
+          "index": 0,
+          "label": "search by git revision",
+          "placeholder": "search by git revision",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "gitlab.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://gitlab.com/gitlab-org/developer-relations/contributor-success/helper-tools/dws-log-inspector",
+  "status": "ok",
+  "webauthnCalls": []
+}

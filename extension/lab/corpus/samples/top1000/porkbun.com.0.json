@@ -1,0 +1,139 @@
+{
+  "captured_at": "2026-10-28T00:09:35.210Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "bulk searchbulk"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "domain search",
+          "autocomplete": "off",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "domainSearchInput",
+          "index": 0,
+          "label": "domain search",
+          "name": "q",
+          "placeholder": "find your domain...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "ariaLabel": "enter one domain per line. you can search for a maximum of 1",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "bulkSearchBoxList",
+          "index": 0,
+          "label": "enter one domain per line. you can search for a maximum of 1",
+          "name": "searchDomains",
+          "required": false,
+          "role": "unknown",
+          "siblings": 5,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "after": "domain list tld selection enter one doma",
+          "ariaLabel": "enter a single sld.",
+          "autocomplete": "off",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "bulkSearchBoxSingle",
+          "index": 1,
+          "label": "enter a single sld.",
+          "name": "bulkSearchSld",
+          "required": false,
+          "role": "unknown",
+          "siblings": 5,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "ariaLabel": "select the tlds you want to search the sld against.",
+          "before": "w. you can select a maximum of 100 tlds.",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 2,
+          "label": "enter a single sld in the box above and select the tlds to s",
+          "name": "bulkSearchTlds[]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "oink"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "ing up for our newsletter! email address",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "footerNewsletterEmail",
+          "index": 0,
+          "label": "email address",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "off",
+          "depth": 17,
+          "hasPattern": false,
+          "index": 1,
+          "name": "website",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "offscreen"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "porkbun.com",
+  "iframes": [
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://porkbun.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,89 @@
+{
+  "captured_at": "2026-10-27T21:55:13.718Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "upload an image",
+        "open camera"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "sb_form_q",
+          "index": 0,
+          "inputmode": "search",
+          "label": "search the web",
+          "maxlength": 2000,
+          "name": "q",
+          "placeholder": "search the web",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "visible"
+        },
+        {
+          "after": "to use visual search, enable the camera",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "sb_imgpst",
+          "index": 1,
+          "label": "paste image link to search",
+          "placeholder": "paste image link to search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "privacy choices consumer health privacy",
+          "depth": 3,
+          "hasPattern": false,
+          "id": "sb_sbi_ipt",
+          "index": 0,
+          "label": "paste image or url",
+          "maxlength": 2048,
+          "name": "imgurl",
+          "placeholder": "paste image or url",
+          "required": false,
+          "role": "unknown",
+          "siblings": 3,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "bing.com",
+  "iframes": [
+    {
+      "origin": "https://www.bing.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://bing.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

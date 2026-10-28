@@ -1,0 +1,252 @@
+{
+  "captured_at": "2026-10-27T23:39:21.093Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "before": "g resources pricing support sales search",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "s-mobilenav",
+          "index": 0,
+          "label": "search",
+          "name": "s",
+          "placeholder": "search linode",
+          "required": false,
+          "role": "tel",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "* last name:",
+          "before": "ty and reli support page . * first name:",
+          "depth": 30,
+          "hasPattern": false,
+          "id": "FirstName",
+          "index": 0,
+          "label": "*first name:",
+          "maxlength": 255,
+          "name": "FirstName",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "* business email address:",
+          "before": "* last name:",
+          "depth": 30,
+          "hasPattern": false,
+          "id": "LastName",
+          "index": 1,
+          "label": "*last name:",
+          "maxlength": 255,
+          "name": "LastName",
+          "required": false,
+          "role": "family_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "* company:",
+          "before": "* business email address:",
+          "depth": 30,
+          "hasPattern": false,
+          "id": "Email",
+          "index": 2,
+          "label": "*business email address:",
+          "maxlength": 255,
+          "name": "Email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "* department:",
+          "before": "* company:",
+          "depth": 30,
+          "hasPattern": false,
+          "id": "Company_Self_Entered__c",
+          "index": 3,
+          "label": "*company:",
+          "maxlength": 255,
+          "name": "Company_Self_Entered__c",
+          "required": false,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "* title:",
+          "before": "* department:",
+          "depth": 30,
+          "hasPattern": false,
+          "id": "adg_Department__c",
+          "index": 4,
+          "label": "*department:",
+          "name": "adg_Department__c",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "* country:",
+          "before": "* title:",
+          "depth": 30,
+          "hasPattern": false,
+          "id": "Title_Level__c",
+          "index": 5,
+          "label": "*title:",
+          "name": "Title_Level__c",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "* time frame for addressing your challen",
+          "before": "* country:",
+          "depth": 30,
+          "hasPattern": false,
+          "id": "Country",
+          "index": 6,
+          "label": "*country:",
+          "name": "Country",
+          "required": false,
+          "role": "country",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "* what is your organization's monthly co",
+          "before": "ime frame for addressing your challenge:",
+          "depth": 30,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 7,
+          "label": "*time frame for addressing your challenge:",
+          "name": "<redacted>",
+          "required": false,
+          "role": "address_line1",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "* phone number:",
+          "before": "spend (usd) across all cloud providers?",
+          "depth": 30,
+          "hasPattern": false,
+          "id": "cloudProvider",
+          "index": 8,
+          "label": "*what is your organization's monthly compute spend (usd) acr",
+          "name": "cloudProvider",
+          "required": false,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "before": "* phone number:",
+          "depth": 30,
+          "hasPattern": false,
+          "id": "Phone",
+          "index": 9,
+          "label": "*phone number:",
+          "maxlength": 255,
+          "name": "Phone",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "tel",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "twitter",
+        "linkedin",
+        "email",
+        "close",
+        "skip to main content",
+        "explore",
+        "products",
+        "solutions",
+        "pricing",
+        "resources",
+        "mobile",
+        "explore"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "by us or by thir back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "linode.com",
+  "iframes": [
+    {
+      "origin": "https://content.linode.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://linode.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

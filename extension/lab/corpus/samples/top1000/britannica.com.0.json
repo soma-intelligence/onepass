@@ -1,0 +1,129 @@
+{
+  "captured_at": "2026-10-27T23:32:27.304Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "click here to search"
+      ],
+      "fields": [
+        {
+          "after": "click here to search search britannica",
+          "ariaLabel": "search britannica",
+          "autocomplete": "off",
+          "before": "explore search britannica",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "search britannica",
+          "maxlength": 200,
+          "name": "query",
+          "placeholder": "search britannica...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "click here to search"
+      ],
+      "fields": [
+        {
+          "after": "click here to search subscribe subscribe",
+          "ariaLabel": "search britannica",
+          "autocomplete": "off",
+          "before": "click here to search search britannica",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "global-nav-search-query",
+          "index": 0,
+          "label": "search britannica",
+          "maxlength": 200,
+          "name": "query",
+          "placeholder": "search britannica...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "click here to search"
+      ],
+      "fields": [
+        {
+          "after": "click here to search ask the chatbot gam",
+          "ariaLabel": "search britannica",
+          "autocomplete": "off",
+          "before": "m subscribe to premium search britannica",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "__526e4bb7-3de2-4a59-b80c-3c12bf6e063e",
+          "index": 0,
+          "label": "search britannica",
+          "maxlength": 200,
+          "name": "query",
+          "placeholder": "search britannica...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "sign up thank you for signing up! by cli",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "email address",
+          "name": "email",
+          "placeholder": "email address",
+          "required": true,
+          "role": "email",
+          "siblings": 4,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "britannica.com",
+  "iframes": [
+    {
+      "origin": "https://www.surveymonkey.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://britannica.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

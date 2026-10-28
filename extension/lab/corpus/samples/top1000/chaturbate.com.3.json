@@ -1,0 +1,69 @@
+{
+  "captured_at": "2026-10-28T00:20:56.204Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "i agree",
+        "all",
+        "sign up",
+        "log in",
+        "open anonymous user menu",
+        "deutsch",
+        "english",
+        "español",
+        "français",
+        "italiano",
+        "日本語",
+        "한국어"
+      ],
+      "fields": [
+        {
+          "after": "all broadcast sign up log in open anonym",
+          "before": "of the service, especially exit i agree",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search chaturbate",
+          "maxlength": 150,
+          "placeholder": "search chaturbate",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "chaturbate.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://chaturbate.com/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

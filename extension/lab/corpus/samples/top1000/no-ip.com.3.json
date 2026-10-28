@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:07:42.464Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "no-ip.com",
+  "source": "rendered",
+  "source_url": "https://no-ip.com/register",
+  "status": "error: http 404"
+}

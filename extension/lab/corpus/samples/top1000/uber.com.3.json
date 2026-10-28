@@ -1,0 +1,51 @@
+{
+  "captured_at": "2026-10-27T23:39:48.487Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue",
+        "continue with google",
+        "continue with apple",
+        "log in with qr code"
+      ],
+      "fields": [
+        {
+          "after": "continue or continue with google continu",
+          "ariaLabel": "enter phone number or email",
+          "autocomplete": "email webauthn",
+          "before": "what's your phone number or email? 🇺🇸",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "PHONE_NUMBER_or_EMAIL_ADDRESS",
+          "index": 0,
+          "inputmode": "email",
+          "label": "enter phone number or email",
+          "name": "email",
+          "placeholder": "enter phone number or email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "m.uber.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://m.uber.com/login-redirect",
+  "status": "ok",
+  "webauthnCalls": []
+}

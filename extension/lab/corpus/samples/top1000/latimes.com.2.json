@@ -1,0 +1,113 @@
+{
+  "captured_at": "2026-10-28T00:14:55.557Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit search"
+      ],
+      "fields": [
+        {
+          "after": "search query submit search advertisement",
+          "before": "e or log in profile sign out show search",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search query",
+          "name": "q",
+          "placeholder": "search",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "agree & continue"
+      ],
+      "fields": [
+        {
+          "before": "ce and ads. login or register with email",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "login or register with email",
+          "name": "email",
+          "placeholder": "login or register with email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "sections",
+        "show search",
+        "submit search",
+        "7",
+        "6 min",
+        "close extra sharing options",
+        "copy link url copied!",
+        "print",
+        "1x",
+        "show comments",
+        "agree & continue"
+      ],
+      "fields": [
+        {
+          "after": "0:00",
+          "before": "hatsapp copy link url copied! print 0:00",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "0:00",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        },
+        {
+          "after": "1x this is read by an automated voice. p",
+          "before": "0:00",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 1,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.latimes.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.latimes.com/opinion/story/2026-10-27/los-angeles-spay-neuter-mandate-low-income-veterinary-services",
+  "status": "ok",
+  "webauthnCalls": []
+}

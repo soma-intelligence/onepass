@@ -1,0 +1,141 @@
+{
+  "captured_at": "2026-10-27T23:38:23.593Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "username",
+          "before": "p for an artist account artist/band name",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "bandname-field",
+          "index": 0,
+          "label": "artist/band name",
+          "name": "bandname-field",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "password",
+          "before": "username",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "username-field",
+          "index": 1,
+          "label": "username",
+          "name": "username-field",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "email",
+          "autocomplete": "new-password",
+          "before": "password",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "password-field",
+          "index": 2,
+          "label": "password",
+          "name": "password-field",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "confirm email",
+          "autocomplete": "email",
+          "before": "email",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "email-field",
+          "index": 3,
+          "label": "email",
+          "name": "email-field",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "email",
+          "before": "confirm email",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "email-confirm-field",
+          "index": 4,
+          "label": "confirm email",
+          "name": "email-confirm-field",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "before": "ivacy policy and terms of service apply.",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "g-recaptcha-response",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "bandcamp.com",
+  "iframes": [
+    {
+      "origin": "https://www.googletagmanager.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://bandcamp.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

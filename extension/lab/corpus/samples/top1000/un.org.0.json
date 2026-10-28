@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:27:06.026Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "un.org",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://un.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

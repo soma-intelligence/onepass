@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:02:46.402Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "nic.ru",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://nic.ru/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

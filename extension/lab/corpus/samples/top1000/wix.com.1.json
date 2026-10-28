@@ -1,0 +1,73 @@
+{
+  "captured_at": "2026-10-27T23:21:10.152Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue with email",
+        "continue with google",
+        "continue with facebook",
+        "continue with apple",
+        "continue with sso"
+      ],
+      "fields": [
+        {
+          "after": "forgot email? continue with email or con",
+          "ariaLabel": "signup or login with email",
+          "autocomplete": "username webauthn",
+          "before": "in don't have an account? sign up email",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "email",
+          "maxlength": 524288,
+          "name": "email",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "before": "ivacy policy and terms of service apply.",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "users.wix.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://accounts.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://users.wix.com/signin?view=sign-up&sendEmail=true&loginCompName=SignUp_H&referralInfo=SignUp_H&postSignUp=https%3A%2F%2Fwww.wix.com%2Fnew%2Fintro%2F&postLogin=https%3A%2F%2Fmanage.wix.com%2Faccount%2Froute&loginDialogContext=login&originUrl=https%3A%2F%2Fwww.wix.com%2F",
+  "status": "ok",
+  "webauthnCalls": []
+}

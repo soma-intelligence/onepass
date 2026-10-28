@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:10:14.821Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "doi.org",
+  "source": "rendered",
+  "source_url": "https://doi.org/account",
+  "status": "error: http 400"
+}

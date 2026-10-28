@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-28T00:19:23.997Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "enviar a capital federal enviar a capita",
+          "autocomplete": "off",
+          "before": "de todo ingresá lo que quieras encontrar",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "cb1-edit",
+          "index": 0,
+          "label": "ingresá lo que quieras encontrar",
+          "maxlength": 120,
+          "name": "as_word",
+          "placeholder": "buscar productos, marcas y más...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "mercadolibre.com.ar",
+  "iframes": [],
+  "lang": "es",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mercadolibre.com.ar/",
+  "status": "ok",
+  "webauthnCalls": []
+}

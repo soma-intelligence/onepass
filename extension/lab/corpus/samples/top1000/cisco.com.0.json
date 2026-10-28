@@ -1,0 +1,282 @@
+{
+  "captured_at": "2026-10-27T22:11:48.074Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "clear"
+      ],
+      "fields": [
+        {
+          "after": "clear product support switches security",
+          "autocomplete": "off",
+          "before": "ownloads search field edit, type in text",
+          "depth": 36,
+          "hasPattern": false,
+          "id": "fw-c-support-finder__form-phrase",
+          "index": 0,
+          "label": "search field edit, type in text",
+          "maxlength": 275,
+          "name": "query",
+          "placeholder": "enter a product name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "clear",
+        "speech-to-text",
+        "search search"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "in en us search field edit, type in text",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "fw-c-global-search__form-phrase",
+          "index": 0,
+          "label": "search field edit, type in text",
+          "maxlength": 275,
+          "name": "query",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 9,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "your experience: helpful unhelpful label",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "fw-c-modal-chat__form-field",
+          "index": 0,
+          "label": "label",
+          "maxlength": 2000,
+          "name": "chat-input",
+          "placeholder": "type your message",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "products and services",
+        "back",
+        "close",
+        "back",
+        "close",
+        "back",
+        "close",
+        "back",
+        "close",
+        "back",
+        "close",
+        "back"
+      ],
+      "fields": [
+        {
+          "after": "opacity",
+          "before": "cancel and close the window. text color",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "vjs_select_587",
+          "index": 0,
+          "label": "text color",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "text background color",
+          "before": "opacity",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "vjs_select_592",
+          "index": 1,
+          "label": "text opacity",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "opacity",
+          "before": "text background color",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "vjs_select_602",
+          "index": 2,
+          "label": "text background color",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "caption area background color",
+          "before": "opacity",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "vjs_select_607",
+          "index": 3,
+          "label": "text background opacity",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "opacity",
+          "before": "caption area background color",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "vjs_select_617",
+          "index": 4,
+          "label": "caption area background color",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "font size",
+          "before": "opacity",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "vjs_select_622",
+          "index": 5,
+          "label": "caption area background opacity",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "text edge style",
+          "before": "font size",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "vjs_select_637",
+          "index": 6,
+          "label": "font size",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "font family",
+          "before": "text edge style",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "vjs_select_656",
+          "index": 7,
+          "label": "text edge style",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "reset done close modal dialog end of dia",
+          "before": "font family",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "vjs_select_671",
+          "index": 8,
+          "label": "font family",
+          "required": false,
+          "role": "family_name",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "cookie list search",
+          "before": "cookies details back button cookie list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 9,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "cisco.com",
+  "iframes": [
+    {
+      "origin": "https://www.cisco.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://cdn.appdynamics.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cisco.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

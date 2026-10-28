@@ -1,0 +1,73 @@
+{
+  "captured_at": "2026-10-27T23:58:02.997Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search .co.uk £ 0.99 / 1st year .io £ 17",
+          "before": "ht domain read article view all articles",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 0,
+          "label": "check your domain name...",
+          "maxlength": 63,
+          "placeholder": "check your domain name...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search free with hosting .co.uk £ 0.99 /",
+          "before": "he perfect domain name. done in minutes!",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "check your domain name...",
+          "maxlength": 63,
+          "placeholder": "check your domain name...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "one.one",
+  "iframes": [
+    {
+      "origin": "https://consentcdn.cookiebot.eu",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://one.one/en-gb/domain/",
+  "status": "ok",
+  "webauthnCalls": []
+}

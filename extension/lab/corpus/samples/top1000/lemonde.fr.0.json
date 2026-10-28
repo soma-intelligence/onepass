@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-27T23:35:11.933Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search an article"
+      ],
+      "fields": [
+        {
+          "before": "e go back to the homepage le monde fr en",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search an article",
+          "placeholder": "search an article",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "lemonde.fr",
+  "iframes": [
+    {
+      "origin": "https://eus.rubiconproject.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://lemonde.fr/",
+  "status": "ok",
+  "webauthnCalls": []
+}

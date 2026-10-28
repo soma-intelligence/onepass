@@ -1,0 +1,110 @@
+{
+  "captured_at": "2026-10-28T00:03:15.122Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "+1",
+        "log in"
+      ],
+      "fields": [
+        {
+          "after": "invalid phone number",
+          "ariaLabel": "phone number",
+          "before": "he country code for your phone number +1",
+          "depth": 11,
+          "hasPattern": true,
+          "id": "phone-number-text",
+          "index": 0,
+          "label": "phone number",
+          "placeholder": "phone number",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "tel",
+          "visibility": "display_none"
+        },
+        {
+          "ariaLabel": "username, phone, or email",
+          "autocomplete": "email",
+          "before": "invalid phone number",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "login-username",
+          "index": 1,
+          "label": "username, phone, or email",
+          "placeholder": "username, phone, or email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "ariaLabel": "password",
+          "autocomplete": "current-password",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "login-password",
+          "index": 2,
+          "label": "password",
+          "placeholder": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "ariaLabel": "username, phone, or email",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "username",
+          "index": 3,
+          "label": "username, phone, or email",
+          "name": "_username",
+          "required": true,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        },
+        {
+          "ariaLabel": "password",
+          "autocomplete": "off",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "password",
+          "index": 4,
+          "label": "password",
+          "name": "_password",
+          "required": true,
+          "role": "password",
+          "siblings": 1,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "vue",
+  "host": "chess.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://chess.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

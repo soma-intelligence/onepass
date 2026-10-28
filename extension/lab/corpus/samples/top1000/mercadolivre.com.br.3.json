@@ -1,0 +1,72 @@
+{
+  "captured_at": "2026-10-28T00:16:22.458Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continuar"
+      ],
+      "fields": [
+        {
+          "after": "continuar criar conta ou como cuidamos d",
+          "before": "e-mail ou telefone",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "_R_1lf5jna_",
+          "index": 0,
+          "label": "e-mail ou telefone",
+          "maxlength": 120,
+          "name": "identifier",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "continuar",
+        "aceitar cookies",
+        "configurar cookies",
+        "fechar",
+        "fechar"
+      ],
+      "fields": [
+        {
+          "before": "erro. por favor, tente novamente. fechar",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "mercadolivre.com.br",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "pt",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mercadolivre.com.br/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

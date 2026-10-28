@@ -1,0 +1,128 @@
+{
+  "captured_at": "2026-10-27T22:22:44.358Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "sign in to your ea account",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "login-with-first-party-form-verification",
+          "index": 0,
+          "name": "verification",
+          "required": false,
+          "role": "username",
+          "siblings": 8,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "next",
+        "sign in with a passkey"
+      ],
+      "fields": [
+        {
+          "after": "phone or email",
+          "autocomplete": "off",
+          "before": "or",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "login-form-verification",
+          "index": 0,
+          "name": "verification",
+          "required": false,
+          "role": "username",
+          "siblings": 8,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        },
+        {
+          "after": "phone or email",
+          "autocomplete": "username webauthn",
+          "before": "phone or email",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "email",
+          "index": 1,
+          "label": "phone or email",
+          "name": "email",
+          "placeholder": "enter your phone or email",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "(+1) +1 afghanistan(+93) aland islands(+",
+          "before": "phone or email",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "regionCode",
+          "index": 2,
+          "name": "regionCode",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "autocomplete": "tel",
+          "before": "yemen(+967) zambia(+260) zimbabwe(+263)",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "phoneNumber",
+          "index": 3,
+          "label": "afghanistan(+93) aland islands(+358) albania(+355) algeria(+",
+          "name": "phoneNumber",
+          "placeholder": "enter your phone or email",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "you must be online when logging in for t",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "password",
+          "index": 4,
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 8,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "ea.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ea.com/login",
+  "status": "ok",
+  "webauthnCalls": [
+    "get"
+  ]
+}

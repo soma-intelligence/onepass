@@ -1,0 +1,29 @@
+{
+  "captured_at": "2026-10-27T22:12:07.939Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "cpanel.net",
+  "iframes": [
+    {
+      "origin": "https://forms.webpros.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://static.addtoany.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://web.cmp.usercentrics.eu",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cpanel.net/mailing-list/",
+  "status": "ok",
+  "webauthnCalls": []
+}

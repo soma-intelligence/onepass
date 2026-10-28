@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:05:09.938Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "cursor.sh",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cursor.sh/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

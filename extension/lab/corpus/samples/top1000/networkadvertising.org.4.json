@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:15:45.642Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "networkadvertising.org",
+  "source": "rendered",
+  "source_url": "https://networkadvertising.org/signup",
+  "status": "error: http 404"
+}

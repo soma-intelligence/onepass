@@ -1,0 +1,59 @@
+{
+  "captured_at": "2026-10-27T22:06:35.872Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "who is eligible for shop pay?",
+        "which cards are accepted with shop pay?",
+        "how many buyers actually use shop pay?",
+        "what makes shop pay so fast?",
+        "usa | english"
+      ],
+      "fields": [
+        {
+          "after": "select region",
+          "before": "usa | english choose a region & language",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "region-country-select",
+          "index": 0,
+          "label": "select region",
+          "name": "region-country-select",
+          "required": false,
+          "role": "country",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "select language confirm australia | engl",
+          "before": "select region",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "region-language-select",
+          "index": 1,
+          "label": "select language",
+          "name": "region-language-select",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "shopify.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://shopify.com/shop-pay",
+  "status": "ok",
+  "webauthnCalls": []
+}

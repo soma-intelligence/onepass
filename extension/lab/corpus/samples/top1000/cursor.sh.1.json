@@ -1,0 +1,46 @@
+{
+  "captured_at": "2026-10-28T00:04:52.486Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue with email"
+      ],
+      "fields": [
+        {
+          "after": "continue with email or continue with goo",
+          "autocomplete": "email",
+          "before": "email",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "radix-_R_2mdpaupflb5ubtb_",
+          "index": 0,
+          "label": "email",
+          "name": "email",
+          "placeholder": "your email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "cursor.sh",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cursor.sh/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

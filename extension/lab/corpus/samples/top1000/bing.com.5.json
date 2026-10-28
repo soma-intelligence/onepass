@@ -1,0 +1,97 @@
+{
+  "captured_at": "2026-10-27T21:55:52.518Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "enter your search here - search suggestions will show as you",
+          "autocomplete": "off",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "sb_form_q",
+          "index": 0,
+          "label": "enter your search here - search suggestions will show as you",
+          "maxlength": 2000,
+          "name": "q",
+          "placeholder": "search the web",
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "still seeing inappropriate content?new content will be added",
+        "see more countries/regionsnew content will be added above th",
+        "see more languagesnew content will be added above the curren",
+        "see more languagesnew content will be added above the curren",
+        "enable personalization",
+        "save",
+        "cancel",
+        "use default settings"
+      ],
+      "fields": [
+        {
+          "after": "voice speed",
+          "ariaLabel": "primary spoken language",
+          "before": "bute voice clips primary spoken language",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "single_language",
+          "index": 0,
+          "label": "primary spoken language",
+          "name": "single_language",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "additional spoken languages",
+          "before": "voice speed",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "speedSlider",
+          "index": 1,
+          "label": "voice speed",
+          "name": "vsos",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "bing.com",
+  "iframes": [
+    {
+      "origin": "https://www.bing.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://bing.com/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

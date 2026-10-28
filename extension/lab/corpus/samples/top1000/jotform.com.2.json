@@ -1,0 +1,109 @@
+{
+  "captured_at": "2026-10-27T23:26:59.351Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "search in all form integrations",
+          "ariaLabel": "search bar",
+          "autocomplete": "off",
+          "before": "dialog end search all form integrations",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "search-input",
+          "index": 0,
+          "label": "search all form integrations",
+          "name": "q",
+          "placeholder": "search all form integrations",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "product form",
+          "autocomplete": "off",
+          "before": "search in all form integrations",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "search-input",
+          "index": 0,
+          "label": "search in all form integrations",
+          "name": "q",
+          "placeholder": "search in all form integrations",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign up for free",
+        "templates",
+        "integrations",
+        "featured integrations",
+        "crm",
+        "storage",
+        "payment",
+        "email",
+        "automations",
+        "featured integrations",
+        "crm",
+        "storage"
+      ],
+      "fields": [
+        {
+          "after": "terms & conditions privacy policy securi",
+          "ariaLabel": "change language preference",
+          "before": "re registered trademarks of jotform inc.",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "jfFooterLanguage",
+          "index": 0,
+          "label": "change language preference",
+          "name": "jfFooterLanguage",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "jotform.com",
+  "iframes": [
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://jotform.com/integrations/stripe",
+  "status": "ok",
+  "webauthnCalls": []
+}

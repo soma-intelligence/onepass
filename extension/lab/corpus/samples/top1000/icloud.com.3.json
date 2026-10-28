@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T21:56:15.240Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "icloud.com",
+  "source": "rendered",
+  "source_url": "https://icloud.com/register",
+  "status": "error: http 404"
+}

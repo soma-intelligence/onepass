@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T23:16:41.460Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "squarespace.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://squarespace.com/websites/create-a-blog",
+  "status": "ok",
+  "webauthnCalls": []
+}

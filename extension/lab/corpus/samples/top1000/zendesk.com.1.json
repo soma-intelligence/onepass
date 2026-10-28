@@ -1,0 +1,46 @@
+{
+  "captured_at": "2026-10-27T22:23:43.531Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign in"
+      ],
+      "fields": [
+        {
+          "after": ".zendesk.com forgot your subdomain? sign",
+          "before": "in to zendesk yoursubdomain.zendesk.com",
+          "depth": 22,
+          "hasPattern": false,
+          "id": ":R3odnabau76:--input",
+          "index": 0,
+          "label": "yoursubdomain.zendesk.com",
+          "name": "account.subdomain",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "zendesk.com",
+  "iframes": [
+    {
+      "origin": "https://www.zndsk.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://zendesk.com/login/",
+  "status": "ok",
+  "webauthnCalls": []
+}

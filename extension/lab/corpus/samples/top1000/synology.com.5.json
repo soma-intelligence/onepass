@@ -1,0 +1,76 @@
+{
+  "captured_at": "2026-10-28T00:03:33.556Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "how can i protect my business from ranso",
+          "ariaLabel": "ask a question",
+          "before": "ze chat window what can i help you with?",
+          "depth": 15,
+          "hasPattern": false,
+          "index": 0,
+          "label": "ask a question",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "how can i protect my business from ransomware?",
+        "how does synology keep my data safe?",
+        "how to strengthen cyber resilience with synology?",
+        "synology hybrid cloud solutions",
+        "how to manage unstructured data at scale?",
+        "how can i protect my business from ransomware?",
+        "how does synology keep my data safe?",
+        "how to strengthen cyber resilience with synology?",
+        "synology hybrid cloud solutions",
+        "how to manage unstructured data at scale?",
+        "how can i protect my business from ransomware?",
+        "how does synology keep my data safe?"
+      ],
+      "fields": [
+        {
+          "after": "by using our ai advisor, you agree to sy",
+          "before": "please wait... what can i help you with?",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "home-ai-advisor-textarea",
+          "index": 0,
+          "label": "what can i help you with?",
+          "name": "home-ai-advisor-textarea",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "synology.com",
+  "iframes": [
+    {
+      "origin": "https://us.store.synology.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 3,
+  "source": "rendered",
+  "source_url": "https://synology.com/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

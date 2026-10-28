@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:09:18.753Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "medium.com",
+  "source": "rendered",
+  "source_url": "https://medium.com/register",
+  "status": "error: http 404"
+}

@@ -1,0 +1,99 @@
+{
+  "captured_at": "2026-10-28T00:22:13.519Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "sign in contact sales toggle menu trust",
+          "before": "eeded. start free trial blog docs search",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "wp-block-search__input-1",
+          "index": 0,
+          "label": "search",
+          "name": "s",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "toggle menu",
+        "do not sell my personal information",
+        "do not sell my personal information",
+        "accept cookies",
+        "allow all",
+        "back button",
+        "filter icon",
+        "clear",
+        "apply",
+        "cancel",
+        "confirm my choices"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "es to build a pr back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "before": "checkbox label label confirm my choices",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "docker.io",
+  "iframes": [
+    {
+      "origin": "https://api.vector.co",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://docker.io/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

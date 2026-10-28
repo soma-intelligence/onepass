@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:04:47.213Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "supabase.co",
+  "source": "rendered",
+  "source_url": "https://supabase.co/register",
+  "status": "error: http 404"
+}

@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:04:08.700Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "vue",
+  "host": "www.frontiersin.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.frontiersin.org/people/login?returnUrl=https%3A%2F%2Fwww.frontiersin.org%2F",
+  "status": "ok",
+  "webauthnCalls": []
+}

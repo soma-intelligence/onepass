@@ -1,0 +1,93 @@
+{
+  "captured_at": "2026-10-27T23:44:48.480Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "gcc login login atlas login gcc login st",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search globalsign",
+          "name": "query",
+          "placeholder": "search globalsign",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "necessary 32",
+        "globalsign8",
+        "google3",
+        "linkedin1",
+        "yandex2",
+        "assets.storylane.io2",
+        "demo.globalsign.comconsent.cookiebot.com6",
+        "engagement.globalsign.compi.pardot.com2",
+        "engagement.globalsign.comwww.googletagmanager.com4",
+        "linkedin.comtwitter.com2",
+        "yandex.comyandex.ru2",
+        "preferences 3"
+      ],
+      "fields": [
+        {
+          "before": "of the region you select when ordering.",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "product title from / year already have a",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "gs-pricing",
+          "index": 1,
+          "name": "gs-pricing",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "globalsign.com",
+  "iframes": [
+    {
+      "origin": "https://consentcdn.cookiebot.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://gmoglobalsign.my.site.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://globalsign.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

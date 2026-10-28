@@ -1,0 +1,67 @@
+{
+  "captured_at": "2026-10-27T23:52:40.284Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "のブログ ブログの説明を入力します。 ブログトップ 記事一覧 画像一覧 動画一覧",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "blogSearchInputHeader",
+          "index": 0,
+          "label": "このブログを検索する",
+          "maxlength": 255,
+          "name": "q",
+          "placeholder": "このブログを検索する",
+          "required": true,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "depth": 12,
+          "hasPattern": false,
+          "id": "blogSearchInputSide",
+          "index": 0,
+          "label": "このブログを検索する",
+          "maxlength": 255,
+          "name": "q",
+          "placeholder": "このブログを検索する",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "ameblo.jp",
+  "iframes": [
+    {
+      "origin": "https://blog-embed.ameba.jp",
+      "sameSite": false
+    }
+  ],
+  "lang": "ja",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ameblo.jp/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

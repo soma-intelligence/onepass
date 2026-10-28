@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:35:59.422Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "plesk.com",
+  "source": "rendered",
+  "source_url": "https://plesk.com/register",
+  "status": "error: http 404"
+}

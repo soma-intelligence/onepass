@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:26:13.492Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "cdc.gov",
+  "source": "rendered",
+  "source_url": "https://cdc.gov/",
+  "status": "error: timeout"
+}

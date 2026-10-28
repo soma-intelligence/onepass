@@ -1,0 +1,86 @@
+{
+  "captured_at": "2026-10-27T23:59:28.382Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "next",
+        "sign up for onlyfans"
+      ],
+      "fields": [
+        {
+          "after": "​ password",
+          "autocomplete": "username webauthn",
+          "before": "rt your favorite creators log in ​ email",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "input-13",
+          "index": 0,
+          "label": "email",
+          "name": "email",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "next by logging in and using onlyfans, y",
+          "autocomplete": "on",
+          "before": "​ password",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "input-16",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "only necessary cookies",
+        "accept all",
+        "next",
+        "sign up for onlyfans"
+      ],
+      "fields": [
+        {
+          "before": "fficking statement acceptable use policy",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "safari-page-scroll-hack",
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "onlyfans.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://onlyfans.com/auth/google?csrf=5glFk1TBcf6eea38a69ee10059c1760806a103d2",
+  "status": "ok",
+  "webauthnCalls": []
+}

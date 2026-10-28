@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:06:40.164Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "amzn.to",
+  "source": "rendered",
+  "source_url": "https://amzn.to/",
+  "status": "error: timeout"
+}

@@ -1,0 +1,140 @@
+{
+  "captured_at": "2026-10-27T23:44:49.955Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "go"
+      ],
+      "fields": [
+        {
+          "after": "go a a smaller larger reset socialize li",
+          "before": "n network donate ≡ menu search this site",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "id-search-field",
+          "index": 0,
+          "label": "search this site",
+          "name": "q",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign up »"
+      ],
+      "fields": [
+        {
+          "after": "username:",
+          "autocomplete": "email",
+          "before": "email:",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "id_email",
+          "index": 0,
+          "label": "email:",
+          "maxlength": 320,
+          "name": "email",
+          "placeholder": "email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "password:",
+          "autocomplete": "username",
+          "before": "username:",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "id_username",
+          "index": 1,
+          "label": "username:",
+          "maxlength": 150,
+          "name": "username",
+          "placeholder": "username",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "password (again):",
+          "autocomplete": "new-password",
+          "before": "password:",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "id_password1",
+          "index": 2,
+          "label": "password:",
+          "name": "password1",
+          "placeholder": "password",
+          "required": true,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "leave this field blank to prove your hum",
+          "autocomplete": "new-password",
+          "before": "password (again):",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "id_password2",
+          "index": 3,
+          "label": "password (again):",
+          "name": "password2",
+          "placeholder": "password (again)",
+          "required": true,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "sign up » already have an account? if yo",
+          "autocomplete": "off",
+          "before": "this field blank to prove your humanity",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 4,
+          "label": "leave this field blank to prove your humanity",
+          "name": "email_body_text",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "python.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://python.org/accounts/signup/",
+  "status": "ok",
+  "webauthnCalls": []
+}

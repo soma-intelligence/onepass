@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-27T22:12:24.576Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "connect"
+      ],
+      "fields": [
+        {
+          "after": "quickconnect id can include only english",
+          "before": "to access your synology operating system",
+          "depth": 3,
+          "hasPattern": false,
+          "id": "input-id",
+          "index": 0,
+          "label": "enter your quickconnect id to access your synology operating",
+          "name": "quickconnect-id",
+          "placeholder": "quickconnect id",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "quickconnect.to",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://quickconnect.to/",
+  "status": "ok",
+  "webauthnCalls": []
+}

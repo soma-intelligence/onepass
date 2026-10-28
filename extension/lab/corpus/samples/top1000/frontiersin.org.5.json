@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:04:45.086Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "frontiersin.org",
+  "source": "rendered",
+  "source_url": "https://frontiersin.org/signup",
+  "status": "error: http 404"
+}

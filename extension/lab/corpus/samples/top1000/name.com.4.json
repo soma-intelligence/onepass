@@ -1,0 +1,322 @@
+{
+  "captured_at": "2026-10-27T22:36:49.093Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search products products build your webs",
+          "ariaLabel": "search domain names",
+          "autocomplete": "off",
+          "before": ".99 .net $16.49 $19.99 .org $9.99 $19.99",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search domain names",
+          "name": "keyword",
+          "placeholder": "search domain names",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search api api get started name.com api",
+          "ariaLabel": "search domain names",
+          "autocomplete": "off",
+          "before": "d a stunning website in minutes. get wix",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search domain names",
+          "name": "keyword",
+          "placeholder": "search domain names",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search support ● support get direct help",
+          "ariaLabel": "search domain names",
+          "autocomplete": "off",
+          "before": "domains with our api learn about our api",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search domain names",
+          "name": "keyword",
+          "placeholder": "search domain names",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search",
+          "ariaLabel": "search domain names",
+          "autocomplete": "off",
+          "before": "rt is online ● 24/7 support chat with us",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search domain names",
+          "name": "keyword",
+          "placeholder": "search domain names",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search get in touch with our 24/7 suppor",
+          "ariaLabel": "search domain names",
+          "autocomplete": "off",
+          "before": "search",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search domain names",
+          "name": "keyword",
+          "placeholder": "search domain names",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "link google sign in"
+      ],
+      "fields": [
+        {
+          "after": "enter your password",
+          "before": "our username and password. your username",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "acct_name",
+          "index": 0,
+          "label": "your username",
+          "name": "acct_name",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "there was an error linking your account.",
+          "before": "enter your password",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "enter your password",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "subscribe you can opt out at any time. b",
+          "ariaLabel": "join our newsletter",
+          "before": "reate a new account let’s keep in touch.",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "email_signup",
+          "index": 0,
+          "label": "join our newsletter",
+          "name": "email_signup",
+          "placeholder": "join our newsletter",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "language",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "list_language",
+          "index": 0,
+          "label": "language",
+          "name": "list_language",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "currency",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "list_currency",
+          "index": 0,
+          "label": "currency",
+          "name": "list_currency",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "domains",
+        "domains",
+        "search",
+        "products",
+        "products",
+        "search",
+        "api",
+        "api",
+        "search",
+        "support ●",
+        "support",
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "enter your email",
+          "autocomplete": "email",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "enter your email",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "create a username create a password",
+          "before": "enter your email",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "username",
+          "index": 1,
+          "label": "create a username",
+          "name": "username",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "minimum length 7 characters must contain",
+          "before": "create a username create a password",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "password",
+          "index": 2,
+          "label": "create a password",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "name.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://name.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

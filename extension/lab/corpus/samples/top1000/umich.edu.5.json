@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:26:29.979Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "umich.edu",
+  "source": "rendered",
+  "source_url": "https://umich.edu/signup",
+  "status": "error: http 404"
+}

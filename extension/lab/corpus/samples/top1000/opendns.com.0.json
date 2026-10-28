@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:29:28.555Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "opendns.com",
+  "source": "rendered",
+  "source_url": "https://opendns.com/",
+  "status": "error: timeout"
+}

@@ -1,0 +1,128 @@
+{
+  "captured_at": "2026-10-27T23:24:20.957Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "submit site search toggle mega menu togg",
+          "autocomplete": "off",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "wp-block-search__input-1",
+          "index": 0,
+          "label": "search",
+          "name": "s",
+          "placeholder": "search...",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "techcrunch daily newsevery weekday and sunday, you can get t",
+        "startups weeklystartups are the core of techcrunch, so get o",
+        "techcrunch week in reviewget the best of our coverage, deliv",
+        "techcrunch mobilitytechcrunch mobility is your destination f",
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "ription choices no newsletters selected.",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "name",
+          "index": 0,
+          "label": "name",
+          "name": "name",
+          "placeholder": "name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        },
+        {
+          "after": "subscribe by submitting your email, you",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "email",
+          "index": 1,
+          "label": "email address",
+          "name": "email",
+          "placeholder": "email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "close",
+        "submit",
+        "site search toggle",
+        "mega menu toggle",
+        "techcrunch daily newsevery weekday and sunday, you can get t",
+        "startups weeklystartups are the core of techcrunch, so get o",
+        "techcrunch week in reviewget the best of our coverage, deliv",
+        "techcrunch mobilitytechcrunch mobility is your destination f",
+        "subscribe",
+        "✕",
+        "disable my adblocker"
+      ],
+      "fields": [
+        {
+          "after": "something went wrong. disable your adblo",
+          "before": "ure to check heading and document order.",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "techcrunch.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://techcrunch.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

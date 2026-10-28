@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:05:21.768Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "snapchat.com",
+  "source": "rendered",
+  "source_url": "https://snapchat.com/login",
+  "status": "error: http 404"
+}

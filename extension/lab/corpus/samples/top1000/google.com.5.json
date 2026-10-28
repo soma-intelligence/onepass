@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T21:53:20.416Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "google.com",
+  "source": "rendered",
+  "source_url": "https://google.com/signup",
+  "status": "error: http 404"
+}

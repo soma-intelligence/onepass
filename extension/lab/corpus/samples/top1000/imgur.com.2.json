@@ -1,0 +1,119 @@
+{
+  "captured_at": "2026-10-27T23:47:13.156Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "register"
+      ],
+      "fields": [
+        {
+          "before": "r with imgur can't register? learn more.",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "username",
+          "index": 0,
+          "label": "can't register? learn more.",
+          "maxlength": 255,
+          "name": "url",
+          "placeholder": "username",
+          "required": false,
+          "role": "username",
+          "siblings": 5,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 7,
+          "hasPattern": false,
+          "id": "email",
+          "index": 1,
+          "label": "email",
+          "maxlength": 255,
+          "name": "email",
+          "placeholder": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 5,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 7,
+          "hasPattern": false,
+          "id": "password",
+          "index": 2,
+          "label": "password",
+          "maxlength": 255,
+          "name": "password",
+          "placeholder": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 5,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "depth": 7,
+          "hasPattern": false,
+          "id": "confirm_password",
+          "index": 3,
+          "label": "retype password",
+          "maxlength": 255,
+          "name": "confirm_password",
+          "placeholder": "retype password",
+          "required": false,
+          "role": "new_password",
+          "siblings": 5,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "register"
+      ],
+      "fields": [
+        {
+          "before": "terms privacy",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "imgur.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://imgur.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

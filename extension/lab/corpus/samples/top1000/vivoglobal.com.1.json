@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:56:19.337Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "vivoglobal.com",
+  "source": "rendered",
+  "source_url": "https://vivoglobal.com/login",
+  "status": "error: http 404"
+}

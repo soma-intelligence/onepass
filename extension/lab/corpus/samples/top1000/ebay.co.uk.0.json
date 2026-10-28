@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:05:22.626Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "ebay.co.uk",
+  "source": "rendered",
+  "source_url": "https://ebay.co.uk/",
+  "status": "error: http 403"
+}

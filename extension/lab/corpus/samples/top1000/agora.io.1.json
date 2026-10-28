@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:05:59.936Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "console.agora.io",
+  "source": "rendered",
+  "source_url": "https://console.agora.io/",
+  "status": "error: page.evaluate: Execution context was destroyed, most likely "
+}

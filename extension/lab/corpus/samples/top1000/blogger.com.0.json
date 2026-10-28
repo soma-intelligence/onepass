@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:05:44.758Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "blogger.com",
+  "source": "rendered",
+  "source_url": "https://blogger.com/",
+  "status": "error: timeout"
+}

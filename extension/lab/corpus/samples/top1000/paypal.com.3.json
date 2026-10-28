@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:06:54.367Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "paypal.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://paypal.com/mobile-app/dashboard?source=%252Fhome_cta&pp_ref_id=9f21811f-4a58-453f-a9bc-4b80451643f7&utm_campaign=&utm_medium=web&utm_source=%2Fhome&cust=&redirect=true",
+  "status": "ok",
+  "webauthnCalls": []
+}

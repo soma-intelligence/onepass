@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T23:35:03.405Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "next"
+      ],
+      "fields": [
+        {
+          "after": "next or sign in with google not your dev",
+          "autocomplete": "username",
+          "before": "up sign in to your account email address",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "login-email",
+          "index": 0,
+          "label": "email address",
+          "name": "login",
+          "placeholder": "enter your email",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "box.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://box.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

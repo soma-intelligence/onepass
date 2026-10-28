@@ -1,0 +1,92 @@
+{
+  "captured_at": "2026-10-28T00:16:26.148Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "autocomplete": "email",
+          "before": "apple continue with facebook or email *",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "_R_qckludabsdqbtb_",
+          "index": 0,
+          "label": "email *",
+          "name": "email",
+          "placeholder": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "current-password",
+          "before": "password",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "_R_bckludabsdqbtb_",
+          "index": 1,
+          "label": "password",
+          "name": "current-password",
+          "placeholder": "enter password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "continue with google",
+        "continue with apple",
+        "continue with facebook",
+        "continue"
+      ],
+      "fields": [
+        {
+          "before": "be to. you can control this in settings.",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.patreon.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.patreon.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

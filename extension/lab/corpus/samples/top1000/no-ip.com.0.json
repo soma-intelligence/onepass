@@ -1,0 +1,58 @@
+{
+  "captured_at": "2026-10-28T00:06:49.768Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "select a domain",
+          "before": "w create your free hostname now hostname",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "hostname",
+          "index": 0,
+          "label": "hostname",
+          "name": "hostname",
+          "placeholder": "hostname",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "sign up sorry, that address is not avail",
+          "ariaLabel": "select a domain",
+          "before": "select a domain",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "domain",
+          "index": 1,
+          "label": "select a domain",
+          "name": "domain",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "no-ip.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://no-ip.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

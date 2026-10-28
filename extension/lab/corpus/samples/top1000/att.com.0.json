@@ -1,0 +1,48 @@
+{
+  "captured_at": "2026-10-28T00:08:23.629Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "’s best guarantee learn more search site",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "global-search-input",
+          "index": 0,
+          "label": "search site",
+          "name": "q",
+          "placeholder": "i'm looking for...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "att.com",
+  "iframes": [
+    {
+      "origin": "https://www.att.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://att.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

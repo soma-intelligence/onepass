@@ -1,0 +1,43 @@
+{
+  "captured_at": "2026-10-27T23:41:38.850Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "search close trending today 🔥 our gifti",
+          "before": "nment reviews best products deals search",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "search-form-input",
+          "index": 0,
+          "label": "search",
+          "name": "s",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "cnet.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cnet.com/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

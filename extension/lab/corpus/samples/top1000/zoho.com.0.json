@@ -1,0 +1,128 @@
+{
+  "captured_at": "2026-10-27T23:52:36.704Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "english english español português (brasi",
+          "ariaLabel": "search for product overviews, faqs, and more...",
+          "autocomplete": "off",
+          "before": "port knowledge base concierge contact us",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "zgh-search-query",
+          "index": 0,
+          "label": "search for product overviews, faqs, and more...",
+          "name": "query",
+          "placeholder": "search for product overviews, faqs, and more...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "contact us security compliance ipr compl",
+          "ariaLabel": "search for product overviews, faqs, and more...",
+          "autocomplete": "off",
+          "before": "ines zoho schools service status careers",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search for product overviews, faqs, and more...",
+          "placeholder": "search for product overviews, faqs, and more...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search products apps suites platforms so",
+          "ariaLabel": "search zoho.com",
+          "before": "erved. sign up for free access zoho home",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search zoho.com",
+          "placeholder": "search zoho.com",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "manage cookies",
+        "accept all cookies",
+        "reject non-essential cookies",
+        "close",
+        "strictly necessary",
+        "functional/preference",
+        "analytics",
+        "third-party company cookies",
+        "save & exit",
+        "solutions",
+        "customers",
+        "partners"
+      ],
+      "fields": [
+        {
+          "after": "no results found. looking for something",
+          "autocomplete": "off",
+          "before": "-linejoin:round;stroke-width:3px;} close",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "i’m looking for...",
+          "placeholder": "i’m looking for...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "zoho.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://zoho.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

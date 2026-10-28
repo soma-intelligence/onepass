@@ -1,0 +1,127 @@
+{
+  "captured_at": "2026-10-27T22:01:31.957Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "camera",
+        "photos",
+        "files",
+        "add photos",
+        "web search",
+        "create imagelog in",
+        "deep researchlog in",
+        "add fileslog in",
+        "web search",
+        "retry"
+      ],
+      "fields": [
+        {
+          "after": "camera photos files add photos web searc",
+          "ariaLabel": "chat with chatgpt",
+          "autocomplete": "off",
+          "before": "chat with chatgpt",
+          "depth": 26,
+          "hasPattern": false,
+          "id": "mobile-composer-prompt",
+          "index": 0,
+          "inputmode": "text",
+          "label": "chat with chatgpt",
+          "name": "prompt",
+          "placeholder": "ask chatgpt",
+          "required": true,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "after": "email is not valid. continue",
+          "autocomplete": "email",
+          "before": "email address",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "mobile-auth-email",
+          "index": 0,
+          "inputmode": "email",
+          "label": "email address",
+          "name": "login_hint",
+          "placeholder": "email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "continue with phone"
+      ],
+      "fields": [
+        {
+          "after": "+1",
+          "ariaLabel": "phone number country code",
+          "autocomplete": "tel-country-code",
+          "before": "phone number",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "mobile-auth-phone-country",
+          "index": 0,
+          "label": "phone number country code",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "continue with phone welcome back choose",
+          "autocomplete": "tel",
+          "before": "+1",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "mobile-auth-phone",
+          "index": 1,
+          "inputmode": "tel",
+          "label": "phone number",
+          "name": "login_hint",
+          "placeholder": "phone number",
+          "required": true,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "tel",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "chatgpt.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://chatgpt.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

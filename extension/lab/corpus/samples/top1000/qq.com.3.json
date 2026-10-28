@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T21:59:46.601Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "qq.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://qq.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

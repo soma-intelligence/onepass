@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:30:24.525Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "loc.gov",
+  "source": "rendered",
+  "source_url": "https://loc.gov/signup",
+  "status": "error: http 404"
+}

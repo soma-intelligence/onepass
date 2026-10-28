@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:20:56.117Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "digitalocean.com",
+  "source": "rendered",
+  "source_url": "https://digitalocean.com/signin",
+  "status": "error: http 404"
+}

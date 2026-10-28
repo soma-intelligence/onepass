@@ -1,0 +1,70 @@
+{
+  "captured_at": "2026-10-27T22:02:29.931Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "learn about chatgpt business talk with c",
+          "before": "or daily commuting quiz me on vocabulary",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "label": "message chatgptquiz me on vocabularyplan a surf trip to cost",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "products",
+        "log in",
+        "research",
+        "products",
+        "business",
+        "developers",
+        "company",
+        "more",
+        "your privacy choices",
+        "englishunited states"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "search locales by name or region",
+          "autocomplete": "off",
+          "before": "ur privacy choices english united states",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "inputmode": "search",
+          "label": "search locales by name or region",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "openai.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://openai.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

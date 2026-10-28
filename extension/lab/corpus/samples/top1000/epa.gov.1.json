@@ -1,0 +1,198 @@
+{
+  "captured_at": "2026-10-28T00:14:29.211Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search",
+          "before": "n official, secure websites. menu search",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "search-box",
+          "index": 0,
+          "label": "search",
+          "name": "querytext",
+          "placeholder": "search epa.gov",
+          "required": false,
+          "role": "unknown",
+          "siblings": 5,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "no, only submit these responses",
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "400 characters allowed would you like to",
+          "before": "se explain the reason for your rating. *",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "please explain the reason for your rating. *",
+          "maxlength": 400,
+          "name": "<redacted>",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "please tell us why you visited www.epa.g",
+          "before": "other enter other text",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "label": "enter other text",
+          "maxlength": 10000,
+          "name": "<redacted>",
+          "placeholder": "enter other text",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "400 characters allowed did you visit www",
+          "before": "ll us why you visited www.epa.gov today.",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 2,
+          "label": "please tell us why you visited www.epa.gov today.",
+          "maxlength": 400,
+          "name": "<redacted>",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "400 characters allowed how can we make w",
+          "before": "why you were able or unable to accomplis",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 3,
+          "label": "did you visit www.epa.gov to accomplish a specific task? if ",
+          "maxlength": 400,
+          "name": "<redacted>",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "400 characters allowed submit",
+          "before": "make www.epa.gov a more helpful website?",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 4,
+          "label": "how can we make www.epa.gov a more helpful website?",
+          "maxlength": 400,
+          "name": "<redacted>",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "an official form of the united states go",
+          "autocomplete": "off",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "fba_directive",
+          "index": 5,
+          "name": "fba_directive",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "here’s how you know",
+        "menu",
+        "search",
+        "primary navigation",
+        "environmental topics",
+        "laws & regulations",
+        "report a violation",
+        "about epa",
+        "open sidenav menu close sidenav menu",
+        "expand or collapse the child menu",
+        "site feedback",
+        "no, only submit these responses"
+      ],
+      "fields": [
+        {
+          "after": "entries search:",
+          "before": "nars that are offered periodically. show",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "label": "<redacted>",
+          "name": "datatable_length",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "before": "entries search:",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 1,
+          "label": "search:",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "epa.gov",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://epa.gov/grants/epa-grants-webinars",
+  "status": "ok",
+  "webauthnCalls": []
+}

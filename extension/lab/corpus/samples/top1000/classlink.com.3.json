@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-10-28T00:19:28.804Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "use my location",
+        "stop using location",
+        "login here"
+      ],
+      "fields": [
+        {
+          "after": "use my location stop using location can'",
+          "before": "slink find your login page use quickcard",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "classlink.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://classlink.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

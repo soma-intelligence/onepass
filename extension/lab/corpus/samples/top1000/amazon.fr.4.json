@@ -1,0 +1,58 @@
+{
+  "captured_at": "2026-10-27T23:24:46.949Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "go"
+      ],
+      "fields": [
+        {
+          "after": "search amazon.fr",
+          "before": "ect the department you want to search in",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "searchDropdownBox",
+          "index": 0,
+          "label": "select the department you want to search in",
+          "name": "url",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        },
+        {
+          "ariaLabel": "search amazon.fr",
+          "autocomplete": "off",
+          "before": "search amazon.fr",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "twotabsearchtextbox",
+          "index": 1,
+          "label": "search amazon.fr",
+          "name": "field-keywords",
+          "placeholder": "search amazon.fr",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "amazon.fr",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amazon.fr/-/en/gp/browse.html?node=15933160031&ref_=footer_4xcb",
+  "status": "ok",
+  "webauthnCalls": []
+}

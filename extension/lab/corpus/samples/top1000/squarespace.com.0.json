@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-10-27T23:14:17.383Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "already have a domain? transfer your dom",
+          "autocomplete": "off",
+          "before": "find the perfect domain for your website",
+          "depth": 6,
+          "hasPattern": false,
+          "index": 0,
+          "label": "start your search here",
+          "name": "query",
+          "placeholder": "start your search here",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "squarespace.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://squarespace.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:30:51.365Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "2gis.com",
+  "source": "rendered",
+  "source_url": "https://2gis.com/signup",
+  "status": "error: http 404"
+}

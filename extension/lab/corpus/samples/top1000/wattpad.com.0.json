@@ -1,0 +1,73 @@
+{
+  "captured_at": "2026-10-27T23:50:13.384Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "write download app log in sign up log in",
+          "autocomplete": "off",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "query",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "browse",
+        "community",
+        "write",
+        "download app",
+        "log in",
+        "sign up",
+        "log in",
+        "get started",
+        "already have an account? log in",
+        "wpchevronright",
+        "wpchevronright",
+        "wpchevronright"
+      ],
+      "fields": [
+        {
+          "after": "romance fanfiction lgbtq+ wattpad origin",
+          "before": "mood or vibe (we're not judging). fake d",
+          "depth": 6,
+          "hasPattern": false,
+          "index": 0,
+          "label": "fake d",
+          "placeholder": "fake d",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "wattpad.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://wattpad.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

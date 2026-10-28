@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:10:40.438Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "porkbun.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://porkbun.com/llms/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

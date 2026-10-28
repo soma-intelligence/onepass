@@ -1,0 +1,54 @@
+{
+  "captured_at": "2026-10-27T23:01:31.448Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search en change language , english uplo",
+          "autocomplete": "off",
+          "before": "open navigation menu search",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "header_search_input",
+          "index": 0,
+          "label": "search",
+          "name": "query",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "scribd.com",
+  "iframes": [
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://cmp.osano.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://scribd.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,139 @@
+{
+  "captured_at": "2026-10-27T22:05:06.311Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "watch snapchat stories stories watch sna",
+          "ariaLabel": "search snapchat",
+          "autocomplete": "off",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "inputmode": "search",
+          "label": "search snapchat",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "open snapchat install watch snapchat sto",
+          "ariaLabel": "search snapchat",
+          "autocomplete": "off",
+          "before": "eators lens studio snapchat ads download",
+          "depth": 6,
+          "hasPattern": false,
+          "index": 0,
+          "inputmode": "search",
+          "label": "search snapchat",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "snapchat overview accounts support busin",
+          "ariaLabel": "search snapchat",
+          "autocomplete": "off",
+          "before": "t new lenses try out snapchat+ snapchat+",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "inputmode": "search",
+          "label": "search snapchat",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "use phone number instead",
+        "log in"
+      ],
+      "fields": [
+        {
+          "after": "use phone number instead log in or conti",
+          "autocomplete": "username",
+          "before": "your computer. username or email address",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "_r_0_",
+          "index": 0,
+          "label": "username or email address",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "use phone number instead",
+        "log in"
+      ],
+      "fields": [
+        {
+          "after": "privacy policy terms of service funny vi",
+          "before": "ofilter terms lens studio terms language",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "sc-global-locale-selector",
+          "index": 0,
+          "label": "language",
+          "name": "locale",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "snapchat.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://snapchat.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,104 @@
+{
+  "captured_at": "2026-10-27T21:53:20.116Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "cancel search cart 0 sign in me get exte",
+          "autocomplete": "off",
+          "before": "licensing unlocked stories view sitemap",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search or ask a question",
+          "name": "q",
+          "placeholder": "search or ask a question",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "more",
+        "all microsoft",
+        "cancel",
+        "search",
+        "sign in",
+        "me",
+        "help me choose a pc",
+        "microsoft 365 tips",
+        "sign in to my account",
+        "learn about azure",
+        "find ai solutions",
+        "sign in to my account"
+      ],
+      "fields": [
+        {
+          "after": "ask a question help me choose a pc micro",
+          "ariaLabel": "ask a question—get help from ai",
+          "autocomplete": "off",
+          "before": "need faster with ai-powered suggestions",
+          "depth": 17,
+          "hasPattern": false,
+          "index": 0,
+          "label": "ask a question—get help from ai",
+          "placeholder": "ask a question",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "ask a question learn about azure find ai",
+          "ariaLabel": "ask a question",
+          "autocomplete": "off",
+          "before": "siness decisions with ai-driven guidance",
+          "depth": 17,
+          "hasPattern": false,
+          "index": 1,
+          "label": "ask a question",
+          "placeholder": "ask a question",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "microsoft.com",
+  "iframes": [
+    {
+      "origin": "https://www.microsoft.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.microsoft.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://microsoft.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

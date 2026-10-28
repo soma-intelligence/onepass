@@ -1,0 +1,69 @@
+{
+  "captured_at": "2026-10-27T21:55:36.953Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "included services, free for the first ye",
+          "ariaLabel": "try a word or a domain name",
+          "before": "a domain name for a secure online space",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "try a word or a domain name",
+          "maxlength": 255,
+          "name": "search",
+          "placeholder": "try a word or a d",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "subscribe invalid registration confirmat",
+          "ariaLabel": "email address",
+          "before": "publications and best offers. one email",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "email address",
+          "maxlength": 255,
+          "name": "email",
+          "placeholder": "email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "gandi.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://gandi.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}

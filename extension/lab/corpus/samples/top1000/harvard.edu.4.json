@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:19:12.188Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "harvard.edu",
+  "source": "rendered",
+  "source_url": "https://harvard.edu/register",
+  "status": "error: http 404"
+}

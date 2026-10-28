@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-28T00:03:49.246Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "subscribe product pricing database auth",
+          "ariaLabel": "email for newsletter",
+          "before": "product updates and news from supabase.",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "get product updates and news from supabase.",
+          "placeholder": "your email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "supabase.co",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://supabase.co/",
+  "status": "ok",
+  "webauthnCalls": []
+}

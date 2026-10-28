@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-28T00:18:07.370Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit"
+      ],
+      "fields": [
+        {
+          "autocomplete": "email",
+          "before": "tment to keeping your data safe. email *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "inputmode": "email",
+          "label": "email*",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "react",
+  "host": "tailscale.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://tailscale.com/blog/headlamp-oidc-login-tsidp-kubernetes",
+  "status": "ok",
+  "webauthnCalls": []
+}

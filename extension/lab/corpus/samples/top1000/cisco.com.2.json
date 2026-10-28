@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:12:17.061Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "cisco.com",
+  "source": "rendered",
+  "source_url": "https://cisco.com/signin",
+  "status": "error: http 404"
+}

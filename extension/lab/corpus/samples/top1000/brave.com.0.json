@@ -1,0 +1,157 @@
+{
+  "captured_at": "2026-10-27T22:15:43.502Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "better results, ai answers, and zero pro",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search the web privately",
+          "name": "q",
+          "placeholder": "search the web privately",
+          "required": true,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "yes",
+        "dismiss",
+        "vs brave vs chrome",
+        "vs brave vs edge",
+        "vs brave vs firefox",
+        "vs brave vs safari"
+      ],
+      "fields": [
+        {
+          "before": "e vs brave vs firefox vs brave vs safari",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "visible"
+        },
+        {
+          "depth": 8,
+          "hasPattern": false,
+          "index": 1,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 8,
+          "hasPattern": false,
+          "index": 2,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 8,
+          "hasPattern": false,
+          "index": 3,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 8,
+          "hasPattern": false,
+          "index": 4,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 8,
+          "hasPattern": false,
+          "index": 5,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 8,
+          "hasPattern": false,
+          "index": 6,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        },
+        {
+          "after": "winning on privacy, performance, and fea",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 7,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        },
+        {
+          "after": "terms of use | report a security issue ©",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "language-switcher",
+          "index": 8,
+          "label": "choose a language",
+          "name": "language-switcher",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "brave.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 4,
+  "source": "rendered",
+  "source_url": "https://brave.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}
