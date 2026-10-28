@@ -43,18 +43,32 @@ struct PhoneTabsView: View {
     /// Choosing Rechercher opens its field (off for the demo captures of the list).
     @State private var openSearchOnSelect = true
 
+    /// A tab's label: the outline symbol, its filled form when the tab is selected.
+    private func tabLabel(_ title: LocalizedStringKey, _ symbol: String, _ value: PhoneTab) -> some View {
+        Label(title, systemImage: tab == value ? symbol + ".fill" : symbol)
+            .environment(\.symbolVariants, .none)
+    }
+
     var body: some View {
         TabView(selection: $tab) {
-            Tab("Accueil", systemImage: "house.fill", value: PhoneTab.home) {
+            // One family: outline symbols of the same weight, filled only on the selected tab (the
+            // bar's own fill variant is turned off so the unselected ones stay light).
+            Tab(value: PhoneTab.home) {
                 stack(.home) { HomeTab() }
+            } label: {
+                tabLabel("Accueil", "house", .home)
             }
             .accessibilityIdentifier("tab.home")
-            Tab("Éléments", systemImage: "list.bullet.rectangle.fill", value: PhoneTab.items) {
+            Tab(value: PhoneTab.items) {
                 stack(.items) { ItemsTab() }
+            } label: {
+                tabLabel("Éléments", "rectangle.stack", .items)
             }
             .accessibilityIdentifier("tab.items")
-            Tab("Watchtower", systemImage: "checkmark.shield.fill", value: PhoneTab.watchtower) {
+            Tab(value: PhoneTab.watchtower) {
                 stack(.watchtower) { WatchtowerTab() }
+            } label: {
+                tabLabel("Watchtower", "checkmark.shield", .watchtower)
             }
             .accessibilityIdentifier("tab.watchtower")
             Tab("Rechercher", systemImage: "magnifyingglass", value: PhoneTab.search, role: .search) {
