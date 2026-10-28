@@ -620,3 +620,81 @@ fn a_pending_password_prompt_does_not_hold_the_lock() {
     assert_eq!(status.code(), Some(1));
     drop(held);
 }
+
+/// The Secret Key a `New Secret Key:` (or `Secret Key:`) line shows.
+fn shown_key(stdout: &str, prefix: &str) -> String {
+    stdout
+        .lines()
+        .find_map(|l| l.strip_prefix(prefix))
+        .expect("a Secret Key line")
+        .to_owned()
+}
+
+#[test]
+fn rotate_keys_replaces_the_secret_key() {
+    let t = template();
+    let old_key = shown_key(&t.account.stdout, "Secret Key: ");
+    let tmp = fresh();
+    let dir = tmp.path();
+    let read = |pw: &str| {
+        onepass(dir, pw)
+            .args(["read", "onepass://Personnel/GitHub/password"])
+            .output()
+            .unwrap()
+    };
+
+    // A wrong current Secret Key: nothing changes.
+    let other = onepass_core::crypto::SecretKey::generate()
+        .unwrap()
+        .to_display();
+    let o = onepass(dir, PASSWORD)
+        .env("ONEPASS_SECRET_KEY", &other)
+        .args(["account", "rotate-keys"])
+        .output()
+        .unwrap();
+    assert_ne!(o.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("did not change"));
+    assert_eq!(read(PASSWORD).stdout, b"hunter2");
+
+    // Rotation: a new key shown, the vault still reads.
+    let o = onepass(dir, PASSWORD)
+        .env("ONEPASS_SECRET_KEY", &old_key)
+        .args(["account", "rotate-keys"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let new_key = shown_key(&String::from_utf8(o.stdout).unwrap(), "New Secret Key: ");
+    assert_ne!(new_key, old_key);
+    assert_eq!(read(PASSWORD).stdout, b"hunter2");
+
+    // The old key is no proof any more.
+    let o = onepass(dir, PASSWORD)
+        .env("ONEPASS_SECRET_KEY", &old_key)
+        .args(["account", "rotate-keys"])
+        .output()
+        .unwrap();
+    assert_ne!(o.status.code(), Some(0));
+
+    // Rotation with a new password.
+    let o = onepass(dir, PASSWORD)
+        .env("ONEPASS_SECRET_KEY", &new_key)
+        .env("ONEPASS_NEW_PASSWORD", "nouveau mot de passe")
+        .args(["account", "rotate-keys", "--change-password"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let third = shown_key(&String::from_utf8(o.stdout).unwrap(), "New Secret Key: ");
+    assert_ne!(third, new_key);
+    assert_ne!(read(PASSWORD).status.code(), Some(0));
+    assert_eq!(read("nouveau mot de passe").stdout, b"hunter2");
+}
