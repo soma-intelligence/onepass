@@ -117,6 +117,21 @@ export class FrameTokens<R extends BoundRecord> {
     await this.opts.area?.remove(this.opts.prefix + token);
   }
 
+  /** The live token of `tabId` and its record, if any (one per tab and kind). */
+  async forTab(tabId: number): Promise<{ token: string; rec: R } | null> {
+    const live = (r: BoundRecord) => r.tabId === tabId && this.now() - r.createdAt <= this.opts.ttlMs && this.now() >= r.createdAt;
+    for (const [token, r] of this.mem) if (live(r)) return { token, rec: r };
+    const area = this.opts.area;
+    if (!area) return null;
+    for (const k of Object.keys(await area.get(null))) {
+      if (!k.startsWith(this.opts.prefix)) continue;
+      const token = k.slice(this.opts.prefix.length);
+      const rec = await this.load(token);
+      if (rec && live(rec)) return { token, rec };
+    }
+    return null;
+  }
+
   /** A live (unexpired) token of `tabId` exists. */
   async hasTab(tabId: number): Promise<boolean> {
     const live = (r: BoundRecord) => r.tabId === tabId && this.now() - r.createdAt <= this.opts.ttlMs && this.now() >= r.createdAt;

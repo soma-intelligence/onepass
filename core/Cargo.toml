@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["onepass-core", "onepass-cli", "onepass-ffi", "onepass-guard", "onepass-mcp", "onepass-peer", "onepass-ssh-agent", "onepass-bridge", "onepass-native-host"]
+members = ["onepass-core", "onepass-cli", "onepass-ffi", "onepass-guard", "onepass-mcp", "onepass-peer", "onepass-ssh-agent", "onepass-bridge", "onepass-native-host", "onepass-relay"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.4"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 publish = false

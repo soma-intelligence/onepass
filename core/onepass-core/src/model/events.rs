@@ -10,6 +10,9 @@
 //! item)` as an `ItemTrailer` when there is at least one, and
 //! `vault::open_item` reads that trailer when bytes remain. A later
 //! extension appends a second trailer after this one, never a field here.
+//! A trailer a build cannot read opens the item without events: history
+//! never locks an item out. An older build that then saves the item drops
+//! the history it could not read.
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;

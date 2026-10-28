@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BridgeClient } from "../src/bridge/client";
-import { NATIVE_HOST } from "../src/background/native";
+import { DEV_HOST as NATIVE_HOST } from "../src/background/native";
 import { NodeTransport } from "../test/bridge/node-transport";
 
 export const CORE = fileURLToPath(new URL("../../core/", import.meta.url));

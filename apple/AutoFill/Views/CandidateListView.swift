@@ -19,6 +19,9 @@ struct CandidateListView: View {
     @State private var query = ""
     @State private var showOthers = false
     @State private var busy = false
+    #if os(iOS)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #endif
 
     var body: some View {
         AutoFillScaffold(title: oneTimeCode ? Text("Codes de vérification") : Text("Choisis un compte"), model: model) {
@@ -90,10 +93,18 @@ struct CandidateListView: View {
                         rows(for: candidate)
                     }
                 }
+                #if os(iOS)
+                // The button card gives way to the rows, which settle in from under the label.
+                .transition(Motion.reveal(reduceMotion: reduceMotion))
+                #endif
             }
         } else {
             Button {
+                #if os(iOS)
+                withAnimation(Motion.fold(reduceMotion: reduceMotion)) { showOthers = true }
+                #else
                 withAnimation(.snappy) { showOthers = true }
+                #endif
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "chevron.down")
@@ -111,6 +122,9 @@ struct CandidateListView: View {
             }
             .buttonStyle(AutoFillRowStyle())
             .autofillCard()
+            #if os(iOS)
+            .transition(.opacity)
+            #endif
             .accessibilityIdentifier("autofill.others")
         }
     }

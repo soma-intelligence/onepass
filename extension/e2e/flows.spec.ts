@@ -231,3 +231,94 @@ paired("identity_fill", async ({ ext }) => {
   await expect(page.locator("#postal-code")).toHaveValue(id.zip);
   await expect(page.locator("#city")).toHaveValue(id.city);
 });
+
+// ---- signing in with a provider, seamless (one surface, picker, keyboard, link) ----
+
+const DOCS = "https://docs.atlas-cloud.test";
+
+paired("one_surface_menu_replaces_offer_and_fits_its_content", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/login`);
+  await ext.extFrame(page, "overlay");
+  const menu = await ext.openMenu(page, "#email");
+  await expect(menu.locator("button.row").first()).toBeVisible();
+  // Never two surfaces: the offer leaves when the menu opens.
+  await expect.poll(() => ext.findExtFrame(page, "overlay")).toBeUndefined();
+  // The frame is as tall as its rows (two logins and "Enregistrer un nouveau login").
+  await expect.poll(async () => menu.evaluate(() => innerHeight)).toBeLessThan(260);
+  const content = await menu.evaluate(() => document.querySelector(".menu")?.scrollHeight ?? 0);
+  expect(Math.abs((await menu.evaluate(() => innerHeight)) - content)).toBeLessThanOrEqual(2);
+});
+
+paired("menu_keyboard_from_the_field", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/login`);
+  const menu = await ext.openMenu(page, "#email");
+  await ext.settle();
+  // Arrows move the menu's highlight while the focus stays in the page's field.
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.locator("button.row.active .t1")).toHaveText("Atlas Cloud");
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.locator("button.row.active .t1")).toHaveText("Atlas Cloud (multi)");
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe("email");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#email")).toHaveValue(FX.ops.email);
+  await expect(page.locator("#password")).toHaveValue(FX.ops.password);
+  // Return picked the row: the page's form was not submitted.
+  await expect(page.locator("#status")).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe("email");
+  // Escape closes; the focus stays where it was.
+  await page.locator("#email").fill("");
+  await ext.openMenu(page, "#email");
+  await page.keyboard.press("Escape");
+  await expect.poll(() => ext.findExtFrame(page, "menu")).toBeUndefined();
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe("email");
+});
+
+paired("provider_picker_signs_in_with_the_other_account_and_remembers_it", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${DOCS}/login`);
+  const menu = await ext.openMenu(page, "#email");
+  const google = menu.locator('button.row[data-provider="google"]:not(.row-sub)');
+  await expect(google.locator(".t2")).toHaveText(FX.googlePerso.email);
+  await ext.settle();
+  await menu.locator("button.row-fold").click();
+  const pro = menu.locator("button.row-sub").filter({ has: menu.locator(".t1", { hasText: FX.googlePro.email }) });
+  await expect(pro).toHaveCount(1);
+  await ext.settle();
+  await pro.click();
+  await expect(page).toHaveURL(/^https:\/\/atlas-cloud\.test\/oauth\/callback/, { timeout: 30_000 });
+  await expect(page.locator("#detail")).toHaveText(`avec Google (${FX.googlePro.email})`);
+  expect(ext.server.providerSignIns).toEqual([FX.googlePro.email]);
+  await expect.poll(async () => (await ext.chainState())?.status, { timeout: 20_000 }).toBe("done");
+  // Next time on that site, the account picked last is the default.
+  await page.goto(`${DOCS}/login`);
+  const again = await ext.openMenu(page, "#email");
+  await expect(again.locator('button.row[data-provider="google"]:not(.row-sub) .t2')).toHaveText(FX.googlePro.email);
+});
+
+paired("provider_link_offered_after_a_manual_google_sign_in", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/login-google`);
+  await expect(page.locator("onepass-root")).toHaveCount(1);
+  await page.locator("#provider").click();
+  await page.locator("#acc-perso").click();
+  await page.locator("#identifier-email").fill(FX.googlePerso.email);
+  await page.locator("#next").click();
+  await page.locator("#password").fill(FX.googlePerso.password);
+  await page.locator("#next").click();
+  await expect(page).toHaveURL(/^https:\/\/atlas-cloud\.test\/oauth\/callback/);
+  const save = await ext.extFrame(page, "save");
+  await expect(save.locator(".link-card .t1")).toHaveText("atlas-cloud.test ↔ Google");
+  await expect(save.locator(".link-card .line2")).toHaveText(`${FX.googlePerso.email} · Google perso`);
+  // One compact prompt, not a sheet.
+  await expect.poll(async () => save.evaluate(() => innerHeight)).toBeLessThan(300);
+  await ext.settle();
+  await save.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(save.getByText("Lien enregistré")).toBeVisible();
+  // The site now signs in with that Google account in one click.
+  await page.goto(`${ATLAS}/logout`);
+  await page.goto(`${ATLAS}/login-google`);
+  const menu = await ext.openMenu(page, "#email");
+  await expect(menu.locator('button.row[data-provider="google"] .t2').first()).toHaveText(FX.googlePerso.email);
+});

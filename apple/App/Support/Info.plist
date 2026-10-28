@@ -47,6 +47,8 @@
 	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
 	<key>OnePassAppGroup</key>
 	<string>$(ONEPASS_APP_GROUP)</string>
+	<key>OnePassBrowserExtensions</key>
+	<string>$(ONEPASS_BROWSER_EXTENSIONS)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

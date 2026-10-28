@@ -2,13 +2,13 @@ import Foundation
 
 /// Where the Safari extension finds its bridge host.
 ///
-/// The product path of the spec (milestone 4, R-02 and R-17) is an XPC relay
-/// to the Mac app, which embeds `onepass-bridge`. Until the app serves the
-/// bridge, Debug builds of the extension carry the development native host
-/// (`core/onepass-native-host`, the binary Chrome and Firefox launch) in
-/// `Contents/MacOS` and start one per connection, exactly as a browser does
-/// for each `connectNative` port. Release builds carry no host: every `open`
-/// answers `unavailable`.
+/// Signed builds reach the Mac app over its socket in the App Group
+/// container (`AppSocket`, spec 2026-10-27-release-bridge-design): the app
+/// serves the bridge from the vault the user unlocked. Debug builds also
+/// carry the development native host (`core/onepass-native-host`) in
+/// `Contents/MacOS` and prefer it, starting one per connection as a browser
+/// does for each `connectNative` port. A build with neither (ad hoc Release)
+/// answers `unavailable` to every `open`.
 public enum BridgeHost {
     public static let executableName = "onepass-native-host"
 
@@ -27,9 +27,16 @@ public enum BridgeHost {
         URL(fileURLWithPath: home).appendingPathComponent(".onepass-dev/native-host.json")
     }
 
-    /// The launcher for the host embedded in `bundle`, or nil when this build
-    /// has none.
-    public static func launcher(in bundle: Bundle = .main) -> ProcessHostLauncher? {
+    /// The development host when this build embeds one, else the app's
+    /// socket when this build is signed by a team, else nil.
+    public static func launcher(in bundle: Bundle = .main) -> (any HostLauncher)? {
+        if let dev = devLauncher(in: bundle) { return dev }
+        return AppSocket.launcher()
+    }
+
+    /// The launcher for the development host embedded in `bundle`, or nil
+    /// when this build has none.
+    public static func devLauncher(in bundle: Bundle = .main) -> ProcessHostLauncher? {
         guard let dir = bundle.executableURL?.deletingLastPathComponent(),
             let id = bundle.bundleIdentifier
         else { return nil }

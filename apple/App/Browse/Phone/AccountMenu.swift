@@ -2,30 +2,37 @@
 import DesignKit
 import SwiftUI
 
-/// Account button of the iPhone navigation bars (mockups `PhoneHome`, `PhoneItems`): the account's
-/// initials on the accent square, as in the Mac account header. Its menu holds the account actions
-/// of the Mac popover: Nouveau coffre, Importer, Réglages (the tab) and Verrouiller, which asks
-/// first when an edited draft would be lost.
+/// Account button of the iPhone navigation bars: the account's initials on the accent square and a
+/// small chevron, as the Mac account header. Its menu holds the Mac popover's content: who is
+/// signed in and on which kind of device, then Réglages (a sheet, it left the tab bar), Nouveau
+/// coffre, Importer and Verrouiller.
 struct AccountMenu: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.openPhoneTab) private var openTab
     @State private var creatingVault = false
 
     var body: some View {
         Menu {
-            Section(model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName) {
+            Section {
+                Button("Réglages", systemImage: "gearshape") { model.showSettings = true }
+                    .accessibilityIdentifier("account.settings")
                 Button("Nouveau coffre…", systemImage: "plus.rectangle.on.rectangle") { creatingVault = true }
                     .accessibilityIdentifier("account.newVault")
                 Button("Importer…", systemImage: "square.and.arrow.down") { model.showImport = true }
                     .accessibilityIdentifier("account.import")
-                Button("Réglages", systemImage: "gearshape") { openTab(.settings) }
-                    .accessibilityIdentifier("account.settings")
+            } header: {
+                Text(verbatim: "\(name) · \(device)")
             }
             Button("Verrouiller", systemImage: "lock", role: .destructive) { model.perform(.lock) }
                 .accessibilityIdentifier("account.lock")
         } label: {
-            AccountAvatar(initials: model.initials, size: 34)
-                .contentShape(Rectangle())
+            HStack(spacing: 4) {
+                AccountAvatar(initials: model.initials, size: 32)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(minHeight: 44)
+            .contentShape(.rect)
         }
         .accessibilityLabel(Text("Menu du compte"))
         .accessibilityIdentifier("account.menu")
@@ -33,23 +40,55 @@ struct AccountMenu: View {
             VaultEditorView(vault: nil) { creatingVault = false }
         }
     }
+
+    private var name: String {
+        model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
+    }
+
+    private var device: String {
+        model.settings.deviceMode == .shared
+            ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel")
+    }
 }
 
-/// The toolbar shared by the Accueil, Éléments and Watchtower roots: account menu on the leading
-/// side, "Nouvel élément" on the trailing side.
-struct PhoneRootToolbar: ToolbarContent {
+/// The toolbar of the Accueil, Éléments and Watchtower roots: the account menu on the leading
+/// side; on the trailing side, glass circles: the screen's display options when it has some, then
+/// "Nouvel élément".
+struct PhoneRootToolbar<Options: View>: ToolbarContent {
     @Environment(AppModel.self) private var model
+    private let options: Options?
+
+    init(@ViewBuilder options: () -> Options) {
+        self.options = options()
+    }
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             AccountMenu()
         }
         .sharedBackgroundVisibility(.hidden)
+        if let options {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    options
+                } label: {
+                    Label("Afficher", systemImage: "slider.horizontal.3")
+                }
+                .accessibilityIdentifier("root.options")
+            }
+        }
+        ToolbarSpacer(.fixed, placement: .topBarTrailing)
         ToolbarItem(placement: .topBarTrailing) {
             Button("Nouvel élément", systemImage: "plus") { model.showNewItemPicker = true }
-                .buttonStyle(.glassProminent)
                 .accessibilityIdentifier("items.new")
         }
+    }
+}
+
+extension PhoneRootToolbar where Options == EmptyView {
+    /// Watchtower: no display options, only "Nouvel élément".
+    init() {
+        options = nil
     }
 }
 #endif

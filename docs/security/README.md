@@ -464,11 +464,26 @@ Lancer : `cd extension && npm run check && npm run e2e`, puis `cd core && cargo 
 
 ### 12.9 Limites connues de l'extension
 
-- La clé d'appairage est lisible par un logiciel qui lit le profil du navigateur (R-17, jalon 2).
+- La clé d'appairage est lisible par un logiciel qui lit le profil du navigateur (R-17). Le pont de production vérifie la signature du relais et de l'appex (12.10), pas celle du navigateur qui lance le relais.
 - L'hôte de développement n'est pas pour de vrais secrets : le coffre est chargé en mémoire (R-14), la clé d'appairage est dans un fichier en 0600, la fixture est refusée par un build release.
 - Pas de passkeys (R-16), pas d'apprentissage des étapes (R-13), aucune exception aux iframes d'autres sites (R-10), chaîne arrêtée hors domaines autorisés (R-11).
 - Les tests de bout en bout ne couvrent que Chromium (R-08).
 - Les jetons du menu, de l'overlay et de la proposition d'enregistrement sont liés à l'identifiant de l'onglet ; chaque action revérifie l'origine et le `documentId` du cadre visé. Un moteur de rendu compromis du même site (qui partage le processus de la page) est hors périmètre.
+
+### 12.10 Pont de production vers l'app Mac
+
+Spec : `docs/specs/2026-10-27-release-bridge-design.md`. Code : `core/onepass-bridge/src/host.rs` (boucle de connexion commune à l'hôte de dev et à l'app), `core/onepass-relay` (rendez-vous, politique de signature, écoute, relais Chrome et Firefox), `core/onepass-ffi/src/bridge.rs` (`BridgeServer` dans l'app), `apple/SafariExtension/SafariRelay/Sources/SafariRelay/AppSocket.swift`, `apple/VaultKit/Sources/VaultKit/Bridge/BrowserBridge.swift`.
+
+- **Transport.** Socket Unix `bridge.sock` (0600) à la racine du conteneur App Group `<équipe>.me.somalabs.onepass`, servi par l'app elle-même tant qu'elle tourne. Protocole, appairage, session, enveloppe chiffrée et politique de divulgation (sections 12.2 à 12.4) inchangés : le relais et l'appex recopient les trames sans les lire, 1 MiB au plus.
+- **Signature des deux côtés.** Chaque côté identifie l'autre par le jeton d'audit du noyau (`LOCAL_PEERTOKEN`, jamais par pid) : cdhash du noyau, exigence `anchor apple generic`, équipe et identifiant exacts (`onepass-peer`, et `SecCodeCheckValidity` côté Safari). L'app n'admet que `me.somalabs.onepass.safari` et `me.somalabs.onepass.relay` signés par sa propre équipe ; un client refusé est fermé avant que l'app ne lise un octet. Le relais n'accepte que `me.somalabs.onepass` de son équipe. Un build signé ad hoc ne sert ni ne joint le pont.
+- **Limite côté Safari (mesurée).** Dans un bundle d'app, le bac à sable refuse à un processus sandboxé (EPERM) la lecture de la signature du processus qui écoute ; l'extension Safari, toujours sandboxée, vérifie l'app quand le système le permet, refuse un pair identifié comme autre chose, et sinon s'appuie sur le conteneur de groupe (créer le socket demande d'être de l'équipe ou d'avoir l'accord de l'utilisateur pour lire les données d'autres apps) et sur le protocole : sans `PK`, un faux serveur n'ouvre aucune session ; il ne peut obtenir qu'un nouvel appairage, que l'utilisateur doit confirmer sans la feuille Touch ID de la vraie app, et seulement quand l'app ne tourne pas (sinon le socket est pris).
+- **Ce que la signature ne prouve pas.** Elle prouve que le pair est notre relais, pas quel navigateur l'a lancé : tout processus local peut lancer `onepass-relay` avec un faux identifiant d'extension. L'identifiant reste un contrôle informatif (liste `OnePassBrowserExtensions` de l'app) ; la garde est l'appairage, comme en 12.1. La clé d'appairage reste lisible dans le profil du navigateur (12.5) : limite inchangée.
+- **Coffre.** Le pont sert la `Session` déverrouillée de l'app, relue à chaque requête : verrouiller l'app verrouille le pont. Les coffres masqués dans l'app le sont aussi pour l'extension. Une écriture (enregistrement d'un login) recharge l'app et part en sync. `unlock` ne fait que mettre l'app au premier plan.
+- **Approbations.** Appairage : feuille avec le code, l'extension et le navigateur (déclarés par l'extension, affichés comme tels), "Approuver" exige Touch ID (ou la montre) sur un coffre déverrouillé, sinon refus. Items `reprompt` : Touch ID à chaque fois, sinon `reprompt_required`.
+- **Clés d'appairage.** Dans le trousseau (élément `me.somalabs.onepass.bridge`, `WhenUnlockedThisDeviceOnly`, groupe partagé de l'app comme la Secret Key), écrites avant que l'extension ne reçoive `pair_ok`. Elles passent par Swift (32 octets, clé de canal, jamais une clé de coffre). "Oublier" (Réglages > Remplissage automatique > Navigateurs) efface la clé : la session suivante reçoit `unknown_pairing`.
+- **Bac à sable.** L'app et l'appex restent sandboxées. Le relais ne l'est pas, pour pouvoir vérifier l'app (P-09 bis) : runtime renforcé, seul l'App Group en entitlement, aucun état, aucune écriture, il ne lit pas les trames. Une distribution Mac App Store demanderait un relais sandboxé, sans cette vérification. Au plus 8 connexions simultanées, délai de 5 s pour la trame d'ouverture.
+- **Journal.** Les divulgations sont journalisées sans valeur dans `bridge-audit.jsonl` (0600) du dossier de la base, comme pour l'hôte de dev.
+- **Manifeste Chrome et Firefox.** Installé par `extension/scripts/install-app-host.mjs` (hôte `me.somalabs.onepass`), pas par l'app sandboxée (P-11).
 
 ## 13. Jalon 6 : Apple Watch, widgets, Raccourcis, Vision Pro
 

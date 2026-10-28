@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FormInfo, PageAnalysis } from "../../src/shared/messages";
 import { GESTURE_MS } from "../../src/content/submit";
 import {
+  asUser,
   EXT_BASE,
   flush,
   input,
@@ -119,6 +120,80 @@ describe("shell and icon", () => {
     expect(s.ext.ofType("close_menu")).toHaveLength(1);
   });
 
+  it("a trusted click into an empty field asks for the menu (auto), never a page click", async () => {
+    setPage(LOGIN);
+    s = start();
+    s.ext.reply = () => ({ ok: { url: `${EXT_BASE}menu.html#${TOKEN}` } });
+    input("u").click(); // page script: untrusted
+    await flush();
+    expect(s.ext.ofType("open_menu")).toHaveLength(0);
+    userClick(input("u"));
+    await flush();
+    expect(s.ext.ofType("open_menu")).toEqual([expect.objectContaining({ type: "open_menu", formKind: "login", auto: true })]);
+    // A filled field: the user is editing, nothing pops up.
+    s.ext.deliver({ type: "remove_frame", kind: "menu" });
+    input("p").value = "typed";
+    userClick(input("p"));
+    await flush();
+    expect(s.ext.ofType("open_menu")).toHaveLength(1);
+  });
+
+  it("menu open: arrows and Return go to the menu, the focus and the page's form stay", async () => {
+    setPage(LOGIN);
+    s = start();
+    s.ext.reply = () => ({ ok: { url: `${EXT_BASE}menu.html#${TOKEN}` } });
+    input("u").focus();
+    userKey(input("u"), "ArrowDown");
+    await flush();
+    expect(s.cs.internals.root.querySelector("iframe")).not.toBeNull();
+    let submitted = 0;
+    document.getElementById("login")!.addEventListener("keydown", (e) => {
+      if ((e as KeyboardEvent).key === "Enter" && !e.defaultPrevented) submitted++;
+    });
+    // Return before any arrow: the page's own (the menu has no highlight yet).
+    userKey(input("u"), "Enter");
+    userKey(input("u"), "ArrowDown");
+    userKey(input("u"), "ArrowUp");
+    const enter = userKey(input("u"), "Enter");
+    // A page's synthetic key is never relayed.
+    input("u").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    await flush();
+    expect(s.ext.ofType("menu_key").map((m) => m.key)).toEqual(["down", "up", "enter"]);
+    expect(enter.defaultPrevented).toBe(true);
+    expect(submitted).toBe(1);
+    expect(document.activeElement).toBe(input("u"));
+  });
+
+  it("typing in the field closes the menu; a click in the field keeps it", async () => {
+    setPage(LOGIN);
+    s = start();
+    s.ext.reply = () => ({ ok: { url: `${EXT_BASE}menu.html#${TOKEN}` } });
+    userKey(input("u"), "ArrowDown");
+    await flush();
+    asUser(input("u"), new MouseEvent("pointerdown", { bubbles: true, composed: true }));
+    expect(s.cs.internals.root.querySelector("iframe")).not.toBeNull();
+    input("u").dispatchEvent(new InputEvent("input", { bubbles: true })); // page script
+    expect(s.cs.internals.root.querySelector("iframe")).not.toBeNull();
+    asUser(input("u"), new InputEvent("input", { bubbles: true, composed: true }));
+    expect(s.cs.internals.root.querySelector("iframe")).toBeNull();
+    expect(s.ext.ofType("close_menu")).toHaveLength(1);
+  });
+
+  it("resize_frame from the worker sizes the frame (clamped), never from another sender", async () => {
+    setPage(LOGIN);
+    s = start();
+    s.ext.reply = () => ({ ok: { url: `${EXT_BASE}menu.html#${TOKEN}` } });
+    userKey(input("u"), "ArrowDown");
+    await flush();
+    const f = s.cs.internals.root.querySelector("iframe")!;
+    s.ext.deliver({ type: "resize_frame", kind: "menu", height: 166 }, { id: "other" });
+    expect(f.style.height).toBe("420px");
+    s.ext.deliver({ type: "resize_frame", kind: "menu", height: 166 });
+    expect(f.style.height).toBe("166px");
+    s.ext.deliver({ type: "resize_frame", kind: "menu", height: "9999" });
+    expect(f.style.height).toBe("166px");
+  });
+
   it("refuses a menu URL that is not an extension page", async () => {
     setPage(LOGIN);
     s = start();
@@ -210,6 +285,15 @@ describe("filler", () => {
     fill(s, f.ref, { username: "alex", current_password: "pw" });
     expect(input("u").value).toBe("alex");
     expect(input("p").value).toBe("pw");
+  });
+
+  it("a fill gives the focus back to the field that had it", () => {
+    setPage(LOGIN);
+    s = start();
+    input("u").focus();
+    expect(fill(s, formById(s, "login").ref, { username: "alex@atlas.dev", current_password: "pw" })).toEqual({ ok: true });
+    expect(input("p").value).toBe("pw");
+    expect(document.activeElement).toBe(input("u"));
   });
 
   it("dispatches input and change events that bubble", () => {

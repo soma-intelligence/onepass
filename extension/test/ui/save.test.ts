@@ -167,10 +167,15 @@ describe("save prompt", () => {
       kind: "provider_link",
       username: "",
       vaults: [],
-      provider: { id: "google", email: "alex.perso@example.com" },
+      provider: { id: "google", email: "alex.perso@example.com", title: "Google perso" },
     });
     await handle.ready;
-    expect(text(r)).toContain("Enregistrer le lien atlas-cloud.test ↔ Google (alex.perso@example.com)");
+    // One compact prompt: the site, the provider, and the very account item the link points to.
+    expect(r.querySelector("h1")!.textContent).toBe("Retenir ce lien ?");
+    expect(r.querySelector(".link-card .t1")!.textContent).toBe("atlas-cloud.test ↔ Google");
+    expect(r.querySelector(".link-card .line2")!.textContent).toBe("alex.perso@example.com · Google perso");
+    expect(r.querySelector(".link-card .way-badge svg.glyph-p_google")).not.toBeNull();
+    expect(r.querySelector(".save")!.classList.contains("fit")).toBe(true);
     await click("Enregistrer");
     expect(worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "save" });
     expect(text(r)).toContain("Lien enregistré");

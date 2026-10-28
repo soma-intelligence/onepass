@@ -80,6 +80,7 @@ struct SearchTab: View {
             .padding(.vertical, 2)
         }
         .scrollIndicators(.hidden)
+        .sensoryFeedback(.selection, trigger: category)
     }
 
     /// A category chip: the type's artwork, its name; the chosen one in the accent.
@@ -95,11 +96,13 @@ struct SearchTab: View {
             .padding(.trailing, 14)
             .frame(height: 34)
             .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-            .background(selected ? AnyShapeStyle(Theme.accent.gradient) : AnyShapeStyle(Color(uiColor: .secondarySystemGroupedBackground)),
-                in: Capsule())
+            .background(selected ? Theme.accent : Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
             .overlay { Capsule().strokeBorder(Color.primary.opacity(selected ? 0 : 0.06)) }
+            .animation(.easeOut(duration: 0.15), value: selected)
+            // 34 pt chip, 44 pt target.
+            .contentShape(Rectangle().inset(by: -5))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(id)
     }

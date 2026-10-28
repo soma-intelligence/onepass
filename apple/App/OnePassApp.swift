@@ -30,6 +30,8 @@ struct OnePassApp: App {
         }
         .commands {
             BrowseCommands(model: model)
+            // View > Show/Hide Sidebar (⌃⌘S): the toolbar has no sidebar button on the Mac.
+            SidebarCommands()
         }
         // "Ouvrir dans une nouvelle fenêtre" of the item menu: one read-only detail per item.
         WindowGroup(id: ItemWindow.id, for: String.self) { $key in

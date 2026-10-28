@@ -67,14 +67,12 @@ struct ItemHeader: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 #else
-                HStack(spacing: 8) {
-                    Text(subtitle)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    vaultBadge
-                }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                // The vault already leads the toolbar (its menu moves the item): named once.
+                Text(subtitle)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 #endif
             }
             Spacer(minLength: 0)

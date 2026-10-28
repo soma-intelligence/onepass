@@ -19,7 +19,10 @@ npm run build              # dist/chromium, dist/firefox, dist/safari
 npm run build:chromium     # un seul navigateur
 node build.mjs firefox     # idem pour Firefox ou Safari
 node build.mjs --dev       # ajoute des source maps en ligne (absentes par défaut)
+node build.mjs --dev-host  # Chrome et Firefox parlent à l'hôte de développement
 ```
+
+Chrome et Firefox parlent par défaut à l'hôte `me.somalabs.onepass`, le relais de l'app Mac (section "App Mac"). `--dev-host` construit pour l'hôte de développement `me.somalabs.onepass.dev` ; les tests de bout en bout et le labo le passent. Un build ne parle qu'à un seul hôte, sans repli.
 
 ## Identifiant de l'extension
 
@@ -37,9 +40,22 @@ Firefox MV3 n'accorde pas les permissions d'hôte à l'installation : elles sont
 
 **Safari (Mac).** L'extension est empaquetée dans l'app Mac : cible `OnePassSafari` (`apple/SafariExtension/`, identifiant `me.somalabs.onepass.safari`), intégrée à `OnePass.app/Contents/PlugIns`, dont les ressources sont `dist/safari` (une phase de build les copie ; construire l'extension avant l'app). Safari n'a pas d'hôte de messagerie native : `src/background/safari.ts` envoie chaque trame par `browser.runtime.sendNativeMessage` au `SafariWebExtensionHandler` de l'extension d'app, qui la relaie octet pour octet (même enveloppe, même appairage, même session que Chrome, R-03). `native.ts` choisit ce transport quand les pages de l'extension sont servies depuis `safari-web-extension:`.
 
-Tant que l'app ne sert pas le pont par XPC (R-17), le build Debug embarque l'hôte de développement (`Contents/MacOS/onepass-native-host`, signé avec le bac à sable hérité) et le lance une fois par connexion, comme Chrome. Les configurations Release n'embarquent aucun hôte : l'extension affiche "App OnePass introuvable". L'extension d'app est dans le bac à sable : l'hôte lit `~/.onepass-dev/native-host.json` où `~` est `~/Library/Containers/me.somalabs.onepass.safari/Data`, avec `"allowed_extensions": ["me.somalabs.onepass.safari"]`. Le fichier de fixture et le `data_dir` doivent être dans ce conteneur (le bac à sable ne lit pas le dépôt). Approbation `file` : `onepass-native-host approve <code> --config ~/Library/Containers/me.somalabs.onepass.safari/Data/.onepass-dev/native-host.json`.
+Dans un build signé par l'équipe (Release-CloudKit, Release-Signed), l'extension d'app joint l'app par son socket `bridge.sock` dans le conteneur App Group (section "App Mac"). Le build Debug embarque en plus l'hôte de développement (`Contents/MacOS/onepass-native-host`, signé avec le bac à sable hérité) et le préfère, en le lançant une fois par connexion, comme Chrome. Sans l'un ni l'autre (Release signé ad hoc), l'extension affiche "App OnePass introuvable". L'extension d'app est dans le bac à sable : l'hôte lit `~/.onepass-dev/native-host.json` où `~` est `~/Library/Containers/me.somalabs.onepass.safari/Data`, avec `"allowed_extensions": ["me.somalabs.onepass.safari"]`. Le fichier de fixture et le `data_dir` doivent être dans ce conteneur (le bac à sable ne lit pas le dépôt). Approbation `file` : `onepass-native-host approve <code> --config ~/Library/Containers/me.somalabs.onepass.safari/Data/.onepass-dev/native-host.json`.
 
 Essayer : `cd extension && npm run build`, puis `make -C apple project` si besoin et un build Debug de `OnePass` pour macOS, lancer l'app une fois (Safari découvre l'extension), activer Safari > Réglages > Avancés > "Afficher les fonctionnalités pour les développeurs web", puis Développement > "Autoriser les extensions non signées" (build signé ad hoc), et cocher OnePass dans Safari > Réglages > Extensions. Safari sur iPhone et iPad attend le pont dans l'app (pas de processus fils sur iOS).
+
+## App Mac (production)
+
+Spec : `docs/specs/2026-10-27-release-bridge-design.md`. L'app OnePass sert le pont depuis le coffre déverrouillé, sur `bridge.sock` dans son conteneur App Group ; elle vérifie la signature de chaque client (extension Safari, relais) et chaque client vérifie la sienne. Chrome et Firefox lancent `OnePass.app/Contents/Helpers/onepass-relay` (builds signés par l'équipe seulement) :
+
+```sh
+node scripts/install-app-host.mjs --app /Applications/OnePass.app --browser chrome --extension-id <identifiant>
+node scripts/install-app-host.mjs --app /Applications/OnePass.app --browser firefox
+```
+
+L'app ne sert que les identifiants de son réglage `ONEPASS_BROWSER_EXTENSIONS` (`apple/project.yml`, Firefox par défaut) : y ajouter l'identifiant Chrome, puis reconstruire. App fermée : "App OnePass introuvable" ; app verrouillée : "OnePass est verrouillé", le bouton met l'app au premier plan. L'appairage s'approuve dans l'app avec Touch ID ; Réglages > Remplissage automatique > Navigateurs liste et oublie les appairages.
+
+Test de bout en bout optionnel (relais signé, sonde signée à la place de l'app) : `test/bridge/app-relay.test.ts`, mode d'emploi en tête du fichier et dans `core/onepass-ffi/examples/bridge_probe.rs`.
 
 ## Hôte natif de développement
 

@@ -66,7 +66,7 @@ export interface LabState {
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const started = Date.now();
   const config = runConfig();
-  execFileSync(process.execPath, ["build.mjs", "chromium"], { cwd: EXT_ROOT, stdio: "inherit" });
+  execFileSync(process.execPath, ["build.mjs", "chromium", "--dev-host"], { cwd: EXT_ROOT, stdio: "inherit" });
   buildHost();
   const world = generate(config.seed, { sites: config.sites, patterns: loadPatterns() });
   mkdirSync(config.out, { recursive: true });

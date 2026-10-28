@@ -58,6 +58,9 @@ struct Sidebar: View {
                 .frame(minHeight: 0, maxHeight: .infinity)
         }
         .background { TitlebarHeightReader(height: $titlebarHeight) }
+        // The account pill fills the sidebar's title bar row: the system sidebar button sat across
+        // the column edge after it. The sidebar still folds with View > Hide Sidebar (⌃⌘S) or a drag.
+        .toolbar(removing: .sidebarToggle)
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 AccountHeader(compact: true)

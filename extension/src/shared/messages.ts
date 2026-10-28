@@ -73,7 +73,8 @@ export type FrameKind = "menu" | "overlay" | "save";
 /** Content script to background (untrusted sender: origin comes from `sender`). */
 export type CsToBg =
   | { type: "page_analysis"; analysis: PageAnalysis }
-  | { type: "open_menu"; fieldRef: string; formRef: string; formKind: FormKind }
+  /** `auto`: a click into the field, not the icon or a key; opened only when there is something to offer. */
+  | { type: "open_menu"; fieldRef: string; formRef: string; formKind: FormKind; auto?: boolean }
   | { type: "close_menu" }
   | {
       type: "submitted_credentials";
@@ -84,7 +85,16 @@ export type CsToBg =
       isNew: boolean;
     }
   | { type: "provider_click"; provider: ProviderId; ref: string }
-  | { type: "account_click"; email: string; ref: string };
+  | { type: "account_click"; email: string; ref: string }
+  /**
+   * A trusted key in the field the menu is anchored to, while the menu is
+   * open: the menu moves its highlight or activates it, the focus stays in
+   * the page (spec 8.3, keyboard).
+   */
+  | { type: "menu_key"; key: MenuKey };
+
+/** Keys the content script relays to an open menu. */
+export type MenuKey = "down" | "up" | "enter";
 
 export type SaveDecision = "save" | "update" | "never" | "dismiss";
 
@@ -101,16 +111,28 @@ export interface SaveEdits {
 export type UiToBg =
   | { type: "menu_init"; token: string }
   | { type: "menu_pick"; token: string; itemId: string }
-  /** "Se connecter avec <fournisseur> (<email>)": starts the chain. */
-  | { type: "menu_signin"; token: string; itemId: string; provider: ProviderId }
+  /**
+   * "Continuer avec <fournisseur>": starts the chain. `accountId`: the
+   * provider account picked in the menu (one it offered), else the default.
+   */
+  | { type: "menu_signin"; token: string; itemId: string; provider: ProviderId; accountId?: string }
   | { type: "menu_generate"; token: string }
   /** "Enregistrer un nouveau login": the save prompt in its edit view. */
   | { type: "menu_new_login"; token: string }
   | { type: "menu_unlock"; token: string }
   | { type: "menu_close"; token: string }
+  /** The page's content height: the frame is sized to it (clamped by the content script). */
+  | { type: "menu_resize"; token: string; height: number }
+  /**
+   * Keys relayed from the page's field (`menu_key`): answered as soon as one
+   * arrives, or empty after a while; the menu asks again. A request, never a
+   * listener: the page talks to the worker only.
+   */
+  | { type: "menu_keys"; token: string }
   | { type: "overlay_init"; token: string }
   | { type: "overlay_state"; token: string }
-  | { type: "overlay_start"; token: string; itemId: string; provider?: ProviderId }
+  | { type: "overlay_start"; token: string; itemId: string; provider?: ProviderId; accountId?: string }
+  | { type: "overlay_resize"; token: string; height: number }
   | { type: "overlay_stop"; token: string }
   | { type: "overlay_close"; token: string }
   | { type: "save_init"; token: string }
@@ -118,6 +140,7 @@ export type UiToBg =
   | { type: "save_generate"; token: string }
   | { type: "save_decide"; token: string; decision: SaveDecision; edits?: SaveEdits; itemId?: string }
   | { type: "save_close"; token: string }
+  | { type: "save_resize"; token: string; height: number }
   | { type: "popup_status" }
   | { type: "popup_unlock" }
   | { type: "popup_search"; query: string }
@@ -150,7 +173,9 @@ export type BgToCs =
   /** `origin`: when set, shown only by a frame still at exactly this origin (no documentId pin). */
   | { type: "show_frame"; kind: FrameKind; url: string; ref?: string; origin?: string }
   | { type: "remove_frame"; kind: FrameKind }
-  | { type: "chain_highlight"; ref: string | null };
+  | { type: "chain_highlight"; ref: string | null }
+  /** Height the extension page asked for (validated by token in the worker, clamped here). */
+  | { type: "resize_frame"; kind: FrameKind; height: number };
 
 const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "page_analysis",
@@ -159,6 +184,7 @@ const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "submitted_credentials",
   "provider_click",
   "account_click",
+  "menu_key",
 ]);
 
 /** Cheap discriminant check for messages received from content scripts. */

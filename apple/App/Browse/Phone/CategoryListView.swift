@@ -9,6 +9,7 @@ import VaultKit
 /// récemment (toast, 30 days to restore).
 struct CategoryListView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let filter: ItemFilter
     @State private var query = ""
     /// "À proximité": rows from the position and the session's location index, closest first.
@@ -50,6 +51,9 @@ struct CategoryListView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // A row trashed, restored or favorited: the list closes or opens the gap. Typing in the
+        // search refilters instantly (it happens with every key).
+        .animation(Motion.list(reduceMotion: reduceMotion), value: session.summariesRevision)
         .scrollContentBackground(.hidden)
         .background(PhoneBackground())
         .overlay {

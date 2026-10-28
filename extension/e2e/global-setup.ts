@@ -20,8 +20,8 @@ export interface E2EState {
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const started = Date.now();
   const ext = fileURLToPath(new URL("../", import.meta.url));
-  execFileSync(process.execPath, ["build.mjs", "chromium"], { cwd: ext, stdio: "inherit" });
-  execFileSync(process.execPath, ["build.mjs", "chromium", "--e2e"], { cwd: ext, stdio: "inherit" });
+  execFileSync(process.execPath, ["build.mjs", "chromium", "--dev-host"], { cwd: ext, stdio: "inherit" });
+  execFileSync(process.execPath, ["build.mjs", "chromium", "--e2e", "--dev-host"], { cwd: ext, stdio: "inherit" });
   // The worker handle of the e2e build must never reach the regular build.
   if (readFileSync(join(ext, "dist/chromium/background.js"), "utf8").includes("__onepassE2E")) {
     throw new Error("e2e: dist/chromium/background.js contains the e2e worker handle");

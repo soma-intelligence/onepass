@@ -143,6 +143,8 @@ fn split_name(full: &str) -> (&str, &str) {
     }
 }
 
+const SECRET_COLS: [&str; 5] = ["password", "totp", "cvc", "pin", "cardnumber"];
+
 const ADDRESS_COLS: [&str; 6] = [
     "address1", "address2", "city", "zipcode", "state", "country",
 ];
@@ -189,7 +191,9 @@ fn row_draft(row: &Row, kind: ItemType) -> Draft {
             }
             "phone_number" if identity => d.set("mobile_phone", val),
             c if (identity || card) && ADDRESS_COLS.contains(&c) => {}
-            _ => d.extra(col, val, false),
+            // A secret column on a row whose type has no slot for it stays
+            // concealed, whatever the hints make of its name.
+            _ => d.extra(col, val, SECRET_COLS.contains(&col)),
         }
     }
     if identity || card {
@@ -277,6 +281,21 @@ mod tests {
         assert!(!is_nordpass_header(
             &csv_records(b"name,url,username,password\n").unwrap().0
         ));
+    }
+
+    #[test]
+    fn secret_columns_stay_concealed_on_any_row() {
+        let csv = b"name,url,additional_urls,username,password,note,cardholdername,cardnumber,cvc,pin,expirydate,zipcode,folder,full_name,phone_number,email,address1,address2,city,country,state,type,custom_fields,totp\n\
+Locker,,,,,a note,,4111111111111111,123,,,,,,,,,,,,,note,,JBSWY3DPEHPK3PXP\n";
+        let imp = parse_nordpass_csv(csv).unwrap();
+        let fields = imported(&imp.items[0].item);
+        for label in ["cardnumber", "cvc", "totp"] {
+            let value = fields.iter().find(|(l, _)| l == label).map(|(_, v)| v);
+            assert!(
+                matches!(value, Some(FieldValue::Concealed(_))),
+                "{label} is {value:?}"
+            );
+        }
     }
 
     #[test]

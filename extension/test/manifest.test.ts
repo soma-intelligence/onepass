@@ -34,7 +34,7 @@ describe.each(BROWSERS)("manifest %s", (b) => {
     const m = load(b);
     expect(m.manifest_version).toBe(3);
     expect(m.name).toBe("OnePass");
-    expect(m.version).toBe("0.1.0");
+    expect(m.version).toBe("0.1.4");
     expect([...m.permissions].sort()).toEqual(
       ["activeTab", "nativeMessaging", "scripting", "storage", "webNavigation"].sort(),
     );
@@ -89,5 +89,12 @@ describe("per-browser differences", () => {
     const m = load("safari");
     expect(m.background.service_worker).toBe("background.js");
     expect(m.web_accessible_resources[0]?.use_dynamic_url).toBeUndefined();
+  });
+});
+
+describe("native messaging host of the build", () => {
+  it("is the app's relay in a regular build", () => {
+    const bg = readFileSync(join(root, "dist", "chromium", "background.js"), "utf8");
+    expect(bg).toMatch(/NATIVE_HOST = true \? "me\.somalabs\.onepass" :/);
   });
 });

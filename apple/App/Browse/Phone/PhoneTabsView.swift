@@ -18,17 +18,18 @@ enum PhoneRoute: Hashable {
 }
 
 enum PhoneTab: String, Hashable {
-    case home, items, watchtower, settings, search
+    case home, items, watchtower, search
 }
 
 extension EnvironmentValues {
-    /// Switches the iPhone tab bar to a tab (home tiles, the account menu's Réglages).
+    /// Switches the iPhone tab bar to a tab.
     @Entry var openPhoneTab: @MainActor (PhoneTab) -> Void = { _ in }
 }
 
 /// iPhone, and iPad in compact width (spec 6.2, mockups `PhoneHome`, `PhoneItems`, `PhoneSearch`):
-/// Liquid Glass tab bar with Accueil, Éléments, Watchtower, Réglages and the search tab (role
-/// `.search`), each tab in its own navigation stack. The item shown on top of the visible tab's stack is
+/// Liquid Glass tab bar with three tabs, Accueil, Éléments and Watchtower, and the search tab (role
+/// `.search`) as the separate button on its right, each tab in its own navigation stack. Réglages
+/// opens from the account menu, as a sheet (`BrowseRoot`). The item shown on top of the visible tab's stack is
 /// `AppModel.selectedItem`, so the detail's own actions (trash, move, save under a new vault)
 /// pop or follow it here. The tab bar hides while an editor is open.
 struct PhoneTabsView: View {
@@ -54,11 +55,6 @@ struct PhoneTabsView: View {
                 stack(.watchtower) { WatchtowerTab() }
             }
             .accessibilityIdentifier("tab.watchtower")
-            // The settings keep their own stack (pages pushed inside, no "OK").
-            Tab("Réglages", systemImage: "gearshape.fill", value: PhoneTab.settings) {
-                SettingsView(inTab: true)
-            }
-            .accessibilityIdentifier("tab.settings")
             Tab("Rechercher", systemImage: "magnifyingglass", value: PhoneTab.search, role: .search) {
                 stack(.search) { SearchTab(query: $searchQuery, isSearching: $searching) }
             }
@@ -66,17 +62,14 @@ struct PhoneTabsView: View {
         }
         // On the tab view, not in the search tab's stack: the `.search` tab then turns into the
         // search field of the tab bar (a `searchable` inside the tab showed no field at all).
-        .searchable(text: $searchQuery, isPresented: $searching, prompt: Text("Titre, site, identifiant, tag"))
+        // Toolbar placement and search tab activation: the search tab is the separate round
+        // button on the right of the three tabs, and its field opens at the bottom.
+        .searchable(text: $searchQuery, isPresented: $searching, placement: .toolbar, prompt: Text("Titre, site, identifiant, tag"))
+        .tabViewSearchActivation(.searchTabSelection)
         .tabBarMinimizeBehavior(.onScrollDown)
         .environment(\.openPhoneTab) { tab = $0 }
         .sheet(isPresented: newItemShown) {
             PhoneNewItemSheet()
-        }
-        // Réglages is a tab here: a request for the settings (a command, a capture) opens it.
-        .onChange(of: model.showSettings, initial: true) { _, shown in
-            guard shown else { return }
-            model.showSettings = false
-            tab = .settings
         }
         // The top of the visible stack is the selection: a tab switch selects that tab's item.
         .onChange(of: tab) { _, newTab in
@@ -188,14 +181,18 @@ struct PhoneTabsView: View {
     }
 
     #if DEBUG
-    /// Captures: `-OnePassDemoTab items|watchtower|settings|search` opens that tab,
+    /// Captures: `-OnePassDemoTab items|watchtower|search` opens that tab (`settings` opens Réglages),
     /// `-OnePassDemoQuery <text>` fills the search, `-OnePassDemoNewItem YES` opens the add sheet,
     /// `-OnePassDemoList <vault|category|tag|archive|trash>` pushes a list in Éléments. Debug builds only.
     private func applyDemoArguments() {
         let defaults = UserDefaults.standard
-        if let name = defaults.string(forKey: "OnePassDemoTab"), let demoTab = PhoneTab(rawValue: name) {
-            openSearchOnSelect = false
-            tab = demoTab
+        if let name = defaults.string(forKey: "OnePassDemoTab") {
+            if let demoTab = PhoneTab(rawValue: name) {
+                openSearchOnSelect = false
+                tab = demoTab
+            } else if name == "settings" {
+                model.showSettings = true
+            }
         }
         if let query = defaults.string(forKey: "OnePassDemoQuery") {
             searchQuery = query
@@ -225,22 +222,34 @@ struct PhoneTabsView: View {
 /// same sheet. Saving shows the new item in the visible tab; "Annuler" closes the sheet.
 struct PhoneNewItemSheet: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack {
-            if let draft = model.newItemDraft {
-                ItemEditorView(draft: draft, isNew: true) { saved in
-                    model.finishNewItem(saved)
+            // The editor comes in from the trailing edge as a pushed screen would, the picker leaves
+            // to the leading edge: the sheet reads as one step forward.
+            ZStack {
+                if let draft = model.newItemDraft {
+                    ItemEditorView(draft: draft, isNew: true) { saved in
+                        model.finishNewItem(saved)
+                    }
+                    .id(draft.item.id)
+                    .transition(stepTransition)
+                } else {
+                    // "Que veux-tu ajouter ?", as on the Mac: the editor then takes its place here.
+                    NewItemSheet(inPhoneSheet: true)
+                        .toolbar(.hidden, for: .navigationBar)
+                        .transition(stepTransition)
                 }
-                .id(draft.item.id)
-            } else {
-                // "Que veux-tu ajouter ?", as on the Mac: the editor then takes its place here.
-                NewItemSheet(inPhoneSheet: true)
-                    .toolbar(.hidden, for: .navigationBar)
             }
+            .animation(Motion.fold(reduceMotion: reduceMotion), value: model.newItemDraft?.item.id)
         }
         // ⌘L with a dirty new item: the confirmation shows over the sheet.
         .discardConfirmation()
+    }
+
+    private var stepTransition: AnyTransition {
+        reduceMotion ? .opacity : .push(from: .trailing)
     }
 }
 #endif

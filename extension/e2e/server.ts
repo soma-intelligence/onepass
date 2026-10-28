@@ -320,6 +320,13 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
           if (!post) return send(loginPage());
           if (state.users.get((body.email ?? "").trim().toLowerCase()) === body.password) return signedIn(body.email ?? "");
           return send(loginPage("Identifiant ou mot de passe incorrect"));
+        case "/login-google": {
+          // The site's own form plus "Continuer avec Google" (no link in the vault yet).
+          const extra = `<p><a class="button" id="provider" href="${esc(google("atlas-cloud"))}">Continuer avec Google</a></p>`;
+          if (!post) return send(loginPage("", extra));
+          if (state.users.get((body.email ?? "").trim().toLowerCase()) === body.password) return signedIn(body.email ?? "");
+          return send(loginPage("Identifiant ou mot de passe incorrect", extra));
+        }
         case "/login-fake-provider":
           return send(
             page("Atlas Docs - Connexion", "atlas/provider-login.html", {

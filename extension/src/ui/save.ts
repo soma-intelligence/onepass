@@ -11,6 +11,7 @@ import type { SaveInit } from "../shared/ui";
 import {
   ClickGuard,
   type FrameDeps,
+  autosize,
   call,
   errorText,
   h,
@@ -23,9 +24,13 @@ import {
   realTimers,
   tile,
   tokenFromHash,
+  wayArt,
 } from "./components";
 import { tr } from "../shared/i18n";
 import { parseEmpty, parsePassword, parseSaveInit } from "./parse";
+
+/** Asked for by the edit view: the content script clamps it to the frame's largest height. */
+const FULL_HEIGHT = 2000;
 
 /** The saved confirmation closes itself after this delay. */
 export const SAVED_CLOSE_MS = 4000;
@@ -62,9 +67,18 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
   const timers = deps.timers ?? realTimers;
   const guard = new ClickGuard({ now, ...(deps.trusted ? { trusted: deps.trusted } : {}) });
   const token = tokenFromHash(deps.hash);
-  const container = h("div", { class: "save" });
+  const container = h("div", { class: "save fit" });
   mount(root, container);
   (deps.observe ?? observeVisibility)(container, (v) => guard.setVisibility(v));
+  // The prompt is as tall as its content; the edit view takes the whole frame.
+  let fit = true;
+  const remeasure = autosize(
+    container,
+    (height) => {
+      if (token) void call(deps.send, { type: "save_resize", token, height: fit ? height : FULL_HEIGHT }, parseEmpty);
+    },
+    deps.observeSize,
+  );
 
   let init: SaveInit | null = null;
   let draft: Draft | null = null;
@@ -80,6 +94,11 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
   const show = (...children: (HTMLElement | null)[]) => {
     mount(container, ...children);
     guard.reset();
+    remeasure();
+  };
+  const setFit = (on: boolean) => {
+    fit = on;
+    container.classList.toggle("fit", on);
   };
 
   const errLine = () => h("p", { class: "error-line", attrs: { role: "alert" } });
@@ -168,6 +187,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     );
 
   function renderSaved(title: string, sub: string): void {
+    setFit(true);
     show(
       h(
         "div",
@@ -188,17 +208,41 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     void decide("never", err, () => renderSaved(tr("OnePass ne proposera plus rien ici", "OnePass won't offer anything here again"), tr("Réglable dans Réglages › Remplissage auto", "Change it in Settings › AutoFill")));
   };
 
+  /**
+   * Spec 8.7, after a sign-in through a provider by hand: one compact
+   * prompt (not a sheet) that names the site, the provider and the very
+   * provider account (its item) the link will point to.
+   */
   function renderProviderLink(i: SaveInit): void {
+    setFit(true);
     const p = i.provider;
     const err = errLine();
-    const line = p ? tr(`Enregistrer le lien ${i.site} ↔ ${providerLabel(p.id)} (${p.email})`, `Save the link ${i.site} ↔ ${providerLabel(p.id)} (${p.email})`) : tr("Enregistrer le lien", "Save the link");
+    const name = p ? providerLabel(p.id) : "";
+    const art = wayArt({ kind: "login", has_password: false, methods: [], icon_letter: i.title.charAt(0).toUpperCase() || "O" }, p?.id, "m");
     show(
       h(
         "div",
-        { class: "save-body", attrs: { role: "dialog", "aria-label": tr("Enregistrer le lien", "Save the link") } },
-        header(tr("Enregistrer le lien ?", "Save the link?"), true),
+        { class: "save-body link", attrs: { role: "dialog", "aria-label": tr("Enregistrer le lien", "Save the link") } },
+        header(tr("Retenir ce lien ?", "Remember this link?"), true),
         more ? moreMenu(i) : null,
-        h("p", { class: "message-title link-line" }, line),
+        h(
+          "div",
+          { class: "link-card" },
+          art,
+          h(
+            "span",
+            { class: "stack" },
+            h("span", { class: "t1 link-line" }, p ? `${i.site} ↔ ${name}` : i.site),
+            p ? h("span", { class: "line2" }, h("span", { class: "t2" }, p.email), p.title ? h("span", { class: "meta" }, ` · ${p.title}`) : null) : null,
+          ),
+        ),
+        h(
+          "p",
+          { class: "note" },
+          p
+            ? tr(`La prochaine fois, OnePass se connectera avec ce compte ${name} en un clic.`, `Next time, OnePass signs in with this ${name} account in one click.`)
+            : tr("La prochaine fois, OnePass se connectera en un clic.", "Next time, OnePass signs in in one click."),
+        ),
         h(
           "div",
           { class: "actions" },
@@ -206,7 +250,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           btn(tr("Pas maintenant", "Not now"), "btn", () => void decide("dismiss", err, () => undefined)),
           btn(tr("Enregistrer", "Save"), "btn btn-primary", () =>
             void decide("save", err, () =>
-              renderSaved(tr("Lien enregistré", "Link saved"), p ? `${i.site} ↔ ${providerLabel(p.id)}` : i.site),
+              renderSaved(tr("Lien enregistré", "Link saved"), p ? `${i.site} ↔ ${name} (${p.email})` : i.site),
             ),
           ),
         ),
@@ -230,6 +274,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       renderProviderLink(i);
       return;
     }
+    setFit(true);
     const d = draft;
     const err = errLine();
     const seg = i.update
@@ -298,6 +343,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
 
   function renderEdit(): void {
     if (!init || !draft || !token) return;
+    setFit(false);
     const i = init;
     const d = draft;
     const t = token;

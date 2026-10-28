@@ -8,6 +8,7 @@ pub mod audit;
 pub mod channel;
 pub mod error;
 pub mod framing;
+pub mod host;
 pub mod kdf;
 pub mod kem;
 pub mod origin;

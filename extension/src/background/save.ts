@@ -11,7 +11,7 @@ import type { SaveInit } from "../shared/ui";
 import type { BgExt } from "./ext";
 import type { UiContext } from "./frames";
 import type { NeverSave } from "./never-save";
-import { removeFrame } from "./overlay";
+import { removeFrame, resizeFrame } from "./overlay";
 import { BgError, type Session } from "./session";
 import { type BoundRecord, FrameTokens } from "./tokens";
 
@@ -29,7 +29,7 @@ export interface SavePending {
   /** The login to update (from `check_credentials`). */
   update?: { itemId: string; title: string };
   /** Provider link variant: the provider account used on this site. */
-  provider?: { id: ProviderId; accountItemId: string; email: string };
+  provider?: { id: ProviderId; accountItemId: string; email: string; title?: string };
   /** Open straight in the edit view (menu "Enregistrer un nouveau login"). */
   view?: "edit";
   /**
@@ -103,6 +103,13 @@ export class SavePrompts {
     return token;
   }
 
+  /** The prompt's content height: its frame is sized to it. */
+  async resize(token: string, ui: UiContext, height: number): Promise<object> {
+    const rec = await this.record(token, ui, false);
+    await resizeFrame(this.deps.ext.tabs, rec, "save", height);
+    return {};
+  }
+
   private async record(token: string, ui: UiContext, open = true): Promise<SaveRecord> {
     const rec = await this.tokens.resolve(token, ui);
     if (!rec || (open && rec.decided)) throw new BgError("invalid");
@@ -127,7 +134,10 @@ export class SavePrompts {
       vaults,
     };
     if (rec.update) out.update = { ...rec.update };
-    if (rec.provider) out.provider = { id: rec.provider.id, email: rec.provider.email };
+    if (rec.provider) {
+      out.provider = { id: rec.provider.id, email: rec.provider.email };
+      if (rec.provider.title !== undefined) out.provider.title = rec.provider.title;
+    }
     if (rec.view) out.view = rec.view;
     return out;
   }

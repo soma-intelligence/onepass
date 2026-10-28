@@ -1,9 +1,12 @@
 // Build script: bundles the extension for each browser into dist/<browser>/.
-// Usage: node build.mjs [chromium|firefox|safari ...] [--dev] [--e2e]
+// Usage: node build.mjs [chromium|firefox|safari ...] [--dev] [--e2e] [--dev-host]
 // Source maps are off by default (this is a password manager); --dev enables
 // inline maps. --e2e writes dist/<browser>-e2e/ instead, whose service worker
 // entry is src/background/e2e-entry.ts (the regular one plus a handle for the
 // end-to-end security suite); the regular build never bundles that file.
+// The native messaging host is the OnePass app's (`me.somalabs.onepass`);
+// --dev-host builds for the development host (`me.somalabs.onepass.dev`),
+// as the end-to-end tests and the lab do. Safari ignores it.
 import { build as esbuild } from "esbuild";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -37,7 +40,10 @@ export function mergeManifest(browser, dir = join(root, "manifests")) {
   return merged;
 }
 
-async function buildBrowser(browser, dev, e2e = false) {
+export const APP_HOST = "me.somalabs.onepass";
+export const DEV_HOST = "me.somalabs.onepass.dev";
+
+async function buildBrowser(browser, dev, e2e = false, devHost = false) {
   const out = join(root, "dist", e2e ? `${browser}-e2e` : browser);
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
@@ -47,6 +53,7 @@ async function buildBrowser(browser, dev, e2e = false) {
     sourcemap: dev ? "inline" : false,
     minify: false,
     logLevel: "warning",
+    define: { __ONEPASS_NATIVE_HOST__: JSON.stringify(devHost ? DEV_HOST : APP_HOST) },
   };
   await esbuild({
     ...common,
@@ -77,17 +84,18 @@ async function buildBrowser(browser, dev, e2e = false) {
   );
 }
 
-export async function buildAll(browsers = BROWSERS, dev = false, e2e = false) {
-  for (const b of browsers) await buildBrowser(b, dev, e2e);
+export async function buildAll(browsers = BROWSERS, dev = false, e2e = false, devHost = false) {
+  for (const b of browsers) await buildBrowser(b, dev, e2e, devHost);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const args = process.argv.slice(2);
   const dev = args.includes("--dev");
   const e2e = args.includes("--e2e");
+  const devHost = args.includes("--dev-host");
   const picked = args.filter((a) => !a.startsWith("--"));
   for (const b of picked) {
     if (!BROWSERS.includes(b)) throw new Error(`unknown browser: ${b}`);
   }
-  await buildAll(picked.length ? picked : BROWSERS, dev, e2e);
+  await buildAll(picked.length ? picked : BROWSERS, dev, e2e, devHost);
 }

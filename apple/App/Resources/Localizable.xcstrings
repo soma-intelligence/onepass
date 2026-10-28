@@ -178,6 +178,16 @@
         }
       }
     },
+    "%@, utilisé %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, used %2$@"
+          }
+        }
+      }
+    },
     "%lld" : {
       "localizations" : {
         "en" : {
@@ -206,6 +216,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld dans un rayon de %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld within %@"
           }
         }
       }
@@ -790,6 +810,16 @@
         }
       }
     },
+    "Afficher la carte" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Map"
+          }
+        }
+      }
+    },
     "Afficher le code" : {
       "localizations" : {
         "en" : {
@@ -806,6 +836,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Password"
+          }
+        }
+      }
+    },
+    "Afficher sur l'accueil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show on Home"
           }
         }
       }
@@ -1110,6 +1150,26 @@
         }
       }
     },
+    "Approuve seulement si l'extension affiche exactement ce code." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approve only if the extension shows exactly this code."
+          }
+        }
+      }
+    },
+    "Approuver" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approve"
+          }
+        }
+      }
+    },
     "Après l'enregistrement, tu ne pourras plus te connecter à ce site avec cette passkey. Le site la garde dans ton compte : supprime-la aussi dans ses réglages." : {
       "localizations" : {
         "en" : {
@@ -1166,6 +1226,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Archived: no longer shows in lists or suggestions."
+          }
+        }
+      }
+    },
+    "Associer un navigateur" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair a browser"
           }
         }
       }
@@ -1256,6 +1326,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No passwords to analyze yet."
+          }
+        }
+      }
+    },
+    "Aucun navigateur associé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No paired browser."
           }
         }
       }
@@ -2120,6 +2200,16 @@
         }
       }
     },
+    "Code %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code %@"
+          }
+        }
+      }
+    },
     "Code QR du réseau %@" : {
       "localizations" : {
         "en" : {
@@ -2906,6 +2996,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Moved to Recently Deleted"
+          }
+        }
+      }
+    },
+    "Déplier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand"
           }
         }
       }
@@ -4020,6 +4120,16 @@
         }
       }
     },
+    "Indisponible dans cette version de OnePass." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not available in this build of OnePass."
+          }
+        }
+      }
+    },
     "Installe OnePass sur ton Apple Watch" : {
       "localizations" : {
         "en" : {
@@ -4630,6 +4740,16 @@
         }
       }
     },
+    "Les extensions OnePass de Safari, Chrome et Firefox remplissent depuis le coffre ouvert dans cette app. Verrouiller OnePass les verrouille aussi." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The OnePass extensions for Safari, Chrome and Firefox fill from the vault open in this app. Locking OnePass locks them too."
+          }
+        }
+      }
+    },
     "Les modifications de cet élément ne sont pas enregistrées." : {
       "localizations" : {
         "en" : {
@@ -4830,6 +4950,16 @@
         }
       }
     },
+    "Masquer la carte" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Map"
+          }
+        }
+      }
+    },
     "Masquer le code" : {
       "localizations" : {
         "en" : {
@@ -4996,6 +5126,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "My Account"
+          }
+        }
+      }
+    },
+    "Mon score de sécurité OnePass : %lld sur 100." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "My OnePass security score: %lld out of 100."
           }
         }
       }
@@ -5470,6 +5610,16 @@
         }
       }
     },
+    "Oublier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget"
+          }
+        }
+      }
+    },
     "Oui" : {
       "localizations" : {
         "en" : {
@@ -5656,6 +5806,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Share"
+          }
+        }
+      }
+    },
+    "Partager mon score" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share My Score"
           }
         }
       }
@@ -5930,6 +6090,16 @@
         }
       }
     },
+    "Profil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profile"
+          }
+        }
+      }
+    },
     "Progression" : {
       "localizations" : {
         "en" : {
@@ -6140,6 +6310,16 @@
         }
       }
     },
+    "Refuser" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refuse"
+          }
+        }
+      }
+    },
     "Remplis tes mots de passe avec OnePass" : {
       "localizations" : {
         "en" : {
@@ -6206,6 +6386,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Switch Back to Personal Mode?"
+          }
+        }
+      }
+    },
+    "Replier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse"
           }
         }
       }
@@ -6366,6 +6556,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Back"
+          }
+        }
+      }
+    },
+    "Rien dans un rayon de %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing within %@"
           }
         }
       }
@@ -7326,6 +7526,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your first name (shown only on your devices)"
+          }
+        }
+      }
+    },
+    "Touch ID est demandé. Sans Touch ID activé dans OnePass, l'association est refusée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touch ID is required. Without Touch ID turned on in OnePass, pairing is refused."
           }
         }
       }
@@ -8570,6 +8780,16 @@
         }
       }
     },
+    "« %@ » dans %@ demande l'accès à ton coffre." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%1$@” in %2$@ asks for access to your vault."
+          }
+        }
+      }
+    },
     "« %@ » mis à la corbeille" : {
       "localizations" : {
         "en" : {
@@ -8606,6 +8826,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nearby"
+          }
+        }
+      }
+    },
+    "À proximité, Archive et Supprimés" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nearby, Archive and Recently Deleted"
           }
         }
       }

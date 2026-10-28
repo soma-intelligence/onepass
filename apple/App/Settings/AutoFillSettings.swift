@@ -16,6 +16,11 @@ struct AutoFillSettings: View {
         let _ = model.settingsRevision
         Form {
             providerSection
+            #if os(macOS)
+            if let bridge = model.browserBridge {
+                BrowserBridgeSection(bridge: bridge)
+            }
+            #endif
             Section {
                 Button("Codes de vérification", systemImage: "number.square") {
                     Task { await AutoFillStatus.openVerificationCodeSettings() }

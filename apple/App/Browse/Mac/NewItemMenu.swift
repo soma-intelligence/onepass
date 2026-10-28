@@ -60,6 +60,9 @@ struct NewItemSheet: View {
     @State private var query = ""
     @State private var showAll = false
     @FocusState private var searchFocused: Bool
+    #if os(iOS)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #endif
     /// iPhone: the sheet stays up after a pick, the editor takes its place (`PhoneNewItemSheet`).
     private let inPhoneSheet: Bool
 
@@ -124,7 +127,12 @@ struct NewItemSheet: View {
                 } label: {
                     Image(systemName: "xmark").font(.body.weight(.semibold)).foregroundStyle(.secondary)
                         .frame(width: 28, height: 28)
+                        #if os(iOS)
+                        // 44 pt target around the 28 pt glyph.
+                        .contentShape(Rectangle().inset(by: -8))
+                        #else
                         .contentShape(.rect)
+                        #endif
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.cancelAction)
@@ -150,7 +158,12 @@ struct NewItemSheet: View {
                             }
                         }
                         moreCategories
-                        if showAll { allCategories }
+                        if showAll {
+                            allCategories
+                                #if os(iOS)
+                                .transition(Motion.reveal(reduceMotion: reduceMotion))
+                                #endif
+                        }
                     } else {
                         if let website {
                             WebsiteTile(title: website.title, host: website.url) { pickWebsite(website) }
@@ -220,7 +233,11 @@ struct NewItemSheet: View {
     /// The wide "Plus de catégories" row, with a few other types fanned out on its right.
     private var moreCategories: some View {
         Button {
+            #if os(iOS)
+            withAnimation(Motion.fold(reduceMotion: reduceMotion)) { showAll.toggle() }
+            #else
             withAnimation(.snappy) { showAll.toggle() }
+            #endif
         } label: {
             HStack {
                 Text(showAll ? "Moins de catégories" : "Plus de catégories")
@@ -248,7 +265,7 @@ struct NewItemSheet: View {
             .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.1)) }
             .contentShape(.rect(cornerRadius: 14))
         }
-        .buttonStyle(.plain)
+        .tileButtonStyle()
         .accessibilityIdentifier("newItem.more")
     }
 
@@ -304,7 +321,7 @@ struct NewItemSheet: View {
                     .overlay { Capsule().strokeBorder(.white.opacity(0.08)) }
                     .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .tileButtonStyle()
                 .accessibilityIdentifier("newItem.website.\(provider.rawValue)")
             }
         }
@@ -386,7 +403,7 @@ private struct BigTypeTile: View {
             }
             .contentShape(.rect(cornerRadius: 14))
         }
-        .buttonStyle(.plain)
+        .tileButtonStyle()
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .accessibilityIdentifier("newItem.\(NewItemMenu.key(type))")
@@ -416,7 +433,7 @@ private struct WebsiteTile: View {
             .background(Theme.accent.opacity(0.14), in: .rect(cornerRadius: 12))
             .contentShape(.rect(cornerRadius: 12))
         }
-        .buttonStyle(.plain)
+        .tileButtonStyle()
         .accessibilityIdentifier("newItem.website")
     }
 }
@@ -448,9 +465,21 @@ private struct NewItemTile: View {
             .contentShape(.rect(cornerRadius: 9))
             .background(hovering ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 9))
         }
-        .buttonStyle(.plain)
+        .tileButtonStyle()
         .onHover { hovering = $0 }
         .help(category.singular)
         .accessibilityIdentifier(identifier ?? "newItem.\(NewItemMenu.key(type))")
+    }
+}
+
+extension View {
+    /// The tiles of "Que veux-tu ajouter ?": plain on the Mac (hover does the work), pressed in on
+    /// iPhone the moment the finger lands.
+    @ViewBuilder fileprivate func tileButtonStyle() -> some View {
+        #if os(iOS)
+        buttonStyle(PressableButtonStyle())
+        #else
+        buttonStyle(.plain)
+        #endif
     }
 }

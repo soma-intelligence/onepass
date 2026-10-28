@@ -152,12 +152,20 @@ struct UnlockView: View {
                 Image(systemName: revealed ? "eye.slash" : "eye")
                     .font(.system(size: 17))
                     .foregroundStyle(.secondary)
+                    #if os(iOS)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: 44, height: Self.fieldHeight)
+                    #else
                     .frame(width: 32, height: Self.fieldHeight)
+                    #endif
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
             .accessibilityIdentifier("autofill.reveal")
+            #if os(iOS)
+            submitButton
+            #endif
         }
         .padding(.leading, 14)
         .padding(.trailing, 6)
@@ -179,6 +187,10 @@ struct UnlockView: View {
         }
         .overlay { shape.strokeBorder(ring, lineWidth: ring == .clear ? 0 : 1).allowsHitTesting(false) }
         .animation(.smooth(duration: 0.15), value: fieldFocused)
+        #if os(iOS)
+        // A refused password: the error haptic lands with the message under the field.
+        .sensoryFeedback(trigger: message) { _, new in new == nil ? nil : .error }
+        #endif
     }
 
     @ViewBuilder private var status: some View {
@@ -191,6 +203,7 @@ struct UnlockView: View {
                 .transition(.opacity)
                 .accessibilityIdentifier("autofill.error")
         }
+
         if let until = lockoutUntil {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let remaining = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
@@ -205,8 +218,37 @@ struct UnlockView: View {
         }
     }
 
+    #if os(iOS)
+    /// iPhone: the unlock action sits at the end of the field, an arrow lit once something is
+    /// typed. Return submits too.
+    private var submitButton: some View {
+        let enabled = !password.isEmpty && !unlocking && !lockedOut
+        return Button {
+            Task { await unlockWithPassword() }
+        } label: {
+            Group {
+                if unlocking, !password.isEmpty {
+                    ProgressView()
+                } else {
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 28))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, enabled ? Theme.accent : Color.secondary.opacity(0.35))
+                }
+            }
+            .frame(width: 44, height: Self.fieldHeight)
+            .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.15), value: enabled)
+        }
+        .buttonStyle(PressableButtonStyle(scale: 0.9))
+        .disabled(!enabled)
+        .accessibilityLabel(Text("Déverrouiller"))
+        .accessibilityIdentifier("autofill.unlock")
+    }
+    #endif
+
     /// Empty field with biometrics on: the biometric button leads. Something typed: "Déverrouiller"
-    /// leads and biometrics stay one tap away.
+    /// leads (on iPhone, the arrow in the field) and biometrics stay one tap away.
     @ViewBuilder private var actions: some View {
         VStack(spacing: 10) {
             if biometrics, password.isEmpty {
@@ -223,6 +265,8 @@ struct UnlockView: View {
                 .accessibilityLabel(Text("Déverrouiller avec \(Self.biometryName)"))
                 .accessibilityIdentifier("autofill.biometrics")
             } else {
+                #if !os(iOS)
+                // iPhone: the arrow inside the field (`submitButton`) unlocks.
                 AutoFillPrimaryButton {
                     Task { await unlockWithPassword() }
                 } label: {
@@ -231,6 +275,7 @@ struct UnlockView: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(password.isEmpty || unlocking || lockedOut)
                 .accessibilityIdentifier("autofill.unlock")
+                #endif
                 if biometrics {
                     Button {
                         Task { await unlockWithBiometrics() }
@@ -239,6 +284,9 @@ struct UnlockView: View {
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(Theme.accent)
                             .padding(.vertical, 4)
+                            #if os(iOS)
+                            .frame(minHeight: 44)
+                            #endif
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

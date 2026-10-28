@@ -194,6 +194,7 @@ struct LockView: View {
             .visionHoverEffect()
             .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
             .accessibilityIdentifier("lock.reveal")
+            unlockButton
         }
         .padding(.leading, 14)
         .padding(.trailing, 6)
@@ -251,14 +252,13 @@ struct LockView: View {
 
     // MARK: - Actions
 
-    /// Empty field with biometrics on: the biometric button leads. Something typed: "Déverrouiller"
-    /// leads and biometrics stay one click away.
+    /// Unlocking with the password lives in the field (its arrow, or Return). Below it, only
+    /// biometrics: the big button while the field is empty, a link once something is typed.
     @ViewBuilder private var actions: some View {
         VStack(spacing: 10) {
             if biometrics, password.isEmpty {
                 biometricButton
             } else {
-                unlockButton
                 if biometrics {
                     Button {
                         Task { await unlockWithBiometrics(automatic: false) }
@@ -302,26 +302,31 @@ struct LockView: View {
         .accessibilityIdentifier("lock.biometrics")
     }
 
+    /// The arrow at the end of the field: dim until something is typed, a spinner while unlocking.
     private var unlockButton: some View {
-        Button {
+        let ready = !password.isEmpty && !unlocking && !lockedOut
+        return Button {
             Task { await unlockWithPassword() }
         } label: {
             Group {
                 if unlocking {
                     ProgressView().controlSize(.small)
                 } else {
-                    Text("Déverrouiller")
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: Platform.isMac ? 22 : 28))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(ready ? Theme.accent : Color.secondary.opacity(0.5))
                 }
             }
-            .font(.system(size: Platform.isMac ? 14 : 17, weight: .semibold))
-            .frame(maxWidth: .infinity)
-            .frame(height: Self.buttonHeight)
+            .frame(width: Platform.isMac ? 30 : 40, height: Self.fieldHeight)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.glassProminent)
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
+        .buttonStyle(.plain)
+        .visionHoverEffect()
         .keyboardShortcut(.defaultAction)
-        .disabled(password.isEmpty || unlocking || lockedOut)
+        .disabled(!ready)
+        .animation(.smooth(duration: 0.15), value: ready)
+        .accessibilityLabel(Text("Déverrouiller"))
         .accessibilityIdentifier("lock.unlock")
     }
 

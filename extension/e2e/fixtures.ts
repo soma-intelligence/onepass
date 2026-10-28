@@ -13,16 +13,18 @@ import { loadCert, type TestCert } from "./cert";
 import type { E2EState } from "./global-setup";
 import { type InstalledHost, installHost, type StagedHost } from "./host";
 import { CANARY_PATH, startServer, type TestServer } from "./server";
-import { MOVE_GUARD_MS } from "../src/content/frames";
+import { MOVE_GUARD_MS, REVEAL_TIMEOUT_MS } from "../src/content/frames";
 import { CLICK_GUARD_MS } from "../src/ui/components";
 
 /**
  * Wait before clicking in a freshly shown or re-rendered extension frame:
  * the frames ignore clicks for CLICK_GUARD_MS after (re)display and the
  * content script for MOVE_GUARD_MS after a move (spec 8.3), plus a margin
- * for the IntersectionObserver v2 delay (100 ms) and rendering.
+ * for the IntersectionObserver v2 delay (100 ms) and rendering. A frame
+ * shows once its page reported its height (at the latest REVEAL_TIMEOUT_MS
+ * after it was inserted), and the delays count from then.
  */
-export const GUARD_WAIT_MS = Math.max(CLICK_GUARD_MS, MOVE_GUARD_MS) + 150;
+export const GUARD_WAIT_MS = Math.max(CLICK_GUARD_MS, MOVE_GUARD_MS) + 150 + REVEAL_TIMEOUT_MS;
 
 const LOOPBACK = new Set(["127.0.0.1", "::1"]);
 
@@ -79,7 +81,10 @@ export interface Ext {
   openMenu(page: Page, selector: string, frame?: Frame): Promise<Frame>;
   /** Clicks a menu row by its exact title (and subtitle), once the click guard allows it. */
   pickRow(menu: Frame, title: string | RegExp, subtitle?: string): Promise<void>;
-  /** Clicks "Se connecter" on an overlay account by its exact title. */
+  /**
+   * Clicks an overlay way to sign in: "<item title>" for its password, or
+   * "<item title> via <Provider>" for its provider method.
+   */
   overlayStart(page: Page, title: string): Promise<Frame>;
   /** The chain state of the page's tab (`storage.session`), if any. */
   chainState(): Promise<{ status: string; reason?: string; host?: string } | null>;
@@ -258,10 +263,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         },
         async overlayStart(p, title) {
           const overlay = await extFrame(p, "overlay");
-          const account = overlay.locator(".ov-account").filter({ has: overlay.locator(".t1", { hasText: exact(title) }) });
+          const via = /^(.*) via (\S+)$/.exec(title);
+          const provider = via ? (via[2] ?? "").toLowerCase() : null;
+          const scope = provider ? `.ov-account[data-provider="${provider}"]:not(.ov-sub)` : ".ov-account:not([data-provider])";
+          const account = overlay.locator(scope).filter({ has: overlay.locator(".t1", { hasText: exact(via ? (via[1] ?? "") : title) }) });
           await expect(account).toHaveCount(1);
           await settle();
-          await account.getByRole("button", { name: "Se connecter" }).click();
+          await account.getByRole("button").click();
           return overlay;
         },
         async chainState() {

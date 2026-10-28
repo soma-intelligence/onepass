@@ -47,15 +47,19 @@ import {
   submitMissed,
   tick,
 } from "./machine";
+import { defaultAccount, rememberAccount, rememberedAccount } from "./choices";
 import { autoSubmitFor } from "./save-flow";
-import type { ChainDriver } from "./types";
+import type { ChainDriver, StartOptions } from "./types";
 
 const PREFIX = "chain:";
 /** An ended chain stays on the overlay this long (its reason, "Connecté"). */
 export const ENDED_VIEW_MS = 2 * 60 * 1000;
+/** A chain that ended this recently shows its outcome on the next page if the overlay is gone. */
+export const END_SHOWN_MS = 10_000;
 
 export interface OverlayPort {
-  open(cs: CsContext): Promise<string>;
+  /** Shows the overlay in the top frame `cs`, under the field `anchorRef` when given. */
+  open(cs: CsContext, anchorRef?: string): Promise<string>;
   hasTab(tabId: number): Promise<boolean>;
 }
 
@@ -69,6 +73,8 @@ export interface ChainDeps {
   filler: Pick<Filler, "fillLogin" | "fillProvider">;
   analyses: Pick<PageAnalyses, "top" | "children" | "onAnalysis">;
   overlays: OverlayPort;
+  /** An inline menu is open in this tab: the overlay is not offered over it (one surface). */
+  menuOpen?: (tabId: number) => Promise<boolean>;
   now?: () => number;
   timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(id: unknown): void };
 }
@@ -133,6 +139,8 @@ export class ChainRunner implements ChainDriver {
   private readonly offered = new Map<number, { doc: string; shapes: Set<string>; closed: boolean }>();
   /** Per tab: top frame commits, to key documents where `documentId` is absent. */
   private readonly navs = new Map<number, number>();
+  /** Per tab: the end (endedAt) whose outcome was shown again after the page changed. */
+  private readonly endShown = new Map<number, number>();
   private readonly now: () => number;
   private readonly timers: NonNullable<ChainDeps["timers"]>;
 
@@ -167,7 +175,7 @@ export class ChainRunner implements ChainDriver {
 
   // ---- ChainDriver ----
 
-  async start(tabId: number, itemId: string, viaProvider?: ProviderId): Promise<void> {
+  async start(tabId: number, itemId: string, viaProvider?: ProviderId, opts: StartOptions = {}): Promise<void> {
     const origin = await this.deps.frames.frameOrigin(tabId, 0);
     if (!origin || parseOrigin(origin)?.https !== true) throw new BgError("insecure_origin");
     const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "chain", origin });
@@ -178,14 +186,17 @@ export class ChainRunner implements ChainDriver {
       const method = item.methods.find((m) => m.provider === viaProvider);
       if (!method) throw new BgError("invalid");
       const r = await this.deps.session.request({ op: "provider_accounts", ctx: "chain", provider: viaProvider, origin });
-      const email = method.account_email.trim().toLowerCase();
+      // A picked account must be one of the provider's (the host checks it again on fill).
       providerAccount =
-        r.accounts.find((a) => a.subtitle.trim().toLowerCase() === email) ?? r.accounts.find((a) => a.item_id === r.linked_item_id);
+        opts.accountId !== undefined
+          ? r.accounts.find((a) => a.item_id === opts.accountId)
+          : defaultAccount(r.accounts, method.account_email, await rememberedAccount(this.deps.local, origin, viaProvider), r.linked_item_id);
       if (!providerAccount) throw new BgError("not_found");
     } else if (!item.has_password) {
       throw new BgError("invalid");
     }
     const autoSubmit = await autoSubmitFor(this.deps.local, itemId);
+    if (viaProvider && providerAccount) await rememberAccount(this.deps.local, origin, viaProvider, providerAccount.item_id);
     await this.serial(tabId, async () => {
       let s = startChain({
         tabId,
@@ -202,7 +213,7 @@ export class ChainRunner implements ChainDriver {
       if (view?.at && view.top.origin === origin) {
         s = await this.advance(s, step(s, view.at.analysis, view.at.cs.origin, this.now(), view.at.cs.frameId), view.at.cs);
       }
-      await this.showOverlay(view?.top ?? { tabId, frameId: 0, origin });
+      await this.showOverlay(view?.top ?? { tabId, frameId: 0, origin }, opts.anchorRef);
       this.arm(s);
     });
   }
@@ -217,19 +228,25 @@ export class ChainRunner implements ChainDriver {
     });
   }
 
-  async state(tabId: number): Promise<ChainView | null> {
+  async state(tabId: number, opening = false): Promise<ChainView | null> {
     return this.serial(tabId, async () => {
       let s = await this.load(tabId);
       if (!s) return null;
       s = await this.onTick(s);
-      if (s.status !== "running" && s.endedAt !== undefined && this.now() - s.endedAt > ENDED_VIEW_MS) return null;
+      const keep = opening ? END_SHOWN_MS : ENDED_VIEW_MS;
+      if (s.status !== "running" && s.endedAt !== undefined && this.now() - s.endedAt > keep) return null;
       return chainView(s);
     });
   }
 
   /** The user closed the overlay: no more offers in that document. */
   async closed(tabId: number, origin: string, documentId?: string): Promise<void> {
-    await this.serial(tabId, async () => this.seen(tabId, documentId ?? `${origin}#${this.navs.get(tabId) ?? 0}`).closed = true);
+    await this.serial(tabId, async () => {
+      this.seen(tabId, documentId ?? `${origin}#${this.navs.get(tabId) ?? 0}`).closed = true;
+      // An ended chain the user closed is not shown again on the next page.
+      const s = await this.load(tabId);
+      if (s?.endedAt !== undefined) this.endShown.set(tabId, s.endedAt);
+    });
   }
 
   /** A chain is running in this tab (the save and link proposals stay quiet). */
@@ -250,6 +267,13 @@ export class ChainRunner implements ChainDriver {
       await this.showOverlay(view.top);
       this.arm(n);
       return;
+    }
+    // A chain that just ended as the page left (another domain, say): its
+    // outcome shows once on the page it led to, so the user knows why.
+    if (s && from.frameId === 0 && s.endedAt !== undefined && this.now() - s.endedAt <= END_SHOWN_MS && this.endShown.get(from.tabId) !== s.endedAt) {
+      this.endShown.set(from.tabId, s.endedAt);
+      if (await this.showOverlay(view.top)) return;
+      this.endShown.delete(from.tabId);
     }
     if (view.at) await this.offerOverlay(view.at.analysis, view.top);
   }
@@ -335,6 +359,7 @@ export class ChainRunner implements ChainDriver {
     this.mem.delete(tabId);
     this.offered.delete(tabId);
     this.navs.delete(tabId);
+    this.endShown.delete(tabId);
     await this.deps.area.remove(PREFIX + tabId);
   }
 
@@ -392,9 +417,9 @@ export class ChainRunner implements ChainDriver {
   // ---- overlay ----
 
   /** True when the overlay is (now) in the tab; `cs` is the top frame. */
-  private async showOverlay(cs: CsContext): Promise<boolean> {
+  private async showOverlay(cs: CsContext, anchorRef?: string): Promise<boolean> {
     try {
-      if (!(await this.deps.overlays.hasTab(cs.tabId))) await this.deps.overlays.open(cs);
+      if (!(await this.deps.overlays.hasTab(cs.tabId))) await this.deps.overlays.open(cs, anchorRef);
       return true;
     } catch {
       // Content script not there (yet): the next analysis retries.
@@ -424,6 +449,8 @@ export class ChainRunner implements ChainDriver {
     const seen = this.seen(cs.tabId, cs.documentId ?? `${cs.origin}#${this.navs.get(cs.tabId) ?? 0}`);
     if (seen.closed || seen.shapes.has(shape) || seen.shapes.size >= MAX_OFFERS) return;
     seen.shapes.add(shape);
+    // One surface: the user is in the inline menu, which offers the same sign-ins.
+    if (await this.deps.menuOpen?.(cs.tabId)) return;
     let shown = true;
     try {
       const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "overlay", origin: cs.origin });

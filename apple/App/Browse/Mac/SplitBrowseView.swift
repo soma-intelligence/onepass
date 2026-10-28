@@ -50,17 +50,36 @@ struct SplitBrowseView: View {
     }
 }
 
-/// Right of the sidebar when a full page is chosen.
+/// Right of the sidebar when a full page is chosen. On the Mac the page names itself in its own
+/// heading, so the title bar shows no title (the account stays where it is on the item list), and
+/// "+" stays where the item list has it.
 struct PageColumn: View {
+    @Environment(AppModel.self) private var model
     let page: BrowsePage
 
     var body: some View {
         NavigationStack {
-            switch page {
-            case .watchtower: WatchtowerPage()
-            case .developer: DeveloperPage()
-            case .items: EmptyView()
+            Group {
+                switch page {
+                case .watchtower: WatchtowerPage()
+                case .developer: DeveloperPage()
+                case .items: EmptyView()
+                }
             }
+            #if os(macOS)
+            .toolbar(removing: .title)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        model.showNewItemPicker = true
+                    } label: {
+                        Label("Nouvel élément", systemImage: "plus")
+                    }
+                    .help("Nouvel élément (⌘N)")
+                    .accessibilityIdentifier("items.new")
+                }
+            }
+            #endif
         }
     }
 }

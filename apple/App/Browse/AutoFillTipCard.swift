@@ -35,7 +35,11 @@ struct AutoFillTipCard: View {
             Button {
                 withAnimation(.snappy) { model.dismissAutoFillTip() }
             } label: {
-                Image(systemName: "xmark").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(.rect)
             }
             .buttonStyle(.borderless)
             .accessibilityLabel(Text("Fermer"))
