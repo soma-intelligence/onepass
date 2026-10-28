@@ -145,7 +145,7 @@ def _swap(tmp: Path, dst: Path) -> None:
         except OSError as restore_err:
             raise RuntimeError(
                 f"swap failed ({swap_err!r}) and restoring the previous output failed ({restore_err!r}); "
-                f"the previous output is in {old}, the new one in {tmp}"
+                f"the new output was discarded; the previous output is in {old} and the next run restores it"
             ) from swap_err
         raise
     shutil.rmtree(old, ignore_errors=True)

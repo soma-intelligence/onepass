@@ -285,5 +285,10 @@ def test_restore_failure_names_both_errors(tmp_path, monkeypatch):
         return real(a, b)
 
     monkeypatch.setattr(os, "rename", flaky)
-    with pytest.raises(RuntimeError, match=r"fail2.*fail3.*dst\.old"):
+    with pytest.raises(RuntimeError, match=r"fail2.*fail3.*discarded.*dst\.old") as err:
         ingest(src, dst)
+    monkeypatch.setattr(os, "rename", real)
+    msg = str(err.value)
+    assert "dst.tmp" not in msg
+    assert not (tmp_path / "dst.tmp").exists()
+    assert (tmp_path / "dst.old").exists()
