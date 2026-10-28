@@ -9340,6 +9340,16 @@
         }
       }
     },
+    "Rechercher dans %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search %@"
+          }
+        }
+      }
+    },
     "Rechercher un champ" : {
       "localizations" : {
         "en" : {
