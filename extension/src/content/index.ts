@@ -131,15 +131,25 @@ export function createContentScript(o: ContentOptions): ContentScript {
 
   let menuSeq = 0;
   let lastKeyAnalysis = Number.NEGATIVE_INFINITY;
+  /** An arrow key moved the menu's highlight: Return now picks it (and not the page's form). */
+  let menuArmed = false;
   const closeMenu = (notify: boolean) => {
+    menuArmed = false;
     if (!parts?.frames.has("menu")) return;
     parts.frames.removeFrame("menu");
     if (notify) void send({ type: "close_menu" });
   };
 
-  const openMenu = async (t: IconTarget) => {
+  /**
+   * `auto`: opened by a click into the field, not asked for by the icon or a
+   * key; the worker opens it only when it has something to offer there.
+   */
+  const openMenu = async (t: IconTarget, auto = false) => {
     const seq = ++menuSeq;
-    const reply = await send({ type: "open_menu", fieldRef: t.fieldRef, formRef: t.form.ref, formKind: t.form.kind });
+    menuArmed = false;
+    const req: CsToBg = { type: "open_menu", fieldRef: t.fieldRef, formRef: t.form.ref, formKind: t.form.kind };
+    if (auto) req.auto = true;
+    const reply = await send(req);
     if (seq !== menuSeq || !parts || stopped || !t.el.isConnected) return;
     const raw = replyUrl(reply);
     // The very URL the worker returned for this request: vouched.
@@ -163,7 +173,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         const values = fillValues(m.values);
         if (pinned(m.origin) && typeof m.formRef === "string" && values) {
           ok = parts.filler.fillForm(m.formRef, values) > 0;
-          if (ok) closeMenu(false);
+          if (ok) closeMenu(true);
         }
         break;
       }
@@ -190,6 +200,12 @@ export function createContentScript(o: ContentOptions): ContentScript {
       case "remove_frame":
         if (typeof m.kind === "string" && FRAME_KINDS.has(m.kind)) {
           parts.frames.removeFrame(m.kind as FrameKind);
+          ok = true;
+        }
+        break;
+      case "resize_frame":
+        if (typeof m.kind === "string" && FRAME_KINDS.has(m.kind) && typeof m.height === "number") {
+          parts.frames.resize(m.kind as FrameKind, m.height);
           ok = true;
         }
         break;
@@ -265,7 +281,22 @@ export function createContentScript(o: ContentOptions): ContentScript {
             closeMenu(true);
             return;
           }
-          if (e.key !== "ArrowDown" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+          if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+          // Menu open under this field: the arrows move its highlight and
+          // Return picks it, with the focus kept in the page (spec 8.3).
+          if (parts?.frames.has("menu") && parts.frames.anchorOf("menu") === e.target) {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              menuArmed = true;
+              void send({ type: "menu_key", key: e.key === "ArrowDown" ? "down" : "up" });
+            } else if (e.key === "Enter" && menuArmed) {
+              e.preventDefault();
+              e.stopPropagation();
+              void send({ type: "menu_key", key: "enter" });
+            }
+            return;
+          }
+          if (e.key !== "ArrowDown") return;
           // A field the page added since the last analysis (it runs 150 ms
           // after a mutation burst): analyse now rather than miss the key.
           // At most one such analysis per observer delay: a held key does not
@@ -306,10 +337,32 @@ export function createContentScript(o: ContentOptions): ContentScript {
       );
       listen(
         doc,
+        "click",
+        (e) => {
+          // A click into an empty field offers its logins, as the browser's
+          // own autofill does; only when the worker has something for it.
+          if (!isTrusted(e) || parts?.frames.has("menu")) return;
+          const t = icons.targetOf(e.target);
+          if (!t || !(t.el instanceof HTMLInputElement) || t.el.value !== "") return;
+          void openMenu(t, true);
+        },
+        { capture: false },
+      );
+      listen(
+        doc,
+        "input",
+        (e) => {
+          // Typing in the field: the user does it by hand, the menu steps aside.
+          if (isTrusted(e) && parts?.frames.anchorOf("menu") === e.target) closeMenu(true);
+        },
+        { capture: true },
+      );
+      listen(
+        doc,
         "pointerdown",
         (e) => {
-          // A click anywhere on the page but our host closes the menu.
-          if (isTrusted(e) && !sh.isHost(e.target)) closeMenu(true);
+          // A click anywhere on the page but our host (or the menu's own field) closes the menu.
+          if (isTrusted(e) && !sh.isHost(e.target) && parts?.frames.anchorOf("menu") !== e.target) closeMenu(true);
         },
         { capture: true },
       );

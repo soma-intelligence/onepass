@@ -5,15 +5,37 @@ import { Clock, FakeVisibility, FakeWorker, HASH, type Reply, TOKEN, button, log
 
 const SITE = "https://atlas-cloud.test";
 
-function setup(answer: (m: UiToBg) => Reply, formKind = "login") {
+const CHOICES = [
+  {
+    itemId: "it_02",
+    provider: "google",
+    accountId: "g_perso",
+    accounts: [
+      { itemId: "g_perso", email: "alex.perso@example.com", title: "Google perso" },
+      { itemId: "g_pro", email: "alex.pro@example.com", title: "Google pro" },
+    ],
+  },
+];
+
+/** What a row says, part by part: title, second line, action. */
+const says = (el: Element) => [...el.querySelectorAll(".t1, .line2, .act")].map((x) => x.textContent).join(" | ");
+
+function setup(answer: (m: UiToBg) => Reply | Promise<Reply>, formKind = "login", choices?: unknown) {
   const r = root();
   const clock = new Clock();
   const vis = new FakeVisibility();
   const worker = new FakeWorker((m) => {
     if (m.type === "menu_init") {
-      const res = answer(m);
+      const res = answer(m) as Reply;
       return "ok" in res && res.ok === "default"
-        ? { ok: { origin: SITE, formKind, items: [login("it_01"), login("it_02", { title: "Atlas Perso", has_password: false, methods: [{ provider: "google", account_email: "alex.perso@example.com" }] })] } }
+        ? {
+            ok: {
+              origin: SITE,
+              formKind,
+              items: [login("it_01"), login("it_02", { title: "Atlas Perso", has_password: false, methods: [{ provider: "google", account_email: "alex.perso@example.com" }] })],
+              ...(choices ? { choices } : {}),
+            },
+          }
         : res;
     }
     return answer(m);
@@ -31,13 +53,13 @@ describe("inline menu", () => {
     await handle.ready;
     expect(worker.sent[0]).toEqual({ type: "menu_init", token: TOKEN });
     expect(text(r)).toContain("OnePass · atlas-cloud.test");
-    expect(text(r)).toContain("Atlas Cloud");
-    expect(text(r)).toContain("alex@atlas.dev");
-    expect(text(r)).toContain("Se connecter avec Google (alex.perso@example.com)");
-    // A provider-only login has no password row.
-    expect(text(r)).not.toContain("Atlas Perso alex@atlas.dev");
-    // Two sign-in rows, then "Enregistrer un nouveau login".
-    expect(r.querySelectorAll("[role=option]")).toHaveLength(3);
+    const opts = [...r.querySelectorAll("[role=option]")];
+    // Each row says how it signs in and what a click does.
+    expect(says(opts[0]!)).toBe("Atlas Cloud | alex@atlas.dev · mot de passe | Remplir");
+    expect(says(opts[1]!)).toBe("Atlas Perso | Avec Google · alex.perso@example.com | Continuer");
+    expect(opts[1]!.querySelector(".way-badge svg.glyph-p_google")).not.toBeNull();
+    // A provider-only login has no password row; then "Enregistrer un nouveau login".
+    expect(opts).toHaveLength(3);
   });
 
   it("Enregistrer un nouveau login opens the save prompt (menu_new_login)", async () => {
@@ -141,9 +163,55 @@ describe("inline menu", () => {
     const { r, handle, worker, clock } = setup(def);
     await handle.ready;
     clock.advance(300);
-    button(r, "Se connecter avec Google").click();
+    button(r, "Avec Google").click();
     await Promise.resolve();
     expect(worker.sent.at(-1)).toEqual({ type: "menu_signin", token: TOKEN, itemId: "it_02", provider: "google" });
+  });
+
+  it("the default provider account, and the others unfolded inline", async () => {
+    const { r, handle, worker, clock } = setup(def, "login", CHOICES);
+    await handle.ready;
+    expect(r.querySelectorAll("button.row-sub")).toHaveLength(0);
+    clock.advance(300);
+    button(r, "Autre compte Google").click();
+    const sub = r.querySelector<HTMLButtonElement>('button.row-sub[data-account="g_pro"]')!;
+    expect(says(sub)).toBe("alex.pro@example.com | Google · Google pro | Continuer");
+    expect(r.querySelector("button.row-fold")!.getAttribute("aria-expanded")).toBe("true");
+    clock.advance(300);
+    sub.click();
+    await Promise.resolve();
+    expect(worker.sent.at(-1)).toEqual({ type: "menu_signin", token: TOKEN, itemId: "it_02", provider: "google", accountId: "g_pro" });
+    clock.advance(300);
+    button(r, "Avec Google").click();
+    await Promise.resolve();
+    expect(worker.sent.at(-1)).toEqual({ type: "menu_signin", token: TOKEN, itemId: "it_02", provider: "google", accountId: "g_perso" });
+  });
+
+  it("keys relayed from the field move the highlight; Return picks it, after the delay only", async () => {
+    const keys: string[][] = [["down"], ["down"], ["up"], ["enter"]];
+    const pending: ((r: Reply) => void)[] = [];
+    const { r, handle, worker, clock } = setup((m) => {
+      if (m.type === "menu_keys") {
+        const k = keys.shift();
+        return k ? ok({ keys: k }) : new Promise<Reply>((res) => void pending.push(res));
+      }
+      return def();
+    });
+    await handle.ready;
+    // The first three keys arrive at once, before the click delay ran out.
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+    await new Promise((res) => setTimeout(res, 0));
+    const opts = [...r.querySelectorAll("[role=option]")];
+    expect(opts[0]!.classList.contains("active")).toBe(true);
+    expect(opts[0]!.getAttribute("aria-selected")).toBe("true");
+    // Return within 300 ms of the render: ignored, like a click.
+    expect(worker.types()).toEqual(["menu_init"]);
+    clock.advance(300);
+    pending.shift()?.(ok({ keys: ["enter"] }));
+    await new Promise((res) => setTimeout(res, 0));
+    expect(worker.sent.filter((m) => m.type === "menu_pick")).toEqual([{ type: "menu_pick", token: TOKEN, itemId: "it_01" }]);
+    // The focus never moved into the menu.
+    expect(document.activeElement).toBe(document.body);
   });
 
   it("keyboard: arrows move between options, Escape closes", async () => {

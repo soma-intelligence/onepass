@@ -172,13 +172,16 @@ export function parseCsToBg(m: unknown): CsToBg | null {
     switch (o.type) {
       case "page_analysis":
         return { type: "page_analysis", analysis: analysis(o.analysis) };
-      case "open_menu":
-        return {
+      case "open_menu": {
+        const r: CsToBg = {
           type: "open_menu",
           fieldRef: ref(o.fieldRef),
           formRef: ref(o.formRef),
           formKind: member<FormKind>(o.formKind, FORM_KINDS),
         };
+        if (o.auto !== undefined) r.auto = bool(o.auto);
+        return r;
+      }
       case "close_menu":
         return { type: "close_menu" };
       case "submitted_credentials":
@@ -193,6 +196,8 @@ export function parseCsToBg(m: unknown): CsToBg | null {
         return { type: "provider_click", provider: member<ProviderId>(o.provider, PROVIDER_IDS), ref: ref(o.ref) };
       case "account_click":
         return { type: "account_click", email: str(o.email, MAX_EMAIL), ref: ref(o.ref) };
+      case "menu_key":
+        return { type: "menu_key", key: member(o.key, MENU_KEYS) };
       default:
         return null;
     }
@@ -215,6 +220,15 @@ function edits(v: unknown): SaveEdits {
 
 const itemId = (v: unknown) => str(v, MAX_ITEM_ID, 1);
 
+const MENU_KEYS: ReadonlySet<string> = new Set(["down", "up", "enter"]);
+/** Frame heights a page may ask for (the content script clamps again per kind). */
+const MAX_FRAME_HEIGHT = 2000;
+
+function height(v: unknown): number {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > MAX_FRAME_HEIGHT) throw new Invalid();
+  return v;
+}
+
 const GEN_KINDS: ReadonlySet<string> = new Set(["smart", "random", "memorable", "pin"]);
 
 /** A fully validated, rebuilt extension page message, or null. */
@@ -227,6 +241,7 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "menu_new_login":
       case "menu_unlock":
       case "menu_close":
+      case "menu_keys":
       case "overlay_init":
       case "overlay_state":
       case "overlay_stop":
@@ -238,18 +253,29 @@ export function parseUiToBg(m: unknown): UiToBg | null {
         return { type: o.type, token: token(o.token) };
       case "menu_pick":
         return { type: o.type, token: token(o.token), itemId: itemId(o.itemId) };
-      case "menu_signin":
-        return {
+      case "menu_signin": {
+        const s: UiToBg = {
           type: o.type,
           token: token(o.token),
           itemId: itemId(o.itemId),
           provider: member<ProviderId>(o.provider, PROVIDER_IDS),
         };
+        if (o.accountId !== undefined) s.accountId = itemId(o.accountId);
+        return s;
+      }
       case "overlay_start": {
         const s: UiToBg = { type: o.type, token: token(o.token), itemId: itemId(o.itemId) };
         if (o.provider !== undefined) s.provider = member<ProviderId>(o.provider, PROVIDER_IDS);
+        if (o.accountId !== undefined) {
+          if (s.provider === undefined) throw new Invalid();
+          s.accountId = itemId(o.accountId);
+        }
         return s;
       }
+      case "menu_resize":
+      case "overlay_resize":
+      case "save_resize":
+        return { type: o.type, token: token(o.token), height: height(o.height) };
       case "save_decide": {
         const d: UiToBg = {
           type: "save_decide",

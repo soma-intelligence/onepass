@@ -211,6 +211,13 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
     let accessory: Accessory
     let menu: MenuItems
     @State private var hovered = false
+    #if os(iOS)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Copies made from this row; each one plays the haptic and restarts the "copied" hold.
+    @State private var copies = 0
+    /// The row shows it was copied: accent tint and a check where the actions glyph sits.
+    @State private var showsCopied = false
+    #endif
 
     init(
         label: String, copyIdentifier: String? = nil, copyLabel: Text = Text("Copier"),
@@ -250,12 +257,29 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
         .padding(.vertical, 9)
         .frame(minHeight: 56)
         .background {
+            #if os(iOS)
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Theme.accent.opacity(showsCopied ? 0.12 : 0))
+                .padding(4)
+            #else
             RoundedRectangle(cornerRadius: 10)
                 .fill(Theme.accent.opacity(hovered ? 0.18 : 0))
                 .padding(4)
+            #endif
         }
         .contentShape(.rect)
+        #if os(iOS)
+        .onTapGesture { copy() }
+        .sensoryFeedback(.success, trigger: copies)
+        .task(id: copies) {
+            guard copies > 0 else { return }
+            try? await Task.sleep(for: Motion.copiedHold)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.3)) { showsCopied = false }
+        }
+        #else
         .onTapGesture { onCopy?() }
+        #endif
         #if os(macOS)
         .onHover { inside in
             withAnimation(.easeOut(duration: 0.12)) { hovered = inside }
@@ -298,6 +322,28 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
         .opacity(hovered ? 1 : 0)
         .allowsHitTesting(hovered)
         .accessibilityHidden(!hovered)
+        #elseif os(iOS)
+        if onCopy != nil || showsMenu {
+            Menu {
+                if onCopy != nil {
+                    Button(action: copy) { Label { copyLabel } icon: { Image(systemName: "doc.on.doc") } }
+                        .accessibilityIdentifier(copyIdentifier ?? "")
+                }
+                if showsMenu { menu }
+            } label: {
+                // Right after a copy the glyph turns into a check for a moment, then back.
+                Image(systemName: showsCopied ? "checkmark.circle.fill" : "ellipsis.circle")
+                    .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+                    .accessibilityLabel(Text(verbatim: "Actions pour \(label)"))
+            }
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
+            .fixedSize()
+            .padding(.vertical, -10)
+            .padding(.trailing, -10)
+        }
         #else
         if onCopy != nil || showsMenu {
             Menu {
@@ -316,6 +362,17 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
         }
         #endif
     }
+
+    #if os(iOS)
+    /// Copies, then says so where the finger is: a success haptic, the row tinted and its glyph
+    /// turned into a check for a moment (the toast at the bottom carries the text).
+    private func copy() {
+        guard let onCopy else { return }
+        onCopy()
+        copies += 1
+        withAnimation(.easeOut(duration: 0.12)) { showsCopied = true }
+    }
+    #endif
 }
 
 /// VoiceOver reaches "Copier" even while the hover buttons are hidden.
@@ -562,6 +619,11 @@ struct WebsiteRow: View {
     let index: Int
     let onCopied: (String) -> Void
     @State private var hovered = false
+    #if os(iOS)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var copies = 0
+    @State private var showsCopied = false
+    #endif
 
     var body: some View {
         HStack(spacing: 12) {
@@ -591,6 +653,11 @@ struct WebsiteRow: View {
             Button(action: copy) {
                 #if os(macOS)
                 Text("Copier").font(.callout.weight(.medium)).foregroundStyle(Theme.readableAccent)
+                #elseif os(iOS)
+                Image(systemName: showsCopied ? "checkmark" : "doc.on.doc")
+                    .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
                 #else
                 Image(systemName: "doc.on.doc")
                 #endif
@@ -598,6 +665,16 @@ struct WebsiteRow: View {
             .buttonStyle(.borderless)
             #if os(macOS)
             .opacity(hovered ? 1 : 0)
+            #elseif os(iOS)
+            .padding(.vertical, -10)
+            .padding(.trailing, -10)
+            .sensoryFeedback(.success, trigger: copies)
+            .task(id: copies) {
+                guard copies > 0 else { return }
+                try? await Task.sleep(for: Motion.copiedHold)
+                guard !Task.isCancelled else { return }
+                showsCopied = false
+            }
             #endif
             .accessibilityLabel(Text("Copier"))
             .accessibilityIdentifier("item.url.copy.\(index)")
@@ -615,5 +692,9 @@ struct WebsiteRow: View {
     private func copy() {
         model.session.copy(url.url, concealed: false)
         onCopied(String(localized: "Copié · effacé dans 90 s"))
+        #if os(iOS)
+        copies += 1
+        showsCopied = true
+        #endif
     }
 }

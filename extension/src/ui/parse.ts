@@ -2,6 +2,10 @@
 // renders as an internal error, never partially.
 import type { FormKind, ProviderId } from "../shared/messages";
 import {
+  CHAIN_PHASES,
+  STEP_WHATS,
+  type StepWhat,
+  type ChainPhase,
   type ChainStepView,
   type ChainView,
   type GeneratorEntry,
@@ -12,7 +16,9 @@ import {
   type PopupItem,
   type PopupStatus,
   type PopupSuggestions,
+  type ProviderChoice,
   type SaveInit,
+  type SignInChoice,
   STOP_REASONS,
   type StepState,
   type StopReason,
@@ -94,13 +100,32 @@ export const parseMenuInit = (v: unknown): MenuInit | null =>
       const l = obj(o.linked);
       m.linked = { itemId: str(l.itemId, 128), site: str(l.site, 253) };
     }
+    if (o.choices !== undefined) m.choices = list(o.choices, signInChoice, 64);
     return m;
   });
+
+function providerChoice(v: unknown): ProviderChoice {
+  const o = obj(v);
+  return { itemId: str(o.itemId, 128), email: str(o.email, 320), title: str(o.title, 256) };
+}
+
+function signInChoice(v: unknown): SignInChoice {
+  const o = obj(v);
+  const c: SignInChoice = {
+    itemId: str(o.itemId, 128),
+    provider: oneOf<ProviderId>(o.provider, PROVIDERS),
+    accounts: list(o.accounts, providerChoice, 32),
+  };
+  if (o.accountId !== undefined) c.accountId = str(o.accountId, 128);
+  return c;
+}
 
 function step(v: unknown): ChainStepView {
   const o = obj(v);
   const s: ChainStepView = { label: str(o.label, 256), state: oneOf<StepState>(o.state, ["pending", "active", "done", "stopped"]) };
   if (o.detail !== undefined) s.detail = str(o.detail, 256);
+  if (o.what !== undefined) s.what = oneOf<StepWhat>(o.what, STEP_WHATS);
+  if (o.onProvider !== undefined) s.onProvider = bool(o.onProvider);
   return s;
 }
 
@@ -114,6 +139,11 @@ function chain(v: unknown): ChainView | null {
   };
   if (o.reason !== undefined) c.reason = oneOf<StopReason>(o.reason, STOP_REASONS);
   if (o.host !== undefined) c.host = str(o.host, 253);
+  if (o.title !== undefined) c.title = str(o.title, 256);
+  if (o.site !== undefined) c.site = str(o.site, 253);
+  if (o.provider !== undefined) c.provider = oneOf<ProviderId>(o.provider, PROVIDERS);
+  if (o.email !== undefined) c.email = str(o.email, 1024);
+  if (o.phase !== undefined) c.phase = oneOf<ChainPhase>(o.phase, CHAIN_PHASES);
   return c;
 }
 
@@ -128,6 +158,9 @@ function account(v: unknown): OverlayAccount {
   };
   if (o.provider !== undefined) a.provider = oneOf<ProviderId>(o.provider, PROVIDERS);
   if (o.email !== undefined) a.email = str(o.email, 320);
+  if (o.accountId !== undefined) a.accountId = str(o.accountId, 128);
+  if (o.accounts !== undefined) a.accounts = list(o.accounts, providerChoice, 32);
+  if (o.totp !== undefined) a.totp = bool(o.totp);
   return a;
 }
 
@@ -162,6 +195,7 @@ export const parseSaveInit = (v: unknown): SaveInit | null =>
     if (o.provider !== undefined) {
       const p = obj(o.provider);
       s.provider = { id: oneOf<ProviderId>(p.id, PROVIDERS), email: str(p.email, 320) };
+      if (p.title !== undefined) s.provider.title = str(p.title, 256);
     }
     if (o.view !== undefined) s.view = oneOf<"edit">(o.view, ["edit"]);
     return s;
@@ -169,6 +203,11 @@ export const parseSaveInit = (v: unknown): SaveInit | null =>
 
 export const parsePassword = (v: unknown): { password: string } | null =>
   guard(() => ({ password: str(obj(v).password, 4096) }));
+
+const MENU_KEYS = ["down", "up", "enter"];
+
+export const parseKeys = (v: unknown): { keys: ("down" | "up" | "enter")[] } | null =>
+  guard(() => ({ keys: list(obj(v).keys, (k) => oneOf<"down" | "up" | "enter">(k, MENU_KEYS), 8) }));
 
 export const parseEmpty = (v: unknown): object | null => guard(() => obj(v));
 

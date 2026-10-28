@@ -91,3 +91,10 @@ describe("per-browser differences", () => {
     expect(m.web_accessible_resources[0]?.use_dynamic_url).toBeUndefined();
   });
 });
+
+describe("native messaging host of the build", () => {
+  it("is the app's relay in a regular build", () => {
+    const bg = readFileSync(join(root, "dist", "chromium", "background.js"), "utf8");
+    expect(bg).toMatch(/NATIVE_HOST = true \? "me\.somalabs\.onepass" :/);
+  });
+});

@@ -18,6 +18,7 @@ import UIKit
 struct ItemDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let ref: ItemRef
     /// Shown in its own window ("Ouvrir dans une nouvelle fenêtre"): read only, "Modifier" goes back
     /// to the main window, whose editing state is global.
@@ -235,9 +236,12 @@ struct ItemDetailView: View {
                 .frame(maxWidth: .infinity)
         }
         if !item.urls.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
+            // A card like the fields and the notes around it, rows split by hairlines.
+            EditorCard {
                 ForEach(Array(item.urls.enumerated()), id: \.offset) { index, url in
+                    if index > 0 { CardDivider() }
                     WebsiteRow(url: url, index: index) { showToast($0) }
+                        .padding(.vertical, 6)
                 }
             }
         }
@@ -265,20 +269,24 @@ struct ItemDetailView: View {
             ItemPlacesCard(locations: places)
         }
         if !item.tags.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                EditorLabel("tags")
-                FlowLayout(spacing: 6) {
-                    ForEach(item.tags, id: \.self) { tag in
-                        Text(tag)
-                            .font(.footnote.weight(.medium))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Theme.accent.opacity(0.18), in: Capsule())
+            EditorCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    EditorLabel("tags")
+                    FlowLayout(spacing: 6) {
+                        ForEach(item.tags, id: \.self) { tag in
+                            Text(tag)
+                                .font(.footnote.weight(.medium))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Theme.accent.opacity(0.18), in: Capsule())
+                        }
                     }
+                    .accessibilityElement(children: .combine)
                 }
-                .accessibilityElement(children: .combine)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal, 16)
         }
     }
 
@@ -287,7 +295,7 @@ struct ItemDetailView: View {
     private func footer(_ item: FfiItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                withAnimation(.snappy) { showDates.toggle() }
+                withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { showDates.toggle() }
             } label: {
                 HStack(spacing: 6) {
                     Text("Modifié le \(FieldDates.timestamp(item.updatedAt))")
@@ -302,6 +310,7 @@ struct ItemDetailView: View {
             .accessibilityValue(showDates ? Text("développé") : Text("réduit"))
             if showDates {
                 ItemTimelineView(events: timeline.isEmpty ? ItemTimelineView.fallback(item) : timeline)
+                    .transition(FoldMotion.transition(reduceMotion: reduceMotion))
                 if item.passwordHistoryCount > 0, !locked(item) {
                     NavigationLink {
                         PasswordHistoryView(ref: ItemRef(vaultID: item.vaultId, itemID: item.id))
@@ -1154,6 +1163,7 @@ struct PasskeyOffer: Equatable {
 /// passkey" (opens the site's settings) and "Ignorer" (excluded for this item, saved).
 struct PasskeyOfferBanner: View {
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let offer: PasskeyOffer
     let onIgnore: () -> Void
     @State private var expanded = true
@@ -1163,7 +1173,7 @@ struct PasskeyOfferBanner: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                withAnimation(.snappy) { expanded.toggle() }
+                withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "person.badge.key.fill")
@@ -1199,12 +1209,33 @@ struct PasskeyOfferBanner: View {
     }
 }
 
+/// The folds of the detail (dates, passkey offer, document preview). iPhone and iPad take the
+/// shared critically damped spring and a fade under Reduce Motion; the Mac keeps its snappy fold.
+enum FoldMotion {
+    static func animation(reduceMotion: Bool) -> Animation {
+        #if os(iOS)
+        Motion.fold(reduceMotion: reduceMotion)
+        #else
+        .snappy
+        #endif
+    }
+
+    static func transition(reduceMotion: Bool) -> AnyTransition {
+        #if os(iOS)
+        Motion.reveal(reduceMotion: reduceMotion)
+        #else
+        .opacity
+        #endif
+    }
+}
+
 // MARK: - Document preview
 
 /// Top of a Document: file icon and name centered, a collapsible "Aperçu" row, then the size.
 /// Attachment contents are not stored in the vault yet (milestone 5), so the preview says so
 /// instead of showing anything.
 struct DocumentCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let attachment: FfiAttachment
     @State private var preview = false
 
@@ -1226,7 +1257,7 @@ struct DocumentCard: View {
             .padding(.vertical, 20)
             CardDivider()
             Button {
-                withAnimation(.snappy) { preview.toggle() }
+                withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { preview.toggle() }
             } label: {
                 HStack {
                     Text("Aperçu")

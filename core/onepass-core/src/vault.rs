@@ -110,19 +110,20 @@ fn encode_item(version: u64, item: &Item) -> Result<Zeroizing<Vec<u8>>> {
     Ok(buf)
 }
 
-/// `(version, item)` then, when bytes remain, exactly one `ItemTrailer`.
+/// `(version, item)` then, when bytes remain, an `ItemTrailer`. The item
+/// itself is strict. The trailer is history only: one this build cannot read
+/// (an `EventKind` added later, a second trailer after it, damage) leaves the
+/// item with no events instead of locking it, and with it the whole vault
+/// listing, out. The bytes stay inside the sealed blob, so nobody without the
+/// item key can put anything there.
 fn decode_item(plain: &[u8]) -> Result<(u64, Item)> {
     const BAD: Error = Error::InvalidFormat("item");
     let ((version, mut item), rest): ((u64, Item), &[u8]) =
         postcard::take_from_bytes(plain).map_err(|_| BAD)?;
-    if !rest.is_empty() {
-        let trailer: ItemTrailer = match postcard::take_from_bytes(rest) {
-            Ok((t, [])) => t,
-            _ => return Err(BAD),
-        };
-        if trailer.events.is_empty() || trailer.events.len() > crate::model::events::MAX_EVENTS {
-            return Err(BAD);
-        }
+    if !rest.is_empty()
+        && let Ok((trailer, _later)) = postcard::take_from_bytes::<ItemTrailer>(rest)
+        && (1..=crate::model::events::MAX_EVENTS).contains(&trailer.events.len())
+    {
         item.events = trailer.events;
     }
     Ok((version, item))
@@ -225,8 +226,10 @@ impl Vault {
         item.vault_id = to.id;
         item.record(
             time::OffsetDateTime::now_utc(),
+            // The source vault's name stays out: members of the target vault
+            // read this item, and "Santé" or "Perso" is not theirs to see.
             EventKind::Moved {
-                from: self.meta.name.clone(),
+                from: String::new(),
                 to: to.meta.name.clone(),
             },
         );
@@ -323,17 +326,27 @@ mod tests {
         let opened = v.open_item(&rec).unwrap();
         assert_eq!(opened.events, item.events);
         assert_eq!(opened, item);
-        // Garbage or an empty trailer after the item is refused.
-        let mut bad = postcard::to_allocvec(&(1u64, &item)).unwrap();
-        bad.push(0);
-        assert!(decode_item(&bad).is_err());
-        bad.pop();
-        bad.extend([1, 0xff]);
-        assert!(decode_item(&bad).is_err());
+        // A trailer this build cannot read (empty, an unknown event kind)
+        // opens the item without its history; a later trailer after a
+        // readable one is skipped.
+        let mut bare = item.clone();
+        bare.events.clear();
+        let mut odd = postcard::to_allocvec(&(1u64, &item)).unwrap();
+        odd.push(0);
+        assert_eq!(decode_item(&odd).unwrap(), (1, bare.clone()));
+        odd.pop();
+        odd.extend([1, 0xff]);
+        assert_eq!(decode_item(&odd).unwrap(), (1, bare));
+        let mut later = encode_item(4, &item).unwrap().to_vec();
+        later.extend([7, 7, 7]);
+        assert_eq!(decode_item(&later).unwrap(), (4, item.clone()));
+        // A damaged item itself is still refused.
+        let whole = postcard::to_allocvec(&(1u64, &item)).unwrap();
+        assert!(decode_item(&whole[..whole.len() / 2]).is_err());
     }
 
     #[test]
-    fn move_records_the_vault_names() {
+    fn move_records_only_the_target_vault_name() {
         let (a, _, _) = vault("Perso");
         let (b, _, _) = vault("Projet Atlas");
         let rec = a.seal_item(&login(&a), 1).unwrap();
@@ -341,7 +354,7 @@ mod tests {
         assert_eq!(
             moved.events.last().unwrap().kind,
             EventKind::Moved {
-                from: "Perso".into(),
+                from: String::new(),
                 to: "Projet Atlas".into()
             }
         );
@@ -404,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn trailing_bytes_in_item_and_meta_are_refused() {
+    fn unreadable_item_history_opens_but_trailing_meta_bytes_are_refused() {
         let (v, env, _) = vault("A");
         let item = login(&v);
         let rec = v.seal_item(&item, 1).unwrap();
@@ -415,7 +428,8 @@ mod tests {
             blob: seal(&item_key, BlobKind::Item, &item_aad(item.id, v.id), &plain).unwrap(),
             ..rec
         };
-        assert_eq!(v.open_item(&bad), Err(Error::InvalidFormat("item")));
+        // Item history is best effort: the item opens, without events.
+        assert_eq!(v.open_item(&bad).unwrap(), item);
 
         let mut meta = postcard::to_allocvec(&v.meta).unwrap();
         meta.push(0);

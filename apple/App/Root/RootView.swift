@@ -52,6 +52,16 @@ struct RootView: View {
             } message: { _ in
                 Text("La prochaine fois, \(OnboardingModel.biometryName) suffit pour ouvrir OnePass. Le mot de passe maître reste demandé tous les 14 jours et après un redémarrage.")
             }
+            #if os(macOS)
+            .sheet(item: Binding(
+                get: { model.browserBridge?.requests.first },
+                set: { _ in }
+            )) { request in
+                if let bridge = model.browserBridge {
+                    BrowserPairingSheet(bridge: bridge, request: request)
+                }
+            }
+            #endif
             #if os(iOS) || os(visionOS)
             .background { WindowSceneReader(scene: $windowScene).frame(width: 0, height: 0) }
             .onChange(of: scenePhase, initial: true) { _, phase in

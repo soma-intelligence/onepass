@@ -75,6 +75,24 @@ const ICONS = {
   copy: ["R5 5 8.5 8.5", "M3 10.5H2.5a1 1 0 01-1-1v-7a1 1 0 011-1h7a1 1 0 011 1V3"],
   keyhole: ["C6 4.5 2.3", "M5 6h2l.8 4H4.2z"],
   alert: ["M7 1.8l5.6 9.7H1.4z", "M7 5.6v2.6", "M7 10h.01"],
+  // Provider marks, drawn here as plain monochrome strokes in the UI's own
+  // line style (never the providers' artwork or colours).
+  p_google: ["M12.2 4.5A5.5 5.5 0 1 0 13.5 8H8.5"],
+  p_apple: [
+    "M8 5.4c-.9-.8-3.4-1-4.2 1.3-.8 2.3.6 5.5 2.1 6.1.8.3 1.3-.2 2.1-.2s1.3.5 2.1.2c1.5-.6 2.9-3.8 2.1-6.1C11.4 4.4 8.9 4.6 8 5.4z",
+    "M8 5.2c0-1.3.7-2.4 2-2.7",
+  ],
+  p_microsoft: ["R3 3 4.3 4.3", "R8.7 3 4.3 4.3", "R3 8.7 4.3 4.3", "R8.7 8.7 4.3 4.3"],
+  p_github: ["M3.6 9.2a4.4 4.4 0 0 0 8.8 0c0-1.2-.4-2.2-1-3l.4-2.9-2.4 1.3a4.6 4.6 0 0 0-2.8 0L4.2 3.3l.4 2.9c-.6.8-1 1.8-1 3z"],
+  p_facebook: ["M10 2.8H8.8c-1.3 0-2 .8-2 2.1V13.2", "M5.2 7.2h4.6"],
+  p_x: ["M3.5 3.5l9 9", "M12.5 3.5l-9 9"],
+  p_linkedin: ["M4.6 7v5.5", "M4.6 4.4v.01", "M7.6 12.5V7", "M7.6 9.6c0-1.5 1-2.6 2.4-2.6s2.1 1 2.1 2.5v3"],
+  p_discord: [
+    "M4.2 4.6c1-.5 2.2-.8 3.8-.8s2.8.3 3.8.8c1 1.6 1.6 3.6 1.5 6-1 .8-2 1.3-3 1.5l-.6-1.2H6.3l-.6 1.2c-1-.2-2-.7-3-1.5-.1-2.4.5-4.4 1.5-6z",
+    "C6.2 8.5 .7",
+    "C9.8 8.5 .7",
+  ],
+  p_slack: ["M6.4 2.5l-1.2 11", "M11 2.5l-1.2 11", "M2.8 6h11", "M2.2 10.2h11"],
 } as const;
 
 export type IconName = keyof typeof ICONS;
@@ -184,6 +202,72 @@ export function srOnly(text: string): HTMLSpanElement {
 /** Provider name as written in the UI ("Google", "GitHub"). */
 export function providerLabel(id: ProviderId): string {
   return PROVIDERS.find((p) => p.id === id)?.name ?? id;
+}
+
+/** "Autre compte Google", or "Autres comptes Google" when there are several. */
+export function otherAccounts(name: string, n: number): string {
+  return n > 1 ? tr(`Autres comptes ${name}`, `Other ${name} accounts`) : tr(`Autre compte ${name}`, `Another ${name} account`);
+}
+
+/** The provider's mark as a neutral monochrome glyph (currentColor). */
+export function providerGlyph(id: ProviderId, size = 12): SVGSVGElement {
+  const svg = icon(`p_${id}` as IconName, size);
+  svg.setAttribute("stroke-width", "1.5");
+  return svg;
+}
+
+/**
+ * Icon of a way to sign in: the item's art, with the provider's glyph on a
+ * small disc at its corner when it signs in through a provider.
+ */
+export function wayArt(
+  it: { kind: "login" | "card" | "identity"; has_password: boolean; methods: readonly unknown[]; icon_letter: string },
+  provider: ProviderId | undefined,
+  size: "s" | "m" = "s",
+): HTMLSpanElement {
+  return h(
+    "span",
+    { class: `way-art way-art-${size}`, attrs: { "aria-hidden": "true" } },
+    itemArt(it, size),
+    provider ? h("span", { class: "way-badge" }, providerGlyph(provider, 10)) : null,
+  );
+}
+
+// ---- frame size ----
+
+export type ObserveSize = (el: Element, cb: () => void) => void;
+
+/** ResizeObserver where the browser has it (not jsdom). */
+export const observeSize: ObserveSize = (el, cb) => {
+  const RO = (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
+  if (!RO) return;
+  new RO(() => cb()).observe(el);
+};
+
+/**
+ * Reports the natural height of `el` (its content, whatever the frame's
+ * current size) each time it changes, once per frame of rendering. The
+ * content script sizes the frame to it, between its own bounds.
+ */
+export function autosize(el: HTMLElement, report: (height: number) => void, observe: ObserveSize = observeSize): () => void {
+  let last = -1;
+  let queued = false;
+  const measure = () => {
+    queued = false;
+    const height = Math.ceil(el.scrollHeight);
+    if (height <= 0 || height === last) return;
+    last = height;
+    report(height);
+  };
+  const raf = (globalThis as { requestAnimationFrame?: (cb: () => void) => number }).requestAnimationFrame;
+  const queue = () => {
+    if (queued) return;
+    queued = true;
+    if (raf) raf(measure);
+    else measure();
+  };
+  observe(el, queue);
+  return queue;
 }
 
 export function hostOf(origin: string): string {
@@ -367,6 +451,14 @@ export class ClickGuard {
 
   accepts(e: Event): boolean {
     if (!this.trusted(e)) return false;
+    return this.ready();
+  }
+
+  /**
+   * Past the delay and not declared hidden: a key relayed by the content
+   * script (trusted there) may act. Same time and visibility rules as a click.
+   */
+  ready(): boolean {
     if (this.opts.now() - this.shownAt < CLICK_GUARD_MS) return false;
     return this.visible !== false;
   }
@@ -408,6 +500,8 @@ export interface FrameDeps {
   trusted?: (e: Event) => boolean;
   observe?: ObserveVisibility;
   timers?: Timers;
+  /** Size observer of the frame content (tests drive it). */
+  observeSize?: ObserveSize;
 }
 
 /** Common page frame: a status line for errors. */

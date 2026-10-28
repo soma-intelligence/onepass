@@ -420,9 +420,12 @@ struct EncryptedBackupFileTests {
     }
 
     @Test func newErrorKindsHaveFrenchTexts() {
-        #expect(VaultError.integrityLabel("epoch_rollback") == "Une ancienne restauration du coffre a été rejouée.")
-        #expect(VaultError.validationMessage("too weak").hasPrefix("Trop facile à deviner"))
-        #expect(SyncStatus.waitingForServer.label == "Synchronisation en attente d'iCloud")
+        // French source, or its English translation when the test runs in English.
+        #expect(["Une ancienne restauration du coffre a été rejouée.", "An old restore of the vault was replayed."]
+            .contains(VaultError.integrityLabel("epoch_rollback")))
+        let weak = VaultError.validationMessage("too weak")
+        #expect(weak.hasPrefix("Trop facile à deviner") || weak.hasPrefix("Too easy to guess"))
+        #expect(["Synchronisation en attente d'iCloud", "Sync waiting for iCloud"].contains(SyncStatus.waitingForServer.label))
         for text in [VaultError.integrityLabel("epoch_rollback"), VaultError.validationMessage("too weak"),
                      SyncStatus.waitingForServer.label] {
             #expect(!text.contains("\u{2014}"))

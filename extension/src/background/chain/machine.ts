@@ -20,7 +20,7 @@ import type { FillField, Summary } from "../../bridge/client";
 import { parseOrigin } from "../../shared/domain";
 import type { FieldRole, FormInfo, PageAnalysis, ProviderId } from "../../shared/messages";
 import { PROVIDERS } from "../../shared/providers";
-import { type ChainView, STOP_REASONS, type StepState, type StopReason } from "../../shared/ui";
+import { type ChainPhase, type ChainStepView, type ChainView, STOP_REASONS, type StepState, type StepWhat, type StopReason } from "../../shared/ui";
 import { titleFromSite } from "../save";
 
 /** Spec 8.6: the whole chain must finish within 60 s of the click. */
@@ -140,6 +140,7 @@ const STOP_LABELS: Readonly<Record<StopReason, string>> = {
   user: tr("Arrêté", "Stopped"),
   locked: tr("OnePass verrouillé", "OnePass locked"),
   repeat: tr("Étape répétée", "Step repeated"),
+  account: tr("Compte introuvable", "Account not found"),
 };
 
 function providerName(id: ProviderId): string {
@@ -202,6 +203,7 @@ function stopped(s: ChainState, reason: StopReason, now: number, host?: string):
   const st: Omit<ChainStep, "nav" | "at" | "sig"> = { kind: "stop", label: STOP_LABELS[reason], state: "stopped" };
   if (reason === "domain" && host) st.detail = host;
   if (reason === "captcha") st.detail = tr("Jamais résolu automatiquement", "Never solved automatically");
+  if (reason === "account" && s.account) st.detail = s.account.email;
   end(n, now, reason === "user" ? "stopped" : "handoff", st);
   return { state: n, actions: [{ type: "stop", reason }] };
 }
@@ -249,7 +251,8 @@ function decide(s: ChainState, a: PageAnalysis, onProvider: boolean): Decision |
   if (onProvider && a.accountChooser.length > 0) {
     const want = s.account?.email ?? "";
     const entry = want === "" ? undefined : a.accountChooser.find((x) => norm(x.email) === want);
-    return entry ? { kind: "account", ref: entry.ref, email: want } : { kind: "stop", reason: "unknown" };
+    // The chooser does not list the account: a precise stop, the user picks.
+    return entry ? { kind: "account", ref: entry.ref, email: want } : { kind: "stop", reason: want === "" ? "unknown" : "account" };
   }
   const otp = a.forms.find((f) => hasRole(f, "otp"));
   if (otp) return { kind: "otp", form: otp };
@@ -471,13 +474,70 @@ export function tick(s: ChainState, now: number): StepResult {
   return { state: s, actions: [] };
 }
 
+/** The step acted on one of the provider's official hosts (its signature names the host). */
+function onProviderStep(s: ChainState, x: ChainStep): boolean {
+  const host = x.sig.split("|")[1]?.split("/")[0] ?? "";
+  return providerHosts(s.provider).includes(host);
+}
+
+/**
+ * What the chain does now, from its last step: the progress line of the
+ * overlay ("Ouverture de Google…", "Choix de camille@…", "Connexion…"),
+ * worded by the page in its language.
+ */
+export function phase(s: ChainState): ChainPhase {
+  const last = s.steps.at(-1);
+  if (!last) return s.provider ? "opening" : "signin";
+  switch (last.kind) {
+    case "provider_click":
+      return "opening";
+    case "account":
+      return last.nav === s.page.nav ? "choosing" : "provider";
+    case "otp":
+    case "fill":
+      if (s.provider && onProviderStep(s, last)) return last.kind === "otp" || last.sig.endsWith("password") ? "back" : "provider";
+      return last.kind === "otp" ? "code" : "signin";
+    default:
+      return "signin";
+  }
+}
+
+function whatOf(x: ChainStep): StepWhat {
+  switch (x.kind) {
+    case "provider_click":
+      return "click";
+    case "account":
+      return "account";
+    case "otp":
+      return "otp";
+    case "fill": {
+      const fields = x.sig.split("|")[2] ?? "";
+      return fields === "username,password" ? "both" : fields === "username" ? "user" : "password";
+    }
+    default:
+      return "end";
+  }
+}
+
+function stepView(s: ChainState, x: ChainStep): ChainStepView {
+  const v: ChainStepView = { label: x.label, state: x.state, what: whatOf(x) };
+  if (x.detail !== undefined) v.detail = x.detail;
+  if (x.kind !== "done" && x.kind !== "stop" && onProviderStep(s, x)) v.onProvider = true;
+  return v;
+}
+
 /** What the overlay shows. */
 export function chainView(s: ChainState): ChainView {
   const v: ChainView = {
     itemId: s.itemId,
     status: s.status,
-    steps: s.steps.map((x) => (x.detail === undefined ? { label: x.label, state: x.state } : { label: x.label, detail: x.detail, state: x.state })),
+    steps: s.steps.map((x) => stepView(s, x)),
+    title: s.title,
+    site: s.site,
+    email: s.account?.email ?? s.username,
   };
+  if (s.provider !== undefined) v.provider = s.provider;
+  if (s.status === "running") v.phase = phase(s);
   if (s.reason !== undefined) v.reason = s.reason;
   if (s.host !== undefined) v.host = s.host;
   return v;

@@ -166,8 +166,28 @@ export function createFiller(opts: FillerOptions): Filler {
 
   const fieldAt = (form: FormInfo, slot: Slot): FieldInfo | undefined => form.fields.filter((x) => x.role === slot.role)[slot.nth];
 
+  /**
+   * The focus where the user left it: each write focuses and blurs its
+   * field (as typing would), then the field that had the focus (the one the
+   * menu was opened from, say) gets it back.
+   */
+  const keepFocus = <T>(fn: () => T): T => {
+    const had = typeof document !== "undefined" ? document.activeElement : null;
+    try {
+      return fn();
+    } finally {
+      if (had instanceof HTMLInputElement && had.isConnected && document.activeElement !== had) had.focus({ preventScroll: true });
+    }
+  };
+
   return {
     fillForm(formRef, values) {
+      return keepFocus(() => fillOnce(formRef, values));
+    },
+  };
+
+  function fillOnce(formRef: string, values: Partial<Record<FieldRole, string>>): number {
+    {
       const first = opts.resolve(formRef, opts.analyze());
       if (!first) return 0;
       let form: FormInfo = first;
@@ -232,6 +252,6 @@ export function createFiller(opts: FillerOptions): Filler {
         if (el && nativeValue(el) === "") write(el, w.value, w.slot.role);
       }
       return n;
-    },
-  };
+    }
+  }
 }
