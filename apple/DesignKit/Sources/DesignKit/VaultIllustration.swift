@@ -17,16 +17,28 @@ public struct VaultIllustration: View {
     private var dark: Bool { scheme == .dark }
     private var ink: Color { dark ? .white : .black }
     /// Opaque ground under the translucent faces, close to the page.
-    private var base: Color { dark ? Color(white: 0.14) : Color(white: 0.965) }
-    private var shadow: Color { .black.opacity(dark ? 0.6 : 0.14) }
+    private var base: Color { dark ? Color(white: 0.14) : Color(red: 0.93, green: 0.935, blue: 0.955) }
+    private var shadow: Color { dark ? .black.opacity(0.6) : Color(red: 0.2, green: 0.2, blue: 0.35).opacity(0.22) }
 
     /// A face lit from the top left.
+    /// Light appearance: brushed silver, white where the light lands, a cool gray on the far side
+    /// (the dark set's numbers read as shade, so the light really comes from the top left).
     private func face(_ lit: Double, _ shade: Double) -> LinearGradient {
-        LinearGradient(colors: [ink.opacity(lit), ink.opacity(shade)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        if dark {
+            return LinearGradient(colors: [ink.opacity(lit), ink.opacity(shade)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+        let cool = Color(red: 0.36, green: 0.38, blue: 0.5)
+        return LinearGradient(colors: [Color.white.opacity(0.95), Color.white.opacity(0.35), cool.opacity(0.12 + lit * 0.9)],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
     }
     /// A bevel: bright where the light hits, gone on the far side.
     private func bevel(_ strength: Double = 1) -> LinearGradient {
-        LinearGradient(colors: [ink.opacity((dark ? 0.3 : 0.16) * strength), ink.opacity(0.03), ink.opacity(0.0)],
+        if dark {
+            return LinearGradient(colors: [ink.opacity(0.3 * strength), ink.opacity(0.03), ink.opacity(0.0)],
+                startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+        // A white edge where the light lands, a soft cool line on the far side.
+        return LinearGradient(colors: [Color.white, Color.white.opacity(0.2), Color(red: 0.3, green: 0.32, blue: 0.45).opacity(0.28 * strength)],
             startPoint: .topLeading, endPoint: .bottomTrailing)
     }
     /// The far side's edge, catching a little of the accent.
