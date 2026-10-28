@@ -479,8 +479,9 @@ impl PairingApprover {
     /// Grant the account to a personal or shared device, once the newcomer
     /// confirmed the code and the user here approved (calling this is that
     /// approval). Adds the newcomer to the signed device list (added by this
-    /// device) and saves it, then seals the Secret Key and the store
-    /// snapshot, at most 50 MiB. Without `include_pending` (an approver
+    /// device), then seals the Secret Key and the store snapshot, at most
+    /// 50 MiB, in one store transaction: a snapshot above the cap, or any
+    /// refusal of the seal, rolls the addition back (nothing is listed). Without `include_pending` (an approver
     /// that syncs, and synced just before) the snapshot is the rows the
     /// server holds, and a store with no synced account is refused. With
     /// `include_pending` (an approver without sync, ruling A10) it is the
@@ -509,7 +510,8 @@ impl PairingApprover {
             return Err(refused("grant does not match the requested mode"));
         }
         let peer = self.peer.clone();
-        let (account_id, snapshot) = session.with(|repo| {
+        let core = &mut s.core;
+        let frame = session.with(|repo| {
             let account_id = account_id_of(repo)?;
             // Without pending writes the snapshot is the `base` rows: the
             // device list written below is pending and reaches the newcomer
@@ -530,7 +532,7 @@ impl PairingApprover {
             };
             repo.devices()?;
             let added_by = repo.this_device_id();
-            repo.add_device(DeviceEntry {
+            let entry = DeviceEntry {
                 device_id: peer.device_id,
                 name: peer.name.clone(),
                 kind: peer.kind,
@@ -538,22 +540,25 @@ impl PairingApprover {
                 added_at: now_unix(),
                 added_by,
                 revoked_at: None,
-            })?;
-            repo.persist_device_state()?;
-            let snapshot = match base {
-                Some(snapshot) => snapshot,
-                None => local_snapshot(repo.store())?,
             };
-            Ok((account_id, snapshot))
+            // The device is listed only if the grant seals: a snapshot above
+            // the cap (or any refusal) rolls the addition back.
+            let secret_key = secret_key.clone();
+            repo.add_device_then(entry, |repo| {
+                let snapshot = match base {
+                    Some(snapshot) => snapshot,
+                    None => local_snapshot(repo.store())?,
+                };
+                let grant = Grant::Full(FullGrant {
+                    account_id,
+                    secret_key,
+                    mode,
+                    device_id: peer.device_id,
+                    snapshot,
+                });
+                Ok::<_, OnePassError>(core.seal_grant(grant, true)?)
+            })
         })?;
-        let grant = Grant::Full(FullGrant {
-            account_id,
-            secret_key,
-            mode,
-            device_id: peer.device_id,
-            snapshot,
-        });
-        let frame = s.core.seal_grant(grant, true)?;
         s.granted = true;
         Ok(frame)
     }

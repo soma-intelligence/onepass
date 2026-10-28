@@ -728,3 +728,65 @@ fn public_grant_strips_history_and_passkeys() {
     assert!(has_passkey(&kept));
     assert_eq!(kept.password_history_count, 1);
 }
+
+#[test]
+fn oversized_full_grant_lists_nothing() {
+    // An approver without sync whose local view is above the 50 MiB cap: the
+    // grant is refused and the device list stays as it was (L2: the device
+    // is listed only once the grant is sealed).
+    let a = approver_device();
+    let note = "n".repeat(850 * 1024);
+    let mut big = Vec::new();
+    for i in 0..64 {
+        let mut item = a
+            .session
+            .new_item(
+                a.vault_id.clone(),
+                FfiItemType::SecureNote,
+                format!("Note {i}"),
+            )
+            .unwrap();
+        for f in item.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+            if f.id == "content" {
+                f.value = FfiFieldValue::Text {
+                    value: note.clone(),
+                };
+            }
+        }
+        big.push(a.session.save_item(item).unwrap().id);
+    }
+    let (n, ap) = confirmed(FfiDeviceMode::Personal);
+    let err = ap
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            true,
+        )
+        .unwrap_err();
+    assert!(
+        matches!(&err, OnePassError::InvalidInput { .. } if format!("{err:?}").contains("too large")),
+        "{err:?}"
+    );
+    assert_eq!(a.session.devices().unwrap().len(), 1, "nothing listed");
+
+    // Smaller now: the same pairing goes through and lists the device once.
+    for id in big {
+        a.session.delete_item(a.vault_id.clone(), id).unwrap();
+    }
+    let frame = ap
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            true,
+        )
+        .unwrap();
+    assert!(matches!(
+        n.open(frame).unwrap(),
+        FfiPairingMessage::FullGrant { .. }
+    ));
+    let listed = a.session.devices().unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(listed.iter().any(|d| d.id == n.device_id()));
+}
