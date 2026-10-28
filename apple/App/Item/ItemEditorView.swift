@@ -11,6 +11,8 @@ struct ItemEditorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editor: ItemEditorModel
     @State private var confirmDiscard = false
+    /// The site's icon, as on the item's page: editing keeps the same picture.
+    @State private var siteIcon: Data?
     /// The generator asked by a password field (presented here, not from the field's row).
     @State private var generatorRequest: GeneratorRequest?
     /// A passkey whose removal waits for "Supprimer la passkey ?" (section id, row key).
@@ -42,6 +44,9 @@ struct ItemEditorView: View {
     }
 
     private var item: FfiItem { editor.draft.item }
+    private var primaryURL: String? {
+        (item.urls.first(where: \.primary) ?? item.urls.first)?.url
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -203,7 +208,16 @@ struct ItemEditorView: View {
                 .tracking(0.6)
             #endif
             HStack(alignment: .center, spacing: 16) {
-                ItemIcon(type: item.itemType, title: item.title, siteIcon: nil, size: 64)
+                ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon, size: 64)
+                    .favoriteBadge(item.favorite, iconSize: 64)
+                    // Follows the website being typed: a new address loads its icon.
+                    .task(id: primaryURL) {
+                        guard let url = primaryURL else {
+                            siteIcon = nil
+                            return
+                        }
+                        siteIcon = await model.iconLoader.icon(for: url)
+                    }
                 TextField("Titre", text: $editor.draft.item.title, prompt: Text(ItemCategory.of(item.itemType).singular))
                     .textFieldStyle(.plain)
                     .font(.system(size: 26, weight: .bold))
