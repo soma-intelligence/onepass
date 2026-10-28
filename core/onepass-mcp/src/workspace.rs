@@ -12,7 +12,7 @@
 //! the agent as it is. The checks of [`LocalWorkspace`] are the contract:
 //! another workspace must apply the same ones, best by delegating to it.
 
-use crate::runner::{self, RunOutput, RunRequest};
+use crate::runner::{self, ProgramIdentity, RunOutput, RunRequest};
 use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
@@ -54,6 +54,13 @@ pub trait Workspace {
     /// Runs `req` and returns its raw output (masked later by the tool).
     fn run(&self, req: &RunRequest) -> Result<RunOutput, WorkspaceRefusal>;
 
+    /// The program `argv` would run from `cwd`, pinned for a session grant
+    /// (absolute path and content digests). `None` when this workspace
+    /// cannot tell: such a request is never remembered.
+    fn program_identity(&self, _argv: &[String], _cwd: Option<&Path>) -> Option<ProgramIdentity> {
+        None
+    }
+
     /// The template at `path`: a regular UTF-8 file of at most
     /// [`MAX_TEMPLATE`] bytes, outside `forbidden`.
     fn read_template(
@@ -89,6 +96,10 @@ pub trait Workspace {
 pub struct LocalWorkspace;
 
 impl Workspace for LocalWorkspace {
+    fn program_identity(&self, argv: &[String], cwd: Option<&Path>) -> Option<ProgramIdentity> {
+        runner::program_identity(argv, cwd)
+    }
+
     fn run(&self, req: &RunRequest) -> Result<RunOutput, WorkspaceRefusal> {
         runner::run(req).map_err(|e| io_refusal("command could not be started", &e))
     }

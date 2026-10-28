@@ -54,7 +54,10 @@ fn run_with_secrets_injects_and_masks() {
     assert_eq!(calls.len(), 1);
     let req = &calls[0];
     assert_eq!(req.action, "run_with_secrets");
-    assert!(req.remember_allowed);
+    // `sh` runs code the approval cannot pin: never remembered.
+    assert!(!req.remember_allowed);
+    let program = req.details.iter().find(|(l, _)| l == "program").unwrap();
+    assert!(program.1.ends_with("/sh"), "{}", program.1);
     assert_eq!(req.targets.len(), 1);
     assert_eq!(req.targets[0].vault, "Dev");
     assert_eq!(req.targets[0].item, "GitHub");
@@ -141,6 +144,80 @@ fn run_with_secrets_invalid_names() {
     );
     invalid(out);
     assert!(a.calls().is_empty());
+}
+
+/// Audit 2026-10-28: a grant for `tool` must not cover another program
+/// at the same path (a shim dropped in `PATH`, a binary replaced), nor the
+/// same program reading an edited file.
+#[test]
+fn session_grant_is_bound_to_the_program_and_its_files() {
+    let a = approver(vec![
+        Decision::AllowFor(std::time::Duration::from_secs(300));
+        4
+    ]);
+    let (mut t, audit) = tools_with_audit(default_policy(), a.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let tool = dir.path().join("tool");
+    fs::copy("/bin/echo", &tool).unwrap();
+    let data = dir.path().join("input.txt");
+    fs::write(&data, "one").unwrap();
+    let args = json!({
+        "command": [tool.to_str().unwrap(), "input.txt"],
+        "cwd": dir.path().to_str().unwrap(),
+        "env": {"T": "onepass://Dev/GitHub/password"},
+    });
+    ok(call(&mut t, "run_with_secrets", args.clone()));
+    ok(call(&mut t, "run_with_secrets", args.clone()));
+    assert_eq!(a.calls().len(), 1);
+    // Same path, other content: asked again.
+    fs::remove_file(&tool).unwrap();
+    fs::copy("/bin/ls", &tool).unwrap();
+    ok(call(&mut t, "run_with_secrets", args.clone()));
+    assert_eq!(a.calls().len(), 2);
+    // The file it reads changed: asked again.
+    fs::write(&data, "two").unwrap();
+    ok(call(&mut t, "run_with_secrets", args.clone()));
+    assert_eq!(a.calls().len(), 3);
+    let decisions: Vec<String> = audit.entries().into_iter().map(|e| e.decision).collect();
+    assert_eq!(
+        decisions,
+        ["grant_5m", "remembered", "grant_5m", "grant_5m"]
+    );
+}
+
+/// A bare name runs the program `PATH` named when it was approved, shown in
+/// the prompt; a program the workspace cannot pin is never remembered.
+#[test]
+fn run_with_secrets_resolves_the_program_before_approval() {
+    let a = approver(vec![Decision::AllowOnce, Decision::AllowOnce]);
+    let mut t = tools(default_policy(), a.clone());
+    let v = ok(call(
+        &mut t,
+        "run_with_secrets",
+        json!({"command": ["echo", "hi"], "env": {"T": "onepass://Dev/GitHub/password"}}),
+    ));
+    assert_eq!(v["stdout"], "hi\n");
+    let calls = a.calls();
+    let program = calls[0]
+        .details
+        .iter()
+        .find(|(l, _)| l == "program")
+        .unwrap();
+    assert!(
+        program.1.starts_with('/') && program.1.ends_with("/echo"),
+        "{}",
+        program.1
+    );
+    assert!(calls[0].remember_allowed);
+
+    let _ = call(
+        &mut t,
+        "run_with_secrets",
+        json!({"command": ["no-such-program-onepass"], "env": {"T": "onepass://Dev/GitHub/password"}}),
+    );
+    let calls = a.calls();
+    assert!(!calls[1].remember_allowed);
+    assert!(calls[1].details.iter().all(|(l, _)| l != "program"));
 }
 
 #[test]

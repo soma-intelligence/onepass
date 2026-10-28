@@ -17,7 +17,10 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use data_encoding::HEXLOWER;
+use serde_json::{Value, json};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -89,6 +92,95 @@ fn kill_group(pgid: u32) {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
+}
+
+/// The program a command runs, pinned for a session grant.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProgramIdentity {
+    /// Absolute, canonical path of the program: what runs.
+    pub path: String,
+    /// What a grant is bound to: the path, the program's SHA-256, and the
+    /// SHA-256 of every argument that names a regular file.
+    pub material: serde_json::Value,
+}
+
+/// The identity of the program `argv` runs here, `None` if it cannot be
+/// resolved or read.
+pub fn program_identity(argv: &[String], cwd: Option<&Path>) -> Option<ProgramIdentity> {
+    let (first, rest) = argv.split_first()?;
+    let path = resolve_program(first, cwd, std::env::var_os("PATH").as_deref())?;
+    let material = program_material(&path, rest, cwd)?;
+    Some(ProgramIdentity {
+        path: path.to_str()?.to_owned(),
+        material,
+    })
+}
+
+/// The absolute, canonical path `argv[0]` runs: as given when it holds a
+/// `/` (relative to `cwd`), else the first executable regular file named so
+/// in `PATH`, as `execvp` would pick it.
+pub fn resolve_program(
+    program: &str,
+    cwd: Option<&Path>,
+    path: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    let executable = |p: &Path| {
+        std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    };
+    let base = |p: &Path| match cwd {
+        Some(c) if p.is_relative() => c.join(p),
+        _ => p.to_path_buf(),
+    };
+    let found = if program.contains('/') {
+        Some(base(Path::new(program))).filter(|p| executable(p))
+    } else {
+        std::env::split_paths(path?)
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .map(|dir| base(&dir).join(program))
+            .find(|p| executable(p))
+    }?;
+    std::fs::canonicalize(found).ok()
+}
+
+/// SHA-256 (hex) of the file at `p`, `None` if it cannot be read.
+fn file_digest(p: &Path) -> Option<String> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(p).ok()?;
+    let mut ctx = aws_lc_rs::digest::Context::new(&aws_lc_rs::digest::SHA256);
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        match f.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => ctx.update(&buf[..n]),
+            Err(_) => return None,
+        }
+    }
+    Some(HEXLOWER.encode(ctx.finish().as_ref()))
+}
+
+/// What a remembered `run_with_secrets` grant is bound to beyond the
+/// request text: the program that runs and its content, and the content of
+/// every argument that names a regular file (a script it may read).
+fn program_material(program: &Path, args: &[String], cwd: Option<&Path>) -> Option<Value> {
+    let operands: Vec<Value> = args
+        .iter()
+        .filter_map(|a| {
+            let p = match cwd {
+                Some(c) if Path::new(a).is_relative() => c.join(a),
+                _ => PathBuf::from(a),
+            };
+            std::fs::metadata(&p)
+                .is_ok_and(|m| m.is_file())
+                .then(|| file_digest(&p).map(|d| json!([a, d])))
+                .flatten()
+        })
+        .collect();
+    Some(json!([
+        program.to_string_lossy(),
+        file_digest(program)?,
+        operands
+    ]))
 }
 
 /// Runs `req` and waits for it, at most `req.timeout`.
