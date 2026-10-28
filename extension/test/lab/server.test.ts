@@ -96,6 +96,21 @@ describe("lab server", () => {
     expect((await req("unknown-host.test", "/")).status).toBe(404);
   });
 
+  it("label_marks_only_in_dataset_mode", async () => {
+    const withForm = world.sites.find((x) => x.flow === "login_single" && !x.traits.some((t) => /iframe|shadow|delayed/.test(t)))!;
+    expect((await req(withForm.host, "/")).body).not.toContain("data-lab-field");
+    const dsDir = mkdtempSync(join(tmpdir(), "lab-server-ds-"));
+    const ds = await startLabServer(world, generateCert(dsDir, world.hosts), { labelMarks: true });
+    try {
+      const r = await client(ds.port)(withForm.host, "/");
+      expect(r.body).toContain("data-lab-field");
+      if (withForm.lookalike) expect((await client(ds.port)(withForm.lookalike.host, "/")).body).toContain("data-lab-field");
+    } finally {
+      await ds.close();
+      rmSync(dsDir, { recursive: true, force: true });
+    }
+  });
+
   it("password_login_signs_in", async () => {
     const s = flow("login_single");
     const r = await req(s.host, "/", { [field(s, "username")]: s.account!.username, [field(s, "password")]: s.account!.password });

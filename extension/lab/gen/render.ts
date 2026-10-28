@@ -80,7 +80,7 @@ function styleOf(site: Site): LoginStyle {
 }
 
 /** Fields shown by a page, in order. Entry-like pages (entry, frame, trap) hold the first step. */
-function pageFields(site: Site, page: PageId, step = 0): FieldSpec[] {
+export function pageFields(site: Site, page: PageId, step = 0): FieldSpec[] {
   if (site.steps) {
     if (page === "step") return site.steps[step] ?? [];
     return page === "entry" || page === "frame" || page === "trap" ? site.steps[0] ?? [] : [];
@@ -157,7 +157,7 @@ ${body}
 }
 
 /** The form of a page with its structural traits (delay, shadow root, rerender) and traps (honeypot, decoy). */
-function mountedForm(site: Site, page: PageId, action: string, step = 0): string {
+function mountedForm(site: Site, page: PageId, action: string, step = 0, labelMarks = false): string {
   const fields = pageFields(site, page, step);
   const entryLike = page === "entry" || page === "frame" || page === "trap";
   const style = styleOf(site);
@@ -174,7 +174,7 @@ function mountedForm(site: Site, page: PageId, action: string, step = 0): string
     next: site.buttons.next,
   };
   const framework = site.framework ?? "static";
-  const form = formHtml(spec, { layout: site.layout ?? "stacked", framework });
+  const form = formHtml(spec, { layout: site.layout ?? "stacked", framework, labelMarks });
   const shadow = has("shadow_open") ? "open" : has("shadow_closed") ? "closed" : undefined;
   const cfg: RuntimeConfig = {
     spa: has("spa_rerender"), reveal, split: spec.splitOtp,
@@ -205,7 +205,11 @@ function passkeyBlock(site: Site, host: string, ctx: PageContext): string {
   });
 }
 
-export function renderSitePage(site: Site, page: PageId, ctx: PageContext): string {
+/** `labelMarks`: dataset mode only, adds data-lab-field="<index among the page's fields>" to each control. The lab runs never set it. */
+export interface RenderOptions { labelMarks?: boolean }
+
+export function renderSitePage(site: Site, page: PageId, ctx: PageContext, opts: RenderOptions = {}): string {
+  const marks = opts.labelMarks === true;
   // The lookalike copy keeps the brand (that is the phishing point) but lives on its own host.
   const host = page === "trap" ? ctx.asHost ?? site.lookalike?.host ?? site.host : site.host;
   const heading = headingOf(site, page, ctx.step);
@@ -219,16 +223,16 @@ export function renderSitePage(site: Site, page: PageId, ctx: PageContext): stri
       parts.push(passkeyBlock(site, host, ctx));
       break;
     case "password":
-      parts.push(mountedForm(site, page, PAGE_PATH.password));
+      parts.push(mountedForm(site, page, PAGE_PATH.password, 0, marks));
       break;
     case "otp":
-      parts.push(mountedForm(site, page, PAGE_PATH.otp));
+      parts.push(mountedForm(site, page, PAGE_PATH.otp, 0, marks));
       break;
     case "step":
-      parts.push(mountedForm(site, page, stepPath(ctx.step ?? 0), ctx.step ?? 0));
+      parts.push(mountedForm(site, page, stepPath(ctx.step ?? 0), ctx.step ?? 0, marks));
       break;
     case "frame":
-      parts.push(mountedForm(site, page, `https://${site.frameHost ?? site.host}${PAGE_PATH.frame}`));
+      parts.push(mountedForm(site, page, `https://${site.frameHost ?? site.host}${PAGE_PATH.frame}`, 0, marks));
       break;
     case "entry":
     case "trap":
@@ -236,7 +240,7 @@ export function renderSitePage(site: Site, page: PageId, ctx: PageContext): stri
         const idp = IDP_HOST[site.sso.provider];
         const href = `https://${idp}/o/oauth2/auth?client=${host}&redirect_uri=https://${host}/oauth/callback`;
         // An sso site may also show a password form; the provider button stays.
-        if (site.fields.length > 0) parts.push(mountedForm(site, page, PAGE_PATH.entry));
+        if (site.fields.length > 0) parts.push(mountedForm(site, page, PAGE_PATH.entry, 0, marks));
         parts.push(`<a id="lab-sso" class="btn" href="${esc(href)}">${esc(site.buttons.sso ?? PROVIDER_NAME[site.sso.provider])}</a>`);
       } else if (site.flow === "login_passkey" && site.passkeyOnly) {
         parts.push(passkeyBlock(site, host, ctx));
@@ -244,7 +248,7 @@ export function renderSitePage(site: Site, page: PageId, ctx: PageContext): stri
         const src = `https://${site.frameHost ?? site.host}${PAGE_PATH.frame}?site=${site.index}`;
         parts.push(`<iframe src="${esc(src)}" title="${esc(heading)}"></iframe>`);
       } else {
-        parts.push(mountedForm(site, page, PAGE_PATH.entry));
+        parts.push(mountedForm(site, page, PAGE_PATH.entry, 0, marks));
       }
       break;
   }

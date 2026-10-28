@@ -2,6 +2,7 @@
 //   lab    --seed <s> --sites <n> [--profiles <n>] [--workers 4] [--report <md>]
 //   repro  --seed <s> --site <i> [--sites <n>] [--profiles <n>]
 //   report --out <dir> [--md <file>]
+//   dataset --seed <s> --forms <n> [--workers <k>]   (labelled field dataset, lab/dataset/build.ts)
 // `lab` and `repro` run the Playwright lab with the LAB_* variables, then write
 // the report; the exit code is 1 when a leak was found.
 import { spawnSync } from "node:child_process";
@@ -129,10 +130,15 @@ function main(argv: string[]): number {
     const profiles = a.profiles !== undefined ? posInt(a, "profiles", 1) : 1;
     return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_PROFILES: String(profiles), LAB_ONLY: String(site), LAB_OUT: reproOut }, reproOut, a.workers, a.report);
   }
+  if (cmd === "dataset") {
+    const args = ["--experimental-strip-types", "lab/dataset/build.ts", "--seed", need(a, "seed"), "--forms", String(posInt(a, "forms", 1))];
+    if (a.workers !== undefined) args.push("--workers", String(posInt(a, "workers", 1)));
+    return spawnSync("node", args, { cwd: EXT_ROOT, stdio: "inherit" }).status ?? 1;
+  }
   if (cmd === "report") {
     return writeReport(absolute(need(a, "out")), a.md) > 0 ? 1 : 0;
   }
-  console.error("usage: lab --seed <s> --sites <n> [--profiles <n>] [--workers 4] [--report <md>] | repro --seed <s> --site <i> [--sites <n>] [--profiles <n>] | report --out <dir> [--md <file>]");
+  console.error("usage: lab --seed <s> --sites <n> [--profiles <n>] [--workers 4] [--report <md>] | repro --seed <s> --site <i> [--sites <n>] [--profiles <n>] | report --out <dir> [--md <file>] | dataset --seed <s> --forms <n> [--workers <k>]");
   return 2;
 }
 
