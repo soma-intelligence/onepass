@@ -223,7 +223,8 @@ private struct BrandCard: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundStyle(.white)
-                .frame(width: width * (brand == "visa" ? 0.34 : 0.26), height: width * 0.16)
+                .frame(width: width * (brand == "visa" ? 0.42 : brand == "amex" ? 0.24 : 0.3),
+                    height: width * (brand == "amex" ? 0.24 : 0.18))
         }
     }
 }
