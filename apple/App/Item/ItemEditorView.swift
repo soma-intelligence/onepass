@@ -89,6 +89,11 @@ struct ItemEditorView: View {
                 #endif
             }
             .scrollDismissesKeyboard(.interactively)
+            #if os(macOS)
+            // Fields scrolling up fade out under the toolbar instead of running behind Annuler and
+            // Enregistrer (they float without glass of their own).
+            .scrollEdgeEffectStyle(.hard, for: .top)
+            #endif
             .defaultScrollAnchor(.top)
             .groupedScreen()
             .environment(\.requestGenerator) { request in generatorRequest = request }
@@ -123,11 +128,7 @@ struct ItemEditorView: View {
             }
             .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
-                saveButton
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.large)
-                    .fontWeight(.semibold)
+                saveButton.buttonStyle(AccentCapsuleButtonStyle())
             }
             .sharedBackgroundVisibility(.hidden)
             #else
@@ -836,6 +837,34 @@ private struct AddFieldTile: View {
 }
 
 #if os(macOS)
+/// The toolbar's main action: white semibold text on an accent capsule (the system prominent style
+/// draws as bare text in a toolbar item without shared glass). Dims when disabled.
+struct AccentCapsuleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        AccentBody(configuration: configuration)
+    }
+
+    private struct AccentBody: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(Theme.accent.mix(with: .white, by: hovering ? 0.1 : 0), in: .capsule)
+                .overlay { Capsule().strokeBorder(.white.opacity(0.14), lineWidth: 0.5) }
+                .contentShape(.capsule)
+                .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.45)
+                .onHover { hovering = $0 }
+                .animation(.easeOut(duration: 0.12), value: hovering)
+        }
+    }
+}
+
 /// A text-only toolbar button: secondary text that brightens and gets a soft capsule under the
 /// pointer, so "Annuler" sits next to the accent "Enregistrer" without competing with it.
 struct QuietToolbarButtonStyle: ButtonStyle {

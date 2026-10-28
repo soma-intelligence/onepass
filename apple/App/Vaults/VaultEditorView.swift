@@ -252,10 +252,7 @@ struct VaultEditorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(vault == nil ? "Créer" : "Enregistrer", action: save)
                         #if os(macOS)
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.large)
-                        .fontWeight(.semibold)
+                        .buttonStyle(AccentCapsuleButtonStyle())
                         #endif
                         .disabled(!canSave)
                         .accessibilityIdentifier("vault.editor.save")
