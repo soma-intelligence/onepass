@@ -45,6 +45,8 @@ final class AppModel {
     /// The onboarding stays on screen until "Ouvrir OnePass", even though the account creation
     /// already unlocked the session.
     var onboardingInProgress = false
+    /// A guest session lent by another device (spec 2b 5.4): its own root, nothing on disk.
+    var publicSession: PublicSession?
 
     // Navigation (filled by the browse screens).
     var selection: ItemFilter = .all {
@@ -358,6 +360,8 @@ final class AppModel {
         case .inactive:
             session.scenePhaseChanged(.inactive)
         case .background:
+            // A guest session never survives the app leaving the screen (ruling A7).
+            publicSession?.end()
             session.scenePhaseChanged(.background)
             #if os(iOS) || os(visionOS)
             lockWhileBackgroundTimeLasts()

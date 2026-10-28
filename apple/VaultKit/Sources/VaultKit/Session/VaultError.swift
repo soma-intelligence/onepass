@@ -11,6 +11,8 @@ public enum VaultError: Error, Equatable, Sendable {
     case conflict
     case biometricsUnavailable
     case passwordRequired
+    /// The signed device list marks this device revoked: everything was erased from it.
+    case deviceRevoked
     case other(String)
 
     /// Maps a core, biometric or keychain error. Anything else becomes `.other` with a generic message.
@@ -65,6 +67,8 @@ public enum VaultError: Error, Equatable, Sendable {
             String(localized: "La biométrie n'est pas disponible sur cet appareil.", bundle: VaultKitStrings.bundle)
         case .passwordRequired:
             String(localized: "Saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
+        case .deviceRevoked:
+            String(localized: "Cet appareil a été retiré de ton compte OnePass.", bundle: VaultKitStrings.bundle)
         case .other(let message):
             message
         }
@@ -95,6 +99,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case "is not a valid national number": String(localized: "Numéro invalide", bundle: VaultKitStrings.bundle)
         case "must not be empty": String(localized: "Ne peut pas être vide", bundle: VaultKitStrings.bundle)
         case "too weak": String(localized: "Trop facile à deviner : allonge-la ou ajoute des mots.", bundle: VaultKitStrings.bundle)
+        case "this device": String(localized: "Cet appareil ne peut pas se retirer lui-même.", bundle: VaultKitStrings.bundle)
         default: String(localized: "Valeur invalide", bundle: VaultKitStrings.bundle)
         }
     }
@@ -106,6 +111,11 @@ public enum VaultError: Error, Equatable, Sendable {
         case "date", "month", "timestamp": String(localized: "Date invalide.", bundle: VaultKitStrings.bundle)
         case "recipe": String(localized: "Réglages du générateur invalides.", bundle: VaultKitStrings.bundle)
         case "passphrase": String(localized: "Phrase de passe illisible.", bundle: VaultKitStrings.bundle)
+        case "last vault": String(localized: "Le dernier coffre ne peut pas être supprimé.", bundle: VaultKitStrings.bundle)
+        case "vault not empty": String(localized: "Vide ce coffre avant de le supprimer.", bundle: VaultKitStrings.bundle)
+        case "account not synced": String(localized: "Synchronise d'abord cet appareil.", bundle: VaultKitStrings.bundle)
+        case "pairing snapshot too large":
+            String(localized: "Ce compte est trop gros pour être copié par appairage.", bundle: VaultKitStrings.bundle)
         default: developerMessage(what) ?? importMessage(what) ?? String(localized: "Valeur invalide.", bundle: VaultKitStrings.bundle)
         }
     }

@@ -120,6 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quit (also after the last window closed): `lock()` drops the keys and clears our clipboard
     /// value, which macOS would otherwise keep after the process is gone (no system expiration).
     func applicationWillTerminate(_ notification: Notification) {
+        // Quitting or closing the window ends a guest session (ruling A7).
+        model?.publicSession?.end()
         model?.lock()
     }
 

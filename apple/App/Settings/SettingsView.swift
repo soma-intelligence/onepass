@@ -2,11 +2,11 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// The pages of the settings (spec 6.1, plus Remplissage automatique from milestone 3, Travel Mode and,
-/// on the Mac, Développeur from milestone 7): a grouped list on iPhone and iPad, tabs in the Mac
-/// `Settings` window.
+/// The pages of the settings (spec 6.1, plus Remplissage automatique from milestone 3, Appareils
+/// from milestone 2b, Travel Mode and, on the Mac, Développeur from milestone 7): a grouped list on
+/// iPhone and iPad, tabs in the Mac `Settings` window.
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, security, autofill, sync, vaults, travel, developer, about
+    case general, security, autofill, sync, vaults, devices, travel, developer, about
 
     var id: String { rawValue }
 
@@ -17,6 +17,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .autofill: "Remplissage automatique"
         case .sync: "Sync"
         case .vaults: "Coffres"
+        case .devices: "Appareils"
         case .travel: "Travel Mode"
         case .developer: "Développeur"
         case .about: "À propos"
@@ -30,6 +31,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .autofill: "key.viewfinder"
         case .sync: "arrow.triangle.2.circlepath.icloud"
         case .vaults: "square.stack.3d.up"
+        case .devices: "laptopcomputer.and.iphone"
         case .travel: "airplane"
         case .developer: "chevron.left.forwardslash.chevron.right"
         case .about: "info.circle"
@@ -43,6 +45,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .autofill: Color(red: 0.20, green: 0.47, blue: 0.96)
         case .sync: Color(red: 0.13, green: 0.63, blue: 0.42)
         case .vaults: Color(red: 0.49, green: 0.23, blue: 0.93)
+        case .devices: Color(red: 0.0, green: 0.55, blue: 0.70)
         case .travel: Color(red: 0.0, green: 0.55, blue: 0.75)
         case .developer: Color(red: 0x47 / 255, green: 0x55 / 255, blue: 0x69 / 255)
         case .about: Color(red: 0.36, green: 0.40, blue: 0.45)
@@ -57,6 +60,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .autofill: AutoFillSettings()
         case .sync: SyncSettings()
         case .vaults: VaultsSettings()
+        case .devices: DevicesSettings()
         case .travel: TravelSettings()
         case .developer:
             #if os(macOS)
@@ -107,6 +111,7 @@ struct SettingsView: View {
                 }
                 Section {
                     row(.vaults)
+                    row(.devices)
                     row(.travel)
                     #if os(iOS)
                     watchRow
@@ -258,6 +263,7 @@ struct MacSettingsView: View {
                         }
                         Section {
                             row(.vaults)
+                            row(.devices)
                             row(.travel)
                             row(.developer)
                         }
