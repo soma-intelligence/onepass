@@ -110,7 +110,7 @@ spctl --assess --type execute --verbose=2 OnePass.app     # "source=Notarized De
 xcrun stapler validate OnePass.app
 ```
 
-Les binaires `onepass-<v>-<cible>` sont la CLI de développement (`core/onepass-cli`) : elle garde des secrets sous une forme réservée au développement (voir `README.md`), à ne pas utiliser pour de vrais secrets. Le binaire macOS n'est signé qu'ad hoc (par l'éditeur de liens) et n'est pas notarisé : après un téléchargement par navigateur, `xattr -d com.apple.quarantine` et `chmod +x` sont nécessaires.
+Les binaires `onepass-<v>-<cible>` sont la CLI de développement (`core/onepass-cli`) : elle garde la Secret Key dans le trousseau macOS ou le Secret Service Linux (voir `core/README.md`), mais reste un outil de développement en préversion. Le binaire Linux a besoin de `libdbus-1` à l'exécution. Le binaire macOS n'est signé qu'ad hoc (par l'éditeur de liens) et n'est pas notarisé : après un téléchargement par navigateur, `xattr -d com.apple.quarantine` et `chmod +x` sont nécessaires.
 
 ## Ce que l'attestation prouve, et ce qu'elle ne prouve pas
 
