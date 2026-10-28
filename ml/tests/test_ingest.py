@@ -1,5 +1,6 @@
 import gzip
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -211,3 +212,48 @@ def test_replaces_existing_output(tmp_path):
     ingest(make_src(tmp_path), tmp_path / "dst")
     m = ingest(tmp_path / "src", tmp_path / "dst")
     assert m["rows"] == 300 and not (tmp_path / "dst.tmp").exists()
+
+
+def test_failed_swap_keeps_previous_output(tmp_path, monkeypatch):
+    src = make_src(tmp_path)
+    dst = tmp_path / "dst"
+    ingest(src, dst)
+    before = {f.name: f.read_bytes() for f in dst.iterdir()}
+    calls = []
+    real = os.rename
+
+    def flaky(a, b):
+        calls.append(1)
+        if len(calls) == 2:
+            raise OSError("boom")
+        return real(a, b)
+
+    monkeypatch.setattr(os, "rename", flaky)
+    with pytest.raises(OSError, match="boom"):
+        ingest(src, dst)
+    monkeypatch.undo()
+    assert {f.name: f.read_bytes() for f in dst.iterdir()} == before
+    assert not (tmp_path / "dst.tmp").exists() and not (tmp_path / "dst.old").exists()
+
+
+def test_manifest_without_rows(tmp_path):
+    m = {k: v for k, v in MANIFEST.items() if k != "rows"}
+    with pytest.raises(ValueError, match="rows"):
+        ingest(make_src(tmp_path, manifest=m), tmp_path / "dst")
+
+
+def test_writers_closed_when_second_fails(tmp_path, monkeypatch):
+    opened = []
+    real = pq.ParquetWriter
+
+    class W(real):
+        def __init__(self, *a, **k):
+            if len(opened) == 1:
+                raise OSError("second writer")
+            super().__init__(*a, **k)
+            opened.append(self)
+
+    monkeypatch.setattr(pq, "ParquetWriter", W)
+    with pytest.raises(OSError, match="second writer"):
+        ingest(make_src(tmp_path), tmp_path / "dst")
+    assert opened and opened[0].is_open is False
