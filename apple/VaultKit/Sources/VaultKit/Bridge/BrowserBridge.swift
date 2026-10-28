@@ -97,6 +97,12 @@ public final class BrowserBridge {
         requests = []
     }
 
+    /// False when "Approuver" would be refused: the vault is locked or Touch ID is off in OnePass.
+    /// The pairing sheet says so before the user tries.
+    public var canApprove: Bool {
+        session.state == .unlocked && session.canUseBiometrics
+    }
+
     /// "Approuver": Touch ID (or the watch) on an unlocked vault, then the code is accepted.
     /// Without biometrics, or locked, the pairing is refused: the user unlocks, enrolls and retries.
     public func approve(_ id: UInt64) async {

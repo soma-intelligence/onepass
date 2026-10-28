@@ -169,7 +169,13 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     h("button", { class: "btn-icon", attrs: { type: "button", "aria-label": label, title: label }, on: { click: () => fn() } }, icon(glyph, size));
 
   // ---- full-page states ----
-  const center = (...children: (Node | null)[]) => mount(container, h("div", { class: "center" }, ...children));
+  // Message states (pairing, locked, missing app) get a compact popup sized to their content;
+  // the list and detail views keep the full size.
+  const compact = (on: boolean) => container.ownerDocument.body.classList.toggle("compact", on);
+  const center = (...children: (Node | null)[]) => {
+    compact(true);
+    mount(container, h("div", { class: "center" }, ...children));
+  };
 
   function renderUnpaired(err?: string): void {
     center(
@@ -218,6 +224,19 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   }
 
   async function approve(): Promise<void> {
+    // Approving in the app closes this popup in Safari: the pairing goes on without it.
+    center(
+      mark("l"),
+      h("h1", null, tr("Approuve dans l'app OnePass", "Approve in the OnePass app")),
+      h(
+        "p",
+        null,
+        tr(
+          "Clique sur « Approuver » dans OnePass et confirme avec Touch ID. Tu peux fermer cette fenêtre.",
+          "Click Approve in OnePass and confirm with Touch ID. You can close this window.",
+        ),
+      ),
+    );
     const r = await call(deps.send, { type: "popup_pair_approve" }, parseEmpty);
     if (!r.ok) {
       renderUnpaired(errorText(r.code));
@@ -331,6 +350,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       icon("key", 18),
     );
     const account = status?.account ?? "";
+    compact(false);
     mount(
       container,
       h(
@@ -748,7 +768,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     renderMain();
   }
 
-  mount(container, h("div", { class: "center" }, mark("l")));
+  center(mark("l"));
   // A pairing in progress dies with the popup.
   addEventListener("pagehide", () => void deps.send({ type: "popup_pair_cancel" }).catch(() => undefined));
   const ready = load();

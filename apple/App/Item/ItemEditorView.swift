@@ -245,7 +245,7 @@ struct ItemEditorView: View {
                             field.kind != .passkey, field.kind != .file
                         {
                             CardDivider()
-                            AddRowButton(title: "ajouter \(field.displayLabel(itemType: item.itemType).lowercasedFirst)") {
+                            AddRowButton(title: String(localized: "ajouter \(field.displayLabel(itemType: item.itemType).lowercasedFirst)")) {
                                 editor.addRepeat(of: field.id, in: section.id)
                                 pinLastRow(of: field.id, in: section.id)
                             }
@@ -402,7 +402,7 @@ struct ItemEditorView: View {
                 .accessibilityIdentifier("editor.location.\(index)")
                 CardDivider()
             }
-            AddRowButton(title: item.locations.isEmpty ? "ajouter un lieu" : "ajouter un autre lieu") {
+            AddRowButton(title: item.locations.isEmpty ? String(localized: "ajouter un lieu") : String(localized: "ajouter un autre lieu")) {
                 searchingPlace = true
             }
             .accessibilityIdentifier("editor.location")

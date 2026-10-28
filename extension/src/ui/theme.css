@@ -433,7 +433,7 @@ body.frame, body.frame #root { height: auto; }
 .saved-art { position: relative; display: block; }
 .ok-badge { position: absolute; right: -6px; bottom: -6px; width: 22px; height: 22px; border-radius: 50%; background: var(--ok); color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 3px var(--pop); }
 
-/* ---- popup (780 x 600) ---- */
+/* ---- popup (780 x 600; 380 x 420 for message states) ---- */
 body.popup {
   width: 780px;
   height: 600px;
@@ -443,6 +443,10 @@ body.popup {
     radial-gradient(420px 300px at 105% 110%, var(--wash), transparent 70%),
     var(--ground);
 }
+/* Message states (pairing, locked, missing app): a smaller popup. Fixed sizes only: Safari sizes
+   its popover from the body box and does not follow an auto height. */
+body.popup.compact { width: 380px; height: 420px; }
+body.popup.compact .center { height: 100%; padding: 28px 24px; }
 .pp { height: 100%; display: flex; flex-direction: column; position: relative; }
 .pp-head { height: 60px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 14px; }
 .brand { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; padding-right: 4px; flex-shrink: 0; }

@@ -220,7 +220,7 @@ struct LoginMethodCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            EditorLabel("se connecte avec").padding(.leading, 16)
+            EditorLabel(String(localized: "se connecte avec")).padding(.leading, 16)
             EditorCard {
                 ChipFlow(spacing: 8) {
                     chip(nil)

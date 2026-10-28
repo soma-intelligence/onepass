@@ -360,7 +360,10 @@ export function errorText(code: string): string {
     case "timeout":
       return tr("L'app OnePass ne répond pas.", "The OnePass app is not responding.");
     case "refused":
-      return tr("Appairage refusé dans l'app OnePass.", "Pairing refused in the OnePass app.");
+      return tr(
+        "Appairage refusé dans l'app OnePass. Elle demande Touch ID : active-le dans OnePass (Réglages > Sécurité), puis recommence.",
+        "Pairing refused in the OnePass app. It asks for Touch ID: turn it on in OnePass (Settings > Security), then try again.",
+      );
     case "expired":
       return tr("Le code a expiré. Recommence l'appairage.", "The code expired. Start pairing again.");
     case "no_form":

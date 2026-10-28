@@ -1348,7 +1348,7 @@ struct DocumentCard: View {
             }
             CardDivider()
             VStack(alignment: .leading, spacing: 3) {
-                EditorLabel("taille du fichier")
+                EditorLabel(String(localized: "taille du fichier"))
                 Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: attachment.size), countStyle: .file))
             }
             .frame(maxWidth: .infinity, alignment: .leading)

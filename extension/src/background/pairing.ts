@@ -29,10 +29,18 @@ interface Pending {
   client: BridgeLike;
   done: Promise<PairingRecord>;
   decide: ((ok: boolean) => void) | undefined;
+  /** The user said the codes match: the app's answer is awaited even if the popup closes. */
+  confirmed: boolean;
 }
 
 function quiet(p: Promise<unknown>): void {
   p.catch(() => undefined);
+}
+
+/** The app answers a refused pairing with `not_allowed`: say it was refused. */
+function pairingError(e: unknown): BgError {
+  const err = toBgError(e);
+  return err.code === "not_allowed" ? new BgError("refused") : err;
 }
 
 export class PairingFlow {
@@ -42,7 +50,7 @@ export class PairingFlow {
 
   /** Start a pairing; resolves with the code to compare. Cancels any previous one. */
   async startPairing(): Promise<{ sas: string }> {
-    this.cancelPairing();
+    this.abort();
     let client: BridgeLike;
     try {
       client = this.deps.newClient();
@@ -51,7 +59,12 @@ export class PairingFlow {
     }
     let gotSas!: (s: string) => void;
     const sasP = new Promise<string>((r) => (gotSas = r));
-    const cur: Pending = { client, done: Promise.resolve() as unknown as Promise<PairingRecord>, decide: undefined };
+    const cur: Pending = {
+      client,
+      done: Promise.resolve() as unknown as Promise<PairingRecord>,
+      decide: undefined,
+      confirmed: false,
+    };
     cur.done = client.pair(EXT_NAME, this.deps.browser ?? "Chromium", (sas) => {
       gotSas(sas);
       return new Promise<boolean>((resolve) => {
@@ -71,21 +84,23 @@ export class PairingFlow {
     } catch (e) {
       if (this.current === cur) this.current = undefined;
       client.close();
-      throw toBgError(e);
+      throw pairingError(e);
     }
   }
 
   /** The user confirmed the codes match: finish, store, open the session. */
   async confirmPairing(): Promise<void> {
     const cur = this.current;
-    if (!cur?.decide) throw new BgError("invalid");
+    // The flow ended (popup closed before the codes were confirmed, or a newer pairing).
+    if (!cur?.decide) throw new BgError("expired");
+    cur.confirmed = true;
     cur.decide(true);
     let record: PairingRecord;
     try {
       record = await cur.done;
     } catch (e) {
       cur.client.close();
-      throw toBgError(e);
+      throw pairingError(e);
     } finally {
       if (this.current === cur) this.current = undefined;
     }
@@ -105,8 +120,16 @@ export class PairingFlow {
     }
   }
 
-  /** The user cancelled, or the popup closed. */
+  /**
+   * The user cancelled, or the popup closed. Once the codes are confirmed the pairing waits for
+   * the app: in Safari, switching to the app to approve closes the popup.
+   */
   cancelPairing(): void {
+    if (this.current?.confirmed) return;
+    this.abort();
+  }
+
+  private abort(): void {
     const cur = this.current;
     if (!cur) return;
     this.current = undefined;
@@ -116,7 +139,7 @@ export class PairingFlow {
 
   /** Forget the pairing on this browser. */
   async forgetPairing(): Promise<void> {
-    this.cancelPairing();
+    this.abort();
     // Cleared first: callers waiting on the session retry and find nothing.
     await this.deps.store.clearPairing();
     this.deps.session.close();

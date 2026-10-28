@@ -960,6 +960,16 @@
         }
       }
     },
+    "Activer Touch ID…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn On Touch ID…"
+          }
+        }
+      }
+    },
     "Activer l'Apple Watch" : {
       "localizations" : {
         "en" : {
@@ -8200,6 +8210,16 @@
         }
       }
     },
+    "Pour approuver un navigateur, OnePass demande Touch ID. Active-le dans Réglages > Sécurité, puis approuve : l'extension attend." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To approve a browser, OnePass asks for Touch ID. Turn it on in Settings > Security, then approve: the extension is waiting."
+          }
+        }
+      }
+    },
     "Pour en sortir sans rien perdre, exporte d'abord ce que cet appareil contient, puis choisis la version à garder. Chaque action demande ton mot de passe maître." : {
       "localizations" : {
         "en" : {
@@ -10430,6 +10450,16 @@
         }
       }
     },
+    "Touch ID n'est pas activé dans OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touch ID is off in OnePass"
+          }
+        }
+      }
+    },
     "Touch ID à chaque signature" : {
       "localizations" : {
         "en" : {
@@ -11360,6 +11390,16 @@
         }
       }
     },
+    "ajouter %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "add %@"
+          }
+        }
+      }
+    },
     "ajouter plus" : {
       "localizations" : {
         "en" : {
@@ -11370,12 +11410,32 @@
         }
       }
     },
+    "ajouter un autre lieu" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "add another place"
+          }
+        }
+      }
+    },
     "ajouter un autre site web" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "add another website"
+          }
+        }
+      }
+    },
+    "ajouter un lieu" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "add a place"
           }
         }
       }
@@ -11850,6 +11910,16 @@
         }
       }
     },
+    "se connecte avec" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "signs in with"
+          }
+        }
+      }
+    },
     "site web" : {
       "localizations" : {
         "en" : {
@@ -11876,6 +11946,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "tags"
+          }
+        }
+      }
+    },
+    "taille du fichier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "file size"
           }
         }
       }
