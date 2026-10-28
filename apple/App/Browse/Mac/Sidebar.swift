@@ -95,6 +95,9 @@ struct Sidebar: View {
         // The whole column, header included, on the system's translucent sidebar material: the
         // desktop shows through, blurred, behind the account row and the list alike.
         .background { SidebarMaterial().ignoresSafeArea() }
+        // Light appearance: a brighter, airier column (a white wash over the blur, the desktop
+        // still showing through), so it no longer reads as a gray panel.
+        .background { SidebarLightWash().ignoresSafeArea() }
         #else
         list
         #endif
@@ -794,11 +797,19 @@ struct SettingsRow: View {
 #if os(macOS)
 /// Reads how much of the window the title bar and the toolbar cover (`contentLayoutRect`). Also used
 /// by the guest session's sidebar (`PublicSessionView`).
+private struct SidebarLightWash: View {
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        if scheme == .light { Color.white.opacity(0.32) } else { Color.clear }
+    }
+}
+
 /// AppKit's behind-window sidebar vibrancy, for the parts of the column SwiftUI draws itself.
 struct SidebarMaterial: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = .sidebar
+        // The lightest behind-window blur: more of the desktop shows through than with `.sidebar`.
+        view.material = .underWindowBackground
         view.blendingMode = .behindWindow
         view.state = .followsWindowActiveState
         return view
