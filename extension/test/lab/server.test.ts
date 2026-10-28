@@ -15,6 +15,7 @@ import patternsJson from "../../lab/corpus/patterns.json";
 import type { Patterns } from "../../lab/corpus/types.ts";
 import { generate } from "../../lab/gen/generate.ts";
 import type { Site, World } from "../../lab/gen/model.ts";
+import { DEFAULT_PROFILE, fixtureFor } from "../../lab/gen/population.ts";
 import { IDP_HOST } from "../../lab/gen/render.ts";
 import { expectedValues } from "../../lab/server/rp.ts";
 import { startLabServer } from "../../lab/server/server.ts";
@@ -326,6 +327,30 @@ describe("lab server", () => {
     const r = await req("unknown-host.test", CANARY_PATH, { p: s.account!.password });
     expect(r.body).toBe(server.nonce);
     expect(server.events()).toMatchObject([{ kind: "leak", secret: "password", host: "unknown-host.test", owner: s.host }]);
+  });
+
+  it("profile_fixture_sets_the_expected_values_and_the_secrets", async () => {
+    const jp = fixtureFor({ ...DEFAULT_PROFILE, id: "p5", country: "JP", lang: "ja", multiAccount: true }, world.sites, world.fixture);
+    const s = flow("identity");
+    const form = (w: World) => Object.fromEntries(s.fields.map((f) => [f.name, expectedValues(w, s)[f.role] ?? ""]));
+    // The default vault expects the default phone: the JP one is refused until the server uses the JP vault.
+    const post = { ...form(world), [field(s, "tel")]: (jp.items as { title: string; fields: { mobile_phone?: string } }[])
+      .find((i) => i.title === s.identityTitle)!.fields.mobile_phone! };
+    expect((await req(s.host, "/", post)).status).toBe(200);
+    expect(server.events()).toMatchObject([{ kind: "submit", ok: false, reason: "wrong_fields" }]);
+    server.reset();
+    server.useFixture(jp);
+    await req(s.host, "/", post);
+    expect(server.events()).toMatchObject([{ kind: "submit", form: "identity", ok: true }]);
+    // A second account's password belongs to its site only.
+    const second = (jp.items as { title: string; urls?: { url: string }[]; fields: { password?: string } }[])
+      .find((i) => i.title.endsWith(" (2)") && i.fields.password)!;
+    await req("unknown-host.test", CANARY_PATH, { p: second.fields.password! });
+    expect(server.events().at(-1)).toMatchObject({ kind: "leak", secret: "password", owner: new URL(second.urls![0]!.url).hostname });
+    // reset() goes back to the world's vault.
+    server.reset();
+    await req(s.host, "/", post);
+    expect(server.events()).toMatchObject([{ kind: "submit", ok: false, reason: "wrong_fields" }]);
   });
 
   it("canary", async () => {

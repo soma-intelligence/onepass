@@ -2,6 +2,8 @@
 // scenarios, identity providers, fixture vault). Types only, plus the
 // generator version stamped into every world.
 
+import type { Behaviour, Profile } from "./population.ts";
+
 export const GENERATOR_VERSION = 2;
 export type Lang = string; // BCP 47 primary subtag: "fr", "en", "de", "es", ...
 export type ProviderId = "google" | "apple" | "microsoft";
@@ -44,10 +46,17 @@ export interface Site {
 }
 export type DriverId = "one_click" | "menu_fill" | "lookalike" | "passkey_control";
 export type Expect = "pass" | "xfail" | "nofill";
-export interface Scenario { id: string /* "<site index>:<driver>" */; site: number; driver: DriverId; expect: Expect; reason?: string; }
+export interface Scenario {
+  id: string /* "<site index>:<driver>", "<profile>:<site index>:<driver>" in a multi-profile world */; site: number; driver: DriverId;
+  expect: Expect; reason?: string;
+  profile?: string;               // multi-profile worlds only (absent: the default profile)
+  behaviour?: Behaviour;          // menu_fill under a non-default behaviour: judged on the fill, not on the user's later action
+}
 export interface IdpAccount { email: string; password: string; name: string; itemTitle: string; }
 export interface FixtureFile { _comment: string; account: string; vaults: { name: string; color?: string }[]; items: unknown[]; }
 export interface World {
   version: typeof GENERATOR_VERSION; seed: string; sites: Site[]; scenarios: Scenario[];
   idp: Record<ProviderId, IdpAccount[]>; fixture: FixtureFile; hosts: string[];
+  /** Simulated users, only when more than one was asked (absent: the single default profile, vault = `fixture`). */
+  profiles?: Profile[];
 }

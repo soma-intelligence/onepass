@@ -33,6 +33,8 @@ export interface Judgement { verdict: Verdict; cause?: string }
 export interface Result {
   worldSeed: string; site: number; siteSeed: string; flow: FlowId; traits: TraitId[]; lang: Lang; labelLang: Lang;
   driver: DriverId; expect: Expect;
+  /** Simulated user (population.ts); "p0" is the default one. */
+  profile?: string;
   /** The documented reason of the expectation (capabilities.ts: "R-16 passkeys", "R-10", "lookalike host"...). */
   reason?: string;
   verdict: Verdict; cause?: string; retried: boolean; durationMs: number; repro: string;
@@ -58,6 +60,13 @@ function rightSignin(site: Site, e: Extract<LabEvent, { kind: "signin" }>): bool
   if (want !== undefined && e.user.trim().toLowerCase() !== want.trim().toLowerCase()) return false;
   if (site.flow === "sso") return e.via === site.sso?.provider;
   return e.via === undefined;
+}
+
+/** Whether every field the scenario's page(s) asked for held a value after the fill (abandons_step: step 1 only). */
+function fillMet(s: Scenario, site: Site, o: Observation): boolean {
+  const fields = s.behaviour === "abandons_step" && site.steps ? site.steps[0]! : site.fields;
+  const typed = new Set(o.typed ?? []);
+  return fields.length > 0 && fields.every((f) => o.filled[f.name] === true || typed.has(f.name));
 }
 
 const WRONG_FILL = new Set(["wrong_fields"]);
@@ -105,7 +114,9 @@ export function judge(s: Scenario, site: Site, o: Observation): Judgement {
     if (s.driver === "lookalike" && o.itemOffered) return { verdict: "fail", cause: "offered_where_forbidden" };
     return { verdict: "pass" };
   }
-  const met = goalMet(site, o.events);
+  // Under a behaviour the user acts after the fill (edits a field, leaves the form): the extension is
+  // judged on what it filled, never on how the site answered the user's later post.
+  const met = s.behaviour !== undefined ? fillMet(s, site, o) : goalMet(site, o.events);
   if (s.expect === "xfail") return met ? { verdict: "xpass" } : { verdict: "xfail", cause: failCause(site, o) };
   return met ? { verdict: "pass" } : { verdict: "fail", cause: failCause(site, o) };
 }

@@ -14,11 +14,12 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test as base } from "@playwright/test";
 import { loadCert } from "../../e2e/cert.ts";
-import type { Scenario, Site, World } from "../gen/model.ts";
+import type { FixtureFile, Scenario, Site, World } from "../gen/model.ts";
 import { type LabServer, startLabServer } from "../server/server.ts";
 import { type Lab, launchLab, launchPlain, networkViolations, readState, readWorld } from "./browser.ts";
 import { lookalike, menuFill, oneClick, passkeyControl, type ScenarioEnv } from "./drive.ts";
 import { extensionDriver } from "./driver.ts";
+import { fixtureFor, profileOf } from "../gen/population.ts";
 import { EXT_ROOT, isSmoke, type LabState } from "./global-setup.ts";
 import { judge, type Judgement, type Observation, type Result, type Verdict } from "./oracle.ts";
 
@@ -38,12 +39,15 @@ const test = base.extend<object, { server: LabServer }>({
   ],
 });
 
+/** Batches of LAB_BATCH sites; one profile per batch (each simulated user has its own vault and so its own browser). */
 function batches(): Scenario[][] {
   const indices = world.sites.map((s) => s.index).filter((i) => config.only === undefined || i === config.only);
   const out: Scenario[][] = [];
-  for (let k = 0; k < indices.length; k += config.batch) {
-    const chunk = new Set(indices.slice(k, k + config.batch));
-    out.push(world.scenarios.filter((s) => chunk.has(s.site)));
+  for (const p of world.profiles ?? [{ id: profileOf({}) }]) {
+    for (let k = 0; k < indices.length; k += config.batch) {
+      const chunk = new Set(indices.slice(k, k + config.batch));
+      out.push(world.scenarios.filter((s) => profileOf(s) === p.id && chunk.has(s.site)));
+    }
   }
   return out;
 }
@@ -57,8 +61,8 @@ const labError = (driver: Scenario["driver"], e: unknown): Observation => {
 };
 
 /** A fresh profile with the extension, paired (closed again if pairing fails). */
-async function pairedLab(server: LabServer): Promise<Lab> {
-  const lab = await launchLab(state, world, server);
+async function pairedLab(server: LabServer, profile: string): Promise<Lab> {
+  const lab = await launchLab(state, world, server, profile);
   try {
     await lab.pair();
     return lab;
@@ -78,9 +82,22 @@ async function closeInto(errors: CloseErrors, what: string, close: () => Promise
   });
 }
 
+/** The vault of each simulated user, built once (the server's checks must expect what the extension is given). */
+const vaults = new Map<string, FixtureFile>();
+function vaultOf(profile: string): FixtureFile {
+  let v = vaults.get(profile);
+  if (!v) {
+    const p = world.profiles?.find((x) => x.id === profile);
+    v = p ? fixtureFor(p, world.sites, world.fixture) : world.fixture;
+    vaults.set(profile, v);
+  }
+  return v;
+}
+
 /** One attempt of a scenario; `lab` is the batch profile (unused by the passkey control). */
 async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Promise<Lab>, closeErrors: CloseErrors): Promise<Observation> {
   server.reset();
+  server.useFixture(vaultOf(profileOf(s)));
   if (s.driver === "passkey_control") {
     let plain;
     try {
@@ -104,7 +121,7 @@ async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Pr
   const env: ScenarioEnv = { driver: extensionDriver(l), server, newPage: () => l.newPage() };
   switch (s.driver) {
     case "one_click": return oneClick(env, site);
-    case "menu_fill": return menuFill(env, site);
+    case "menu_fill": return menuFill(env, site, s.behaviour);
     case "lookalike": return lookalike(env, site);
   }
 }
@@ -117,8 +134,8 @@ async function safeAttempt(s: Scenario, site: Site, server: LabServer, lab: () =
 function record(s: Scenario, site: Site, j: Judgement, retried: boolean, durationMs: number): Result {
   const r: Result = {
     worldSeed: world.seed, site: site.index, siteSeed: site.seed, flow: site.flow, traits: site.traits, lang: site.lang,
-    labelLang: site.labelLang, driver: s.driver, expect: s.expect, ...(s.reason ? { reason: s.reason } : {}), verdict: j.verdict, ...(j.cause ? { cause: j.cause } : {}),
-    retried, durationMs, repro: `npm run lab:repro -- --seed ${world.seed} --site ${site.index}`,
+    labelLang: site.labelLang, profile: profileOf(s), driver: s.driver, expect: s.expect, ...(s.reason ? { reason: s.reason } : {}), verdict: j.verdict, ...(j.cause ? { cause: j.cause } : {}),
+    retried, durationMs, repro: `npm run lab:repro -- --seed ${world.seed} --site ${site.index}${world.profiles ? ` --profiles ${world.profiles.length}` : ""}`,
   };
   appendFileSync(state.results, `${JSON.stringify(r)}\n`);
   return r;
@@ -132,7 +149,8 @@ batches().forEach((scenarios, k) => {
     test.setTimeout(scenarios.length * 180_000 + 120_000);
     const seenViolations = networkViolations().length;
     let shared: Lab | undefined;
-    const batchLab = async () => (shared ??= await pairedLab(server));
+    const profile = profileOf(scenarios[0] ?? {});
+    const batchLab = async () => (shared ??= await pairedLab(server, profile));
     const verdicts: Verdict[] = [];
     const closeErrors: CloseErrors = [];
     try {
@@ -155,7 +173,7 @@ batches().forEach((scenarios, k) => {
           let fresh: Lab | undefined;
           let second: Observation;
           try {
-            second = await safeAttempt(s, site, server, async () => (fresh = await pairedLab(server)), closeErrors);
+            second = await safeAttempt(s, site, server, async () => (fresh = await pairedLab(server, profile)), closeErrors);
           } finally {
             const used: Lab | undefined = fresh;
             if (used) await closeInto(closeErrors, `${s.id} replay profile`, () => used.close());

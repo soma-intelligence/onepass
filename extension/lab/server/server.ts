@@ -15,7 +15,7 @@ import * as https from "node:https";
 import * as net from "node:net";
 import type { TestCert } from "../../e2e/cert.ts";
 import { CANARY_PATH } from "../../e2e/server.ts";
-import type { Account, ProviderId, Site, World } from "../gen/model.ts";
+import type { Account, FixtureFile, ProviderId, Site, World } from "../gen/model.ts";
 import { IDP_HOST, renderSitePage } from "../gen/render.ts";
 import { handleIdp } from "./idp.ts";
 import { Ledger } from "./ledger.ts";
@@ -71,7 +71,10 @@ export interface LabServer {
   nonce: string;
   ledger: Ledger;
   events(): LabEvent[];
+  /** Back to the world's own vault and a clean log. */
   reset(): void;
+  /** The vault of the simulated user playing the next scenario: expected values and secrets of the checks (until reset). */
+  useFixture(fixture: FixtureFile): void;
   close(): Promise<void>;
 }
 
@@ -221,6 +224,12 @@ export async function startLabServer(world: World, cert: TestCert): Promise<LabS
       st.counters.clear();
       st.codes.clear();
       ledger.reset();
+      st.world = world;
+      ledger.useFixture(world.fixture);
+    },
+    useFixture(fixture) {
+      st.world = { ...world, fixture };
+      ledger.useFixture(fixture);
     },
     close: () =>
       new Promise<void>((resolve) => {

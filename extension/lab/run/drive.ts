@@ -11,6 +11,7 @@
 import { createPrivateKey } from "node:crypto";
 import type { Frame, Page } from "@playwright/test";
 import type { FieldSpec, Site } from "../gen/model.ts";
+import type { Behaviour } from "../gen/population.ts";
 import { PAGE_PATH, stepPath } from "../gen/render.ts";
 import type { LabEvent } from "../server/ledger.ts";
 import type { LabServer } from "../server/server.ts";
@@ -227,14 +228,30 @@ async function submitForm(scope: Frame): Promise<void> {
 }
 
 /**
+ * What the simulated user does to the form after the extension filled it
+ * (profile behaviour): "partial" empties the last text field, "corrects_field"
+ * retypes the first one. The snapshot of the fill is taken before, and the
+ * oracle judges that snapshot: this edit is the user's, not the extension's.
+ * A failed edit is not a scenario error (the field may be a select or hidden).
+ */
+async function userEdits(page: Page, scope: Frame, fields: FieldSpec[], behaviour: Behaviour): Promise<void> {
+  const text = fields.filter((f) => f.type !== "select");
+  const target = behaviour === "partial" ? text.at(-1) : behaviour === "corrects_field" ? text[0] : undefined;
+  if (!target) return;
+  await typeField(page, scope, target.id, behaviour === "partial" ? "" : "corrected-by-user", 2_000).catch(() => undefined);
+}
+
+/**
  * multi_step: on each page in turn, the menu on that step's fields, the item
  * picked, then its button ("next" before the last step). Stops at the first
  * step whose menu does not offer the item (the oracle reads no_menu or
  * no_menu_item), or when the next page does not come (a refusal the oracle
  * reads from the server events). The flags hold only if every step reached
- * showed the menu and offered the item.
+ * showed the menu and offered the item. Under a behaviour, the user edits
+ * the last step after the fill; abandons_step stops after step 1 (nothing is
+ * submitted, the oracle judges step 1 only).
  */
-async function menuFillSteps(env: ScenarioEnv, page: Page, scope: Frame, site: Site, o: Observation): Promise<void> {
+async function menuFillSteps(env: ScenarioEnv, page: Page, scope: Frame, site: Site, o: Observation, behaviour: Behaviour): Promise<void> {
   const steps = site.steps!;
   for (const [k, step] of steps.entries()) {
     if (k > 0 && !(await waitPath(scope, stepPath(k), 10_000))) return;
@@ -243,13 +260,15 @@ async function menuFillSteps(env: ScenarioEnv, page: Page, scope: Frame, site: S
     o.itemOffered = menu.offered && (k === 0 || o.itemOffered);
     await snapshotFilled(page, site, o.filled);
     if (!menu.offered) return;
+    if (behaviour === "abandons_step") return;
+    if (k === steps.length - 1) await userEdits(page, scope, step, behaviour);
     await submitForm(scope).catch(() => undefined);
   }
   await waitEvents(env.server, signedIn(site), 10_000);
 }
 
-/** menu_fill: focus the first field offering the menu, ArrowDown, pick the item, then submit. */
-export async function menuFill(env: ScenarioEnv, site: Site): Promise<Observation> {
+/** menu_fill: focus the first field offering the menu, ArrowDown, pick the item, then (as the profile's behaviour says) submit. */
+export async function menuFill(env: ScenarioEnv, site: Site, behaviour: Behaviour = "complete"): Promise<Observation> {
   const started = Date.now();
   const o = blank("menu_fill");
   let page: Page | undefined;
@@ -258,7 +277,7 @@ export async function menuFill(env: ScenarioEnv, site: Site): Promise<Observatio
     await goto(page, `https://${site.host}/`);
     const scope = await formScope(page, site);
     if (site.steps) {
-      await menuFillSteps(env, page, scope, site, o);
+      await menuFillSteps(env, page, scope, site, o, behaviour);
       return finish(env, page, o, started);
     }
     const { fields, title } = menuTarget(site);
@@ -275,6 +294,8 @@ export async function menuFill(env: ScenarioEnv, site: Site): Promise<Observatio
     o.itemOffered = menu.offered;
     if (menu.offered) await debugDump(page, o);
     await snapshotFilled(page, site, o.filled);
+    // abandons_step has no step to abandon on a one-page form: the user goes on.
+    if (behaviour === "partial" || behaviour === "corrects_field") await userEdits(page, scope, site.fields, behaviour);
     await submitForm(scope).catch(() => undefined);
     await waitEvents(env.server, submitted(site), 10_000);
     await waitEvents(env.server, signedIn(site), site.flow === "signup" ? 3_000 : 0);
