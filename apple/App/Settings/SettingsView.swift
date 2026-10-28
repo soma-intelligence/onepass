@@ -2,10 +2,11 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// The six pages of the settings (spec 6.1, plus Remplissage automatique from milestone 3): a
-/// grouped list on iPhone and iPad, tabs in the Mac `Settings` window.
+/// The pages of the settings (spec 6.1, plus Remplissage automatique from milestone 3, Travel Mode and,
+/// on the Mac, Développeur from milestone 7): a grouped list on iPhone and iPad, tabs in the Mac
+/// `Settings` window.
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, security, autofill, sync, vaults, about
+    case general, security, autofill, sync, vaults, travel, developer, about
 
     var id: String { rawValue }
 
@@ -16,6 +17,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .autofill: "Remplissage automatique"
         case .sync: "Sync"
         case .vaults: "Coffres"
+        case .travel: "Travel Mode"
+        case .developer: "Développeur"
         case .about: "À propos"
         }
     }
@@ -27,6 +30,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .autofill: "key.viewfinder"
         case .sync: "arrow.triangle.2.circlepath.icloud"
         case .vaults: "square.stack.3d.up"
+        case .travel: "airplane"
+        case .developer: "chevron.left.forwardslash.chevron.right"
         case .about: "info.circle"
         }
     }
@@ -38,6 +43,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .autofill: Color(red: 0.20, green: 0.47, blue: 0.96)
         case .sync: Color(red: 0.13, green: 0.63, blue: 0.42)
         case .vaults: Color(red: 0.49, green: 0.23, blue: 0.93)
+        case .travel: Color(red: 0.0, green: 0.55, blue: 0.75)
+        case .developer: Color(red: 0x47 / 255, green: 0x55 / 255, blue: 0x69 / 255)
         case .about: Color(red: 0.36, green: 0.40, blue: 0.45)
         }
     }
@@ -50,6 +57,13 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .autofill: AutoFillSettings()
         case .sync: SyncSettings()
         case .vaults: VaultsSettings()
+        case .travel: TravelSettings()
+        case .developer:
+            #if os(macOS)
+            DeveloperSettingsPage()
+            #else
+            EmptyView()
+            #endif
         case .about: AboutSettings()
         }
     }
@@ -93,6 +107,7 @@ struct SettingsView: View {
                 }
                 Section {
                     row(.vaults)
+                    row(.travel)
                     #if os(iOS)
                     watchRow
                     #endif
@@ -243,6 +258,10 @@ struct MacSettingsView: View {
                         }
                         Section {
                             row(.vaults)
+                            row(.travel)
+                            row(.developer)
+                        }
+                        Section {
                             row(.about)
                         }
                     }
@@ -266,7 +285,16 @@ struct MacSettingsView: View {
         }
         .frame(minWidth: 760, idealWidth: 820, minHeight: 540, idealHeight: 600)
         .containerBackground(.thinMaterial, for: .window)
+        .onAppear(perform: takeRequest)
+        .onChange(of: model.settingsPageRequest) { takeRequest() }
         .simultaneousGesture(TapGesture().onEnded { model.session.noteActivity() })
+    }
+
+    /// A page asked by another screen (Développeur page cards).
+    private func takeRequest() {
+        guard let request = model.settingsPageRequest else { return }
+        page = request
+        model.settingsPageRequest = nil
     }
 
     /// A sidebar row: the page's colored tile and its name.

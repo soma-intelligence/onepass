@@ -10,12 +10,12 @@
 //! anyone is asked, and no value is read before the user approves: a
 //! request the policy refuses never reaches the approver.
 
-use super::{Call, CallResult, Failure, McpTools, Refusal};
+use super::{Call, CallResult, McpTools, Refusal};
 use crate::mask::mask;
 use crate::policy::Scope;
 use crate::port::{PortError, VaultInfo, VaultPort};
 use crate::protocol::ClientInfo;
-use crate::runner::{self, RunRequest};
+use crate::runner::RunRequest;
 use crate::template::{render_template, template_refs};
 use data_encoding::HEXLOWER;
 use onepass_core::Id;
@@ -33,9 +33,6 @@ use onepass_guard::{
     sanitize_for_display,
 };
 use serde_json::{Map, Value, json};
-use std::fs::{self, OpenOptions};
-use std::io::{self, Read, Write};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use zeroize::Zeroizing;
@@ -50,8 +47,6 @@ const MAX_SHOWN: usize = 8192;
 /// Characters per detail line of an approval prompt (the prompt cuts each
 /// line at 200, so long values are split instead of cut).
 const DETAIL_CHUNK: usize = 150;
-/// Largest template `fill_template` reads.
-const MAX_TEMPLATE: u64 = 1024 * 1024;
 /// Most placeholders in one template.
 const MAX_PLACEHOLDERS: usize = 256;
 
@@ -225,10 +220,6 @@ fn otp_config(value: &FieldValue) -> Option<TotpConfig> {
         totp_from_secret(s)
     };
     cfg.ok()
-}
-
-fn io_refusal(what: &str, e: &io::Error) -> Refusal {
-    Refusal::Invalid(format!("{what}: {}", e.kind()))
 }
 
 impl<P: VaultPort> McpTools<P> {
@@ -544,7 +535,7 @@ impl<P: VaultPort> McpTools<P> {
             cwd: cwd.map(PathBuf::from),
             timeout: Duration::from_secs(timeout),
         };
-        let out = runner::run(&req).map_err(|e| io_refusal("command could not be started", &e))?;
+        let out = self.workspace.run(&req)?;
         let secrets: Vec<(&str, &str)> = req
             .env
             .iter()
@@ -560,36 +551,6 @@ impl<P: VaultPort> McpTools<P> {
         }))
     }
 
-    /// Where `fill_template` may write `output`: an existing directory
-    /// outside the data directory, no symbolic link, no existing file
-    /// unless `overwrite`. Returns the resolved path.
-    fn output_target(&self, output: &str, overwrite: bool) -> Result<PathBuf, Refusal> {
-        let out = Path::new(output);
-        let (Some(parent), Some(name)) = (out.parent(), out.file_name()) else {
-            return Err(invalid("output path must name a file"));
-        };
-        let parent = parent
-            .canonicalize()
-            .map_err(|e| io_refusal("output directory is not usable", &e))?;
-        let target = parent.join(name);
-        if let Some(dir) = self.forbidden_dir() {
-            let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-            if target.starts_with(&dir) {
-                return Err(invalid("output path is inside the data directory"));
-            }
-        }
-        match fs::symlink_metadata(&target) {
-            Ok(m) if m.file_type().is_symlink() => Err(invalid("output path is a symbolic link")),
-            Ok(_) if !overwrite => Err(invalid("output file exists, set overwrite to replace it")),
-            Ok(m) if !m.is_file() => Err(invalid("output path is not a regular file")),
-            // A hard link would carry the secrets to another name.
-            Ok(m) if m.nlink() > 1 => Err(invalid("output file has other hard links")),
-            Ok(_) => Ok(target),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(target),
-            Err(e) => Err(io_refusal("output path is not usable", &e)),
-        }
-    }
-
     /// `fill_template {template_path, output_path, overwrite?}`.
     pub(super) fn fill_template(
         &mut self,
@@ -603,8 +564,11 @@ impl<P: VaultPort> McpTools<P> {
             .get("overwrite")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        self.output_target(output_path, overwrite)?;
-        let template = read_template(Path::new(template_path), self.forbidden_dir())?;
+        self.workspace
+            .check_output(Path::new(output_path), overwrite, self.forbidden_dir())?;
+        let template = self
+            .workspace
+            .read_template(Path::new(template_path), self.forbidden_dir())?;
         let refs = template_refs(&template);
         if refs.is_empty() {
             return Err(invalid("template has no {{ onepass://... }} placeholder").into());
@@ -655,8 +619,12 @@ impl<P: VaultPort> McpTools<P> {
         }
         let rendered = render_template(&template, &values);
         // Checked again: the path may have changed while the user decided.
-        let target = self.output_target(output_path, overwrite)?;
-        write_private(&target, rendered.as_bytes(), overwrite)?;
+        self.workspace.write_output(
+            Path::new(output_path),
+            &rendered,
+            overwrite,
+            self.forbidden_dir(),
+        )?;
         Ok(json!({"replaced": refs.len(), "output_path": output_path}))
     }
 
@@ -843,52 +811,4 @@ impl<P: VaultPort> McpTools<P> {
         let value = self.read_value(&l.vault, &l.r)?;
         Ok(super::untrusted(json!({"value": value.as_str()})))
     }
-}
-
-/// The template at `path`: a regular file of at most [`MAX_TEMPLATE`]
-/// bytes, in UTF-8, outside `forbidden` (the data directory), which
-/// answers exactly like a missing file.
-fn read_template(path: &Path, forbidden: Option<&Path>) -> Result<Zeroizing<String>, Failure> {
-    let unreadable = |e: &io::Error| io_refusal("template could not be read", e);
-    let real = path.canonicalize().map_err(|e| unreadable(&e))?;
-    if let Some(dir) = forbidden {
-        let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-        if real.starts_with(&dir) {
-            return Err(unreadable(&io::Error::from(io::ErrorKind::NotFound)).into());
-        }
-    }
-    let file = fs::File::open(&real).map_err(|e| unreadable(&e))?;
-    let meta = file
-        .metadata()
-        .map_err(|e| io_refusal("template could not be read", &e))?;
-    if !meta.is_file() {
-        return Err(invalid("template is not a regular file").into());
-    }
-    if meta.len() > MAX_TEMPLATE {
-        return Err(invalid("template is too large").into());
-    }
-    let mut bytes = Zeroizing::new(Vec::new());
-    file.take(MAX_TEMPLATE + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| io_refusal("template could not be read", &e))?;
-    let text = std::str::from_utf8(&bytes).map_err(|_| invalid("template is not valid UTF-8"))?;
-    Ok(Zeroizing::new(text.to_owned()))
-}
-
-/// Writes `data` to `path` with mode `0600`: a new file, or the existing
-/// regular file when `overwrite`.
-fn write_private(path: &Path, data: &[u8], overwrite: bool) -> Result<(), Refusal> {
-    let mut opts = OpenOptions::new();
-    opts.write(true).mode(0o600);
-    if overwrite {
-        opts.create(true).truncate(true);
-    } else {
-        opts.create_new(true);
-    }
-    let mut f = opts
-        .open(path)
-        .map_err(|e| io_refusal("output could not be written", &e))?;
-    f.set_permissions(fs::Permissions::from_mode(0o600))
-        .and_then(|()| f.write_all(data))
-        .map_err(|e| io_refusal("output could not be written", &e))
 }

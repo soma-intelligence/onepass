@@ -102,6 +102,8 @@ public final class VaultSession {
     private var biometrics: BiometricUnlock { environment.biometrics }
     private var secretKeys: SecretKeyVault { SecretKeyVault(keychain: environment.keychain) }
     private var dbPath: String { environment.databaseURL.path }
+    /// The unlocked core session (nil while locked), for the servers of milestone 7 and Travel Mode.
+    var coreSession: Session? { session }
 
     // MARK: - State
 
@@ -1207,7 +1209,7 @@ public final class VaultSession {
         return Snapshot(vaults: try session.vaults(), summaries: try session.itemSummaries(), purged: purged)
     }
 
-    private func background<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+    func background<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
         let hook = coreWorkHook
         return try await CoreThread.run {
             hook?()

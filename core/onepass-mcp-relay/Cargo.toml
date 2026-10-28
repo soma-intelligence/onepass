@@ -1,0 +1,29 @@
+[package]
+name = "onepass-mcp-relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+# The stdio program MCP clients launch, embedded in the Mac app: it relays
+# JSON-RPC lines to the app's socket and runs, for the app, what its
+# sandbox forbids (spec 2026-10-27-m7-app-design, sections 4.1 and 4.2).
+[[bin]]
+name = "onepass-mcp"
+path = "src/main.rs"
+
+[lib]
+name = "onepass_mcp_relay"
+path = "src/lib.rs"
+
+[dependencies]
+onepass-mcp = { path = "../onepass-mcp" }
+# Identity of the MCP client (first ancestor that is not a launcher).
+onepass-peer = { path = "../onepass-peer" }
+serde.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

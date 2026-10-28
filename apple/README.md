@@ -169,7 +169,7 @@ Hors périmètre (spec, section 12) :
 - Extension de navigateur : jalon 4.
 - Watchtower (onglet présent avec un état vide), pack d'icônes de marques, import, export, sauvegarde, pièces jointes : jalon 5.
 - Apple Watch (app), Vision Pro, widgets, Contrôles, Raccourcis, Spotlight, Handoff : jalon 6 (Apple Watch, Vision Pro, widgets, Contrôles et Raccourcis livrés, voir Jalon 6).
-- MCP, agent SSH, génération de clés SSH, Travel Mode : jalon 7.
+- MCP, agent SSH, génération de clés SSH, Travel Mode : jalon 7 (livrés, voir Jalon 7).
 - Changement du mot de passe maître, suppression de vault, option Secret Key dans le trousseau iCloud.
 
 Décisions qui limitent ce jalon (spec, section 13) :
@@ -305,3 +305,11 @@ Rien de ce qui suit n'a été vérifié au jalon 6 (spec, section 13) :
 - Widgets : seulement les 8 premiers favoris par titre ; un TOTP non favori n'y est pas (W6) ; codes valables 12 h (W4). Un widget peut afficher l'état verrouillé jusqu'à son prochain rafraîchissement après le déverrouillage.
 - Pas de widgets Mac ni visionOS (W5), pas de Spotlight ni de Handoff (W10), pas de Contrôle "Scanner un QR TOTP" (W11), pas de widget "À proximité" (R11).
 - Vision Pro : le titre de la colonne de liste est tronqué ("Tous les él...") quand la fenêtre est à sa taille par défaut.
+
+## Jalon 7 : agent SSH, serveur MCP et Travel Mode
+
+Spec : `docs/superpowers/specs/2026-10-27-m7-app-design.md`.
+
+- **Agent SSH (Mac)** : Réglages > Développeur. L'app sert les clés SSH de ses coffres sur `~/Library/Containers/me.somalabs.onepass/Data/.onepass/ssh.sock` (ligne `IdentityAgent` et `export SSH_AUTH_SOCK` copiables), approbation dans un panneau flottant plus Touch ID à chaque signature (réglable), autorisations de 5, 15 ou 60 minutes, connexions transférées refusées par défaut, `known_hosts` choisi par l'utilisateur pour nommer les destinations. Génération et import de clés (« Nouvelle clé SSH… »). L'agent s'arrête au verrouillage.
+- **Serveur MCP (Mac)** : le client MCP lance `OnePass.app/Contents/Helpers/onepass-mcp --socket <conteneur>/.onepass/mcp.sock` (bloc `mcpServers` copiable). Le relais (crate `core/onepass-mcp-relay`, copié et signé par `scripts/embed-mcp-relay.sh`) identifie son client et exécute pour l'app les commandes et fichiers des outils à secrets ; l'app ne sert que le relais de son propre paquet. Coffres exposés seulement s'ils sont dans la politique signée, clients appairés (panneau et Touch ID pour un client signé, « Appairer un programme… » pour un outil ad hoc), portées par coffre, autorisations révocables, journal d'audit vérifié.
+- **Travel Mode (Mac et iOS)** : Réglages > Travel Mode, et « Sûr en voyage » dans l'éditeur de coffre (synchronisé). Les coffres qui partent quittent l'appareil sans être supprimés d'iCloud ; au retour, OnePass les recharge depuis iCloud et les vérifie contre les derniers manifestes vus. Une synchro réussie est exigée avant d'entrer.

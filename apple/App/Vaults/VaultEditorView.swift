@@ -71,6 +71,8 @@ struct VaultEditorView: View {
     @State private var name: String
     @State private var icon: String
     @State private var color: String
+    /// Stays on the device in Travel Mode (synced with the vault).
+    @State private var travelSafe: Bool
     @State private var saving = false
     @State private var errorMessage: String?
     @FocusState private var nameFocused: Bool
@@ -81,6 +83,7 @@ struct VaultEditorView: View {
         _name = State(initialValue: vault?.meta.name ?? "")
         _icon = State(initialValue: vault?.meta.icon ?? "folder")
         _color = State(initialValue: vault?.meta.color ?? "blue")
+        _travelSafe = State(initialValue: vault?.meta.travelSafe ?? false)
     }
 
     private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -114,6 +117,12 @@ struct VaultEditorView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                }
+                Section {
+                    Toggle("Sûr en voyage", isOn: $travelSafe)
+                        .accessibilityIdentifier("vault.editor.travelSafe")
+                } footer: {
+                    Text("En Travel Mode, les coffres qui ne sont pas sûrs en voyage quittent tes appareils jusqu'à ton retour.")
                 }
                 if let errorMessage {
                     Section {
@@ -193,10 +202,10 @@ struct VaultEditorView: View {
         guard canSave else { return }
         saving = true
         errorMessage = nil
-        // A rename keeps the flags this editor does not show.
+        // The MCP flag is set from Réglages > Développeur, with the signed policy: kept as is here.
         let meta = FfiVaultMeta(
             name: trimmed, icon: icon, color: color,
-            travelSafe: vault?.meta.travelSafe ?? false, mcpAccess: vault?.meta.mcpAccess ?? false)
+            travelSafe: travelSafe, mcpAccess: vault?.meta.mcpAccess ?? false)
         Task {
             defer { saving = false }
             do {

@@ -80,6 +80,36 @@ pub trait RecordStore {
     fn list(&self, kind: RecordKind) -> Result<Vec<Record>>;
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()>;
 
+    /// Remove this device's copy of a record, and only that: the Travel
+    /// Mode takes a vault off the device without deleting it anywhere
+    /// else. The default is `delete`, which is the same thing for a store
+    /// that has no remote; a store that pushes deletions to a server
+    /// (`crate::sync::SyncStore`) overrides it so nothing is pushed.
+    fn evict(&mut self, kind: RecordKind, id: Id) -> Result<()> {
+        self.delete(kind, id)
+    }
+
+    /// `evict` every record, all or nothing: on a failure the records
+    /// already evicted are put back (best effort over every record; a
+    /// failed put back is returned instead of the first error, so the
+    /// caller never takes a partial undo for a clean one). A persistent
+    /// store overrides it with one transaction.
+    fn evict_all(&mut self, records: &[Record]) -> Result<()> {
+        for (n, r) in records.iter().enumerate() {
+            if let Err(e) = self.evict(r.kind, r.id) {
+                let mut undo = Ok(());
+                for d in records[..n].iter().rev() {
+                    if let Err(e2) = self.put(d.clone()) {
+                        undo = undo.and(Err(e2));
+                    }
+                }
+                undo?;
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+
     /// The restore epoch this device accepted or issued last, with the
     /// SHA-256 of its record data, if the store keeps it (device-local, not
     /// synced). Used to tell two different epochs with the same number

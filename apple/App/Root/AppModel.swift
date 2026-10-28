@@ -23,10 +23,13 @@ final class AppModel {
     /// Widget snapshot (and, from Task 8, the watch payload) while unlocked.
     @ObservationIgnored let companion: CompanionCoordinator
     @ObservationIgnored let iconLoader: SiteIconLoader
+    /// The SSH agent and the MCP server the Mac app serves (milestone 7), and their questions.
+    let developer = DeveloperHosts()
     #if os(macOS)
     /// The browser extensions' bridge (Safari, Chrome, Firefox): signed builds with their App Group
     /// container only; never with demo data or a UI test store.
     let browserBridge: BrowserBridge?
+    @ObservationIgnored private var approvalPanel: ApprovalPanelController?
     #endif
     @ObservationIgnored private let remote: (any RemoteRecordStore)?
 
@@ -66,6 +69,8 @@ final class AppModel {
     var pendingDiscard: GuardedAction?
     /// iPhone and iPad: the settings sheet (the Mac has its own `Settings` window).
     var showSettings = false
+    /// The settings page to show next time the settings open (Développeur page cards).
+    var settingsPageRequest: SettingsPage?
     /// Bumped on every settings change made through `updateSettings`, so views that show a setting
     /// (stored in `UserDefaults`, not observable) redraw.
     private(set) var settingsRevision = 0
@@ -678,6 +683,14 @@ final class AppModel {
             resetNavigation()
         }
         companion.sessionChanged()
+        #if os(macOS)
+        if approvalPanel == nil { approvalPanel = ApprovalPanelController(hosts: developer) }
+        if state == .unlocked {
+            Task { await developer.sessionUnlocked(session) }
+        } else {
+            developer.sessionLocked()
+        }
+        #endif
     }
 
     // MARK: - Routes from outside the app

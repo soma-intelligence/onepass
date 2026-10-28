@@ -53,6 +53,8 @@ const SUPERSEDED_KEY: &str = "password_change_superseded";
 /// The capped log of remote deletions the store refused (outside the `sync.`
 /// namespace of the FFI handle, so only the core writes it).
 const IGNORED_DELETIONS_KEY: &str = "ignored_deletions";
+/// The vaults the Travel Mode keeps off this device (16-byte ids).
+const TRAVEL_HIDDEN_KEY: &str = "travel_hidden";
 const IGNORED_LOG_VERSION: u8 = 1;
 const IGNORED_ENTRY_BYTES: usize = 1 + 16 + 8;
 /// Most entries kept in the log of ignored deletions (and in the log of
@@ -879,7 +881,14 @@ impl SyncStore {
 
     /// Park a change received from the server. Nothing is visible until
     /// `commit_remote`. A later change for the same key replaces it.
+    ///
+    /// While the Travel Mode hides vaults (`set_travel_hidden`), their
+    /// records are dropped here: a fetch never brings them back.
     pub fn stage_remote(&mut self, c: RemoteChange) -> Result<()> {
+        let hidden = self.travel_hidden()?;
+        if !hidden.is_empty() && belongs_to_hidden(&hidden, &c) {
+            return Ok(());
+        }
         let v = to_i64(c.version)?;
         self.conn
             .execute(
@@ -1024,6 +1033,62 @@ impl SyncStore {
                 "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
                 params![key, value],
             )
+            .map_err(store_err)?;
+        Ok(())
+    }
+
+    /// Remove a local meta value; a missing key is not an error.
+    pub fn delete_meta(&mut self, key: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM meta WHERE key = ?1", params![key])
+            .map_err(store_err)?;
+        Ok(())
+    }
+
+    /// The vaults the Travel Mode keeps off this device: `stage_remote`
+    /// drops their records. Device-local, never pushed. An empty set
+    /// removes the entry.
+    pub fn set_travel_hidden(&mut self, vaults: &BTreeSet<Id>) -> Result<()> {
+        if vaults.is_empty() {
+            self.conn
+                .execute(
+                    "DELETE FROM meta WHERE key = ?1",
+                    params![TRAVEL_HIDDEN_KEY],
+                )
+                .map_err(store_err)?;
+            return Ok(());
+        }
+        let bytes: Vec<u8> = vaults.iter().flat_map(|v| v.0).collect();
+        self.set_meta(TRAVEL_HIDDEN_KEY, &bytes)
+    }
+
+    /// The vaults of `set_travel_hidden`, empty when none.
+    pub fn travel_hidden(&self) -> Result<BTreeSet<Id>> {
+        let Some(bytes) = self.meta(TRAVEL_HIDDEN_KEY)? else {
+            return Ok(BTreeSet::new());
+        };
+        if bytes.len() % 16 != 0 {
+            return Err(Error::InvalidFormat("travel hidden vaults"));
+        }
+        Ok(bytes.as_chunks::<16>().0.iter().map(|c| Id(*c)).collect())
+    }
+
+    /// `wal_checkpoint(TRUNCATE)` then `VACUUM`, so rows the Travel Mode
+    /// evicted do not linger in free pages. Fails if another connection
+    /// holds a transaction open; the data stays correct either way.
+    pub fn compact(&self) -> Result<()> {
+        let busy: i64 = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))
+            .map_err(store_err)?;
+        if busy != 0 {
+            return Err(Error::Store("checkpoint busy".into()));
+        }
+        self.conn.execute_batch("VACUUM;").map_err(store_err)?;
+        self.conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| {
+                r.get::<_, i64>(0)
+            })
             .map_err(store_err)?;
         Ok(())
     }
@@ -2444,6 +2509,42 @@ impl WriteTx<'_> {
     }
 }
 
+/// `RecordStore::evict` inside a transaction: the row leaves every layer
+/// and nothing is queued for the server.
+fn evict_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
+    if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+        return Err(Error::InvalidFormat("list record deletion"));
+    }
+    for table in ["base", "pending", "staging", "ancestor", "kept"] {
+        tx.execute(
+            &format!("DELETE FROM {table} WHERE kind = ?1 AND id = ?2"),
+            params![kind.code(), &id.0[..]],
+        )
+        .map_err(store_err)?;
+    }
+    Ok(())
+}
+
+/// Whether a staged change belongs to one of the `hidden` vaults: its key,
+/// meta or manifest (keyed by the vault id), or an item record carrying the
+/// vault id as prefix. An item deletion carries no data: it is let through
+/// (the row is not in `base` while the vault is hidden, so it removes
+/// nothing).
+fn belongs_to_hidden(hidden: &BTreeSet<Id>, c: &RemoteChange) -> bool {
+    match c.kind {
+        RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
+            hidden.contains(&c.id)
+        }
+        RecordKind::Item => c
+            .data
+            .as_deref()
+            .and_then(|d| d.get(..16))
+            .and_then(|p| <[u8; 16]>::try_from(p).ok())
+            .is_some_and(|p| hidden.contains(&Id(p))),
+        _ => false,
+    }
+}
+
 fn delete_vault_rows(tx: &Connection, vault: Id) -> Result<()> {
     let codes = (RecordKind::Manifest.code(), RecordKind::Item.code());
     tx.execute(
@@ -2604,6 +2705,24 @@ impl RecordStore for SyncStore {
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
         let tx = self.write_tx()?;
         delete_in(&tx, kind, id)?;
+        tx.commit()
+    }
+
+    /// Drops the row from every layer, `pending` included, and queues
+    /// nothing: the server keeps its copy (Travel Mode). A signed list
+    /// record is never evicted (`InvalidFormat("list record deletion")`).
+    fn evict(&mut self, kind: RecordKind, id: Id) -> Result<()> {
+        let tx = self.write_tx()?;
+        evict_in(&tx, kind, id)?;
+        tx.commit()
+    }
+
+    /// One transaction: all the rows go, or none.
+    fn evict_all(&mut self, records: &[Record]) -> Result<()> {
+        let tx = self.write_tx()?;
+        for r in records {
+            evict_in(&tx, r.kind, r.id)?;
+        }
         tx.commit()
     }
 

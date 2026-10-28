@@ -1660,7 +1660,13 @@ dependencies = [
  "data-encoding",
  "onepass-bridge",
  "onepass-core",
+ "onepass-guard",
+ "onepass-mcp",
+ "onepass-mcp-relay",
+ "onepass-peer",
  "onepass-relay",
+ "onepass-ssh-agent",
+ "postcard",
  "psl",
  "serde_json",
  "tempfile",
@@ -1695,6 +1701,18 @@ dependencies = [
  "data-encoding",
  "onepass-core",
  "onepass-guard",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "zeroize",
+]
+
+[[package]]
+name = "onepass-mcp-relay"
+version = "0.1.0"
+dependencies = [
+ "onepass-mcp",
+ "onepass-peer",
  "serde",
  "serde_json",
  "tempfile",
