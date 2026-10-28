@@ -117,6 +117,9 @@ public actor SyncCoordinator: SyncTrigger {
 
     // MARK: - Public API
 
+    /// A remote is configured (pairing seals the server's view, ruling A10).
+    public nonisolated var syncsWithServer: Bool { remote != nil }
+
     /// Runs a round now (or joins the one in progress, plus one more) and returns when it is done.
     public func syncNow() async {
         guard remote != nil else { return }

@@ -379,6 +379,9 @@ struct SyncHealthTests {
 
 @Suite("Encrypted backup file and safe exit texts")
 struct EncryptedBackupFileTests {
+    /// Messages are compared in French, the source language, whatever the machine's language.
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     @Test func fileNameCarriesTheDay() {
         let date = Date(timeIntervalSince1970: 1_793_000_000)  // 2026-10-26 in UTC
         let utc = TimeZone(identifier: "UTC")!

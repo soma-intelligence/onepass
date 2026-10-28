@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "fr",
   "strings" : {
+    "Ajouter un appareil à ton compte" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a device to your account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un appareil à ton compte"
+          }
+        }
+      }
+    },
     "Ancienne version rejouée." : {
       "localizations" : {
         "en" : {
@@ -13,6 +29,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ancienne version rejouée."
+          }
+        }
+      }
+    },
+    "Appairage annulé. Rien n'a été envoyé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pairing cancelled. Nothing was sent."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appairage annulé. Rien n'a été envoyé."
           }
         }
       }
@@ -61,6 +93,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce compte a déjà une passkey OnePass pour ce site."
+          }
+        }
+      }
+    },
+    "Ce compte est trop gros pour être copié par appairage." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account is too large to copy by pairing."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce compte est trop gros pour être copié par appairage."
           }
         }
       }
@@ -125,6 +173,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce kit plus ton mot de passe maître donnent un accès complet à ton coffre. Imprime-le et range la feuille hors ligne. Ne le photographie jamais et ne le stocke jamais dans le cloud."
+          }
+        }
+      }
+    },
+    "Cet appareil a été retiré de ton compte OnePass." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device was removed from your OnePass account."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet appareil a été retiré de ton compte OnePass."
+          }
+        }
+      }
+    },
+    "Cet appareil ne peut pas se retirer lui-même." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device cannot remove itself."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet appareil ne peut pas se retirer lui-même."
           }
         }
       }
@@ -641,6 +721,38 @@
         }
       }
     },
+    "L'appairage a été refusé. Recommence depuis le début." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The pairing was refused. Start again from the beginning."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'appairage a été refusé. Recommence depuis le début."
+          }
+        }
+      }
+    },
+    "L'autre appareil a annulé l'appairage." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The other device cancelled the pairing."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'autre appareil a annulé l'appairage."
+          }
+        }
+      }
+    },
     "L'élément a changé entre-temps. Réessaie." : {
       "localizations" : {
         "en" : {
@@ -705,6 +817,22 @@
         }
       }
     },
+    "La connexion avec l'autre appareil a été coupée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The connection with the other device was lost."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La connexion avec l'autre appareil a été coupée."
+          }
+        }
+      }
+    },
     "La synchronisation n'a pas abouti, nouvel essai bientôt." : {
       "localizations" : {
         "en" : {
@@ -717,6 +845,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La synchronisation n'a pas abouti, nouvel essai bientôt."
+          }
+        }
+      }
+    },
+    "Le code a expiré. Un nouveau s'affiche." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The code expired. A new one is shown."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le code a expiré. Un nouveau s'affiche."
           }
         }
       }
@@ -749,6 +893,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le compte iCloud a changé"
+          }
+        }
+      }
+    },
+    "Le dernier coffre ne peut pas être supprimé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last vault cannot be deleted."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le dernier coffre ne peut pas être supprimé."
           }
         }
       }
@@ -1057,6 +1217,38 @@
         }
       }
     },
+    "Rapproche les deux appareils et vérifie qu'ils sont sur le même Wi-Fi." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bring both devices closer and check they are on the same Wi-Fi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rapproche les deux appareils et vérifie qu'ils sont sur le même Wi-Fi."
+          }
+        }
+      }
+    },
+    "Retirer cet appareil de ton compte" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove this device from your account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer cet appareil de ton compte"
+          }
+        }
+      }
+    },
     "Réglages du générateur invalides." : {
       "localizations" : {
         "en" : {
@@ -1197,6 +1389,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Synchronisation en cours"
+          }
+        }
+      }
+    },
+    "Synchronise d'abord cet appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync this device first."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synchronise d'abord cet appareil."
           }
         }
       }
@@ -1501,6 +1709,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Valeur invalide."
+          }
+        }
+      }
+    },
+    "Vide ce coffre avant de le supprimer." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empty this vault before deleting it."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vide ce coffre avant de le supprimer."
           }
         }
       }
