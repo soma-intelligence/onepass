@@ -388,6 +388,14 @@ final class OnboardingModel {
         restorePassword = ""
     }
 
+    /// iOS: the app went to the background. A received account not unlocked yet is dropped (M3): the
+    /// screen shows "Recommencer".
+    func sceneWentToBackground() {
+        guard pairing?.state == .receivedFull else { return }
+        pairing?.cancel()
+        restorePassword = ""
+    }
+
     /// The approver granted the account: imports it with the master password. A wrong password keeps
     /// the grant for another try (ruling A9).
     private func unlockPaired() async {
@@ -573,6 +581,7 @@ final class OnboardingModel {
 /// sidebar on Mac (mockups `PhoneOnboarding` and `Onboarding`).
 struct OnboardingFlow: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model: OnboardingModel?
 
     var body: some View {
@@ -612,6 +621,11 @@ struct OnboardingFlow: View {
             // A lock after the creation or restore unlocked the session (spec 4 point 5).
             if old == .unlocked, new != .unlocked, new != .unlocking { model?.sessionLocked() }
         }
+        #if os(iOS)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { model?.sceneWentToBackground() }
+        }
+        #endif
     }
 }
 

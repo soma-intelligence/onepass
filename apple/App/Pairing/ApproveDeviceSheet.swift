@@ -29,7 +29,9 @@ struct ApproveDeviceSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // Not while the grant is sent: it may already be out (M1).
                     Button(finished ? "OK" : "Annuler") { close() }
+                        .disabled(granting)
                         .accessibilityIdentifier("approve.close")
                 }
             }
@@ -44,6 +46,10 @@ struct ApproveDeviceSheet: View {
             flow?.cancel()
             password = ""
         }
+    }
+
+    private var granting: Bool {
+        if case .granting = flow?.state { true } else { false }
     }
 
     private var finished: Bool {
@@ -127,7 +133,11 @@ struct ApproveDeviceSheet: View {
                 Section {
                     SecureField("Mot de passe maître", text: $password)
                         .privacySensitive()
-                        .onSubmit { Task { await approve(flow, mode: mode) } }
+                        .onSubmit {
+                            // Return twice must not start a second approval (L1).
+                            guard !approving, !password.isEmpty else { return }
+                            Task { await approve(flow, mode: mode) }
+                        }
                         .accessibilityIdentifier("approve.password")
                 } footer: {
                     if let error = flow.approvalError, error != .passwordRequired {
@@ -171,6 +181,8 @@ struct ApproveDeviceSheet: View {
             picking = true
             return
         }
+        // Set before the first await: a second tap or Return does nothing (L1).
+        guard !approving else { return }
         approving = true
         defer { approving = false }
         if flow.approvalError != nil, !password.isEmpty {
