@@ -273,7 +273,10 @@ enum Art {
     }
 
     static func drawing(_ type: FfiItemType, _ k: ArtKit, monogram: String?) -> AnyView {
-        switch type {
+        // The rendered set (graphite metal, violet accent, the vault illustration's style) when the
+        // app's assets are there; the drawings below stay for extensions and as a fallback.
+        if let rendered = photo("category-\(String(describing: type))") { return AnyView(rendered) }
+        return switch type {
         case .login: AnyView(login(k, monogram))
         case .password: AnyView(password(k))
         case .email: AnyView(email(k))
@@ -295,7 +298,7 @@ enum Art {
         case .membership: AnyView(membership(k))
         case .rewardProgram: AnyView(reward(k))
         case .insurance: AnyView(insurance(k))
-        case .vehicle: photo("category-vehicle").map { AnyView($0) } ?? AnyView(vehicle(k))
+        case .vehicle: AnyView(vehicle(k))
         case .accessCode: AnyView(accessCode(k))
         case .secureNote: AnyView(secureNote(k))
         case .document: AnyView(document(k))
