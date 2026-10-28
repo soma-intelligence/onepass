@@ -279,10 +279,7 @@ struct Sidebar: View {
                     Label {
                         Text(tag)
                     } icon: {
-                        // A small price tag in the tag's color, its hole cut through.
-                        Image(systemName: "tag.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(TagColor.of(tag).gradient)
+                        TagMark(color: TagColor.of(tag))
                             .frame(width: SymbolTile.sidebarSize, height: SymbolTile.sidebarSize)
                     }
                     .badge(counts.byTag[tag] ?? 0)
@@ -567,6 +564,31 @@ struct AccountAvatar: View {
         .clipShape(shape)
         .overlay { shape.strokeBorder(.white.opacity(0.12), lineWidth: 0.5) }
         .accessibilityHidden(true)
+    }
+}
+
+/// A tag's mark: a soft, rounded label shape (round on three corners, a gentle point at the top
+/// left) in the tag's color, with its hole cut through near the point.
+struct TagMark: View {
+    let color: Color
+    var size: CGFloat = 14
+
+    var body: some View {
+        UnevenRoundedRectangle(topLeadingRadius: size * 0.18, bottomLeadingRadius: size * 0.5,
+                bottomTrailingRadius: size * 0.5, topTrailingRadius: size * 0.5, style: .continuous)
+            .fill(color.gradient)
+            .frame(width: size, height: size)
+            .mask {
+                Rectangle()
+                    .overlay(alignment: .topLeading) {
+                        Circle()
+                            .frame(width: size * 0.24, height: size * 0.24)
+                            .offset(x: size * 0.24, y: size * 0.24)
+                            .blendMode(.destinationOut)
+                    }
+                    .compositingGroup()
+            }
+            .accessibilityHidden(true)
     }
 }
 
