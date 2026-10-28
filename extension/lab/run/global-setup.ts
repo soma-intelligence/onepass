@@ -4,13 +4,13 @@
 // stage the host with that vault outside the checkout, build the encrypted
 // fixture cache once, and issue a certificate for every host of the world.
 // Paths reach the workers through LAB_STATE (a JSON file).
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateCert } from "../../e2e/cert.ts";
 import { buildHost, prebuildFixtureCache, type StagedHost, stageHost } from "../../e2e/host.ts";
+import { buildLabExtension, LAB_DIST_ROOT } from "../build-marker.ts";
 import { generate, loadPatterns } from "../gen/generate.ts";
 import { DEFAULT_PROFILE_ID, fixtureFor } from "../gen/population.ts";
 
@@ -67,6 +67,8 @@ export interface LabState {
   certDir: string;
   cache: string;
   host: StagedHost;
+  /** Extension folder of this run (dist-lab/<run>/chromium), never the shared dist/chromium. */
+  extDir: string;
   /** Staged host and encrypted vault cache of every simulated user (the default one is `host` and `cache`). */
   profiles: Record<string, { host: StagedHost; cache: string }>;
 }
@@ -74,13 +76,17 @@ export interface LabState {
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const started = Date.now();
   const config = runConfig();
-  execFileSync(process.execPath, ["build.mjs", "chromium"], { cwd: EXT_ROOT, stdio: "inherit" });
+  // Own build folder per run (C1), checked against the requested classifier before anything runs.
+  const built = buildLabExtension(LAB_DIST_ROOT, basename(config.out), {
+    ONEPASS_CLASSIFIER: process.env.ONEPASS_CLASSIFIER, ONEPASS_MODEL_DIR: process.env.ONEPASS_MODEL_DIR,
+  });
   buildHost();
   const world = generate(config.seed, { sites: config.sites, patterns: loadPatterns(), profiles: config.profiles });
   mkdirSync(config.out, { recursive: true });
   const worldPath = join(config.out, "world.json");
   const fixture = join(config.out, "fixture.json");
   const results = join(config.out, "results.jsonl");
+  writeFileSync(join(config.out, "build-marker.json"), JSON.stringify(built.marker, null, 2));
   writeFileSync(worldPath, JSON.stringify(world, null, 2));
   writeFileSync(fixture, JSON.stringify(world.fixture, null, 2));
   writeFileSync(results, "");
@@ -98,7 +104,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const staged = stageHost(join(root, `host-${p.id}`), file);
     profiles[p.id] = { host: staged, cache: await prebuildFixtureCache(join(root, `prebuild-${p.id}`), staged) };
   }));
-  const state: LabState = { root, config, world: worldPath, fixture, results, certDir, cache, host, profiles };
+  const state: LabState = { root, config, extDir: built.dir, world: worldPath, fixture, results, certDir, cache, host, profiles };
   const statePath = join(root, "state.json");
   writeFileSync(statePath, JSON.stringify(state));
   process.env.LAB_STATE = statePath;

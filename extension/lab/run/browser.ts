@@ -208,7 +208,7 @@ export async function launchLab(state: LabState, world: World, server: LabServer
   if (!staged) throw new Error(`lab: no staged vault for profile ${profileId}`);
   const dir = mkdtempSync(join(tmpdir(), "onepass-lab-profile-"));
   const profile = join(dir, "profile");
-  const extPath = join(EXT_ROOT, "dist", "chromium");
+  const extPath = state.extDir;
   let ctx: BrowserContext | undefined;
   try {
     ctx = await chromium.launchPersistentContext(profile, {

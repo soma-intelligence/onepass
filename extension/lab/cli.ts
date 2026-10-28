@@ -96,18 +96,31 @@ function runPlaywright(env: Record<string, string>, workers: string | undefined)
   return r.status ?? 1;
 }
 
-/** classifier.json of a run: kind, model size, offline metrics, and for a model build the classify time measured in the worker. */
-function writeClassifierInfo(out: string, a: Args, env: Record<string, string>, seed: string, sites: number): void {
+/**
+ * classifier.json of a run: kind, build marker (checked before the run), model size, offline metrics, and for a
+ * model build the classify time measured in the worker. Returns false when the probe failed (marked "failed").
+ */
+function writeClassifierInfo(out: string, a: Args, env: Record<string, string>, seed: string, sites: number): boolean {
   const opts = classifierOptions(a);
-  if (opts.kind === undefined) return;
+  if (opts.kind === undefined) return true;
   const info = classifierInfo(opts.kind, opts.modelDir);
+  const markerFile = join(out, "build-marker.json");
+  if (existsSync(markerFile)) info.buildMarker = JSON.parse(readFileSync(markerFile, "utf8")) as NonNullable<typeof info.buildMarker>;
+  let ok = true;
   if (opts.kind !== "heuristic") {
     const file = join(out, "classify-time.json");
     const r = spawnSync("node", ["--experimental-strip-types", "lab/run/classify-time.ts", "--seed", seed, "--sites", String(sites), "--out", file], { cwd: EXT_ROOT, stdio: "inherit", env: { ...process.env, ...env } });
-    if (r.status === 0) info.classifyMs = JSON.parse(readFileSync(file, "utf8")) as NonNullable<typeof info.classifyMs>;
-    else console.error("lab: the classify time could not be measured (the comparison will say so)");
+    if (r.status === 0) {
+      info.classifyMs = JSON.parse(readFileSync(file, "utf8")) as NonNullable<typeof info.classifyMs>;
+      info.probe = "ok";
+    } else {
+      ok = false;
+      info.probe = "failed";
+      console.error("lab: the classify-time probe failed (marked probe failed in classifier.json; exit code 1)");
+    }
   }
   writeFileSync(join(out, "classifier.json"), JSON.stringify(info, null, 2));
+  return ok;
 }
 
 function runLab(env: Record<string, string>, out: string, workers: string | undefined, md: string | undefined, a: Args = {}, seed = "", sites = 0): number {
@@ -120,9 +133,9 @@ function runLab(env: Record<string, string>, out: string, workers: string | unde
   }
   const meta = { date: new Date().toISOString().slice(0, 10), commit: commit(), durationMin: minutes };
   writeFileSync(join(out, "run-meta.json"), JSON.stringify(meta, null, 2));
-  writeClassifierInfo(out, a, env, seed, sites);
+  const probeOk = writeClassifierInfo(out, a, env, seed, sites);
   const leaks = writeReport(out, md);
-  return leaks > 0 || status !== 0 ? 1 : 0;
+  return leaks > 0 || status !== 0 || !probeOk ? 1 : 0;
 }
 
 /** `compare --out <dir> <dir> <dir> --md <file> [--real-rows <jsonl>]`: the folders are the values of --out and the arguments after it. */
@@ -136,7 +149,7 @@ async function compare(rest: string[]): Promise<number> {
   if (a["real-rows"] !== undefined) {
     // The heuristic's real_test score comes from running classifyField on the rows (heuristic-eval.ts).
     const score = await scoreRows(absolute(a["real-rows"]));
-    const runs = loaded.runs.map((r) => (r.info.classifier === "heuristic" ? { ...r, info: { ...r.info, realTestMacroF1: score.macroF1, realTestRows: score.rows } } : r));
+    const runs = loaded.runs.map((r) => (r.info.classifier === "heuristic" ? { ...r, info: { ...r.info, realTestMacroF1: score.macroF1, realTestMergedF1: score.mergedF1, realTestRows: score.rows, ...(score.digest ? { realTestDigest: score.digest } : {}) } } : r));
     ({ markdown } = compareRuns(runs));
   }
   const target = absolute(need(a, "md"));
@@ -177,7 +190,7 @@ async function main(argv: string[]): Promise<number> {
     // A separate directory keeps the original run's results and report intact.
     const reproOut = absolute(join("lab", "out", `${seed}${cls.suffix}-repro-${site}`));
     const profiles = a.profiles !== undefined ? posInt(a, "profiles", 1) : 1;
-    return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_PROFILES: String(profiles), LAB_ONLY: String(site), LAB_OUT: reproOut, ...cls.env }, reproOut, a.workers, a.report);
+    return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_PROFILES: String(profiles), LAB_ONLY: String(site), LAB_OUT: reproOut, ...cls.env }, reproOut, a.workers, a.report, a, seed, sites);
   }
   if (cmd === "dataset") {
     const args = ["--experimental-strip-types", "lab/dataset/build.ts", "--seed", need(a, "seed"), "--forms", String(posInt(a, "forms", 1))];

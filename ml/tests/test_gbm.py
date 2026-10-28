@@ -95,6 +95,16 @@ def test_evaluate_reports_and_real_test_empty(trained, data):
     assert written["test"]["macro_f1"] == t["macro_f1"]
 
 
+def test_rows_digest_matches_the_lab_recipe(tmp_path):
+    import pyarrow as pa
+    from onepass_ml.eval import rows_digest
+
+    t = pa.table({"origin": ["b.com", "a.com"], "site": [1, 0], "step": [0, 0], "index": [2, 0]})
+    pq.write_table(t, tmp_path / "real_test.parquet")
+    # Same value as the TypeScript test of rowsDigest (extension/test/lab/heuristic-eval.test.ts).
+    assert rows_digest(tmp_path / "real_test.parquet") == "1a846ebafc55dee56bca4111816dc8a678ed0ff58fda3efc1798fdb3eeb6c45a"
+
+
 def test_target_is_not_a_feature(data):
     X, y = load_matrix(data / "train.parquet")
     rows = pq.read_table(data / "train.parquet").to_pylist()

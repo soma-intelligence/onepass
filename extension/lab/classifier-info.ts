@@ -2,12 +2,13 @@
 // metrics from the ml eval JSON next to the model, plus the per-form classify time statistics.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { mergedMacroF1FromConfusion } from "./dataset/f1.ts";
 import type { ClassifierInfo, ClassifierKind, ClassifyTime } from "./compare.ts";
 
 /** Files of a model build, as build.mjs MODEL_FILES. */
 const FILES: Record<Exclude<ClassifierKind, "heuristic">, string[]> = { gbm: ["gbm.onnx"], encoder: ["encoder.onnx", "tokenizer.json"] };
 
-interface Split { rows?: number; macro_f1?: number }
+interface Split { rows?: number; macro_f1?: number; labels?: string[]; confusion_matrix?: number[][] }
 
 export function classifierInfo(kind: ClassifierKind, modelDir?: string): ClassifierInfo {
   if (kind === "heuristic") return { classifier: "heuristic" };
@@ -21,11 +22,14 @@ export function classifierInfo(kind: ClassifierKind, modelDir?: string): Classif
   const info: ClassifierInfo = { classifier: kind, modelBytes: bytes };
   const evalFile = join(modelDir, `${kind}-eval.json`);
   if (existsSync(evalFile)) {
-    const e = JSON.parse(readFileSync(evalFile, "utf8")) as { test?: Split | string; real_test?: Split | string };
+    const e = JSON.parse(readFileSync(evalFile, "utf8")) as { test?: Split | string; real_test?: Split | string; real_test_digest?: string };
     const f1 = (s: Split | string | undefined): number | null | undefined => (s === undefined ? undefined : typeof s === "string" || s.macro_f1 === undefined ? null : s.macro_f1);
     info.testMacroF1 = f1(e.test);
     info.realTestMacroF1 = f1(e.real_test);
-    info.realTestRows = typeof e.real_test === "object" ? (e.real_test.rows ?? 0) : 0;
+    const rt = e.real_test;
+    info.realTestMergedF1 = typeof rt === "object" && rt.labels && rt.confusion_matrix ? mergedMacroF1FromConfusion(rt.confusion_matrix, rt.labels) : rt === undefined ? undefined : null;
+    info.realTestRows = typeof rt === "object" ? (rt.rows ?? 0) : 0;
+    if (e.real_test_digest) info.realTestDigest = e.real_test_digest;
   }
   return info;
 }
