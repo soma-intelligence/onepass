@@ -15,17 +15,32 @@ public struct VaultBadge: View {
         self.tile = tile
     }
 
-    /// The seven vault colors a vault can take, in display order.
-    public nonisolated static let colorNames = ["blue", "teal", "orange", "green", "purple", "pink", "gray"]
+    /// The vault colors, in display order (a rainbow, then the neutrals). The first seven are the
+    /// original palette: vaults saved with them keep their exact color.
+    public nonisolated static let colorNames = [
+        "red", "orange", "amber", "yellow", "lime", "green", "mint", "teal", "cyan",
+        "sky", "blue", "indigo", "purple", "pink", "rose", "brown", "graphite", "gray",
+    ]
 
     public nonisolated static func color(named: String) -> Color {
         switch named {
-        case "blue": Color(hex: 0x2F80ED)
-        case "teal": Color(hex: 0x0E9F9F)
+        case "red": Color(hex: 0xE5484D)
         case "orange": Color(hex: 0xE08A00)
+        case "amber": Color(hex: 0xF5A623)
+        case "yellow": Color(hex: 0xE6C02E)
+        case "lime": Color(hex: 0x8CBF26)
         case "green": Color(hex: 0x22A06B)
+        case "mint": Color(hex: 0x2EC4A0)
+        case "teal": Color(hex: 0x0E9F9F)
+        case "cyan": Color(hex: 0x16A9D6)
+        case "sky": Color(hex: 0x5AA9F5)
+        case "blue": Color(hex: 0x2F80ED)
+        case "indigo": Color(hex: 0x5B5BD6)
         case "purple": Color(hex: 0x7C3AED)
         case "pink": Color(hex: 0xDB2777)
+        case "rose": Color(hex: 0xF0718F)
+        case "brown": Color(hex: 0xA0703F)
+        case "graphite": Color(hex: 0x3F4450)
         case "gray": Color(hex: 0x5B6472)
         default: Color(hex: 0x5B6472)
         }

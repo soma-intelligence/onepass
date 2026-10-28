@@ -24,7 +24,7 @@ struct ItemHeader: View {
     @ViewBuilder private var vaultBadge: some View {
         if let vault {
             HStack(spacing: 5) {
-                VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 16)
+                VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 16)
                 Text(vault.meta.name).lineLimit(1)
             }
             .padding(.leading, 3)

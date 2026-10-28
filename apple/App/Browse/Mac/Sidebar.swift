@@ -162,30 +162,37 @@ struct Sidebar: View {
     // MARK: - Sections
 
     @ViewBuilder private func vaultsSection(_ counts: ItemCounts) -> some View {
-        Section(isExpanded: $vaultsExpanded) {
-            ForEach(session.vaults, id: \.id) { vault in
-                Label {
-                    Text(vault.meta.name)
-                } icon: {
-                    VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: SymbolTile.sidebarSize,
-                        tile: true)
+        // A plain section with its own header: the system fold chevron sat on the right, on top of
+        // the "+" button. Here it leads the title and the "+" keeps the trailing edge alone.
+        Section {
+            if vaultsExpanded {
+                ForEach(session.vaults, id: \.id) { vault in
+                    Label {
+                        Text(vault.meta.name)
+                    } icon: {
+                        VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: SymbolTile.sidebarSize)
+                    }
+                    .badge(counts.byVault[vault.id] ?? 0)
+                    .tag(Destination.filter(.vault(vault.id)))
+                    .accessibilityIdentifier("sidebar.vaults.\(vault.id)")
                 }
-                .badge(counts.byVault[vault.id] ?? 0)
-                .tag(Destination.filter(.vault(vault.id)))
-                .accessibilityIdentifier("sidebar.vaults.\(vault.id)")
             }
         } header: {
-            HStack {
-                Text("Coffres").textCase(.uppercase)
-                Spacer()
+            HStack(spacing: 0) {
+                SectionFoldHeader(title: "Coffres", expanded: $vaultsExpanded, id: "sidebar.vaults.fold")
+                Spacer(minLength: 8)
                 Button {
                     creatingVault = true
                 } label: {
-                    Label("Nouveau coffre", systemImage: "plus")
-                        .labelStyle(.iconOnly)
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 22, height: 22)
+                        .contentShape(.rect)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
                 .help("Nouveau coffre")
+                .accessibilityLabel(Text("Nouveau coffre"))
                 .accessibilityIdentifier("sidebar.vaults.new")
             }
         }
@@ -217,7 +224,8 @@ struct Sidebar: View {
     @ViewBuilder private func tagsSection(_ counts: ItemCounts) -> some View {
         let tags = counts.byTag.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         if !tags.isEmpty {
-            Section(isExpanded: $tagsExpanded) {
+            Section {
+                if tagsExpanded {
                 ForEach(tags, id: \.self) { tag in
                     Label {
                         Text(tag)
@@ -231,8 +239,9 @@ struct Sidebar: View {
                     .tag(Destination.filter(.tag(tag)))
                     .accessibilityIdentifier("sidebar.tags.\(tag)")
                 }
+                }
             } header: {
-                Text("Tags").textCase(.uppercase)
+                SectionFoldHeader(title: "Tags", expanded: $tagsExpanded, id: "sidebar.tags.fold")
             }
         }
     }
@@ -368,6 +377,31 @@ struct AccountAvatar: View {
         .clipShape(shape)
         .overlay { shape.strokeBorder(.white.opacity(0.12), lineWidth: 0.5) }
         .accessibilityHidden(true)
+    }
+}
+
+/// A sidebar section title that folds its section: the chevron leads, turning down when open.
+struct SectionFoldHeader: View {
+    let title: LocalizedStringKey
+    @Binding var expanded: Bool
+    let id: String
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(duration: 0.3, bounce: 0)) { expanded.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .frame(width: 12)
+                Text(title).textCase(.uppercase)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(Text(expanded ? "Ouvert" : "Fermé"))
+        .accessibilityIdentifier(id)
     }
 }
 

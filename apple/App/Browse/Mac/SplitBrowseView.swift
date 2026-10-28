@@ -98,9 +98,11 @@ struct DetailColumn: View {
             } else if let ref = model.selectedItem {
                 ItemDetailView(ref: ref).id(ref)
             } else {
-                EmptyState(
-                    title: String(localized: "Aucun élément sélectionné"), systemImage: "rectangle.portrait.on.rectangle.portrait",
-                    message: String(localized: "Choisis un élément dans la liste."))
+                // The vault picture alone carries the empty state; the words stay for VoiceOver.
+                VaultIllustration(size: 340)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityElement()
+                    .accessibilityLabel(Text("Aucun élément sélectionné. Choisis un élément dans la liste."))
             }
         }
     }

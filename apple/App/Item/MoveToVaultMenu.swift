@@ -74,7 +74,7 @@ struct VaultToolbarMenu: View {
         } label: {
             HStack(spacing: 6) {
                 if let current {
-                    VaultBadge(name: current.meta.name, colorName: current.meta.color, size: 16, tile: true)
+                    VaultIconTile(icon: current.meta.icon, colorName: current.meta.color, size: 16)
                     Text(current.meta.name).lineLimit(1)
                 }
             }

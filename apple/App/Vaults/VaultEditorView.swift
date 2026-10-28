@@ -2,67 +2,155 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// The twelve symbols a vault can take, and the seven named colors (the vault badge palette).
+/// The symbols a vault can take (SF Symbols, drawn white on the vault's color) and its named colors
+/// (the `VaultBadge` palette). Vaults made before the larger set keep their outline symbols.
 enum VaultStyle {
-    static let icons = [
+    static let catalog: [(symbol: String, label: String)] = [
+        ("folder.fill", String(localized: "Dossier")),
+        ("archivebox.fill", String(localized: "Archives")),
+        ("house.fill", String(localized: "Maison")),
+        ("building.2.fill", String(localized: "Bureau")),
+        ("building.columns.fill", String(localized: "Banque")),
+        ("briefcase.fill", String(localized: "Travail")),
+        ("person.fill", String(localized: "Personne")),
+        ("person.2.fill", String(localized: "Duo")),
+        ("figure.2.and.child.holdinghands", String(localized: "Famille")),
+        ("heart.fill", String(localized: "Cœur")),
+        ("star.fill", String(localized: "Étoile")),
+        ("crown.fill", String(localized: "Couronne")),
+        ("cart.fill", String(localized: "Panier")),
+        ("bag.fill", String(localized: "Achats")),
+        ("gift.fill", String(localized: "Cadeau")),
+        ("creditcard.fill", String(localized: "Carte bancaire")),
+        ("banknote.fill", String(localized: "Argent")),
+        ("chart.bar.fill", String(localized: "Finances")),
+        ("scalemass.fill", String(localized: "Juridique")),
+        ("doc.text.fill", String(localized: "Documents")),
+        ("envelope.fill", String(localized: "Courrier")),
+        ("phone.fill", String(localized: "Téléphone")),
+        ("bubble.left.and.bubble.right.fill", String(localized: "Messages")),
+        ("globe.americas.fill", String(localized: "Monde")),
+        ("airplane", String(localized: "Voyage")),
+        ("car.fill", String(localized: "Voiture")),
+        ("sailboat.fill", String(localized: "Bateau")),
+        ("tram.fill", String(localized: "Transports")),
+        ("map.fill", String(localized: "Carte")),
+        ("mountain.2.fill", String(localized: "Montagne")),
+        ("tent.fill", String(localized: "Camping")),
+        ("tree.fill", String(localized: "Nature")),
+        ("leaf.fill", String(localized: "Feuille")),
+        ("flame.fill", String(localized: "Flamme")),
+        ("drop.fill", String(localized: "Goutte")),
+        ("bolt.fill", String(localized: "Énergie")),
+        ("sun.max.fill", String(localized: "Soleil")),
+        ("moon.stars.fill", String(localized: "Nuit")),
+        ("cloud.fill", String(localized: "Nuage")),
+        ("snowflake", String(localized: "Hiver")),
+        ("graduationcap.fill", String(localized: "Études")),
+        ("book.fill", String(localized: "Livre")),
+        ("pencil.and.outline", String(localized: "Écriture")),
+        ("paintbrush.fill", String(localized: "Art")),
+        ("music.note", String(localized: "Musique")),
+        ("film.fill", String(localized: "Cinéma")),
+        ("camera.fill", String(localized: "Photo")),
+        ("gamecontroller.fill", String(localized: "Jeux")),
+        ("dice.fill", String(localized: "Dés")),
+        ("puzzlepiece.fill", String(localized: "Puzzle")),
+        ("tennisball.fill", String(localized: "Sport")),
+        ("dumbbell.fill", String(localized: "Fitness")),
+        ("figure.run", String(localized: "Course")),
+        ("cross.case.fill", String(localized: "Santé")),
+        ("pills.fill", String(localized: "Médicaments")),
+        ("pawprint.fill", String(localized: "Animaux")),
+        ("cup.and.saucer.fill", String(localized: "Café")),
+        ("fork.knife", String(localized: "Restaurants")),
+        ("wrench.and.screwdriver.fill", String(localized: "Outils")),
+        ("hammer.fill", String(localized: "Bricolage")),
+        ("terminal.fill", String(localized: "Terminal")),
+        ("chevron.left.forwardslash.chevron.right", String(localized: "Code")),
+        ("server.rack", String(localized: "Serveurs")),
+        ("cpu.fill", String(localized: "Matériel")),
+        ("wifi", String(localized: "Wi-Fi")),
+        ("atom", String(localized: "Science")),
+        ("testtube.2", String(localized: "Laboratoire")),
+        ("key.fill", String(localized: "Clé")),
+        ("lock.fill", String(localized: "Cadenas")),
+        ("shield.fill", String(localized: "Bouclier")),
+        ("flag.fill", String(localized: "Drapeau")),
+        ("sparkles", String(localized: "Étincelles")),
+    ]
+
+    static let icons = catalog.map(\.symbol)
+
+    /// The first twelve symbols, outline, from before the larger set.
+    static let legacy = [
         "folder", "briefcase", "house", "person", "person.2", "heart",
         "star", "cart", "creditcard", "airplane", "graduationcap", "gamecontroller",
     ]
+
+    /// The symbol to draw: a stored legacy outline name becomes its filled sibling.
+    static func symbol(_ icon: String) -> String {
+        if icons.contains(icon) { return icon }
+        if legacy.contains(icon) { return icons.contains(icon + ".fill") ? icon + ".fill" : icon }
+        return "folder.fill"
+    }
 
     static let colors = VaultBadge.colorNames
 
     static func colorLabel(_ name: String) -> String {
         switch name {
-        case "blue": String(localized: "Bleu")
-        case "teal": String(localized: "Turquoise")
+        case "red": String(localized: "Rouge")
         case "orange": String(localized: "Orange")
+        case "amber": String(localized: "Ambre")
+        case "yellow": String(localized: "Jaune")
+        case "lime": String(localized: "Citron vert")
         case "green": String(localized: "Vert")
+        case "mint": String(localized: "Menthe")
+        case "teal": String(localized: "Turquoise")
+        case "cyan": String(localized: "Cyan")
+        case "sky": String(localized: "Ciel")
+        case "blue": String(localized: "Bleu")
+        case "indigo": String(localized: "Indigo")
         case "purple": String(localized: "Violet")
         case "pink": String(localized: "Rose")
+        case "rose": String(localized: "Rose poudré")
+        case "brown": String(localized: "Brun")
+        case "graphite": String(localized: "Graphite")
+        case "gray": String(localized: "Gris")
         default: String(localized: "Gris")
         }
     }
 
     static func iconLabel(_ name: String) -> String {
-        switch name {
-        case "folder": String(localized: "Dossier")
-        case "briefcase": String(localized: "Mallette")
-        case "house": String(localized: "Maison")
-        case "person": String(localized: "Personne")
-        case "person.2": String(localized: "Deux personnes")
-        case "heart": String(localized: "Cœur")
-        case "star": String(localized: "Étoile")
-        case "cart": String(localized: "Panier")
-        case "creditcard": String(localized: "Carte bancaire")
-        case "airplane": String(localized: "Avion")
-        case "graduationcap": String(localized: "Études")
-        case "gamecontroller": String(localized: "Jeux")
-        default: name
-        }
+        catalog.first { $0.symbol == symbol(name) }?.label ?? name
     }
 }
 
-/// Rounded tile with a vault's symbol on its color (preview of the editor, list of the settings).
+/// A vault's symbol on a squircle in a soft gradient of its color, with a hairline highlight: the
+/// same family as the sidebar's row tiles.
 struct VaultIconTile: View {
     let icon: String
     let colorName: String
     var size: CGFloat = 30
 
     var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-            .fill(VaultBadge.color(named: colorName))
+        let shape = RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+        shape
+            .fill(VaultBadge.color(named: colorName).gradient)
+            .overlay { shape.strokeBorder(.white.opacity(0.18), lineWidth: 0.5) }
             .frame(width: size, height: size)
             .overlay {
-                Image(systemName: VaultStyle.icons.contains(icon) ? icon : "folder")
+                Image(systemName: VaultStyle.symbol(icon))
                     .font(.system(size: size * 0.5, weight: .semibold))
                     .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.12), radius: 0.5, y: 0.5)
             }
             .accessibilityHidden(true)
     }
 }
 
-/// Creates a vault (`vault` nil) or renames and restyles one: name, symbol among twelve, color
-/// among seven. An existing vault is deleted here when it is empty and not the last (R14).
+/// Creates a vault (`vault` nil) or renames and restyles one: a large live preview with the name
+/// under it, then the colors, then the symbols, each drawn in the chosen color. An existing vault is deleted here when it is empty and not the last (R14).
 struct VaultEditorView: View {
     @Environment(AppModel.self) private var model
     let vault: FfiVault?
@@ -82,7 +170,7 @@ struct VaultEditorView: View {
         self.vault = vault
         self.onDone = onDone
         _name = State(initialValue: vault?.meta.name ?? "")
-        _icon = State(initialValue: vault?.meta.icon ?? "folder")
+        _icon = State(initialValue: vault.map { VaultStyle.symbol($0.meta.icon) } ?? "folder.fill")
         _color = State(initialValue: vault?.meta.color ?? "blue")
         _travelSafe = State(initialValue: vault?.meta.travelSafe ?? false)
     }
@@ -94,30 +182,42 @@ struct VaultEditorView: View {
         NavigationStack {
             Form {
                 Section {
-                    HStack(spacing: 14) {
-                        VaultIconTile(icon: icon, colorName: color, size: 44)
+                    VStack(spacing: 14) {
+                        VaultIconTile(icon: icon, colorName: color, size: 76)
+                            .shadow(color: VaultBadge.color(named: color).opacity(0.35), radius: 14, y: 6)
+                            .animation(.spring(duration: 0.35, bounce: 0.3), value: color)
+                            .animation(.spring(duration: 0.35, bounce: 0.3), value: icon)
                         TextField("Nom du coffre", text: $name, prompt: Text("Projet Atlas"))
+                            .labelsHidden()
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.center)
+                            .font(.title2.weight(.semibold))
                             .focused($nameFocused)
                             .onSubmit(save)
                             .submitLabel(.done)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(.fill.quaternary, in: .rect(cornerRadius: 10, style: .continuous))
                             .accessibilityIdentifier("vault.editor.name")
                     }
-                }
-                Section("Icône") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], spacing: 8) {
-                        ForEach(VaultStyle.icons, id: \.self) { symbol in
-                            iconButton(symbol)
-                        }
-                    }
-                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
                 }
                 Section("Couleur") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], spacing: 8) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: 8)], spacing: 10) {
                         ForEach(VaultStyle.colors, id: \.self) { name in
                             colorButton(name)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
+                }
+                Section("Icône") {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 40, maximum: 46), spacing: 8)], spacing: 8) {
+                        ForEach(VaultStyle.icons, id: \.self) { symbol in
+                            iconButton(symbol)
+                        }
+                    }
+                    .padding(.vertical, 6)
                 }
                 Section {
                     Toggle("Sûr en voyage", isOn: $travelSafe)
@@ -144,10 +244,19 @@ struct VaultEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Annuler", action: onDone)
+                        #if os(macOS)
+                        .buttonStyle(QuietToolbarButtonStyle())
+                        #endif
                         .accessibilityIdentifier("vault.editor.cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(vault == nil ? "Créer" : "Enregistrer", action: save)
+                        #if os(macOS)
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        .fontWeight(.semibold)
+                        #endif
                         .disabled(!canSave)
                         .accessibilityIdentifier("vault.editor.save")
                 }
@@ -155,7 +264,7 @@ struct VaultEditorView: View {
             .onAppear { if vault == nil { nameFocused = true } }
         }
         #if os(macOS)
-        .frame(minWidth: 420, minHeight: 440)
+        .frame(width: 480, height: 640)
         #endif
         .interactiveDismissDisabled(saving)
     }
@@ -206,42 +315,60 @@ struct VaultEditorView: View {
         }
     }
 
+    /// A symbol of the grid, already in the vault's color: tinted when idle, the full tile once
+    /// chosen, with a ring.
     private func iconButton(_ symbol: String) -> some View {
         let selected = icon == symbol
+        let tint = VaultBadge.color(named: color)
         return Button {
-            icon = symbol
+            withAnimation(.spring(duration: 0.3, bounce: 0.3)) { icon = symbol }
         } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(selected ? Color.white : Color.primary)
-                .frame(width: 44, height: 44)
-                .background(
-                    selected ? AnyShapeStyle(VaultBadge.color(named: color)) : AnyShapeStyle(.quaternary),
-                    in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            ZStack {
+                if selected {
+                    VaultIconTile(icon: symbol, colorName: color, size: 40)
+                } else {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(tint.opacity(0.16))
+                        .frame(width: 40, height: 40)
+                        .overlay {
+                            Image(systemName: symbol)
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(tint.mix(with: .white, by: 0.25))
+                        }
+                }
+            }
+            .padding(2)
+            .overlay {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(selected ? tint : .clear, lineWidth: 2)
+            }
+            .scaleEffect(selected ? 1.04 : 1)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .help(VaultStyle.iconLabel(symbol))
         .visionHoverEffect()
         .accessibilityLabel(Text(VaultStyle.iconLabel(symbol)))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("vault.editor.icon.\(symbol)")
     }
 
+    /// A color dot; the chosen one gets a ring a little away from it.
     private func colorButton(_ colorName: String) -> some View {
         let selected = color == colorName
+        let fill = VaultBadge.color(named: colorName)
         return Button {
-            color = colorName
+            withAnimation(.spring(duration: 0.3, bounce: 0.3)) { color = colorName }
         } label: {
             Circle()
-                .fill(VaultBadge.color(named: colorName))
-                .frame(width: 32, height: 32)
-                .overlay {
-                    if selected {
-                        Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                    }
-                }
-                .frame(width: 44, height: 44)
+                .fill(fill.gradient)
+                .frame(width: 24, height: 24)
+                .padding(3)
+                .overlay { Circle().strokeBorder(selected ? fill : .clear, lineWidth: 2) }
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .help(VaultStyle.colorLabel(colorName))
         .visionHoverEffect()
         .accessibilityLabel(Text(VaultStyle.colorLabel(colorName)))
         .accessibilityAddTraits(selected ? .isSelected : [])
