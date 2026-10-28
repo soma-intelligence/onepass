@@ -47,7 +47,7 @@ struct GeneralSettings: View {
                 if shared {
                     Text("Appareil partagé : le délai est imposé (5 minutes au plus). Repasse en mode personnel pour le régler.")
                 } else {
-                    Text("OnePass se verrouille après ce délai d'inactivité et quand l'app reste en arrière-plan aussi longtemps.")
+                    Text("Aussi après ce temps en arrière-plan.")
                 }
             }
             Section {
@@ -57,7 +57,7 @@ struct GeneralSettings: View {
                 ))
                 .accessibilityIdentifier("settings.siteIcons")
             } footer: {
-                Text("Récupérées directement sur le site de l'élément, sans cookies et sans service tiers. Désactivées, aucune requête n'est envoyée.")
+                Text("Depuis le site lui-même, sans service tiers.")
             }
             Section {
                 Button("Importer depuis un autre gestionnaire…", systemImage: "square.and.arrow.down") {
@@ -67,7 +67,7 @@ struct GeneralSettings: View {
             } header: {
                 Text("Import")
             } footer: {
-                Text("Mots de passe d'Apple, 1Password, Bitwarden, NordPass, Dashlane, LastPass, Proton Pass, Keeper, Enpass, RoboForm, KeePass et les navigateurs.")
+                Text("Apple, 1Password, Bitwarden, les navigateurs et 8 autres.")
             }
             Section {
                 Button("Exporter une sauvegarde chiffrée…", systemImage: "square.and.arrow.down.on.square") {

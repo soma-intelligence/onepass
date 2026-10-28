@@ -1560,6 +1560,16 @@
         }
       }
     },
+    "Apple, 1Password, Bitwarden, les navigateurs et 8 autres." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple, 1Password, Bitwarden, browsers and 8 more."
+          }
+        }
+      }
+    },
     "Approuve seulement si l'extension affiche exactement ce code." : {
       "localizations" : {
         "en" : {
@@ -1986,6 +1996,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No refused deletions."
+          }
+        }
+      }
+    },
+    "Aussi après ce temps en arrière-plan." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also after this long in the background."
           }
         }
       }
@@ -4226,6 +4246,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Since %1$@, %2$@ off this device"
+          }
+        }
+      }
+    },
+    "Depuis le site lui-même, sans service tiers." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From the site itself, no third-party service."
           }
         }
       }

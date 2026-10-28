@@ -494,6 +494,8 @@ struct ItemDetailView: View {
         }
         .sharedBackgroundVisibility(.hidden)
         #else
+        // The big header already names the item: no second title in the bar.
+        ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
         // iPhone and iPad: three icons in one group. The vault is already under the title (its
         // badge), and "Déplacer…" sits in the actions menu.
         if item.trashedAt == nil {
