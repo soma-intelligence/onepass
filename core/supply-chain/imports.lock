@@ -90,6 +90,10 @@ when = "2024-01-24"
 user-id = 127697
 user-login = "bendk"
 
+[audits.actix.audits]
+
+[audits.ariel-os.audits]
+
 [[audits.bytecode-alliance.wildcard-audits.bumpalo]]
 who = "Nick Fitzgerald <fitzgen@gmail.com>"
 criteria = "safe-to-deploy"
@@ -327,6 +331,8 @@ who = "Johan Andersson <opensource@embark-studios.com>"
 criteria = "safe-to-deploy"
 delta = "0.3.0 -> 0.4.0"
 notes = "No unsafe usage or ambient capabilities"
+
+[audits.fermyon.audits]
 
 [[audits.google.audits.byteorder]]
 who = "danakj <danakj@chromium.org>"
