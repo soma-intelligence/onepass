@@ -37,7 +37,10 @@ export interface InferenceRuntime {
   open(model: Uint8Array): Promise<RuntimeSession>;
 }
 
-export type ModelSession = ModelSessionLike;
+export interface ModelSession extends ModelSessionLike {
+  /** Encoder: total tokens the request would run (the worker's token budget). Absent for gbm (cost = fields). */
+  tokens?(features: FieldFeatures[]): number;
+}
 
 // ---- ONNX metadata (ModelProto.metadata_props, field 14) ----
 
@@ -167,6 +170,7 @@ function gbmSession(rt: RuntimeSession): ModelSession {
 function encoderSession(rt: RuntimeSession, tok: Tokenizer): ModelSession {
   return {
     kind: "encoder",
+    tokens: (features) => features.reduce((n, f) => n + encode(tok, serialize(f)).length, 0),
     async predict(features: FieldFeatures[]) {
       if (features.length === 0) return [];
       const n = features.length;

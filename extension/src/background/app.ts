@@ -243,7 +243,9 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     let loaded: Promise<ModelSession | null> | null = null;
     const load = () => (loaded ??= service.then((m) => m.loadClassifierModel(ext, kind)).catch(() => null));
     modelSession = load;
-    handlers.cs.classify = async (m, from) => (await service).createClassifyHandler({ kind, frames, session: load })(m, from);
+    // One handler (and so one budget per tab) for the worker's lifetime.
+    const handler = service.then((m) => m.createClassifyHandler({ kind, frames, session: load }));
+    handlers.cs.classify = async (m, from) => (await handler)(m, from);
   }
 
   return {
