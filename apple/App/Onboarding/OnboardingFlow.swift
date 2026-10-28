@@ -796,22 +796,21 @@ private struct MacOnboardingLayout: View {
 }
 
 /// Step list of the mockup's left rail: number disc, check once done, current step in bold.
+/// Plain colours, not the sidebar's vibrant styles: those also draw in the app's own window
+/// renders (`Snapshot`), where dark vibrancy comes out black.
 private struct StepRail: View {
     let model: OnboardingModel
+    @Environment(\.colorScheme) private var scheme
+
+    private var label: Color { scheme == .dark ? Color.white.opacity(0.85) : Color.black.opacity(0.85) }
+    private var secondaryLabel: Color { scheme == .dark ? Color.white.opacity(0.55) : Color.black.opacity(0.5) }
+    private var currentRow: Color { scheme == .dark ? Color.white.opacity(0.1) : Color.white }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Theme.accent)
-                    .frame(width: 34, height: 34)
-                    .overlay {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                    .accessibilityHidden(true)
-                Text("OnePass").font(.title3.bold())
+                AppGlyph(size: 34).accessibilityHidden(true)
+                Text("OnePass").font(.title3.bold()).foregroundStyle(label)
             }
             .padding(.horizontal, 6)
             .padding(.bottom, 22)
@@ -824,7 +823,7 @@ private struct StepRail: View {
                         if index <= current {
                             Circle().fill(Theme.accent)
                         } else {
-                            Circle().strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1.5)
+                            Circle().strokeBorder(secondaryLabel.opacity(0.7), lineWidth: 1.5)
                         }
                         if index < current {
                             Image(systemName: "checkmark")
@@ -833,13 +832,13 @@ private struct StepRail: View {
                         } else {
                             Text("\(index + 1)")
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(index == current ? Color.white : Color.secondary)
+                                .foregroundStyle(index == current ? Color.white : secondaryLabel)
                         }
                     }
                     .frame(width: 22, height: 22)
                     Text(OnboardingModel.railLabel(step))
                         .font(.system(size: 13.5, weight: index == current ? .bold : .medium))
-                        .foregroundStyle(index > current ? Color.secondary : Color.primary)
+                        .foregroundStyle(index > current ? secondaryLabel : label)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                 }
@@ -847,7 +846,7 @@ private struct StepRail: View {
                 .frame(height: 36)
                 .background {
                     if index == current {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(currentRow)
                     }
                 }
                 .accessibilityElement(children: .combine)

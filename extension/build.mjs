@@ -78,6 +78,7 @@ async function buildBrowser(browser, dev, e2e = false, devHost = false) {
   }
   cpSync(join(root, "src/ui/theme.css"), join(out, "theme.css"));
   cpSync(join(root, "src/_locales"), join(out, "_locales"), { recursive: true });
+  cpSync(join(root, "src/icons"), join(out, "icons"), { recursive: true });
   writeFileSync(
     join(out, "manifest.json"),
     JSON.stringify(mergeManifest(browser), null, 2) + "\n",

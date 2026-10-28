@@ -135,13 +135,13 @@ button:disabled { opacity: .5; }
   backdrop-filter: blur(28px) saturate(160%);
 }
 
-/* The OnePass mark: an indigo tile with a white keyhole. */
+/* The OnePass mark: an indigo tile with the white Lattice. */
 .mark {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent);
+  background: linear-gradient(160deg, #6E6CF0 0%, var(--accent) 45%, #3F3DB8 100%);
   color: #FFFFFF;
 }
 .mark-s { width: 18px; height: 18px; border-radius: 5px; }
