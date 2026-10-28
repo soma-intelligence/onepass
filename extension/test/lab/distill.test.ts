@@ -153,14 +153,66 @@ describe("corpusFiles", () => {
     const { tmpdir } = await import("node:os");
     const { corpusFiles } = await import("../../lab/corpus/distill.ts");
     const root = mkdtempSync(join(tmpdir(), "distill-"));
-    const dirs = { samples: join(root, "samples"), top: join(root, "samples", "top1000"), cc: join(root, "cc"), priv: join(root, "private") };
+    const dirs = { samples: join(root, "samples"), top: join(root, "samples", "top1000"), cc: join(root, "samples", "commoncrawl"), priv: join(root, "private") };
     for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true });
     for (const [d, n] of [[dirs.samples, "a.json"], [dirs.top, "b.0.json"], [dirs.top, "b.done.json"], [dirs.cc, "c.0.json"],
-      [dirs.cc, "commoncrawl-state.json"], [dirs.priv, "d.json"]] as const) writeFileSync(join(d, n), "{}");
+      [dirs.priv, "d.json"]] as const) writeFileSync(join(d, n), "{}");
     const base = (xs: string[]) => xs.map((x) => x.slice(root.length + 1)).sort();
-    expect(base(corpusFiles({ samples: dirs.samples, commoncrawl: dirs.cc, private: dirs.priv }, false)))
-      .toEqual(["cc/c.0.json", "samples/a.json", "samples/top1000/b.0.json"]);
-    expect(base(corpusFiles({ samples: dirs.samples, commoncrawl: join(root, "missing"), private: dirs.priv }, true)))
-      .toEqual(["private/d.json", "samples/a.json", "samples/top1000/b.0.json"]);
+    expect(base(corpusFiles({ samples: dirs.samples, private: dirs.priv }, false)))
+      .toEqual(["samples/a.json", "samples/commoncrawl/c.0.json", "samples/top1000/b.0.json"]);
+    expect(base(corpusFiles({ samples: dirs.samples, private: dirs.priv }, true)))
+      .toEqual(["private/d.json", "samples/a.json", "samples/commoncrawl/c.0.json", "samples/top1000/b.0.json"]);
+  });
+
+  it("never reads lab/out: the committed patterns.json rebuilds from a clean checkout", async () => {
+    const { corpusDirs, corpusFiles } = await import("../../lab/corpus/distill.ts");
+    const files = corpusFiles(corpusDirs(), true);
+    expect(files.some((f) => f.includes("/samples/commoncrawl/"))).toBe(true);
+    for (const f of files) expect(f.replace(/\\/g, "/")).not.toMatch(/\/lab\/out\//);
+    expect(JSON.stringify(corpusDirs())).not.toMatch(/\/out\b/);
+  });
+});
+
+describe("label sanity", () => {
+  const fld = (role: string, label: string) => ({ tag: "input", type: "text", name: role, hasPattern: false, required: false,
+    visibility: "visible" as const, role: role as never, label });
+  const crawled = (fields: ReturnType<typeof fld>[], buttons: string[] = []): Sample =>
+    sample({ extractor: 2, lang: "en", forms: [{ step: "other", buttons, fields }] });
+  const BAD: [string, string][] = [
+    ["new_password", "search"], ["new_password", "cpf"], ["new_password", "at least 8 characters"],
+    ["postal_code", "bitte lösen sie folgende aufgabe: *"], ["tel", "chat with chatgpt"],
+    ["email", "*"], ["email", "join our newsletter"], ["email", "free software supporter:"], ["email", "confirm email"],
+    ["username", "can't register? learn more."], ["username", "create a username"],
+    ["organization", "*what is your organization's monthly compute spend on ai?"],
+  ];
+
+  it("drops every mislabel seen in the top 1000", () => {
+    const out = distill([crawled(BAD.map(([r, l]) => fld(r, l)))], baseline);
+    for (const [role, label] of BAD) {
+      const all = Object.values(out.roles[role as keyof typeof out.roles].labels).flat();
+      expect(all, `${role}: ${label}`).not.toContain(label);
+    }
+  });
+
+  it("drops skip, without and accept buttons", () => {
+    const noise = ["continue without accepting", "skip to next", "accept and continue", "agree & continue", "next page", "next items"];
+    const out = distill([crawled([], [...noise, "Next"])], baseline);
+    const all = Object.values(out.buttons).flatMap((m) => Object.values(m).flat());
+    for (const b of noise) expect(all).not.toContain(b);
+    expect(out.buttons.next.en).toContain("Next");
+  });
+
+  it("keeps sound labels", () => {
+    const good: [string, string][] = [["email", "work email"], ["username", "login id"], ["new_password", "choose a password"],
+      ["postal_code", "zip code"], ["tel", "mobile number"], ["organization", "company"], ["given_name", "first name"]];
+    const out = distill([crawled(good.map(([r, l]) => fld(r, l)))], baseline);
+    for (const [role, label] of good) {
+      expect(out.roles[role as keyof typeof out.roles].labels.en!.map((x) => x.toLowerCase()), label).toContain(label);
+    }
+  });
+
+  it("hand-picked samples are not held to the crawl's role agreement", () => {
+    const out = distill([sample({ forms: [{ step: "both", buttons: [], fields: [fld("username", "Nome utente"), fld("password", "Parola chiave")] }] })], baseline);
+    expect(out.roles.password.labels.it).toContain("Parola chiave");
   });
 });

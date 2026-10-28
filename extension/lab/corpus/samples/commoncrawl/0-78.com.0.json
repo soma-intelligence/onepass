@@ -1,0 +1,61 @@
+{
+  "captured_at": "2026-10-28T00:56:31.344Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "登入"
+      ],
+      "fields": [
+        {
+          "after": "密碼",
+          "autocomplete": "email",
+          "before": "🌙 創作者與粉絲見面的最佳空間 登入 註冊 email",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "login-email",
+          "index": 0,
+          "inputmode": "email",
+          "label": "email",
+          "name": "email",
+          "placeholder": "請輸入 email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "zero_size"
+        },
+        {
+          "autocomplete": "current-password",
+          "before": "密碼",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "login-password",
+          "index": 1,
+          "label": "密碼",
+          "name": "password",
+          "placeholder": "請輸入密碼",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "0-78.com",
+  "iframes": [],
+  "lang": "zh",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "commoncrawl",
+  "source_url": "https://0-78.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

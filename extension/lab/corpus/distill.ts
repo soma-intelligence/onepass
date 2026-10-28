@@ -2,11 +2,11 @@
 // with the "ok" samples and writes a stable patterns.json (version 2: also
 // step sequences, frameworks and trait weights). As a CLI it reads
 // seed-lexicon.json and the samples of the three sources: samples/*.json (hand
-// picked), samples/top1000/*.json (rendered crawl), ../out/commoncrawl/*.json
-// when present, and private/*.json (recorded flows) only with --with-private,
+// picked), samples/top1000/*.json (rendered crawl), samples/commoncrawl/*.json
+// (Common Crawl pages, copied from the job output), and private/*.json (recorded flows) only with --with-private,
 // so that the committed patterns.json never depends on private files.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TRAIT_WEIGHTS } from "../gen/generate.ts";
 import type { Lang, ProviderId, Role, TraitId } from "../gen/model.ts";
@@ -53,9 +53,12 @@ const PROVIDER_PHRASE = /^(continue|continuer|weiter|continuar|continua|sign ?in
 // Wording of a password being chosen (signup, reset): never a label of the sign-in password.
 const NEW_PASSWORD = /\b(create|new|choose|confirm|retype|repeat|again|nouveau|nouvel|creer|choisi|confirme|neues|erstell|wiederhol|bestatig|crea|nueva|nuevo|repet|nuova|conferma)\b/;
 
+// Consent banners, skip links and pagination are not form buttons.
+const NOT_A_BUTTON = /\b(skip|without|accept|accepter|akzeptieren|aceptar|accetta|agree|ohne|sans|sin|senza)\b|\bnext (page|items?)\b/;
+
 export function classifyButton(text: string): ButtonKind | undefined {
   const t = plain(text);
-  if (PROVIDER_NAME.test(t) || PROVIDER_PHRASE.test(t)) return undefined;
+  if (PROVIDER_NAME.test(t) || PROVIDER_PHRASE.test(t) || NOT_A_BUTTON.test(t)) return undefined;
   for (const [kind, re] of BUTTON_WORDS) if (re.test(t)) return kind;
   return undefined;
 }
@@ -89,6 +92,39 @@ function finish(map: Record<string, string[]>): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const k of Object.keys(map).sort()) out[k] = dedupe(map[k]!);
   return out;
+}
+
+// Label sanity: the generator renders lexicon labels as ground truth, so a
+// label that names something else poisons the dataset and fails the lab for
+// nothing. Dropped everywhere: bare punctuation, labels over 40 characters,
+// captcha, search, newsletter and chat wording, signup wording on a login
+// identifier, password hints. Crawled samples (top 1000, Common Crawl:
+// roles guessed by the crawler, often from type or name alone) also need the
+// label itself to agree with the field's role: classifyRole on the label
+// gives the role, its family, or "unknown" (email labels must name the
+// email, password labels a password).
+const MAX_LABEL = 40;
+const NOT_A_LABEL = /captcha|robot|aufgabe|losen sie|solve|search|recherche|suche|buscar|newsletter|subscribe|abonn|supporter|\bchat/;
+const SIGNUP_IDENTIFIER = /creat|regist|sign ?up|confirm|inscri|creer|erstell|crea|repeat|again/;
+const PASSWORD_HINT = /at least|characters|caracteres|zeichen|caratteri|minimum|\bmin\b/;
+const FAMILY: Partial<Record<Role, Role[]>> = {
+  password: ["password", "new_password"], new_password: ["password", "new_password"], email: ["email", "username"],
+  username: ["username", "email"], cc_exp: ["cc_exp", "cc_exp_month", "cc_exp_year"],
+  address_line1: ["address_line1", "address_line2"], address_line2: ["address_line1", "address_line2"],
+};
+const STRICT: Role[] = ["email", "password", "new_password"];
+
+export function labelOk(role: Role, label: string, crawled: boolean): boolean {
+  const t = plain(label);
+  if (!/[\p{L}\p{N}]/u.test(t) || label.trim().length > MAX_LABEL) return false;
+  if (NOT_A_LABEL.test(t)) return false;
+  if ((role === "username" || role === "email") && SIGNUP_IDENTIFIER.test(t)) return false;
+  if ((role === "password" || role === "new_password") && PASSWORD_HINT.test(t)) return false;
+  if (!crawled) return true;
+  const guess = classifyRole({ label });
+  const family = FAMILY[role] ?? [role];
+  if (guess === "unknown") return !STRICT.includes(role) && t.replace(/\s/g, "").length > 3;
+  return family.includes(guess);
 }
 
 // Sanitized placeholders, raw or HTML-escaped by an extractor: no label.
@@ -205,6 +241,7 @@ export function distill(samples: Sample[], baseline: Lexicon, opts: DistillOptio
     for (const t of traitHits(s)) traitCount[t]++;
     // A static copy (Common Crawl) has no layout: its fields all read zero_size.
     const seen = (v: string) => v === "visible" || (s.source === "commoncrawl" && v === "zero_size");
+    const crawled = s.source === "commoncrawl" || (s.extractor === 2 && (s.source ?? "rendered") === "rendered");
     if (s.forms?.some((f) => f.step === "identifier")) identifierFirst++;
     if (s.iframes && s.iframes.length > 0) iframe++;
     if ((s.shadowFields ?? 0) > 0) shadow++;
@@ -224,7 +261,7 @@ export function distill(samples: Sample[], baseline: Lexicon, opts: DistillOptio
         acSeen[r]++;
         if (fld.autocomplete && classifyRole({ autocomplete: fld.autocomplete }) === r) acHit[r]++;
         const signupWording = r === "password" && fld.label !== undefined && NEW_PASSWORD.test(plain(fld.label));
-        if (fld.label && !SKIP.has(fld.label) && !signupWording) addTo(labels[r], lang, fld.label);
+        if (fld.label && !SKIP.has(fld.label) && !signupWording && labelOk(r, fld.label, crawled)) addTo(labels[r], lang, fld.label);
         for (const t of [fld.name, fld.id]) if (t && !SKIP.has(t)) tokens[r].push(t);
       }
     }
@@ -276,7 +313,13 @@ export function sampleFiles(names: string[]): string[] {
   return names.filter((f) => f.endsWith(".json") && !f.endsWith(".done.json")).sort();
 }
 
-export interface CorpusDirs { samples: string; commoncrawl: string; private: string }
+export interface CorpusDirs { samples: string; private: string }
+
+const here = () => dirname(fileURLToPath(import.meta.url));
+/** Inputs of the CLI: tracked samples only (plus the git-ignored private flows on request), never lab/out. */
+export function corpusDirs(): CorpusDirs {
+  return { samples: join(here(), "samples"), private: join(here(), "private") };
+}
 
 function filesIn(dir: string): string[] {
   if (!existsSync(dir)) return [];
@@ -284,15 +327,15 @@ function filesIn(dir: string): string[] {
 }
 
 /**
- * Sample files of the three sources (Ruling R9): hand-picked samples/, the
- * top 1000 crawl in samples/top1000/, Common Crawl pages when the job left
- * some (not its commoncrawl-* state files; the loader also drops non-samples by shape),
- * and the private recorded flows only when asked.
+ * Sample files of the sources (Ruling R9): hand-picked samples/, the top
+ * 1000 crawl in samples/top1000/, the Common Crawl pages copied (sanitized)
+ * into samples/commoncrawl/, and the private recorded flows only when asked.
+ * lab/out is never an input: the committed patterns.json rebuilds from a
+ * clean checkout.
  */
 export function corpusFiles(dirs: CorpusDirs, withPrivate: boolean): string[] {
   return [
-    ...filesIn(dirs.samples), ...filesIn(join(dirs.samples, "top1000")),
-    ...filesIn(dirs.commoncrawl).filter((f) => !basename(f).startsWith("commoncrawl-")),
+    ...filesIn(dirs.samples), ...filesIn(join(dirs.samples, "commoncrawl")), ...filesIn(join(dirs.samples, "top1000")),
     ...(withPrivate ? filesIn(dirs.private) : []),
   ];
 }
@@ -303,11 +346,10 @@ function isSample(v: unknown): v is Sample {
 }
 
 function main(): void {
-  const dir = fileURLToPath(new URL(".", import.meta.url));
+  const dir = here();
   const withPrivate = process.argv.includes("--with-private");
   const baseline = JSON.parse(readFileSync(join(dir, "seed-lexicon.json"), "utf8")) as Lexicon;
-  const dirs: CorpusDirs = { samples: join(dir, "samples"), commoncrawl: join(dir, "..", "out", "commoncrawl"), private: join(dir, "private") };
-  const samples = corpusFiles(dirs, withPrivate).map((f) => JSON.parse(readFileSync(f, "utf8")) as unknown).filter(isSample);
+  const samples = corpusFiles(corpusDirs(), withPrivate).map((f) => JSON.parse(readFileSync(f, "utf8")) as unknown).filter(isSample);
   const out = distill(samples, baseline, { withPrivate });
   writeFileSync(join(dir, "patterns.json"), stableJson(out));
   console.log(`patterns.json written (${out.samples} samples, ${out.steps.length} step sequences)`);

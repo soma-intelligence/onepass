@@ -6,22 +6,14 @@
         "Weiter"
       ],
       "en": [
-        "accept & continue",
-        "agree & continue",
-        "agree and continue",
         "Continue",
-        "continue without accepting",
-        "Next",
-        "next items",
-        "next page",
-        "skip to next"
+        "Next"
       ],
       "es": [
         "CONTINUAR",
         "Siguiente"
       ],
       "fr": [
-        "accepter et continuer",
         "Continuer",
         "Suivant",
         "Étape suivante"
@@ -316,7 +308,6 @@
         ],
         "en": [
           "*Street Address",
-          "*time frame for addressing your challenge:",
           "Address",
           "Address line 1",
           "Street address"
@@ -637,12 +628,10 @@
           "Land oder Region"
         ],
         "en": [
-          "*",
           "*country:",
           "change the state",
           "Country",
           "country *",
-          "Country Australia Austria Belgium Brazil Canada China Denmar",
           "Country or region",
           "country/region *",
           "select country / region:"
@@ -682,7 +671,6 @@
           "e-mail-adresse *"
         ],
         "en": [
-          "*",
           "* your email",
           "*business email address:",
           "*work email:",
@@ -693,7 +681,6 @@
           "business email address*",
           "business email*",
           "company email",
-          "confirm email",
           "contact email",
           "e-mail",
           "E-mail address",
@@ -714,26 +701,16 @@
           "enter phone number or email",
           "enter your email",
           "Enter your email address",
-          "enter your email to get started with a free kit",
-          "free software supporter:",
-          "get all the latest offers, articles, and industry news strai",
-          "get industry insights and updates from stripe",
-          "get product updates and news from supabase.",
-          "join our newsletter",
-          "join our newsletter & marketing communicationwe'll send you",
-          "login or register with email",
           "login:",
           "New email",
           "or enter email address",
           "phone number or email address",
-          "sign up for merriam-webster's word of the day newsletter",
           "username / email",
           "username or e-mail",
           "username or email",
           "username or email address",
           "username, phone, or email",
           "what's your email?",
-          "word of the day email subscribe",
           "work email",
           "your company email",
           "your email",
@@ -775,8 +752,7 @@
           "enter an email. work email preferred."
         ],
         "zh": [
-          "email",
-          "電子郵件"
+          "email"
         ]
       },
       "tokens": [
@@ -891,7 +867,6 @@
           "Nachname"
         ],
         "en": [
-          "*",
           "*last name:",
           "Family name",
           "Last name",
@@ -940,7 +915,6 @@
           "vorname *"
         ],
         "en": [
-          "*",
           "*first name:",
           "First name",
           "first name *",
@@ -996,7 +970,6 @@
           "Passwort wiederholen"
         ],
         "en": [
-          "at least 8 characters",
           "Choose a password",
           "Confirm password",
           "Create a password",
@@ -1007,8 +980,7 @@
           "password again",
           "password*",
           "password:",
-          "retype password",
-          "search"
+          "retype password"
         ],
         "es": [
           "Confirmar contraseña",
@@ -1020,15 +992,8 @@
           "Confirmer le mot de passe",
           "Nouveau mot de passe"
         ],
-        "pt": [
-          "cpf"
-        ],
         "und": [
           "enter password again"
-        ],
-        "zh": [
-          "密碼",
-          "確認密碼"
         ]
       },
       "tokens": [
@@ -1070,16 +1035,13 @@
           "Unternehmen"
         ],
         "en": [
-          "*",
           "*company:",
-          "*what is your organization's monthly compute spend (usd) acr",
           "Company",
           "company *",
           "company address",
           "Company name",
           "company name or ticket",
           "company*",
-          "data storage locationchoose where to store your organization",
           "Organization"
         ],
         "es": [
@@ -1143,9 +1105,6 @@
           "Code de vérification",
           "Code reçu par sms",
           "Code à usage unique"
-        ],
-        "zh": [
-          "email 驗證碼"
         ]
       },
       "tokens": [
@@ -1187,17 +1146,9 @@
           "password",
           "wifi password"
         ],
-        "ru": [
-          "пароль"
-        ],
         "und": [
           "enter password",
-          "password",
-          "пароль"
-        ],
-        "zh": [
-          "密码 *",
-          "密碼"
+          "password"
         ]
       },
       "tokens": [
@@ -1251,7 +1202,6 @@
       "autocompleteRate": 0.3958333333333333,
       "labels": {
         "de": [
-          "bitte lösen sie folgende aufgabe: *",
           "Plz",
           "plz oder ort",
           "Postleitzahl"
@@ -1259,8 +1209,6 @@
         "en": [
           "Postal code",
           "Postcode",
-          "search city or zip code",
-          "Search the Postal Store: Keyword or SKU",
           "ZIP",
           "Zip code",
           "ZIP Code™"
@@ -1308,7 +1256,6 @@
         ],
         "en": [
           "*phone number:",
-          "chat with chatgpt",
           "contact phone",
           "Mobile phone",
           "Phone",
@@ -1362,9 +1309,6 @@
           "username / benutzername"
         ],
         "en": [
-          "can't register? learn more.",
-          "create a username",
-          "create username",
           "Display Name",
           "Email",
           "Email address",
@@ -1385,8 +1329,7 @@
           "Username or email address",
           "username*",
           "username/email/phone",
-          "username:",
-          "wordpress.com email address or usernameemail address or user"
+          "username:"
         ],
         "es": [
           "Identificador",
