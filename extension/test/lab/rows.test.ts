@@ -12,7 +12,7 @@ import { extractFeatures } from "../../src/content/detect/features.ts";
 import type { PageFeatures } from "../../src/content/detect/features.ts";
 import patternsJson from "../../lab/corpus/patterns.json";
 import type { Patterns } from "../../lab/corpus/types.ts";
-import { buildDataset } from "../../lab/dataset/build.ts";
+import { EXTRACT, buildDataset, withFastTimers } from "../../lab/dataset/build.ts";
 import { datasetPages, originOf, rowsFor } from "../../lab/dataset/rows.ts";
 import type { DatasetRow } from "../../lab/dataset/rows.ts";
 import { splitOf } from "../../lab/dataset/split.ts";
@@ -227,6 +227,45 @@ describe("buildDataset", () => {
     } finally {
       rmSync(a, { recursive: true, force: true });
       rmSync(b, { recursive: true, force: true });
+    }
+  }, 180_000);
+
+  it("survives a failing form: logged, counted, page recycled, build finishes", async () => {
+    const out = mkdtempSync(join(tmpdir(), "ds-f-"));
+    try {
+      const m = await buildDataset({ seed: "fail", forms: 40, workers: 2, out, patterns, beforeEvaluate: (seq) => { if (seq === 7) throw new Error("forced"); } });
+      expect(m.failedForms).toBe(1);
+      expect(m.forms).toBe(40);
+      expect(m.rows).toBeGreaterThan(0);
+      expect(JSON.parse(readFileSync(join(out, "fail-g2", "manifest.json"), "utf8")).failedForms).toBe(1);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("reuses one page for 5,000 forms without nesting the timer shim", async () => {
+    const pw = (await import("playwright-core")) as unknown as { chromium?: any; default?: { chromium: any } };
+    const browser = await (pw.chromium ?? pw.default!.chromium).launch({ channel: "chromium" });
+    try {
+      const page = await browser.newPage();
+      // Native setTimeout replaced by a probe that records the depth of the call stack it is reached from.
+      await page.evaluate(() => {
+        Error.stackTraceLimit = 100_000;
+        const w = window as any;
+        const native = w.setTimeout.bind(window);
+        w.__depth = 0;
+        w.setTimeout = (...a: any[]) => { w.__depth = new Error().stack!.split("\n").length; return native(...a); };
+      });
+      const sample = world.sites.find((s) => staticSite(s) && datasetPages(s).length > 0)!;
+      const p = datasetPages(sample)[0]!;
+      const html = withFastTimers(renderSitePage(sample, p.page, p.ctx, { labelMarks: true }));
+      for (let i = 0; i < 5000; i++) await page.setContent(html, { waitUntil: "domcontentloaded" });
+      const features = await page.evaluate(EXTRACT);
+      expect(features.forms.length).toBeGreaterThan(0);
+      await page.evaluate(() => { setTimeout(() => undefined, 0); });
+      expect(await page.evaluate(() => (window as any).__depth)).toBeLessThan(30);
+    } finally {
+      await browser.close();
     }
   }, 180_000);
 });
