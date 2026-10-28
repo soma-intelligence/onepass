@@ -13,6 +13,7 @@ struct Sidebar: View {
     /// Not secret: which sections are folded.
     /// The account panel under the account row (Mac).
     @State private var accountMenuOpen = false
+    @State private var accountRowBottom: CGFloat = 60
     /// The vault whose sheet is open from its row's context menu.
     @State private var editingVaultID: String?
     @AppStorage("onepass.sidebar.vaultsExpanded", store: AppModel.browseDefaults) private var vaultsExpanded = true
@@ -58,6 +59,10 @@ struct Sidebar: View {
             AccountHeader(menuOpen: $accountMenuOpen)
                 .padding(.horizontal, 15)
                 .padding(.bottom, 6)
+                // Where the account panel hangs from: right under this row.
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("sidebarColumn")).maxY } action: {
+                    accountRowBottom = $0
+                }
             // In a VStack the list asks for the height of all its rows as a minimum, which made the
             // split view taller than the window and pushed every column's top out of sight.
             // Rows scrolling up fade out under the account row instead of running behind it.
@@ -70,6 +75,7 @@ struct Sidebar: View {
                     }
                 }
         }
+        .coordinateSpace(.named("sidebarColumn"))
         .background { TitlebarHeightReader(height: $titlebarHeight) }
         // The account menu: our own panel under the account row (the system menu could not take
         // the house style). A click anywhere else or Escape closes it.
@@ -83,7 +89,7 @@ struct Sidebar: View {
                         newVault: { accountMenuOpen = false; creatingVault = true },
                         close: { accountMenuOpen = false }
                     )
-                    .padding(.top, titlebarHeight + 50)
+                    .padding(.top, accountRowBottom - 2)
                     .padding(.horizontal, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .transition(.asymmetric(
@@ -470,20 +476,13 @@ struct AccountMenuPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 36)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(name).font(.headline).lineLimit(1)
-                    Text(model.settings.deviceMode == .shared ? "Appareil partagé" : "Appareil personnel")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
-            .accessibilityElement(children: .combine)
+            // The account row above already shows who: only the kind of device here.
+            Text(model.settings.deviceMode == .shared ? "Appareil partagé" : "Appareil personnel")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
             divider
             AccountMenuRow(title: "Nouveau coffre…", symbol: "plus.circle", shortcut: nil, action: newVault)
                 .accessibilityIdentifier("account.newVault")
