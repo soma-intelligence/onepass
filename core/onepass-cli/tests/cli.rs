@@ -687,7 +687,10 @@ fn rotate_keys_replaces_the_secret_key() {
     assert_ne!(new_key, old_key);
     assert_eq!(read(PASSWORD).stdout, b"hunter2");
     let device = fs::read(dir.join("device.bin")).unwrap();
-    assert!(!holds_key(&device, &new_key), "new Secret Key in device.bin");
+    assert!(
+        !holds_key(&device, &new_key),
+        "new Secret Key in device.bin"
+    );
 
     // The old key is no proof any more.
     let o = onepass(dir, PASSWORD)
