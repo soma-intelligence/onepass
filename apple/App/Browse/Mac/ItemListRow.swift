@@ -29,7 +29,7 @@ struct ItemListRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon, size: 34)
+            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon, size: 34, brand: summary.cardBrand)
                 .favoriteBadge(summary.favorite, iconSize: 34)
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.title)

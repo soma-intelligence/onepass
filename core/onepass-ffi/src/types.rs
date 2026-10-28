@@ -340,6 +340,10 @@ pub struct FfiItemSummary {
     /// "oidc:<domain>"...). `None` when the item has none.
     #[uniffi(default = None)]
     pub sign_in_provider: Option<String>,
+    /// Network of a credit card from its number's BIN ("visa", "mastercard",
+    /// "amex"... as `card_brand`). `None` for other types or an unknown brand.
+    #[uniffi(default = None)]
+    pub card_brand: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]

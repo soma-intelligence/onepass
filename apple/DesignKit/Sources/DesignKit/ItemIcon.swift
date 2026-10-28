@@ -12,11 +12,29 @@ public struct ItemIcon: View {
 
     @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
 
-    public init(type: FfiItemType, title: String, siteIcon: Data?, size: CGFloat = 38) {
+    private let brand: String?
+
+    /// `brand`: a credit card's network ("visa", "mastercard", "amex"...): the card shows that
+    /// network's mark on its color instead of the generic card artwork.
+    public init(type: FfiItemType, title: String, siteIcon: Data?, size: CGFloat = 38, brand: String? = nil) {
         self.type = type
         self.title = title
         self.size = size
         self.image = siteIcon.flatMap(Self.filled)
+        self.brand = type == .creditCard ? brand : nil
+    }
+
+    /// The networks with a mark in the app's assets (`card-<brand>`), and the color of their tile.
+    static func brandColor(_ brand: String) -> Color? {
+        switch brand {
+        case "visa": Color(red: 0x1A / 255, green: 0x1F / 255, blue: 0x71 / 255)
+        case "mastercard": Color(red: 0x25 / 255, green: 0x25 / 255, blue: 0x25 / 255)
+        case "amex": Color(red: 0x2E / 255, green: 0x77 / 255, blue: 0xBC / 255)
+        case "discover": Color(red: 0xF2 / 255, green: 0x65 / 255, blue: 0x1E / 255)
+        case "jcb": Color(red: 0x0B / 255, green: 0x4E / 255, blue: 0xA2 / 255)
+        case "diners_club": Color(red: 0x00 / 255, green: 0x79 / 255, blue: 0xBE / 255)
+        default: nil
+        }
     }
 
     private final class Box: @unchecked Sendable {
@@ -109,7 +127,26 @@ public struct ItemIcon: View {
 
     public var body: some View {
         Group {
-            if let image, Self.isLowResolution(image, side: side) {
+            if image == nil, let brand, let color = Self.brandColor(brand) {
+                // The network's mark in white on its color, like the card itself.
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(color.gradient)
+                    .overlay {
+                        Image("card-\(brand)", bundle: .main)
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundStyle(brand == "mastercard" ? AnyShapeStyle(LinearGradient(
+                                colors: [Color(red: 0.92, green: 0.0, blue: 0.11), Color(red: 0.97, green: 0.62, blue: 0.11)],
+                                startPoint: .leading, endPoint: .trailing)) : AnyShapeStyle(.white))
+                            .padding(side * 0.18)
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: corner, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.12))
+                    }
+                    .frame(width: side, height: side)
+            } else if let image, Self.isLowResolution(image, side: side) {
                 // A small favicon is not stretched into a blur: it sits at its own size (one
                 // source pixel per screen pixel on Retina, at most 60% of the tile), crisp, on a
                 // neutral tile.

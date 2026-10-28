@@ -38,7 +38,7 @@ struct ItemHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon, size: 64)
+            ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon, size: 64, brand: item.cardBrandName)
                 .favoriteBadge(item.favorite, iconSize: 64)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {

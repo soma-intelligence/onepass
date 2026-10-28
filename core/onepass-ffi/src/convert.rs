@@ -617,6 +617,23 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
             LoginMethod::Provider { provider, .. } => Some(provider_to_string(provider)),
             _ => None,
         }),
+        card_brand: card_brand_of(i),
+    }
+}
+
+/// The card network of a credit card, from the BIN of its number.
+fn card_brand_of(item: &Item) -> Option<String> {
+    if item.item_type != ItemType::CreditCard {
+        return None;
+    }
+    let number = match item.field("number").map(|f| &f.value) {
+        Some(FieldValue::Concealed(n)) => n.as_str(),
+        Some(FieldValue::Text(n)) => n.as_str(),
+        _ => return None,
+    };
+    match onepass_core::model::checks::card_brand(number) {
+        onepass_core::model::checks::CardBrand::Unknown => None,
+        brand => Some(crate::brand_name(brand).to_owned()),
     }
 }
 

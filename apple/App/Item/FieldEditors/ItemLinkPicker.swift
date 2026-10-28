@@ -172,6 +172,16 @@ enum LoginProvider: String, CaseIterable, Identifiable {
 }
 
 extension FfiItem {
+    /// A credit card's network from its number ("visa"...), nil when unknown or not a card.
+    var cardBrandName: String? {
+        guard itemType == .creditCard,
+            let number = sections.lazy.flatMap(\.fields).first(where: { $0.id == "number" })?.value.text,
+            !number.isEmpty
+        else { return nil }
+        let brand = cardBrand(number: number)
+        return brand == "unknown" ? nil : brand
+    }
+
     /// The provider the login signs in with, and the item of that account (the first one).
     var signInProvider: (provider: String, accountItemID: String)? {
         for method in loginMethods {
