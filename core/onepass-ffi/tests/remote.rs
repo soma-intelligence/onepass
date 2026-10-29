@@ -887,8 +887,11 @@ fn agent_only_session_refused_by_browser_bridge() {
 struct ScriptedUi;
 
 impl FfiDeveloperUi for ScriptedUi {
-    fn approve(&self, _request: FfiApprovalRequest) -> FfiDecision {
-        FfiDecision::AllowOnce
+    fn approve(&self, _request: FfiApprovalRequest) -> FfiAnswer {
+        FfiAnswer {
+            decision: FfiDecision::AllowOnce,
+            approved_on: Some("mac".into()),
+        }
     }
     fn verify_presence(&self, _reason: String) -> bool {
         true
@@ -1008,6 +1011,57 @@ fn agent_only_session_serves_mcp() {
     );
     assert_eq!(listed["result"]["isError"], false, "{listed}");
     assert!(listed.to_string().contains(&vault.meta.name), "{listed}");
+    drop(r);
+    host.stop();
+}
+
+/// The app says yes before it hands over (the other order of the developer
+/// test), and the session is the agents-only one the phone opened.
+#[test]
+fn gate_hands_over_to_an_agent_only_session() {
+    struct Unlocked;
+    impl FfiGateUi for Unlocked {
+        fn locked_request(&self, _client: FfiMcpClient) -> bool {
+            true
+        }
+    }
+    let (mac, _phone, s) = agent_only();
+    let data = mac.dir.path().join("dev").display().to_string();
+    let socket = mac.dir.path().join("dev").join("mcp.sock");
+    let socket = socket.display().to_string();
+    let gate = McpGate::start_any_relay_for_tests(socket.clone(), Arc::new(Unlocked)).unwrap();
+    let mut r = Relay::connect(
+        &socket,
+        json!({
+            "id": "team:TEAMID0001:com.exemple.agent", "label": "Agent Exemple",
+            "signed": true, "hardened": null,
+            "code": {"kind": "team", "team_id": "TEAMID0001", "identifier": "com.exemple.agent"},
+            "chain": ["team:TEAMID0001:com.exemple.agent"],
+        }),
+    );
+    thread::sleep(Duration::from_millis(300));
+    let host = gate
+        .hand_over(
+            s,
+            FfiMcpHostConfig {
+                data_dir: data,
+                socket_path: socket,
+                relay_path: "/unused".into(),
+                protected_dirs: vec![mac.dir.path().display().to_string()],
+            },
+            Arc::new(ScriptedUi),
+        )
+        .unwrap();
+    // The gate may go as soon as it handed over: the held connection still
+    // reaches the server.
+    drop(gate);
+    let init = r.call(
+        1,
+        "initialize",
+        json!({"protocolVersion": "2025-11-25", "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1"}}),
+    );
+    assert_eq!(init["result"]["serverInfo"]["name"], "onepass", "{init}");
     drop(r);
     host.stop();
 }

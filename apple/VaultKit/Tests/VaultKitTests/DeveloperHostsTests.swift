@@ -55,12 +55,12 @@ struct DeveloperHostsTests {
         let request = FfiApprovalRequest(
             surface: "ssh", client: "/usr/bin/ssh", clientVerified: false, action: "ssh_sign",
             details: [], targets: [FfiTarget(vault: "Personnel", item: "Github", field: nil)],
-            rememberAllowed: true)
+            rememberAllowed: true, strongRequired: false, confirmCode: "kq")
         let answer = Task.detached { bridge.approve(request: request) }
         while hosts.prompts.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
         let prompt = try #require(hosts.prompts.first)
         hosts.answer(prompt.id, with: .allowForMinutes(minutes: 15))
-        #expect(await answer.value == .allowForMinutes(minutes: 15))
+        #expect(await answer.value.decision == .allowForMinutes(minutes: 15))
         #expect(hosts.prompts.isEmpty)
         // Pairing needs the answer and the presence check.
         #expect(bridge.verifyPresence(reason: "test"))

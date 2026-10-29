@@ -21,6 +21,8 @@ const FAST: FfiKdfParams = FfiKdfParams {
 /// what it was asked.
 struct ScriptedUi {
     answer: Mutex<FfiDecision>,
+    /// Where the answer says it was given.
+    origin: Mutex<Option<String>>,
     present: bool,
     pair: bool,
     asked: Mutex<Vec<FfiApprovalRequest>>,
@@ -31,6 +33,7 @@ impl ScriptedUi {
     fn new(answer: FfiDecision, present: bool) -> Arc<ScriptedUi> {
         Arc::new(ScriptedUi {
             answer: Mutex::new(answer),
+            origin: Mutex::new(None),
             present,
             pair: true,
             asked: Mutex::new(Vec::new()),
@@ -40,9 +43,12 @@ impl ScriptedUi {
 }
 
 impl FfiDeveloperUi for ScriptedUi {
-    fn approve(&self, request: FfiApprovalRequest) -> FfiDecision {
+    fn approve(&self, request: FfiApprovalRequest) -> FfiAnswer {
         self.asked.lock().unwrap().push(request);
-        *self.answer.lock().unwrap()
+        FfiAnswer {
+            decision: *self.answer.lock().unwrap(),
+            approved_on: self.origin.lock().unwrap().clone(),
+        }
     }
     fn verify_presence(&self, _reason: String) -> bool {
         self.presence_checks.fetch_add(1, Ordering::SeqCst);
@@ -435,6 +441,8 @@ mod mcp {
     impl Relay {
         fn connect(socket: &str, client: serde_json::Value) -> Relay {
             let out = UnixStream::connect(socket).unwrap();
+            out.set_read_timeout(Some(std::time::Duration::from_secs(20)))
+                .unwrap();
             let input = BufReader::new(out.try_clone().unwrap());
             let mut r = Relay { out, input };
             r.send(serde_json::json!({"t": "hello", "v": 1, "client": client}));
@@ -445,6 +453,33 @@ mod mcp {
             let mut line = v.to_string();
             line.push('\n');
             self.out.write_all(line.as_bytes()).unwrap();
+        }
+
+        /// Sends one JSON-RPC request without waiting for its reply.
+        fn request(&mut self, id: u64, method: &str, params: serde_json::Value) {
+            let rpc =
+                serde_json::json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
+            self.send(serde_json::json!({"t": "mcp", "line": rpc.to_string()}));
+        }
+
+        /// The next JSON-RPC reply (notifications skipped).
+        fn reply(&mut self) -> serde_json::Value {
+            loop {
+                let msg = self.recv();
+                assert_eq!(msg["t"], "mcp", "{msg}");
+                let line: serde_json::Value =
+                    serde_json::from_str(msg["line"].as_str().unwrap()).unwrap();
+                if line.get("method").is_some() && line.get("id").is_none() {
+                    continue;
+                }
+                return line;
+            }
+        }
+
+        /// True once the app closed the connection.
+        fn closed(&mut self) -> bool {
+            let mut line = String::new();
+            matches!(self.input.read_line(&mut line), Ok(0) | Err(_))
         }
 
         fn recv(&mut self) -> serde_json::Value {
@@ -663,6 +698,7 @@ mod mcp {
         exposed(&fx);
         let ui = Arc::new(ScriptedUi {
             answer: Mutex::new(FfiDecision::AllowOnce),
+            origin: Mutex::new(None),
             present: true,
             pair: false,
             asked: Mutex::new(Vec::new()),
@@ -779,5 +815,238 @@ mod mcp {
         assert!(filled.to_string().contains("data folder"), "{filled}");
         assert!(ui.asked.lock().unwrap().is_empty());
         host.stop();
+    }
+    // ---- the gate, while the app is locked
+
+    const LOCKED: &str = "OnePass is locked on this Mac. Approve on your iPhone or unlock the app.";
+
+    /// The app's side of the gate: records who asked, answers what the test
+    /// sends (false after a while, as the app does after 60 s).
+    struct GateUi {
+        asked: Mutex<Vec<FfiMcpClient>>,
+        answers: Mutex<std::sync::mpsc::Receiver<bool>>,
+    }
+
+    impl FfiGateUi for GateUi {
+        fn locked_request(&self, client: FfiMcpClient) -> bool {
+            self.asked.lock().unwrap().push(client);
+            self.answers
+                .lock()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(20))
+                .unwrap_or(false)
+        }
+    }
+
+    fn gate_ui() -> (Arc<GateUi>, std::sync::mpsc::Sender<bool>) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ui = Arc::new(GateUi {
+            asked: Mutex::new(Vec::new()),
+            answers: Mutex::new(rx),
+        });
+        (ui, tx)
+    }
+
+    fn wait_asked(ui: &GateUi, n: usize) {
+        for _ in 0..500 {
+            if ui.asked.lock().unwrap().len() >= n {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("the app was not asked {n} times");
+    }
+
+    fn init_params() -> serde_json::Value {
+        serde_json::json!({"protocolVersion": "2025-11-25", "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1"}})
+    }
+
+    fn host_config(fx: &Fixture) -> FfiMcpHostConfig {
+        FfiMcpHostConfig {
+            data_dir: fx.data(),
+            socket_path: fx.mcp_socket(),
+            relay_path: "/unused".into(),
+            protected_dirs: vec![fx.dir.path().display().to_string()],
+        }
+    }
+
+    #[test]
+    fn gate_refuses_unverified_peer() {
+        let fx = fixture();
+        let (ui, _answers) = gate_ui();
+        // The relay the gate expects is /usr/bin/true: this test is not it.
+        let gate = McpGate::start(fx.mcp_socket(), "/usr/bin/true".into(), ui.clone()).unwrap();
+        assert!(gate.is_running());
+        let mut s = UnixStream::connect(fx.mcp_socket()).unwrap();
+        s.set_read_timeout(Some(std::time::Duration::from_secs(10)))
+            .unwrap();
+        let hello = serde_json::json!({"t": "hello", "v": 1, "client": signed_client()});
+        let _ = s.write_all(format!("{hello}\n").as_bytes());
+        let mut buf = [0u8; 64];
+        // Closed without a word.
+        assert!(matches!(s.read(&mut buf), Ok(0) | Err(_)));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(ui.asked.lock().unwrap().is_empty());
+        gate.stop();
+        assert!(!gate.is_running());
+        assert!(!std::path::Path::new(&fx.mcp_socket()).exists());
+    }
+
+    #[test]
+    fn gate_holds_then_hands_over_after_unlock() {
+        let fx = fixture();
+        exposed(&fx);
+        let (gate_ui, answers) = gate_ui();
+        let gate = McpGate::start_any_relay_for_tests(fx.mcp_socket(), gate_ui.clone()).unwrap();
+        let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
+        r.request(1, "initialize", init_params());
+        wait_asked(&gate_ui, 1);
+        {
+            let asked = gate_ui.asked.lock().unwrap();
+            assert_eq!(asked[0].id, "team:TEAMID0001:com.exemple.agent");
+            assert_eq!(asked[0].label, "Agent Exemple");
+            assert!(asked[0].signed);
+        }
+
+        // One held connection per client: a second one is answered at once.
+        let mut second = Relay::connect(&fx.mcp_socket(), signed_client());
+        second.request(1, "initialize", init_params());
+        let refused = second.reply();
+        assert_eq!(refused["error"]["message"], LOCKED, "{refused}");
+        assert!(second.closed());
+        assert_eq!(gate_ui.asked.lock().unwrap().len(), 1);
+
+        // The app unlocks: the server starts on the session and takes the
+        // held connection, its pending `initialize` included.
+        let ui = ScriptedUi::new(FfiDecision::AllowOnce, true);
+        let host = gate
+            .hand_over(fx.session.clone(), host_config(&fx), ui.clone())
+            .unwrap();
+        answers.send(true).unwrap();
+        let init = r.reply();
+        assert_eq!(init["result"]["serverInfo"]["name"], "onepass", "{init}");
+        for _ in 0..200 {
+            if !fx
+                .session
+                .clone()
+                .paired_clients(fx.data())
+                .unwrap()
+                .is_empty()
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let listed = r.call(
+            2,
+            "tools/call",
+            serde_json::json!({"name": "list_vaults", "arguments": {}}),
+            &no_exec,
+        );
+        assert_eq!(listed["result"]["isError"], false, "{listed}");
+
+        // Later connections go straight to the server.
+        let mut third = Relay::connect(&fx.mcp_socket(), signed_client());
+        initialize(&mut third);
+        assert_eq!(gate_ui.asked.lock().unwrap().len(), 1);
+        assert!(!gate.is_running());
+
+        drop((r, third));
+        host.stop();
+        gate.stop();
+        assert!(!std::path::Path::new(&fx.mcp_socket()).exists());
+    }
+
+    #[test]
+    fn gate_answers_locked_error_on_refusal() {
+        let fx = fixture();
+        exposed(&fx);
+        let (gate_ui, answers) = gate_ui();
+        let gate = McpGate::start_any_relay_for_tests(fx.mcp_socket(), gate_ui.clone()).unwrap();
+        let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
+        r.request(7, "initialize", init_params());
+        wait_asked(&gate_ui, 1);
+        answers.send(false).unwrap();
+        let reply = r.reply();
+        assert_eq!(reply["id"], 7, "{reply}");
+        assert_eq!(reply["error"]["message"], LOCKED, "{reply}");
+        assert!(!reply.to_string().contains("Jeton Atlas"));
+        assert!(r.closed());
+
+        // The hold is released: the same client is asked again.
+        let mut again = Relay::connect(&fx.mcp_socket(), signed_client());
+        again.request(1, "initialize", init_params());
+        wait_asked(&gate_ui, 2);
+        answers.send(false).unwrap();
+        assert_eq!(again.reply()["error"]["message"], LOCKED);
+
+        // A client that leaves while held releases its hold at once, and the
+        // app's late answer finds nobody to serve.
+        let gone = Relay::connect(&fx.mcp_socket(), signed_client());
+        wait_asked(&gate_ui, 3);
+        drop(gone);
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let mut back = Relay::connect(&fx.mcp_socket(), signed_client());
+        back.request(1, "initialize", init_params());
+        answers.send(true).unwrap();
+        wait_asked(&gate_ui, 4);
+        answers.send(false).unwrap();
+        assert_eq!(back.reply()["error"]["message"], LOCKED);
+        assert!(back.closed());
+        gate.stop();
+    }
+
+    #[test]
+    fn answer_origin_reaches_audit() {
+        let fx = fixture();
+        let reference = exposed(&fx);
+        let ui = ScriptedUi::new(FfiDecision::AllowOnce, true);
+        *ui.origin.lock().unwrap() = Some("phone:7f3a9c".into());
+        let host = start(&fx, ui.clone());
+        let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
+        initialize(&mut r);
+        for _ in 0..200 {
+            if !fx
+                .session
+                .clone()
+                .paired_clients(fx.data())
+                .unwrap()
+                .is_empty()
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let ran = r.call(
+            2,
+            "tools/call",
+            serde_json::json!({"name": "run_with_secrets", "arguments": {
+                "command": ["true"], "env": {"TOKEN": reference}}}),
+            &|exec| {
+                serde_json::json!({"t": "exec_result", "id": exec["id"], "ok": {
+                    "code": 0, "stdout": "", "stderr": "",
+                    "timed_out": false, "truncated": false}})
+            },
+        );
+        assert_eq!(ran["result"]["isError"], false, "{ran}");
+        {
+            let asked = ui.asked.lock().unwrap();
+            assert_eq!(asked.len(), 1);
+            // The app shows the guard's confirmation code.
+            assert!(!asked[0].confirm_code.is_empty());
+            assert!(!asked[0].strong_required);
+        }
+        drop(r);
+        host.stop();
+
+        let report = fx.session.clone().audit_report(fx.data()).unwrap();
+        assert!(report.problem.is_none(), "{report:?}");
+        let log = std::fs::read_to_string(fx.dir.path().join("dev").join("audit.log")).unwrap();
+        let line = log
+            .lines()
+            .find(|l| l.contains("run_with_secrets"))
+            .expect("run_with_secrets audited");
+        assert!(line.contains(r#""approved_on":"phone:7f3a9c""#), "{line}");
     }
 }
