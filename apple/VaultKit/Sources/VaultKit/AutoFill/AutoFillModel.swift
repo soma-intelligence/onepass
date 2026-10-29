@@ -44,6 +44,9 @@ public final class AutoFillModel {
     @ObservationIgnored private let ownAppIDs: Set<String>
     @ObservationIgnored private let onComplete: (AutoFillResult) -> Void
     @ObservationIgnored private var wrote = false
+    /// The service each Login of the current list matched (`"<vault id>:<item id>"` to service): what a
+    /// fill from the list remembers. `others` are not in it.
+    @ObservationIgnored private var listedServices: [String: String] = [:]
 
     /// `ownAppIDs`: the containing app's bundle identifier, with and without the team prefix.
     public init(
@@ -191,9 +194,12 @@ public final class AutoFillModel {
 
     // MARK: - Lists
 
+    /// The matches of each service follow the core's plan for it (the Login used last there first),
+    /// then the rest in the candidates' order.
     private func listScreen(services: [String], passkey: PasskeyRequest?, oneTimeCode: Bool) async throws -> Screen {
         var matches: [FfiAutofillCandidate] = []
         var seen = Set<String>()
+        var served: [String: String] = [:]
         if let passkey {
             for candidate in try await session.autofillCandidates(service: passkey.rpID, includeAll: false) {
                 let offered = offering(candidate)
@@ -201,9 +207,12 @@ public final class AutoFillModel {
             }
         }
         for service in services {
-            for candidate in try await session.autofillCandidates(service: service, includeAll: false)
-            where seen.insert(candidate.itemId).inserted {
+            let candidates = try await session.autofillCandidates(service: service, includeAll: false)
+            // The plan only orders: without it, the candidates' order.
+            let ranked = await plan(service: service, oneTimeCode: oneTimeCode).map { Self.ordered(candidates, by: $0) }
+            for candidate in ranked ?? candidates where seen.insert(candidate.itemId).inserted {
                 matches.append(offering(candidate))
+                served["\(candidate.vaultId):\(candidate.itemId)"] = service
             }
         }
         let anchor = services.first ?? passkey?.rpID ?? ""
@@ -214,7 +223,31 @@ public final class AutoFillModel {
             matches.removeAll { !$0.hasTotp }
             others.removeAll { !$0.hasTotp }
         }
+        listedServices = served
         return .list(matches, others: others)
+    }
+
+    /// The core's plan for `service`, nil when it fails (the list then keeps the candidates' order).
+    /// An integrity failure or a lock still shows through the session's state.
+    private func plan(service: String, oneTimeCode: Bool) async -> FfiAutofillPlan? {
+        do {
+            return try await session.autofillPlan(service: service, request: oneTimeCode ? .oneTimeCode : .password)
+        } catch {
+            if session.state == .unlocked { session.lastError = nil }
+            return nil
+        }
+    }
+
+    /// `candidates` with the plan's items first, in the plan's order; the others keep their order.
+    nonisolated static func ordered(_ candidates: [FfiAutofillCandidate], by plan: FfiAutofillPlan) -> [FfiAutofillCandidate] {
+        let position = Dictionary(plan.itemIds.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return candidates.enumerated()
+            .sorted { a, b in
+                let pa = position[a.element.itemId] ?? Int.max
+                let pb = position[b.element.itemId] ?? Int.max
+                return pa != pb ? pa < pb : a.offset < b.offset
+            }
+            .map(\.element)
     }
 
     /// The candidate with only the passkeys this request accepts (none without a passkey request).
@@ -256,9 +289,16 @@ public final class AutoFillModel {
         guard !isFinished, session.state == .unlocked, let kind = listKind, listed(candidate) != nil else { return }
         do {
             let item = try await session.loadItem(vaultID: candidate.vaultId, itemID: candidate.itemId)
+            let service = listedServices["\(candidate.vaultId):\(candidate.itemId)"]
             if kind == .oneTimeCode {
-                finish(try oneTimeCodeResult(item) ?? .cancelled(.credentialNotFound))
+                guard let result = try oneTimeCodeResult(item) else {
+                    finish(.cancelled(.credentialNotFound))
+                    return
+                }
+                await noteUse(item, service: service)
+                finish(result)
             } else {
+                await noteUse(item, service: service)
                 finish(passwordResult(item))
             }
         } catch {
@@ -308,12 +348,14 @@ public final class AutoFillModel {
         switch kind {
         case .password:
             if let item {
+                await noteUse(item, service: services.first)
                 finish(passwordResult(item))
             } else {
                 screen = try await listScreen(services: services, passkey: nil, oneTimeCode: false)
             }
         case .oneTimeCode:
             if let item, let result = try oneTimeCodeResult(item) {
+                await noteUse(item, service: services.first)
                 finish(result)
             } else {
                 screen = try await listScreen(services: services, passkey: nil, oneTimeCode: true)
@@ -355,6 +397,26 @@ public final class AutoFillModel {
             return nil
         }
         return item
+    }
+
+    /// Remembers a fill of `service` by `item` (site memory: the next plans and identity ranks), before
+    /// the credential goes back (the extension may be killed right after). Only when the core wrote
+    /// (not throttled) does the request post `store-changed` and publish the new ranks before the
+    /// session locks. Best effort: a failure never stops the fill; an integrity failure leaves its
+    /// state as for any other call, any other error is cleared. Nil `service` (a Login from `others`,
+    /// or a direct request without a service) remembers nothing.
+    private func noteUse(_ item: FfiItem, service: String?) async {
+        guard let service, !service.isEmpty, !isFinished else { return }
+        let written: Bool
+        do {
+            written = try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", service: service)
+        } catch {
+            if session.state == .unlocked { session.lastError = nil }
+            return
+        }
+        guard written else { return }
+        wrote = true
+        await session.publishAutofillIdentitiesNow()
     }
 
     private func assertion(

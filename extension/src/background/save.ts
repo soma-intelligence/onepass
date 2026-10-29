@@ -57,6 +57,8 @@ export interface SaveDeps {
   session: Pick<Session, "request">;
   neverSave: NeverSave;
   now?: () => number;
+  /** A login was saved or updated from the prompt of `tabId` (the site memory notes it, notes.ts). */
+  onSaved?: (tabId: number, origin: string, itemId: string) => Promise<void>;
 }
 
 export class SavePrompts {
@@ -157,6 +159,8 @@ export class SavePrompts {
 
   async decide(token: string, ui: UiContext, decision: SaveDecision, edits?: SaveEdits): Promise<object> {
     const rec = await this.record(token, ui);
+    /** The login saved or updated (a confirmed save). */
+    let savedItem: string | undefined;
     switch (decision) {
       case "dismiss":
         await this.tokens.drop(token);
@@ -181,7 +185,7 @@ export class SavePrompts {
           const password = edits.password === "" ? rec.password : edits.password;
           // A login without a password is never saved (new login from the menu, nothing typed).
           if (password === "") throw new BgError("invalid");
-          await this.deps.session.request({
+          const saved = await this.deps.session.request({
             op: "save_login",
             ctx: "save_prompt",
             origin: rec.origin,
@@ -192,6 +196,7 @@ export class SavePrompts {
             rule: edits.rule,
             tags: edits.tags,
           });
+          savedItem = saved.item_id;
         }
         break;
       case "update":
@@ -204,11 +209,13 @@ export class SavePrompts {
           origin: rec.origin,
           password: edits && edits.password !== "" ? edits.password : rec.password,
         });
+        savedItem = rec.update.itemId;
         break;
     }
     rec.password = "";
     rec.decided = true;
     await this.tokens.update(token, rec);
+    if (savedItem !== undefined) await this.deps.onSaved?.(rec.tabId, rec.origin, savedItem).catch(() => undefined);
     return {};
   }
 

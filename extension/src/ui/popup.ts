@@ -2,10 +2,12 @@
 // pairing, locked and missing host states, suggestions for the active tab,
 // search, item detail with copy buttons, reveal and a TOTP countdown ring,
 // "Remplir", the generator with its history, and "Oublier cet appairage"
-// (spec 6.4) from the main and locked views.
+// (spec 6.4) from the main and locked views. Smart fill: the plan of the
+// active tab in one line with its Fill (alternatives listed first below it),
+// and "Oublier mes choix sur ce site".
 import { ext } from "../shared/browser";
 import { tr } from "../shared/i18n";
-import type { GeneratorEntry, GeneratorKind, PopupStatus, Summary } from "../shared/ui";
+import type { GeneratorEntry, GeneratorKind, PopupPlanLine, PopupStatus, Summary } from "../shared/ui";
 import {
   type Send,
   type Timers,
@@ -22,6 +24,7 @@ import {
 import {
   parseEmpty,
   parseFilled,
+  parseForgotSite,
   parseGenerated,
   parseHistory,
   parseItem,
@@ -76,6 +79,35 @@ export const GENERATOR_TYPES: readonly { kind: GeneratorKind; label: string; hel
     help: tr("Des chiffres seulement, pour les codes et les cadenas.", "Digits only, for codes and locks."),
   },
 ];
+
+/** The plan line: "Se connecter en tant que tom@… en 2 étapes". */
+export function planText(p: PopupPlanLine): string {
+  const who = p.label;
+  switch (p.intent) {
+    case "login":
+      if (p.mode === "fill") {
+        // Fills this page, sends nothing: no promise of a sign-in.
+        if (p.steps > 1) return who === "" ? tr("Remplir l'identifiant", "Fill the username") : tr(`Remplir l'identifiant de ${who}`, `Fill the username of ${who}`);
+        return who === ""
+          ? tr("Remplir l'identifiant et le mot de passe", "Fill the username and password")
+          : tr(`Remplir l'identifiant et le mot de passe de ${who}`, `Fill the username and password of ${who}`);
+      }
+      if (who === "") return tr("Se connecter", "Sign in");
+      return p.steps > 1
+        ? tr(`Se connecter en tant que ${who} en ${p.steps} étapes`, `Sign in as ${who} in ${p.steps} steps`)
+        : tr(`Se connecter en tant que ${who}`, `Sign in as ${who}`);
+    case "otp":
+      return tr("Remplir le code à usage unique", "Fill the one-time code");
+    case "signup":
+      return tr("Créer le compte avec un mot de passe généré", "Create the account with a generated password");
+    case "reset":
+      return who === "" ? tr("Changer le mot de passe", "Change the password") : tr(`Changer le mot de passe de ${who}`, `Change the password of ${who}`);
+    case "checkout":
+      return who === "" ? tr("Remplir le paiement", "Fill the payment") : tr(`Remplir le paiement avec ${who}`, `Fill the payment with ${who}`);
+    case "address":
+      return who === "" ? tr("Remplir l'adresse", "Fill the address") : tr(`Remplir l'adresse avec ${who}`, `Fill the address with ${who}`);
+  }
+}
 
 /** "703083" -> "703 083". */
 export function formatCode(code: string): string {
@@ -297,6 +329,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   let status: PopupStatus | null = null;
   let domain: string | null = null;
   let suggestions: Summary[] = [];
+  let plan: PopupPlanLine | null = null;
   let results: Summary[] | null = null;
   let selected: string | null = null;
   let view: "detail" | "gen" | "none" = "none";
@@ -374,6 +407,16 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       empty = tr("Cette page n'est pas un site HTTPS.", "This page is not an HTTPS site.");
     }
     const list = h("div", { class: "pp-list", attrs: { role: "listbox", "aria-label": title } });
+    // What one click does on this page, then its alternatives (listed first by the worker).
+    const line =
+      plan && !results
+        ? h(
+            "div",
+            { class: "plan-line glass", attrs: { role: "group", "aria-label": tr("Remplissage en un clic", "One-click fill") } },
+            h("span", { class: "plan-text" }, planText(plan)),
+            button(tr("Remplir", "Fill"), "btn btn-primary", () => void track(smartFill())),
+          )
+        : null;
     for (const it of items) {
       list.append(
         h(
@@ -391,6 +434,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     mount(
       side,
       h("h1", { class: "pp-side-title" }, icon(results ? "search" : "star", 13), title),
+      line,
       list,
       empty ? h("p", { class: "pp-empty" }, empty) : null,
       domain && !results
@@ -408,8 +452,25 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             ),
           )
         : null,
-      h("div", { class: "pp-foot" }, forgetButton()),
+      h(
+        "div",
+        { class: "pp-foot" },
+        domain && !results ? button(tr("Oublier mes choix sur ce site", "Forget my choices on this site"), "btn-link", () => void track(forgetSite())) : null,
+        forgetButton(),
+      ),
     );
+  }
+
+  async function smartFill(): Promise<void> {
+    const r = await call(deps.send, { type: "popup_smart_fill" }, parseFilled);
+    if (!r.ok) return handleError(r.code);
+    toast(tr(`Remplissage lancé sur ${r.value.domain}`, `Filling on ${r.value.domain}`));
+  }
+
+  async function forgetSite(): Promise<void> {
+    const r = await call(deps.send, { type: "popup_forget_site" }, parseForgotSite);
+    if (!r.ok) return handleError(r.code);
+    toast(tr(`Choix oubliés pour ${r.value.domain}`, `Choices forgotten for ${r.value.domain}`));
   }
 
   /** Only the reply to the latest query is shown (replies may cross). */
@@ -743,6 +804,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     if (!s.ok) return handleError(s.code);
     domain = s.value.domain;
     suggestions = s.value.items;
+    plan = s.value.plan ?? null;
     results = null;
     view = "none";
     renderMain();

@@ -112,6 +112,15 @@ describe("fill pipeline", () => {
     });
   });
 
+  it("a planned signup identifier gets the identity's e-mail, a menu fill never", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    expect(await filler.fillIdentity(target(), "it_03", "menu", ["username"])).toBe(1);
+    expect((ext.sentToTabs[0]?.message as { values: unknown }).values).toEqual({ username: "alex@atlas.dev" });
+    await filler.fillIdentity(target(), "it_03");
+    expect(Object.keys((ext.sentToTabs[1]?.message as { values: object }).values)).not.toContain("username");
+  });
+
   it("fill_refused_after_navigation (other origin, nothing asked to the host)", async () => {
     const { ext, client, filler } = await setup();
     ext.setFrame(7, 0, "https://evil.test/login", "doc-2");
@@ -189,5 +198,36 @@ describe("Frames.frameOrigin", () => {
     expect(await f.frameOrigin(1, 0)).toBe(SITE);
     expect(await f.frameOrigin(1, 1)).toBeNull();
     expect(await f.frameOrigin(2, 0)).toBeNull();
+  });
+});
+
+describe("fill of a planned group", () => {
+  it("delivers only the planned roles", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    expect(await filler.fillIdentity(target(), "it_02", "menu", ["email", "tel"])).toBe(1);
+    expect(await filler.fillGenerated(target(), "Gen-1", ["new_password"])).toBe(1);
+    expect(ext.sentToTabs.map((s) => (s.message as { values: unknown }).values)).toEqual([
+      { email: "alex@atlas.dev" },
+      { new_password: "Gen-1" },
+    ]);
+  });
+
+  it("sends nothing when no planned role has a value", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    expect(await filler.fillIdentity(target(), "it_02", "menu", ["tel"])).toBe(0);
+    expect(ext.sentToTabs).toEqual([]);
+  });
+
+  it("submits the form in the verified frame", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
+    await filler.submit(target());
+    expect(ext.sentToTabs).toEqual([
+      { tabId: 7, message: { type: "submit", origin: SITE, ref: "f1", planned: true }, options: { documentId: "doc-1" } },
+    ]);
+    ext.setFrame(7, 0, "https://elsewhere.test/", "doc-2");
+    expect(await code(filler.submit(target()))).toBe("origin_mismatch");
   });
 });

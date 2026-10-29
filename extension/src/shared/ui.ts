@@ -99,6 +99,8 @@ export interface MenuInit {
   linked?: { itemId: string; site: string };
   /** Provider accounts per item method (sign-in forms only). */
   choices?: SignInChoice[];
+  /** Opened by a fill plan that could not choose: its best item, listed first. */
+  best?: string;
 }
 
 /** One way to sign in offered by the overlay. */
@@ -149,7 +151,21 @@ export interface PopupStatus {
 export interface PopupSuggestions {
   /** Host of the active tab, or null when it is not an HTTPS page. */
   domain: string | null;
+  /** The plan's alternatives first, best first. */
   items: Summary[];
+  /** What one click does on the active tab (smart fill), when there is a plan. */
+  plan?: PopupPlanLine;
+}
+
+/** The plan in one line: "Se connecter en tant que tom@… en 2 étapes". No value, ever. */
+export interface PopupPlanLine {
+  intent: "login" | "signup" | "reset" | "otp" | "checkout" | "address";
+  /** The account or item it uses (a username or a title, as the summaries show it); "" for a new password only. */
+  label: string;
+  /** Steps of a sign-in (identifier then password: 2); 1 otherwise. */
+  steps: number;
+  /** `chain`: one click signs in (high confidence `OpenChain`); `fill`: it fills this page, nothing is sent. */
+  mode: "chain" | "fill";
 }
 
 export interface PopupItem {
