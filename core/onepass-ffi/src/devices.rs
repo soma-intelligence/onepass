@@ -205,6 +205,17 @@ impl Session {
         })
     }
 
+    /// Record the Secret Key this device holds (Keychain) as one it used
+    /// with the account, after an unlock by biometrics (which sees no
+    /// Secret Key): `unlock_after_rotation` refuses to follow a rotation on
+    /// a device with no such record (ruling K18), so call this after every
+    /// `unlock_with_auk`.
+    pub fn note_secret_key(&self, secret_key: String) -> Result<(), OnePassError> {
+        let secret_key = Zeroizing::new(secret_key);
+        let secret_key = SecretKey::parse(&secret_key)?;
+        self.with(|repo| Ok(repo.note_secret_key(&secret_key)?))
+    }
+
     /// The signed device list, revoked devices included, sorted by id.
     pub fn devices(&self) -> Result<Vec<FfiDevice>, OnePassError> {
         self.with(|repo| {
@@ -333,9 +344,11 @@ pub fn store_keys_rotated(db_path: String) -> Result<bool, OnePassError> {
 /// follows the new account identity, keeping its pinned state. A new
 /// identity offered with a Secret Key this device already used under
 /// another identity is refused (`Validation`: a revoked device can forge a
-/// "rotation" under the old key), whatever order the app tries keys in;
-/// any other key the rotation was not sealed under is `WrongPassword`; old
-/// params served again are `Integrity`.
+/// "rotation" under the old key), whatever order the app tries keys in,
+/// and so is any key on a device with no record of the keys it used (call
+/// `Session::note_secret_key` after biometric unlocks); any other key the
+/// rotation was not sealed under is `WrongPassword`; an identity this
+/// device left is `Integrity`.
 #[uniffi::export]
 pub fn unlock_after_rotation(
     db_path: String,

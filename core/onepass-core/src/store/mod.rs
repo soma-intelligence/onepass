@@ -171,6 +171,25 @@ pub trait RecordStore {
         Ok(())
     }
 
+    /// Whether this store keeps `known_secret_keys` and
+    /// `retired_identities` across sessions. Following a rotation
+    /// (`Repository::unlock_after_rotation`) needs it (ruling K20): without
+    /// that memory nothing proves the key offered is new to this device.
+    fn keeps_known_keys(&self) -> bool {
+        false
+    }
+
+    /// Fingerprints of the identities this device left by a key rotation
+    /// (its own, or one it followed): never followed back (ruling K18).
+    fn retired_identities(&self) -> Result<Vec<[u8; 32]>> {
+        Ok(Vec::new())
+    }
+
+    /// Remember an identity for `retired_identities` (bounded, oldest out).
+    fn retire_identity(&mut self, _identity: [u8; 32]) -> Result<()> {
+        Ok(())
+    }
+
     /// Write every record only if the stored record with its key has the
     /// version paired with it (`None`: no such record), all or nothing:
     /// on a conflict nothing is written (`Error::Conflict`). The default

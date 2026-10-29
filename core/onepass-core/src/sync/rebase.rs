@@ -251,12 +251,14 @@ impl Repository<SyncStore> {
             &forced,
             self.epoch_rewound,
             self.lists_forced,
+            self.params_forced,
         )?;
         self.device = device;
         self.chain = chain;
         self.dropped.clear();
         self.epoch_rewound = false;
         self.lists_forced = false;
+        self.params_forced = false;
         Ok(())
     }
 
@@ -300,10 +302,13 @@ impl Repository<SyncStore> {
     /// (the stored epoch's rules, the store).
     pub fn rebase_report(&mut self) -> Result<RebaseReport> {
         let mut first_error = None;
-        // A key rotation the server overtook goes out again above it
-        // first: everything else of the rotation waits for its params.
-        if let Err(e) = self.reissue_rotation() {
-            first_error.get_or_insert(e);
+        // Another device's rotation is whole on the server: this one lost
+        // (ruling K19). Nothing of it goes out; the user follows the winner.
+        if self.abandon_overtaken_rotation()? {
+            return Ok(RebaseReport {
+                rebased: Vec::new(),
+                error: Some(IntegrityError::RotationOvertaken.into()),
+            });
         }
         // While this device's rotation is not whole on the server, a vault
         // the server holds under a manifest the new key did not sign (a

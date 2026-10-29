@@ -189,6 +189,13 @@ impl Manifest {
     }
 }
 
+/// Whether `sm` carries a valid signature by `key` over its sealed blob,
+/// without opening it (no vault key needed): how a device tells whose key
+/// signed a manifest the server holds.
+pub(crate) fn signed_by(sm: &SignedManifest, key: &HybridVerifyingKey) -> bool {
+    key.verify(DOMAIN, &sm.blob, &sm.sig).is_ok()
+}
+
 /// Seal the manifest with the vault key and sign the sealed blob (domain
 /// `"manifest"`). Refuses a manifest that `verify_manifest` would refuse:
 /// another vault, unsorted or duplicate entries, or a wrong Merkle root.
