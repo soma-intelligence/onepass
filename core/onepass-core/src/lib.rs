@@ -4,6 +4,7 @@
 #![deny(unsafe_code)]
 
 pub mod account;
+pub mod approvers;
 pub mod archive;
 pub mod chain;
 pub mod companion;

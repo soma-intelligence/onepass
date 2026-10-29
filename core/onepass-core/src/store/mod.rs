@@ -26,6 +26,8 @@ pub enum RecordKind {
     DeviceList,
     /// The signed vault list, id = account id, version = its seq.
     VaultList,
+    /// The signed approver list, id = account id, version = its seq.
+    ApproverList,
 }
 
 impl RecordKind {
@@ -40,6 +42,7 @@ impl RecordKind {
             Self::RestoreEpoch => 7,
             Self::DeviceList => 8,
             Self::VaultList => 9,
+            Self::ApproverList => 10,
         }
     }
 
@@ -54,6 +57,7 @@ impl RecordKind {
             7 => Self::RestoreEpoch,
             8 => Self::DeviceList,
             9 => Self::VaultList,
+            10 => Self::ApproverList,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -328,6 +332,7 @@ mod tests {
             RecordKind::RestoreEpoch,
             RecordKind::DeviceList,
             RecordKind::VaultList,
+            RecordKind::ApproverList,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
@@ -335,8 +340,9 @@ mod tests {
         assert_eq!(RecordKind::RestoreEpoch.code(), 7);
         assert_eq!(RecordKind::DeviceList.code(), 8);
         assert_eq!(RecordKind::VaultList.code(), 9);
+        assert_eq!(RecordKind::ApproverList.code(), 10);
         assert_eq!(
-            RecordKind::from_code(10).unwrap_err(),
+            RecordKind::from_code(11).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
         assert_eq!(

@@ -248,6 +248,7 @@ fn keeps_ancestor(kind: RecordKind) -> bool {
             | RecordKind::RestoreEpoch
             | RecordKind::DeviceList
             | RecordKind::VaultList
+            | RecordKind::ApproverList
     )
 }
 
@@ -323,13 +324,17 @@ fn held_lists(conn: &Connection) -> Result<BTreeSet<(RecordKind, Id)>> {
             "SELECT p.kind, p.id FROM pending p
              JOIN base b ON b.kind = p.kind AND b.id = p.id
              LEFT JOIN ancestor a ON a.kind = p.kind AND a.id = p.id
-             WHERE p.kind IN (?1, ?2) AND p.data IS NOT NULL
+             WHERE p.kind IN (?1, ?2, ?3) AND p.data IS NOT NULL
                AND (a.id IS NULL OR a.version != b.version)",
         )
         .map_err(store_err)?;
     let rows = stmt
         .query_map(
-            params![RecordKind::DeviceList.code(), RecordKind::VaultList.code()],
+            params![
+                RecordKind::DeviceList.code(),
+                RecordKind::VaultList.code(),
+                RecordKind::ApproverList.code()
+            ],
             |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
         )
         .map_err(store_err)?;
@@ -854,13 +859,14 @@ impl SyncStore {
                 &format!(
                     "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
                      SELECT b.kind, b.id, b.version, b.data FROM base b
-                     WHERE b.kind IN (?1, ?2, ?3, ?4) AND {missing}"
+                     WHERE b.kind IN (?1, ?2, ?3, ?4, ?5) AND {missing}"
                 ),
                 params![
                     RecordKind::Manifest.code(),
                     RecordKind::RestoreEpoch.code(),
                     RecordKind::DeviceList.code(),
-                    RecordKind::VaultList.code()
+                    RecordKind::VaultList.code(),
+                    RecordKind::ApproverList.code()
                 ],
             )
             .map_err(store_err)?;
@@ -1502,7 +1508,7 @@ impl SyncStore {
     pub(crate) fn discard_local_changes(&mut self) -> Result<()> {
         let tx = self.write_tx()?;
         tx.execute(
-            "DELETE FROM pending WHERE kind IN (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "DELETE FROM pending WHERE kind IN (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 RecordKind::VaultKey.code(),
                 RecordKind::VaultMeta.code(),
@@ -1510,7 +1516,8 @@ impl SyncStore {
                 RecordKind::Manifest.code(),
                 RecordKind::RestoreEpoch.code(),
                 RecordKind::DeviceList.code(),
-                RecordKind::VaultList.code()
+                RecordKind::VaultList.code(),
+                RecordKind::ApproverList.code()
             ],
         )
         .map_err(store_err)?;
@@ -2250,7 +2257,10 @@ fn has_pending_manifest(conn: &Connection, vault: Id) -> Result<bool> {
 /// signed list record is never deleted (spec 4.2: the lists only grow):
 /// `InvalidFormat("list record deletion")`.
 fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
-    if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+    if matches!(
+        kind,
+        RecordKind::DeviceList | RecordKind::VaultList | RecordKind::ApproverList
+    ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
     let base_row: Option<(i64, Option<Vec<u8>>)> = tx
@@ -2314,7 +2324,8 @@ fn protected_from_remote_deletion(
         | RecordKind::Keyset
         | RecordKind::RestoreEpoch
         | RecordKind::DeviceList
-        | RecordKind::VaultList => true,
+        | RecordKind::VaultList
+        | RecordKind::ApproverList => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v) && !deleted.contains(&v))
         }
@@ -2436,6 +2447,12 @@ pub(crate) fn merge_chain(
             force_lists,
             IntegrityError::VaultListRollback,
         )?,
+        approver_list: seen(
+            mem.approver_list,
+            stored.approver_list,
+            force_lists,
+            IntegrityError::DeviceListRollback,
+        )?,
         device_id,
     })
 }
@@ -2512,7 +2529,10 @@ impl WriteTx<'_> {
 /// `RecordStore::evict` inside a transaction: the row leaves every layer
 /// and nothing is queued for the server.
 fn evict_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
-    if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+    if matches!(
+        kind,
+        RecordKind::DeviceList | RecordKind::VaultList | RecordKind::ApproverList
+    ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
     for table in ["base", "pending", "staging", "ancestor", "kept"] {
@@ -4535,18 +4555,21 @@ mod tests {
             device_list: seen_at(2, 1),
             vault_list: seen_at(5, 1),
             device_id: None,
+            approver_list: None,
         };
         let newer = ChainState {
             params_epoch: 2,
             device_list: seen_at(3, 2),
             vault_list: seen_at(4, 2),
             device_id: Some(id),
+            approver_list: seen_at(2, 3),
         };
         let merged = ChainState {
             params_epoch: 2,
             device_list: seen_at(3, 2),
             vault_list: seen_at(5, 1),
             device_id: Some(id),
+            approver_list: seen_at(2, 3),
         };
         // Whichever process persists, nothing goes back.
         assert_eq!(merge_chain(&older, &newer, false).unwrap(), merged);
@@ -4590,6 +4613,7 @@ mod tests {
         // A device id is set once: another one is refused, forced or not.
         let mine = ChainState {
             device_id: Some(Id::new()),
+            approver_list: None,
             ..stored.clone()
         };
         let other = ChainState {
@@ -4613,6 +4637,7 @@ mod tests {
             device_list: seen_at(4, 1),
             vault_list: seen_at(6, 1),
             device_id: Some(id),
+            approver_list: None,
         };
         s.set_chain_state(&stored).unwrap();
         // A process that unlocked before those pins persists its own.
@@ -4621,6 +4646,7 @@ mod tests {
             device_list: seen_at(3, 9),
             vault_list: seen_at(5, 9),
             device_id: None,
+            approver_list: None,
         };
         let (_, chain) = s
             .merge_device_state(&DeviceState::default(), &stale, &[], false, false)
