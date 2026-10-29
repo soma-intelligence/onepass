@@ -93,6 +93,46 @@ fn concurrent_edits_of_same_item_newest_wins() {
 }
 
 #[test]
+fn remote_password_change_wins_and_keeps_local_usage() {
+    use onepass_core::fill_plan::context::FieldRole;
+    use onepass_core::fill_plan::intent::Intent;
+    use onepass_core::model::usage::{SiteUsage, StepKind, form_shape_hash};
+
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let x = &items[0];
+    // B remembers a fill: a usage write, `updated_at` unchanged.
+    let site = SiteUsage {
+        site: "exemple.fr".into(),
+        form_shape_hash: form_shape_hash(&[FieldRole::Username, FieldRole::CurrentPassword]),
+        intent: Intent::Login,
+        step_seq: vec![StepKind::Fill],
+        count: 1,
+        last_at: at(T0 + 5),
+    };
+    let v = b.vault();
+    assert!(
+        b.repo()
+            .record_usage(&v, x.id, site.clone(), at(T0 + 5))
+            .unwrap()
+    );
+    // A changes the password, later, and pushes first.
+    let mut changed = x.clone();
+    changed.field_mut("password").unwrap().value = FieldValue::Password("n3w".to_owned().into());
+    changed.updated_at = at(T0 + 10);
+    a.save(&changed);
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    let got = b.items().remove(0);
+    assert_eq!(got.field("password"), changed.field("password"));
+    assert_eq!(got.updated_at, changed.updated_at);
+    assert_eq!(got.usage, vec![site]);
+    assert_eq!(a.items(), b.items());
+}
+
+#[test]
 fn same_timestamp_edits_converge() {
     let mut server = Server::default();
     let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);

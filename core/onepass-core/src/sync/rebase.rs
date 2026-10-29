@@ -75,6 +75,7 @@ use crate::manifest::{
     Manifest, ManifestEntry, SignedManifest, manifest_hash, record_hash, verify_manifest,
 };
 use crate::model::Item;
+use crate::model::usage::merge_usage;
 use crate::repo::{Repository, Use, seen, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
 use crate::sync::SyncStore;
@@ -633,25 +634,27 @@ impl Repository<SyncStore> {
         let ancestor = plan.ancestor_entries();
         let mut saves = Vec::new();
         for c in &plan.changed {
-            let keep = match loaded.listed(c.item.id) {
-                None => true,
-                Some((_, remote)) => {
-                    let remote_hash = record_hash(remote);
-                    let untouched = ancestor.iter().any(|a| {
-                        a.item_id == remote.item_id
-                            && a.version == remote.version
-                            && a.record_hash == remote_hash
-                    });
-                    untouched || {
-                        let theirs = vault.open_item(remote)?.updated_at;
-                        c.item.updated_at > theirs
-                            || (c.item.updated_at == theirs && c.hash > remote_hash)
-                    }
-                }
-            };
-            if keep {
+            let Some((_, remote)) = loaded.listed(c.item.id) else {
                 saves.push(c.item.clone());
+                continue;
+            };
+            let remote_hash = record_hash(remote);
+            let untouched = ancestor.iter().any(|a| {
+                a.item_id == remote.item_id
+                    && a.version == remote.version
+                    && a.record_hash == remote_hash
+            });
+            if untouched {
+                saves.push(c.item.clone());
+                continue;
             }
+            // Changed on both sides: the usage of both rides on the winner
+            // (a usage write leaves `updated_at` alone, so any real remote
+            // edit wins, and the local usage must not be lost with it).
+            let theirs = vault.open_item(remote)?;
+            let keep = c.item.updated_at > theirs.updated_at
+                || (c.item.updated_at == theirs.updated_at && c.hash > remote_hash);
+            saves.extend(resolve(&c.item, theirs, keep));
         }
         let deletes: Vec<Id> = plan
             .deleted
@@ -674,6 +677,21 @@ impl Repository<SyncStore> {
     }
 }
 
+/// The item to save for one changed on both sides, once `updated_at` chose
+/// a side: the winner, with the usage of both (`merge_usage`), its own
+/// `updated_at` unchanged. `None` when the remote wins and already holds
+/// all the local usage: nothing to write.
+fn resolve(local: &Item, remote: Item, local_wins: bool) -> Option<Item> {
+    let usage = merge_usage(&local.usage, &remote.usage);
+    if local_wins {
+        return Some(Item {
+            usage,
+            ..local.clone()
+        });
+    }
+    (usage != remote.usage).then_some(Item { usage, ..remote })
+}
+
 /// The local manifest must have been built on the ancestor: a later seq,
 /// and the very next one must point at it. Otherwise `ManifestRollback`.
 fn descends(local: &Manifest, ancestor: &Manifest) -> Result<()> {
@@ -688,7 +706,47 @@ fn descends(local: &Manifest, ancestor: &Manifest) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use time::macros::datetime;
+
     use super::*;
+    use crate::fill_plan::context::FieldRole;
+    use crate::fill_plan::intent::Intent;
+    use crate::model::usage::{SiteUsage, StepKind, form_shape_hash};
+    use crate::model::{FieldValue, ItemType, new_item};
+
+    #[test]
+    fn remote_password_change_wins_and_keeps_local_usage() {
+        let t0 = datetime!(2026-10-28 12:00 UTC);
+        let mut ancestor = new_item(ItemType::Login, Id::new(), "Example");
+        ancestor.updated_at = t0;
+        let mut local = ancestor.clone();
+        let site = SiteUsage {
+            site: "example.com".into(),
+            form_shape_hash: form_shape_hash(&[FieldRole::Username, FieldRole::CurrentPassword]),
+            intent: Intent::Login,
+            step_seq: vec![StepKind::Fill],
+            count: 1,
+            last_at: t0 + time::Duration::minutes(1),
+        };
+        assert!(local.note_usage(site.clone(), site.last_at));
+        assert_eq!(local.updated_at, t0);
+        let mut remote = ancestor.clone();
+        remote.field_mut("password").unwrap().value = FieldValue::Password("n3w".to_owned().into());
+        remote.updated_at = t0 + time::Duration::minutes(5);
+
+        let out = resolve(&local, remote.clone(), false).expect("usage carried over");
+        assert_eq!(out.field("password"), remote.field("password"));
+        assert_eq!(out.updated_at, remote.updated_at);
+        assert_eq!(out.usage, vec![site]);
+        // Nothing local to carry: the remote stands as it is.
+        assert_eq!(resolve(&ancestor, remote.clone(), false), None);
+        // The local side wins: it takes the remote usage too.
+        let mut theirs = remote.clone();
+        theirs.usage = local.usage.clone();
+        let mine = resolve(&ancestor, theirs, true).unwrap();
+        assert_eq!(mine.usage, local.usage);
+        assert_eq!(mine.updated_at, ancestor.updated_at);
+    }
 
     #[test]
     fn local_manifest_must_descend_from_its_ancestor() {

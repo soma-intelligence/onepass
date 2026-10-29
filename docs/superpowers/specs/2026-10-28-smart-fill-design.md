@@ -172,12 +172,13 @@ Fonctions pures, poids fixes dans une seule table (`fill_plan::weights`) :
 
 ## 7. Mémoire du site
 
-Nouvel enregistrement chiffré du coffre :
+Mémoire par élément, dans une seconde remorque scellée de l'élément (`UsageTrailer`, ruling R1), après la remorque d'historique (`ItemTrailer`) :
 
 ```
+UsageTrailer { sites: [SiteUsage] }
+
 SiteUsage {
   site: String,               // eTLD+1
-  item_id: ItemId,
   form_shape_hash: [u8; 16],  // rôles et ordre des champs, sans texte
   intent: Intent,
   step_seq: [StepKind],
@@ -186,11 +187,12 @@ SiteUsage {
 }
 ```
 
-- Signé et synchronisé comme les autres enregistrements (nouveau type d'enregistrement, numéro pris à la suite des existants au moment de l'implémentation).
-- Écrit seulement après un remplissage réussi : chaîne arrivée à `done`, ou sauvegarde confirmée, ou remplissage sans envoi suivi d'une navigation du même site.
-- Au plus 20 entrées par site ; une entrée sans usage depuis un an est supprimée.
-- Jamais exposé comme liste de sites par le MCP ni par la CLI : les règles du guard restent les mêmes.
-- Supprimé avec l'élément ; effaçable par site depuis les réglages des apps et de l'extension.
+- Chiffrée et synchronisée avec l'élément, sous sa clé : pas de nouveau type d'enregistrement (les listes signées sont lisibles par le serveur). Un élément sans usage s'encode à l'octet près comme avant ; une remorque illisible ouvre l'élément sans usage.
+- Une écriture d'usage ne change jamais `updated_at` : toute vraie modification distante gagne le rebase, qui reporte l'usage local sur l'élément gagnant (union par site, `merge_usage`).
+- Écrite seulement après un remplissage réussi : chaîne arrivée à `done`, ou sauvegarde confirmée, ou remplissage sans envoi suivi d'une navigation du même site. Et seulement si le site est nouveau pour l'élément, si `form_shape_hash` ou `intent` a changé, ou si le dernier usage date de plus d'une heure (ruling R3).
+- Au plus 20 sites par élément, les plus récents (ruling R2) ; une entrée sans usage depuis un an est supprimée à l'écriture suivante.
+- Jamais exposé comme liste de sites par le MCP ni par la CLI (hors de la forme serde de l'élément) : les règles du guard restent les mêmes.
+- Supprimé avec l'élément ; effaçable par site depuis les réglages des apps et de l'extension (`Repository::forget_site_usage`).
 
 ## 8. Ce que fait un clic
 

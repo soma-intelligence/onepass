@@ -5,6 +5,7 @@ use crate::id::Id;
 use crate::model::events::ItemEvent;
 use crate::model::field::{AttachmentRef, Field, FieldValue, PasswordHistoryEntry, Section};
 use crate::model::templates::ItemType;
+use crate::model::usage::SiteUsage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MatchRule {
@@ -95,6 +96,10 @@ pub struct Item {
     /// item: sealed as a trailer after it, so older records still decode.
     #[serde(skip)]
     pub events: Vec<ItemEvent>,
+    /// Per-site fill memory (see `model::usage`). Sealed in a second
+    /// trailer, never in the serde form: the MCP and the CLI never see it.
+    #[serde(skip)]
+    pub usage: Vec<SiteUsage>,
 }
 
 impl Item {
@@ -218,6 +223,7 @@ mod tests {
                 replaced_at: datetime!(2026-10-01 08:00 UTC),
             }],
             events: vec![],
+            usage: vec![],
         }
     }
 

@@ -58,6 +58,7 @@ use crate::manifest::{
 };
 use crate::model::Item;
 use crate::model::events::EventKind;
+use crate::model::usage::SiteUsage;
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
@@ -1125,6 +1126,44 @@ impl<S: RecordStore> Repository<S> {
         Ok(())
     }
 
+    /// Remember a fill of `u.site` by this item (`Item::note_usage`). The
+    /// item is saved only when the memory changed enough to be worth a
+    /// write (`true`), with its `updated_at` unchanged: a usage write never
+    /// beats a real edit from another device.
+    pub fn record_usage(
+        &mut self,
+        vault: &Vault,
+        item_id: Id,
+        u: SiteUsage,
+        now: OffsetDateTime,
+    ) -> Result<bool> {
+        self.sync_epoch()?;
+        let loaded = self.served(vault, Use::Write)?;
+        let (_, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
+        let mut item = vault.open_item(rec)?;
+        if !item.note_usage(u, now) {
+            return Ok(false);
+        }
+        self.save_item(vault, item)?;
+        Ok(true)
+    }
+
+    /// Forget `site` in every item of every vault this device opens (spec
+    /// 7, erase by site). Returns how many items were rewritten, each with
+    /// its `updated_at` unchanged.
+    pub fn forget_site_usage(&mut self, site: &str) -> Result<usize> {
+        let mut rewritten = 0;
+        for vault in self.vaults()? {
+            for mut item in self.items(&vault)? {
+                if item.forget_site_usage(site) {
+                    self.save_item(&vault, item)?;
+                    rewritten += 1;
+                }
+            }
+        }
+        Ok(rewritten)
+    }
+
     /// Remove an item for good: manifest without it first, then its record
     /// and its ignored leftovers.
     pub fn delete_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
@@ -1687,6 +1726,44 @@ mod tests {
 
     fn user(item: &Item) -> String {
         item.subtitle()
+    }
+
+    #[test]
+    fn usage_writes_only_when_worth_it_and_forgets_by_site() {
+        use crate::fill_plan::context::FieldRole;
+        use crate::fill_plan::intent::Intent;
+        use crate::model::usage::{StepKind, form_shape_hash};
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let item = login(&v, "alice");
+        repo.save_item(&v, item.clone()).unwrap();
+        let now = OffsetDateTime::now_utc();
+        let u = |site: &str| SiteUsage {
+            site: site.into(),
+            form_shape_hash: form_shape_hash(&[FieldRole::Username]),
+            intent: Intent::Login,
+            step_seq: vec![StepKind::Fill],
+            count: 1,
+            last_at: now,
+        };
+        let version = |repo: &mut Repository<MemoryStore>| {
+            repo.load(&v).unwrap().listed(item.id).unwrap().1.version
+        };
+        assert!(repo.record_usage(&v, item.id, u("a.com"), now).unwrap());
+        assert!(repo.record_usage(&v, item.id, u("b.com"), now).unwrap());
+        let written = version(&mut repo);
+        // Same site, same shape, within the hour: no write.
+        assert!(!repo.record_usage(&v, item.id, u("a.com"), now).unwrap());
+        assert_eq!(version(&mut repo), written);
+        let stored = repo.items(&v).unwrap().remove(0);
+        assert_eq!(stored.updated_at, item.updated_at);
+        assert_eq!(stored.usage.len(), 2);
+
+        assert_eq!(repo.forget_site_usage("a.com").unwrap(), 1);
+        assert_eq!(repo.forget_site_usage("a.com").unwrap(), 0);
+        let stored = repo.items(&v).unwrap().remove(0);
+        assert_eq!(stored.usage.len(), 1);
+        assert_eq!(stored.usage[0].site, "b.com");
+        assert_eq!(stored.updated_at, item.updated_at);
     }
 
     /// Store an item record by hand, as an interrupted write would leave it.
