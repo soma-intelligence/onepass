@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createBackground, FILL_SMART_COMMAND } from "../src/background/app";
+import { BridgeAppError } from "../src/bridge/client";
 import { NOTE_NAV_MS } from "../src/background/notes";
 import { penaltyKey } from "../src/background/penalty";
 import { MemoryPairingStore, Store } from "../src/background/store";
@@ -110,7 +111,7 @@ async function bg(next: () => PlanOut, extra: (r: Record<string, unknown>) => un
 
 describe("icon click (plan_context with the gesture's form and field)", () => {
   it("icon_click_with_high_login_starts_chain", async () => {
-    const t = await bg(() => plan({ action: "open_chain", groups: [loginGroup(A)], alternatives: [A] }));
+    const t = await bg(() => plan({ action: "open_chain", groups: [loginGroup(A)], alternatives: [] }));
     const r = await t.ext.send({ type: "plan_context", formRef: "f1", fieldRef: "f1e0", context: body(LOGIN_FORM) }, t.top);
     expect(r).toEqual({ ok: { outcome: "chain" } });
     // The plan's item, the progress under the clicked field, and what note_fill needs at done.
@@ -119,10 +120,11 @@ describe("icon click (plan_context with the gesture's form and field)", () => {
   });
 
   it("icon_click_with_tie_opens_menu_best_first", async () => {
-    const t = await bg(() => plan({ action: "show_menu", confidence: "low", groups: [loginGroup(B)], alternatives: [B, A], reasons: ["tie"] }));
+    const t = await bg(() => plan({ action: "show_menu", confidence: "low", groups: [loginGroup(B)], alternatives: [A], reasons: ["tie"] }));
     const r = await t.ext.send({ type: "plan_context", formRef: "f1", fieldRef: "f1e0", context: body(LOGIN_FORM) }, t.top);
     expect(r).toEqual({ ok: { outcome: "menu" } });
-    // The content script opens the menu next: the plan's alternatives come first.
+    // The content script opens the menu next: the chosen item, then the
+    // plan's alternatives (the bridge leaves the chosen one out of them).
     const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login" }, t.top)) as { ok: { url: string } };
     const token = open.ok.url.split("#")[1] as string;
     const init = (await t.ext.send({ type: "menu_init", token }, uiSender(`menu.html#${token}`, 7))) as { ok: { items: { item_id: string }[]; best?: string } };
@@ -269,7 +271,7 @@ describe("site memory (note_fill)", () => {
   });
 
   it("a pick in the menu a plan opened is noted once the page moves on", async () => {
-    const t = await bg(() => plan({ action: "show_menu", confidence: "low", groups: [loginGroup(B)], alternatives: [B, A] }));
+    const t = await bg(() => plan({ action: "show_menu", confidence: "low", groups: [loginGroup(B)], alternatives: [A] }));
     await t.ext.send({ type: "plan_context", formRef: "f1", fieldRef: "f1e0", context: body(LOGIN_FORM) }, t.top);
     const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login" }, t.top)) as { ok: { url: string } };
     const token = open.ok.url.split("#")[1] as string;
@@ -314,7 +316,7 @@ describe("popup and command", () => {
   };
 
   it("popup_shows_plan_line: the plan in one line, its alternatives first", async () => {
-    const t = await bg(() => plan({ action: "open_chain", groups: [loginGroup(B, "f1", ["email"])], alternatives: [B] }));
+    const t = await bg(() => plan({ action: "open_chain", groups: [loginGroup(B, "f1", ["email"])], alternatives: [] }));
     t.ext.activeTab = { id: 7, url: `${SITE}/login` };
     replyContext(t, [form("f1", ["email"], [{ button_ref: "b1", class: "next" }])]);
     const r = (await t.ext.send({ type: "popup_suggestions" }, uiSender("popup.html"))) as { ok: { items: { item_id: string }[]; plan: unknown } };
@@ -370,6 +372,17 @@ describe("popup and command", () => {
     const before = t.client.requests.length;
     await t.ext.send({ type: "popup_forget_site" }, uiSender("menu.html#AbCdEfGhIjKlMnOpQrStUv", 7));
     expect(t.client.requests.length).toBe(before);
+  });
+
+  it("a forget the host could not finish is an error, never a success", async () => {
+    const t = await bg(
+      () => plan({}),
+      (r) => (r.op === "forget_site" ? new BridgeAppError("internal", "a vault could not be read") : undefined),
+    );
+    t.ext.activeTab = { id: 7, url: `${SITE}/login` };
+    const r = (await t.ext.send({ type: "popup_forget_site" }, uiSender("popup.html"))) as { ok?: unknown; err?: unknown };
+    expect(r.ok).toBeUndefined();
+    expect(r.err).toBeDefined();
   });
 
   it("the popup's Fill and the fill-smart command ask the top frame to run smart fill", async () => {

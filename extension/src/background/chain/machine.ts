@@ -370,7 +370,7 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
       delete prev.missed;
       prev.retried = true;
       prev.submittedAt = now;
-      return { state: n, actions: [{ type: "submit", formRef: d.form.ref }] };
+      return { state: n, actions: [submitOf(n, d.form.ref, onProvider)] };
     }
     return { state: n, actions: [] };
   }
@@ -401,7 +401,7 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
       break;
   }
   if ((d.kind === "otp" || d.kind === "fill") && n.autoSubmit) {
-    actions.push({ type: "submit", formRef: d.form.ref });
+    actions.push(submitOf(n, d.form.ref, onProvider));
     st.submittedAt = now;
   }
   if ((d.kind === "otp" || d.kind === "fill") && !onProvider && !n.planned && n.roles === undefined) {
@@ -410,6 +410,16 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
   }
   n.steps.push(st);
   return { state: n, actions };
+}
+
+/**
+ * The chain's submit of a form. A chain a plan started submits on the site's
+ * pages as the plan does (`planned`: the content script re-checks the button
+ * for pay or create at the click and never takes a re-rendered copy); a
+ * provider's pages and the other chains are unchanged.
+ */
+function submitOf(n: ChainState, formRef: string, onProvider: boolean): ChainAction {
+  return n.planned && !onProvider ? { type: "submit", formRef, planned: true } : { type: "submit", formRef };
 }
 
 /** What a plan made of a page the chain did not recognize: the chain item's login group. */

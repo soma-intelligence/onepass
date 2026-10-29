@@ -112,6 +112,15 @@ describe("fill pipeline", () => {
     });
   });
 
+  it("a planned signup identifier gets the identity's e-mail, a menu fill never", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    expect(await filler.fillIdentity(target(), "it_03", "menu", ["username"])).toBe(1);
+    expect((ext.sentToTabs[0]?.message as { values: unknown }).values).toEqual({ username: "alex@atlas.dev" });
+    await filler.fillIdentity(target(), "it_03");
+    expect(Object.keys((ext.sentToTabs[1]?.message as { values: object }).values)).not.toContain("username");
+  });
+
   it("fill_refused_after_navigation (other origin, nothing asked to the host)", async () => {
     const { ext, client, filler } = await setup();
     ext.setFrame(7, 0, "https://evil.test/login", "doc-2");

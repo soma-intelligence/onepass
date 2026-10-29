@@ -279,6 +279,15 @@ describe("machine", () => {
     ]);
   });
 
+  it("a chain a plan started sends its submits as planned (click-time re-check, no re-rendered copy)", () => {
+    const planned = startChain({ tabId: 7, item: item as never, siteOrigin: SITE, now: T0, planned: { roles: ["email", "current_password"], intent: "login" } });
+    const r = step(planned, page(`${SITE}/login`, [loginForm]), SITE, T0 + 10);
+    expect(r.actions.filter((a) => a.type === "submit")).toEqual([{ type: "submit", formRef: "f1", planned: true }]);
+    // A chain from the menu or the overlay: as before.
+    const plain = step(s0(), page(`${SITE}/login`, [loginForm]), SITE, T0 + 10);
+    expect(plain.actions.filter((a) => a.type === "submit")).toEqual([{ type: "submit", formRef: "f1" }]);
+  });
+
   it("note shape: planned roles first, else the first form filled; steps in order", () => {
     const planned = startChain({ tabId: 7, item: item as never, siteOrigin: SITE, now: T0, planned: { roles: ["username"], intent: "login" } });
     expect(noteShape(planned)).toEqual({ roles: ["username"], intent: "login" });

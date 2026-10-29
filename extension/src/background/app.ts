@@ -29,7 +29,7 @@ import { Overlays, removeFrame, resizeFrame } from "./overlay";
 import { PairingFlow } from "./pairing";
 import { clearPenalty, hasPenalty, siteOf } from "./penalty";
 import { Planner, type PlanOrigins, framesFromSender, mainRoles } from "./planner";
-import { PopupBackend, alternativesFirst, loginFields } from "./popup";
+import { PopupBackend, alternativesFirst, loginFields, rankedIds } from "./popup";
 import { type Handlers, createRouter, parsePlanContextBody } from "./router";
 import { type SavePending, SavePrompts } from "./save";
 import { BgError, type BridgeLike, Session } from "./session";
@@ -335,7 +335,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         if (outcome === "menu") {
           const ctx = planner.contextOf(plan);
           planMenus.set(`${from.tabId}:${from.frameId}`, {
-            alternatives: plan.alternatives.slice(0, 8),
+            alternatives: rankedIds(plan).slice(0, 8),
             planned: { roles: ctx ? mainRoles(ctx, plan.groups) : [], intent: plan.intent },
             documentId: from.documentId,
             at: now(),

@@ -193,6 +193,21 @@ describe("buildPageContext", () => {
     const all = ctx.forms.flatMap((f) => f.fields.map((x) => x.field_ref));
     expect(new Set(all).size).toBe(all.length);
   });
+
+  it("the cap keeps the submit and every pay or create button, whatever their place", () => {
+    const others = Array.from({ length: 40 }, (_, i) => `<button type="button">Option ${i}</button>`).join("");
+    const { ctx, refs } = page(`<form id="login">
+      <input type="text" name="username" autocomplete="username">
+      <input type="password" autocomplete="current-password">
+      ${others}<button id="pay" type="button">Pay now</button><button id="new" type="button">Create account</button>
+      <button id="go" type="submit">Sign in</button></form>`);
+    const buttons = ctx.forms[0]!.buttons;
+    expect(buttons).toHaveLength(32);
+    expect(refs.get(buttons[0]!.button_ref)).toBe(byId("go"));
+    expect(buttons[0]!.class).toBe("submit");
+    expect(buttons.slice(1, 3).map((b) => refs.get(b.button_ref))).toEqual([byId("pay"), byId("new")]);
+    expect(buttons.slice(1, 3).map((b) => b.class)).toEqual(["pay", "create"]);
+  });
 });
 
 describe("buttonClass", () => {
@@ -256,6 +271,9 @@ describe("hashTypedUsername", () => {
     const out = await withTypedUsernameHash(ctx, ZERO_SALT, "Tom@Example.com ");
     expect(out.typed_username_hash).toHaveLength(32);
     expect(out.typed_username_hash?.slice(0, 4)).toEqual([0xa2, 0xd5, 0x5e, 0xd8]);
+    // The exact JSON that `typed_username_hash_json_matches_the_extension_shape`
+    // (onepass-core tests/fill_plan.rs) reads back as a `[u8; 32]`.
+    expect(JSON.stringify(out.typed_username_hash)).toBe("[162,213,94,216,181,168,236,136,57,35,28,13,179,110,190,95,217,141,11,198,232,38,139,136,154,68,244,8,231,44,13,53]");
     expect(ctx.typed_username_hash).toBeNull();
     expect((await withTypedUsernameHash(ctx, ZERO_SALT, "")).typed_username_hash).toBeNull();
   });

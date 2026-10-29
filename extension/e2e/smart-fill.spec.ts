@@ -88,11 +88,13 @@ paired("smart_fill_signup_generates_password_never_submits_then_offers_save", as
   await expect(page.locator("#new-password")).not.toHaveValue("", { timeout: 15_000 });
   const pw = await page.locator("#new-password").inputValue();
   await expect(page.locator("#confirm-password")).toHaveValue(pw);
+  // The identifier field (autocomplete=username) gets the identity's e-mail.
+  await expect(page.locator("#email")).toHaveValue(FX.identity.email);
   await ext.settle(1500);
   expect(await submits()).toBe(0);
   expect(page.url()).toBe(`${ATLAS}/signup`);
   expect(audited(ext, "plan_fill").at(-1)).toMatchObject({ intent: "signup", action: "fill" });
-  // The user types the identifier (the plan leaves this signup's username field to them) and sends the form.
+  // That address already has an account here: the user types another one and sends the form.
   await page.locator("#email").fill("new.user@atlas.dev");
   await page.locator("#submit").click();
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 15_000 });

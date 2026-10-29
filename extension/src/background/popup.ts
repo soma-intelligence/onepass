@@ -99,6 +99,20 @@ export function planLine(plan: PlanOut, items: readonly Summary[]): PopupPlanLin
   return { intent: plan.intent, label, steps, mode };
 }
 
+/**
+ * The plan's items best first: the chosen one (its first group with an item),
+ * then `alternatives`, which the bridge sends without the chosen one. No
+ * duplicate.
+ */
+export function rankedIds(plan: Pick<PlanOut, "groups" | "alternatives">): string[] {
+  const chosen = plan.groups.find((g) => g.item_id !== null)?.item_id;
+  const out: string[] = [];
+  for (const id of [...(chosen ? [chosen] : []), ...plan.alternatives]) {
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
 /** `items` with the plan's alternatives first, in the plan's order. */
 export function alternativesFirst<T extends { item_id: string }>(items: readonly T[], alternatives: readonly string[]): T[] {
   const rank = (x: T) => {
@@ -186,7 +200,7 @@ export class PopupBackend {
       plan = null;
     }
     if (!plan) return { domain: tab.host, items };
-    const out: PopupSuggestions = { domain: tab.host, items: alternativesFirst(items, plan.alternatives) };
+    const out: PopupSuggestions = { domain: tab.host, items: alternativesFirst(items, rankedIds(plan)) };
     const line = planLine(plan, items);
     if (line) out.plan = line;
     return out;

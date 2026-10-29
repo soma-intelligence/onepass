@@ -205,7 +205,12 @@ function hintsFor(
   };
 }
 
-/** Buttons of one group (form, or the container of fields outside any form), in document order. */
+/**
+ * Buttons of one group (form, or the container of fields outside any form),
+ * at most `PAGE_CONTEXT_MAX_BUTTONS`: the submit first, then the pay and
+ * create buttons, then the rest, each in document order, so the cap never
+ * drops the button a plan sends or one that must hold its submit.
+ */
 function groupButtons(doc: Document, container: Element, submit: Element | null, geometry: Geometry): HTMLElement[] {
   const form = container instanceof HTMLFormElement ? container : null;
   const candidates = Array.from(container.querySelectorAll(BUTTON_SELECTOR));
@@ -217,7 +222,7 @@ function groupButtons(doc: Document, container: Element, submit: Element | null,
     }
   }
   if (submit !== null && !candidates.includes(submit)) candidates.push(submit);
-  return candidates
+  const kept = candidates
     .filter(
       (b): b is HTMLElement =>
         b instanceof HTMLElement &&
@@ -226,7 +231,14 @@ function groupButtons(doc: Document, container: Element, submit: Element | null,
         !b.matches(":disabled") &&
         isRendered(b, geometry),
     )
-    .slice(0, PAGE_CONTEXT_MAX_BUTTONS);
+    .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : a === b ? 0 : 1));
+  const rank = (b: HTMLElement): number => {
+    if (b === submit) return 0;
+    const c = buttonClass(b);
+    return c === "pay" || c === "create" ? 1 : 2;
+  };
+  // Stable sort: document order within each rank.
+  return kept.sort((a, b) => rank(a) - rank(b)).slice(0, PAGE_CONTEXT_MAX_BUTTONS);
 }
 
 const CARD_ROLES: ReadonlySet<FieldRole> = new Set(["cc_name", "cc_number", "cc_exp", "cc_exp_month", "cc_exp_year"]);

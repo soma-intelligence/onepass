@@ -119,7 +119,7 @@ export class Filler {
     return this.deliver(t, values, roles);
   }
 
-  /** With `roles`, the identity's e-mail alone can go into a signup or checkout group. */
+  /** With `roles`, the identity's e-mail alone can go into a signup or checkout group, also as its `username`. */
   async fillIdentity(t: FillTarget, itemId: string, ctx: Ctx = "menu", roles?: readonly FieldRole[]): Promise<number> {
     await this.verify(t);
     const r = await this.session.request({ op: "fill_identity", ctx, item_id: itemId, origin: t.origin });
@@ -128,6 +128,9 @@ export class Filler {
     put(values, "family_name", r.family_name);
     put(values, "full_name", [r.given_name, r.family_name].filter((x) => x).join(" "));
     put(values, "email", r.email);
+    // A signup's identifier field (`username` role) takes the e-mail, only
+    // when a plan put it in the identity group.
+    if (roles?.includes("username")) put(values, "username", r.email);
     put(values, "tel", r.tel);
     put(values, "organization", r.organization);
     put(values, "bday", r.birthday);

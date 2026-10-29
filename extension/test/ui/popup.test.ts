@@ -420,6 +420,21 @@ describe("popup: smart fill", () => {
     expect(text(r)).toContain("Choix oubliés pour atlas-cloud.test");
   });
 
+  it("a failed forget shows the error, never the success line", async () => {
+    const w = worker((m) => {
+      if (m.type === "popup_suggestions") {
+        return { ok: { domain: "atlas-cloud.test", items, plan: { intent: "login", label: "tom@atlas.dev", steps: 2, mode: "chain" } } };
+      }
+      if (m.type === "popup_forget_site") return { err: "internal" };
+      return null;
+    });
+    const { r, handle } = setup(w);
+    await handle.ready;
+    button(r, "Oublier mes choix sur ce site").click();
+    await handle.settled();
+    expect(text(r)).not.toContain("Choix oubliés");
+  });
+
   it("the line's words for each intent, never an em dash", async () => {
     const { planText } = await import("../../src/ui/popup");
     const lines = [
