@@ -479,12 +479,14 @@ final class AppModel {
         return (try? await context.evaluatePolicy(policy, localizedReason: reason)) ?? false
     }
 
-    /// The first-unlock offer applies: personal device, biometrics possible here but not on, and
-    /// the offer never answered for this account on this device.
+    /// The first-unlock offer applies: personal device, biometrics possible here but not enrolled, and
+    /// either the offer never answered for this account on this device, or biometric unlock was on
+    /// and its enrollment is gone (keychain group change, new Face ID set): it is offered again.
     var biometricOfferDue: Bool {
         guard let accountID = settings.accountID, settings.deviceMode.biometricsAllowed,
-            session.environment.biometrics.isAvailable, !settings.biometricsWanted, !session.canUseBiometrics
+            session.environment.biometrics.isAvailable, !session.canUseBiometrics
         else { return false }
+        if settings.biometricsWanted { return true }
         return !Self.browseDefaults.bool(forKey: Self.biometricOfferKey(accountID))
     }
 
