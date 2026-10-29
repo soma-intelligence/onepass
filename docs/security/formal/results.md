@@ -100,6 +100,27 @@
 | manifest.pv | `not event(Fetched(d_3,v_84,seen(2,h0),2,mh_12))` | false | false |
 | manifest.pv | `not event(Fetched(d_3,v_84,seen(2,h0),3,mh_12))` | false | false |
 | manifest.pv | `not event(ItemAccepted(d_3,v_84,one_entry(i_6,ver_9,rh_6)))` | false | false |
+| rotation.pv | `not (event(ItemSealedNew(d,m)) && attacker(m))` | true | true |
+| rotation.pv | `not (event(Rotated(s,ip_4,r,ro,k_13,ik)) && attacker(k_13))` | true | true |
+| rotation.pv | `not (event(Rotated(s,ip_4,r,ro,k_13,ik)) && attacker(ik))` | true | true |
+| rotation.pv | `event(Adopt(d,s,ip_4)) ==> event(Rotated(s,ip_4,r,ro,k_13,ik))` | true | true |
+| rotation.pv | `not event(Adopt(devA,devB,ip_4))` | true | true |
+| rotation.pv | `not event(Adopt(devC,devB,ip_4))` | true | true |
+| rotation.pv | `event(VaultAcceptedNew(d,ip_4,v_42,k_13)) ==> event(VaultCreatedNew(ip_4,v_42,k_13))` | true | true |
+| rotation.pv | `event(PinRoster(restore_new,ip_4,ro)) ==> event(Rotated(s,ip_4,r,ro,k_13,ik))` | true | true |
+| rotation.pv | `event(PinRoster(restore_old,ip_4,ro)) ==> event(Rotated(s,ip_4,r,ro,k_13,ik))` | false | false |
+| rotation.pv | `not event(Adopt(devC,devA,ip_4))` | false | false |
+| rotation.pv | `not event(Adopt(devA,devC,ip_4))` | false | false |
+| rotation.pv | `not event(VaultAcceptedNew(devC,ip_4,v_42,k_13))` | false | false |
+| rotation.pv | `not event(ItemSealedNew(devC,m))` | false | false |
+| rotation.pv | `not event(PinRoster(restore_new,ip_4,ro))` | false | false |
+| rotation_account_anchor.pv | `event(Adopt(d,s,ip_1)) ==> event(Rotated(s,ip_1,r,ro,k_5,ik))` | false | false |
+| rotation_account_anchor.pv | `not (event(ItemSealedNew(d,m)) && attacker(m))` | false | false |
+| rotation_account_anchor.pv | `not event(Adopt(devC,devA,ip_1))` | false | false |
+| rotation_autofollow.pv | `event(Adopt(d,s,ip_1)) ==> event(Rotated(s,ip_1,r,ro,k_5,ik))` | false | false |
+| rotation_autofollow.pv | `not event(Adopt(devC,devB,ip_1))` | false | false |
+| rotation_autofollow.pv | `not (event(ItemSealedNew(d,m)) && attacker(m))` | false | false |
+| rotation_autofollow.pv | `not event(Adopt(devC,devA,ip_1))` | false | false |
 | sanity.pv | `not attacker(secret_msg[])` | true | true |
 | sanity.pv | `not attacker(auk_msg[])` | true | true |
 | sanity.pv | `not attacker(bridge_msg[])` | true | true |
