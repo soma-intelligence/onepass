@@ -173,7 +173,10 @@ impl RecordStore for SqliteStore {
 /// `delete` on a connection or an open transaction. A signed list record is
 /// never deleted: `InvalidFormat("list record deletion")`.
 fn delete_on(conn: &Connection, kind: RecordKind, id: Id) -> Result<()> {
-    if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+    if matches!(
+        kind,
+        RecordKind::DeviceList | RecordKind::VaultList | RecordKind::ApproverList
+    ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
     conn.execute(

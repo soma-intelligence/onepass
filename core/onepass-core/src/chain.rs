@@ -13,14 +13,22 @@
 //!   params (a master password change today).
 //! - `device_list`, `vault_list`: the last signed device list and vault list
 //!   accepted (filled by later milestones).
+//! - `approver_list`: the last signed approver list accepted (version 2).
 //! - `device_id`: this device's id in the device list, once registered.
+//!
+//! Postcard is not self-describing, so a new field is a new version: the
+//! encoding is always version 2, and version 1 (no approver list) still
+//! decodes, with `approver_list` at `None`.
 
 use serde::{Deserialize, Serialize};
 
 use crate::{Error, Id, Result};
 
 /// Encoding version, the first byte of `ChainState::encode`.
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
+
+/// The version 1 encoding, which `decode` still reads.
+const VERSION_1: u8 = 1;
 
 /// A signed list as last accepted: its sequence number and the hash of its
 /// signed body.
@@ -37,6 +45,28 @@ pub struct ChainState {
     pub device_list: Option<Seen>,
     pub vault_list: Option<Seen>,
     pub device_id: Option<Id>,
+    pub approver_list: Option<Seen>,
+}
+
+/// `ChainState` as version 1 wrote it (before the approver list).
+#[derive(Deserialize)]
+struct ChainStateV1 {
+    params_epoch: u64,
+    device_list: Option<Seen>,
+    vault_list: Option<Seen>,
+    device_id: Option<Id>,
+}
+
+impl From<ChainStateV1> for ChainState {
+    fn from(v: ChainStateV1) -> Self {
+        ChainState {
+            params_epoch: v.params_epoch,
+            device_list: v.device_list,
+            vault_list: v.vault_list,
+            device_id: v.device_id,
+            approver_list: None,
+        }
+    }
 }
 
 impl ChainState {
@@ -48,13 +78,18 @@ impl ChainState {
         out
     }
 
-    /// Decode what `encode` wrote: a known version byte and the whole
-    /// buffer, trailing bytes refused (`InvalidFormat("chain state")`).
+    /// Decode what `encode` wrote (or version 1 did): a known version byte
+    /// and the whole buffer, trailing bytes refused
+    /// (`InvalidFormat("chain state")`).
     pub fn decode(bytes: &[u8]) -> Result<ChainState> {
         let bad = Error::InvalidFormat("chain state");
         match bytes.split_first() {
             Some((&VERSION, body)) => match postcard::take_from_bytes::<ChainState>(body) {
                 Ok((state, [])) => Ok(state),
+                _ => Err(bad),
+            },
+            Some((&VERSION_1, body)) => match postcard::take_from_bytes::<ChainStateV1>(body) {
+                Ok((state, [])) => Ok(state.into()),
                 _ => Err(bad),
             },
             _ => Err(bad),
@@ -83,7 +118,71 @@ mod tests {
                 hash: [2; 32],
             }),
             device_id: Some(Id::new()),
+            approver_list: Some(Seen {
+                seq: 4,
+                hash: [3; 32],
+            }),
         }
+    }
+
+    /// `encode` of a version 1 state, as shipped before the approver list:
+    /// epoch 7, device list (3, [1; 32]), vault list (9, [2; 32]), device
+    /// id [3; 16].
+    fn v1_bytes() -> Vec<u8> {
+        let mut b = vec![1, 7, 1, 3];
+        b.extend([1u8; 32]);
+        b.extend([1, 9]);
+        b.extend([2u8; 32]);
+        b.push(1);
+        b.extend([3u8; 16]);
+        b
+    }
+
+    #[test]
+    fn chain_v1_still_decodes() {
+        let s = ChainState::decode(&v1_bytes()).unwrap();
+        assert_eq!(s.params_epoch, 7);
+        assert_eq!(
+            s.device_list,
+            Some(Seen {
+                seq: 3,
+                hash: [1; 32]
+            })
+        );
+        assert_eq!(
+            s.vault_list,
+            Some(Seen {
+                seq: 9,
+                hash: [2; 32]
+            })
+        );
+        assert_eq!(s.device_id, Some(Id([3; 16])));
+        assert_eq!(s.approver_list, None);
+        // Re-encoding writes the current version.
+        assert_eq!(s.encode()[0], VERSION);
+        assert_eq!(ChainState::decode(&s.encode()).unwrap(), s);
+        // A version 1 buffer is as strict as a version 2 one.
+        let mut trailing = v1_bytes();
+        trailing.push(0);
+        assert_eq!(
+            ChainState::decode(&trailing),
+            Err(Error::InvalidFormat("chain state"))
+        );
+        let short = v1_bytes();
+        assert_eq!(
+            ChainState::decode(&short[..short.len() - 1]),
+            Err(Error::InvalidFormat("chain state"))
+        );
+    }
+
+    #[test]
+    fn chain_v2_round_trip() {
+        let s = full();
+        let bytes = s.encode();
+        assert_eq!(bytes[0], 2);
+        let back = ChainState::decode(&bytes).unwrap();
+        assert_eq!(back, s);
+        assert!(back.approver_list.is_some());
     }
 
     #[test]
@@ -101,7 +200,7 @@ mod tests {
         let mut bytes = full().encode();
         assert_eq!(ChainState::decode(&[]), bad);
         // Unknown version.
-        bytes[0] = 2;
+        bytes[0] = 3;
         assert_eq!(ChainState::decode(&bytes), bad);
         // Trailing bytes.
         let mut bytes = full().encode();
