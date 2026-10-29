@@ -13,8 +13,9 @@ use onepass_core::crypto::SecretKey;
 use onepass_core::devices::{DeviceEntry, DeviceMode};
 use onepass_core::model::{FieldValue, Item};
 use onepass_core::pairing::{
-    Approver, AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Message, Newcomer, PairingQr,
-    PublicGrant, SnapshotRecord, check_snapshot_size, snapshot_from_store,
+    Approver, AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Host, Message, Newcomer,
+    PairingQr, PublicGrant, RendezvousCode, SnapshotRecord, check_snapshot_size,
+    snapshot_from_store,
 };
 use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::{AccountState, SyncStore};
@@ -165,7 +166,8 @@ pub struct PairingNewcomer {
     device_id: Id,
     qr_text: String,
     hello: Vec<u8>,
-    session_id: [u8; 16],
+    /// The Bonjour service: published (QR direction) or joined (code direction).
+    service: String,
     expires_at: i64,
     state: Mutex<NewcomerState>,
 }
@@ -193,8 +195,45 @@ impl PairingNewcomer {
             device_id,
             qr_text: qr.to_text(),
             hello,
-            session_id: qr.session_id,
+            service: bytes_hex(&qr.session_id),
             expires_at: qr.expires_at,
+            state: Mutex::new(NewcomerState {
+                core,
+                grant: None,
+                released: None,
+                imported: false,
+            }),
+        }))
+    }
+
+    /// Join an approver that shows a code (rendezvous direction): `code` is
+    /// the scanned QR text (`OPPAIR2:...`) or the typed `XXXX-XXXX`. The
+    /// device is valid for 120 s from `now`. `hello()` is the first frame to
+    /// send to the host; `service_name()` is the code's service, `qr_text()` the
+    /// canonical code text.
+    #[uniffi::constructor]
+    pub fn join(
+        name: String,
+        kind: FfiDeviceKind,
+        mode: FfiDeviceMode,
+        code: String,
+        now: i64,
+    ) -> Result<Arc<Self>, OnePassError> {
+        let code = RendezvousCode::parse(&code)?;
+        let device_id = Id::new();
+        let info = DeviceInfo {
+            device_id,
+            name,
+            kind: kind.into(),
+        };
+        let (core, hello) = Newcomer::join(info, mode.into(), &code, now)?;
+        let expires_at = core.expires_at();
+        Ok(Arc::new(PairingNewcomer {
+            device_id,
+            qr_text: code.qr_text(),
+            service: code.service_name(),
+            hello,
+            expires_at,
             state: Mutex::new(NewcomerState {
                 core,
                 grant: None,
@@ -219,9 +258,10 @@ impl PairingNewcomer {
         self.hello.clone()
     }
 
-    /// The Bonjour service name to publish: the session id in hex.
+    /// The Bonjour service name: the session id in hex to publish (QR
+    /// direction), or the code's service to connect to (code direction).
     pub fn service_name(&self) -> String {
-        bytes_hex(&self.session_id)
+        self.service.clone()
     }
 
     /// The id this device asks to be listed under.
@@ -406,6 +446,89 @@ fn lean(mut item: Item) -> Item {
     item
 }
 
+/// The approver's side of the rendezvous direction: shows a code (QR and
+/// typed) renewed every 30 s, and takes the one `JoinHello` that proves it.
+/// Once a Hello is accepted, or after five bad ones, the host is closed.
+#[derive(uniffi::Object)]
+pub struct PairingHost {
+    inner: Mutex<Host>,
+}
+
+/// A code on the approver's screen.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiHostCode {
+    /// The text to draw as a QR code (`OPPAIR2:...`).
+    pub qr_text: String,
+    /// The same secret to read and type (`XXXX-XXXX`).
+    pub short_text: String,
+    /// The Bonjour service to publish for this code until `expires_at`.
+    pub service_name: String,
+    /// When this code stops being accepted (Unix seconds).
+    pub expires_at: i64,
+}
+
+/// The Bonjour service name of a rendezvous code: what a newcomer connects
+/// to after scanning or typing it. Accepts the QR text or the typed form.
+#[uniffi::export]
+pub fn pairing_rendezvous_service_name(code: String) -> Result<String, OnePassError> {
+    Ok(RendezvousCode::parse(&code)?.service_name())
+}
+
+#[uniffi::export]
+impl PairingHost {
+    #[uniffi::constructor]
+    pub fn new() -> Result<Arc<Self>, OnePassError> {
+        Ok(Arc::new(PairingHost {
+            inner: Mutex::new(Host::new()),
+        }))
+    }
+
+    /// A new code, valid 120 s from `now`; older ones stay valid until
+    /// their own expiry. Call every 30 s while the window is open.
+    pub fn issue(&self, now: i64) -> Result<FfiHostCode, OnePassError> {
+        let c = lock(&self.inner).issue(now)?;
+        Ok(FfiHostCode {
+            qr_text: c.qr_text,
+            short_text: c.short_text,
+            service_name: c.service_name,
+            expires_at: c.expires_at,
+        })
+    }
+
+    /// Check a newcomer's first frame against the live codes and start the
+    /// approver session. Errors do not say whether the code or the frame
+    /// was wrong. After success every code is spent.
+    pub fn accept(
+        &self,
+        join_hello: Vec<u8>,
+        now: i64,
+    ) -> Result<Arc<PairingApprover>, OnePassError> {
+        let (core, key_exchange, sas, peer, requested) =
+            lock(&self.inner).accept(&join_hello, now)?;
+        // The session id the grant is bound to: the newcomer drew it.
+        let session_id = onepass_core::pairing::JoinHello::from_bytes(&join_hello)?
+            .hello
+            .session_id;
+        Ok(PairingApprover::from_parts(
+            core,
+            key_exchange,
+            sas,
+            peer,
+            requested,
+            session_id,
+        ))
+    }
+
+    /// Spend the codes: the window closed or the user refused the code.
+    pub fn close(&self) {
+        lock(&self.inner).close();
+    }
+
+    pub fn is_open(&self) -> bool {
+        lock(&self.inner).is_open()
+    }
+}
+
 struct ApproverState {
     core: Approver,
     peer_confirmed: bool,
@@ -423,16 +546,16 @@ pub struct PairingApprover {
     state: Mutex<ApproverState>,
 }
 
-#[uniffi::export]
 impl PairingApprover {
-    /// Check the scanned QR text against the newcomer's Hello and start the
-    /// session. Refused for an expired QR or a Hello the QR does not commit
-    /// to, before anything is sent.
-    #[uniffi::constructor]
-    pub fn begin(qr_text: String, hello: Vec<u8>, now: i64) -> Result<Arc<Self>, OnePassError> {
-        let session_id = PairingQr::parse(&qr_text)?.session_id;
-        let (core, key_exchange, sas, peer, requested) = Approver::begin(&qr_text, &hello, now)?;
-        Ok(Arc::new(PairingApprover {
+    fn from_parts(
+        core: Approver,
+        key_exchange: Vec<u8>,
+        sas: String,
+        peer: DeviceInfo,
+        requested: DeviceMode,
+        session_id: [u8; 16],
+    ) -> Arc<Self> {
+        Arc::new(PairingApprover {
             key_exchange,
             sas,
             peer,
@@ -443,7 +566,27 @@ impl PairingApprover {
                 peer_confirmed: false,
                 granted: false,
             }),
-        }))
+        })
+    }
+}
+
+#[uniffi::export]
+impl PairingApprover {
+    /// Check the scanned QR text against the newcomer's Hello and start the
+    /// session. Refused for an expired QR or a Hello the QR does not commit
+    /// to, before anything is sent.
+    #[uniffi::constructor]
+    pub fn begin(qr_text: String, hello: Vec<u8>, now: i64) -> Result<Arc<Self>, OnePassError> {
+        let session_id = PairingQr::parse(&qr_text)?.session_id;
+        let (core, key_exchange, sas, peer, requested) = Approver::begin(&qr_text, &hello, now)?;
+        Ok(Self::from_parts(
+            core,
+            key_exchange,
+            sas,
+            peer,
+            requested,
+            session_id,
+        ))
     }
 
     /// The 6-digit code to compare with the newcomer's screen.

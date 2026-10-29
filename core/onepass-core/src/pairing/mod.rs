@@ -45,6 +45,27 @@
 //! `expires_at`. `Message = Confirmed | Grant(Full | Public) | Ack |
 //! Audit | End` (variant indexes 0 to 4).
 //!
+//! Rendezvous direction (version 2, `rendezvous`): the approver shows the
+//! code and the newcomer joins it. Everything after the Hello is the same.
+//!
+//! 1. A draws a 5-byte code and shows it as the QR text `"OPPAIR2:" ||
+//!    BASE32(code)` (8 characters, RFC 4648, no padding) and as the typed
+//!    form `XXXX-XXXX`. A new code every `RV_RENEW_SECS`; each is valid
+//!    `QR_LIFETIME_SECS` from its issue; the first accepted Hello closes
+//!    them all.
+//! 2. N scans or types the code, finds A on the network, and sends
+//!    `JoinHello`: `"OPH2" || postcard(Hello) || proof`, where `Hello` is
+//!    the v1 message with a random `session_id`, and `proof =
+//!    HMAC-SHA256(HKDF-SHA256(salt = empty, ikm = code, info =
+//!    "onepass/pairing/rv/proof/v2"), "OPH2" || postcard(Hello))`.
+//! 3. A refuses unless the proof matches a live code (checked in constant
+//!    time; `RV_MAX_FAILURES` bad Hellos close the host). It then draws K
+//!    and wraps it as in v1 with the label `"onepass/pairing/v2"` and
+//!    `transcript = SHA-256(QR text of the code || JoinHello bytes)`. The
+//!    code never commits to N's key: the proof does, and the SAS catches
+//!    anyone who knew the code.
+//! 4. KeyExchange, SAS, channel and grant are exactly those of version 1.
+//!
 //! The grant matches the requested mode: a public request gets only a
 //! `PublicGrant` (read only, this session's id, not yet expired), a
 //! personal or shared request only a `FullGrant` of that same mode, whose
@@ -57,6 +78,7 @@ pub mod channel;
 pub mod messages;
 pub mod newcomer;
 pub mod qr;
+pub mod rendezvous;
 pub mod snapshot;
 
 use aws_lc_rs::digest::{Context, SHA256};
@@ -69,11 +91,14 @@ use crate::{Error, Result, ValidationError};
 pub use approver::Approver;
 pub use channel::Channel;
 pub use messages::{
-    AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Hello, KeyExchange, Message,
+    AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Hello, JoinHello, KeyExchange, Message,
     PublicGrant, SnapshotRecord,
 };
 pub use newcomer::Newcomer;
 pub use qr::PairingQr;
+pub use rendezvous::{
+    Host, HostCode, RV_MAX_FAILURES, RV_QR_PREFIX, RV_RENEW_SECS, RendezvousCode,
+};
 pub use snapshot::{MAX_SNAPSHOT_BYTES, check_snapshot_size, snapshot_from_store};
 
 /// A QR is valid this long after it is shown (spec 5.1, ruling B16).
@@ -90,6 +115,8 @@ pub const MAX_FRAME_BYTES: usize = 64 * 1024 * 1024;
 
 /// Label of the KEM envelope that carries the session key.
 const KEM_LABEL: &[u8] = b"onepass/pairing/v1";
+/// KEM label of the rendezvous direction (the approver shows the code).
+const KEM_LABEL_RV: &[u8] = b"onepass/pairing/v2";
 const SAS_INFO: &[u8] = b"onepass/pairing/sas/v1";
 
 /// The short authentication code both screens show: 6 decimal digits,

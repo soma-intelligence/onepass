@@ -56,13 +56,26 @@ impl Approver {
             return Err(IntegrityError::WrongContext.into());
         }
 
+        Self::establish(qr_text, hello, h, KEM_LABEL)
+    }
+
+    /// Wrap a fresh session key to the Hello's ephemeral key, bound to the
+    /// transcript of `qr_text` and `hello` (the bytes as received), and
+    /// start the session. The caller has already authenticated the Hello
+    /// against the QR (commitment) or the rendezvous code (proof).
+    pub(crate) fn establish(
+        qr_text: &str,
+        hello: &[u8],
+        h: Hello,
+        label: &[u8],
+    ) -> Result<(Approver, Vec<u8>, String, DeviceInfo, DeviceMode)> {
         let t = transcript(qr_text, hello);
         let k = SymmetricKey::generate()?;
-        let envelope = wrap_key_labeled(&h.ephemeral_public, &k, KEM_LABEL, &t)?;
+        let envelope = wrap_key_labeled(&h.ephemeral_public, &k, label, &t)?;
         let code = sas(&k, &t)?;
         let approver = Approver {
-            channel: Channel::approver(&k, qr.session_id)?,
-            session_id: qr.session_id,
+            channel: Channel::approver(&k, h.session_id)?,
+            session_id: h.session_id,
             requested: h.requested_mode,
             peer_confirmed: false,
             granted: None,

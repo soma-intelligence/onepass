@@ -820,3 +820,140 @@ fn discarded_grant_cannot_be_imported() {
     assert_eq!(n.take_secret_key(), None);
     assert_eq!(store_state(dev.path.clone()).unwrap(), FfiStoreState::Empty);
 }
+
+/// The rendezvous direction: the approver shows the code, the newcomer
+/// types it. Both sides through the SAS and the newcomer's confirmation.
+fn confirmed_rv(
+    mode: FfiDeviceMode,
+    typed: bool,
+) -> (Arc<PairingNewcomer>, Arc<PairingApprover>, Arc<PairingHost>) {
+    let host = PairingHost::new().unwrap();
+
+    let shown = host.issue(now()).unwrap();
+    assert!(shown.qr_text.starts_with("OPPAIR2:"));
+    assert_eq!(shown.short_text.len(), 9);
+    assert_eq!(shown.service_name.len(), 32);
+    assert_eq!(
+        pairing_rendezvous_service_name(shown.short_text.clone()).unwrap(),
+        shown.service_name
+    );
+    let code = if typed {
+        shown.short_text.to_lowercase()
+    } else {
+        shown.qr_text.clone()
+    };
+    let n = PairingNewcomer::join(
+        "iPhone de Camille".into(),
+        FfiDeviceKind::Phone,
+        mode,
+        code,
+        now(),
+    )
+    .unwrap();
+    assert_eq!(n.service_name(), shown.service_name);
+    let a = host.accept(n.hello(), now()).unwrap();
+    assert_eq!(a.requested_mode(), mode);
+    assert_eq!(a.peer().name, "iPhone de Camille");
+    assert_eq!(a.peer().id, n.device_id());
+    let sas = n.on_key_exchange(a.key_exchange(), now()).unwrap();
+    assert_eq!(sas, a.sas());
+    let f = n.confirm().unwrap();
+    assert_eq!(a.on_frame(f).unwrap(), FfiPairingMessage::Confirmed);
+    (n, a, host)
+}
+
+#[test]
+fn ffi_rendezvous_pairing_end_to_end() {
+    for typed in [false, true] {
+        let a = approver_device();
+        let (n, ap, host) = confirmed_rv(FfiDeviceMode::Personal, typed);
+        // The codes are spent by the first accepted Hello.
+        assert!(!host.is_open());
+        assert!(host.issue(now()).is_err());
+
+        let frame = ap
+            .seal_full_grant(
+                a.session.clone(),
+                a.secret_key.clone(),
+                FfiDeviceMode::Personal,
+                false,
+            )
+            .unwrap();
+        let FfiPairingMessage::FullGrant { device_id, .. } = n.open(frame).unwrap() else {
+            panic!("expected a full grant");
+        };
+        assert_eq!(device_id, n.device_id());
+        let ack = n.seal_ack().unwrap();
+        assert_eq!(ap.on_frame(ack).unwrap(), FfiPairingMessage::Ack);
+
+        let dev = empty_device();
+        let unlocked = n
+            .import_snapshot(dev.path.clone(), PASSWORD.into())
+            .unwrap();
+        assert_eq!(n.take_secret_key().unwrap(), a.secret_key);
+        assert_eq!(unlocked.session.item_summaries().unwrap().len(), 1);
+        let listed = a.session.devices().unwrap();
+        assert!(listed.iter().any(|d| d.id == n.device_id()));
+        unlocked.session.lock();
+    }
+}
+
+#[test]
+fn ffi_rendezvous_refuses_wrong_code_and_host_is_single_use() {
+    let host = PairingHost::new().unwrap();
+    host.issue(now()).unwrap();
+    // A code the host never showed.
+    let other = PairingHost::new().unwrap().issue(now()).unwrap();
+    let stranger = PairingNewcomer::join(
+        "Intrus".into(),
+        FfiDeviceKind::Phone,
+        FfiDeviceMode::Personal,
+        other.qr_text,
+        now(),
+    )
+    .unwrap();
+    assert!(host.accept(stranger.hello(), now()).is_err());
+    assert!(host.is_open(), "one bad Hello does not close the host");
+    // Malformed codes never reach the network.
+    assert!(
+        PairingNewcomer::join(
+            "X".into(),
+            FfiDeviceKind::Phone,
+            FfiDeviceMode::Personal,
+            "pas un code".into(),
+            now()
+        )
+        .is_err()
+    );
+    // A QR of the other direction is not a code.
+    let v1 = PairingNewcomer::new(
+        "X".into(),
+        FfiDeviceKind::Phone,
+        FfiDeviceMode::Personal,
+        now(),
+    )
+    .unwrap();
+    assert!(
+        PairingNewcomer::join(
+            "X".into(),
+            FfiDeviceKind::Phone,
+            FfiDeviceMode::Personal,
+            v1.qr_text(),
+            now()
+        )
+        .is_err()
+    );
+    // Public request over the rendezvous gets a public grant only.
+    let a = approver_device();
+    let (n, ap, _) = confirmed_rv(FfiDeviceMode::Public, false);
+    assert!(
+        ap.seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false
+        )
+        .is_err()
+    );
+    let _ = n;
+}
