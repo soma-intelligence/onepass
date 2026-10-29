@@ -125,7 +125,7 @@ Une table de règles ordonnées dans `fill_plan::intent`, la première qui s'app
 1. aucun champ remplissable ou formulaire marqué à ignorer : `Ignore` ;
 2. au moins un champ carte : `Checkout` ;
 3. deux champs `new_password`, ou `current_password` + `new_password` : `Reset` ;
-4. `new_password` avec un bouton `Create` ou un indice d'inscription : `Signup` ;
+4. au moins un `new_password` : `Signup`, avec un bouton `Create`, un mot ou un indice d'inscription (`kind` du détecteur), et aussi sans aucun d'eux (un e-mail, un nouveau mot de passe et « Continuer ») ; un nouveau mot de passe n'est jamais une connexion, donc jamais un envoi automatique ;
 5. `otp` seul : `Otp` ;
 6. `current_password` ou identifiant seul : `Login` ;
 7. champs d'adresse ou d'identité seulement : `Address`.
@@ -166,8 +166,9 @@ Fonctions pures, poids fixes dans une seule table (`fill_plan::weights`) :
 
 ### 6.4 Composition
 
-- **Paiement** : carte utilisée la dernière fois sur ce site, sinon la favorite puis la plus récente (le modèle n'a pas de carte par défaut) ; identité utilisée ici, sinon celle dont le pays correspond aux indices de la page ou à la langue ; e-mail de l'identité, sinon celui du Login du site.
-- **Inscription** : mot de passe généré par `generator.rs` selon les règles du site quand la page les donne (`pattern`, `maxlength`), plus l'identité principale. L'enregistrement passe par le flux de sauvegarde existant (`chain/save-flow.ts`).
+- **Paiement** : carte utilisée la dernière fois sur ce site, sinon la favorite puis la plus récente (le modèle n'a pas de carte par défaut) ; identité utilisée ici, sinon celle dont le pays correspond au domaine de premier niveau de la page ; sans mémoire ni pays qui correspond, le classement seul : plusieurs identités à égalité donnent le menu, jamais la première par règle ; e-mail de l'identité, sinon celui du Login du site.
+- **Inscription** : mot de passe généré par `generator.rs` selon les règles du site quand la page les donne (`pattern`, `maxlength`), plus l'identité choisie comme pour le paiement, dont l'e-mail va aussi dans un champ identifiant (`username`). Sans identité à choisir (aucune, ou plusieurs à égalité), le plan garde le mot de passe généré seul, sans perdre de confiance. L'enregistrement passe par le flux de sauvegarde existant (`chain/save-flow.ts`).
+- **Code à usage unique** : seuls les Login qui ont un secret TOTP sont candidats ; la mémoire du site (« utilisé ici la dernière fois ») se compte parmi eux.
 - **Réinitialisation** : mot de passe actuel du Login du site plus un nouveau mot de passe généré.
 
 ## 7. Mémoire du site
@@ -202,7 +203,7 @@ SiteUsage {
 | Intention | Confiance haute | Moyenne | Basse |
 |---|---|---|---|
 | Login | `OpenChain` : la chaîne remplit, envoie, suit mot de passe, code et fournisseur SSO jusqu'à `done` | remplit cette étape, n'envoie pas | menu |
-| Otp seul | TOTP de l'élément de la mémoire du site, envoi | remplit, n'envoie pas | menu |
+| Otp seul | TOTP du Login avec code utilisé ici la dernière fois, envoi ; sans cette mémoire, remplit sans envoyer | remplit, n'envoie pas | menu |
 | Signup | identité + mot de passe généré, jamais d'envoi, sauvegarde armée | idem | menu |
 | Reset | actuel + nouveau généré, jamais d'envoi | idem | menu |
 | Checkout | carte + identité + e-mail, jamais d'appui sur payer | idem | menu |
@@ -226,7 +227,7 @@ L'icône du champ, le bouton Remplir de la barre d'outils et le raccourci clavie
 ## 9. Sécurité
 
 - Les refus passent avant le plan et de nouveau avant la livraison, et le plan ne peut en lever aucun : iframe d'un autre site (R-10), champs pièges invisibles, sosies de domaine, nouvelle vérification d'origine par l'hôte, `same_origin` pour les cadres enfants.
-- Envoi automatique seulement si intention `Login` et confiance haute ; jamais si le même formulaire a un bouton `Pay` ou `Create` ; jamais dans un cadre enfant.
+- Envoi automatique seulement à confiance haute, pour `Login`, ou pour `Otp` seul avec l'élément utilisé ici la dernière fois ; un seul formulaire planifié ; jamais avec un bouton `Pay` ou `Create` dans un formulaire planifié (revérifié au moment du clic) ; jamais dans un cadre enfant ; jamais quand l'utilisateur a tapé une valeur dans un champ que l'élément remplirait, sauf un identifiant tapé qui désigne l'élément choisi ; et seulement à partir d'un geste de l'utilisateur (clic sur l'icône, bouton Remplir, raccourci), jamais au focus ni au chargement.
 - Le plan ne porte que des identifiants. Les valeurs ne circulent que par les opérations `fill_*` existantes.
 - `PageContext` est une entrée hostile (le content script vit dans la page) : bornes de taille (au plus 32 formulaires, 64 champs par formulaire, 32 boutons), rejet de tout champ inconnu, nouvelle cible `plan_fill` dans `core/fuzz`.
 - Le hachage de l'identifiant tapé utilise un sel de session : il ne permet pas de corréler un identifiant entre deux sessions.
