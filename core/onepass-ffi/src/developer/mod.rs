@@ -26,8 +26,8 @@ use std::time::Duration;
 
 use onepass_core::crypto::HybridSignature;
 use onepass_guard::{
-    ApprovalRequest, Approver, Decision, GuardError, LocalSigner, MAX_GRANT_TTL, StrongAuth,
-    StrongOutcome, Surface, sanitize_for_display,
+    Answer, ApprovalRequest, Approver, Decision, GuardError, LocalSigner, MAX_GRANT_TTL,
+    StrongAuth, StrongOutcome, Surface, sanitize_for_display,
 };
 
 use crate::error::{OnePassError, invalid};
@@ -159,17 +159,18 @@ pub(crate) struct UiApprover {
 }
 
 impl Approver for UiApprover {
-    fn approve(&self, req: &ApprovalRequest) -> Decision {
+    fn approve(&self, req: &ApprovalRequest) -> Answer {
         let shown = to_ffi(req);
         let decision = decision_of(self.ui.approve(shown.clone()), req.remember_allowed);
+        // The FFI answer does not say where it was given yet.
         if decision == Decision::Deny || !self.presence {
-            return decision;
+            return Answer::new(decision);
         }
         let reason = format!("{} : {}", shown.client, shown.action);
         if self.ui.verify_presence(reason) {
-            decision
+            Answer::new(decision)
         } else {
-            Decision::Deny
+            Answer::new(Decision::Deny)
         }
     }
 }

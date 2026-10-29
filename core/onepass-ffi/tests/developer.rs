@@ -469,7 +469,13 @@ mod mcp {
                 let msg = self.recv();
                 match msg["t"].as_str().unwrap() {
                     "mcp" => {
-                        return serde_json::from_str(msg["line"].as_str().unwrap()).unwrap();
+                        let line: serde_json::Value =
+                            serde_json::from_str(msg["line"].as_str().unwrap()).unwrap();
+                        // A notification (pending approval) is not the reply.
+                        if line.get("method").is_some() && line.get("id").is_none() {
+                            continue;
+                        }
+                        return line;
                     }
                     "exec" => {
                         let reply = exec(&msg);

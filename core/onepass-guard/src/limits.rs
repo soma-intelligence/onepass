@@ -7,7 +7,7 @@
 //! pending wait for that prompt instead of opening another one (an
 //! `AllowOnce` answer is never shared).
 
-use crate::approval::{ApprovalRequest, Approver, Decision};
+use crate::approval::{Answer, ApprovalRequest, Approver, Decision, challenge_code};
 use crate::clock::Clock;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Condvar, Mutex};
@@ -247,10 +247,14 @@ fn expire(window: &mut VecDeque<Instant>, now: Instant) {
 }
 
 /// Result of [`PromptGate::approve`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Gated {
     /// The decision that applies to this request.
     pub decision: Decision,
+    /// Where the approval was given (`mac` or `phone:<device_id>`), as the
+    /// approver said; a joined request carries the one of the prompt it
+    /// joined. `None` when unknown or on a refusal nobody gave.
+    pub approved_on: Option<String>,
     /// True when no prompt was shown for this request: it joined the prompt
     /// of an identical pending request (or timed out waiting for it, then
     /// `decision` is `Deny`).
@@ -258,10 +262,10 @@ pub struct Gated {
 }
 
 /// What a waiting request learns when the prompt it waits for ends.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Turn {
-    /// Take this decision without a prompt.
-    Join(Decision),
+    /// Take this answer without a prompt.
+    Join(Answer),
     /// Prompt yourself (the previous prompt allowed only once).
     Lead,
 }
@@ -314,12 +318,13 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 struct Publish<'a, A: Approver> {
     gate: &'a PromptGate<A>,
     id: &'a (String, String),
-    decision: Option<Decision>,
+    answer: Option<Answer>,
 }
 
 impl<A: Approver> Drop for Publish<'_, A> {
     fn drop(&mut self) {
-        let decision = self.decision.unwrap_or(Decision::Deny);
+        let answer = self.answer.take().unwrap_or(Answer::new(Decision::Deny));
+        let decision = answer.decision;
         let mut pending = lock(&self.gate.pending);
         if let Some(st) = pending.get_mut(self.id) {
             match decision {
@@ -330,9 +335,9 @@ impl<A: Approver> Drop for Publish<'_, A> {
                     }
                     None => st.prompting = false,
                 },
-                shared => {
+                _ => {
                     for t in st.queue.drain(..) {
-                        st.turns.insert(t, Turn::Join(shared));
+                        st.turns.insert(t, Turn::Join(answer.clone()));
                     }
                     st.prompting = false;
                 }
@@ -367,6 +372,22 @@ impl<A: Approver> PromptGate<A> {
     /// an identical request (same `client_id` and canonical `key`); see the
     /// type documentation for how the decision is shared.
     pub fn approve(&self, client_id: &str, key: &str, req: &ApprovalRequest) -> Gated {
+        self.approve_notifying(client_id, key, req, &mut |_| {})
+    }
+
+    /// [`Self::approve`], telling the caller the confirmation code before the
+    /// prompt is shown. When this request leads a prompt, the guard draws a
+    /// fresh code (whatever `req.confirm_code` held is replaced), calls
+    /// `pending` with it, then asks the approver with a copy of `req`
+    /// carrying that code. A request that joins another prompt or times out
+    /// waiting never calls `pending`.
+    pub fn approve_notifying(
+        &self,
+        client_id: &str,
+        key: &str,
+        req: &ApprovalRequest,
+        pending_notice: &mut dyn FnMut(&str),
+    ) -> Gated {
         let id = (client_id.to_owned(), key.to_owned());
         let mut pending = lock(&self.pending);
         let st = pending.entry(id.clone()).or_default();
@@ -382,9 +403,10 @@ impl<A: Approver> PromptGate<A> {
                         pending.remove(&id);
                     }
                     match turn {
-                        Turn::Join(decision) => {
+                        Turn::Join(answer) => {
                             return Gated {
-                                decision,
+                                decision: answer.decision,
+                                approved_on: answer.approved_on,
                                 joined: true,
                             };
                         }
@@ -398,6 +420,7 @@ impl<A: Approver> PromptGate<A> {
                     }
                     return Gated {
                         decision: Decision::Deny,
+                        approved_on: None,
                         joined: true,
                     };
                 };
@@ -414,13 +437,23 @@ impl<A: Approver> PromptGate<A> {
         let mut publish = Publish {
             gate: self,
             id: &id,
-            decision: None,
+            answer: None,
         };
-        let decision = self.inner.approve(req);
-        publish.decision = Some(decision);
+        // The guard draws the code the user will confirm; no code, no prompt.
+        let answer = match challenge_code() {
+            Some(code) => {
+                pending_notice(&code);
+                let mut shown = req.clone();
+                shown.confirm_code = code;
+                self.inner.approve(&shown)
+            }
+            None => Answer::new(Decision::Deny),
+        };
+        publish.answer = Some(answer.clone());
         drop(publish);
         Gated {
-            decision,
+            decision: answer.decision,
+            approved_on: answer.approved_on,
             joined: false,
         }
     }
@@ -631,6 +664,8 @@ mod tests {
             details: vec![],
             targets: vec![],
             remember_allowed: true,
+            strong_required: false,
+            confirm_code: String::new(),
         }
     }
 
@@ -652,7 +687,7 @@ mod tests {
     }
 
     impl Approver for BarrierApprover {
-        fn approve(&self, req: &ApprovalRequest) -> Decision {
+        fn approve(&self, req: &ApprovalRequest) -> Answer {
             self.entered.wait();
             self.release.wait();
             self.inner.approve(req)
@@ -699,6 +734,7 @@ mod tests {
     fn shown(decision: Decision) -> Gated {
         Gated {
             decision,
+            approved_on: None,
             joined: false,
         }
     }
@@ -706,6 +742,7 @@ mod tests {
     fn joined(decision: Decision) -> Gated {
         Gated {
             decision,
+            approved_on: None,
             joined: true,
         }
     }
@@ -811,6 +848,50 @@ mod tests {
         assert_eq!(gate.inner().calls().len(), 3);
     }
 
+    #[test]
+    fn the_guard_draws_the_code_and_tells_it_before_the_prompt() {
+        let gate = PromptGate::new(ScriptedApprover::new(vec![Decision::AllowOnce]), LONG);
+        let mut told = Vec::new();
+        let mut r = req();
+        r.confirm_code = "caller-code".into();
+        let g = gate.approve_notifying("c", "k", &r, &mut |c| told.push(c.to_owned()));
+        assert_eq!(g, shown(Decision::AllowOnce));
+        // One notice, with the code the approver was shown, from the alphabet.
+        let seen = gate.inner().calls();
+        assert_eq!(told, [seen[0].confirm_code.clone()]);
+        assert_eq!(told[0].chars().count(), crate::approval::CHALLENGE_LEN);
+        assert!(
+            told[0]
+                .chars()
+                .all(|c| crate::approval::CHALLENGE_ALPHABET.contains(c))
+        );
+    }
+
+    #[test]
+    fn the_answer_origin_reaches_the_caller_and_the_joiners() {
+        let gate = Arc::new(PromptGate::new(
+            BarrierApprover {
+                entered: Barrier::new(2),
+                release: Barrier::new(2),
+                inner: ScriptedApprover::with_answers(vec![Answer::on(
+                    Decision::AllowFor(LONG),
+                    "phone:p1",
+                )]),
+            },
+            LONG,
+        ));
+        let leader = spawn_approve(&gate);
+        gate.inner().entered.wait();
+        let follower = spawn_approve(&gate);
+        wait_for_waiter(&*gate);
+        gate.inner().release.wait();
+        let (l, f) = (leader.join().unwrap(), follower.join().unwrap());
+        assert_eq!(l.approved_on.as_deref(), Some("phone:p1"));
+        assert!(!l.joined);
+        assert_eq!(f.approved_on.as_deref(), Some("phone:p1"));
+        assert!(f.joined);
+    }
+
     /// An approver that panics: the waiters must be released with `Deny`.
     struct PanickingApprover {
         entered: Barrier,
@@ -818,7 +899,7 @@ mod tests {
     }
 
     impl Approver for PanickingApprover {
-        fn approve(&self, _req: &ApprovalRequest) -> Decision {
+        fn approve(&self, _req: &ApprovalRequest) -> Answer {
             self.entered.wait();
             self.release.wait();
             panic!("approver failure");

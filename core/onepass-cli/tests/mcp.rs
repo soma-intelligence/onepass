@@ -114,6 +114,8 @@ struct Server {
     stdin: Option<ChildStdin>,
     lines: mpsc::Receiver<String>,
     next_id: u64,
+    /// Notifications received while waiting for replies.
+    notices: Vec<Value>,
 }
 
 impl Server {
@@ -148,6 +150,7 @@ impl Server {
             stdin,
             lines: rx,
             next_id: 1,
+            notices: Vec::new(),
         };
         let init = s.request(
             "initialize",
@@ -172,13 +175,20 @@ impl Server {
         let id = self.next_id;
         self.next_id += 1;
         self.send(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
-        let line = self
-            .lines
-            .recv_timeout(Duration::from_secs(120))
-            .expect("a reply from the server");
-        let v: Value = serde_json::from_str(&line).unwrap();
-        assert_eq!(v["id"], id, "{v}");
-        v
+        loop {
+            let line = self
+                .lines
+                .recv_timeout(Duration::from_secs(120))
+                .expect("a reply from the server");
+            let v: Value = serde_json::from_str(&line).unwrap();
+            // A notification (the pending-approval notice) is not the reply.
+            if v.get("method").is_some() && v.get("id").is_none() {
+                self.notices.push(v);
+                continue;
+            }
+            assert_eq!(v["id"], id, "{v}");
+            return v;
+        }
     }
 
     fn call(&mut self, tool: &str, args: Value) -> Value {
@@ -272,6 +282,18 @@ fn mcp_stdio_end_to_end() {
     );
     assert_eq!(reveal["isError"], true, "{reveal}");
     assert!(!reveal.to_string().contains(SERVER_PW));
+
+    // The prompted call announced the wait with a code, before its reply
+    // (`reveal_secret` was refused by scope before any prompt: no notice).
+    assert_eq!(s.notices.len(), 1, "{:?}", s.notices);
+    for n in &s.notices {
+        let text = n["params"]["data"].as_str().unwrap();
+        assert!(
+            text.starts_with("Approve on your Mac or iPhone. Code: "),
+            "{n}"
+        );
+        assert!(!n.to_string().contains(SERVER_PW));
+    }
 
     let (code, stderr) = s.finish();
     assert_eq!(code, 0, "{stderr}");
