@@ -235,6 +235,22 @@
         }
       }
     },
+    "Aucun appareil n'affiche ce code. Vérifie le code, rapproche les deux appareils et vérifie qu'ils sont sur le même Wi-Fi." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No device is showing this code. Check the code, bring the two devices closer and make sure they are on the same Wi-Fi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun appareil n'affiche ce code. Vérifie le code, rapproche les deux appareils et vérifie qu'ils sont sur le même Wi-Fi."
+          }
+        }
+      }
+    },
     "Aucun compte iCloud n'est disponible." : {
       "localizations" : {
         "en" : {
@@ -273,6 +289,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "C'est une archive OnePass chiffrée : elle ne s'importe pas ici."
+          }
+        }
+      }
+    },
+    "Ce code n'est pas valide. Vérifie-le : 8 caractères, par exemple K7QM-4XPR." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This code is not valid. Check it: 8 characters, for example K7QM-4XPR."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce code n'est pas valide. Vérifie-le : 8 caractères, par exemple K7QM-4XPR."
           }
         }
       }

@@ -68,7 +68,8 @@ struct ApproveDeviceSheet: View {
         switch flow.state {
         case .idle:
             ScanStep { text in Task { await flow.begin(qrText: text) } }
-        case .connecting:
+        case .connecting, .hosting:
+            // `hosting` is the Mac's way in (the code is shown there); this sheet scans.
             status("Connexion au nouvel appareil...", detail: "Les deux appareils doivent être proches, sur le même Wi-Fi.")
         case .comparing(let sas, let peer, let requestedMode):
             if requestedMode == .public, picking {
