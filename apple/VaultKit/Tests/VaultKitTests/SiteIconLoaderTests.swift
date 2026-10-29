@@ -99,7 +99,7 @@ struct SiteIconLoaderTests {
     }
 
     static func cacheName(_ host: String) -> String {
-        SHA256.hash(data: Data(host.lowercased().utf8)).map { String(format: "%02x", $0) }.joined() + ".v2.png"
+        SHA256.hash(data: Data(host.lowercased().utf8)).map { String(format: "%02x", $0) }.joined() + ".\(SiteIconLoader.cacheVersion).png"
     }
 
     @Test func iconLoaderRefusesHTTP() async {
@@ -219,9 +219,10 @@ struct SiteIconLoaderTests {
         #expect(await loader.icon(for: "https://retry.exemple.fr") == nil)
         #expect(StubProtocol.requests(host: "retry.exemple.fr").count == first)
 
-        let markers = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "miss" }
-        let marker = try #require(markers.first)
+        // The item's own host's marker (its parent domain and www. have one too).
+        let name = SHA256.hash(data: Data("retry.exemple.fr".utf8)).map { String(format: "%02x", $0) }.joined()
+        let marker = directory.appendingPathComponent(name + ".\(SiteIconLoader.cacheVersion).miss")
+        #expect(FileManager.default.fileExists(atPath: marker.path))
         try FileManager.default.setAttributes(
             [.modificationDate: Date().addingTimeInterval(-8 * 24 * 3600)], ofItemAtPath: marker.path)
         StubProtocol.install(host: "retry.exemple.fr") { _ in .init(body: Self.pngData()) }
@@ -443,14 +444,14 @@ struct SiteIconLoaderTests {
         let order = SiteIconLoader.ranked(page.icons + SiteIconLoader.wellKnownCandidates(host: "rang.exemple.fr"))
             .map(\.url.path)
         let expected = [
-            "/i.svg", "/t.png", "/t152.png", "/i96.png", "/i16.png", "/favicon.ico",
+            "/i.svg", "/i512.png", "/t.png", "/t152.png", "/i96.png", "/i16.png", "/favicon.ico",
             "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/mask.svg",
         ]
         // Where SVG cannot be drawn it is not even fetched.
         #expect(order == (SiteIconLoader.rendersSVG ? expected : expected.filter { !$0.hasSuffix(".svg") }))
     }
 
-    @Test func manifestIconsSkipMonochromeAndOtherHosts() {
+    @Test func manifestIconsSkipMonochromeAndKeepTheirCDN() {
         let json = """
             {"icons": [
               {"src": "/m/192.png", "sizes": "192x192", "type": "image/png"},
@@ -462,8 +463,8 @@ struct SiteIconLoaderTests {
             """
         let base = URL(string: "https://manifeste.exemple.fr/m/site.webmanifest")!
         let icons = SiteIconLoader.manifestIcons(in: Data(json.utf8), base: base, host: "manifeste.exemple.fr")
-        #expect(icons.map(\.url.path) == ["/m/192.png", "/m/512.png"])
-        #expect(icons.map(\.declared) == [192, 512])
+        #expect(icons.map(\.url.path) == ["/m/192.png", "/m/512.png", "/1024.png"])
+        #expect(icons.map(\.declared) == [192, 512, 1024])
         #expect(SiteIconLoader.manifestIcons(in: Data("pas du json".utf8), base: base, host: "manifeste.exemple.fr").isEmpty)
     }
 
@@ -881,5 +882,34 @@ struct SiteIconLoaderTests {
         #expect(StubProtocol.requests(host: "www.marque-autre.com").isEmpty)
         #expect(StubProtocol.requests(host: "www.prive-marque.com").isEmpty)
         #expect(StubProtocol.requests(host: "cdn.image-marque.com").isEmpty)
+    }
+
+    /// Airbnb and Pinterest name their current icons on their CDN: fetched there, with the same checks
+    /// (public name, public addresses). A CDN on a private address is skipped for the site's own icon.
+    @Test func iconsOnTheSitesCDNAreFetchedWhenPublic() async throws {
+        let (session, _) = Self.makeSession()
+        StubProtocol.install(host: "www.marque-cdn.fr") { request in
+            switch request.url?.path {
+            case "", "/":
+                .init(body: Data(#"<link rel="apple-touch-icon" sizes="180x180" href="https://img.marque-cdn.net/t180.png">"#.utf8))
+            default: .init(body: Self.pngData(side: 32))
+            }
+        }
+        StubProtocol.install(host: "img.marque-cdn.net") { _ in .init(body: Self.pngData(side: 180)) }
+        StubProtocol.install(host: "www.marque-fermee.fr") { request in
+            switch request.url?.path {
+            case "", "/":
+                .init(body: Data(#"<link rel="apple-touch-icon" sizes="180x180" href="https://img.interne.net/t180.png">"#.utf8))
+            case "/favicon.ico": .init(body: Self.pngData(side: 32))
+            default: .init(status: 404)
+            }
+        }
+        StubProtocol.install(host: "img.interne.net") { _ in .init(body: Self.pngData(side: 180)) }
+        let resolver = StaticResolver(["img.interne.net": ["192.168.1.20"]])
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: resolver, enabled: { true })
+        #expect(await loader.icon(for: "https://www.marque-cdn.fr") != nil)
+        #expect(StubProtocol.requests(host: "img.marque-cdn.net").contains { $0.url?.path == "/t180.png" })
+        #expect(await loader.icon(for: "https://www.marque-fermee.fr") != nil, "the site's own favicon")
+        #expect(StubProtocol.requests(host: "img.interne.net").isEmpty)
     }
 }
