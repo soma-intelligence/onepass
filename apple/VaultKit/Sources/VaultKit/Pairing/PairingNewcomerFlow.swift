@@ -150,7 +150,7 @@ public final class PairingNewcomerFlow {
     /// Shows a first QR and waits for the approver.
     public func start() {
         guard state == .idle else { return }
-        if vault.state != .noAccount, mode != .public {
+        if !vault.acceptsPairing, mode != .public {
             state = .failed(.accountExists)
             return
         }

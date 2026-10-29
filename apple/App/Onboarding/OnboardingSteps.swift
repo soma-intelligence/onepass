@@ -933,6 +933,14 @@ private struct RestoreStep: View {
             .foregroundStyle(.secondary)
         }
         if model.restoreOnly {
+            // The account came through the sync: the other device can hand over its Secret Key.
+            Button {
+                model.choose(.pair)
+            } label: {
+                Label("Appairer avec mon autre appareil", systemImage: "qrcode")
+            }
+            .buttonStyle(.glass)
+            .accessibilityIdentifier("onboarding.pairInstead")
             switch newVaultOffer {
             case .offered:
                 // No Emergency Kit: the local copy cannot be opened, the only way out is a new vault.

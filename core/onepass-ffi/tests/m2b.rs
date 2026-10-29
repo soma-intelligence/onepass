@@ -419,6 +419,77 @@ fn import_refuses_non_empty_store() {
     assert_eq!(still.session.account_id(), other_id);
 }
 
+/// iCloud reached the new device before the pairing: its store holds the
+/// account, never opened here. The grant lands on top of it, a wrong
+/// password leaves it as the sync left it, and the right one opens it.
+#[test]
+fn import_onto_store_the_sync_filled() {
+    // The approver's rows reach the newcomer's store through the sync alone.
+    let dir = TempDir::new().unwrap();
+    let path = db_path(dir.path());
+    let created = create_account_with_kdf(path.clone(), PASSWORD.into(), FAST).unwrap();
+    let vault_id = created.session.vaults().unwrap()[0].id.clone();
+    created
+        .session
+        .register_this_device("Mac de Camille".into(), FfiDeviceKind::Mac, FfiDeviceMode::Personal)
+        .unwrap();
+    let a = Device {
+        _dir: dir,
+        path,
+        session: created.session,
+        secret_key: created.secret_key,
+        vault_id,
+    };
+    save_login(&a, &a.vault_id, "Messagerie exemple.fr", "pw-atlas-1");
+    let dev = empty_device();
+    sync(&a.path, &dev.path);
+    assert_eq!(store_state(dev.path.clone()).unwrap(), FfiStoreState::Account);
+
+    let (n, ap) = confirmed(FfiDeviceMode::Personal);
+    let frame = ap
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false,
+        )
+        .unwrap();
+    n.open(frame).unwrap();
+
+    assert_eq!(
+        n.import_snapshot(dev.path.clone(), "mauvais-mot-de-passe".into())
+            .err(),
+        Some(OnePassError::WrongPassword)
+    );
+    assert_eq!(n.take_secret_key(), None);
+    assert_eq!(store_state(dev.path.clone()).unwrap(), FfiStoreState::Account);
+
+    let unlocked = n
+        .import_snapshot(dev.path.clone(), PASSWORD.into())
+        .unwrap();
+    assert_eq!(unlocked.session.account_id(), a.session.account_id());
+    assert_eq!(unlocked.session.this_device_id(), Some(n.device_id()));
+    assert_eq!(unlocked.session.item_summaries().unwrap().len(), 1);
+    assert_eq!(n.take_secret_key(), Some(a.secret_key.clone()));
+    unlocked.session.lock();
+
+    // Opened once here: a later grant no longer takes this store.
+    let (n2, ap2) = confirmed(FfiDeviceMode::Personal);
+    let frame = ap2
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false,
+        )
+        .unwrap();
+    n2.open(frame).unwrap();
+    assert!(
+        n2.import_snapshot(dev.path.clone(), PASSWORD.into())
+            .is_err()
+    );
+}
+
 #[test]
 fn secret_key_withheld_after_failed_import() {
     let a = approver_device();

@@ -428,13 +428,22 @@ impl PairingNewcomer {
             return Err(refused("device id"));
         }
         let path = Path::new(&db_path);
-        match SyncStore::open(path)?.account_state()? {
-            AccountState::Empty => {}
-            AccountState::Present | AccountState::PinnedButMissing => {
-                return Err(invalid("store not empty"));
+        // A store the sync already filled with this account (iCloud reached
+        // this device before the pairing) takes the grant on top of it, if
+        // this device never opened it: the snapshot rows merge like a fetch.
+        let synced = {
+            let store = SyncStore::open(path)?;
+            match store.account_state()? {
+                AccountState::Empty => None,
+                AccountState::Present if synced_only(&store, grant.account_id)? => {
+                    Some(store.chain_state()?)
+                }
+                AccountState::Present | AccountState::PinnedButMissing => {
+                    return Err(invalid("store not empty"));
+                }
             }
-        }
-        match import(path, &db_path, &password, grant) {
+        };
+        match import(path, &db_path, &password, grant, synced.clone()) {
             Ok(unlocked) => {
                 s.released = Some(grant.secret_key.clone());
                 s.grant = None;
@@ -442,10 +451,20 @@ impl PairingNewcomer {
                 Ok(unlocked)
             }
             Err(e) => {
-                // Nothing of the snapshot stays on the device. If the reset
-                // itself fails the import error is still the one reported.
+                // Nothing of the snapshot stays on an empty device. A synced
+                // store keeps its records (the sync brought them, the
+                // snapshot only repeats signed ones) and gets its chain state
+                // back, so a retry finds it as it was. If the clean-up itself
+                // fails the import error is still the one reported.
                 if let Ok(mut store) = SyncStore::open(path) {
-                    let _ = store.reset();
+                    match synced {
+                        None => {
+                            let _ = store.reset();
+                        }
+                        Some(chain) => {
+                            let _ = store.set_chain_state(&chain);
+                        }
+                    }
                 }
                 Err(e)
             }
@@ -476,6 +495,7 @@ fn import(
     db_path: &str,
     password: &str,
     grant: &FullGrant,
+    synced: Option<ChainState>,
 ) -> Result<FfiUnlocked, OnePassError> {
     {
         let mut store = SyncStore::open(path)?;
@@ -485,7 +505,7 @@ fn import(
         store.commit_remote()?;
         store.set_chain_state(&ChainState {
             device_id: Some(grant.device_id),
-            ..ChainState::default()
+            ..synced.unwrap_or_default()
         })?;
     }
     let unlocked = crate::unlock_password(db_path, password, &grant.secret_key)?;
@@ -501,6 +521,17 @@ fn import(
         return Err(refused("device id"));
     }
     Ok(unlocked)
+}
+
+/// The store holds `account` only because the sync brought it: its params
+/// record is that account's, and this device never opened it (no pinned
+/// account, no device id of its own).
+fn synced_only(store: &SyncStore, account: Id) -> Result<bool, OnePassError> {
+    let params = store.list(RecordKind::AccountParams)?;
+    Ok(params.len() == 1
+        && params[0].id == account
+        && store.device_state()?.pinned.is_none()
+        && store.chain_state()?.device_id.is_none())
 }
 
 // ---- approver ---------------------------------------------------------------

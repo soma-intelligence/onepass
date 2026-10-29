@@ -147,7 +147,8 @@ final class OnboardingModel {
 
     var steps: [OnboardingStep] {
         if path == .pair {
-            var steps: [OnboardingStep] = [.welcome, .pairMode, .pairing]
+            // From the Emergency Kit screen of an account the sync brought: back leads there.
+            var steps: [OnboardingStep] = [restoreOnly ? .restore : .welcome, .pairMode, .pairing]
             // A guest session opens its own screen: nothing follows.
             guard pairDeviceMode != .public else { return steps }
             if biometricsOffered { steps.append(.biometrics) }
@@ -188,6 +189,11 @@ final class OnboardingModel {
         guard canGoBack, index > 0 else { return }
         if step == .pairing { stopPairing() }
         movingForward = false
+        if restoreOnly, step == .pairMode {
+            path = .restore
+            step = .restore
+            return
+        }
         step = steps[index - 1]
     }
 
