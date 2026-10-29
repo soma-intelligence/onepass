@@ -33,8 +33,8 @@ Le passage du laboratoire lui-même n'utilise aucun réseau externe : tous les h
 | --- | --- |
 | `npm run check` | typage, tests unitaires (dont `test/lab/`), compilation. Sans navigateur. |
 | `npm run lab:smoke` | navigateur, graine fixe `lab-smoke-18`, 12 sites couvrant chaque flux et les pièges structurels (cadre inter-sites, shadow DOM fermé, rerendu SPA, OTP découpé, sosie) ; compare au résultat épinglé `smoke-expected.json` |
-| `npm run lab -- --seed <s> --sites <n> [--workers 4] [--report <md>]` | passage complet ; rapport dans `lab/out/<s>/report.md`, copié dans `<md>` si demandé. Code de sortie 1 s'il y a une fuite. |
-| `npm run lab:repro -- --seed <s> --site <i> [--sites <n>]` | rejoue un seul site du monde ; résultats dans `lab/out/<s>-repro-<i>/` |
+| `npm run lab -- --seed <s> [--sites <n>] [--drivers current,smart_fill] [--workers 4] [--report <md>]` | passage complet (200 sites par défaut, pilotes actuels par défaut) ; rapport dans `lab/out/<s>/report.md`, copié dans `<md>` si demandé. Code de sortie 1 si le passage est rouge (fuite, mauvais élément ou envoi automatique hors connexion). |
+| `npm run lab:repro -- --seed <s> --site <i> [--sites <n>] [--drivers ...]` | rejoue un seul site du monde ; résultats dans `lab/out/<s>-repro-<i>/` |
 | `npm run lab:corpus` | relevé du corpus (réseau réel, lent, rarement) puis distillation |
 | `node --experimental-strip-types lab/cli.ts report --out <dossier> [--md <fichier>]` | refait le rapport d'un dossier de résultats existant |
 
@@ -44,6 +44,9 @@ Le passage complet demande Chromium (Playwright), `cargo` pour l'hôte natif et 
 
 - **Résumé** : nombre de sites et de scénarios, taux de réussite global, fuites. Le taux est (réussis + instables) sur le total sans les échecs attendus, les réussites inattendues et les erreurs du labo.
 - **Taux par flux, trait, langue, pilote** : un site à plusieurs traits compte une fois sous chacun de ses traits.
+- **Réussite en un clic** : par flux, les pilotes actuels (overlay pour la connexion, menu du champ pour les formulaires) face à `smart_fill` (clic de confiance sur l'icône OnePass du champ, ou le bouton Remplir de la barre d'outils quand la page n'a pas de champ, puis ce que fait le plan). Un clic = le but atteint avec un seul geste vers OnePass ; ouvrir le menu puis choisir une ligne fait deux gestes ; la frappe de l'utilisateur et son appui sur le bouton du formulaire ne comptent pas. Ainsi, quand un clic `smart_fill` remplit un formulaire (paiement, adresse, identité, inscription), l'utilisateur appuie lui-même sur le bouton du formulaire et cet envoi ne compte pas ; il ne compte pas non plus après le menu des pilotes actuels. Le rapport donne à côté le taux de but atteint par flux pour les deux ensembles de pilotes, quel que soit le nombre de gestes. Les deux ensembles de pilotes ne partagent jamais un profil : la mémoire du site de l'un n'aide pas l'autre.
+- **Mauvais élément** (`wrong_item`) : un champ contient une valeur d'un autre élément du coffre que celui du scénario, ou le site a connecté un autre compte. Les valeurs sont lues par le pilote dans la page et restent dans sa mémoire ; seuls les noms des champs sortent. Échec, et le passage est rouge.
+- **Envoi automatique hors connexion** (`auto_submit_outside_login`) : le site a reçu un envoi avant que le pilote (l'utilisateur) n'appuie sur le bouton, sur un flux dont l'intention vraie n'est pas la connexion (l'étape du code fait partie de la connexion). Échec, et le passage est rouge.
 - **Échecs** : chaque ligne donne le site, le flux, le pilote, les traits, la cause et la commande de rejeu.
 - **Réussites inattendues** (`xpass`) : une capacité attendue manquante est arrivée ; retirer l'attente d'échec dans `gen/capabilities.ts`.
 - **Ce que l'extension ne fait pas encore** : échecs attendus (`xfail`) regroupés par cause, puis causes d'échec récurrentes.

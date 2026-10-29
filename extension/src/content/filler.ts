@@ -109,6 +109,19 @@ function fire(el: Element, type: string): void {
   el.dispatchEvent(ev);
 }
 
+/**
+ * What each control held right after OnePass wrote it. Lives in this closure
+ * only (a page cannot read or forge it); `filledByUs` compares it with the
+ * control's value now, so a field the user edited since is theirs again.
+ */
+const written = new WeakMap<Element, string>();
+
+/** True when `el` still holds exactly what OnePass wrote into it. */
+export function filledByUs(el: Element): boolean {
+  const v = written.get(el);
+  return v !== undefined && v !== "" && v === nativeValue(el);
+}
+
 /** Writes `v` into one control, as a user would. False when nothing matched. */
 function write(el: FieldElement, v: string, role: FieldRole): boolean {
   let value = v;
@@ -123,6 +136,7 @@ function write(el: FieldElement, v: string, role: FieldRole): boolean {
   fire(el, "input");
   fire(el, "change");
   if (el instanceof HTMLElement) el.blur();
+  written.set(el, nativeValue(el));
   return true;
 }
 

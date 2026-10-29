@@ -31,8 +31,22 @@ export interface Driver {
    */
   menuFill(page: Page, scope: Frame, selectors: string[], title: string | undefined, pick: boolean,
     timeouts?: { first: number; next: number }): Promise<MenuOutcome>;
-  /** Progress of a sign-in started on `https://<site>`: its status and stop reason, if any. */
-  progress(site: string): Promise<{ status: string; reason?: string } | null>;
+  /**
+   * Smart fill as the user starts it (spec 8.2): a click on the OnePass icon
+   * of `selector` in `scope`, or the toolbar Fill when the page has no field
+   * to click (`selector` undefined). The plan then runs on its own.
+   */
+  smartFill(page: Page, scope: Frame, selector: string | undefined, timeoutMs: number): Promise<void>;
+  /** Progress of a sign-in started on `https://<site>`: its status, stop reason and start time, if any. */
+  progress(site: string): Promise<{ status: string; reason?: string; startedAt?: number } | null>;
+  /** The in-field menu of the page, if one shows now. */
+  menuFrame(page: Page): Frame | undefined;
+  /** Whether a menu shows on the page now. */
+  menuShown(page: Page): Promise<boolean>;
+  /** Whether `menu` offers `title` (within 5 s). */
+  menuOffers(menu: Frame, title: string): Promise<boolean>;
+  /** Picks the row `title` of `menu`. */
+  menuPick(menu: Frame, title: string): Promise<void>;
   /** Whether the autofill told the user it refused for rate limiting. */
   rateLimited(page: Page): Promise<boolean>;
 }
@@ -75,9 +89,27 @@ export function extensionDriver(lab: Lab): Driver {
       }
       return { shown: true, offered };
     },
+    async smartFill(page, scope, selector, timeoutMs) {
+      if (selector === undefined) await lab.toolbarFill(page);
+      else await lab.clickIcon(page, scope, selector, timeoutMs);
+    },
     async progress(site) {
       const c = await lab.chainState(site).catch(() => null);
-      return c ? { status: c.status, ...(c.reason !== undefined ? { reason: c.reason } : {}) } : null;
+      return c
+        ? { status: c.status, ...(c.reason !== undefined ? { reason: c.reason } : {}), ...(c.startedAt !== undefined ? { startedAt: c.startedAt } : {}) }
+        : null;
+    },
+    menuFrame(page) {
+      return lab.findExtFrame(page, "menu");
+    },
+    async menuShown(page) {
+      return lab.findExtFrame(page, "menu") !== undefined;
+    },
+    menuOffers(menu, title) {
+      return lab.menuRow(menu, title, 5_000);
+    },
+    menuPick(menu, title) {
+      return lab.pickRow(menu, title);
     },
     async rateLimited(page) {
       for (const f of page.frames()) {

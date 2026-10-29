@@ -19,6 +19,8 @@
 // page could make OnePass report credentials of its choosing at will (save
 // prompt spoofing, probing for stored credentials).
 import type { CsToBg, FormInfo, FormKind, PageAnalysis } from "../shared/messages";
+import { buttonClass } from "./context";
+import { BUTTON_SELECTOR } from "./detect/forms";
 import type { RefRegistry } from "./detect/refs";
 import { type Geometry, isRendered } from "./detect/visibility";
 import { nativeValue } from "./filler";
@@ -59,13 +61,31 @@ export interface SubmitWatcher {
   stop(): void;
   /** Chain: clicks a rendered element by ref. */
   clickRef(ref: string): boolean;
-  /** Chain: submits a form (its button, then `requestSubmit`, then Enter). */
-  submitForm(formRef: string): boolean;
+  /**
+   * Chain and plan: submits a form (its button, then `requestSubmit`, then
+   * Enter). `planned` (a plan's submit): only that very form, never a copy a
+   * re-render put in its place, and never when one of its buttons reads as
+   * pay or create now.
+   */
+  submitForm(formRef: string, planned?: boolean): boolean;
 }
 
 function isSubmitType(el: Element): boolean {
   if (el instanceof HTMLButtonElement) return el.type === "submit";
   return el instanceof HTMLInputElement && (el.type === "submit" || el.type === "image");
+}
+
+/** The form's chosen submit control, or any rendered button of it, reads as pay or create. */
+function payOrCreate(container: Element, button: Element | null, geometry: Geometry): boolean {
+  const all = new Set<Element>(Array.from(container.querySelectorAll(BUTTON_SELECTOR)));
+  if (button) all.add(button);
+  if (container instanceof HTMLFormElement) for (const el of Array.from(container.elements)) if (el.matches(BUTTON_SELECTOR)) all.add(el);
+  for (const b of all) {
+    if (!(b instanceof HTMLElement) || (b !== button && !isRendered(b, geometry))) continue;
+    const c = buttonClass(b);
+    if (c === "pay" || c === "create") return true;
+  }
+  return false;
 }
 
 export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
@@ -230,12 +250,15 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       el.click();
       return true;
     },
-    submitForm(formRef) {
-      // A form the page re-rendered since the chain saw it: its copy.
+    submitForm(formRef, planned = false) {
+      // A form the page re-rendered since the chain saw it: its copy (not for a plan).
       const f = opts.resolve(formRef, opts.analyze());
       const container = f ? refs.get(f.ref) : null;
       if (!container || !f) return false;
+      if (planned && f.ref !== formRef) return false;
       const button = f.submitRef !== undefined ? refs.get(f.submitRef) : null;
+      // The page may have relabelled a button since the plan: read them again, at click time.
+      if (planned && payOrCreate(container, button, geometry)) return false;
       if (button instanceof HTMLElement && isRendered(button, geometry)) {
         button.click();
         return true;

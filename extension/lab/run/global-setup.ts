@@ -11,7 +11,8 @@ import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateCert } from "../../e2e/cert.ts";
 import { buildHost, prebuildFixtureCache, type StagedHost, stageHost } from "../../e2e/host.ts";
-import { generate, loadPatterns } from "../gen/generate.ts";
+import { generate, loadPatterns, parseDriverGroups, withDrivers } from "../gen/generate.ts";
+import type { DriverGroup } from "../gen/model.ts";
 
 export const EXT_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 // First seed (n >= 2) whose 12 sites hold iframe_cross_site, shadow_closed, spa_rerender and split_otp
@@ -28,6 +29,8 @@ export interface LabRunConfig {
   out: string;
   /** Sites per paired profile. */
   batch: number;
+  /** Driver sets played (LAB_DRIVERS, default "current"); each set gets its own profiles. */
+  drivers: DriverGroup[];
 }
 
 /** The run configuration from the LAB_* environment variables (smoke defaults). */
@@ -41,14 +44,15 @@ export function runConfig(env: NodeJS.ProcessEnv = process.env): LabRunConfig {
   if (only !== undefined && !(Number.isInteger(only) && only >= 0 && only < sites)) {
     throw new Error(`lab: LAB_ONLY must be a site index below ${sites} (${env.LAB_ONLY})`);
   }
+  const drivers = parseDriverGroups(env.LAB_DRIVERS || "current");
   const rawOut = env.LAB_OUT || join("lab", "out", seed);
   const out = isAbsolute(rawOut) ? rawOut : join(EXT_ROOT, rawOut);
-  return { seed, sites, batch, out, ...(only !== undefined ? { only } : {}) };
+  return { seed, sites, batch, out, drivers, ...(only !== undefined ? { only } : {}) };
 }
 
 /** Whether this run is the smoke regression (fixed seed and size, every site). */
 export function isSmoke(c: LabRunConfig): boolean {
-  return c.seed === SMOKE_SEED && c.sites === SMOKE_SITES && c.only === undefined;
+  return c.seed === SMOKE_SEED && c.sites === SMOKE_SITES && c.only === undefined && c.drivers.join(",") === "current";
 }
 
 export interface LabState {
@@ -68,7 +72,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const config = runConfig();
   execFileSync(process.execPath, ["build.mjs", "chromium", "--dev-host"], { cwd: EXT_ROOT, stdio: "inherit" });
   buildHost();
-  const world = generate(config.seed, { sites: config.sites, patterns: loadPatterns() });
+  const world = withDrivers(generate(config.seed, { sites: config.sites, patterns: loadPatterns() }), config.drivers);
   mkdirSync(config.out, { recursive: true });
   const worldPath = join(config.out, "world.json");
   const fixture = join(config.out, "fixture.json");
@@ -86,7 +90,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const statePath = join(root, "state.json");
   writeFileSync(statePath, JSON.stringify(state));
   process.env.LAB_STATE = statePath;
-  console.log(`lab setup: seed ${config.seed}, ${config.sites} sites, ${((Date.now() - started) / 1000).toFixed(1)} s, out ${config.out}`);
+  console.log(`lab setup: seed ${config.seed}, ${config.sites} sites, drivers ${config.drivers.join(",")}, ${((Date.now() - started) / 1000).toFixed(1)} s, out ${config.out}`);
   return async () => {
     rmSync(root, { recursive: true, force: true });
   };

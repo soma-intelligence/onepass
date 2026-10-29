@@ -116,6 +116,7 @@ jobs:
           - site_directory
           - mcp_line
           - ssh_agent_frame
+          - plan_fill
     defaults:
       run:
         working-directory: core

@@ -45,7 +45,7 @@ const MAX_HEADINGS = 5;
  * selector itself so that the cap applies to real candidates (a page may hold
  * thousands of navigation links).
  */
-const BUTTON_SELECTOR =
+export const BUTTON_SELECTOR =
   'button, input[type="submit" i], input[type="image" i], input[type="button" i], [role="button"], ' +
   'a:not([href]), a[href^="#"], a[href^="javascript:" i]';
 
@@ -97,7 +97,7 @@ interface Group {
   fields: Classified[];
 }
 
-function controlForm(el: Element): HTMLFormElement | null {
+export function controlForm(el: Element): HTMLFormElement | null {
   if (
     el instanceof HTMLInputElement ||
     el instanceof HTMLSelectElement ||
@@ -113,13 +113,13 @@ function isNextLabel(el: Element): boolean {
   return t !== "" && t.length <= MAX_NEXT_LABEL && NEXT_TEXT.test(t);
 }
 
-function isSubmitType(el: Element): boolean {
+export function isSubmitType(el: Element): boolean {
   if (el instanceof HTMLButtonElement) return el.type === "submit";
   return el instanceof HTMLInputElement && (el.type === "submit" || el.type === "image");
 }
 
 /** A link only acts as a button when it does not navigate somewhere. */
-function isNavigatingLink(el: Element): boolean {
+export function isNavigatingLink(el: Element): boolean {
   if (!(el instanceof HTMLAnchorElement) || el.getAttribute("role") === "button") return false;
   const href = (el.getAttribute("href") ?? "").trim();
   return href !== "" && !href.startsWith("#") && !/^javascript:/i.test(href);

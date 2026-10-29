@@ -9,7 +9,7 @@
 // after 10 minutes, on a navigation of their frame, on tab removal, and when
 // a new menu opens in the same frame.
 import type { Summary } from "../bridge/client";
-import type { FormKind, MenuKey, ProviderId } from "../shared/messages";
+import type { FieldRole, FillIntent, FormKind, MenuKey, ProviderId } from "../shared/messages";
 import { newToken } from "../shared/tokens";
 import type { BgExt, StorageArea } from "./ext";
 import type { CsContext, UiContext } from "./frames";
@@ -23,6 +23,10 @@ export interface MenuField {
   fieldRef: string;
   /** Page-influenced hint: picks which list is shown, never a policy input. */
   formKind: FormKind;
+  /** Opened after a fill plan that could not choose: its alternatives, best first (from the bridge). */
+  first?: string[];
+  /** That plan's main form roles and intent: a pick is noted for the site memory (notes.ts). */
+  planned?: { roles: FieldRole[]; intent: FillIntent };
 }
 
 export interface MenuRecord extends MenuField {
@@ -69,6 +73,8 @@ export class MenuTokens {
       formKind: field.formKind,
       createdAt: this.now(),
     };
+    if (field.first) rec.first = [...field.first];
+    if (field.planned) rec.planned = { roles: [...field.planned.roles], intent: field.planned.intent };
     if (cs.documentId !== undefined) rec.documentId = cs.documentId;
     this.mem.set(token, rec);
     await this.area.set({ [PREFIX + token]: rec });
@@ -181,6 +187,11 @@ function parseRecord(raw: unknown): MenuRecord | null {
   if (!int(r.tabId) || !int(r.frameId) || !int(r.createdAt)) return null;
   for (const k of ["origin", "formRef", "fieldRef", "formKind"]) if (typeof r[k] !== "string") return null;
   if (r.documentId !== undefined && typeof r.documentId !== "string") return null;
+  if (r.first !== undefined && !(Array.isArray(r.first) && r.first.length <= 8 && r.first.every((x) => typeof x === "string"))) return null;
+  if (r.planned !== undefined) {
+    const p = r.planned as Record<string, unknown> | null;
+    if (typeof p !== "object" || p === null || typeof p.intent !== "string" || !Array.isArray(p.roles) || !p.roles.every((x) => typeof x === "string")) return null;
+  }
   return r as unknown as MenuRecord;
 }
 

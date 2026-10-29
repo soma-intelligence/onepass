@@ -1,7 +1,8 @@
 // In-field icon (spec 8.3): a 20 px indigo tile with the Lattice mark at the right edge of each
-// fillable field, inside the closed shadow root. A click opens the menu only
-// when the browser vouches for it (`isTrusted`): a page cannot open the menu
-// with a synthetic click (S2).
+// fillable field, inside the closed shadow root. A click runs smart fill (the
+// menu when the plan cannot choose) only when the browser vouches for it
+// (`isTrusted`): a page cannot start a fill nor open the menu with a
+// synthetic click (S2).
 import { tr } from "../shared/i18n";
 import type { FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
 import type { RefRegistry } from "./detect/refs";
@@ -51,6 +52,8 @@ export interface Icons {
   reposition(): void;
   /** The icon target for a field element, if it has one. */
   targetOf(el: EventTarget | null): IconTarget | undefined;
+  /** Every icon target, in the order the fields were reported. */
+  all(): IconTarget[];
   destroy(): void;
 }
 
@@ -165,6 +168,9 @@ export function createIcons(opts: IconsOptions): Icons {
     targetOf(el) {
       if (!(el instanceof Element)) return undefined;
       return byField.get(el)?.target;
+    },
+    all() {
+      return [...byField.values()].map((e) => e.target);
     },
     destroy() {
       resize?.disconnect();

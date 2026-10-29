@@ -8,7 +8,7 @@
 // reused, even after a timeout. Any protocol failure (bad frame, bad MAC,
 // replayed or skipped counter, host error frame, transport closed) fails
 // every pending request and closes the transport.
-import type { ProviderId } from "../shared/messages";
+import type { NoteFillRequest, NoteFillResponse, PlanFillRequest, PlanFillResponse, ProviderId } from "../shared/messages";
 import { BridgeError, utf8, wipe } from "./bytes";
 import type { Channel } from "./channel";
 import { ExtPairing, PAIRING_TIMEOUT_MS, type PairingOptions, type PairingRecord } from "./pairing";
@@ -137,6 +137,14 @@ interface Ops {
     req: { ctx: Ctx; site_origin: string; provider: ProviderId; account_item_id: string };
     res: { item_id: string };
   };
+  /** The bridge session's username salt: 32 bytes as lower-case hex, the same until the session ends. */
+  fill_salt: { req: { ctx: Ctx }; res: { salt: string } };
+  /** A plan of item ids, roles and refs for a page context; never a value. */
+  plan_fill: { req: PlanFillRequest; res: PlanFillResponse };
+  /** What was filled where, for the site memory. */
+  note_fill: { req: NoteFillRequest; res: NoteFillResponse };
+  /** Forget a site in every item's memory (popup only); `site` is a host or an https origin, reduced by the host. */
+  forget_site: { req: { ctx: Ctx; site: string }; res: { items: number } };
 }
 
 export type Op = keyof Ops;

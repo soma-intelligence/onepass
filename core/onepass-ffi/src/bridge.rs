@@ -31,6 +31,8 @@ use onepass_bridge::service::{VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError};
 use onepass_core::Id;
 use onepass_core::model::Item;
+use onepass_core::model::usage::SiteUsage;
+use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use crate::convert::{id_hex, parse_id};
@@ -233,13 +235,18 @@ struct FileAudit(PathBuf);
 
 impl AuditSink for FileAudit {
     fn record(&mut self, e: AuditEvent) {
-        let line = serde_json::json!({
+        let mut line = serde_json::json!({
             "at": e.at,
             "op": e.op,
             "item_id": e.item_id,
             "origin": e.origin,
             "ctx": e.ctx.as_str(),
         });
+        if let (Some(p), Some(obj)) = (e.plan, line.as_object_mut()) {
+            obj.insert("intent".into(), serde_json::json!(p.intent));
+            obj.insert("action".into(), serde_json::json!(p.action));
+            obj.insert("confidence".into(), serde_json::json!(p.confidence));
+        }
         if let Ok(mut f) = OpenOptions::new()
             .create(true)
             .append(true)
@@ -365,6 +372,53 @@ impl VaultAccess for AppVault<'_> {
                 .delegate
                 .confirm_reprompt(id_hex(vault_id), id_hex(item_id)),
             None => false,
+        }
+    }
+
+    fn record_usage(
+        &mut self,
+        vault_id: Id,
+        item_id: Id,
+        u: SiteUsage,
+        now: OffsetDateTime,
+        force: bool,
+    ) -> onepass_bridge::Result<bool> {
+        if lock(&self.0.excluded).contains(&vault_id) {
+            return Err(BridgeError::App(AppErrorCode::NotFound));
+        }
+        let written = self
+            .session()?
+            .with(|repo| {
+                let vault = find_vault(repo, vault_id)?;
+                Ok(repo.record_usage(&vault, item_id, u.clone(), now, force)?)
+            })
+            .map_err(bridge_error)?;
+        if written {
+            self.0.delegate.vault_changed();
+        }
+        Ok(written)
+    }
+
+    fn forget_site_usage(&mut self, site: &str) -> onepass_bridge::Result<usize> {
+        // Vaults hidden from the extension keep their memory, as they are
+        // never read nor written from here.
+        let excluded = lock(&self.0.excluded).clone();
+        let result = self
+            .session()?
+            .with(|repo| Ok(repo.forget_site_usage_in(site, |v| !excluded.contains(&v.id))?));
+        match result {
+            Ok(rewritten) => {
+                if rewritten > 0 {
+                    self.0.delegate.vault_changed();
+                }
+                Ok(rewritten)
+            }
+            Err(e) => {
+                // Best effort: other vaults may have been rewritten before
+                // the failure.
+                self.0.delegate.vault_changed();
+                Err(bridge_error(e))
+            }
         }
     }
 }

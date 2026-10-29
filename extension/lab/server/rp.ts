@@ -87,7 +87,8 @@ function countryMatches(posted: string, code: string, lang: string): boolean {
   return false;
 }
 
-function matches(role: Role, posted: string, want: string, lang: string): boolean {
+/** Whether a posted value is the fixture value `want` of `role` (formats as the site accepts them). */
+export function matches(role: Role, posted: string, want: string, lang: string): boolean {
   switch (role) {
     case "cc_number": return posted.replace(/\D/g, "") === want.replace(/\D/g, "");
     case "cc_exp": {

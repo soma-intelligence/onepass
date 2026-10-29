@@ -151,3 +151,10 @@ path = "fuzz_targets/ssh_agent_frame.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "plan_fill"
+path = "fuzz_targets/plan_fill.rs"
+test = false
+doc = false
+bench = false

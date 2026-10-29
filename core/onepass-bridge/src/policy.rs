@@ -5,6 +5,8 @@
 //! autofill, and the current TOTP code, never the TOTP secret.
 
 use onepass_core::Id;
+use onepass_core::fill_plan::score::{Candidate, CandidateKind, MatchQuality as PlanQuality};
+use onepass_core::model::usage::last_used_on;
 use onepass_core::model::{Field, FieldValue, Item, ItemType, LoginMethod, MatchRule};
 use onepass_core::reference::otp_field_of;
 use onepass_core::totp::{code_at, parse_otpauth, seconds_remaining, totp_from_secret};
@@ -51,6 +53,72 @@ pub fn item_match(item: &Item, page: &Origin) -> Option<MatchQuality> {
         }
     }
     best
+}
+
+/// The ranking envelope of an item for `fill_plan::score::order`. No usage
+/// and no typed username yet: the score is the match quality alone.
+pub fn to_candidate(item: &Item, q: PlanQuality) -> Candidate {
+    Candidate {
+        item_id: item.id,
+        kind: match item.item_type {
+            ItemType::CreditCard => CandidateKind::Card,
+            ItemType::Identity => CandidateKind::Identity,
+            _ => CandidateKind::Login,
+        },
+        quality: q,
+        favorite: item.favorite,
+        // Nanoseconds, so two saves in one second keep their order.
+        updated_at: i64::try_from(item.updated_at.unix_timestamp_nanos()).unwrap_or(i64::MAX),
+        title: item.title.clone(),
+        username_hash: None,
+        usage: None,
+        has_totp: item.item_type == ItemType::Login && otp_field(item).is_some(),
+    }
+}
+
+/// `SHA-256(salt || lowercase(trim(username)))`: what `plan_fill`
+/// compares with the hash the extension made of a typed username.
+pub fn username_hash(salt: &[u8; 32], username: &str) -> [u8; 32] {
+    let mut ctx = aws_lc_rs::digest::Context::new(&aws_lc_rs::digest::SHA256);
+    ctx.update(salt);
+    ctx.update(username.trim().to_lowercase().as_bytes());
+    let mut out = [0u8; 32];
+    out.copy_from_slice(ctx.finish().as_ref());
+    out
+}
+
+/// Candidates of one kind for `fill_plan::plan`, with their memory of
+/// `site`: `last_on_site` for the one entry used last among them (a tie
+/// to the higher count, then the lowest item id), `same_shape`
+/// when the entry saw `shape` (the main form's roles). A login also
+/// carries the salted hash of its identifier.
+pub fn plan_candidates(
+    items: &[(&Item, PlanQuality)],
+    site: &str,
+    shape: Option<[u8; 16]>,
+    salt: &[u8; 32],
+) -> Vec<Candidate> {
+    let last = last_used_on(items.iter().map(|(i, _)| *i), site);
+    items
+        .iter()
+        .map(|(i, q)| {
+            let mut c = to_candidate(i, *q);
+            if i.item_type == ItemType::Login {
+                c.username_hash = login_identifier(i).map(|u| username_hash(salt, u));
+            }
+            c.usage = i.usage_signal(site, last, shape);
+            c
+        })
+        .collect()
+}
+
+/// The plan quality of a bridge match (`None` is no match: `Other`).
+pub fn plan_quality(q: Option<MatchQuality>) -> PlanQuality {
+    match q {
+        Some(MatchQuality::ExactHost) => PlanQuality::Exact,
+        Some(MatchQuality::Domain) => PlanQuality::Domain,
+        None => PlanQuality::Other,
+    }
 }
 
 /// Is this a login of `p`: a URL whose host is an official host of `p`?
@@ -166,7 +234,7 @@ fn has_password(item: &Item) -> bool {
 }
 
 /// The filled OTP field of an item, if it is marked for autofill.
-fn otp_field(item: &Item) -> Option<&Field> {
+pub fn otp_field(item: &Item) -> Option<&Field> {
     otp_field_of(item).ok().filter(|f| f.autofill)
 }
 

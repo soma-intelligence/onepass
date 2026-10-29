@@ -83,4 +83,8 @@ export interface BgExt {
     local: StorageArea;
     session: StorageArea;
   };
+  /** Keyboard shortcuts of the manifest's `commands` (absent where the browser has none). */
+  commands?: {
+    onCommand: Event<(command: string) => void>;
+  };
 }

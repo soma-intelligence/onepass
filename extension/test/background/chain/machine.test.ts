@@ -305,7 +305,10 @@ describe("stop reasons", () => {
     s = step(s, page([]), SITE, T0 + 100).state;
     s = settled(s, T0 + 200);
     expect(tick(s, T0 + 200 + UNKNOWN_MS - 1).actions).toEqual([]);
-    const r = tick(s, T0 + 200 + UNKNOWN_MS);
+    // Spec 5.3: planned again once, then unknown when nothing came of it.
+    const r0 = tick(s, T0 + 200 + UNKNOWN_MS);
+    expect(r0.actions).toEqual([{ type: "replan" }]);
+    const r = tick(r0.state, T0 + 200 + UNKNOWN_MS * 2);
     expect(r.actions).toEqual([{ type: "stop", reason: "unknown" }]);
   });
 
@@ -315,7 +318,9 @@ describe("stop reasons", () => {
   });
 
   it("the start page is loaded already: unknown 4 s after the click", () => {
-    expect(tick(start(), T0 + UNKNOWN_MS).actions).toEqual([{ type: "stop", reason: "unknown" }]);
+    const r0 = tick(start(), T0 + UNKNOWN_MS);
+    expect(r0.actions).toEqual([{ type: "replan" }]);
+    expect(tick(r0.state, T0 + UNKNOWN_MS * 2).actions).toEqual([{ type: "stop", reason: "unknown" }]);
   });
 
   it("timeout after 60 s", () => {
@@ -364,7 +369,9 @@ describe("late fields and re-rendered forms (B1, B2)", () => {
     s = step(s, page([], { providerButtons: [] }, `${SITE}/next#ready`), SITE, T0 + 3200).state;
     expect(tick(s, T0 + 200 + UNKNOWN_MS).actions).toEqual([]);
     expect(nextDue(s)).toBe(T0 + 3200 + UNKNOWN_MS);
-    expect(tick(s, T0 + 3200 + UNKNOWN_MS).actions).toEqual([{ type: "stop", reason: "unknown" }]);
+    const r0 = tick(s, T0 + 3200 + UNKNOWN_MS);
+    expect(r0.actions).toEqual([{ type: "replan" }]);
+    expect(tick(r0.state, T0 + 3200 + UNKNOWN_MS * 2).actions).toEqual([{ type: "stop", reason: "unknown" }]);
   });
 
   it("a sign-in form built late on the next page is filled, not taken for done", () => {

@@ -65,6 +65,14 @@ export interface Lab {
   overlayHas(overlay: Frame, title: string, timeout?: number): Promise<boolean>;
   /** Clicks "Se connecter" on the overlay account `title`. */
   overlayStart(overlay: Frame, title: string): Promise<void>;
+  /**
+   * Clicks the OnePass icon of `selector` in `scope` with the mouse, where
+   * content/icon.ts draws it (a trusted click, as a user's), once the field
+   * shows (within `timeout`) and the page analysis had time to attach it.
+   */
+  clickIcon(page: Page, scope: Frame, selector: string, timeout: number): Promise<void>;
+  /** The toolbar Fill on `page`: the popup's `popup_smart_fill` with `page` as the active tab. */
+  toolbarFill(page: Page): Promise<void>;
   /** The latest chain started on `https://<site>`, if any. */
   chainState(site: string): Promise<ChainView | null>;
   close(): Promise<void>;
@@ -174,6 +182,24 @@ export async function shadowField(scope: Frame, selector: string): Promise<{ x: 
     const hook = (window as unknown as { __labField?: (s: string) => { x: number; y: number; width: number; height: number; filled: boolean } | null }).__labField;
     return hook ? hook(sel) : null;
   }, selector).catch(() => null);
+}
+
+/** content/icon.ts: a 20 px icon, 6 px inside the field's right edge (see e2e/smart-fill.spec.ts). */
+const ICON_CENTER_FROM_RIGHT = 6 + 10;
+/** After the field shows: the content script analyses 150 ms after a mutation burst, then attaches its icon. */
+const ICON_SETTLE_MS = 900;
+
+/** The page-level box of `selector` in `scope` (closed shadow root: its page hook, offset by the frame), or null. */
+async function fieldBox(p: Page, scope: Frame, selector: string): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  const field = scope.locator(selector).first();
+  if ((await field.count().catch(() => 0)) > 0) {
+    if (!(await field.isVisible().catch(() => false))) return null;
+    return field.boundingBox().catch(() => null);
+  }
+  const box = await shadowField(scope, selector);
+  if (!box || box.width <= 0 || box.height <= 0) return null;
+  const frameBox = scope === p.mainFrame() ? { x: 0, y: 0 } : await (await scope.frameElement()).boundingBox();
+  return { x: (frameBox?.x ?? 0) + box.x, y: (frameBox?.y ?? 0) + box.y, width: box.width, height: box.height };
 }
 
 /**
@@ -305,6 +331,29 @@ export async function launchLab(state: LabState, world: World, server: LabServer
         const account = overlay.locator(".ov-account").filter({ has: overlay.locator(".t1", { hasText: exact(title) }) });
         await sleep(GUARD_WAIT_MS);
         await account.first().getByRole("button", { name: "Se connecter" }).click();
+      },
+      async clickIcon(p, scope, selector, timeout) {
+        const end = Date.now() + timeout;
+        let box = await fieldBox(p, scope, selector);
+        while (!box) {
+          if (Date.now() >= end) throw new Error(`no field ${selector} within ${timeout} ms`);
+          await sleep(200);
+          box = await fieldBox(p, scope, selector);
+        }
+        await sleep(ICON_SETTLE_MS);
+        // The layout may have moved while the page settled.
+        box = (await fieldBox(p, scope, selector)) ?? box;
+        await p.mouse.click(box.x + box.width - ICON_CENTER_FROM_RIGHT, box.y + box.height / 2);
+      },
+      async toolbarFill(p) {
+        const popup = await context.newPage();
+        try {
+          await popup.goto(`chrome-extension://${id}/popup.html`);
+          await p.bringToFront();
+          await popup.evaluate(() => chrome.runtime.sendMessage({ type: "popup_smart_fill" }).catch(() => undefined));
+        } finally {
+          await popup.close();
+        }
       },
       async chainState(site) {
         const chains = Object.entries(await sessionStorage()).filter(([k]) => k.startsWith("chain:")).map(([, v]) => v as ChainView)
