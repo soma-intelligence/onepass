@@ -4900,6 +4900,16 @@
         }
       }
     },
+    "Déverrouille une fois avec ton mot de passe : OnePass te proposera %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock once with your password: OnePass will offer %@."
+          }
+        }
+      }
+    },
     "Déverrouiller" : {
       "localizations" : {
         "en" : {
