@@ -40,6 +40,8 @@ pub enum BlobKind {
     Pairing = 12,
     /// The sealed body of a remote approval request (`remote`).
     Remote = 13,
+    /// The AUK sealed under the remote unlock key `K_r` (`remote_unlock`).
+    RemoteUnlock = 14,
 }
 
 /// Context a blob is bound to. Opening under any other context fails.
@@ -277,6 +279,7 @@ mod tests {
         assert_eq!(BlobKind::Companion as u8, 11);
         assert_eq!(BlobKind::Pairing as u8, 12);
         assert_eq!(BlobKind::Remote as u8, 13);
+        assert_eq!(BlobKind::RemoteUnlock as u8, 14);
     }
 
     use super::*;
