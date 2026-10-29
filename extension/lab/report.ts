@@ -106,9 +106,13 @@ function pairRates(results: Result[], hit: (r: Result) => boolean): { byFlow: Re
   return { byFlow, total };
 }
 
-/** The run is red on any leak, any wrong item and any auto-submit outside a sign-in (spec 10). */
+/**
+ * The run is red on any leak, any wrong item and any auto-submit outside a sign-in (spec 10),
+ * and when every scenario is a lab error, since such a run measured nothing.
+ */
 export function isRed(s: Summary): boolean {
-  return s.leaks.length > 0 || s.wrongItem.length > 0 || s.autoSubmitOutsideLogin.length > 0;
+  const benchFailed = s.overall.total > 0 && s.overall.labError === s.overall.total;
+  return s.leaks.length > 0 || s.wrongItem.length > 0 || s.autoSubmitOutsideLogin.length > 0 || benchFailed;
 }
 
 export function summarize(all: Result[]): Summary {

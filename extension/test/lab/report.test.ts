@@ -255,6 +255,11 @@ describe("smart fill metrics", () => {
     expect(renderReport(world, auto, meta)).toContain("- Envois automatiques hors connexion (`auto_submit_outside_login`) : 1 (le passage est rouge)");
     expect(isRed(summarize([res(3, "leak", { cause: "leak:password:pw@evil.test" })]))).toBe(true);
   });
+  it("run_red_when_every_scenario_is_a_lab_error", () => {
+    expect(isRed(summarize([res(0, "lab_error"), res(1, "lab_error")]))).toBe(true);
+    expect(isRed(summarize([res(0, "pass"), res(1, "lab_error")]))).toBe(false);
+    expect(isRed(summarize([]))).toBe(false);
+  });
 
   it("replay_never_hides_a_safety_failure", () => {
     const fail = (cause: string) => ({ verdict: "fail" as const, cause });
