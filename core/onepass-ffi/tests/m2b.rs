@@ -820,3 +820,77 @@ fn discarded_grant_cannot_be_imported() {
     assert_eq!(n.take_secret_key(), None);
     assert_eq!(store_state(dev.path.clone()).unwrap(), FfiStoreState::Empty);
 }
+
+#[test]
+fn ffi_invite_pairing_grants_the_account() {
+    let a = approver_device();
+    let invite = PairingInvite::new(now()).unwrap();
+    let code = invite.qr_text();
+    assert!(code.starts_with("OPJOIN1:"));
+    assert_eq!(pairing_code_kind(code.clone()), FfiPairingCodeKind::Invite);
+    assert_eq!(invite.service_name().len(), 32);
+
+    let n = PairingNewcomer::join(
+        code,
+        "iPhone de Camille".into(),
+        FfiDeviceKind::Phone,
+        FfiDeviceMode::Personal,
+        now(),
+    )
+    .unwrap();
+    assert_eq!(n.qr_text(), "");
+    assert_eq!(n.service_name(), invite.service_name());
+    assert_eq!(
+        pairing_service_name(invite.qr_text()).unwrap(),
+        invite.service_name()
+    );
+
+    // A Hello without the invite's secret is refused, the invite stays open.
+    let stranger = PairingNewcomer::new(
+        "Mac inconnu".into(),
+        FfiDeviceKind::Mac,
+        FfiDeviceMode::Personal,
+        now(),
+    )
+    .unwrap();
+    assert!(invite.accept(stranger.hello(), now()).is_err());
+
+    let ap = invite.accept(n.hello(), now()).unwrap();
+    assert!(invite.accept(n.hello(), now()).is_err(), "spent");
+    assert_eq!(ap.peer().name, "iPhone de Camille");
+    assert_eq!(ap.peer().id, n.device_id());
+    let sas = n.on_key_exchange(ap.key_exchange(), now()).unwrap();
+    assert_eq!(sas, ap.sas());
+    assert_eq!(
+        ap.on_frame(n.confirm().unwrap()).unwrap(),
+        FfiPairingMessage::Confirmed
+    );
+    let frame = ap
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false,
+        )
+        .unwrap();
+    let FfiPairingMessage::FullGrant { account_id, .. } = n.open(frame).unwrap() else {
+        panic!("expected a full grant");
+    };
+    assert_eq!(account_id, a.session.account_id());
+}
+
+#[test]
+fn pairing_code_kind_tells_the_codes_apart() {
+    let n = PairingNewcomer::new(
+        "iPad de Camille".into(),
+        FfiDeviceKind::Tablet,
+        FfiDeviceMode::Personal,
+        now(),
+    )
+    .unwrap();
+    assert_eq!(pairing_code_kind(n.qr_text()), FfiPairingCodeKind::Pairing);
+    assert_eq!(
+        pairing_code_kind("https://example.com".into()),
+        FfiPairingCodeKind::Unknown
+    );
+}

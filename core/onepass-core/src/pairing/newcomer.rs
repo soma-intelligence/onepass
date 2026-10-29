@@ -9,8 +9,9 @@ use crate::crypto::{HybridKemSecret, SecretKey, random_array};
 use crate::devices::{DeviceMode, check_name};
 
 use super::channel::Channel;
+use super::invite::signed_hello;
 use super::messages::{DeviceInfo, Grant, Hello, KeyExchange, Message};
-use super::qr::{PairingQr, QR_VERSION};
+use super::qr::{InviteQr, PairingQr, QR_VERSION};
 use super::snapshot::check_snapshot;
 use super::{KEM_LABEL, QR_LIFETIME_SECS, now_unix, refused, sas, sha256, transcript};
 
@@ -74,6 +75,41 @@ impl Newcomer {
             acked: false,
         };
         Ok((newcomer, qr, hello))
+    }
+
+    /// Join from a scanned invite (`invite`): the new ephemeral key pair,
+    /// the invite's session, and the Hello signed with its secret, the frame
+    /// to send once connected. The key exchange is taken for
+    /// `QR_LIFETIME_SECS` from `now`, on this device's clock.
+    pub fn join(
+        invite_text: &str,
+        device: DeviceInfo,
+        mode: DeviceMode,
+        now: i64,
+    ) -> Result<(Newcomer, Vec<u8>)> {
+        check_name(&device.name)?;
+        let session_id = InviteQr::parse(invite_text)?.session_id;
+        let secret = HybridKemSecret::generate()?;
+        let hello = Hello {
+            session_id,
+            ephemeral_public: secret.public()?,
+            device,
+            requested_mode: mode,
+        }
+        .to_bytes()?;
+        let (_, frame) = signed_hello(invite_text, &hello, now)?;
+        let newcomer = Newcomer {
+            secret: Some(secret),
+            session_id,
+            expires_at: now.checked_add(QR_LIFETIME_SECS).ok_or(refused("time"))?,
+            mode,
+            transcript: transcript(invite_text, &hello),
+            channel: None,
+            state: State::AwaitingKey,
+            public_granted: false,
+            acked: false,
+        };
+        Ok((newcomer, frame))
     }
 
     pub fn session_id(&self) -> [u8; 16] {

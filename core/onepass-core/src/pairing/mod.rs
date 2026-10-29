@@ -51,9 +51,13 @@
 //! snapshot (the `base` rows of the store, `SnapshotRecord {kind: record
 //! kind code, id, version, data}`) is at most `MAX_SNAPSHOT_BYTES`
 //! serialized. The newcomer imports it later as a remote fetch.
+//!
+//! The other direction, where the approver shows an invite QR and the
+//! newcomer scans it, changes steps 1 to 3 only: see `invite`.
 
 pub mod approver;
 pub mod channel;
+pub mod invite;
 pub mod messages;
 pub mod newcomer;
 pub mod qr;
@@ -68,12 +72,13 @@ use crate::{Error, Result, ValidationError};
 
 pub use approver::Approver;
 pub use channel::Channel;
+pub use invite::Invite;
 pub use messages::{
     AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Hello, KeyExchange, Message,
     PublicGrant, SnapshotRecord,
 };
 pub use newcomer::Newcomer;
-pub use qr::PairingQr;
+pub use qr::{InviteQr, PairingQr};
 pub use snapshot::{MAX_SNAPSHOT_BYTES, check_snapshot_size, snapshot_from_store};
 
 /// A QR is valid this long after it is shown (spec 5.1, ruling B16).
