@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { generate, loadPatterns, parseDriverGroups, withDrivers } from "../../lab/gen/generate.ts";
 import { foreignFields } from "../../lab/run/items.ts";
+import { smartTarget } from "../../lab/run/target.ts";
 import { expectedValues } from "../../lab/server/rp.ts";
 
 const world = generate("items-seed", { sites: 120, patterns: loadPatterns() });
@@ -68,5 +69,18 @@ describe("driver sets", () => {
     expect(parseDriverGroups("smart_fill,current")).toEqual(["current", "smart_fill"]);
     expect(() => parseDriverGroups("current,menu")).toThrow(/unknown driver set menu/);
     expect(() => parseDriverGroups("")).toThrow();
+  });
+});
+
+describe("smart fill target", () => {
+  const base = world.sites.find((s) => s.flow === "login_single")!;
+  const field = (role: (typeof base.fields)[number]["role"], id: string) => ({ role, name: id, id, label: id, type: "text" });
+  it("follows_the_content_icon_roles", () => {
+    // A password field carries the icon (current_password in content/icon.ts).
+    expect(smartTarget({ ...base, flow: "login_single", fields: [field("password", "pw")] })?.id).toBe("pw");
+    // No icon on a card expiry or a country: the first field with one.
+    expect(smartTarget({ ...base, flow: "checkout_card", fields: [field("cc_exp", "e"), field("cc_number", "n")] })?.id).toBe("n");
+    expect(smartTarget({ ...base, flow: "address", fields: [field("country", "c")] })).toBeUndefined();
+    expect(smartTarget({ ...base, flow: "signup", fields: [field("email", "m"), field("new_password", "p")] })?.id).toBe("p");
   });
 });

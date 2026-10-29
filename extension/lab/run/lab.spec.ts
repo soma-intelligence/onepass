@@ -23,7 +23,7 @@ import { groupOf } from "../gen/generate.ts";
 import { lookalike, menuFill, oneClick, passkeyControl, type ScenarioEnv, smartFill } from "./drive.ts";
 import { extensionDriver } from "./driver.ts";
 import { EXT_ROOT, isSmoke, type LabState } from "./global-setup.ts";
-import { judge, type Judgement, type Observation, oneClickOf, type Result, type Verdict } from "./oracle.ts";
+import { afterReplay, judge, type Judgement, type Observation, oneClickOf, replayable, type Result, type Verdict } from "./oracle.ts";
 
 const state: LabState = readState();
 const world: World = readWorld(state);
@@ -161,8 +161,9 @@ batches().forEach((scenarios, k) => {
           shared = undefined;
           await broken.close().catch(() => undefined);
         }
-        // A forbidden fill or offer (expect nofill) is a security event: never replayed into a pass.
-        if (j.verdict === "fail" && s.expect !== "nofill") {
+        // A forbidden fill or offer (expect nofill) and a safety failure (wrong item, auto-submit
+        // outside a sign-in) are security events: never replayed into a pass.
+        if (replayable(s, j)) {
           retried = true;
           let fresh: Lab | undefined;
           let second: Observation;
@@ -173,14 +174,10 @@ batches().forEach((scenarios, k) => {
             if (used) await closeInto(closeErrors, `${s.id} replay profile`, () => used.close());
           }
           duration += second.durationMs;
-          const again = judge(s, site, second);
-          if (again.verdict === "pass") {
-            j = { verdict: "flaky", cause: j.cause };
-            seen = second;
-          } else if (again.verdict === "leak") {
-            j = again;
-            seen = second;
-          }
+          // A violation seen on the replay is kept, never dropped for the first failure.
+          const settled = afterReplay(j, judge(s, site, second));
+          j = settled.judgement;
+          if (settled.replay) seen = second;
         }
         const r = record(s, site, j, retried, duration, seen);
         verdicts.push(r.verdict);

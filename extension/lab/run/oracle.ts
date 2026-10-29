@@ -159,3 +159,27 @@ export function oneClickOf(s: Scenario, verdict: Verdict, o: Observation): boole
   const met = verdict === "pass" || verdict === "flaky" || verdict === "xpass";
   return met && o.clicks === 1;
 }
+
+/** Causes that are safety failures: never replayed, never hidden by a replay. */
+export const SAFETY_CAUSES = new Set(["wrong_item", "auto_submit_outside_login"]);
+
+/**
+ * Whether a first attempt gets one replay in a fresh profile: a plain
+ * failure only. A forbidden fill (expect nofill) or a safety failure is
+ * final, never turned into a flaky pass.
+ */
+export function replayable(s: Scenario, j: Judgement): boolean {
+  return j.verdict === "fail" && s.expect !== "nofill" && !SAFETY_CAUSES.has(j.cause ?? "");
+}
+
+/**
+ * The verdict after a replay of `first`: a pass makes it flaky; a leak or a
+ * safety failure on the replay replaces it (a violation is never dropped);
+ * anything else keeps the first failure. `replay` says whether the replay's
+ * observation is the one the verdict stands on.
+ */
+export function afterReplay(first: Judgement, again: Judgement): { judgement: Judgement; replay: boolean } {
+  if (again.verdict === "pass") return { judgement: { verdict: "flaky", ...(first.cause ? { cause: first.cause } : {}) }, replay: true };
+  if (again.verdict === "leak" || SAFETY_CAUSES.has(again.cause ?? "")) return { judgement: again, replay: true };
+  return { judgement: first, replay: false };
+}

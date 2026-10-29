@@ -16,13 +16,14 @@
 // (navigation to a lab host, browser launch, host rate limit) carry `lab:`.
 import { createPrivateKey } from "node:crypto";
 import type { Frame, Page } from "@playwright/test";
-import type { Expect, FieldSpec, Role, Site, World } from "../gen/model.ts";
+import type { Expect, FieldSpec, Site, World } from "../gen/model.ts";
 import { PAGE_PATH } from "../gen/render.ts";
 import type { LabEvent } from "../server/ledger.ts";
 import type { LabServer } from "../server/server.ts";
 import { focusField, type PlainBrowser, shadowField, sleep } from "./browser.ts";
 import type { Driver } from "./driver.ts";
 import { foreignFields } from "./items.ts";
+import { smartTarget } from "./target.ts";
 import type { Observation } from "./oracle.ts";
 
 /** What a scenario runs against: the autofill under test, the lab server, a fresh tab. */
@@ -299,15 +300,6 @@ async function userSubmit(env: ScenarioEnv, page: Page, scope: Frame, site: Site
 const SMART_WAIT_MS = 10_000;
 /** After a first field fills: time for the plan's other groups. */
 const SMART_SETTLE_MS = 1_500;
-/** Lab roles whose field carries the OnePass icon (content/icon.ts ICON_ROLES). */
-const ICON_ROLES = new Set<Role>(["username", "email", "password", "new_password", "otp", "cc_number", "given_name"]);
-
-/** The field whose icon the user clicks: the new password on signup, else the form's first field with an icon. */
-export function smartTarget(site: Site): FieldSpec | undefined {
-  if (site.flow === "signup") return site.fields.find((f) => f.role === "new_password");
-  return site.fields.find((f) => ICON_ROLES.has(f.role));
-}
-
 /** The menu row the user would pick for this site. */
 const menuTitle = (site: Site): string | undefined =>
   site.flow === "signup" ? GENERATE_ROW : site.cardTitle ?? site.identityTitle ?? site.itemTitle;

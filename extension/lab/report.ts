@@ -39,6 +39,9 @@ export interface Summary {
   /** One-click success per flow, current drivers against smart_fill. */
   oneClick: Record<string, OneClickPair>;
   oneClickTotal: OneClickPair;
+  /** Goal met per flow, any number of gestures, over the same scenarios as the one-click rates. */
+  goalMet: Record<string, OneClickPair>;
+  goalMetTotal: OneClickPair;
 }
 
 function emptyRate(): Rate {
@@ -83,7 +86,10 @@ export const CONTROL_DRIVER = "passkey_control";
 
 const emptyOneClick = (): OneClickPair => ({ current: { total: 0, ok: 0, rate: 0 }, smart_fill: { total: 0, ok: 0, rate: 0 } });
 
-function oneClickRates(results: Result[]): { byFlow: Record<string, OneClickPair>; total: OneClickPair } {
+const MET = new Set<Result["verdict"]>(["pass", "flaky", "xpass"]);
+
+/** Per flow and in total, current against smart_fill: `ok` counts the results `hit` accepts. */
+function pairRates(results: Result[], hit: (r: Result) => boolean): { byFlow: Record<string, OneClickPair>; total: OneClickPair } {
   const byFlow: Record<string, OneClickPair> = {};
   const total = emptyOneClick();
   for (const r of results) {
@@ -91,7 +97,7 @@ function oneClickRates(results: Result[]): { byFlow: Record<string, OneClickPair
     const side = r.driver === "smart_fill" ? "smart_fill" : "current";
     for (const pair of [(byFlow[r.flow] ??= emptyOneClick()), total]) {
       pair[side].total++;
-      if (r.oneClick) pair[side].ok++;
+      if (hit(r)) pair[side].ok++;
     }
   }
   for (const pair of [...Object.values(byFlow), total]) {
@@ -114,7 +120,8 @@ export function summarize(all: Result[]): Summary {
   const control = emptyRate();
   for (const r of checks) add(control, r.verdict);
   finish(control);
-  const oneClick = oneClickRates(results);
+  const oneClick = pairRates(results, (r) => r.oneClick === true);
+  const goalMet = pairRates(results, (r) => MET.has(r.verdict));
   return {
     overall,
     byFlow: group(results, (r) => [r.flow]),
@@ -133,6 +140,8 @@ export function summarize(all: Result[]): Summary {
     autoSubmitOutsideLogin: bySiteDriver(all.filter((r) => r.cause === "auto_submit_outside_login")),
     oneClick: oneClick.byFlow,
     oneClickTotal: oneClick.total,
+    goalMet: goalMet.byFlow,
+    goalMetTotal: goalMet.total,
   };
 }
 
@@ -160,6 +169,18 @@ function oneClickTable(s: Summary): string[] {
   ];
   for (const [flow, p] of rows) out.push(`| ${flow} | ${ratio(p.current)} | ${ratio(p.smart_fill)} |`);
   out.push(`| Total | ${ratio(s.oneClickTotal.current)} | ${ratio(s.oneClickTotal.smart_fill)} |`, "");
+  out.push(
+    "### But atteint, quel que soit le nombre de gestes",
+    "",
+    "Mêmes scénarios, but atteint (réussis, instables, réussites inattendues) : le menu des formulaires compte ici comme le plan.",
+    "",
+    "| Flux | Actuel (overlay, menu) | smart_fill |",
+    "| --- | --- | --- |",
+  );
+  for (const [flow, p] of Object.entries(s.goalMet).sort(([a], [b]) => a.localeCompare(b))) {
+    out.push(`| ${flow} | ${ratio(p.current)} | ${ratio(p.smart_fill)} |`);
+  }
+  out.push(`| Total | ${ratio(s.goalMetTotal.current)} | ${ratio(s.goalMetTotal.smart_fill)} |`, "");
   return out;
 }
 

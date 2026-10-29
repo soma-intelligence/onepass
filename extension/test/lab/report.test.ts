@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { generate, loadPatterns } from "../../lab/gen/generate.ts";
 import type { Scenario, Site } from "../../lab/gen/model.ts";
 import { isRed, renderReport, summarize } from "../../lab/report.ts";
-import { judge, type Observation, oneClickOf, type Result, type Verdict } from "../../lab/run/oracle.ts";
+import { afterReplay, judge, type Observation, oneClickOf, replayable, type Result, type Verdict } from "../../lab/run/oracle.ts";
 import type { LabEvent } from "../../lab/server/ledger.ts";
 
 function res(n: number, verdict: Verdict, over: Partial<Result> = {}): Result {
@@ -254,5 +254,44 @@ describe("smart fill metrics", () => {
     expect(isRed(auto)).toBe(true);
     expect(renderReport(world, auto, meta)).toContain("- Envois automatiques hors connexion (`auto_submit_outside_login`) : 1 (le passage est rouge)");
     expect(isRed(summarize([res(3, "leak", { cause: "leak:password:pw@evil.test" })]))).toBe(true);
+  });
+
+  it("replay_never_hides_a_safety_failure", () => {
+    const fail = (cause: string) => ({ verdict: "fail" as const, cause });
+    // A safety failure on the first attempt is final, like a nofill scenario's.
+    expect(replayable(sc(checkout), fail("wrong_item"))).toBe(false);
+    expect(replayable(sc(checkout), fail("auto_submit_outside_login"))).toBe(false);
+    expect(replayable(sc(checkout, "smart_fill", "nofill"), fail("filled_where_forbidden"))).toBe(false);
+    expect(replayable(sc(checkout), fail("timeout"))).toBe(true);
+    expect(replayable(sc(checkout), { verdict: "pass" })).toBe(false);
+    // A replay showing a violation replaces a plain first failure.
+    expect(afterReplay(fail("timeout"), fail("wrong_item"))).toEqual({ judgement: fail("wrong_item"), replay: true });
+    expect(afterReplay(fail("timeout"), fail("auto_submit_outside_login")))
+      .toEqual({ judgement: fail("auto_submit_outside_login"), replay: true });
+    expect(afterReplay(fail("timeout"), { verdict: "leak", cause: "leak:card:n@x.test" }))
+      .toEqual({ judgement: { verdict: "leak", cause: "leak:card:n@x.test" }, replay: true });
+    // A pass on the replay is flaky; another plain failure keeps the first one.
+    expect(afterReplay(fail("timeout"), { verdict: "pass" })).toEqual({ judgement: { verdict: "flaky", cause: "timeout" }, replay: true });
+    expect(afterReplay(fail("timeout"), fail("no_overlay"))).toEqual({ judgement: fail("timeout"), replay: false });
+  });
+
+  it("report_has_goal_met_rate_per_flow", () => {
+    const s = summarize([
+      res(0, "pass", { flow: "checkout_card", driver: "menu_fill", oneClick: false }),
+      res(1, "fail", { flow: "checkout_card", driver: "menu_fill", oneClick: false, cause: "timeout" }),
+      res(0, "flaky", { flow: "checkout_card", driver: "smart_fill", oneClick: false }),
+      res(1, "pass", { flow: "checkout_card", driver: "smart_fill", oneClick: true }),
+      res(2, "xfail", { flow: "login_single", driver: "one_click", oneClick: false }),
+      res(2, "xpass", { flow: "login_single", driver: "smart_fill", oneClick: true }),
+      res(3, "pass", { flow: "login_single", driver: "lookalike", expect: "nofill" }),
+    ]);
+    expect(s.goalMet.checkout_card).toEqual({ current: { total: 2, ok: 1, rate: 0.5 }, smart_fill: { total: 2, ok: 2, rate: 1 } });
+    expect(s.goalMet.login_single).toEqual({ current: { total: 1, ok: 0, rate: 0 }, smart_fill: { total: 1, ok: 1, rate: 1 } });
+    expect(s.goalMetTotal).toEqual({ current: { total: 3, ok: 1, rate: 1 / 3 }, smart_fill: { total: 3, ok: 3, rate: 1 } });
+    const md = renderReport(world, s, meta);
+    const section = md.slice(md.indexOf("## Réussite en un clic"), md.indexOf("## Taux de réussite"));
+    expect(section).toContain("### But atteint, quel que soit le nombre de gestes");
+    expect(section).toContain("| checkout_card | 1/2 (50.0 %) | 2/2 (100.0 %) |");
+    expect(section).toContain("| Total | 1/3 (33.3 %) | 3/3 (100.0 %) |");
   });
 });
