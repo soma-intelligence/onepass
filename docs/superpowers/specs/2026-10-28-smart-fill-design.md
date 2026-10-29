@@ -175,7 +175,7 @@ Fonctions pures, poids fixes dans une seule table (`fill_plan::weights`) :
 Mémoire par élément, dans une seconde remorque scellée de l'élément (`UsageTrailer`, ruling R1), après la remorque d'historique (`ItemTrailer`) :
 
 ```
-UsageTrailer { sites: [SiteUsage] }
+UsageTrailer { sites: [SiteUsage], forgotten: [(site, forgotten_at)] }
 
 SiteUsage {
   site: String,               // eTLD+1
@@ -188,11 +188,12 @@ SiteUsage {
 ```
 
 - Chiffrée et synchronisée avec l'élément, sous sa clé : pas de nouveau type d'enregistrement (les listes signées sont lisibles par le serveur). Un élément sans usage s'encode à l'octet près comme avant ; une remorque illisible ouvre l'élément sans usage.
-- Une écriture d'usage ne change jamais `updated_at` : toute vraie modification distante gagne le rebase, qui reporte l'usage local sur l'élément gagnant (union par site, `merge_usage`).
+- Une écriture d'usage ne change jamais `updated_at`, et un changement local qui ne touche que l'usage perd toujours le rebase face à une modification distante, quelles que soient les horloges ; le rebase reporte l'usage local sur l'élément gagnant (union par site, `merge_trailers`).
 - Écrite seulement après un remplissage réussi : chaîne arrivée à `done`, ou sauvegarde confirmée, ou remplissage sans envoi suivi d'une navigation du même site. Et seulement si le site est nouveau pour l'élément, si `form_shape_hash` ou `intent` a changé, ou si le dernier usage date de plus d'une heure (ruling R3).
 - Au plus 20 sites par élément, les plus récents (ruling R2) ; une entrée sans usage depuis un an est supprimée à l'écriture suivante.
 - Jamais exposé comme liste de sites par le MCP ni par la CLI (hors de la forme serde de l'élément) : les règles du guard restent les mêmes.
 - Supprimé avec l'élément ; effaçable par site depuis les réglages des apps et de l'extension (`Repository::forget_site_usage`).
+- Effacer un site laisse une pierre tombale `(site, forgotten_at)` dans la remorque : la fusion écarte toute entrée de ce site dont `last_at` n'est pas plus récent, un usage postérieur revient ; pierres tombales expirées après un an, au plus 20 (les plus récentes).
 
 ## 8. Ce que fait un clic
 

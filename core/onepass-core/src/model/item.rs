@@ -5,7 +5,7 @@ use crate::id::Id;
 use crate::model::events::ItemEvent;
 use crate::model::field::{AttachmentRef, Field, FieldValue, PasswordHistoryEntry, Section};
 use crate::model::templates::ItemType;
-use crate::model::usage::SiteUsage;
+use crate::model::usage::{Forgotten, SiteUsage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MatchRule {
@@ -100,6 +100,9 @@ pub struct Item {
     /// trailer, never in the serde form: the MCP and the CLI never see it.
     #[serde(skip)]
     pub usage: Vec<SiteUsage>,
+    /// Sites forgotten on purpose, sealed with `usage`.
+    #[serde(skip)]
+    pub usage_forgotten: Vec<Forgotten>,
 }
 
 impl Item {
@@ -224,6 +227,7 @@ mod tests {
             }],
             events: vec![],
             usage: vec![],
+            usage_forgotten: vec![],
         }
     }
 

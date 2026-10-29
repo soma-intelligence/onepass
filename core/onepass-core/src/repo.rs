@@ -1149,14 +1149,23 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// Forget `site` in every item of every vault this device opens (spec
-    /// 7, erase by site). Returns how many items were rewritten, each with
-    /// its `updated_at` unchanged.
+    /// 7, erase by site), leaving a tombstone in each so other devices'
+    /// copies do not bring it back. Best effort, vault by vault: a vault
+    /// that cannot be read or written (an alert, a lost race) is skipped
+    /// and the others still go. Returns how many items were rewritten, each
+    /// with its `updated_at` unchanged.
     pub fn forget_site_usage(&mut self, site: &str) -> Result<usize> {
+        let now = OffsetDateTime::now_utc();
         let mut rewritten = 0;
-        for vault in self.vaults()? {
-            for mut item in self.items(&vault)? {
-                if item.forget_site_usage(site) {
-                    self.save_item(&vault, item)?;
+        for vault in self.open_vaults()? {
+            let Ok(items) = self.items(&vault) else {
+                continue;
+            };
+            for mut item in items {
+                if item.forget_site_usage(site, now) {
+                    if self.save_item(&vault, item).is_err() {
+                        break;
+                    }
                     rewritten += 1;
                 }
             }

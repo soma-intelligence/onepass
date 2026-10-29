@@ -7,8 +7,10 @@
 //! (written even empty, so the usage always sits second). An item without
 //! usage is written exactly as before. A trailer a build cannot read opens
 //! the item without usage, never fails it. A usage write leaves
-//! `updated_at` alone, so any real edit from another device wins the sync
-//! rebase, which then carries the local usage over (`merge_usage`).
+//! `updated_at` alone, and the sync rebase always lets a remote edit win
+//! over a local change that touched only the usage, then carries the local
+//! usage over (`merge_trailers`). Forgetting a site leaves a tombstone in
+//! the trailer, so the union of that merge does not bring the site back.
 
 use std::collections::BTreeMap;
 
@@ -50,10 +52,16 @@ pub struct SiteUsage {
     pub last_at: OffsetDateTime,
 }
 
+/// A site forgotten on purpose, and when: an entry for it no newer than
+/// this is dropped wherever it comes from, so a forget survives the union
+/// of a sync merge.
+pub type Forgotten = (String, OffsetDateTime);
+
 /// The second trailer of a sealed item, after `ItemTrailer`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UsageTrailer {
     pub sites: Vec<SiteUsage>,
+    pub forgotten: Vec<Forgotten>,
 }
 
 /// First 16 bytes of the SHA-256 of the role names (their serde names)
@@ -91,9 +99,30 @@ fn settle(sites: &mut Vec<SiteUsage>) {
     sites.truncate(MAX_SITES);
 }
 
-/// Union by site: the larger `last_at` and `count`, the shape, intent and
-/// steps of the more recent entry. Commutative, at most `MAX_SITES`.
-pub fn merge_usage(a: &[SiteUsage], b: &[SiteUsage]) -> Vec<SiteUsage> {
+/// The newest tombstone per site, newest first then by site, at most
+/// `MAX_SITES`.
+fn settle_forgotten(forgotten: &mut Vec<Forgotten>) {
+    let mut by_site: BTreeMap<String, OffsetDateTime> = BTreeMap::new();
+    for (site, at) in forgotten.drain(..) {
+        let e = by_site.entry(site).or_insert(at);
+        *e = (*e).max(at);
+    }
+    forgotten.extend(by_site);
+    forgotten.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    forgotten.truncate(MAX_SITES);
+}
+
+/// Drop every entry at or before its site's tombstone.
+fn bury(sites: &mut Vec<SiteUsage>, forgotten: &[Forgotten]) {
+    sites.retain(|u| {
+        !forgotten
+            .iter()
+            .any(|(site, at)| *site == u.site && u.last_at <= *at)
+    });
+}
+
+/// Union by site, uncapped (see `merge_usage`).
+fn union(a: &[SiteUsage], b: &[SiteUsage]) -> Vec<SiteUsage> {
     let mut by_site: BTreeMap<&str, SiteUsage> = BTreeMap::new();
     for u in a.iter().chain(b) {
         let merged = match by_site.get(u.site.as_str()) {
@@ -106,20 +135,43 @@ pub fn merge_usage(a: &[SiteUsage], b: &[SiteUsage]) -> Vec<SiteUsage> {
         };
         by_site.insert(&u.site, merged);
     }
-    let mut out: Vec<SiteUsage> = by_site.into_values().collect();
+    by_site.into_values().collect()
+}
+
+/// Union by site: the larger `last_at` and `count`, the shape, intent and
+/// steps of the more recent entry. Commutative, at most `MAX_SITES`.
+/// Tombstones are not looked at: the sync merge uses `merge_trailers`.
+pub fn merge_usage(a: &[SiteUsage], b: &[SiteUsage]) -> Vec<SiteUsage> {
+    let mut out = union(a, b);
     settle(&mut out);
     out
+}
+
+/// Merge of two whole trailers: `merge_usage` of the sites, the newest
+/// tombstone per site (at most `MAX_SITES`, the newest), and no site whose
+/// `last_at` is at or before its tombstone. Commutative.
+pub fn merge_trailers(a: &UsageTrailer, b: &UsageTrailer) -> UsageTrailer {
+    let mut forgotten: Vec<Forgotten> = a.forgotten.iter().chain(&b.forgotten).cloned().collect();
+    settle_forgotten(&mut forgotten);
+    let mut sites = union(&a.sites, &b.sites);
+    bury(&mut sites, &forgotten);
+    settle(&mut sites);
+    UsageTrailer { sites, forgotten }
 }
 
 impl Item {
     /// Remember a fill of `u.site` at `now`. `true` when the item must be
     /// saved: the site is new for it, or its shape or intent changed, or its
-    /// last use is older than `REWRITE_AFTER_SECS`. Otherwise nothing is
-    /// written. Entries older than `USAGE_TTL_DAYS` are dropped, at most
-    /// `MAX_SITES` kept (the most recent). Never touches `updated_at`.
+    /// last use is older than `REWRITE_AFTER_SECS`, and the entry is still
+    /// there after the cap. Otherwise nothing is written. Entries and
+    /// tombstones older than `USAGE_TTL_DAYS` are dropped, at most
+    /// `MAX_SITES` of each kept (the most recent). Never touches
+    /// `updated_at`.
     pub fn note_usage(&mut self, u: SiteUsage, now: OffsetDateTime) -> bool {
         let cutoff = now - Duration::days(USAGE_TTL_DAYS);
         self.usage.retain(|e| e.last_at >= cutoff);
+        self.usage_forgotten.retain(|(_, at)| *at >= cutoff);
+        let site = u.site.clone();
         let write = match self.usage.iter_mut().find(|e| e.site == u.site) {
             None => {
                 self.usage.push(SiteUsage {
@@ -142,15 +194,44 @@ impl Item {
                 changed || stale
             }
         };
+        bury(&mut self.usage, &self.usage_forgotten);
         settle(&mut self.usage);
-        write
+        write && self.usage.iter().any(|e| e.site == site)
     }
 
-    /// Drop what this item remembers of `site`. `true` if it had any.
-    pub fn forget_site_usage(&mut self, site: &str) -> bool {
-        let before = self.usage.len();
+    /// Drop what this item remembers of `site` and leave a tombstone at
+    /// `now` (or the entry's own `last_at` if a clock ran ahead), so
+    /// another device's copy of the entry does not come back with the next
+    /// sync. `true` if it had any (the item must be saved).
+    pub fn forget_site_usage(&mut self, site: &str, now: OffsetDateTime) -> bool {
+        let Some(at) = self
+            .usage
+            .iter()
+            .filter(|e| e.site == site)
+            .map(|e| e.last_at.max(now))
+            .max()
+        else {
+            return false;
+        };
         self.usage.retain(|e| e.site != site);
-        self.usage.len() != before
+        let cutoff = now - Duration::days(USAGE_TTL_DAYS);
+        self.usage_forgotten.retain(|(_, t)| *t >= cutoff);
+        self.usage_forgotten.push((site.to_owned(), at));
+        settle_forgotten(&mut self.usage_forgotten);
+        true
+    }
+
+    /// The usage and its tombstones, as sealed.
+    pub fn usage_trailer(&self) -> UsageTrailer {
+        UsageTrailer {
+            sites: self.usage.clone(),
+            forgotten: self.usage_forgotten.clone(),
+        }
+    }
+
+    pub fn set_usage_trailer(&mut self, t: UsageTrailer) {
+        self.usage = t.sites;
+        self.usage_forgotten = t.forgotten;
     }
 }
 
@@ -207,10 +288,86 @@ mod tests {
         let mut it = item();
         it.note_usage(usage("a.com", LOGIN, T0), T0);
         it.note_usage(usage("b.com", LOGIN, T0), T0);
-        assert!(it.forget_site_usage("a.com"));
+        assert!(it.forget_site_usage("a.com", T0));
         assert_eq!(it.usage.len(), 1);
         assert_eq!(it.usage[0].site, "b.com");
-        assert!(!it.forget_site_usage("a.com"));
+        assert!(!it.forget_site_usage("a.com", T0));
+    }
+
+    #[test]
+    fn forget_leaves_a_tombstone_and_refreshes_it() {
+        let mut it = item();
+        it.note_usage(usage("a.com", LOGIN, T0), T0);
+        let t1 = T0 + Duration::hours(1);
+        assert!(it.forget_site_usage("a.com", t1));
+        assert_eq!(it.usage_forgotten, vec![("a.com".to_owned(), t1)]);
+        // Used again later: allowed, and survives its own tombstone.
+        let t2 = t1 + Duration::hours(1);
+        assert!(it.note_usage(usage("a.com", LOGIN, t2), t2));
+        assert_eq!(it.usage.len(), 1);
+        let t3 = t2 + Duration::hours(1);
+        assert!(it.forget_site_usage("a.com", t3));
+        assert_eq!(it.usage_forgotten, vec![("a.com".to_owned(), t3)]);
+    }
+
+    #[test]
+    fn merge_drops_sites_forgotten_since() {
+        let mine = UsageTrailer {
+            sites: vec![usage("b.com", LOGIN, T0)],
+            forgotten: vec![("a.com".into(), T0 + Duration::hours(2))],
+        };
+        let theirs = UsageTrailer {
+            sites: vec![
+                usage("a.com", LOGIN, T0 + Duration::hours(1)),
+                usage("c.com", LOGIN, T0),
+            ],
+            forgotten: vec![
+                ("a.com".into(), T0),
+                ("b.com".into(), T0 - Duration::hours(1)),
+            ],
+        };
+        let m = merge_trailers(&mine, &theirs);
+        let sites: Vec<&str> = m.sites.iter().map(|u| u.site.as_str()).collect();
+        assert_eq!(sites, ["b.com", "c.com"]);
+        assert!(
+            m.forgotten
+                .contains(&("a.com".into(), T0 + Duration::hours(2)))
+        );
+        assert!(!m.forgotten.contains(&("a.com".into(), T0)));
+        // A use after the forget comes back.
+        let again = UsageTrailer {
+            sites: vec![usage("a.com", LOGIN, T0 + Duration::hours(3))],
+            forgotten: vec![],
+        };
+        assert_eq!(merge_trailers(&mine, &again).sites.len(), 2);
+    }
+
+    #[test]
+    fn tombstones_expire_and_are_capped() {
+        let mut it = item();
+        for i in 0..25 {
+            let at = T0 + Duration::minutes(i);
+            let site = format!("s{i}.com");
+            it.note_usage(usage(&site, LOGIN, at), at);
+            it.forget_site_usage(&site, at);
+        }
+        assert_eq!(it.usage_forgotten.len(), MAX_SITES);
+        assert_eq!(it.usage_forgotten[0].0, "s24.com");
+        let later = T0 + Duration::days(USAGE_TTL_DAYS + 1);
+        it.note_usage(usage("new.com", LOGIN, later), later);
+        assert!(it.usage_forgotten.is_empty());
+    }
+
+    #[test]
+    fn note_usage_is_false_when_the_entry_is_capped_away() {
+        let mut it = item();
+        // Twenty sites stamped by a clock ahead of this one.
+        for i in 0..20 {
+            let at = T0 + Duration::days(1) + Duration::minutes(i);
+            it.note_usage(usage(&format!("s{i}.com"), LOGIN, at), at);
+        }
+        assert!(!it.note_usage(usage("late.com", LOGIN, T0), T0));
+        assert!(it.usage.iter().all(|u| u.site != "late.com"));
     }
 
     #[test]
@@ -254,7 +411,7 @@ mod tests {
         let mut it = item();
         let before = it.updated_at;
         it.note_usage(usage("example.com", LOGIN, T0), T0);
-        it.forget_site_usage("example.com");
+        it.forget_site_usage("example.com", T0);
         assert_eq!(it.updated_at, before);
     }
 
@@ -348,5 +505,32 @@ mod tests {
         ) {
             prop_assert_eq!(merge_usage(&a, &b), merge_usage(&b, &a));
         }
+
+        #[test]
+        fn trailer_merge_is_commutative_and_honours_tombstones(
+            a in arb_trailer(),
+            b in arb_trailer(),
+        ) {
+            let m = merge_trailers(&a, &b);
+            prop_assert_eq!(&m, &merge_trailers(&b, &a));
+            prop_assert!(m.forgotten.len() <= MAX_SITES);
+            for u in &m.sites {
+                prop_assert!(!m.forgotten.iter().any(|(s, at)| *s == u.site && u.last_at <= *at));
+            }
+        }
+    }
+
+    fn arb_trailer() -> impl Strategy<Value = UsageTrailer> {
+        (
+            prop::collection::vec(arb_usage(), 0..8),
+            prop::collection::vec((0u8..6, 0i64..5), 0..4),
+        )
+            .prop_map(|(sites, gone)| UsageTrailer {
+                sites,
+                forgotten: gone
+                    .into_iter()
+                    .map(|(s, h)| (format!("s{s}.com"), T0 + Duration::hours(h)))
+                    .collect(),
+            })
     }
 }

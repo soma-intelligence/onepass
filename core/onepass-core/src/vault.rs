@@ -96,13 +96,11 @@ fn item_aad(item_id: Id, vault_id: Id) -> Aad {
 fn encode_item(version: u64, item: &Item) -> Result<Zeroizing<Vec<u8>>> {
     const BAD: Error = Error::InvalidFormat("item");
     let value = (version, item);
-    let has_usage = !item.usage.is_empty();
+    let has_usage = !item.usage.is_empty() || !item.usage_forgotten.is_empty();
     let trailer = (!item.events.is_empty() || has_usage).then(|| ItemTrailer {
         events: item.events.clone(),
     });
-    let usage = has_usage.then(|| UsageTrailer {
-        sites: item.usage.clone(),
-    });
+    let usage = has_usage.then(|| item.usage_trailer());
     let head = postcard::experimental::serialized_size(&value).map_err(|_| BAD)?;
     let mid = match &trailer {
         Some(t) => postcard::experimental::serialized_size(t).map_err(|_| BAD)?,
@@ -128,7 +126,8 @@ fn encode_item(version: u64, item: &Item) -> Result<Zeroizing<Vec<u8>>> {
 /// `(version, item)` then, when bytes remain, an `ItemTrailer` and a
 /// `UsageTrailer`. The item itself is strict. The trailers are history and
 /// fill memory only: one this build cannot read (a variant added later, a
-/// further trailer, damage, more than `MAX_EVENTS` or `MAX_SITES` entries)
+/// further trailer, damage, more than `MAX_EVENTS` events or `MAX_SITES`
+/// sites or tombstones)
 /// leaves the item without it instead of locking it, and with it the whole
 /// vault listing, out. An unreadable `ItemTrailer` hides the usage too: its
 /// end is unknown. The bytes stay inside the sealed blob, so nobody without
@@ -146,8 +145,9 @@ fn decode_item(plain: &[u8]) -> Result<(u64, Item)> {
         if !later.is_empty()
             && let Ok((usage, _beyond)) = postcard::take_from_bytes::<UsageTrailer>(later)
             && usage.sites.len() <= crate::model::usage::MAX_SITES
+            && usage.forgotten.len() <= crate::model::usage::MAX_SITES
         {
-            item.usage = usage.sites;
+            item.set_usage_trailer(usage);
         }
     }
     Ok((version, item))
@@ -419,9 +419,20 @@ mod tests {
     }
 
     #[test]
+    fn usage_tombstones_roundtrip_alone() {
+        let (v, _, _) = vault("A");
+        let mut item = login(&v);
+        item.usage_forgotten = vec![("example.com".into(), item.created_at)];
+        let opened = v.open_item(&v.seal_item(&item, 1).unwrap()).unwrap();
+        assert_eq!(opened.usage_forgotten, item.usage_forgotten);
+        assert_eq!(opened, item);
+    }
+
+    #[test]
     fn usage_roundtrips_with_events() {
         let (v, _, _) = vault("A");
         let mut item = with_usage(login(&v));
+        item.usage_forgotten = vec![("old.example".into(), item.created_at)];
         item.record(item.created_at, EventKind::Created);
         let opened = v.open_item(&v.seal_item(&item, 1).unwrap()).unwrap();
         assert_eq!(opened.events, item.events);
@@ -435,7 +446,7 @@ mod tests {
         let mut item = login(&v);
         item.record(item.created_at, EventKind::Created);
         let mut head = encode_item(1, &item).unwrap().to_vec();
-        // Damaged: an unknown intent index.
+        // Damaged: one site whose name length runs past the end.
         let mut bad = head.clone();
         bad.extend([1, 0xff]);
         assert_eq!(decode_item(&bad).unwrap(), (1, item.clone()));
@@ -443,8 +454,17 @@ mod tests {
         let site = with_usage(item.clone()).usage.remove(0);
         let many = UsageTrailer {
             sites: vec![site; crate::model::usage::MAX_SITES + 1],
+            forgotten: vec![],
         };
-        head.extend(postcard::to_allocvec(&many).unwrap());
+        let mut over = head.clone();
+        over.extend(postcard::to_allocvec(&many).unwrap());
+        assert_eq!(decode_item(&over).unwrap(), (1, item.clone()));
+        // Too many tombstones too.
+        let gone = UsageTrailer {
+            sites: vec![],
+            forgotten: vec![("a.com".into(), item.created_at); crate::model::usage::MAX_SITES + 1],
+        };
+        head.extend(postcard::to_allocvec(&gone).unwrap());
         assert_eq!(decode_item(&head).unwrap(), (1, item));
     }
 

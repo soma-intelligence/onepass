@@ -17,7 +17,7 @@ pub use field::{
 pub use item::{Item, ItemUrl, Location, LoginMethod, MatchRule, Provider};
 pub use menus::menu_options;
 pub use templates::{ItemType, new_item, template};
-pub use usage::{SiteUsage, StepKind, UsageTrailer};
+pub use usage::{Forgotten, SiteUsage, StepKind, UsageTrailer};
 pub use validate::validate;
 
 /// Golden encodings: postcard writes an enum variant as its index (a
