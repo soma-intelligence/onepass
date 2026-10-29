@@ -235,12 +235,100 @@ impl<S: RecordStore> Repository<S> {
     }
 }
 
+/// The approver list as a locked device can prove it (agent-ready spec
+/// 6.2: the Mac sends a remote unlock request before any unlock).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockedApprovers {
+    /// The entries that count, as `Repository::approvers` filters them.
+    pub entries: Vec<ApproverEntry>,
+    /// `seq` of the device list read (0 without one).
+    pub device_list_seq: u64,
+    /// `seq` of the approver list read (0 without one).
+    pub approver_list_seq: u64,
+}
+
+/// Read the approver list without the account keys. The pinned account
+/// (`device`) gives the account id and identity; the stored account params,
+/// signed by that identity, give the account's public signing key; the
+/// device list and the approver list must each verify under that key and
+/// against the chain state this device last accepted (`chain`), so an
+/// older list replayed is a rollback here too. Nothing is written. No pin
+/// or no params is `NotFound`; no approver list is no approver.
+pub fn approvers_without_unlock<S: RecordStore>(
+    store: &S,
+    device: &crate::repo::DeviceState,
+    chain: &ChainState,
+) -> Result<LockedApprovers> {
+    use crate::lists::{APPROVER_LIST_DOMAIN, DEVICE_LIST_DOMAIN, verify};
+    let pin = device.pinned.as_ref().ok_or(Error::NotFound)?;
+    let account = pin.account_id;
+    let params = store
+        .get(RecordKind::AccountParams, account)?
+        .ok_or(Error::NotFound)?;
+    let signing = crate::account::signed_params(&params.data, Some(pin))?.signing_pub;
+    let wrong = || Error::Integrity(crate::IntegrityError::WrongContext);
+
+    let devices = match store.get(RecordKind::DeviceList, account)? {
+        Some(rec) => {
+            let body = verify::<DeviceEntry>(
+                &signing,
+                DEVICE_LIST_DOMAIN,
+                &rec.data,
+                chain.device_list.as_ref(),
+            )?;
+            if rec.id != account || body.account_id != account {
+                return Err(wrong());
+            }
+            Some(body)
+        }
+        None if chain.device_list.is_some() => {
+            return Err(crate::IntegrityError::DeviceListRollback.into());
+        }
+        None => None,
+    };
+    let list = match store.get(RecordKind::ApproverList, account)? {
+        Some(rec) => {
+            let body = verify::<ApproverEntry>(
+                &signing,
+                APPROVER_LIST_DOMAIN,
+                &rec.data,
+                chain.approver_list.as_ref(),
+            )?;
+            if rec.id != account || body.account_id != account {
+                return Err(wrong());
+            }
+            Some(body)
+        }
+        None if chain.approver_list.is_some() => {
+            return Err(crate::IntegrityError::DeviceListRollback.into());
+        }
+        None => None,
+    };
+    let live = |id: Id| {
+        devices
+            .as_ref()
+            .and_then(|d| d.entry(id))
+            .is_some_and(|d| d.revoked_at.is_none())
+    };
+    Ok(LockedApprovers {
+        device_list_seq: devices.as_ref().map_or(0, |d| d.seq),
+        approver_list_seq: list.as_ref().map_or(0, |l| l.seq),
+        entries: list
+            .map(|l| l.entries)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|e| e.is_active() && live(e.device_id))
+            .collect(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::IntegrityError;
     use crate::crypto::{HybridKemSecret, HybridSigningKey, KdfParams, random_array};
     use crate::devices::{DeviceKind, DeviceMode};
+    use crate::repo::DeviceState;
     use crate::store::{Record, RecordKind, RecordStore};
     use crate::sync::SyncStore;
 
@@ -435,6 +523,34 @@ mod tests {
         assert_eq!(
             repo.approvers().unwrap_err(),
             Error::Integrity(IntegrityError::DeviceListRollback)
+        );
+    }
+
+    #[test]
+    fn locked_read_matches_the_unlocked_one() {
+        let mut repo = repo();
+        let device = repo.device_state().clone();
+        let none = approvers_without_unlock(&repo.store, &device, repo.chain()).unwrap();
+        assert!(none.entries.is_empty());
+        assert_eq!(none.approver_list_seq, 0);
+        let (sign_pub, kem_pub) = keys();
+        repo.register_this_approver(sign_pub, kem_pub, ApproverRole::Phone)
+            .unwrap();
+        let unlocked = repo.approvers().unwrap();
+        let locked = approvers_without_unlock(&repo.store, &device, repo.chain()).unwrap();
+        assert_eq!(locked.entries, unlocked);
+        assert_eq!(locked.approver_list_seq, 1);
+        assert!(locked.device_list_seq >= 1);
+
+        // A list replayed below the one accepted is refused.
+        let mut chain = repo.chain().clone();
+        chain.approver_list.as_mut().unwrap().seq = 7;
+        assert!(approvers_without_unlock(&repo.store, &device, &chain).is_err());
+        // No pinned account proves nothing.
+        assert_eq!(
+            approvers_without_unlock(&repo.store, &DeviceState::default(), repo.chain())
+                .unwrap_err(),
+            Error::NotFound
         );
     }
 
