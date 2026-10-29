@@ -125,8 +125,10 @@ struct Shared {
 }
 
 impl Shared {
+    /// The app's session, unless it is agents-only: the browsers see a
+    /// session opened from the phone as locked (spec 6.3).
     fn session(&self) -> Option<Arc<Session>> {
-        lock(&self.session).clone()
+        lock(&self.session).clone().filter(|s| !s.is_agent_only())
     }
 }
 

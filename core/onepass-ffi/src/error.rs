@@ -10,12 +10,22 @@ pub enum OnePassError {
     NotFound,
     Conflict,
     Locked,
-    Validation { field: String, reason: String },
-    Integrity { kind: String },
-    InvalidInput { what: String },
+    Validation {
+        field: String,
+        reason: String,
+    },
+    Integrity {
+        kind: String,
+    },
+    InvalidInput {
+        what: String,
+    },
     Store,
     Crypto,
     PasskeyExcluded,
+    /// The remote unlock envelope `C` no longer opens the account (master
+    /// password changed elsewhere): erase it and enroll again.
+    RemoteUnlockStale,
 }
 
 impl fmt::Display for OnePassError {
@@ -33,6 +43,7 @@ impl fmt::Display for OnePassError {
             Self::PasskeyExcluded => {
                 f.write_str("a passkey the relying party excluded already exists")
             }
+            Self::RemoteUnlockStale => f.write_str("remote unlock must be enrolled again"),
         }
     }
 }
