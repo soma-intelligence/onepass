@@ -101,7 +101,7 @@ public enum PlaintextExportFile {
         calendar.timeZone = timeZone
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         let day = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
-        return "OnePass export non chiffré \(day).csv"
+        return String(localized: "OnePass export non chiffré \(day).csv", bundle: VaultKitStrings.bundle)
     }
 
     /// Creates `url` with mode 0600 and writes `data`; refuses an existing file (or link).

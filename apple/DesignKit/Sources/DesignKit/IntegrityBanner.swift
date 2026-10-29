@@ -33,7 +33,7 @@ public struct IntegrityBanner: View {
                 .foregroundStyle(.red)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Données refusées").font(.headline)
+                Text("Données refusées", bundle: DesignKitStrings.bundle).font(.headline)
                 Text(Self.message(for: kind)).font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -41,7 +41,7 @@ public struct IntegrityBanner: View {
         .padding(12)
         .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("Alerte d'intégrité"))
+        .accessibilityLabel(Text("Alerte d'intégrité", bundle: DesignKitStrings.bundle))
     }
 }
 

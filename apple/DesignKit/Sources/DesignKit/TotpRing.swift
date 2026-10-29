@@ -35,7 +35,7 @@ public struct TotpRing: View {
                 .trim(from: 0, to: fraction)
                 .stroke(tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            Text("\(max(remaining, 0))")
+            Text(verbatim: "\(max(remaining, 0))")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .contentTransition(.numericText(countsDown: true))
@@ -43,8 +43,8 @@ public struct TotpRing: View {
         }
         .frame(width: 28, height: 28)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Code à usage unique"))
-        .accessibilityValue(Text("encore \(max(remaining, 0)) secondes"))
+        .accessibilityLabel(Text("Code à usage unique", bundle: DesignKitStrings.bundle))
+        .accessibilityValue(Text("encore \(max(remaining, 0)) secondes", bundle: DesignKitStrings.bundle))
     }
 }
 
@@ -86,7 +86,7 @@ public struct TotpCountdown: View {
                     .rotationEffect(.degrees(-90))
             }
             .frame(width: 12, height: 12)
-            Text("\(max(remaining, 0))")
+            Text(verbatim: "\(max(remaining, 0))")
                 .font(.caption.monospacedDigit().weight(.medium))
                 .foregroundStyle(remaining <= 5 ? Color.red : Color.secondary)
                 .contentTransition(.numericText(countsDown: true))
@@ -96,8 +96,8 @@ public struct TotpCountdown: View {
         .padding(.vertical, 4)
         .background(Color.secondary.opacity(0.14), in: Capsule())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Code à usage unique"))
-        .accessibilityValue(Text("encore \(max(remaining, 0)) secondes"))
+        .accessibilityLabel(Text("Code à usage unique", bundle: DesignKitStrings.bundle))
+        .accessibilityValue(Text("encore \(max(remaining, 0)) secondes", bundle: DesignKitStrings.bundle))
     }
 }
 
