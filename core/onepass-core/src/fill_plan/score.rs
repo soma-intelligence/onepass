@@ -8,6 +8,8 @@ use super::weights::{
     DOMAIN, EXACT, FAVORITE, FREQUENCY_MAX, LAST_ON_SITE, MARGIN, RECENCY_MAX, SAME_SHAPE,
     TYPED_USERNAME,
 };
+use serde::Serialize;
+
 use crate::id::Id;
 
 const DAY: i64 = 86_400;
@@ -55,7 +57,9 @@ pub enum Tiebreak {
     FavoriteThenRecent,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Ordered: `Low < Medium < High`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Confidence {
     Low,
     Medium,
@@ -297,6 +301,29 @@ mod tests {
     fn weak_roles_cap_at_medium() {
         let v = vec![cand(1, MatchQuality::Exact)];
         assert_eq!(confidence(&v, &scores(&v), false), Confidence::Medium);
+    }
+
+    #[test]
+    fn typed_match_gives_high() {
+        let hash = [7u8; 32];
+        let mut d = cand(1, MatchQuality::Domain);
+        d.username_hash = Some(hash);
+        let v = vec![d, cand(2, MatchQuality::Other)];
+        let s: Vec<i64> = v.iter().map(|c| score(c, Some(&hash), NOW)).collect();
+        assert_eq!(confidence(&v, &s, true), Confidence::High);
+    }
+
+    #[test]
+    fn two_typed_matches_tied_is_medium() {
+        let hash = [7u8; 32];
+        let mut a = cand(1, MatchQuality::Domain);
+        a.username_hash = Some(hash);
+        let mut b = cand(2, MatchQuality::Domain);
+        b.username_hash = Some(hash);
+        let v = vec![a, b];
+        let s: Vec<i64> = v.iter().map(|c| score(c, Some(&hash), NOW)).collect();
+        assert_eq!(s[0], s[1]);
+        assert_eq!(confidence(&v, &s, true), Confidence::Medium);
     }
 
     #[test]

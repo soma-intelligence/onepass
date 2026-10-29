@@ -1,8 +1,11 @@
 //! Intent of a form, from an ordered rule table (spec 5.2): first match wins.
 
+use serde::Serialize;
+
 use super::context::{ButtonClass, FieldRole, FormContext};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Intent {
     Login,
     Signup,
