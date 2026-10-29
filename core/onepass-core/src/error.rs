@@ -27,10 +27,11 @@ pub enum IntegrityError {
     /// A vault list older than the one this device already accepted, a
     /// fork of it, or none where one was accepted.
     VaultListRollback,
-    /// Signed account params on the server far above the ones a pending
-    /// key rotation was built on: a device must not sign its rotation again
-    /// at an epoch the server picked (ruling K14).
-    ParamsEpochJump,
+    /// Another device's key rotation completed on the server first (params
+    /// and content signed by its new identity): this device's pending
+    /// rotation is dropped; follow the winner with its Secret Key (ruling
+    /// K19).
+    RotationOvertaken,
 }
 
 impl fmt::Display for IntegrityError {
@@ -52,7 +53,7 @@ impl fmt::Display for IntegrityError {
             Self::ParamsRollback => "account parameters rollback detected",
             Self::DeviceListRollback => "device list rollback detected",
             Self::VaultListRollback => "vault list rollback detected",
-            Self::ParamsEpochJump => "account parameters epoch jumped too far",
+            Self::RotationOvertaken => "another key rotation completed first",
         };
         f.write_str(s)
     }

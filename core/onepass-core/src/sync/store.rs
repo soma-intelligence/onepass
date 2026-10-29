@@ -90,9 +90,12 @@ const MAX_KNOWN_KEYS: usize = 16;
 /// rotation's transaction, cleared once the server holds params of that
 /// identity and nothing is left to push.
 const ROTATION_KEY: &str = "rotation_identity";
-/// Raised when this device signed its rotation again above params another
-/// device wrote meanwhile (a password change it overtook, ruling K16).
+/// Raised when this device's rotation goes out over params the old identity
+/// wrote meanwhile (a password change it overtook, ruling K16).
 const OVERTAKEN_KEY: &str = "password_change_overtaken";
+/// Identities this device left by a rotation (`retired_identities`): the
+/// known-keys version byte, then 32-byte fingerprints, oldest first.
+const RETIRED_KEY: &str = "retired_identities";
 const FETCH_MODE_KEY: &str = "zone.full_fetch";
 const FETCH_PLAIN: u8 = 1;
 const FETCH_RESET: u8 = 2;
@@ -403,6 +406,15 @@ fn account_pair_pushable(conn: &Connection, id: Id) -> Result<bool> {
         return Ok(false);
     };
     let base = server_params(conn, id)?;
+    // Params of another identity on the server: the keys were rotated
+    // elsewhere; a change made under the identity this device still holds
+    // never goes over them (ruling K17).
+    if let Some(base) = &base
+        && let (Some(mine), Some(theirs)) = (identity_of(&params), identity_of(base))
+        && mine != theirs
+    {
+        return Ok(false);
+    }
     Ok(match base.as_deref().map(params_epoch) {
         Some(Some(base_epoch)) => epoch > base_epoch,
         // No server params (a new account, or a zone reset that requeued
@@ -419,159 +431,309 @@ fn identity_of(data: &[u8]) -> Option<Vec<u8>> {
         .and_then(|p| postcard::to_allocvec(&p.identity_pub).ok())
 }
 
-/// Whether the key rotation of this device waits to reach the server for
-/// account `id` (ruling K13): the durable marker (`ROTATION_KEY`, set in
-/// the rotation's own transaction) names an identity, the pending params
-/// are of it, and the server's params are not. Nothing else decides it:
-/// not the restore epoch, which a rebase may drop or renumber.
-fn rotation_waiting(conn: &Connection, id: Id) -> Result<bool> {
-    let Some(mark) = meta_in(conn, ROTATION_KEY)? else {
-        return Ok(false);
-    };
-    let Some(pending) = row_data(conn, "pending", RecordKind::AccountParams, id)? else {
-        return Ok(false);
-    };
-    if identity_of(&pending).as_ref() != Some(&mark) {
-        return Ok(false);
-    }
-    let server = server_params(conn, id)?.and_then(|d| identity_of(&d));
-    Ok(server.as_ref() != Some(&mark))
+/// SHA-256 of an identity's postcard encoding (`identity_of`): the
+/// fingerprint `retired_identities` keeps.
+fn identity_fp(identity: &[u8]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out.copy_from_slice(aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, identity).as_ref());
+    out
 }
 
-/// The server's params of account `id` as a waiting rotation counts them
-/// (ruling K14): only if they verify under their own identity and are this
-/// account's. Anything else (a forged epoch, garbage) is overwritten.
+/// A key rotation of this device that is not yet whole on the server
+/// (ruling K13): the identity it leaves, the one it creates, and its
+/// params and keyset records, so that the pair can go out again if the
+/// server loses it.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct RotationMark {
+    account: Id,
+    old_identity: Vec<u8>,
+    new_identity: Vec<u8>,
+    params: Vec<u8>,
+    keyset: Vec<u8>,
+}
+
+/// Version byte of the `ROTATION_KEY` value.
+const ROTATION_MARK_VERSION: u8 = 2;
+
+fn rotation_mark(conn: &Connection) -> Result<Option<RotationMark>> {
+    Ok(
+        meta_in(conn, ROTATION_KEY)?.and_then(|v| match v.split_first() {
+            Some((&ROTATION_MARK_VERSION, body)) => match postcard::take_from_bytes(body) {
+                Ok((m, [])) => Some(m),
+                _ => None,
+            },
+            _ => None,
+        }),
+    )
+}
+
+/// The server's params of account `id` that count (rulings K14, K17): only if
+/// they verify under their own identity and are this account's. Anything
+/// else (a forged epoch, garbage) is overwritten.
 fn verified_server_params(conn: &Connection, id: Id) -> Result<Option<AccountParams>> {
     Ok(server_params(conn, id)?
         .and_then(|d| self_signed(&d).ok())
         .filter(|p| p.account_id == id))
 }
 
-/// Whether a waiting rotation's pair may go out: both rows pending, and
-/// its epoch above the server's verified params (or there are none).
-fn rotation_pushable(conn: &Connection, id: Id) -> Result<bool> {
-    let params = row_data(conn, "pending", RecordKind::AccountParams, id)?;
-    let keyset = row_data(conn, "pending", RecordKind::Keyset, id)?;
-    let (Some(params), Some(_)) = (params, keyset) else {
+/// Whether the server holds a whole rotation to the identity of `params`
+/// (ruling K19): its `KeyRotation` restore epoch, every manifest and both
+/// lists verify under that identity's signing key. Server rows only.
+fn rotation_complete(conn: &Connection, params: &AccountParams) -> Result<bool> {
+    let key = &params.signing_pub;
+    let id = params.account_id;
+    let Some(epoch) = row_data(conn, "base", RecordKind::RestoreEpoch, id)? else {
         return Ok(false);
     };
-    let Some(epoch) = params_epoch(&params) else {
+    let epoch_ok = SignedRestoreEpoch::decode(&epoch).ok().is_some_and(|e| {
+        e.verify(id, key)
+            .is_ok_and(|e| e.reason == EpochReason::KeyRotation)
+    });
+    if !epoch_ok {
         return Ok(false);
-    };
-    Ok(match verified_server_params(conn, id)? {
-        Some(server) => epoch > server.epoch,
-        None => true,
-    })
+    }
+    let mut stmt = conn
+        .prepare("SELECT data FROM base WHERE kind = ?1")
+        .map_err(store_err)?;
+    let rows = stmt
+        .query_map(params![RecordKind::Manifest.code()], |r| {
+            r.get::<_, Vec<u8>>(0)
+        })
+        .map_err(store_err)?;
+    for row in rows {
+        let data = row.map_err(store_err)?;
+        let ok = crate::manifest::SignedManifest::decode(&data)
+            .is_ok_and(|sm| crate::manifest::signed_by(&sm, key));
+        if !ok {
+            return Ok(false);
+        }
+    }
+    if let Some(list) = row_data(conn, "base", RecordKind::DeviceList, id)?
+        && verify::<crate::devices::DeviceEntry>(key, crate::lists::DEVICE_LIST_DOMAIN, &list, None)
+            .is_err()
+    {
+        return Ok(false);
+    }
+    if let Some(list) = row_data(conn, "base", RecordKind::VaultList, id)?
+        && verify::<VaultListEntry>(key, VAULT_LIST_DOMAIN, &list, None).is_err()
+    {
+        return Ok(false);
+    }
+    Ok(true)
 }
 
-/// Set the rotation marker when `writes` are a key rotation (its
-/// `KeyRotation` restore epoch with the rotated params), in the same
-/// transaction.
-fn note_rotation(tx: &Connection, writes: &[(Record, Option<u64>)]) -> Result<()> {
+/// Where this device's rotation stands against the server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RotationState {
+    /// No rotation of this device waits.
+    None,
+    /// The server holds params of the new identity.
+    Landed,
+    /// Another rotation is whole on the server (ruling K19): this one lost.
+    Overtaken,
+    /// The pair must still go out: the server holds the old identity (at
+    /// any epoch, ruling K17), unverified params, nothing, or another
+    /// rotation not yet whole.
+    Waiting,
+}
+
+fn rotation_state(conn: &Connection) -> Result<RotationState> {
+    let Some(mark) = rotation_mark(conn)? else {
+        return Ok(RotationState::None);
+    };
+    let Some(server) = verified_server_params(conn, mark.account)? else {
+        return Ok(RotationState::Waiting);
+    };
+    let identity = postcard::to_allocvec(&server.identity_pub).unwrap_or_default();
+    if identity == mark.new_identity {
+        return Ok(RotationState::Landed);
+    }
+    if identity != mark.old_identity && rotation_complete(conn, &server)? {
+        return Ok(RotationState::Overtaken);
+    }
+    Ok(RotationState::Waiting)
+}
+
+/// Whether the key rotation of this device waits to reach the server for
+/// account `id`, its pair pending: `rotation_state` is `Waiting`.
+fn rotation_waiting(conn: &Connection, id: Id) -> Result<bool> {
+    Ok(rotation_mark(conn)?.is_some_and(|m| m.account == id)
+        && rotation_state(conn)? == RotationState::Waiting)
+}
+
+/// The rotation in `writes` (a `KeyRotation` restore epoch with the
+/// rotated params and keyset), read before they are written: the mark to
+/// set in the same transaction.
+fn rotation_in(tx: &Connection, writes: &[(Record, Option<u64>)]) -> Result<Option<RotationMark>> {
     let rotation = writes.iter().any(|(r, _)| {
         r.kind == RecordKind::RestoreEpoch
             && SignedRestoreEpoch::decode(&r.data)
                 .is_ok_and(|e| e.epoch.reason == EpochReason::KeyRotation)
     });
     if !rotation {
-        return Ok(());
+        return Ok(None);
     }
-    let identity = writes
-        .iter()
-        .find(|(r, _)| r.kind == RecordKind::AccountParams)
-        .and_then(|(r, _)| identity_of(&r.data));
-    if let Some(identity) = identity {
-        tx.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
-            params![ROTATION_KEY, identity],
-        )
-        .map_err(store_err)?;
-    }
-    Ok(())
+    let find = |kind| writes.iter().find(|(r, _)| r.kind == kind).map(|(r, _)| r);
+    let (Some(params), Some(keyset)) = (find(RecordKind::AccountParams), find(RecordKind::Keyset))
+    else {
+        return Ok(None);
+    };
+    let old =
+        effective_get(tx, RecordKind::AccountParams, params.id)?.and_then(|r| identity_of(&r.data));
+    let (Some(old_identity), Some(new_identity)) = (old, identity_of(&params.data)) else {
+        return Ok(None);
+    };
+    Ok(Some(RotationMark {
+        account: params.id,
+        old_identity,
+        new_identity,
+        params: params.data.clone(),
+        keyset: keyset.data.clone(),
+    }))
 }
 
-/// Clear the rotation marker once the server holds params of the rotated
-/// identity and nothing is left to push: the rotation is whole on the
-/// server.
+/// Set the rotation mark and retire the identity it leaves, in the
+/// rotation's transaction (rulings K13, K18).
+fn note_rotation(tx: &Connection, mark: &RotationMark) -> Result<()> {
+    let mut value = vec![ROTATION_MARK_VERSION];
+    value.extend(postcard::to_allocvec(mark).map_err(|_| Error::InvalidFormat("rotation"))?);
+    tx.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+        params![ROTATION_KEY, value],
+    )
+    .map_err(store_err)?;
+    retire_in(tx, identity_fp(&mark.old_identity))
+}
+
+/// After a fetch or a push: settle this device's rotation against the
+/// server (rulings K13, K16, K17, K19).
+/// - landed, nothing left to push: the mark goes;
+/// - waiting without its pair pending (another rotation, not whole,
+///   overwrote it): the pair is queued again from the mark;
+/// - waiting over params of the old identity at an epoch at least the
+///   rotation's: a password change made there is overtaken (flag);
+/// - overtaken: left to the repository (`Repository::rebase`), which drops
+///   the rotation.
 fn settle_rotation(tx: &Connection) -> Result<()> {
-    let Some(mark) = meta_in(tx, ROTATION_KEY)? else {
+    let Some(mark) = rotation_mark(tx)? else {
         return Ok(());
     };
-    let pending: i64 = tx
-        .query_row("SELECT COUNT(*) FROM pending", [], |r| r.get(0))
-        .map_err(store_err)?;
-    if pending > 0 {
-        return Ok(());
-    }
-    let mut stmt = tx
-        .prepare("SELECT data FROM base WHERE kind = ?1 AND server_meta IS NOT NULL")
-        .map_err(store_err)?;
-    let rows = stmt
-        .query_map(params![RecordKind::AccountParams.code()], |r| {
-            r.get::<_, Vec<u8>>(0)
-        })
-        .map_err(store_err)?;
-    let mut landed = false;
-    for row in rows {
-        landed |= identity_of(&row.map_err(store_err)?).as_ref() == Some(&mark);
-    }
-    if landed {
-        tx.execute("DELETE FROM meta WHERE key = ?1", params![ROTATION_KEY])
-            .map_err(store_err)?;
+    match rotation_state(tx)? {
+        RotationState::Landed => {
+            let pending: i64 = tx
+                .query_row("SELECT COUNT(*) FROM pending", [], |r| r.get(0))
+                .map_err(store_err)?;
+            if pending == 0 {
+                tx.execute("DELETE FROM meta WHERE key = ?1", params![ROTATION_KEY])
+                    .map_err(store_err)?;
+            }
+        }
+        RotationState::Waiting => {
+            let id = mark.account;
+            let queued = row_data(tx, "pending", RecordKind::AccountParams, id)?
+                .is_some_and(|d| identity_of(&d).as_ref() == Some(&mark.new_identity));
+            if !queued {
+                for (kind, data) in [
+                    (RecordKind::AccountParams, &mark.params),
+                    (RecordKind::Keyset, &mark.keyset),
+                ] {
+                    let version = effective_version(tx, kind, id)?
+                        .unwrap_or(0)
+                        .checked_add(1)
+                        .ok_or(Error::Conflict)?;
+                    write_pending(
+                        tx,
+                        &Record {
+                            id,
+                            kind,
+                            version,
+                            data: data.clone(),
+                        },
+                    )?;
+                }
+            }
+            if let Some(server) = verified_server_params(tx, id)?
+                && postcard::to_allocvec(&server.identity_pub).unwrap_or_default()
+                    == mark.old_identity
+                && params_epoch(&mark.params).is_some_and(|e| server.epoch >= e)
+            {
+                tx.execute(
+                    "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+                    params![OVERTAKEN_KEY, &[1u8][..]],
+                )
+                .map_err(store_err)?;
+            }
+        }
+        RotationState::None | RotationState::Overtaken => {}
     }
     Ok(())
 }
 
-/// The ids of the accounts with pending params (with data).
-fn pending_params_ids(conn: &Connection) -> Result<Vec<Id>> {
-    let mut stmt = conn
-        .prepare("SELECT id FROM pending WHERE kind = ?1 AND data IS NOT NULL")
-        .map_err(store_err)?;
-    let rows = stmt
-        .query_map(params![RecordKind::AccountParams.code()], |r| {
-            r.get::<_, Vec<u8>>(0)
-        })
-        .map_err(store_err)?;
-    rows.map(|id| decode_id(id.map_err(store_err)?)).collect()
+/// Add `identity` to the retired identities (bounded, oldest out).
+fn retire_in(tx: &Connection, identity: [u8; 32]) -> Result<()> {
+    let mut retired = decode_retired(meta_in(tx, RETIRED_KEY)?.as_deref());
+    retired.retain(|r| *r != identity);
+    retired.push(identity);
+    let excess = retired.len().saturating_sub(MAX_KNOWN_KEYS);
+    retired.drain(..excess);
+    let mut bytes = vec![KNOWN_KEYS_VERSION];
+    for r in &retired {
+        bytes.extend_from_slice(r);
+    }
+    tx.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+        params![RETIRED_KEY, bytes],
+    )
+    .map_err(store_err)?;
+    Ok(())
 }
 
-/// While a rotation waits (`rotation_waiting`), only the account pair goes
-/// out, alone, and only once it is pushable (rulings K10, K13): vault keys
-/// wrapped to the new KEM key, manifests and lists signed by the new key,
-/// re-sealed items, deletions of the old ones and the epoch all wait until
-/// the server holds the new params. `None` when no rotation waits.
+fn decode_retired(bytes: Option<&[u8]>) -> Vec<[u8; 32]> {
+    let Some((&KNOWN_KEYS_VERSION, body)) = bytes.and_then(|b| b.split_first()) else {
+        return Vec::new();
+    };
+    body.as_chunks::<32>().0.to_vec()
+}
+
+/// While a rotation of this device is not whole on the server
+/// (`rotation_state`), only the account pair goes out, alone, while it
+/// waits (rulings K10, K13): vault keys, manifests, lists, re-sealed items,
+/// deletions and the epoch all wait until the server holds the new params.
+/// Overtaken by another whole rotation, nothing goes out (ruling K19).
+/// `None` when the rest may go.
 fn rotation_changes(tx: &Connection) -> Result<Option<Vec<Change>>> {
-    let mut waiting = false;
+    let state = rotation_state(tx)?;
+    if state == RotationState::Overtaken {
+        return Ok(Some(Vec::new()));
+    }
+    if state != RotationState::Waiting {
+        return Ok(None);
+    }
+    let Some(mark) = rotation_mark(tx)? else {
+        return Ok(None);
+    };
+    let id = mark.account;
     let mut out = Vec::new();
-    for id in pending_params_ids(tx)? {
-        if !rotation_waiting(tx, id)? {
-            continue;
-        }
-        waiting = true;
-        if !rotation_pushable(tx, id)? {
-            continue;
-        }
-        for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
-            let row = tx
-                .query_row(
-                    "SELECT version, data FROM pending WHERE kind = ?1 AND id = ?2",
-                    params![kind.code(), &id.0[..]],
-                    |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<Vec<u8>>>(1)?)),
-                )
-                .optional()
-                .map_err(store_err)?;
-            if let Some((version, data)) = row {
-                out.push(Change {
-                    kind,
-                    id,
-                    version: u64::try_from(version)
-                        .map_err(|_| Error::InvalidFormat("record version"))?,
-                    data,
-                });
-            }
+    for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
+        let row = tx
+            .query_row(
+                "SELECT version, data FROM pending WHERE kind = ?1 AND id = ?2",
+                params![kind.code(), &id.0[..]],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<Vec<u8>>>(1)?)),
+            )
+            .optional()
+            .map_err(store_err)?;
+        if let Some((version, data)) = row {
+            out.push(Change {
+                kind,
+                id,
+                version: u64::try_from(version)
+                    .map_err(|_| Error::InvalidFormat("record version"))?,
+                data,
+            });
         }
     }
-    Ok(waiting.then_some(out))
+    Ok(Some(out))
 }
 
 /// After a fetch: a local password change (pending account params and
@@ -583,12 +745,11 @@ fn rotation_changes(tx: &Connection) -> Result<Option<Vec<Change>>> {
 /// left without its pending params is dropped as well.
 ///
 /// A pending pair of a key rotation (`rotation_waiting`) is never dropped
-/// that way, whatever the server's epoch or identity (ruling K10): the rest
-/// of the rotation waits for it, and dropping it would leave everything
-/// sealed and signed for keys no params name. It goes only once the server
-/// holds this very pair. Otherwise it stays, blocked
-/// (`SyncStore::rotation_blocked`), until the repository signs it again
-/// above the server's epoch (`Repository::rebase`).
+/// that way, whatever the server's epoch (rulings K10, K17): the rest of
+/// the rotation waits for it, and dropping it would leave everything sealed
+/// and signed for keys no params name. It goes out over the old identity's
+/// params at its own epoch. A pending change of an identity the server no
+/// longer holds is dropped at any epoch: the keys were rotated elsewhere.
 fn settle_account_changes(tx: &Connection) -> Result<()> {
     let ids: Vec<Vec<u8>> = {
         let mut stmt = tx
@@ -613,7 +774,10 @@ fn settle_account_changes(tx: &Connection) -> Result<()> {
         let (Some(local), Some(remote)) = (params_epoch(&pending), params_epoch(&base)) else {
             continue;
         };
-        if remote < local {
+        // Params of another identity overtake a change of this one at any
+        // epoch: the keys were rotated elsewhere (ruling K17).
+        let rotated = identity_of(&pending) != identity_of(&base);
+        if remote < local && !rotated {
             continue;
         }
         for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
@@ -1333,10 +1497,16 @@ impl SyncStore {
         force: &[Id],
         keep_epoch: bool,
         force_lists: bool,
+        force_params: bool,
     ) -> Result<(DeviceState, ChainState)> {
         let tx = self.write_tx()?;
         let stored = device_state_in(&tx)?;
-        let chain = merge_chain(mem_chain, &chain_state_in(&tx)?, force_lists)?;
+        let mut chain = merge_chain(mem_chain, &chain_state_in(&tx)?, force_lists)?;
+        if force_params {
+            // A rotation followed: the epoch pinned under the identity left
+            // counts for nothing (ruling K17).
+            chain.params_epoch = mem_chain.params_epoch;
+        }
         let pinned = match (mem.pinned.clone(), stored.pinned) {
             (Some(mut mine), Some(theirs))
                 if mine.account_id == theirs.account_id
@@ -1603,30 +1773,31 @@ impl SyncStore {
         self.read(held_epoch)
     }
 
-    /// The version (epoch number) of the restore epoch written here and not
-    /// yet pushed, if any.
-    /// The server's params epoch when a key rotation of this device waits
-    /// and its pending params can no longer go out (the server's epoch is at
-    /// least theirs, ruling K10), `None` otherwise. The repository then signs
-    /// the pair again above that epoch (`Repository::reissue_rotation`).
-    pub(crate) fn rotation_blocked(&self) -> Result<Option<(Id, u64)>> {
-        self.read(|c| {
-            for id in pending_params_ids(c)? {
-                if !rotation_waiting(c, id)? || rotation_pushable(c, id)? {
-                    continue;
-                }
-                if let Some(server) = verified_server_params(c, id)? {
-                    return Ok(Some((id, server.epoch)));
-                }
-            }
-            Ok(None)
-        })
+    /// Whether a key rotation of this device is not yet whole on the
+    /// server (the mark of `rotation_state` is set).
+    pub(crate) fn rotation_marked(&self) -> Result<bool> {
+        self.read(|c| Ok(rotation_mark(c)?.is_some()))
     }
 
-    /// Whether a key rotation of this device is not yet whole on the server
-    /// (the marker of `rotation_waiting` is set).
-    pub(crate) fn rotation_marked(&self) -> Result<bool> {
-        self.read(|c| Ok(meta_in(c, ROTATION_KEY)?.is_some()))
+    /// Whether another device's rotation is whole on the server while this
+    /// device's is not (ruling K19).
+    pub(crate) fn rotation_overtaken(&self) -> Result<bool> {
+        self.read(|c| Ok(rotation_state(c)? == RotationState::Overtaken))
+    }
+
+    /// Drop this device's rotation, overtaken (ruling K19): every pending
+    /// change, the account pair included, and the mark. The device then
+    /// follows the winner (`Repository::unlock_after_rotation`).
+    pub(crate) fn abandon_rotation(&mut self) -> Result<()> {
+        self.discard_local_changes()?;
+        let tx = self.write_tx()?;
+        for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
+            tx.execute("DELETE FROM pending WHERE kind = ?1", params![kind.code()])
+                .map_err(store_err)?;
+        }
+        tx.execute("DELETE FROM meta WHERE key = ?1", params![ROTATION_KEY])
+            .map_err(store_err)?;
+        tx.commit()
     }
 
     /// The pending restore epoch, decoded (this device's own row), when it
@@ -1644,24 +1815,6 @@ impl SyncStore {
             Ok(data
                 .and_then(|d| SignedRestoreEpoch::decode(&d).ok())
                 .filter(|e| e.epoch.reason == EpochReason::KeyRotation))
-        })
-    }
-
-    /// The epoch number of the server's restore epoch record, decoded, not
-    /// verified (it may be signed by a key this device no longer has).
-    pub(crate) fn server_epoch_number(&self) -> Result<Option<u64>> {
-        self.read(|c| {
-            let data = c
-                .query_row(
-                    "SELECT data FROM base WHERE kind = ?1",
-                    params![RecordKind::RestoreEpoch.code()],
-                    |r| r.get::<_, Vec<u8>>(0),
-                )
-                .optional()
-                .map_err(store_err)?;
-            Ok(data
-                .and_then(|d| SignedRestoreEpoch::decode(&d).ok())
-                .map(|e| e.epoch.epoch))
         })
     }
 
@@ -1685,13 +1838,9 @@ impl SyncStore {
         tx.commit()
     }
 
-    /// Raise the flag read by `take_password_change_overtaken` (ruling K16).
-    pub(crate) fn note_password_change_overtaken(&mut self) -> Result<()> {
-        self.set_meta(OVERTAKEN_KEY, &[1])
-    }
-
     /// Whether this device's key rotation overtook a password change made
-    /// on another device (its rotation was signed again above it) since the
+    /// on another device (the old identity wrote at an epoch at least the
+    /// rotation's, ruling K16) since the
     /// last call; reading clears it. That password no longer opens the
     /// account: the app says so with the new Emergency Kit.
     pub fn take_password_change_overtaken(&mut self) -> Result<bool> {
@@ -1704,6 +1853,8 @@ impl SyncStore {
         Ok(raised)
     }
 
+    /// The version (epoch number) of the restore epoch written here and not
+    /// yet pushed, if any.
     pub(crate) fn pending_epoch(&self) -> Result<Option<u64>> {
         self.read(|c| {
             c.query_row(
@@ -2246,7 +2397,7 @@ fn cause_code(e: IntegrityError) -> u8 {
         IntegrityError::ParamsRollback => 13,
         IntegrityError::DeviceListRollback => 14,
         IntegrityError::VaultListRollback => 15,
-        IntegrityError::ParamsEpochJump => 16,
+        IntegrityError::RotationOvertaken => 16,
     }
 }
 
@@ -2268,7 +2419,7 @@ fn cause_of(code: u8) -> Option<IntegrityError> {
         13 => IntegrityError::ParamsRollback,
         14 => IntegrityError::DeviceListRollback,
         15 => IntegrityError::VaultListRollback,
-        16 => IntegrityError::ParamsEpochJump,
+        16 => IntegrityError::RotationOvertaken,
         _ => return None,
     })
 }
@@ -3012,6 +3163,7 @@ impl RecordStore for SyncStore {
             check_size(&r.data)?;
         }
         let tx = self.write_tx()?;
+        let rotation = rotation_in(&tx, &writes)?;
         for (r, expected) in &writes {
             if effective_version(&tx, r.kind, r.id)? != *expected {
                 return Err(Error::Conflict);
@@ -3021,7 +3173,9 @@ impl RecordStore for SyncStore {
         for (kind, id) in deletes {
             delete_in(&tx, kind, id)?;
         }
-        note_rotation(&tx, &writes)?;
+        if let Some(mark) = rotation {
+            note_rotation(&tx, &mark)?;
+        }
         tx.commit()
     }
 
@@ -3134,6 +3288,20 @@ impl RecordStore for SyncStore {
         for id in unlisted {
             delete_in(&tx, RecordKind::Item, *id)?;
         }
+        tx.commit()
+    }
+
+    fn keeps_known_keys(&self) -> bool {
+        true
+    }
+
+    fn retired_identities(&self) -> Result<Vec<[u8; 32]>> {
+        self.read(|c| Ok(decode_retired(meta_in(c, RETIRED_KEY)?.as_deref())))
+    }
+
+    fn retire_identity(&mut self, identity: [u8; 32]) -> Result<()> {
+        let tx = self.write_tx()?;
+        retire_in(&tx, identity)?;
         tx.commit()
     }
 
@@ -4652,7 +4820,7 @@ mod tests {
         ParamsRollback,
         DeviceListRollback,
         VaultListRollback,
-        ParamsEpochJump,
+        RotationOvertaken,
     );
 
     #[test]
@@ -4973,7 +5141,7 @@ mod tests {
             device_id: None,
         };
         let (_, chain) = s
-            .merge_device_state(&DeviceState::default(), &stale, &[], false, false)
+            .merge_device_state(&DeviceState::default(), &stale, &[], false, false, false)
             .unwrap();
         assert_eq!(chain, stored);
         assert_eq!(s.chain_state().unwrap(), stored);
