@@ -1043,11 +1043,21 @@ public final class VaultSession {
     }
 
     /// "Oublier les choix pour un site": forgets `site` in every item of the visible vaults (other
-    /// devices drop it at the next sync). Returns how many items were rewritten.
+    /// devices drop it at the next sync). Returns how many items were rewritten. Throws when any
+    /// vault could not be read or written; the core still went through the others, so the lists are
+    /// reloaded and the writes made are sent before the error is thrown.
     @discardableResult
     public func forgetSiteUsage(site: String) async throws -> Int {
         let excluded = excludedVaultIDs
-        return Int(try await write { try $0.forgetSiteUsage(site: site, excludedVaultIds: excluded) })
+        do {
+            return Int(try await write { try $0.forgetSiteUsage(site: site, excludedVaultIds: excluded) })
+        } catch {
+            if state == .unlocked {
+                await reload()
+                notifySync { await $0.localChangesWritten() }
+            }
+            throw error
+        }
     }
 
     /// Creates a passkey (key pair generated and kept by the core) in an existing Login or a new one,

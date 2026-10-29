@@ -198,7 +198,10 @@ struct ForgetSiteChoices: View {
             try await model.session.forgetSiteUsage(site: site)
             await reload()
         } catch {
-            errorMessage = VaultError(error).localizedMessage
+            // Never shown as done: some vaults may still remember the site.
+            let message = VaultError(error).localizedMessage
+            await reload()
+            errorMessage = message
         }
     }
 }

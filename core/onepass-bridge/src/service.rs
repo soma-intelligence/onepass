@@ -13,7 +13,7 @@ use onepass_core::fill_plan::compose::PRIORITY;
 use onepass_core::fill_plan::context::{FieldRole, FrameKind, MAX_FIELDS, PageContext};
 use onepass_core::fill_plan::intent::{Intent, intent_of};
 use onepass_core::fill_plan::score::{Candidate, MatchQuality as PlanQuality, Tiebreak, order};
-use onepass_core::fill_plan::{Pool, plan};
+use onepass_core::fill_plan::{Pool, page_intent, plan};
 use onepass_core::generator::{self, CharsetOptions, PassphraseOptions, Wordlist};
 use onepass_core::model::usage::{SiteUsage, form_shape_hash};
 use onepass_core::model::{
@@ -32,7 +32,7 @@ use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
 use crate::policy::{
     card_values, eligible, identity_values, is_provider_account, item_match, login_identifier,
-    login_secrets, plan_candidates, plan_quality, provider_url_matches, reveal_value,
+    login_secrets, otp_field, plan_candidates, plan_quality, provider_url_matches, reveal_value,
     stored_password, summarize, summary_kind, to_candidate, totp_now,
 };
 use crate::provider::{ProviderId, from_host};
@@ -963,8 +963,13 @@ impl<V: VaultAccess> Service<V> {
         let shape = main_roles(context).map(|roles| form_shape_hash(&roles));
         let all = self.items()?;
         let usable = || all.iter().map(|(_, i)| i).filter(|i| eligible(i));
+        // A code page is filled from a Login holding a code only, and the
+        // one used here last is found among those (as the system AutoFill
+        // does for a one-time code).
+        let otp = page_intent(context) == Intent::Otp;
         let logins: Vec<(&Item, PlanQuality)> = usable()
             .filter(|i| i.item_type == ItemType::Login)
+            .filter(|i| !otp || otp_field(i).is_some())
             .filter_map(|i| item_match(i, &page).map(|q| (i, plan_quality(Some(q)))))
             .collect();
         let of_kind = |k: SummaryKind| -> Vec<(&Item, PlanQuality)> {

@@ -403,14 +403,23 @@ impl VaultAccess for AppVault<'_> {
         // Vaults hidden from the extension keep their memory, as they are
         // never read nor written from here.
         let excluded = lock(&self.0.excluded).clone();
-        let rewritten = self
+        let result = self
             .session()?
-            .with(|repo| Ok(repo.forget_site_usage_in(site, |v| !excluded.contains(&v.id))?))
-            .map_err(bridge_error)?;
-        if rewritten > 0 {
-            self.0.delegate.vault_changed();
+            .with(|repo| Ok(repo.forget_site_usage_in(site, |v| !excluded.contains(&v.id))?));
+        match result {
+            Ok(rewritten) => {
+                if rewritten > 0 {
+                    self.0.delegate.vault_changed();
+                }
+                Ok(rewritten)
+            }
+            Err(e) => {
+                // Best effort: other vaults may have been rewritten before
+                // the failure.
+                self.0.delegate.vault_changed();
+                Err(bridge_error(e))
+            }
         }
-        Ok(rewritten)
     }
 }
 

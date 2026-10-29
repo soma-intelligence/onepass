@@ -335,6 +335,7 @@ pub(crate) fn to_candidate(item: &Item, q: FfiMatchQuality) -> Candidate {
         title: item.title.clone(),
         username_hash: None,
         usage: None,
+        has_totp: filled(item, "totp"),
     }
 }
 
@@ -642,7 +643,8 @@ impl Session {
     /// Forget `site` (a domain or a URL, reduced to its registrable domain)
     /// in every item of the vaults not excluded, as the bridge's
     /// `forget_site` does (`Repository::forget_site_usage_in`, best effort).
-    /// Returns how many items were rewritten.
+    /// Returns how many items were rewritten; an error when any vault could
+    /// not be read or written (the others were still rewritten).
     pub fn forget_site_usage(
         &self,
         site: String,

@@ -1177,6 +1177,37 @@ fn plan_fill_audit_has_no_refs() {
 }
 
 #[test]
+fn plan_fill_otp_page_uses_the_login_holding_a_code() {
+    let mut h = H::new();
+    let (a, b) = twins(&mut h);
+    let item = h
+        .svc
+        .vault_mut()
+        .items
+        .iter_mut()
+        .find(|i| i.id == b)
+        .unwrap();
+    item.field_mut("totp").unwrap().value =
+        FieldValue::Otp(format!("otpauth://totp/Twin:tom?secret={TOTP_SECRET}&issuer=Twin").into());
+    // B (with a code) signed in here, then A (without one), last.
+    ok(&h.call(note(b, TWIN)));
+    ok(&h.call_at(note(a, TWIN), NOW + 60));
+    let code_page = json!({"origin":TWIN,"top_origin":TWIN,"frame_kind":"top",
+        "typed_username_hash":null,
+        "forms":[{"form_ref":"form-otp","intent_hints":{"kind":"otp","signup_words":false,
+            "reset_words":false,"checkout_words":false,"ignore":false},"step_index":null,
+            "fields":[{"field_ref":"ref-otp","role":"otp","confidence":0.9,"visible":true,
+                       "prefilled":"empty"}],
+            "buttons":[{"button_ref":"ref-go","class":"submit"}]}]});
+    let v = h.call_at(plan_req(TWIN, code_page), NOW + 120);
+    let plan = &ok(&v)["plan"];
+    assert_eq!(plan["intent"], "otp", "{plan}");
+    assert_eq!(plan["groups"][0]["item_id"], id(b), "{plan}");
+    assert_eq!(plan["action"], "fill_and_submit", "{plan}");
+    assert_eq!(plan["alternatives"], json!([]), "{plan}");
+}
+
+#[test]
 fn forget_site_only_from_popup() {
     let mut h = H::new();
     let (_, b) = twins(&mut h);
