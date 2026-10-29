@@ -77,8 +77,9 @@ pub struct AuditEntry {
     pub decision: String,
     /// Result of the action (free-form label).
     pub outcome: String,
-    /// Where the approval was given: `mac` or `phone:<device_id>`. Absent
-    /// in entries written before it existed and when nobody was asked.
+    /// Where the request was answered, allow or deny: `mac` or
+    /// `phone:<device_id>`. Absent in entries written before it existed and
+    /// when nobody was asked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approved_on: Option<String>,
 }

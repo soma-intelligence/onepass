@@ -288,10 +288,8 @@ fn mcp_stdio_end_to_end() {
     assert_eq!(s.notices.len(), 1, "{:?}", s.notices);
     for n in &s.notices {
         let text = n["params"]["data"].as_str().unwrap();
-        assert!(
-            text.starts_with("Approve on your Mac or iPhone. Code: "),
-            "{n}"
-        );
+        // The terminal's challenge never goes to the client.
+        assert_eq!(text, "Approve in the terminal running onepass mcp.", "{n}");
         assert!(!n.to_string().contains(SERVER_PW));
     }
 

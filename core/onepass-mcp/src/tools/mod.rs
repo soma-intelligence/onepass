@@ -133,9 +133,15 @@ impl Refusal {
 }
 
 /// The text sent to the agent while a human is asked. Fixed: it never
-/// carries a name, a target or a value, only the confirmation code.
-pub(crate) fn pending_text(code: &str) -> String {
-    format!("Approve on your Mac or iPhone. Code: {code}")
+/// carries a name, a target or a value, only the confirmation code (and
+/// that only when the approver's code is public).
+pub(crate) fn pending_text(code: Option<&str>) -> String {
+    match code {
+        Some(code) => format!("Approve on your Mac or iPhone. Code: {code}"),
+        // The user types the code on a terminal the client may share: it
+        // must not reach the client.
+        None => "Approve in the terminal running onepass mcp.".to_owned(),
+    }
 }
 
 /// Where a call announces that it waits for an approval.
@@ -148,7 +154,7 @@ pub(crate) struct Notice<'n> {
 
 impl Notice<'_> {
     /// Sends the pending-approval notice for `code`.
-    pub(crate) fn pending(&mut self, code: &str) {
+    pub(crate) fn pending(&mut self, code: Option<&str>) {
         let text = pending_text(code);
         let msg = match &self.token {
             Some(token) => json!({
@@ -170,6 +176,10 @@ impl Notice<'_> {
 pub(crate) struct SharedApprover(pub(crate) Arc<dyn Approver>);
 
 impl Approver for SharedApprover {
+    fn code_is_public(&self) -> bool {
+        self.0.code_is_public()
+    }
+
     fn approve(&self, req: &ApprovalRequest) -> Answer {
         self.0.approve(req)
     }
