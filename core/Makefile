@@ -23,10 +23,11 @@ deny:
 audit:
 	cargo audit
 
-# Supply-chain audits (supply-chain/). Not part of `check`: it fetches the
-# imported audit sets from the network. CI runs it.
+# Supply-chain audits (supply-chain/), against the imported audit sets in
+# supply-chain/imports.lock, as CI runs it. `cargo vet regenerate imports`
+# refreshes them from the network.
 vet:
-	cargo vet
+	cargo vet --locked
 
 # CycloneDX SBOM per workspace crate, written next to each crate then moved to
 # target/sbom/. Needs cargo-cyclonedx (cargo install --locked cargo-cyclonedx).
