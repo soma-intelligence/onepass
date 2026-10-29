@@ -1129,7 +1129,10 @@ impl<S: RecordStore> Repository<S> {
     /// Remember a fill of `u.site` by this item (`Item::note_usage`). The
     /// item is saved only when the memory changed enough to be worth a
     /// write (`true`), with its `updated_at` unchanged: a usage write never
-    /// beats a real edit from another device.
+    /// beats a real edit from another device. The write is forced when
+    /// another item of the vault used the site after this item's entry, so
+    /// this item becomes the last used there again (A, B, then A within the
+    /// hour). Other items that do not open are skipped for that check.
     pub fn record_usage(
         &mut self,
         vault: &Vault,
@@ -1141,7 +1144,16 @@ impl<S: RecordStore> Repository<S> {
         let loaded = self.served(vault, Use::Write)?;
         let (_, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
         let mut item = vault.open_item(rec)?;
-        if !item.note_usage(u, now) {
+        let force = item.site_last_at(&u.site).is_some_and(|own| {
+            loaded
+                .records
+                .iter()
+                .filter(|(_, r)| r.item_id != item_id)
+                .filter_map(|(_, r)| vault.open_item(r).ok())
+                .filter_map(|other| other.site_last_at(&u.site))
+                .any(|at| at > own)
+        });
+        if !item.note_usage_with(u, now, force) {
             return Ok(false);
         }
         self.save_item(vault, item)?;
@@ -1155,9 +1167,19 @@ impl<S: RecordStore> Repository<S> {
     /// and the others still go. Returns how many items were rewritten, each
     /// with its `updated_at` unchanged.
     pub fn forget_site_usage(&mut self, site: &str) -> Result<usize> {
+        self.forget_site_usage_in(site, |_| true)
+    }
+
+    /// `forget_site_usage` over the vaults `keep` accepts only (an app
+    /// leaves out the vaults it hides from the extension).
+    pub fn forget_site_usage_in(
+        &mut self,
+        site: &str,
+        keep: impl Fn(&Vault) -> bool,
+    ) -> Result<usize> {
         let now = OffsetDateTime::now_utc();
         let mut rewritten = 0;
-        for vault in self.open_vaults()? {
+        for vault in self.open_vaults()?.into_iter().filter(|v| keep(v)) {
             let Ok(items) = self.items(&vault) else {
                 continue;
             };
@@ -1738,6 +1760,39 @@ mod tests {
     }
 
     #[test]
+    fn usage_a_b_a_within_the_hour_rewrites_a() {
+        use crate::fill_plan::context::FieldRole;
+        use crate::fill_plan::intent::Intent;
+        use crate::model::usage::{StepKind, form_shape_hash};
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let (a, b) = (login(&v, "alice"), login(&v, "bob"));
+        repo.save_item(&v, a.clone()).unwrap();
+        repo.save_item(&v, b.clone()).unwrap();
+        let t0 = OffsetDateTime::now_utc();
+        let u = |at: OffsetDateTime| SiteUsage {
+            site: "a.com".into(),
+            form_shape_hash: form_shape_hash(&[FieldRole::Username]),
+            intent: Intent::Login,
+            step_seq: vec![StepKind::Fill],
+            count: 1,
+            last_at: at,
+        };
+        let min = time::Duration::minutes;
+        let (t10, t20) = (t0 + min(10), t0 + min(20));
+        assert!(repo.record_usage(&v, a.id, u(t0), t0).unwrap());
+        assert!(repo.record_usage(&v, b.id, u(t10), t10).unwrap());
+        // B used the site after A's entry: A is rewritten within the hour.
+        assert!(repo.record_usage(&v, a.id, u(t20), t20).unwrap());
+        let items = repo.items(&v).unwrap();
+        let last = |id: Id| items.iter().find(|i| i.id == id).unwrap().usage[0].last_at;
+        assert_eq!(last(a.id), t20);
+        assert_eq!(last(b.id), t10);
+        // A is now the newest: a repeat within the hour writes nothing.
+        let t25 = t0 + min(25);
+        assert!(!repo.record_usage(&v, a.id, u(t25), t25).unwrap());
+    }
+
+    #[test]
     fn usage_writes_only_when_worth_it_and_forgets_by_site() {
         use crate::fill_plan::context::FieldRole;
         use crate::fill_plan::intent::Intent;
@@ -1767,6 +1822,9 @@ mod tests {
         assert_eq!(stored.updated_at, item.updated_at);
         assert_eq!(stored.usage.len(), 2);
 
+        // A vault left out keeps its memory.
+        assert_eq!(repo.forget_site_usage_in("a.com", |_| false).unwrap(), 0);
+        assert_eq!(repo.items(&v).unwrap()[0].usage.len(), 2);
         assert_eq!(repo.forget_site_usage("a.com").unwrap(), 1);
         assert_eq!(repo.forget_site_usage("a.com").unwrap(), 0);
         let stored = repo.items(&v).unwrap().remove(0);

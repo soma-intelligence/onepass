@@ -168,6 +168,13 @@ impl Item {
     /// `MAX_SITES` of each kept (the most recent). Never touches
     /// `updated_at`.
     pub fn note_usage(&mut self, u: SiteUsage, now: OffsetDateTime) -> bool {
+        self.note_usage_with(u, now, false)
+    }
+
+    /// `note_usage`, with `force` rewriting a known entry within
+    /// `REWRITE_AFTER_SECS` too: another item used the site after this one,
+    /// so this entry must become the newest again (`Repository::record_usage`).
+    pub fn note_usage_with(&mut self, u: SiteUsage, now: OffsetDateTime, force: bool) -> bool {
         let cutoff = now - Duration::days(USAGE_TTL_DAYS);
         self.usage.retain(|e| e.last_at >= cutoff);
         self.usage_forgotten.retain(|(_, at)| *at >= cutoff);
@@ -184,19 +191,28 @@ impl Item {
             Some(e) => {
                 let changed = e.form_shape_hash != u.form_shape_hash || e.intent != u.intent;
                 let stale = now - e.last_at >= Duration::seconds(REWRITE_AFTER_SECS);
-                if changed || stale {
+                let write = changed || stale || force;
+                if write {
                     *e = SiteUsage {
                         count: e.count.saturating_add(1),
                         last_at: now.max(e.last_at),
                         ..u
                     };
                 }
-                changed || stale
+                write
             }
         };
         bury(&mut self.usage, &self.usage_forgotten);
         settle(&mut self.usage);
         write && self.usage.iter().any(|e| e.site == site)
+    }
+
+    /// When this item last filled `site`, if it remembers it.
+    pub fn site_last_at(&self, site: &str) -> Option<OffsetDateTime> {
+        self.usage
+            .iter()
+            .find(|e| e.site == site)
+            .map(|e| e.last_at)
     }
 
     /// Drop what this item remembers of `site` and leave a tombstone at
@@ -378,6 +394,16 @@ mod tests {
         assert!(!it.note_usage(usage("example.com", LOGIN, later), later));
         assert_eq!(it.usage[0].count, 1);
         assert_eq!(it.usage[0].last_at, T0);
+    }
+
+    #[test]
+    fn forced_write_within_hour_moves_last_at() {
+        let mut it = item();
+        it.note_usage(usage("example.com", LOGIN, T0), T0);
+        let later = T0 + Duration::minutes(20);
+        assert!(it.note_usage_with(usage("example.com", LOGIN, later), later, true));
+        assert_eq!(it.usage[0].count, 2);
+        assert_eq!(it.usage[0].last_at, later);
     }
 
     #[test]

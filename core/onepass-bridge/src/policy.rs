@@ -4,6 +4,8 @@
 //! A summary never holds a secret. A fill gives only fields marked for
 //! autofill, and the current TOTP code, never the TOTP secret.
 
+use std::cmp::Reverse;
+
 use onepass_core::Id;
 use onepass_core::fill_plan::score::{
     Candidate, CandidateKind, MatchQuality as PlanQuality, UsageSignal,
@@ -89,7 +91,8 @@ pub fn username_hash(salt: &[u8; 32], username: &str) -> [u8; 32] {
 }
 
 /// Candidates of one kind for `fill_plan::plan`, with their memory of
-/// `site`: `last_on_site` for the entry used last among them, `same_shape`
+/// `site`: `last_on_site` for the one entry used last among them (a tie
+/// to the higher count, then the lowest item id), `same_shape`
 /// when the entry saw `shape` (the main form's roles). A login also
 /// carries the salted hash of its identifier.
 pub fn plan_candidates(
@@ -103,9 +106,9 @@ pub fn plan_candidates(
     }
     let last = items
         .iter()
-        .filter_map(|(i, _)| entry(i, site))
-        .map(|u| u.last_at)
-        .max();
+        .filter_map(|(i, _)| entry(i, site).map(|u| (u.last_at, u.count, Reverse(i.id), i.id)))
+        .max()
+        .map(|(.., id)| id);
     items
         .iter()
         .map(|(i, q)| {
@@ -114,7 +117,7 @@ pub fn plan_candidates(
                 c.username_hash = login_identifier(i).map(|u| username_hash(salt, u));
             }
             c.usage = entry(i, site).map(|u| UsageSignal {
-                last_on_site: Some(u.last_at) == last,
+                last_on_site: Some(i.id) == last,
                 same_shape: Some(u.form_shape_hash) == shape,
                 count: u.count,
                 last_at: u.last_at.unix_timestamp(),

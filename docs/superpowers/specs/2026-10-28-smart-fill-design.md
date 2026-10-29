@@ -166,7 +166,7 @@ Fonctions pures, poids fixes dans une seule table (`fill_plan::weights`) :
 
 ### 6.4 Composition
 
-- **Paiement** : carte par défaut ou carte utilisée la dernière fois sur ce site ; identité utilisée ici, sinon celle dont le pays correspond aux indices de la page ou à la langue ; e-mail de l'identité, sinon celui du Login du site.
+- **Paiement** : carte utilisée la dernière fois sur ce site, sinon la favorite puis la plus récente (le modèle n'a pas de carte par défaut) ; identité utilisée ici, sinon celle dont le pays correspond aux indices de la page ou à la langue ; e-mail de l'identité, sinon celui du Login du site.
 - **Inscription** : mot de passe généré par `generator.rs` selon les règles du site quand la page les donne (`pattern`, `maxlength`), plus l'identité principale. L'enregistrement passe par le flux de sauvegarde existant (`chain/save-flow.ts`).
 - **Réinitialisation** : mot de passe actuel du Login du site plus un nouveau mot de passe généré.
 

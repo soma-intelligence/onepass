@@ -399,9 +399,12 @@ impl VaultAccess for AppVault<'_> {
     }
 
     fn forget_site_usage(&mut self, site: &str) -> onepass_bridge::Result<usize> {
+        // Vaults hidden from the extension keep their memory, as they are
+        // never read nor written from here.
+        let excluded = lock(&self.0.excluded).clone();
         let rewritten = self
             .session()?
-            .with(|repo| Ok(repo.forget_site_usage(site)?))
+            .with(|repo| Ok(repo.forget_site_usage_in(site, |v| !excluded.contains(&v.id))?))
             .map_err(bridge_error)?;
         if rewritten > 0 {
             self.0.delegate.vault_changed();

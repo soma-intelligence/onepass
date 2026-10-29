@@ -383,12 +383,22 @@ impl VaultAccess for FakeVault {
         u: SiteUsage,
         now: OffsetDateTime,
     ) -> Result<bool> {
+        // As `Repository::record_usage`: forced when another item of the
+        // vault used the site after this one.
+        let vault = self.item(item_id).vault_id;
+        let own = self.item(item_id).site_last_at(&u.site);
+        let force = self
+            .items
+            .iter()
+            .filter(|i| i.id != item_id && i.vault_id == vault)
+            .filter_map(|i| i.site_last_at(&u.site))
+            .any(|at| own.is_some_and(|o| at > o));
         let item = self
             .items
             .iter_mut()
             .find(|i| i.id == item_id)
             .ok_or(BridgeError::App(AppErrorCode::NotFound))?;
-        Ok(item.note_usage(u, now))
+        Ok(item.note_usage_with(u, now, force))
     }
 
     fn forget_site_usage(&mut self, site: &str) -> Result<usize> {

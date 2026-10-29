@@ -10,7 +10,7 @@ use std::str::FromStr;
 
 use onepass_core::Id;
 use onepass_core::fill_plan::compose::PRIORITY;
-use onepass_core::fill_plan::context::{FieldRole, MAX_FIELDS, PageContext};
+use onepass_core::fill_plan::context::{FieldRole, FrameKind, MAX_FIELDS, PageContext};
 use onepass_core::fill_plan::intent::{Intent, intent_of};
 use onepass_core::fill_plan::score::{Candidate, MatchQuality as PlanQuality, Tiebreak, order};
 use onepass_core::fill_plan::{Pool, plan};
@@ -947,6 +947,15 @@ impl<V: VaultAccess> Service<V> {
             return Err(AppErrorCode::OriginMismatch);
         }
         context.validate().map_err(|_| AppErrorCode::Invalid)?;
+        // A top frame is its own top: anything else is a forged context.
+        if context.frame_kind == FrameKind::Top
+            && Origin::parse(&context.top_origin)
+                .ok()
+                .map(|t| t.origin_string())
+                != Some(page.origin_string())
+        {
+            return Err(AppErrorCode::Invalid);
+        }
         let site = page.site();
         let shape = main_roles(context).map(|roles| form_shape_hash(&roles));
         let all = self.items()?;
@@ -987,7 +996,9 @@ impl<V: VaultAccess> Service<V> {
         Ok(Response::Plan { plan: fill.into() })
     }
 
-    /// Remember that an item filled this site, for the next plans.
+    /// Remember that an item filled this site, for the next plans. A login
+    /// must match the origin; a card or an identity has no URL, so the
+    /// origin is only the site key.
     fn note_fill(
         &mut self,
         ctx: Ctx,
@@ -1001,8 +1012,12 @@ impl<V: VaultAccess> Service<V> {
             return Err(AppErrorCode::Invalid);
         }
         let (vault, item) = self.eligible_item(item_id)?;
-        if item_match(&item, &page).is_none() {
-            return Err(AppErrorCode::OriginMismatch);
+        match summary_kind(item.item_type) {
+            Some(SummaryKind::Login) if item_match(&item, &page).is_none() => {
+                return Err(AppErrorCode::OriginMismatch);
+            }
+            Some(_) => {}
+            None => return Err(AppErrorCode::NotFound),
         }
         let at = unix(now);
         let usage = SiteUsage {
@@ -1021,16 +1036,18 @@ impl<V: VaultAccess> Service<V> {
     }
 
     /// Forget a site in every item. From the extension window only. `site`
-    /// is a registrable domain, or an https origin reduced to its own.
+    /// is a host or an https origin, reduced as `Origin::site` does (IDN to
+    /// punycode, lower case, registrable domain).
     fn forget_site(&mut self, ctx: Ctx, site: &str, now: u64) -> OpResult<Response> {
         if ctx != Ctx::Popup {
             return Err(AppErrorCode::NotAllowed);
         }
         let site = match site.trim() {
+            "" => return Err(AppErrorCode::Invalid),
             s if s.contains("://") => origin(s)?.site(),
-            s => s.trim_end_matches('.').to_lowercase(),
+            s => origin(&format!("https://{s}"))?.site(),
         };
-        if site.is_empty() || site.len() > MAX_SITE_LEN {
+        if site.len() > MAX_SITE_LEN {
             return Err(AppErrorCode::Invalid);
         }
         let items = self.vault.forget_site_usage(&site).map_err(app_code)?;

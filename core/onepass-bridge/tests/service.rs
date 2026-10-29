@@ -1118,10 +1118,9 @@ fn note_fill_then_plan_prefers_last_used() {
 fn note_fill_rejects_item_of_other_site() {
     let mut h = H::new();
     let (_, b) = twins(&mut h);
-    let (atlas, google, card) = (h.ids.atlas, h.ids.google_perso, h.ids.card);
+    let (atlas, google) = (h.ids.atlas, h.ids.google_perso);
     assert_eq!(err(&h.call(note(atlas, TWIN))), "origin_mismatch");
     assert_eq!(err(&h.call(note(google, ATLAS))), "origin_mismatch");
-    assert_eq!(err(&h.call(note(card, ATLAS))), "origin_mismatch");
     assert_eq!(
         err(&h.call(note(b, "https://twin.test.evil.test"))),
         "origin_mismatch"
@@ -1204,4 +1203,112 @@ fn username_hash_vector() {
         data_encoding::HEXLOWER.encode(&h),
         "a2d55ed8b5a8ec8839231c0db36ebe5fd98d0bc6e8268b889a44f408e72c0d35"
     );
+}
+
+// Review round 1.
+
+#[test]
+fn note_fill_a_b_a_within_hour_prefers_a() {
+    let mut h = H::new();
+    let (a, b) = twins(&mut h);
+    ok(&h.call_at(note(a, TWIN), NOW));
+    ok(&h.call_at(note(b, TWIN), NOW + 600));
+    ok(&h.call_at(note(a, TWIN), NOW + 1200));
+    let v = h.call_at(plan_req(TWIN, page(TWIN, None)), NOW + 1300);
+    let plan = &ok(&v)["plan"];
+    assert_eq!(plan["groups"][0]["item_id"], id(a), "{plan}");
+    assert_eq!(plan["confidence"], "high", "{plan}");
+}
+
+/// One checkout form: number, expiry, security code, a pay button.
+fn checkout_page(origin: &str) -> Value {
+    let field = |r: &str, role: &str| json!({"field_ref":r,"role":role,"confidence":0.9,"visible":true,"prefilled":"empty"});
+    json!({"origin":origin,"top_origin":origin,"frame_kind":"top","typed_username_hash":null,
+           "forms":[{"form_ref":"pay-form",
+               "intent_hints":{"kind":"card","signup_words":false,"reset_words":false,
+                               "checkout_words":true,"ignore":false},
+               "step_index":null,
+               "fields":[field("cc-n","cc_number"),field("cc-e","cc_exp"),field("cc-c","cc_csc")],
+               "buttons":[{"button_ref":"pay","class":"pay"}]}]})
+}
+
+#[test]
+fn note_fill_card_then_checkout_prefers_it() {
+    use onepass_core::model::{ItemType, new_item};
+    let mut h = H::new();
+    let perso = h.ids.perso;
+    let second = new_item(ItemType::CreditCard, perso, "Carte Twin");
+    let second_id = second.id;
+    h.svc.vault_mut().items.push(second);
+    let cards = [h.ids.card, second_id];
+
+    let v = h.call(plan_req(ATLAS, checkout_page(ATLAS)));
+    let first = ok(&v)["plan"]["groups"][0]["item_id"].clone();
+    assert_eq!(ok(&v)["plan"]["intent"], "checkout", "{v}");
+    let other = cards.into_iter().find(|c| json!(id(*c)) != first).unwrap();
+
+    let noted = json!({"op":"note_fill","ctx":"menu","item_id":id(other),"origin":ATLAS,
+                       "roles":["cc_number","cc_exp","cc_csc"],"intent":"checkout",
+                       "steps":["fill"]});
+    assert_eq!(ok(&h.call(noted)), &json!({}));
+    assert_eq!(h.vault().item(other).usage[0].site, "atlas-cloud.test");
+
+    let v = h.call(plan_req(ATLAS, checkout_page(ATLAS)));
+    let plan = &ok(&v)["plan"];
+    assert_eq!(plan["groups"][0]["item_id"], id(other), "{plan}");
+    assert_ne!(plan["action"], "fill_and_submit");
+    // An http origin is still refused, even with no URL to match.
+    let mut bad = json!({"op":"note_fill","ctx":"menu","item_id":id(other),
+                         "origin":"http://atlas-cloud.test","roles":[],"intent":"checkout",
+                         "steps":[]});
+    assert_eq!(err(&h.call(bad.clone())), "insecure_origin");
+    // An identity is noted the same way.
+    bad["origin"] = json!(ATLAS);
+    bad["item_id"] = json!(id(h.ids.identity));
+    bad["intent"] = json!("address");
+    assert_eq!(ok(&h.call(bad)), &json!({}));
+}
+
+#[test]
+fn last_on_site_tie_marks_one() {
+    let mut h = H::new();
+    let (a, b) = twins(&mut h);
+    ok(&h.call(note(a, TWIN)));
+    ok(&h.call(note(b, TWIN)));
+    let v = h.call(plan_req(TWIN, page(TWIN, None)));
+    let plan = &ok(&v)["plan"];
+    assert_eq!(plan["groups"][0]["item_id"], id(a.min(b)), "{plan}");
+    assert!(
+        plan["reasons"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("last_on_site")),
+        "{plan}"
+    );
+}
+
+#[test]
+fn plan_fill_rejects_top_frame_with_other_top_origin() {
+    let mut h = H::new();
+    let mut ctx = page(ATLAS, None);
+    ctx["top_origin"] = json!("https://evil.test");
+    assert_eq!(err(&h.call(plan_req(ATLAS, ctx.clone()))), "invalid");
+    // A same-origin child frame may sit under another top origin.
+    ctx["frame_kind"] = json!("same_origin_child");
+    ok(&h.call(plan_req(ATLAS, ctx)));
+}
+
+#[test]
+fn forget_site_normalizes_unicode_host() {
+    let mut h = H::new();
+    let shop = "https://b\u{fc}cher.test";
+    let item = h
+        .svc
+        .vault_mut()
+        .add_login("Buecher", "alex@b.test", shop, MatchRule::Domain);
+    ok(&h.call(note(item, shop)));
+    assert_eq!(h.vault().item(item).usage[0].site, "xn--bcher-kva.test");
+    let v = h.call(json!({"op":"forget_site","ctx":"popup","site":"login.B\u{dc}CHER.test"}));
+    assert_eq!(ok(&v), &json!({"items":1}));
+    assert!(h.vault().item(item).usage.is_empty());
 }
