@@ -1509,7 +1509,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass;
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator macosx";
@@ -1538,7 +1538,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofill;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofill;
 				PRODUCT_NAME = OnePassAutoFill;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -1562,7 +1562,7 @@
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Watch/Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp;
 				PRODUCT_NAME = OnePassWatch;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -1585,7 +1585,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.widgets;
 				PRODUCT_NAME = OnePassWidgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1608,7 +1608,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp.widgets;
 				PRODUCT_NAME = OnePassWatchWidgets;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -1629,7 +1629,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = OnePass;
@@ -1649,7 +1649,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofilluitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofilluitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = AutoFillHost;
@@ -1675,7 +1675,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass;
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator macosx";
@@ -1699,7 +1699,7 @@
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Watch/Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp;
 				PRODUCT_NAME = OnePassWatch;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -1725,7 +1725,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofill;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofill;
 				PRODUCT_NAME = OnePassAutoFill;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -1755,7 +1755,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				ONEPASS_SAFARI_DEV_HOST = NO;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.safari;
 				PRODUCT_NAME = OnePassSafari;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ONEPASS_CLOUDKIT";
@@ -1775,7 +1775,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = OnePass;
@@ -1798,7 +1798,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp.widgets;
 				PRODUCT_NAME = OnePassWatchWidgets;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -1822,7 +1822,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofillhost;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofillhost;
 				PRODUCT_NAME = AutoFillHost;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -1847,7 +1847,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofill;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofill;
 				PRODUCT_NAME = OnePassAutoFill;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -1877,7 +1877,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				ONEPASS_SAFARI_DEV_HOST = NO;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.safari;
 				PRODUCT_NAME = OnePassSafari;
 				SDKROOT = macosx;
 			};
@@ -1977,7 +1977,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				ONEPASS_SAFARI_DEV_HOST = NO;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.safari;
 				PRODUCT_NAME = OnePassSafari;
 				SDKROOT = macosx;
 			};
@@ -1999,7 +1999,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofillhost;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofillhost;
 				PRODUCT_NAME = AutoFillHost;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -2019,7 +2019,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = OnePass;
@@ -2041,7 +2041,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.widgets;
 				PRODUCT_NAME = OnePassWidgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -2064,7 +2064,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp.widgets;
 				PRODUCT_NAME = OnePassWatchWidgets;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -2085,7 +2085,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofilluitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofilluitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = AutoFillHost;
@@ -2111,7 +2111,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass;
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator macosx";
@@ -2137,7 +2137,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.widgets;
 				PRODUCT_NAME = OnePassWidgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -2160,7 +2160,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofillhost;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofillhost;
 				PRODUCT_NAME = AutoFillHost;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -2248,7 +2248,7 @@
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Watch/Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp;
 				PRODUCT_NAME = OnePassWatch;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -2269,7 +2269,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofilluitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofilluitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = AutoFillHost;
@@ -2357,7 +2357,7 @@
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Watch/Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp;
 				PRODUCT_NAME = OnePassWatch;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -2384,7 +2384,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				ONEPASS_SAFARI_DEV_HOST = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.safari;
 				PRODUCT_NAME = OnePassSafari;
 				SDKROOT = macosx;
 			};
@@ -2406,7 +2406,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp.widgets;
 				PRODUCT_NAME = OnePassWatchWidgets;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -2427,7 +2427,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofilluitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofilluitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = AutoFillHost;
@@ -2454,7 +2454,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass;
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator macosx";
@@ -2484,7 +2484,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofill;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofill;
 				PRODUCT_NAME = OnePassAutoFill;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -2580,7 +2580,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofillhost;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofillhost;
 				PRODUCT_NAME = AutoFillHost;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -2600,7 +2600,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = OnePass;
@@ -2622,7 +2622,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.widgets;
 				PRODUCT_NAME = OnePassWidgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
