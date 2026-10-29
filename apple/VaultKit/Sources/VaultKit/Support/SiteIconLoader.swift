@@ -30,7 +30,7 @@ extension URLSession {
     public static let ephemeralNoCookies = URLSession(configuration: ephemeralNoCookiesConfiguration)
 }
 
-/// Loads site icons straight from the item's own site. HTTPS only, same host only, public host
+/// Loads site icons straight from the item's own site. HTTPS only, public host
 /// names only (never an IP literal, `localhost`, a single-label name or a local network suffix such as
 /// `.local`, `.lan`, `.home.arpa` or `.internal`: no LAN probing), and the name must resolve to public
 /// addresses only (checked before any request: no private, loopback, link-local, CGNAT, unique-local
@@ -39,7 +39,8 @@ extension URLSession {
 ///
 /// Where the icon comes from, best first: the home page's `<link>` icons (`apple-touch-icon`,
 /// `apple-touch-icon-precomposed`, `icon`, `shortcut icon`) and the icons of its web app manifest
-/// (same host), ranked by the size they declare (SVG first, then the largest `sizes`); then
+/// (on the site, or on the host the page names for them, such as a brand's CDN: `a0.muscache.com` for
+/// Airbnb, `s.pinimg.com` for Pinterest, with the same checks), ranked by the size they declare (SVG first, then the largest `sizes`); then
 /// `/apple-touch-icon.png` and `/apple-touch-icon-precomposed.png`; then the monochrome `mask-icon`;
 /// `/favicon.ico` last. A source of `goodPixels` or more ends the search; a smaller one is kept and the
 /// next candidates are tried (at most `maxImageAttempts` images), the largest found wins. In an ICO
@@ -79,7 +80,7 @@ public actor SiteIconLoader {
     /// Images fetched per host at most (on top of the home page and the manifest).
     static let maxImageAttempts = 6
     /// Version in the cache file names: bumping it refetches every icon once.
-    static let cacheVersion = "v2"
+    static let cacheVersion = "v3"
 
     private let cacheDirectory: URL
     private let session: URLSession
@@ -232,6 +233,8 @@ public actor SiteIconLoader {
 
         var best: DecodedIcon?
         var attempts = 0
+        /// Other hosts the page names for its icons, and whether they resolve to public addresses only.
+        var publicHosts: [String: Bool] = [:]
         for candidate in Self.ranked(candidates) {
             if let best, best.sourcePixels >= Self.goodPixels { break }
             guard attempts < Self.maxImageAttempts else { break }
@@ -239,8 +242,21 @@ public actor SiteIconLoader {
             if let best, !candidate.vector, let declared = candidate.declared, declared <= best.sourcePixels {
                 continue
             }
+            // An icon the page names on another host (its CDN): that host passes the same checks.
+            let iconHost = candidate.url.host?.lowercased() ?? site
+            if iconHost != site {
+                guard Self.isFetchableHost(iconHost) else { continue }
+                if publicHosts[iconHost] == nil {
+                    guard let found = await resolver.addresses(for: iconHost) else {
+                        offline = true
+                        continue
+                    }
+                    publicHosts[iconHost] = !found.isEmpty && found.allSatisfy(\.isPublic)
+                }
+                guard publicHosts[iconHost] == true else { continue }
+            }
             attempts += 1
-            guard let fetched = await get(candidate.url, host: site, truncate: false, offline: &offline),
+            guard let fetched = await get(candidate.url, host: iconHost, truncate: false, offline: &offline),
                 let decoded = Self.decodeIcon(fetched.data)
             else { continue }
             if decoded.sourcePixels > best?.sourcePixels ?? 0 { best = decoded }
@@ -450,18 +466,20 @@ public actor SiteIconLoader {
         type?.lowercased().contains("svg") == true || url.pathExtension.lowercased() == "svg"
     }
 
-    /// Resolves a reference against `base`: HTTPS on `host` only, nil otherwise.
-    private static func sameHost(_ reference: String, base: URL, host: String) -> URL? {
+    /// Resolves an icon reference against `base`: HTTPS on a public host name (the site itself or
+    /// the one it names for its icons), nil otherwise. The addresses are checked before the fetch.
+    private static func iconURL(_ reference: String, base: URL) -> URL? {
         guard let url = URL(string: reference.trimmingCharacters(in: .whitespacesAndNewlines), relativeTo: base)?
             .absoluteURL,
-            url.scheme?.lowercased() == "https", url.host?.lowercased() == host
+            url.scheme?.lowercased() == "https", let host = url.host, isFetchableHost(host)
         else { return nil }
         return url
     }
 
     // MARK: HTML
 
-    /// Icons named by `<link>` tags (at most 16) and the web app manifest, same host and HTTPS only.
+    /// Icons named by `<link>` tags (at most 16, HTTPS on a public host name) and the web app manifest
+    /// (same host).
     static func pageLinks(in data: Data, base: URL, host: String) -> (icons: [IconCandidate], manifest: URL?) {
         let html = String(decoding: data, as: UTF8.self)
         guard let tag = try? NSRegularExpression(pattern: "<link\\b[^>]*>", options: [.caseInsensitive])
@@ -472,7 +490,7 @@ public actor SiteIconLoader {
             guard let r = Range(match.range, in: html) else { continue }
             let element = String(html[r])
             guard let relValue = attribute("rel", in: element), let link = attribute("href", in: element),
-                let url = sameHost(link, base: base, host: host)
+                let url = iconURL(link, base: base)
             else { continue }
             let rels = Set(relValue.lowercased().split(whereSeparator: \.isWhitespace).map(String.init))
             let kind: IconCandidate.Kind
@@ -483,7 +501,7 @@ public actor SiteIconLoader {
             } else if rels.contains("mask-icon") {
                 kind = .mask
             } else {
-                if rels.contains("manifest"), manifest == nil { manifest = url }
+                if rels.contains("manifest"), manifest == nil, url.host?.lowercased() == host { manifest = url }
                 continue
             }
             guard icons.count < 16 else { continue }
@@ -507,7 +525,7 @@ public actor SiteIconLoader {
         return nil
     }
 
-    /// The `icons` of a web app manifest (at most 16), same host and HTTPS only. Monochrome icons are
+    /// The `icons` of a web app manifest (at most 16), HTTPS on a public host name. Monochrome icons are
     /// left out: they are silhouettes.
     static func manifestIcons(in data: Data, base: URL, host: String) -> [IconCandidate] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -516,7 +534,7 @@ public actor SiteIconLoader {
         var icons: [IconCandidate] = []
         for case let entry as [String: Any] in entries {
             guard icons.count < 16 else { break }
-            guard let src = entry["src"] as? String, let url = sameHost(src, base: base, host: host) else { continue }
+            guard let src = entry["src"] as? String, let url = iconURL(src, base: base) else { continue }
             let purposes = ((entry["purpose"] as? String) ?? "any").lowercased().split(whereSeparator: \.isWhitespace)
             if !purposes.isEmpty, purposes.allSatisfy({ $0 == "monochrome" }) { continue }
             icons.append(IconCandidate(

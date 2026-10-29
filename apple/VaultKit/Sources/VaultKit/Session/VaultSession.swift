@@ -790,6 +790,8 @@ public final class VaultSession {
         case .background:
             autoLock.enterBackground(now)
             concealRevealed()
+            // "Immédiatement": leaving the screen locks; Face ID (or the password) opens it again.
+            if state == .unlocked, settings.autoLockDelay.locksInBackground { lock() }
             // The clipboard is kept (copy, then switch app to paste): it clears on lock and after 90 s.
         case .active:
             let expired = autoLock.becomeActive(now, delay: settings.effectiveAutoLockSeconds)

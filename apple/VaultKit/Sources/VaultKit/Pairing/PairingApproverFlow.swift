@@ -62,6 +62,8 @@ public final class PairingApproverFlow {
     @ObservationIgnored private var approving = false
     @ObservationIgnored private let peerTimeout: Duration
     @ObservationIgnored private var inviteRun: Task<Void, Never>?
+    /// The session started from an invite: the new device takes this account's name and photo.
+    @ObservationIgnored private var fromInvite = false
 
     /// A shown invite is replaced this long before it expires, so a scan never lands on a dead code.
     public static let inviteRenewalMargin: Duration = .seconds(20)
@@ -167,6 +169,7 @@ public final class PairingApproverFlow {
             if state == .granting { fail(.connectionLost) }
             return
         }
+        if fromInvite { await sendProfile(approver: approver, transport: transport) }
         do {
             let secretKey = try vault.loadSecretKey()
             defer { secretKey.secretKey.wipe() }
@@ -254,6 +257,26 @@ public final class PairingApproverFlow {
 
     // MARK: - Steps
 
+    /// Invite sessions: this account's display name and photo, so the new device shows the same.
+    /// Best effort: a refused or unsent profile never stops the grant.
+    private func sendProfile(approver: PairingApprover, transport: any PairingTransport) async {
+        let settings = vault.environment.settings
+        let scalars = settings.displayName.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
+        let name = String(String(String.UnicodeScalarView(scalars)).prefix(Self.maxProfileNameLength))
+        let photo = settings.profilePhoto.flatMap { $0.count <= Self.maxProfilePhotoBytes ? $0 : nil } ?? Data()
+        guard !name.isEmpty || !photo.isEmpty else { return }
+        do {
+            let frame = try await CoreThread.run { try approver.sealProfile(name: name, photo: photo) }
+            try await transport.send(frame)
+        } catch {
+            Self.log.notice("pairing profile not sent")
+        }
+    }
+
+    /// The core's limits on a profile (64 characters, 256 KiB).
+    static let maxProfileNameLength = 64
+    static let maxProfilePhotoBytes = 256 * 1024
+
     private func runInvite(listener: any PairingListener) async {
         do {
             while true {
@@ -267,6 +290,7 @@ public final class PairingApproverFlow {
                 }
                 self.approver = approver
                 self.transport = transport
+                fromInvite = true
                 state = .connecting
                 try await transport.send(approver.keyExchange())
                 guard state == .connecting else { return }
@@ -464,7 +488,7 @@ public final class PairingApproverFlow {
             if case .publicRunning(_, let expires) = state { state = .publicRunning(journal: journal, expiresAt: expires) }
         case .end:
             if case .publicRunning = state { finish() } else { peerGone(.cancelledByPeer) }
-        case .fullGrant, .publicGrant:
+        case .fullGrant, .publicGrant, .profile:
             // Never sent to an approver.
             peerGone(.refused)
         }

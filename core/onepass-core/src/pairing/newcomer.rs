@@ -10,7 +10,7 @@ use crate::devices::{DeviceMode, check_name};
 
 use super::channel::Channel;
 use super::invite::signed_hello;
-use super::messages::{DeviceInfo, Grant, Hello, KeyExchange, Message};
+use super::messages::{DeviceInfo, Grant, Hello, KeyExchange, Message, ProfileCard};
 use super::qr::{InviteQr, PairingQr, QR_VERSION};
 use super::snapshot::check_snapshot;
 use super::{KEM_LABEL, QR_LIFETIME_SECS, now_unix, refused, sas, sha256, transcript};
@@ -36,6 +36,9 @@ pub struct Newcomer {
     state: State,
     public_granted: bool,
     acked: bool,
+    /// Joined from an invite: the approver may send its `Profile`.
+    joined: bool,
+    profile: Option<ProfileCard>,
 }
 
 impl Newcomer {
@@ -73,6 +76,8 @@ impl Newcomer {
             state: State::AwaitingKey,
             public_granted: false,
             acked: false,
+            joined: false,
+            profile: None,
         };
         Ok((newcomer, qr, hello))
     }
@@ -108,8 +113,15 @@ impl Newcomer {
             state: State::AwaitingKey,
             public_granted: false,
             acked: false,
+            joined: true,
+            profile: None,
         };
         Ok((newcomer, frame))
+    }
+
+    /// The approver's profile, when it sent one (invite sessions).
+    pub fn profile(&self) -> Option<&ProfileCard> {
+        self.profile.as_ref()
     }
 
     pub fn session_id(&self) -> [u8; 16] {
@@ -171,6 +183,14 @@ impl Newcomer {
         let r = match &msg {
             Message::Grant(g) if self.state == State::Confirmed => self.accept(g, now),
             Message::Grant(_) => Err(refused("grant before confirmation")),
+            Message::Profile(p)
+                if self.joined
+                    && self.state == State::Confirmed
+                    && self.mode != DeviceMode::Public
+                    && self.profile.is_none() =>
+            {
+                p.check().map(|()| self.profile = Some(p.clone()))
+            }
             Message::End => Ok(()),
             _ => Err(refused("unexpected message")),
         };

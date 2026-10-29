@@ -89,6 +89,8 @@ public final class PairingNewcomerFlow {
     @ObservationIgnored private var transport: (any PairingTransport)?
     @ObservationIgnored private var run: Task<Void, Never>?
     @ObservationIgnored private var grantedMode: DeviceMode?
+    /// The approver's name and photo (invite sessions), applied once the account is unlocked here.
+    @ObservationIgnored private var receivedProfile: (name: String, photo: Data)?
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "pairing")
 
@@ -204,6 +206,7 @@ public final class PairingNewcomerFlow {
         grantTimer?.cancel()
         do {
             try await vault.importPaired(newcomer, password: password, mode: mode)
+            applyReceivedProfile()
             state = .done
             self.newcomer = nil
             close()
@@ -473,11 +476,24 @@ public final class PairingNewcomerFlow {
             case .end:
                 stop(.failed(.cancelledByPeer))
                 return
+            case .profile(let name, let photo):
+                // Invite sessions: kept until the account is unlocked here.
+                receivedProfile = (name, photo)
+                continue
             case .confirmed, .ack, .audit:
                 // Not sent to a newcomer: ignored.
                 continue
             }
         }
+    }
+
+    /// Takes the approver's name and photo where this device has none yet.
+    private func applyReceivedProfile() {
+        guard let profile = receivedProfile else { return }
+        receivedProfile = nil
+        let settings = vault.environment.settings
+        if settings.displayName.isEmpty, !profile.name.isEmpty { settings.displayName = profile.name }
+        if settings.profilePhoto == nil, !profile.photo.isEmpty { settings.profilePhoto = profile.photo }
     }
 
     private func stop(_ final: State) {

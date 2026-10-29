@@ -75,7 +75,7 @@ pub use channel::Channel;
 pub use invite::Invite;
 pub use messages::{
     AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Hello, KeyExchange, Message,
-    PublicGrant, SnapshotRecord,
+    ProfileCard, PublicGrant, SnapshotRecord,
 };
 pub use newcomer::Newcomer;
 pub use qr::{InviteQr, PairingQr};
