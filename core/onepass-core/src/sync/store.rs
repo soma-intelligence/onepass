@@ -1953,6 +1953,12 @@ fn cause_code(e: IntegrityError) -> u8 {
         IntegrityError::ParamsRollback => 13,
         IntegrityError::DeviceListRollback => 14,
         IntegrityError::VaultListRollback => 15,
+        IntegrityError::RemoteSignature => 16,
+        IntegrityError::RemoteExpired => 17,
+        IntegrityError::RemoteReplay => 18,
+        IntegrityError::RemoteUnknownDevice => 19,
+        IntegrityError::RemoteWrongRecipient => 20,
+        IntegrityError::RemoteUnknownRequest => 21,
     }
 }
 
@@ -1974,6 +1980,12 @@ fn cause_of(code: u8) -> Option<IntegrityError> {
         13 => IntegrityError::ParamsRollback,
         14 => IntegrityError::DeviceListRollback,
         15 => IntegrityError::VaultListRollback,
+        16 => IntegrityError::RemoteSignature,
+        17 => IntegrityError::RemoteExpired,
+        18 => IntegrityError::RemoteReplay,
+        19 => IntegrityError::RemoteUnknownDevice,
+        20 => IntegrityError::RemoteWrongRecipient,
+        21 => IntegrityError::RemoteUnknownRequest,
         _ => return None,
     })
 }
@@ -4323,6 +4335,12 @@ mod tests {
         ParamsRollback,
         DeviceListRollback,
         VaultListRollback,
+        RemoteSignature,
+        RemoteExpired,
+        RemoteReplay,
+        RemoteUnknownDevice,
+        RemoteWrongRecipient,
+        RemoteUnknownRequest,
     );
 
     #[test]
@@ -4388,7 +4406,7 @@ mod tests {
     #[test]
     fn health_cause_codes_round_trip_and_fail_closed() {
         let mut codes = std::collections::BTreeSet::new();
-        assert_eq!(ALL_CAUSES.len(), 16);
+        assert_eq!(ALL_CAUSES.len(), 22);
         for &cause in ALL_CAUSES {
             exhaustive(cause);
             let code = cause_code(cause);

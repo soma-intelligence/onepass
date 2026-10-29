@@ -57,6 +57,12 @@ pub(crate) fn integrity_kind(e: IntegrityError) -> &'static str {
         IntegrityError::ParamsRollback => "params_rollback",
         IntegrityError::DeviceListRollback => "device_list_rollback",
         IntegrityError::VaultListRollback => "vault_list_rollback",
+        IntegrityError::RemoteSignature => "remote_signature",
+        IntegrityError::RemoteExpired => "remote_expired",
+        IntegrityError::RemoteReplay => "remote_replay",
+        IntegrityError::RemoteUnknownDevice => "remote_unknown_device",
+        IntegrityError::RemoteWrongRecipient => "remote_wrong_recipient",
+        IntegrityError::RemoteUnknownRequest => "remote_unknown_request",
     }
 }
 
