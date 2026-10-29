@@ -204,6 +204,11 @@ impl ReplayGuard {
         self.seen.iter().any(|(id, _)| id == request_id)
     }
 
+    #[cfg(test)]
+    fn is_empty_for_tests(&self) -> bool {
+        self.seen.is_empty()
+    }
+
     /// Remember `request_id` as accepted at `now`, forgetting what is older
     /// than the replay window.
     pub fn record(&mut self, request_id: [u8; 16], now: i64) {
@@ -455,6 +460,15 @@ pub fn open_request(
         return Err(integrity(IntegrityError::RemoteWrongRecipient));
     }
     verify_sender(&env, request.from, request.kind.sender_role(), approvers)?;
+    // The receiver must hold the kind's recipient role: a phone never takes
+    // a notice meant for a Mac, nor a Mac a request meant for a phone.
+    let role = request.kind.recipient_role();
+    if !approvers
+        .iter()
+        .any(|e| e.device_id == me.device_id && e.role == role && e.retired_at.is_none())
+    {
+        return Err(integrity(IntegrityError::RemoteWrongRecipient));
+    }
 
     if now.saturating_add(PHONE_CLOCK_SKEW_SECS) < request.created_at
         || now > request.expires_at.saturating_add(PHONE_CLOCK_SKEW_SECS)
@@ -701,6 +715,20 @@ mod tests {
                 err(IntegrityError::RemoteWrongRecipient)
             );
         }
+        // A notice addressed to a phone is refused by that phone.
+        let to_phone = ApproverEntry {
+            role: ApproverRole::Mac,
+            ..phone.entry.clone()
+        };
+        let mut h = header(&phone, &phone, RemoteKind::Lock);
+        h.to = phone.id.device_id;
+        let misdirected = seal_request(&phone.id.signing, &to_phone, h, &body()).unwrap();
+        let mut seen = ReplayGuard::new();
+        assert_eq!(
+            open_request(&misdirected, &phone.id, &list, T + 1, &mut seen).unwrap_err(),
+            err(IntegrityError::RemoteWrongRecipient)
+        );
+        assert!(seen.is_empty_for_tests());
         // A notice signed by a Mac is refused: only a phone sends one.
         let mut h = header(&phone, &mac, RemoteKind::Lock);
         h.from = mac.id.device_id;

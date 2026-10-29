@@ -555,7 +555,9 @@ fn phone_notices_reach_the_mac() {
         .seal_remote_notice(phone.keys.clone(), mac.id.clone(), FfiNoticeKind::Lock)
         .unwrap();
     assert_eq!(lock.to, mac.id);
-    let notice = unlocker.open_remote_notice(lock.blob.clone()).unwrap();
+    let notice = unlocker
+        .open_remote_notice(lock.blob.clone(), None)
+        .unwrap();
     assert_eq!(
         notice,
         FfiNotice {
@@ -566,7 +568,7 @@ fn phone_notices_reach_the_mac() {
     // Replayed, even by a new unlocker (the guard is in the local meta).
     let again = RemoteUnlocker::new(mac.path.clone(), mac.keys.clone()).unwrap();
     assert_eq!(
-        again.open_remote_notice(lock.blob).unwrap_err(),
+        again.open_remote_notice(lock.blob, None).unwrap_err(),
         OnePassError::Integrity {
             kind: "remote_replay".into()
         }
@@ -580,8 +582,24 @@ fn phone_notices_reach_the_mac() {
             FfiNoticeKind::ForgetUnlock,
         )
         .unwrap();
+    // ForgetUnlock only from the enrolled phone: without enrollment, or
+    // with another phone enrolled, it is refused and not remembered.
+    let stranger = "ab".repeat(16);
+    for enrolled in [None, Some(stranger)] {
+        assert_eq!(
+            unlocker
+                .open_remote_notice(forget.blob.clone(), enrolled)
+                .unwrap_err(),
+            OnePassError::Integrity {
+                kind: "remote_unknown_device".into()
+            }
+        );
+    }
     assert_eq!(
-        unlocker.open_remote_notice(forget.blob).unwrap().kind,
+        unlocker
+            .open_remote_notice(forget.blob, Some(phone.id.clone()))
+            .unwrap()
+            .kind,
         FfiNoticeKind::ForgetUnlock
     );
 
@@ -589,12 +607,15 @@ fn phone_notices_reach_the_mac() {
     // a Mac request, which is not a notice.
     let mac_session =
         unlock_with_password(mac.path.clone(), PASSWORD.into(), mac.secret_key.clone()).unwrap();
-    assert!(
+    assert_eq!(
         mac_session
             .session
             .seal_remote_notice(mac.keys.clone(), mac.id.clone(), FfiNoticeKind::Lock)
-            .and_then(|n| unlocker.open_remote_notice(n.blob))
-            .is_err()
+            .unwrap_err(),
+        OnePassError::Validation {
+            field: "approver".into(),
+            reason: "not a phone".into()
+        }
     );
     let request = mac_session
         .session
@@ -605,7 +626,97 @@ fn phone_notices_reach_the_mac() {
             body("x"),
         )
         .unwrap();
-    assert!(unlocker.open_remote_notice(request.blob).is_err());
+    assert!(unlocker.open_remote_notice(request.blob, None).is_err());
+}
+
+#[test]
+fn a_notice_is_never_opened_by_a_phone() {
+    use onepass_core::approvers::{ApproverEntry, ApproverRole};
+    use onepass_core::crypto::{HybridKemSecret, HybridSigningKey};
+    use onepass_core::remote::{RemoteKind, RequestBody, RequestHeader, seal_request};
+
+    let (mac, phone) = mac_and_phone();
+    // A phone-signed Lock addressed to a phone (forged with the core: the
+    // FFI never seals one), carrying very high list seqs.
+    let signing = HybridSigningKey::from_bytes(&phone.keys.signing).unwrap();
+    let kem_pub = HybridKemSecret::from_bytes(&phone.keys.kem_secret)
+        .unwrap()
+        .public()
+        .unwrap();
+    let mut id = [0u8; 16];
+    for (i, b) in id.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&phone.id[2 * i..2 * i + 2], 16).unwrap();
+    }
+    let phone_id = onepass_core::Id(id);
+    let as_mac = ApproverEntry {
+        device_id: phone_id,
+        sign_pub: signing.verifying_key().unwrap(),
+        kem_pub,
+        role: ApproverRole::Mac,
+        added_at: 0,
+        retired_at: None,
+    };
+    let t = now();
+    let blob = seal_request(
+        &signing,
+        &as_mac,
+        RequestHeader {
+            request_id: [5; 16],
+            from: phone_id,
+            to: phone_id,
+            created_at: t,
+            expires_at: t + 60,
+            registry_seq: u64::MAX,
+            approver_list_seq: u64::MAX,
+            kind: RemoteKind::Lock,
+        },
+        &RequestBody {
+            client: "OnePass".into(),
+            client_verified: true,
+            action: "lock".into(),
+            details: Vec::new(),
+            targets: Vec::new(),
+            remember_allowed: false,
+            strong_required: false,
+            confirm_code: String::new(),
+            unlock_eph_pub: None,
+            transfer_key: None,
+            window_minutes: None,
+        },
+    )
+    .unwrap();
+    let wrong = OnePassError::Integrity {
+        kind: "remote_wrong_recipient".into(),
+    };
+    assert_eq!(
+        phone
+            .session
+            .open_remote_request(phone.keys.clone(), blob.clone())
+            .unwrap_err(),
+        wrong
+    );
+    // Not remembered: the same blob gives the same refusal, not a replay.
+    assert_eq!(
+        phone
+            .session
+            .open_remote_request(phone.keys.clone(), blob)
+            .unwrap_err(),
+        wrong
+    );
+    // The peer seqs did not move: a normal Mac request still opens.
+    let sealed = mac
+        .session
+        .seal_remote_request(
+            mac.keys.clone(),
+            phone.id.clone(),
+            FfiRemoteKind::Approve,
+            body("run_with_secrets"),
+        )
+        .unwrap();
+    phone
+        .session
+        .open_remote_request(phone.keys.clone(), sealed.blob)
+        .unwrap();
 }
 
 #[test]
