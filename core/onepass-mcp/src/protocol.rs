@@ -160,6 +160,8 @@ pub fn handle_line_notifying(
     Some(match method {
         "initialize" => result_response(id, initialize(session, params)),
         "ping" => result_response(id, json!({})),
+        // Notices are few and fixed: nothing to filter by level.
+        "logging/setLevel" => result_response(id, json!({})),
         "tools/list" => {
             let tools: Vec<Value> = host
                 .tools()
@@ -594,6 +596,18 @@ mod tests {
             (ctx.notify)(json!({"token": token}).to_string());
             self.call(c, name, args)
         }
+    }
+
+    #[test]
+    fn set_level_is_accepted() {
+        let mut s = Session::new();
+        init(&mut s);
+        let r = send(
+            &mut s,
+            r#"{"jsonrpc":"2.0","id":5,"method":"logging/setLevel","params":{"level":"error"}}"#,
+        );
+        assert_eq!(r["result"], json!({}));
+        assert!(r.get("error").is_none());
     }
 
     #[test]

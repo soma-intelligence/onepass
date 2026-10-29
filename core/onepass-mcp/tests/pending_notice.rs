@@ -130,6 +130,46 @@ fn mcp_sends_log_message_without_token() {
     assert!(n["params"].get("progressToken").is_none());
 }
 
+/// A terminal-style approver: its code must stay between it and the user.
+struct Terminal(Witness);
+
+impl Approver for Terminal {
+    fn approve(&self, req: &ApprovalRequest) -> Answer {
+        self.0.approve(req)
+    }
+    fn code_is_public(&self) -> bool {
+        false
+    }
+}
+
+#[test]
+fn a_terminal_approver_code_never_reaches_the_client() {
+    for token in [Some(json!("t")), None] {
+        let sent = Sent::default();
+        let t_approver = Arc::new(Terminal(Witness {
+            sent: sent.clone(),
+            seen: Mutex::new(Vec::new()),
+            answer: Answer::new(Decision::AllowOnce),
+        }));
+        let (mut t, _) = tools_with_policy(everything, t_approver.clone());
+        let reply = rpc(&mut t, &sent, reveal(token));
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        let (count, code) = t_approver.0.seen.lock().unwrap()[0].clone();
+        // Told before the wait, and the approver still got a code.
+        assert_eq!(count, 1);
+        assert_eq!(code.chars().count(), 4);
+        let sent = sent.lock().unwrap().clone();
+        assert_eq!(sent.len(), 1);
+        assert!(!sent[0].contains(&code), "{}", sent[0]);
+        let n: Value = serde_json::from_str(&sent[0]).unwrap();
+        let text = n["params"]["message"]
+            .as_str()
+            .or_else(|| n["params"]["data"].as_str())
+            .unwrap();
+        assert_eq!(text, "Approve in the terminal running onepass mcp.");
+    }
+}
+
 #[test]
 fn pending_notice_never_contains_values() {
     for token in [Some(json!("t")), None] {

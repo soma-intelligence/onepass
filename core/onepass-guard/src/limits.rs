@@ -378,7 +378,8 @@ impl<A: Approver> PromptGate<A> {
     /// [`Self::approve`], telling the caller the confirmation code before the
     /// prompt is shown. When this request leads a prompt, the guard draws a
     /// fresh code (whatever `req.confirm_code` held is replaced), calls
-    /// `pending` with it, then asks the approver with a copy of `req`
+    /// `pending_notice` with `Some(code)` when the approver's code is public
+    /// ([`Approver::code_is_public`]) and `None` otherwise, then asks the approver with a copy of `req`
     /// carrying that code. A request that joins another prompt or times out
     /// waiting never calls `pending`.
     pub fn approve_notifying(
@@ -386,7 +387,7 @@ impl<A: Approver> PromptGate<A> {
         client_id: &str,
         key: &str,
         req: &ApprovalRequest,
-        pending_notice: &mut dyn FnMut(&str),
+        pending_notice: &mut dyn FnMut(Option<&str>),
     ) -> Gated {
         let id = (client_id.to_owned(), key.to_owned());
         let mut pending = lock(&self.pending);
@@ -442,7 +443,7 @@ impl<A: Approver> PromptGate<A> {
         // The guard draws the code the user will confirm; no code, no prompt.
         let answer = match challenge_code() {
             Some(code) => {
-                pending_notice(&code);
+                pending_notice(self.inner.code_is_public().then_some(code.as_str()));
                 let mut shown = req.clone();
                 shown.confirm_code = code;
                 self.inner.approve(&shown)
@@ -854,17 +855,42 @@ mod tests {
         let mut told = Vec::new();
         let mut r = req();
         r.confirm_code = "caller-code".into();
-        let g = gate.approve_notifying("c", "k", &r, &mut |c| told.push(c.to_owned()));
+        let g = gate.approve_notifying("c", "k", &r, &mut |c| told.push(c.map(str::to_owned)));
         assert_eq!(g, shown(Decision::AllowOnce));
         // One notice, with the code the approver was shown, from the alphabet.
         let seen = gate.inner().calls();
-        assert_eq!(told, [seen[0].confirm_code.clone()]);
-        assert_eq!(told[0].chars().count(), crate::approval::CHALLENGE_LEN);
+        assert_eq!(told, [Some(seen[0].confirm_code.clone())]);
+        let code = told[0].clone().unwrap();
+        assert_eq!(code.chars().count(), crate::approval::CHALLENGE_LEN);
         assert!(
-            told[0]
-                .chars()
+            code.chars()
                 .all(|c| crate::approval::CHALLENGE_ALPHABET.contains(c))
         );
+    }
+
+    /// An approver whose code must stay private (a terminal).
+    struct Private(ScriptedApprover);
+
+    impl Approver for Private {
+        fn approve(&self, req: &ApprovalRequest) -> Answer {
+            self.0.approve(req)
+        }
+        fn code_is_public(&self) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn a_private_code_is_used_but_never_told() {
+        let gate = PromptGate::new(
+            Private(ScriptedApprover::new(vec![Decision::AllowOnce])),
+            LONG,
+        );
+        let mut told = Vec::new();
+        gate.approve_notifying("c", "k", &req(), &mut |c| told.push(c.map(str::to_owned)));
+        assert_eq!(told, [None]);
+        // The approver still got a code to ask for.
+        assert!(!gate.inner().0.calls()[0].confirm_code.is_empty());
     }
 
     #[test]

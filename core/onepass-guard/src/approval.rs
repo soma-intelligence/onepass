@@ -148,6 +148,15 @@ pub fn decision_label(decision: &Decision) -> &'static str {
 pub trait Approver: Send + Sync {
     /// Returns the answer for `req`. Anything but an explicit yes is `Deny`.
     fn approve(&self, req: &ApprovalRequest) -> Answer;
+
+    /// Whether the confirmation code may be shown to the requesting client.
+    /// True for an approver on another device or panel (the user reads the
+    /// code there and compares). False when the user types the code on a
+    /// terminal the client may share: the code is then the defence against
+    /// keystrokes injected by that client, and must never reach it.
+    fn code_is_public(&self) -> bool {
+        true
+    }
 }
 
 /// Characters of the approval challenge: lowercase letters without `i`, `l`
@@ -350,6 +359,10 @@ impl Default for TtyApprover {
 }
 
 impl Approver for TtyApprover {
+    fn code_is_public(&self) -> bool {
+        false
+    }
+
     fn approve(&self, req: &ApprovalRequest) -> Answer {
         // Holding the lock serializes concurrent prompts.
         let _guard = self.serial.lock().unwrap_or_else(|e| e.into_inner());
@@ -392,6 +405,11 @@ fn prompt_on(tty: &mut File, req: &ApprovalRequest, code: &str, timeout: Duratio
 pub struct DevAutoApprover(pub Decision);
 
 impl Approver for DevAutoApprover {
+    // It stands in for the terminal approver: same notice.
+    fn code_is_public(&self) -> bool {
+        false
+    }
+
     fn approve(&self, _req: &ApprovalRequest) -> Answer {
         Answer::new(self.0)
     }
