@@ -540,6 +540,40 @@ fn candidates_order_favorites_then_recent() {
     assert_eq!(c[0].title, "a");
 }
 
+/// Twelve Logins, three qualities, some favorites: best match first, then
+/// favorites, then most recently updated. Frozen from the ranker before it
+/// went through `fill_plan::order`.
+#[test]
+fn candidates_order_is_frozen() {
+    let fx = fixture();
+    let mut ids = std::collections::HashMap::new();
+    for t in ["e1", "e2", "e3", "e4"] {
+        ids.insert(t, login(&fx, t, &["https://shop.example.com"]).id);
+    }
+    for t in ["d1", "d2", "d3", "d4"] {
+        ids.insert(t, login(&fx, t, &["https://www.example.com"]).id);
+    }
+    for t in ["o1", "o2", "o3", "o4"] {
+        ids.insert(t, login(&fx, t, &["https://other.test"]).id);
+    }
+    for t in ["e2", "d3", "d1", "o4", "e4"] {
+        fx.session
+            .set_favorite(fx.vault_id.clone(), ids[t].clone(), true)
+            .unwrap();
+    }
+    let c = fx
+        .session
+        .autofill_candidates("shop.example.com".into(), true, Vec::new())
+        .unwrap();
+    let got: Vec<&str> = c.iter().map(|c| c.title.as_str()).collect();
+    assert_eq!(
+        got,
+        [
+            "e4", "e2", "e3", "e1", "d1", "d3", "d4", "d2", "o4", "o3", "o2", "o1"
+        ]
+    );
+}
+
 #[test]
 fn candidates_respect_match_rule() {
     let fx = fixture();

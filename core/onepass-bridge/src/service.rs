@@ -5,10 +5,11 @@
 //! the origin the browser gave it. A reply holding a secret is built in a
 //! `Zeroizing` buffer and journaled without its value.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 
 use onepass_core::Id;
+use onepass_core::fill_plan::score::{Candidate, Tiebreak, order};
 use onepass_core::generator::{self, CharsetOptions, PassphraseOptions, Wordlist};
 use onepass_core::model::{
     FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PasswordHistoryEntry, new_item,
@@ -26,8 +27,8 @@ use crate::audit::{AuditEvent, AuditSink};
 use crate::origin::{MatchQuality, Origin};
 use crate::policy::{
     card_values, eligible, identity_values, is_provider_account, item_match, login_identifier,
-    login_secrets, provider_url_matches, reveal_value, stored_password, summarize, summary_kind,
-    totp_now,
+    login_secrets, plan_quality, provider_url_matches, reveal_value, stored_password, summarize,
+    summary_kind, to_candidate, totp_now,
 };
 use crate::provider::{ProviderId, from_host};
 use crate::{AppErrorCode, BridgeError, Result};
@@ -129,13 +130,20 @@ fn rank(q: Option<MatchQuality>) -> u8 {
     }
 }
 
-/// Sorts summaries: best match first, then by title.
-fn sort(items: &mut [Summary]) {
-    items.sort_by(|a, b| {
-        rank(a.match_quality)
-            .cmp(&rank(b.match_quality))
-            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
-    });
+/// Sorts summaries through `fill_plan::order`: best match first, then by
+/// title. No usage and no typed username, so `now` never enters a score.
+fn sort(pairs: Vec<(Summary, Candidate)>) -> Vec<Summary> {
+    let mut by_id: HashMap<Id, VecDeque<Summary>> = HashMap::new();
+    let mut cands = Vec::with_capacity(pairs.len());
+    for (s, c) in pairs {
+        by_id.entry(c.item_id).or_default().push_back(s);
+        cands.push(c);
+    }
+    order(&mut cands, None, 0, Tiebreak::Title);
+    cands
+        .iter()
+        .filter_map(|c| by_id.get_mut(&c.item_id)?.pop_front())
+        .collect()
 }
 
 /// Equality of two secrets in constant time.
@@ -470,13 +478,14 @@ impl<V: VaultAccess> Service<V> {
                 .and_then(|(_, i)| login_identifier(i))
                 .map(str::to_owned)
         };
-        let mut out: Vec<Summary> = all
+        let pairs = all
             .iter()
             .filter(|(_, i)| eligible(i) && summary_kind(i.item_type).is_some())
-            .filter_map(|(v, i)| pick(i).map(|q| summarize(v, i, q, &email)))
+            .filter_map(|(v, i)| {
+                pick(i).map(|q| (summarize(v, i, q, &email), to_candidate(i, plan_quality(q))))
+            })
             .collect();
-        sort(&mut out);
-        out
+        sort(pairs)
     }
 
     fn list_for_origin(&mut self, o: &str) -> OpResult<Response> {

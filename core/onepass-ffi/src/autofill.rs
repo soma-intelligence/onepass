@@ -2,9 +2,12 @@
 //! passkey registration and assertion. No secret value crosses here, and the
 //! passkey private key never leaves the Rust.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use onepass_core::Id;
+use onepass_core::fill_plan::score::{
+    Candidate, CandidateKind, MatchQuality as PlanQuality, Tiebreak, order,
+};
 use onepass_core::model::{
     self, Field, FieldType, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule,
     PasskeyCredential,
@@ -219,6 +222,26 @@ fn candidate(item: &Item, quality: FfiMatchQuality, url: Option<&str>) -> FfiAut
     }
 }
 
+/// The ranking envelope of a Login for `fill_plan::score::order`. No usage and
+/// no typed username yet: the score is the match quality alone.
+pub(crate) fn to_candidate(item: &Item, q: FfiMatchQuality) -> Candidate {
+    Candidate {
+        item_id: item.id,
+        kind: CandidateKind::Login,
+        quality: match q {
+            FfiMatchQuality::ExactHost => PlanQuality::Exact,
+            FfiMatchQuality::Domain => PlanQuality::Domain,
+            FfiMatchQuality::Other => PlanQuality::Other,
+        },
+        favorite: item.favorite,
+        // Nanoseconds, so two saves in one second keep their order.
+        updated_at: i64::try_from(item.updated_at.unix_timestamp_nanos()).unwrap_or(i64::MAX),
+        title: item.title.clone(),
+        username_hash: None,
+        usage: None,
+    }
+}
+
 /// Puts the passkey in the first empty `passkeys` field, or in a copy right
 /// after the last one (the field is repeatable); a Login without the field
 /// gets one at the end of its first section.
@@ -359,30 +382,33 @@ impl Session {
         let excluded = parse_ids(&excluded_vault_ids)?;
         let target = site(&service);
         self.with(|repo| {
-            let mut ranked = Vec::new();
+            let mut by_id: HashMap<Id, VecDeque<FfiAutofillCandidate>> = HashMap::new();
+            let mut cands = Vec::new();
             for item in visible_items(repo, &excluded)? {
                 if !live_login(&item) || item.hide_from_autofill {
                     continue;
                 }
                 let best = target.as_ref().and_then(|t| item_quality(t, &item));
-                let c = match best {
-                    Some((q, url)) => candidate(&item, q, url),
-                    None if include_all => candidate(
-                        &item,
+                let (q, url) = match best {
+                    Some((q, url)) => (q, url),
+                    None if include_all => (
                         FfiMatchQuality::Other,
                         item.urls.first().map(|u| u.url.as_str()),
                     ),
                     None => continue,
                 };
-                ranked.push((c, item.favorite, item.updated_at));
+                by_id
+                    .entry(item.id)
+                    .or_default()
+                    .push_back(candidate(&item, q, url));
+                cands.push(to_candidate(&item, q));
             }
-            ranked.sort_by(|a, b| {
-                a.0.quality
-                    .cmp(&b.0.quality)
-                    .then(b.1.cmp(&a.1))
-                    .then(b.2.cmp(&a.2))
-            });
-            Ok(ranked.into_iter().map(|(c, ..)| c).collect())
+            // No usage and no typed username, so `now` never enters a score.
+            order(&mut cands, None, 0, Tiebreak::FavoriteThenRecent);
+            Ok(cands
+                .iter()
+                .filter_map(|c| by_id.get_mut(&c.item_id)?.pop_front())
+                .collect())
         })
     }
 

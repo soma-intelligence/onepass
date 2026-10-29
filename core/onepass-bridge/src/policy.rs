@@ -5,6 +5,7 @@
 //! autofill, and the current TOTP code, never the TOTP secret.
 
 use onepass_core::Id;
+use onepass_core::fill_plan::score::{Candidate, CandidateKind, MatchQuality as PlanQuality};
 use onepass_core::model::{Field, FieldValue, Item, ItemType, LoginMethod, MatchRule};
 use onepass_core::reference::otp_field_of;
 use onepass_core::totp::{code_at, parse_otpauth, seconds_remaining, totp_from_secret};
@@ -51,6 +52,35 @@ pub fn item_match(item: &Item, page: &Origin) -> Option<MatchQuality> {
         }
     }
     best
+}
+
+/// The ranking envelope of an item for `fill_plan::score::order`. No usage
+/// and no typed username yet: the score is the match quality alone.
+pub fn to_candidate(item: &Item, q: PlanQuality) -> Candidate {
+    Candidate {
+        item_id: item.id,
+        kind: match item.item_type {
+            ItemType::CreditCard => CandidateKind::Card,
+            ItemType::Identity => CandidateKind::Identity,
+            _ => CandidateKind::Login,
+        },
+        quality: q,
+        favorite: item.favorite,
+        // Nanoseconds, so two saves in one second keep their order.
+        updated_at: i64::try_from(item.updated_at.unix_timestamp_nanos()).unwrap_or(i64::MAX),
+        title: item.title.clone(),
+        username_hash: None,
+        usage: None,
+    }
+}
+
+/// The plan quality of a bridge match (`None` is no match: `Other`).
+pub fn plan_quality(q: Option<MatchQuality>) -> PlanQuality {
+    match q {
+        Some(MatchQuality::ExactHost) => PlanQuality::Exact,
+        Some(MatchQuality::Domain) => PlanQuality::Domain,
+        None => PlanQuality::Other,
+    }
 }
 
 /// Is this a login of `p`: a URL whose host is an official host of `p`?

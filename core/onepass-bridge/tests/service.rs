@@ -826,3 +826,105 @@ fn writes_count_in_the_rate_limit() {
     );
     assert_eq!(err(&v), "rate_limited");
 }
+
+/// Twelve Logins of mixed quality, title case, favorite and date: the order of
+/// `list_for_origin` is best match first, then lowercase title. Frozen from the
+/// ranker before it went through `fill_plan::order`.
+#[test]
+fn list_for_origin_order_is_frozen() {
+    use onepass_core::model::{ItemType, ItemUrl, new_item};
+
+    let (mut vault, _) = FakeVault::new();
+    let v = vault.vaults[0].id;
+    vault.items.clear();
+    let rows = [
+        (
+            "zeta",
+            "https://shop.example.test",
+            MatchRule::ExactHost,
+            true,
+        ),
+        (
+            "Yankee",
+            "https://www.example.test",
+            MatchRule::Domain,
+            false,
+        ),
+        (
+            "Alpha",
+            "https://shop.example.test",
+            MatchRule::ExactHost,
+            false,
+        ),
+        (
+            "apple",
+            "https://blog.example.test",
+            MatchRule::Domain,
+            true,
+        ),
+        ("Nope1", "https://elsewhere.test", MatchRule::Domain, true),
+        (
+            "Beta",
+            "https://shop.example.test",
+            MatchRule::ExactHost,
+            true,
+        ),
+        ("Zulu", "https://www.example.test", MatchRule::Domain, false),
+        (
+            "alpha2",
+            "https://shop.example.test",
+            MatchRule::ExactHost,
+            false,
+        ),
+        (
+            "Cherry",
+            "https://www.example.test",
+            MatchRule::Domain,
+            true,
+        ),
+        (
+            "Nope2",
+            "https://elsewhere.test",
+            MatchRule::ExactHost,
+            false,
+        ),
+        (
+            "mango",
+            "https://shop.example.test",
+            MatchRule::ExactHost,
+            false,
+        ),
+        (
+            "banana",
+            "https://docs.example.test",
+            MatchRule::Domain,
+            false,
+        ),
+    ];
+    for (title, u, rule, favorite) in rows {
+        let mut i = new_item(ItemType::Login, v, title);
+        i.favorite = favorite;
+        i.urls.push(ItemUrl {
+            label: String::new(),
+            url: u.into(),
+            rule,
+            primary: true,
+        });
+        vault.items.push(i);
+    }
+    let mut svc = Service::new(vault, Box::new(MemoryAudit::new()));
+    let out = svc.handle(
+        json!({"id":1,"op":"list_for_origin","ctx":"menu","origin":"https://shop.example.test"})
+            .to_string()
+            .as_bytes(),
+        NOW,
+    );
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        titles(&v),
+        [
+            "Alpha", "alpha2", "Beta", "mango", "zeta", "apple", "banana", "Cherry", "Yankee",
+            "Zulu"
+        ]
+    );
+}
