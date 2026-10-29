@@ -2,7 +2,7 @@
 
 Date : 2026-10-28
 Statut : en revue (design validé section par section avec le fondateur le 2026-10-28)
-Portée : au-dessus du jalon 7 dans les apps (`2026-10-27-m7-app-design.md`), rendre le serveur MCP de l'app Mac utilisable par tout agent IA du Mac, y compris quand le titulaire n'est pas devant l'écran. Branche `docs/agent-ready-spec`, implémentation sur une branche partie de `feat/onepass-redesign`.
+Portée : au-dessus du jalon 7 dans les apps (`2026-10-27-m7-app-design.md`), rendre le serveur MCP de l'app Mac utilisable par tout agent IA du Mac, y compris quand le titulaire n'est pas devant l'écran. Branche `docs/agent-ready-spec`, implémentation sur `feat/agent-ready`, partie de `main` (qui porte le jalon 7 dans les apps).
 
 ## 1. Compréhension
 
@@ -68,20 +68,20 @@ Règle de frontière inchangée : seul le Rust manipule les clés et vérifie le
 
 La liste des appareils (`devices.rs`, `DeviceEntry`) ne porte aucune clé publique. Un nouvel enregistrement signé, additif, les ajoute :
 
+Une troisième liste signée, chaînée et monotone (`lists.rs`), à côté de la liste des appareils et de celle des coffres :
+
 ```
-approvers = SignedConfig(domaine "approvers", signé par la clé du compte) {
-  generation: u64,
-  entries: [ { device_id, sign_pub: HybridSignPublic (ML-DSA-87 + Ed25519),
+ApproverList (RecordKind::ApproverList, domaine "approver-list", signée par la clé du compte)
+  entries: [ ApproverEntry { device_id, sign_pub: HybridVerifyingKey (ML-DSA-87 + Ed25519),
                kem_pub: HybridKemPublic (ML-KEM-1024 + X25519),
-               role: Mac | Phone, added_at } ]
-}
+               role: Mac | Phone, added_at, retired_at: Option } ]
 ```
 
-- Chaque appareil génère ses deux paires de clés à l'activation de la fonction, garde les privées dans son trousseau (ce seul appareil, sans synchro iCloud), signe l'entrée avec la clé du compte (le coffre est ouvert à ce moment) et l'enregistrement part par la synchro CloudKit habituelle.
-- Une entrée ne vaut que si son `device_id` figure dans la liste des appareils et n'y est pas révoqué. Révoquer un appareil invalide donc ses clés d'approbation sans autre écriture.
-- Chaque appareil garde en mémoire la plus haute `generation` vue (comme le registre des clients) : un registre plus ancien rejoué est refusé.
+- Chaque appareil génère ses deux paires de clés à l'activation de la fonction, garde les privées dans son trousseau (ce seul appareil, sans synchro iCloud), ajoute son entrée (le coffre est ouvert à ce moment, la liste est signée par la clé du compte) et l'enregistrement part par la synchro CloudKit habituelle.
+- Une entrée ne vaut que si son `device_id` figure dans la liste des appareils et n'y est pas révoqué, et si elle n'est pas retirée. Révoquer un appareil invalide donc ses clés d'approbation sans autre écriture ; réenrôler un appareil retire son entrée et en ajoute une neuve.
+- Le chaînage des listes (`seq`, `prev_hash`, dernier corps vu dans `ChainState`) refuse un registre plus ancien rejoué. `ChainState` passe à la version 2 (champ `approver_list`), la version 1 se lit encore.
 
-Ruling: registre séparé plutôt que des champs dans `DeviceEntry` - aucun changement du format de la liste des appareils, les anciens clients l'ignorent - coût si faux : une lecture de plus à chaque vérification, mise en cache par session.
+Ruling: liste séparée plutôt que des champs dans `DeviceEntry` - aucun changement du format de la liste des appareils, les anciens clients l'ignorent - coût si faux : une lecture de plus à chaque vérification, mise en cache par session.
 
 Ruling: clé privée du téléphone hors synchro iCloud - une clé synchronisée laisserait n'importe quel appareil du compte Apple répondre à la place du téléphone - coût si faux : un nouveau téléphone doit s'enrôler à nouveau.
 
@@ -94,7 +94,7 @@ Demande (Mac vers un téléphone), une par téléphone enrôlé :
 ```
 RemoteRequest { v: 1, request_id: [u8; 16], from: device_id (Mac), to: device_id (téléphone),
   created_at, expires_at (created_at + 60 s), registry_generation (clients),
-  approvers_generation, kind: Approve | Unlock | ApproveAndUnlock | Pair,
+  approver_list_seq, kind: Approve | Unlock | ApproveAndUnlock | Pair,
   body: scellé pour kem_pub du téléphone {
     client: identité vérifiée affichable, action, lignes de détail non secrètes,
     cibles (coffre, item, champ en noms), remember_allowed, strong_required,
@@ -114,7 +114,7 @@ RemoteResponse { v: 1, request_id, from: téléphone, to: Mac, created_at,
 
 - Scellement : `kem::wrap_key_labeled` avec les étiquettes `onepass/remote/request/v1` et `onepass/remote/unlock/v1`, contexte = `request_id || from || to`, comme la charge de la montre (`companion.rs`).
 - Le Mac n'accepte qu'une réponse par `request_id`, signée par un téléphone du registre, adressée à lui, avant `expires_at` (horloge du Mac), pour une demande qu'il a lui-même émise et qui attend encore. Toute autre réponse est refusée et journalisée.
-- Le téléphone refuse une demande expirée, non signée par un Mac du registre, ou déjà vue (liste des `request_id` des 24 dernières heures).
+- Le téléphone refuse une demande expirée (son horloge, avec 120 s de tolérance), non signée par un Mac du registre, ou déjà vue (liste des `request_id` des 24 dernières heures).
 
 ### 5.2 Transport CloudKit
 
@@ -224,10 +224,10 @@ Risques résiduels, documentés : CloudKit et Apple voient quand et combien de d
 
 ## 10. Tests
 
-- Rust, `approvers` : signature par la clé du compte, appareil révoqué ignoré, génération plus ancienne refusée.
+- Rust, `approvers` : liste signée par la clé du compte, appareil révoqué ou entrée retirée ignorés, liste plus ancienne rejouée refusée, `ChainState` version 1 lue.
 - Rust, `remote` : aller-retour scellé et signé ; refus d'une réponse expirée, rejouée, d'un autre appareil, d'un appareil révoqué, adressée à un autre Mac, pour une demande inconnue ; demande dont la génération des clients a reculé.
 - Rust, `remote_unlock` : enrôlement puis ouverture donnent la même AUK que le mot de passe ; `C` seul et `K_r` seul n'ouvrent rien ; révocation ; changement de mot de passe qui efface les `C`.
-- FFI : session `AgentOnly` refuse les appels d'interface et sert MCP ; fin de fenêtre ; `PromptBridge` avec un approbateur à distance scripté (première réponse gagne, l'autre retirée, refus tardif ignoré).
+- FFI : session `AgentOnly` refusée par le pont des navigateurs et sert MCP ; fin de fenêtre ; `PromptBridge` avec un approbateur à distance scripté (première réponse gagne, l'autre retirée, refus tardif ignoré).
 - Swift : `RemoteChannel` sur un faux CloudKit en mémoire ; `RemoteResponder` (Face ID simulé) ; écran de demande sur le simulateur.
 - Relais : `install` et `uninstall` dans un `HOME` temporaire pour les quatre clients, sauvegarde, `--dry-run`, `--force`, fichier existant avec d'autres serveurs intact.
 - Bout en bout : relais signé, vrai client MCP, app sur un coffre de test, réponse à distance injectée par le faux CloudKit.
@@ -245,7 +245,7 @@ Risques résiduels, documentés : CloudKit et Apple voient quand et combien de d
 
 1. CloudKit privé et notification visible.
 2. Notification sensible au temps, pas silencieuse.
-3. Registre des clés d'approbation séparé de la liste des appareils.
+3. Liste des clés d'approbation séparée de la liste des appareils.
 4. Clés privées du téléphone hors synchro iCloud.
 5. Identifiant d'appareil destinataire en clair dans l'enregistrement CloudKit.
 6. La montre approuve par le panneau du Mac, pas par la notification.
