@@ -11,6 +11,10 @@ use std::sync::OnceLock;
 use assert_cmd::Command;
 use predicates::prelude::*;
 
+/// The development secret store of every test run (`secret_store.rs`):
+/// a directory standing in for the keychain or the Secret Service.
+const SECRET_STORE: &str = concat!("dir:", env!("CARGO_TARGET_TMPDIR"), "/secret-store");
+
 const PASSWORD: &str = "correct horse battery";
 const TOTP_SECRET: &str = "JBSWY3DPEHPK3PXP";
 
@@ -31,6 +35,7 @@ fn onepass(dir: &Path, password: &str) -> Command {
     c.env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
         .env("ONEPASS_PASSWORD", password)
         .env("ONEPASS_DEV_FAST_KDF", "1")
+        .env("ONEPASS_DEV_SECRET_STORE", SECRET_STORE)
         .arg("--data-dir")
         .arg(dir);
     c
@@ -494,6 +499,7 @@ fn parallel_writers_lose_nothing() {
             c.env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
                 .env("ONEPASS_PASSWORD", PASSWORD)
                 .env("ONEPASS_DEV_FAST_KDF", "1")
+                .env("ONEPASS_DEV_SECRET_STORE", SECRET_STORE)
                 .arg("--data-dir")
                 .arg(dir)
                 .args(["item", "create", "login", "--title"])
@@ -528,6 +534,7 @@ fn run_closed_stdout(dir: &Path, args: &[&str]) -> Out {
         .env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
         .env("ONEPASS_PASSWORD", PASSWORD)
         .env("ONEPASS_DEV_FAST_KDF", "1")
+        .env("ONEPASS_DEV_SECRET_STORE", SECRET_STORE)
         .arg("--data-dir")
         .arg(dir)
         .args(args)
@@ -619,4 +626,110 @@ fn a_pending_password_prompt_does_not_hold_the_lock() {
     let status = status.expect("the command waited on the lock before prompting");
     assert_eq!(status.code(), Some(1));
     drop(held);
+}
+
+/// Whether `bytes` hold the Secret Key `shown`, dashed or bare.
+fn holds_key(bytes: &[u8], shown: &str) -> bool {
+    let bare: String = shown.chars().filter(|c| *c != '-').collect();
+    [shown.to_owned(), bare]
+        .iter()
+        .any(|form| bytes.windows(form.len()).any(|w| w == form.as_bytes()))
+}
+
+fn shown_key(out: &str) -> String {
+    out.lines()
+        .find_map(|l| l.strip_prefix("Secret Key: "))
+        .expect("a Secret Key line")
+        .to_owned()
+}
+
+fn output(mut c: Command) -> Out {
+    let o = c.output().unwrap();
+    Out {
+        code: o.status.code().unwrap(),
+        stdout: String::from_utf8(o.stdout).unwrap(),
+        stderr: String::from_utf8(o.stderr).unwrap(),
+    }
+}
+
+#[test]
+fn account_create_keeps_the_secret_key_out_of_device_bin() {
+    let t = template();
+    assert_eq!(t.account.code, 0, "{}", t.account.stderr);
+    let key = shown_key(&t.account.stdout);
+    let device = fs::read(t.dir.join("device.bin")).unwrap();
+    assert!(!holds_key(&device, &key), "Secret Key found in device.bin");
+    let store = PathBuf::from(SECRET_STORE.strip_prefix("dir:").unwrap());
+    let in_store = fs::read_dir(&store)
+        .unwrap()
+        .map(|e| e.unwrap())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("secretkey."))
+        .any(|e| fs::read_to_string(e.path()).unwrap() == key);
+    assert!(in_store, "Secret Key not in the store");
+}
+
+#[test]
+fn without_a_secret_store_the_key_stays_in_clear_only_by_choice() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("data");
+
+    // No store: refused, nothing left behind.
+    let mut c = onepass(&dir, PASSWORD);
+    c.env("ONEPASS_DEV_SECRET_STORE", "none")
+        .args(["account", "create"]);
+    let out = output(c);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(
+        out.stderr.contains("--insecure-file-secret-key"),
+        "{}",
+        out.stderr
+    );
+    assert!(out.stdout.is_empty());
+    assert!(!dir.join("device.bin").exists());
+    assert!(!dir.join("vault.sqlite").exists());
+
+    // The explicit choice: the key sits in device.bin, and it is said.
+    let mut c = onepass(&dir, PASSWORD);
+    c.env("ONEPASS_DEV_SECRET_STORE", "none").args([
+        "--insecure-file-secret-key",
+        "account",
+        "create",
+    ]);
+    let out = output(c);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stderr.contains("WARNING"), "{}", out.stderr);
+    let key = shown_key(&out.stdout);
+    assert!(holds_key(&fs::read(dir.join("device.bin")).unwrap(), &key));
+
+    // Still no store, no option: the earlier choice holds, and is said.
+    let mut c = onepass(&dir, PASSWORD);
+    c.env("ONEPASS_DEV_SECRET_STORE", "none")
+        .args(["vault", "list"]);
+    let out = output(c);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stderr.contains("WARNING"), "{}", out.stderr);
+
+    // A store appears: the key moves into it at the next unlock.
+    let store = tmp.path().join("store");
+    let mut c = onepass(&dir, PASSWORD);
+    c.env(
+        "ONEPASS_DEV_SECRET_STORE",
+        format!("dir:{}", store.display()),
+    )
+    .args(["vault", "list"]);
+    let out = output(c);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stderr.contains("moved"), "{}", out.stderr);
+    assert!(!out.stderr.contains("WARNING"), "{}", out.stderr);
+    assert!(!holds_key(&fs::read(dir.join("device.bin")).unwrap(), &key));
+    let entries: Vec<_> = fs::read_dir(&store).unwrap().map(|e| e.unwrap()).collect();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(fs::read_to_string(entries[0].path()).unwrap(), key);
+
+    // From then on, the store is required: without it, a clear refusal.
+    let mut c = onepass(&dir, PASSWORD);
+    c.env("ONEPASS_DEV_SECRET_STORE", "none")
+        .args(["vault", "list"]);
+    let out = output(c);
+    assert_eq!(out.code, 1, "{}", out.stderr);
 }

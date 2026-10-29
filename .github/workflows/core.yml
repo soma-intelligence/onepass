@@ -34,6 +34,11 @@ jobs:
       # rustup reads core/rust-toolchain.toml (pinned toolchain, rustfmt, clippy).
       - name: Install the pinned toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      # The CLI keeps its Secret Key in the Secret Service on Linux
+      # (dbus-secret-service links libdbus-1 through pkg-config).
+      - name: Install libdbus-1 headers (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-1-dev pkg-config
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: core
