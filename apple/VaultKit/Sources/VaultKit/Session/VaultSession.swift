@@ -89,7 +89,7 @@ public final class VaultSession {
 
     static let maxRecents = 20
     nonisolated static let trashRetentionDays: UInt32 = 30
-    static let unlockPrompt = "Déverrouiller OnePass"
+    static var unlockPrompt: String { String(localized: "Déverrouiller OnePass", bundle: VaultKitStrings.bundle) }
     nonisolated static let personalVault = FfiVaultMeta(
         name: "Personnel", icon: "person", color: "blue", travelSafe: false, mcpAccess: false)
     nonisolated private static let log = Logger(subsystem: "me.somalabs.onepass", category: "session")
@@ -321,8 +321,11 @@ public final class VaultSession {
         }
     }
 
-    nonisolated static let recoveryRefused =
-        "Cette action n'est possible que lorsque le compte a disparu du stockage ou que sa Secret Key manque."
+    nonisolated static var recoveryRefused: String {
+        String(
+            localized: "Cette action n'est possible que lorsque le compte a disparu du stockage ou que sa Secret Key manque.",
+            bundle: VaultKitStrings.bundle)
+    }
 
     private enum Presence { case present, missing, unknown }
 
@@ -354,7 +357,8 @@ public final class VaultSession {
     /// The stored Secret Key for an unlock, in a wipeable buffer (the caller wipes it). Missing:
     /// `needsSecretKey`. Keychain error: thrown as is.
     func loadSecretKey() throws -> (accountID: String, secretKey: SecretBytes) {
-        let missing = VaultError.other("La Secret Key de ce compte n'est pas sur cet appareil : utilise ton Emergency Kit.")
+        let missing = VaultError.other(String(
+            localized: "La Secret Key de ce compte n'est pas sur cet appareil : utilise ton Emergency Kit.", bundle: VaultKitStrings.bundle))
         guard let accountID = knownAccountID() else {
             needsSecretKey = true
             throw fail(missing)

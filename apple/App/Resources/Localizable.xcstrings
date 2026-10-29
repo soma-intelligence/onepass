@@ -62,6 +62,16 @@
         }
       }
     },
+    "%@ (clé privée)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (Private Key)"
+          }
+        }
+      }
+    },
     "%@ (copie)" : {
       "localizations" : {
         "en" : {
@@ -114,6 +124,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ turned on"
+          }
+        }
+      }
+    },
+    "%@ est activé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Is On"
           }
         }
       }
@@ -264,6 +284,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld"
+          }
+        }
+      }
+    },
+    "%lld caractères au moins" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At least %lld characters"
           }
         }
       }
@@ -1700,6 +1730,16 @@
         }
       }
     },
+    "Assez solide pour ton coffre" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strong enough for your vault"
+          }
+        }
+      }
+    },
     "Associer un navigateur" : {
       "localizations" : {
         "en" : {
@@ -1906,6 +1946,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No Item Selected"
+          }
+        }
+      }
+    },
+    "Aucun élément sélectionné. Choisis un élément dans la liste." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No item selected. Choose an item in the list."
           }
         }
       }
@@ -2276,6 +2326,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "It's the only password you need to remember. No one can recover it for you, not even us."
+          }
+        }
+      }
+    },
+    "C'est noté. Garde-la loin de tes écrans." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noted. Keep it away from your screens."
           }
         }
       }
@@ -3120,6 +3180,16 @@
         }
       }
     },
+    "Choisis un mot de passe, ou touche Générer." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a password, or tap Generate."
+          }
+        }
+      }
+    },
     "Choisis un élément" : {
       "localizations" : {
         "en" : {
@@ -3340,6 +3410,16 @@
         }
       }
     },
+    "Coche la case une fois ta Secret Key rangée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check the box once your Secret Key is stored safely."
+          }
+        }
+      }
+    },
     "Code" : {
       "localizations" : {
         "en" : {
@@ -3466,6 +3546,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Encrypted Vault in iCloud"
+          }
+        }
+      }
+    },
+    "Coffre créé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vault Created"
           }
         }
       }
@@ -3650,6 +3740,16 @@
         }
       }
     },
+    "Confirme ton mot de passe." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm your password."
+          }
+        }
+      }
+    },
     "Confirme-le" : {
       "localizations" : {
         "en" : {
@@ -3686,6 +3786,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confirm the passphrase"
+          }
+        }
+      }
+    },
+    "Confirmé à l'identique" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmed, both match"
           }
         }
       }
@@ -5010,6 +5120,26 @@
         }
       }
     },
+    "Encore %lld caractères." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld more characters."
+          }
+        }
+      }
+    },
+    "Encore 1 caractère." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 more character."
+          }
+        }
+      }
+    },
     "Enregistrement inconnu" : {
       "localizations" : {
         "en" : {
@@ -5536,6 +5666,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Flame"
+          }
+        }
+      }
+    },
+    "Force" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strength"
           }
         }
       }
@@ -6206,6 +6346,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Print the Kit"
+          }
+        }
+      }
+    },
+    "Imprimée, ou sur un support hors ligne." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Printed, or on offline storage."
           }
         }
       }
@@ -7200,6 +7350,16 @@
         }
       }
     },
+    "Les deux saisies doivent être identiques." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Both entries must match."
+          }
+        }
+      }
+    },
     "Les deux saisies sont différentes." : {
       "localizations" : {
         "en" : {
@@ -7676,6 +7836,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Edit"
+          }
+        }
+      }
+    },
+    "Modifier (⌘E)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit (⌘E)"
           }
         }
       }
@@ -8630,6 +8800,16 @@
         }
       }
     },
+    "Ouvrir Réglages" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings"
+          }
+        }
+      }
+    },
     "Ouvrir dans Plans" : {
       "localizations" : {
         "en" : {
@@ -8776,6 +8956,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Shared"
+          }
+        }
+      }
+    },
+    "Pas encore assez solide : ajoute un mot, ou touche Générer." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not strong enough yet. Add a word, or tap Generate."
           }
         }
       }
@@ -8960,6 +9150,16 @@
         }
       }
     },
+    "Plus tard, dans Réglages" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Later, in Settings"
+          }
+        }
+      }
+    },
     "Point" : {
       "localizations" : {
         "en" : {
@@ -9076,6 +9276,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Take iCloud's Version"
+          }
+        }
+      }
+    },
+    "Presque" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almost"
           }
         }
       }
@@ -10190,6 +10400,16 @@
         }
       }
     },
+    "Saisis la Secret Key de ton kit." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the Secret Key from your kit."
+          }
+        }
+      }
+    },
     "Saisis ton mot de passe maître" : {
       "localizations" : {
         "en" : {
@@ -10206,6 +10426,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enter your master password, then confirm with %@."
+          }
+        }
+      }
+    },
+    "Saisis ton mot de passe maître." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter your master password."
+          }
+        }
+      }
+    },
+    "Saisis à nouveau ton mot de passe pour réessayer." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter your password again to retry."
           }
         }
       }
@@ -10736,6 +10976,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sun"
+          }
+        }
+      }
+    },
+    "Solide" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strong"
           }
         }
       }
@@ -11310,6 +11560,16 @@
         }
       }
     },
+    "Ton coffre est chiffré et prêt sur cet %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your vault is encrypted and ready on this %@."
+          }
+        }
+      }
+    },
     "Ton coffre est dans iCloud : il reviendrait sur cet appareil. Pour l'ouvrir, saisis la Secret Key de ton Emergency Kit." : {
       "localizations" : {
         "en" : {
@@ -11326,6 +11586,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your Vault Is Empty"
+          }
+        }
+      }
+    },
+    "Ton coffre s'ouvre maintenant d'un regard ou d'un doigt." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your vault now opens with a glance or a touch."
           }
         }
       }
@@ -11646,6 +11916,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Too many attempts. Try again in %@."
+          }
+        }
+      }
+    },
+    "Trop faible" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too Weak"
           }
         }
       }
@@ -12620,6 +12900,16 @@
         }
       }
     },
+    "fait" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "done"
+          }
+        }
+      }
+    },
     "favoris" : {
       "localizations" : {
         "en" : {
@@ -13010,6 +13300,16 @@
         }
       }
     },
+    "« Plus tard » : tu pourras l'activer dans Réglages." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Later”: you can turn it on in Settings."
+          }
+        }
+      }
+    },
     "À propos" : {
       "localizations" : {
         "en" : {
@@ -13216,6 +13516,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "School"
+          }
+        }
+      }
+    },
+    "à faire" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "to do"
           }
         }
       }

@@ -7,6 +7,14 @@ enum VaultKitStrings {
     /// `pinSourceLanguage()` so they pass whatever the language of the machine.
     nonisolated(unsafe) static var bundle: Bundle = .module
 
+    /// Language the strings are read in: the pinned `.lproj` (tests), else the bundle's pick.
+    static var language: String {
+        if bundle.bundleURL.pathExtension == "lproj" {
+            return bundle.bundleURL.deletingPathExtension().lastPathComponent
+        }
+        return bundle.preferredLocalizations.first ?? "fr"
+    }
+
     /// Reads strings from the French localization only (tests). Idempotent.
     static func pinSourceLanguage() {
         if let path = Bundle.module.path(forResource: "fr", ofType: "lproj"), let fr = Bundle(path: path) {
