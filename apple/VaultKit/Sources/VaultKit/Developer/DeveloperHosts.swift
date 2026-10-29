@@ -299,8 +299,9 @@ final class PromptBridge: FfiDeveloperUi, @unchecked Sendable {
         self.presence = presence
     }
 
-    func approve(request: FfiApprovalRequest) -> FfiDecision {
-        ask(.approval(request)) ?? .deny
+    func approve(request: FfiApprovalRequest) -> FfiAnswer {
+        // Where it was answered comes with the Mac and iPhone race.
+        FfiAnswer(decision: ask(.approval(request)) ?? .deny, approvedOn: nil)
     }
 
     func pairRequest(client: FfiMcpClient) -> Bool {
