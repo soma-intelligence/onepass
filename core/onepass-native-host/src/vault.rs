@@ -344,6 +344,7 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
         item_id: Id,
         u: SiteUsage,
         now: OffsetDateTime,
+        force: bool,
     ) -> onepass_bridge::Result<bool> {
         if self.is_locked() {
             return Err(LOCKED);
@@ -355,7 +356,7 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
             let Some(vault) = vaults.iter().find(|v| v.id == vault_id) else {
                 return Err(Error::NotFound);
             };
-            repo.record_usage(vault, item_id, u, now)
+            repo.record_usage(vault, item_id, u, now, force)
         });
         let written = match written {
             Ok(w) => w,

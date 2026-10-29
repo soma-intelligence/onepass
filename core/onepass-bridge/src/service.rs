@@ -87,13 +87,16 @@ pub trait VaultAccess {
     /// Ask the user to confirm access to an item marked `reprompt`.
     fn approve_reprompt(&mut self, item_id: Id) -> bool;
     /// Remember a fill of `u.site` by an item (`Repository::record_usage`):
-    /// `true` when the item was rewritten.
+    /// `true` when the item was rewritten. `force`: another item, in any
+    /// vault, used the site after this one, so the entry is rewritten even
+    /// within the hour.
     fn record_usage(
         &mut self,
         vault_id: Id,
         item_id: Id,
         u: SiteUsage,
         now: OffsetDateTime,
+        force: bool,
     ) -> Result<bool>;
     /// Forget `site` in every item (`Repository::forget_site_usage`): how
     /// many items were rewritten.
@@ -1011,17 +1014,33 @@ impl<V: VaultAccess> Service<V> {
         if fill.roles.len() > MAX_FIELDS || fill.steps.len() > MAX_STEPS {
             return Err(AppErrorCode::Invalid);
         }
-        let (vault, item) = self.eligible_item(item_id)?;
-        match summary_kind(item.item_type) {
-            Some(SummaryKind::Login) if item_match(&item, &page).is_none() => {
+        let id = parse_id(item_id)?;
+        let all = self.items()?;
+        let (vault, item) = all
+            .iter()
+            .find(|(_, i)| i.id == id && eligible(i))
+            .ok_or(AppErrorCode::NotFound)?;
+        let kind = match summary_kind(item.item_type) {
+            Some(SummaryKind::Login) if item_match(item, &page).is_none() => {
                 return Err(AppErrorCode::OriginMismatch);
             }
-            Some(_) => {}
+            Some(k) => k,
             None => return Err(AppErrorCode::NotFound),
-        }
+        };
+        let site = page.site();
+        // Another eligible item of this kind, in any vault, used the site
+        // after this one: rewrite, or it stays `last_on_site` (spec 6.2).
+        let force = item.site_last_at(&site).is_some_and(|own| {
+            all.iter()
+                .map(|(_, i)| i)
+                .filter(|i| i.id != id && eligible(i) && summary_kind(i.item_type) == Some(kind))
+                .filter_map(|i| i.site_last_at(&site))
+                .any(|at| at > own)
+        });
+        let (vault_id, item_id) = (vault.id, item.id);
         let at = unix(now);
         let usage = SiteUsage {
-            site: page.site(),
+            site,
             form_shape_hash: form_shape_hash(fill.roles),
             intent: fill.intent,
             step_seq: fill.steps.iter().map(|s| (*s).into()).collect(),
@@ -1029,9 +1048,9 @@ impl<V: VaultAccess> Service<V> {
             last_at: at,
         };
         self.vault
-            .record_usage(vault.id, item.id, usage, at)
+            .record_usage(vault_id, item_id, usage, at, force)
             .map_err(app_code)?;
-        self.record("note_fill", item.id, Some(page.host()), ctx, now);
+        self.record("note_fill", item_id, Some(page.host()), ctx, now);
         Ok(Response::Empty {})
     }
 

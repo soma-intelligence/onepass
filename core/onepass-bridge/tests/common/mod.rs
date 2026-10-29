@@ -312,7 +312,19 @@ impl FakeVault {
 
     /// Add a login with one URL to the personal vault.
     pub fn add_login(&mut self, title: &str, user: &str, u: &str, rule: MatchRule) -> Id {
-        let item = login(self.vaults[0].id, title, user, "Twin-Pass-0011", u, rule);
+        self.add_login_in(self.vaults[0].id, title, user, u, rule)
+    }
+
+    /// Add a login with one URL to `vault`.
+    pub fn add_login_in(
+        &mut self,
+        vault: Id,
+        title: &str,
+        user: &str,
+        u: &str,
+        rule: MatchRule,
+    ) -> Id {
+        let item = login(vault, title, user, "Twin-Pass-0011", u, rule);
         let id = item.id;
         self.items.push(item);
         id
@@ -382,15 +394,17 @@ impl VaultAccess for FakeVault {
         item_id: Id,
         u: SiteUsage,
         now: OffsetDateTime,
+        forced: bool,
     ) -> Result<bool> {
-        // As `Repository::record_usage`: forced when another item of the
-        // vault used the site after this one.
+        // As `Repository::record_usage`: `forced`, or another live item of
+        // the vault used the site after this one.
         let vault = self.item(item_id).vault_id;
         let own = self.item(item_id).site_last_at(&u.site);
         let force = self
             .items
             .iter()
             .filter(|i| i.id != item_id && i.vault_id == vault)
+            .filter(|i| !i.archived && i.trashed_at.is_none())
             .filter_map(|i| i.site_last_at(&u.site))
             .any(|at| own.is_some_and(|o| at > o));
         let item = self
@@ -398,7 +412,7 @@ impl VaultAccess for FakeVault {
             .iter_mut()
             .find(|i| i.id == item_id)
             .ok_or(BridgeError::App(AppErrorCode::NotFound))?;
-        Ok(item.note_usage_with(u, now, force))
+        Ok(item.note_usage_with(u, now, force || forced))
     }
 
     fn forget_site_usage(&mut self, site: &str) -> Result<usize> {

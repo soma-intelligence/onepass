@@ -1130,29 +1130,34 @@ impl<S: RecordStore> Repository<S> {
     /// item is saved only when the memory changed enough to be worth a
     /// write (`true`), with its `updated_at` unchanged: a usage write never
     /// beats a real edit from another device. The write is forced when
-    /// another item of the vault used the site after this item's entry, so
-    /// this item becomes the last used there again (A, B, then A within the
-    /// hour). Other items that do not open are skipped for that check.
+    /// `force` (the caller saw another item, maybe in another vault, use
+    /// the site later) or when another live item of this vault used the
+    /// site after this item's entry, so this item becomes the last used
+    /// there again (A, B, then A within the hour). Archived, trashed and
+    /// unreadable items are skipped for that check.
     pub fn record_usage(
         &mut self,
         vault: &Vault,
         item_id: Id,
         u: SiteUsage,
         now: OffsetDateTime,
+        force: bool,
     ) -> Result<bool> {
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
         let (_, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
         let mut item = vault.open_item(rec)?;
-        let force = item.site_last_at(&u.site).is_some_and(|own| {
-            loaded
-                .records
-                .iter()
-                .filter(|(_, r)| r.item_id != item_id)
-                .filter_map(|(_, r)| vault.open_item(r).ok())
-                .filter_map(|other| other.site_last_at(&u.site))
-                .any(|at| at > own)
-        });
+        let force = force
+            || item.site_last_at(&u.site).is_some_and(|own| {
+                loaded
+                    .records
+                    .iter()
+                    .filter(|(_, r)| r.item_id != item_id)
+                    .filter_map(|(_, r)| vault.open_item(r).ok())
+                    .filter(|other| !other.archived && other.trashed_at.is_none())
+                    .filter_map(|other| other.site_last_at(&u.site))
+                    .any(|at| at > own)
+            });
         if !item.note_usage_with(u, now, force) {
             return Ok(false);
         }
@@ -1779,17 +1784,58 @@ mod tests {
         };
         let min = time::Duration::minutes;
         let (t10, t20) = (t0 + min(10), t0 + min(20));
-        assert!(repo.record_usage(&v, a.id, u(t0), t0).unwrap());
-        assert!(repo.record_usage(&v, b.id, u(t10), t10).unwrap());
+        assert!(repo.record_usage(&v, a.id, u(t0), t0, false).unwrap());
+        assert!(repo.record_usage(&v, b.id, u(t10), t10, false).unwrap());
         // B used the site after A's entry: A is rewritten within the hour.
-        assert!(repo.record_usage(&v, a.id, u(t20), t20).unwrap());
+        assert!(repo.record_usage(&v, a.id, u(t20), t20, false).unwrap());
         let items = repo.items(&v).unwrap();
         let last = |id: Id| items.iter().find(|i| i.id == id).unwrap().usage[0].last_at;
         assert_eq!(last(a.id), t20);
         assert_eq!(last(b.id), t10);
         // A is now the newest: a repeat within the hour writes nothing.
         let t25 = t0 + min(25);
-        assert!(!repo.record_usage(&v, a.id, u(t25), t25).unwrap());
+        assert!(!repo.record_usage(&v, a.id, u(t25), t25, false).unwrap());
+        // Unless the caller saw a newer use elsewhere (another vault).
+        let t30 = t0 + min(30);
+        assert!(repo.record_usage(&v, a.id, u(t30), t30, true).unwrap());
+    }
+
+    #[test]
+    fn usage_force_scan_skips_archived_and_trashed() {
+        use crate::fill_plan::context::FieldRole;
+        use crate::fill_plan::intent::Intent;
+        use crate::model::usage::{StepKind, form_shape_hash};
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let (a, b) = (login(&v, "alice"), login(&v, "bob"));
+        repo.save_item(&v, a.clone()).unwrap();
+        repo.save_item(&v, b.clone()).unwrap();
+        let t0 = OffsetDateTime::now_utc();
+        let min = time::Duration::minutes;
+        let u = |at: OffsetDateTime| SiteUsage {
+            site: "a.com".into(),
+            form_shape_hash: form_shape_hash(&[FieldRole::Username]),
+            intent: Intent::Login,
+            step_seq: vec![StepKind::Fill],
+            count: 1,
+            last_at: at,
+        };
+        assert!(repo.record_usage(&v, a.id, u(t0), t0, false).unwrap());
+        assert!(
+            repo.record_usage(&v, b.id, u(t0 + min(10)), t0 + min(10), false)
+                .unwrap()
+        );
+        repo.archive_item(&v, b.id).unwrap();
+        assert!(
+            !repo
+                .record_usage(&v, a.id, u(t0 + min(20)), t0 + min(20), false)
+                .unwrap()
+        );
+        repo.trash_item(&v, b.id).unwrap();
+        assert!(
+            !repo
+                .record_usage(&v, a.id, u(t0 + min(21)), t0 + min(21), false)
+                .unwrap()
+        );
     }
 
     #[test]
@@ -1812,11 +1858,21 @@ mod tests {
         let version = |repo: &mut Repository<MemoryStore>| {
             repo.load(&v).unwrap().listed(item.id).unwrap().1.version
         };
-        assert!(repo.record_usage(&v, item.id, u("a.com"), now).unwrap());
-        assert!(repo.record_usage(&v, item.id, u("b.com"), now).unwrap());
+        assert!(
+            repo.record_usage(&v, item.id, u("a.com"), now, false)
+                .unwrap()
+        );
+        assert!(
+            repo.record_usage(&v, item.id, u("b.com"), now, false)
+                .unwrap()
+        );
         let written = version(&mut repo);
         // Same site, same shape, within the hour: no write.
-        assert!(!repo.record_usage(&v, item.id, u("a.com"), now).unwrap());
+        assert!(
+            !repo
+                .record_usage(&v, item.id, u("a.com"), now, false)
+                .unwrap()
+        );
         assert_eq!(version(&mut repo), written);
         let stored = repo.items(&v).unwrap().remove(0);
         assert_eq!(stored.updated_at, item.updated_at);

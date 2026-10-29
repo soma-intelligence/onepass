@@ -556,6 +556,7 @@ mod tests {
             _: Id,
             _: onepass_core::model::usage::SiteUsage,
             _: time::OffsetDateTime,
+            _: bool,
         ) -> crate::Result<bool> {
             Ok(false)
         }

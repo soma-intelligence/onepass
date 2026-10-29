@@ -1312,3 +1312,25 @@ fn forget_site_normalizes_unicode_host() {
     assert_eq!(ok(&v), &json!({"items":1}));
     assert!(h.vault().item(item).usage.is_empty());
 }
+
+// Review round 2.
+
+#[test]
+fn note_fill_a_b_a_across_vaults_prefers_a() {
+    let mut h = H::new();
+    let (perso, pro) = (h.ids.perso, h.ids.pro);
+    let v = h.svc.vault_mut();
+    let a = v.add_login_in(perso, "Twin A", "alex@twin.test", TWIN, MatchRule::Domain);
+    let b = v.add_login_in(pro, "Twin B", "tom@example.com", TWIN, MatchRule::Domain);
+    ok(&h.call_at(note(a, TWIN), NOW));
+    ok(&h.call_at(note(b, TWIN), NOW + 600));
+    ok(&h.call_at(note(a, TWIN), NOW + 1200));
+    assert_eq!(
+        h.vault().item(a).usage[0].last_at.unix_timestamp(),
+        (NOW + 1200) as i64
+    );
+    let v = h.call_at(plan_req(TWIN, page(TWIN, None)), NOW + 1300);
+    let plan = &ok(&v)["plan"];
+    assert_eq!(plan["groups"][0]["item_id"], id(a), "{plan}");
+    assert_eq!(plan["confidence"], "high", "{plan}");
+}

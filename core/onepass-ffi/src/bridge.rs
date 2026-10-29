@@ -381,6 +381,7 @@ impl VaultAccess for AppVault<'_> {
         item_id: Id,
         u: SiteUsage,
         now: OffsetDateTime,
+        force: bool,
     ) -> onepass_bridge::Result<bool> {
         if lock(&self.0.excluded).contains(&vault_id) {
             return Err(BridgeError::App(AppErrorCode::NotFound));
@@ -389,7 +390,7 @@ impl VaultAccess for AppVault<'_> {
             .session()?
             .with(|repo| {
                 let vault = find_vault(repo, vault_id)?;
-                Ok(repo.record_usage(&vault, item_id, u.clone(), now)?)
+                Ok(repo.record_usage(&vault, item_id, u.clone(), now, force)?)
             })
             .map_err(bridge_error)?;
         if written {
