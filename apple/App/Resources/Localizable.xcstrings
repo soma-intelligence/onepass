@@ -2540,6 +2540,16 @@
         }
       }
     },
+    "Ce code reste valable %lld s. Un nouveau le remplace avant la fin." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This code stays valid for %lld s. A new one replaces it before then."
+          }
+        }
+      }
+    },
     "Ce coffre est vide" : {
       "localizations" : {
         "en" : {
@@ -3470,6 +3480,16 @@
         }
       }
     },
+    "Code injecté (Debug)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Injected Code (Debug)"
+          }
+        }
+      }
+    },
     "Code postal" : {
       "localizations" : {
         "en" : {
@@ -3700,6 +3720,26 @@
         }
       }
     },
+    "Configurer un appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set Up a Device"
+          }
+        }
+      }
+    },
+    "Configurer un appareil…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set Up a Device…"
+          }
+        }
+      }
+    },
     "Confirme avec ton mot de passe maître pour retirer cet appareil." : {
       "localizations" : {
         "en" : {
@@ -3846,6 +3886,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Forwarded connection"
+          }
+        }
+      }
+    },
+    "Connexion à ton autre appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting to Your Other Device"
           }
         }
       }
@@ -6950,6 +7000,16 @@
         }
       }
     },
+    "Le Mac affiche un code à scanner avec le nouvel iPhone ou iPad, puis vous comparez un code à 6 chiffres." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Mac shows a code to scan with the new iPhone or iPad, then you compare a 6-digit code."
+          }
+        }
+      }
+    },
     "Le compte iCloud a changé" : {
       "localizations" : {
         "en" : {
@@ -8216,6 +8276,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Browsers"
+          }
+        }
+      }
+    },
+    "Ne montre ce code qu'à ton propre appareil, devant toi." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show this code only to your own device, in front of you."
           }
         }
       }
@@ -10550,6 +10620,16 @@
         }
       }
     },
+    "Scanne ce code avec ton nouvel appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan This Code with Your New Device"
+          }
+        }
+      }
+    },
     "Scanne ce code pour rejoindre « %@ »." : {
       "localizations" : {
         "en" : {
@@ -10586,6 +10666,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scan Kit QR Code"
+          }
+        }
+      }
+    },
+    "Scanner le code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan the Code"
+          }
+        }
+      }
+    },
+    "Scanner le code de mon autre appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan My Other Device’s Code"
           }
         }
       }
@@ -11130,6 +11230,16 @@
         }
       }
     },
+    "Sur l'iPhone ou l'iPad : « J'ai déjà OnePass sur un autre appareil », puis « Scanner le code de mon autre appareil »." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the iPhone or iPad: “I Already Have OnePass on Another Device”, then “Scan My Other Device’s Code”."
+          }
+        }
+      }
+    },
     "Sur le nouvel appareil, choisis « J'ai déjà OnePass sur un autre appareil » : il affiche un QR code à scanner avec ton iPhone ou ton iPad." : {
       "localizations" : {
         "en" : {
@@ -11536,6 +11646,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your other device ended the session."
+          }
+        }
+      }
+    },
+    "Ton autre appareil est un Mac ? Ouvre le menu de ton compte, puis « Configurer un appareil »." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Is your other device a Mac? Open your account menu, then “Set Up a Device”."
           }
         }
       }
@@ -12160,6 +12280,16 @@
         }
       }
     },
+    "Une session invitée s'approuve depuis ton iPhone ou ton iPad." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approve a guest session from your iPhone or iPad."
+          }
+        }
+      }
+    },
     "Utilise tes secrets dans le terminal, avec Git et tes agents IA, sans les copier en clair." : {
       "localizations" : {
         "en" : {
@@ -12406,6 +12536,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Comma"
+          }
+        }
+      }
+    },
+    "Vise le code affiché par ton Mac ou ton autre appareil, devant toi." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Point at the code your Mac or other device shows, in front of you."
           }
         }
       }

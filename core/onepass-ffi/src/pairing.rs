@@ -13,8 +13,8 @@ use onepass_core::crypto::SecretKey;
 use onepass_core::devices::{DeviceEntry, DeviceMode};
 use onepass_core::model::{FieldValue, Item};
 use onepass_core::pairing::{
-    Approver, AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Message, Newcomer, PairingQr,
-    PublicGrant, SnapshotRecord, check_snapshot_size, snapshot_from_store,
+    Approver, AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Invite, InviteQr, Message,
+    Newcomer, PairingQr, PublicGrant, SnapshotRecord, check_snapshot_size, snapshot_from_store,
 };
 use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::{AccountState, SyncStore};
@@ -140,11 +140,94 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The Bonjour service name of a pairing QR: its session id in hex. Parses
-/// the QR (canonical text only) and trusts nothing else.
+/// The Bonjour service name of a pairing QR or an invite: its session id in
+/// hex. Parses the code (canonical text only) and trusts nothing else.
 #[uniffi::export]
 pub fn pairing_service_name(qr_text: String) -> Result<String, OnePassError> {
+    if let Ok(invite) = InviteQr::parse(&qr_text) {
+        return Ok(bytes_hex(&invite.session_id));
+    }
     Ok(bytes_hex(&PairingQr::parse(&qr_text)?.session_id))
+}
+
+/// What a scanned code is: the QR a new device shows, an invite an unlocked
+/// device shows, or neither. Canonical texts only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiPairingCodeKind {
+    Pairing,
+    Invite,
+    Unknown,
+}
+
+#[uniffi::export]
+pub fn pairing_code_kind(text: String) -> FfiPairingCodeKind {
+    if PairingQr::parse(&text).is_ok() {
+        FfiPairingCodeKind::Pairing
+    } else if InviteQr::parse(&text).is_ok() {
+        FfiPairingCodeKind::Invite
+    } else {
+        FfiPairingCodeKind::Unknown
+    }
+}
+
+// ---- invite (the unlocked device shows the code) ----------------------------
+
+/// The unlocked device's open invite: shows the code, publishes the
+/// service, and starts the session with the first connection whose Hello
+/// carries the invite's secret. Renew it by making a new object.
+#[derive(uniffi::Object)]
+pub struct PairingInvite {
+    session_id: [u8; 16],
+    expires_at: i64,
+    core: Mutex<Invite>,
+}
+
+#[uniffi::export]
+impl PairingInvite {
+    /// A fresh invite, valid 120 s from `now` (Unix seconds).
+    #[uniffi::constructor]
+    pub fn new(now: i64) -> Result<Arc<Self>, OnePassError> {
+        let core = Invite::new(now)?;
+        Ok(Arc::new(PairingInvite {
+            session_id: core.session_id(),
+            expires_at: core.expires_at(),
+            core: Mutex::new(core),
+        }))
+    }
+
+    /// The text to show as a QR code (`OPJOIN1:...`). It holds the secret:
+    /// show it, never log or store it.
+    pub fn qr_text(&self) -> String {
+        lock(&self.core).qr_text().to_owned()
+    }
+
+    pub fn expires_at(&self) -> i64 {
+        self.expires_at
+    }
+
+    /// The Bonjour service name to publish: the session id in hex.
+    pub fn service_name(&self) -> String {
+        bytes_hex(&self.session_id)
+    }
+
+    /// Check a connection's first frame and start the session: send the
+    /// approver's `key_exchange()` back. A refused frame leaves the invite
+    /// open for another connection; an accepted one spends it.
+    pub fn accept(&self, hello: Vec<u8>, now: i64) -> Result<Arc<PairingApprover>, OnePassError> {
+        let (core, key_exchange, sas, peer, requested) = lock(&self.core).accept(&hello, now)?;
+        Ok(Arc::new(PairingApprover {
+            key_exchange,
+            sas,
+            peer,
+            requested,
+            session_id: self.session_id,
+            state: Mutex::new(ApproverState {
+                core,
+                peer_confirmed: false,
+                granted: false,
+            }),
+        }))
+    }
 }
 
 // ---- newcomer ---------------------------------------------------------------
@@ -195,6 +278,40 @@ impl PairingNewcomer {
             hello,
             session_id: qr.session_id,
             expires_at: qr.expires_at,
+            state: Mutex::new(NewcomerState {
+                core,
+                grant: None,
+                released: None,
+                imported: false,
+            }),
+        }))
+    }
+
+    /// Join from a scanned invite (`OPJOIN1:...`), under a fresh device id:
+    /// connect to `service_name()` and send `hello()` (signed with the
+    /// invite's secret); the key exchange is taken for 120 s from `now`.
+    /// `qr_text()` is empty: this device shows no code.
+    #[uniffi::constructor]
+    pub fn join(
+        invite_text: String,
+        name: String,
+        kind: FfiDeviceKind,
+        mode: FfiDeviceMode,
+        now: i64,
+    ) -> Result<Arc<Self>, OnePassError> {
+        let device_id = Id::new();
+        let info = DeviceInfo {
+            device_id,
+            name,
+            kind: kind.into(),
+        };
+        let (core, hello) = Newcomer::join(&invite_text, info, mode.into(), now)?;
+        Ok(Arc::new(PairingNewcomer {
+            device_id,
+            qr_text: String::new(),
+            hello,
+            session_id: core.session_id(),
+            expires_at: core.expires_at(),
             state: Mutex::new(NewcomerState {
                 core,
                 grant: None,

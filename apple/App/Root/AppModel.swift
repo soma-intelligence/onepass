@@ -81,6 +81,8 @@ final class AppModel {
     var showNewItemPicker = false
     /// ⌘⇧I (Fichier > Importer…): the import sheet.
     var showImport = false
+    /// Mac account menu > Configurer un appareil…: the invite the new device scans.
+    var showDeviceSetup = false
     #if DEBUG
     /// `-OnePassDebugImport <path>`: the file the import sheet reads once it opens.
     var debugImportURL: URL?
@@ -839,6 +841,7 @@ final class AppModel {
         pendingDiscard = nil
         showNewItemPicker = false
         showImport = false
+        showDeviceSetup = false
         showRestore = false
         // The offer holds the typed password: never kept past a lock.
         biometricOffer = nil

@@ -55,14 +55,23 @@ impl Approver {
         if h.session_id != qr.session_id || sha256(&h.ephemeral_public.to_bytes()) != qr.key_hash {
             return Err(IntegrityError::WrongContext.into());
         }
+        Approver::start(qr_text, hello, h)
+    }
 
+    /// The key exchange for a checked Hello: `qr_text` is the text both
+    /// sides hash into the transcript (the newcomer's QR, or the invite).
+    pub(super) fn start(
+        qr_text: &str,
+        hello: &[u8],
+        h: Hello,
+    ) -> Result<(Approver, Vec<u8>, String, DeviceInfo, DeviceMode)> {
         let t = transcript(qr_text, hello);
         let k = SymmetricKey::generate()?;
         let envelope = wrap_key_labeled(&h.ephemeral_public, &k, KEM_LABEL, &t)?;
         let code = sas(&k, &t)?;
         let approver = Approver {
-            channel: Channel::approver(&k, qr.session_id)?,
-            session_id: qr.session_id,
+            channel: Channel::approver(&k, h.session_id)?,
+            session_id: h.session_id,
             requested: h.requested_mode,
             peer_confirmed: false,
             granted: None,

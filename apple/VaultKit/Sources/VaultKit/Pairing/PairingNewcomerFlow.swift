@@ -19,6 +19,8 @@ public final class PairingNewcomerFlow {
         case idle
         /// Show `qrText` as a QR code until `expiresAt` (a new one replaces it before).
         case showingCode(qrText: String, expiresAt: Date)
+        /// Joining from a scanned invite: reaching the device that shows it.
+        case joining
         /// Compare `sas` with the approver's screen.
         case comparing(sas: String)
         /// Confirmed here; the approver confirms and grants.
@@ -36,7 +38,8 @@ public final class PairingNewcomerFlow {
 
         public static func == (a: State, b: State) -> Bool {
             switch (a, b) {
-            case (.idle, .idle), (.waitingForApproval, .waitingForApproval), (.receivedFull, .receivedFull),
+            case (.idle, .idle), (.joining, .joining), (.waitingForApproval, .waitingForApproval),
+                (.receivedFull, .receivedFull),
                 (.importing, .importing), (.done, .done), (.cancelled, .cancelled):
                 true
             case (.showingCode(let q1, let e1), .showingCode(let q2, let e2)): q1 == q2 && e1 == e2
@@ -66,7 +69,14 @@ public final class PairingNewcomerFlow {
     public private(set) var importError: VaultError?
 
     @ObservationIgnored private let vault: VaultSession
-    @ObservationIgnored private let listener: any PairingListener
+    /// Where the approver comes from: it scans the QR this device shows, or this device scanned its
+    /// invite and connects to it.
+    private enum Source {
+        case show(any PairingListener)
+        case join(invite: String, connector: any PairingConnector)
+    }
+
+    @ObservationIgnored private let source: Source
     @ObservationIgnored private let deviceName: String
     @ObservationIgnored private let deviceKind: FfiDeviceKind
     @ObservationIgnored private let renewEvery: Duration
@@ -95,7 +105,7 @@ public final class PairingNewcomerFlow {
     ) {
         self.vault = vault
         self.mode = mode
-        self.listener = listener
+        self.source = .show(listener)
         self.deviceName = String((deviceName ?? VaultSession.currentDeviceName()).prefix(VaultSession.maxDeviceNameLength))
         self.deviceKind = deviceKind ?? VaultSession.currentDeviceKind
         self.renewEvery = renewEvery
@@ -103,6 +113,30 @@ public final class PairingNewcomerFlow {
         self.grantLifetime = grantLifetime
         self.now = now
     }
+
+    /// Joins from `invite`, the `OPJOIN1:` text scanned on the approver's screen: connects to the
+    /// service it names with `connector` (`LocalNetworkPairingConnector` in the apps), then the same
+    /// code comparison and grant as when this device shows its QR.
+    public init(
+        vault: VaultSession, mode: FfiDeviceMode, invite: String, connector: any PairingConnector,
+        deviceName: String? = nil, deviceKind: FfiDeviceKind? = nil,
+        handshakeTimeout: Duration = PairingNewcomerFlow.joinTimeout,
+        grantLifetime: Duration = PairingNewcomerFlow.grantLifetime,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.vault = vault
+        self.mode = mode
+        self.source = .join(invite: invite, connector: connector)
+        self.deviceName = String((deviceName ?? VaultSession.currentDeviceName()).prefix(VaultSession.maxDeviceNameLength))
+        self.deviceKind = deviceKind ?? VaultSession.currentDeviceKind
+        self.renewEvery = PairingNewcomerFlow.renewInterval
+        self.handshakeTimeout = handshakeTimeout
+        self.grantLifetime = grantLifetime
+        self.now = now
+    }
+
+    /// How long joining an invite may take, from the scan to the key exchange.
+    public static let joinTimeout: Duration = .seconds(20)
 
     isolated deinit {
         run?.cancel()
@@ -199,7 +233,10 @@ public final class PairingNewcomerFlow {
     private func pair() async {
         let connection: (newcomer: PairingNewcomer, transport: any PairingTransport, sas: String)
         do {
-            connection = try await waitForApprover()
+            switch source {
+            case .show(let listener): connection = try await waitForApprover(listener: listener)
+            case .join(let invite, let connector): connection = try await join(invite: invite, connector: connector)
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -218,7 +255,7 @@ public final class PairingNewcomerFlow {
 
     /// Publishes a QR until an approver's key exchange is validated, a new QR every `renewEvery`
     /// (or after a refused key exchange).
-    private func waitForApprover() async throws -> (PairingNewcomer, any PairingTransport, String) {
+    private func waitForApprover(listener: any PairingListener) async throws -> (PairingNewcomer, any PairingTransport, String) {
         while true {
             try Task.checkCancellation()
             let nowUnix = Int64(now().timeIntervalSince1970)
@@ -226,7 +263,41 @@ public final class PairingNewcomerFlow {
             let newcomer = try await CoreThread.run {
                 try PairingNewcomer(name: name, kind: kind, mode: mode, now: nowUnix)
             }
-            if let found = try await publish(newcomer) { return found }
+            if let found = try await publish(newcomer, listener: listener) { return found }
+        }
+    }
+
+    /// Reaches the device showing `invite`, sends the signed Hello and reads its key exchange, all
+    /// within `handshakeTimeout`. An invite the core refuses (expired, not an invite) fails at once.
+    private func join(invite: String, connector: any PairingConnector) async throws -> (PairingNewcomer, any PairingTransport, String) {
+        state = .joining
+        let nowUnix = Int64(now().timeIntervalSince1970)
+        let (name, kind, mode) = (deviceName, deviceKind, mode)
+        let newcomer = try await CoreThread.run {
+            try PairingNewcomer.join(inviteText: invite, name: name, kind: kind, mode: mode, now: nowUnix)
+        }
+        let deadline = handshakeTimeout
+        let transport = try await withThrowingTaskGroup(of: (any PairingTransport)?.self) { group in
+            group.addTask { try await connector.connect(serviceName: newcomer.serviceName()) }
+            group.addTask {
+                try await Task.sleep(for: deadline)
+                return nil
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next(), let transport = first else {
+                throw PairingTransportError.notFound
+            }
+            return transport
+        }
+        do {
+            let exchange = try await Self.handshake(transport, hello: newcomer.hello(), within: deadline)
+            let at = Int64(now().timeIntervalSince1970)
+            let sas = try await CoreThread.run { try newcomer.onKeyExchange(bytes: exchange, now: at) }
+            try Task.checkCancellation()
+            return (newcomer, transport, sas)
+        } catch {
+            transport.close()
+            throw error
         }
     }
 
@@ -240,7 +311,9 @@ public final class PairingNewcomerFlow {
     /// key exchange (16 KiB at most) before its deadline; the first one the core accepts wins, the
     /// others are closed and the service is withdrawn. Nil: renew the QR (time, or a refused key
     /// exchange, which ends this session in the core).
-    private func publish(_ newcomer: PairingNewcomer) async throws -> (PairingNewcomer, any PairingTransport, String)? {
+    private func publish(
+        _ newcomer: PairingNewcomer, listener: any PairingListener
+    ) async throws -> (PairingNewcomer, any PairingTransport, String)? {
         let expiresAt = Date(timeIntervalSince1970: TimeInterval(newcomer.expiresAt()))
         state = .showingCode(qrText: newcomer.qrText(), expiresAt: expiresAt)
         let hello = newcomer.hello()
