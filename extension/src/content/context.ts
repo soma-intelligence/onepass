@@ -23,7 +23,7 @@ import {
   PAGE_CONTEXT_MAX_FIELDS,
   PAGE_CONTEXT_MAX_FORMS,
 } from "../shared/messages";
-import { type FieldElement, isFieldCandidate, scoreField } from "./detect/fields";
+import { controlType, type FieldElement, isFieldCandidate, scoreField } from "./detect/fields";
 import {
   BUTTON_SELECTOR,
   controlForm,
@@ -43,6 +43,8 @@ import {
   SEARCH_WORDS,
   SIGN_IN_WORDS,
   SIGNUP_WORDS,
+  TYPE_ONLY_CONFIDENCE,
+  TYPE_WEIGHTS,
 } from "./detect/lexicon";
 import { buttonLabel } from "./detect/provider";
 import type { RefRegistry } from "./detect/refs";
@@ -61,11 +63,18 @@ const SPLIT_OTP_CONFIDENCE = 0.8;
 /** Headings read per form. */
 const MAX_FORM_HEADINGS = 5;
 
-/** `score` of `classifyField` as 0..1: `AUTOCOMPLETE_SCORE` or more is 1, `SCORE_CEILING` of text and type signals is 1. */
-export function confidenceOf(score: number): number {
-  if (!Number.isFinite(score)) return score === Number.POSITIVE_INFINITY ? 1 : 0;
+/**
+ * `score` of a field as 0..1. `typeWeight` is what the control type alone
+ * contributed to that score (`TYPE_WEIGHTS[type][role]`). `AUTOCOMPLETE_SCORE`
+ * or more is 1. When nothing but the type backs the role (a bare
+ * `type=password`) confidence stops at `TYPE_ONLY_CONFIDENCE`; otherwise
+ * `SCORE_CEILING` of score is 1.
+ */
+export function confidenceOf(score: number, typeWeight = 0): number {
+  if (Number.isNaN(score)) return 0;
   if (score >= AUTOCOMPLETE_SCORE) return 1;
-  return Math.min(1, Math.max(0, score / SCORE_CEILING));
+  const raw = Math.min(1, Math.max(0, score / SCORE_CEILING));
+  return score - typeWeight <= 0 ? Math.min(TYPE_ONLY_CONFIDENCE, raw) : raw;
 }
 
 /** What a button does, read from its label and type. */
@@ -95,7 +104,9 @@ function bytesToHex(bytes: Uint8Array): string {
  * bridge's `fill_salt` returns. Undefined for an empty username.
  */
 export async function hashTypedUsername(salt: string, value: string): Promise<string | undefined> {
-  const name = value.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/i.test(salt)) return undefined;
+  // Rust `char::is_whitespace`: White_Space, which excludes U+FEFF.
+  const name = value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "").toLowerCase();
   if (name === "") return undefined;
   const saltBytes = Uint8Array.from(hexToBytes(salt));
   const nameBytes = new TextEncoder().encode(name);
@@ -116,7 +127,16 @@ function isChecked(el: Element): boolean {
   return el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio") && el.checked;
 }
 
+/** A select holds a value only when moved off the option the page selected (or the first one). */
+function selectMoved(el: HTMLSelectElement): boolean {
+  if (el.multiple) return el.selectedIndex >= 0 && nativeValue(el) !== "";
+  const opts = Array.from(el.options);
+  const def = Math.max(0, opts.findIndex((o) => o.defaultSelected));
+  return el.selectedIndex !== def && nativeValue(el) !== "";
+}
+
 function holdsValue(el: Element): boolean {
+  if (el instanceof HTMLSelectElement) return selectMoved(el);
   return isChecked(el) || nativeValue(el) !== "";
 }
 
@@ -186,13 +206,22 @@ function hintsFor(
 }
 
 /** Buttons of one group (form, or the container of fields outside any form), in document order. */
-function groupButtons(container: Element, geometry: Geometry): HTMLElement[] {
+function groupButtons(doc: Document, container: Element, submit: Element | null, geometry: Geometry): HTMLElement[] {
   const form = container instanceof HTMLFormElement ? container : null;
-  return Array.from(container.querySelectorAll(BUTTON_SELECTOR))
+  const candidates = Array.from(container.querySelectorAll(BUTTON_SELECTOR));
+  // Buttons that belong to the form from outside: `form="id"`, and the one the detector chose.
+  if (form !== null && form.id !== "") {
+    for (const b of Array.from(doc.querySelectorAll("[form]"))) {
+      // Compared as text, no selector built from the id (nothing to escape).
+      if (b.getAttribute("form") === form.id && b.matches(BUTTON_SELECTOR) && !candidates.includes(b)) candidates.push(b);
+    }
+  }
+  if (submit !== null && !candidates.includes(submit)) candidates.push(submit);
+  return candidates
     .filter(
       (b): b is HTMLElement =>
         b instanceof HTMLElement &&
-        controlForm(b) === form &&
+        (b === submit || controlForm(b) === form) &&
         !isNavigatingLink(b) &&
         !b.matches(":disabled") &&
         isRendered(b, geometry),
@@ -200,15 +229,21 @@ function groupButtons(container: Element, geometry: Geometry): HTMLElement[] {
     .slice(0, PAGE_CONTEXT_MAX_BUTTONS);
 }
 
+const CARD_ROLES: ReadonlySet<FieldRole> = new Set(["cc_name", "cc_number", "cc_exp", "cc_exp_month", "cc_exp_year"]);
+
 function fieldContexts(form: PageAnalysis["forms"][number], refs: RefRegistry, geometry: Geometry): FieldContext[] {
   const out: FieldContext[] = [];
+  // As `resolveSecurityCodes`: an ambiguous security code is a card code only next to another card field.
+  const cardForm = form.fields.some((f) => CARD_ROLES.has(f.role));
   for (const f of form.fields) {
     if (out.length >= PAGE_CONTEXT_MAX_FIELDS) break;
     const cells = cellsOf(refs, f.ref, f.parts);
     const first = refs.get(f.ref);
     if (first === null || !isFieldCandidate(first)) continue;
     const split = f.parts !== undefined && f.parts.length > 0;
-    const confidence = split ? SPLIT_OTP_CONFIDENCE : confidenceOf(scoreField(first as FieldElement)[f.role]);
+    const el = first as FieldElement;
+    const typeWeight = (f.role === "unknown" ? undefined : TYPE_WEIGHTS[controlType(el)]?.[f.role]) ?? 0;
+    const confidence = split ? SPLIT_OTP_CONFIDENCE : confidenceOf(scoreField(el, cardForm)[f.role], typeWeight);
     out.push({
       field_ref: f.ref,
       role: f.role,
@@ -234,12 +269,14 @@ export function buildPageContext(
   geometry: Geometry = domGeometry,
 ): PageContext {
   const forms: FormContext[] = [];
-  const extra = analysis.forms.length === 1 ? pageWords(doc, analysis.url) : "";
+  const words = pageWords(doc, analysis.url);
   for (const info of analysis.forms.slice(0, PAGE_CONTEXT_MAX_FORMS)) {
     const container = refs.get(info.ref);
     if (container === null) continue;
+    // Page words: any form of a one-form page, and every sign-in or sign-up form (its heading is often outside it).
+    const extra = analysis.forms.length === 1 || info.kind === "login" || info.kind === "signup" ? words : "";
     const fields = fieldContexts(info, refs, geometry);
-    const buttons = groupButtons(container, geometry);
+    const buttons = groupButtons(doc, container, info.submitRef === undefined ? null : refs.get(info.submitRef), geometry);
     forms.push({
       form_ref: info.ref,
       intent_hints: hintsFor(info.kind, fields.flatMap((f) => (f.role === null ? [] : [f.role])), container, buttons, extra),
@@ -259,6 +296,9 @@ export function buildPageContext(
 }
 
 /**
+ * Page-set values count as typed (a page can pre-fill a field, and then steers
+ * which of its own logins ranks first): accepted, it is the same origin.
+ *
  * The username the user typed in the page's first form, to hash with
  * `withTypedUsernameHash`. Stays in the content script: it is never put in a
  * context or a message. Fields OnePass filled are not the user's typing.

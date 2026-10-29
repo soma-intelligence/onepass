@@ -184,11 +184,14 @@ describe("buildPageContext", () => {
   it("caps fields and buttons of one form", () => {
     const fields = Array.from({ length: 70 }, (_, i) => `<input type="email" autocomplete="email" name="e${i}">`).join("");
     const buttons = Array.from({ length: 40 }, () => `<button type="submit">Pay</button>`).join("");
-    const { ctx } = page(`<form>${fields}<input type="password" autocomplete="current-password">${buttons}</form>`);
-    expect(ctx.forms[0]!.fields.length).toBeLessThanOrEqual(64);
+    const { ctx, refs } = page(`<form>${fields}<input type="password" autocomplete="current-password">${buttons}</form>`);
+    const f0 = ctx.forms[0]!;
+    expect(f0.fields).toHaveLength(64);
+    const firstIds = Array.from(document.querySelectorAll("form input")).slice(0, 64);
+    expect(f0.fields.map((x) => refs.get(x.field_ref))).toEqual(firstIds);
     expect(ctx.forms[0]!.buttons).toHaveLength(32);
-    const refs = ctx.forms.flatMap((f) => f.fields.map((x) => x.field_ref));
-    expect(new Set(refs).size).toBe(refs.length);
+    const all = ctx.forms.flatMap((f) => f.fields.map((x) => x.field_ref));
+    expect(new Set(all).size).toBe(all.length);
   });
 });
 
@@ -255,5 +258,84 @@ describe("hashTypedUsername", () => {
     expect(out.typed_username_hash?.slice(0, 4)).toEqual([0xa2, 0xd5, 0x5e, 0xd8]);
     expect(ctx.typed_username_hash).toBeNull();
     expect((await withTypedUsernameHash(ctx, ZERO_SALT, "")).typed_username_hash).toBeNull();
+  });
+});
+
+describe("round 1 fixes", () => {
+  it("confidence by signal: name-only logins clear 0.6, type-only do not", () => {
+    const { ctx } = page(`<form>
+      <input id="a" type="text" name="username">
+      <input id="b" type="password" name="password">
+      <button type="submit">Sign in</button></form>`);
+    for (const x of ctx.forms[0]!.fields) expect(x.confidence).toBeGreaterThanOrEqual(0.6);
+    const bare = page(`<form><input type="password"><input type="text" autocomplete="username"><button type="submit">Sign in</button></form>`).ctx;
+    const pw = bare.forms[0]!.fields.find((x) => x.role === "current_password")!;
+    expect(pw.confidence).toBeLessThan(0.6);
+    expect(confidenceOf(Number.NaN)).toBe(0);
+    expect(confidenceOf(3, 3)).toBeLessThanOrEqual(0.5);
+  });
+
+  it("an untouched select is empty, a changed one is typed", () => {
+    const html = `<form id="f">
+      <input autocomplete="cc-number" name="n">
+      <select id="m" autocomplete="cc-exp-month"><option value="">Month</option><option value="01">01</option><option value="02">02</option></select>
+      <select id="y" autocomplete="cc-exp-year"><option value="2030">2030</option><option value="2031" selected>2031</option></select>
+      <button type="submit">Pay</button></form>`;
+    const { ctx, refs } = page(html);
+    const state = (id: string) => ctx.forms[0]!.fields.find((x) => (refs.get(x.field_ref) as HTMLElement).id === id)!.prefilled;
+    expect(state("m")).toBe("empty");
+    expect(state("y")).toBe("empty");
+    (byId("m") as HTMLSelectElement).value = "02";
+    const analysis = analyzeDocument(document, refs, { url: SITE, geometry: testGeometry });
+    const again = buildPageContext(document, refs, analysis, ORIGINS, testGeometry);
+    const m = again.forms[0]!.fields.find((x) => (refs.get(x.field_ref) as HTMLElement).id === "m")!;
+    expect(m.prefilled).toBe("typed");
+  });
+
+  it("buttons outside the form (form attribute, submitRef) are included, page words read in a multi-form page", () => {
+    const { ctx, refs } = page(`
+      <h1>Create your account</h1>
+      <form id="su"><input type="email" autocomplete="email"><input type="password" autocomplete="new-password"><input type="password" autocomplete="new-password"></form>
+      <button id="out" type="submit" form="su">Continue</button>
+      <form id="other"><input type="text" autocomplete="username"><input type="password" autocomplete="current-password"><button type="submit">Sign in</button></form>`);
+    const su = ctx.forms.find((f) => (refs.get(f.form_ref) as HTMLElement).id === "su")!;
+    expect(su.buttons.map((b) => (refs.get(b.button_ref) as HTMLElement).id)).toContain("out");
+    expect(su.intent_hints.signup_words).toBe(true);
+    const refsAll = su.buttons.map((b) => b.button_ref);
+    expect(new Set(refsAll).size).toBe(refsAll.length);
+  });
+
+  it("orphan group includes its submitRef", () => {
+    const { ctx, refs } = page(`<div id="g"><input type="email" autocomplete="email"><input type="password" autocomplete="new-password"><input type="password" autocomplete="new-password"></div>
+      <button id="go" type="button">Create account</button>`);
+    expect(ctx.forms).toHaveLength(1);
+    // Whatever the detector picked as submit is listed.
+    const analysis = analyzeDocument(document, refs, { url: SITE, geometry: testGeometry });
+    const sub = analysis.forms[0]!.submitRef;
+    if (sub !== undefined) expect(ctx.forms[0]!.buttons.map((b) => b.button_ref)).toContain(sub);
+  });
+
+  it("wider create words", () => {
+    for (const l of ["Get started", "Start free trial", "Create", "Créer"]) expect(buttonClass(button(l))).toBe("create");
+  });
+
+  it("hash trim is Rust char::is_whitespace", async () => {
+    const z = "00".repeat(32);
+    const plain = await hashTypedUsername(z, "tom@x.com");
+    expect(await hashTypedUsername(z, "tom@x.com\u0085")).toBe(plain);
+    expect(await hashTypedUsername(z, "\uFEFFtom@x.com")).not.toBe(plain);
+  });
+
+  it("malformed salt gives undefined", async () => {
+    expect(await hashTypedUsername("zz", "tom")).toBeUndefined();
+    expect(await hashTypedUsername("00".repeat(31), "tom")).toBeUndefined();
+    expect(await hashTypedUsername("00".repeat(33), "tom")).toBeUndefined();
+  });
+
+  it("a security code read as a one-time code keeps a real confidence", () => {
+    const { ctx } = page(`<form><input type="text" name="security code" id="c" autocomplete="off"><button type="submit">Continue</button></form>`);
+    const f = ctx.forms[0]?.fields.find((x) => x.role === "otp");
+    if (f) expect(f.confidence).toBeGreaterThanOrEqual(0.6);
+    expect(f).toBeDefined();
   });
 });

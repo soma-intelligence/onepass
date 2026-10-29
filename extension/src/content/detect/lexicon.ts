@@ -403,8 +403,14 @@ export function normalizeText(s: string): string {
 // only), so each pattern is written that way. They read the page's wording,
 // never a value the user typed.
 
-/** Highest score `scoreField` gives from text and type alone (an `autocomplete` token gives AUTOCOMPLETE_SCORE). */
-export const SCORE_CEILING = 8;
+/**
+ * Score at which text evidence alone is fully trusted (a name or label match
+ * is worth 3 or more): `confidenceOf` divides by it. 3 gives 0.67, above the
+ * planner's 0.6 floor, so a field named "username" or "password" is planned.
+ */
+export const SCORE_CEILING = 4.5;
+/** Most confidence the control type alone (a bare `type=password`) can give: below the planner's 0.6 floor. */
+export const TYPE_ONLY_CONFIDENCE = 0.5;
 
 /** Buttons that pay: "Pay", "Payer", "Place order". */
 export const PAY_WORDS =
@@ -412,7 +418,7 @@ export const PAY_WORDS =
 
 /** Buttons that create an account. */
 export const CREATE_WORDS =
-  /\b(create (an |your |my )?(free )?(account|profile)|sign ?up|register|registration|join|join now|creer (un |mon |votre )?compte|s inscrire|inscription|inscrivez vous|registrieren|konto erstellen|registrarse|crear (una |mi )?cuenta|registrati|crea (un )?account|criar (uma |a minha )?conta|registreren|account aanmaken)\b/;
+  /\b(create|creer|create (an |your |my )?(free )?(account|profile)|get started|start (a |your )?(free )?trial|sign ?up|register|registration|join|join now|creer (un |mon |votre )?compte|s inscrire|inscription|inscrivez vous|registrieren|konto erstellen|registrarse|crear (una |mi )?cuenta|registrati|crea (un )?account|criar (uma |a minha )?conta|registreren|account aanmaken)\b/;
 
 /** Wording of a "continue" step, without the sign-in verbs. */
 export const NEXT_WORDS =
