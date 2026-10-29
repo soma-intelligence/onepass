@@ -16,7 +16,14 @@ struct PairingStep: View {
                 content(flow)
                     .onChange(of: flow.state, initial: true) { _, state in model.pairingStateChanged(state) }
             } else {
-                ProgressView().frame(maxWidth: .infinity)
+                switch model.effectivePairMethod {
+                case .scan:
+                    ScanCodeStep(model: model)
+                case .type:
+                    TypeCodeStep(model: model)
+                case .showCode:
+                    ProgressView().frame(maxWidth: .infinity)
+                }
             }
         }
     }
@@ -37,6 +44,11 @@ struct PairingStep: View {
                 systemImage: "wifi")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+        case .joining:
+            StepTitle(
+                title: "Connexion à ton autre appareil...",
+                subtitle: "Les deux appareils doivent être proches, sur le même Wi-Fi.")
+            ProgressView().frame(maxWidth: .infinity, minHeight: 80)
         case .comparing(let sas):
             StepTitle(
                 title: "Compare les codes",

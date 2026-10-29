@@ -23,6 +23,12 @@ struct BrowseCommands: Commands {
                 .disabled(!unlocked)
             Button("Restaurer une sauvegarde…") { model.showRestore = true }
                 .disabled(!unlocked)
+            #if os(macOS)
+            Divider()
+            // The Mac shows a code (QR and typed); the new iPhone or iPad scans or types it.
+            Button("Configurer un appareil…") { model.showHostDevice = true }
+                .disabled(!unlocked)
+            #endif
         }
         // Replaces the standard Find submenu, whose ⌘F would compete with this one.
         CommandGroup(replacing: .textEditing) {
