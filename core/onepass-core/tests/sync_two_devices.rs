@@ -212,6 +212,57 @@ fn usage_only_write_never_beats_a_remote_edit_with_an_older_clock() {
 }
 
 #[test]
+fn local_edit_with_an_older_clock_beats_a_remote_usage_only_write() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let x = &items[0];
+    // A remembers a fill (usage only, `updated_at` unchanged) and pushes.
+    let v = a.vault();
+    assert!(
+        a.repo()
+            .record_usage(
+                &v,
+                x.id,
+                site_usage("exemple.fr", T0 + 5),
+                at(T0 + 5),
+                false
+            )
+            .unwrap()
+    );
+    sync(&mut server, &mut a).unwrap();
+    // B's clock is behind: its real edit is dated before the ancestor.
+    b.save(&edited(x, "x.b", T0 - 50));
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    let got = a.items().remove(0);
+    assert_eq!(got.subtitle(), "x.b");
+    assert_eq!(got.usage.len(), 1);
+    assert_eq!(a.items(), b.items());
+}
+
+#[test]
+fn usage_only_write_never_resurrects_a_remotely_deleted_item() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0), ("y", T0)]);
+    let x = &items[0];
+    a.delete(x.id);
+    sync(&mut server, &mut a).unwrap();
+    // B, not synced yet, remembers a fill on the deleted item.
+    let v = b.vault();
+    assert!(
+        b.repo()
+            .record_usage(&v, x.id, site_usage("x.fr", T0 + 5), at(T0 + 5), false)
+            .unwrap()
+    );
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    assert_eq!(users(&a.items()), vec!["y"]);
+    assert_eq!(a.items(), b.items());
+}
+
+#[test]
 fn same_timestamp_edits_converge() {
     let mut server = Server::default();
     let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);

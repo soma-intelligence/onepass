@@ -90,6 +90,8 @@ struct Changed {
     /// The local change touched only the usage memory (`usage_only`
     /// against the ancestor's record, when this device still holds it).
     usage_only: bool,
+    /// The ancestor's record of the item, when this device still holds it.
+    before: Option<Item>,
 }
 
 /// A held vault's intents, worked out before anything is written.
@@ -572,7 +574,8 @@ impl Repository<SyncStore> {
                 })
                 .and_then(|r| vault.open_item(r).ok());
             changed.push(Changed {
-                usage_only: before.is_some_and(|b| usage_only(&item, &b)),
+                usage_only: before.as_ref().is_some_and(|b| usage_only(&item, b)),
+                before,
                 item,
                 hash: e.record_hash,
             });
@@ -654,7 +657,11 @@ impl Repository<SyncStore> {
         let mut saves = Vec::new();
         for c in &plan.changed {
             let Some((_, remote)) = loaded.listed(c.item.id) else {
-                saves.push(c.item.clone());
+                // Deleted on the server: a usage write alone never brings
+                // the item back.
+                if !c.usage_only {
+                    saves.push(c.item.clone());
+                }
                 continue;
             };
             let remote_hash = record_hash(remote);
@@ -668,13 +675,19 @@ impl Repository<SyncStore> {
                 continue;
             }
             // Changed on both sides: the usage of both rides on the winner.
-            // A local change to the usage only never wins, whatever the
-            // clocks say (a usage write leaves `updated_at` alone, and a
-            // remote clock behind must not lose a real edit to it).
+            // A change to the usage only never beats a real edit, whatever
+            // the clocks say (a usage write leaves `updated_at` alone, so a
+            // clock behind on either side must not lose a real edit to it).
             let theirs = vault.open_item(remote)?;
-            let keep = !c.usage_only
-                && (c.item.updated_at > theirs.updated_at
-                    || (c.item.updated_at == theirs.updated_at && c.hash > remote_hash));
+            let remote_usage_only = c.before.as_ref().is_some_and(|b| usage_only(&theirs, b));
+            let keep = if c.usage_only {
+                false
+            } else if remote_usage_only {
+                true
+            } else {
+                c.item.updated_at > theirs.updated_at
+                    || (c.item.updated_at == theirs.updated_at && c.hash > remote_hash)
+            };
             saves.extend(resolve(&c.item, theirs, keep));
         }
         let deletes: Vec<Id> = plan

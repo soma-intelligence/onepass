@@ -100,6 +100,16 @@ pub struct Pool {
     pub now: i64,
 }
 
+/// The page's main intent: the first of `PRIORITY` among its forms,
+/// `Ignore` when none.
+pub fn page_intent(ctx: &PageContext) -> Intent {
+    let intents: Vec<Intent> = ctx.forms.iter().map(intent_of).collect();
+    PRIORITY
+        .into_iter()
+        .find(|i| intents.contains(i))
+        .unwrap_or(Intent::Ignore)
+}
+
 /// Which roles of a form of `intent` a group of `kind` fills.
 fn wants(intent: Intent, kind: GroupKind, role: FieldRole) -> bool {
     use FieldRole as R;
@@ -114,7 +124,10 @@ fn wants(intent: Intent, kind: GroupKind, role: FieldRole) -> bool {
             matches!(role, R::Username | R::Email | R::CurrentPassword)
         }
         (Intent::Reset | Intent::Signup, GroupKind::GeneratedPassword) => generated,
-        (Intent::Signup | Intent::Checkout | Intent::Address, GroupKind::Identity) => identity,
+        // A signup's identifier is the identity's e-mail, also in a field
+        // marked `username`.
+        (Intent::Signup, GroupKind::Identity) => identity || role == R::Username,
+        (Intent::Checkout | Intent::Address, GroupKind::Identity) => identity,
         (Intent::Checkout, GroupKind::Card) => role.is_card(),
         _ => false,
     }
@@ -153,7 +166,8 @@ enum Fallback {
     None,
     /// The default card, else the ranking.
     DefaultCard(Option<Id>),
-    /// The identity of the origin's country, else the first identity.
+    /// The identity of the origin's country, else the ranking (a tie
+    /// among identities is a menu, never the first one by rule).
     Country(Option<String>),
 }
 
@@ -162,7 +176,7 @@ struct Slot {
     kind: GroupKind,
     ranked: Vec<Candidate>,
     scores: Vec<i64>,
-    /// Picked by a rule (default card, country, first identity), not ranking.
+    /// Picked by a rule (default card, identity of the country), not ranking.
     by_rule: bool,
 }
 
@@ -187,16 +201,13 @@ impl Slot {
                 Fallback::DefaultCard(card) => {
                     card.and_then(|d| ranked.iter().position(|c| c.item_id == d))
                 }
-                Fallback::Country(country) => {
-                    by_rule = true;
-                    country.as_ref().and_then(|cc| {
-                        ranked.iter().position(|c| {
-                            countries
-                                .get(&c.item_id)
-                                .is_some_and(|v| v.eq_ignore_ascii_case(cc))
-                        })
+                Fallback::Country(country) => country.as_ref().and_then(|cc| {
+                    ranked.iter().position(|c| {
+                        countries
+                            .get(&c.item_id)
+                            .is_some_and(|v| v.eq_ignore_ascii_case(cc))
                     })
-                }
+                }),
             };
             if let Some(i) = found {
                 by_rule = true;
@@ -270,10 +281,15 @@ pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
     let now = pool.now;
     let countries = &pool.identity_country;
     let mut slots: Vec<Slot> = Vec::new();
+    let mut logins = pool.logins;
+    if intent == Intent::Otp {
+        // Only a Login holding a one-time code secret can fill a code.
+        logins.retain(|c| c.has_totp);
+    }
     if needs(GroupKind::Login) {
         slots.push(Slot::new(
             GroupKind::Login,
-            pool.logins,
+            logins,
             typed,
             now,
             Fallback::None,
@@ -299,6 +315,21 @@ pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
             Fallback::Country(origin_country(&ctx.top_origin)),
             countries,
         ));
+    }
+
+    // A signup without an identity to choose (none in the vault, or a tie
+    // with no rule to break it) still gets its generated password: the
+    // identity is left out of the plan, not guessed, and does not lower its
+    // confidence.
+    let mut reasons = Vec::new();
+    if intent == Intent::Signup {
+        slots.retain(|s| {
+            let keep = s.kind != GroupKind::Identity || s.confidence(true) > Confidence::Low;
+            if !keep {
+                push(&mut reasons, ReasonCode::NoCandidate);
+            }
+            keep
+        });
     }
 
     let mut groups = Vec::new();
@@ -337,7 +368,6 @@ pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
         .filter(|f| refs.contains(&f.field_ref.as_str()))
         .all(|f| f.confidence >= ROLE_MIN);
 
-    let mut reasons = Vec::new();
     // The weakest slot sets the plan's confidence.
     let confidence = slots
         .iter()
@@ -406,6 +436,22 @@ pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
         planned.dedup();
         if planned.len() > 1 {
             push(&mut reasons, ReasonCode::MultipleForms);
+            held = true;
+        }
+        // A value the user typed in a field the chosen item would fill
+        // (the chain refills by its own analysis and could overwrite it):
+        // only a typed username that matched the chosen account is let by.
+        let typed_matched = slots.first().is_some_and(|s| {
+            s.kind == GroupKind::Login && s.scores.first().is_some_and(|t| *t >= TYPED_USERNAME)
+        });
+        let typed_in_target = forms.iter().flat_map(|f| &f.fields).any(|f| {
+            f.visible
+                && f.prefilled == Prefilled::Typed
+                && f.role.is_some_and(|r| {
+                    wants(intent, GroupKind::Login, r) && !(typed_matched && r.is_identifier())
+                })
+        });
+        if typed_in_target {
             held = true;
         }
         // A code is sent only for the item used on this site last time.

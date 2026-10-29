@@ -47,6 +47,8 @@ pub struct Candidate {
     pub title: String,
     pub username_hash: Option<[u8; 32]>,
     pub usage: Option<UsageSignal>,
+    /// A Login holding a one-time code secret (only these fill an Otp form).
+    pub has_totp: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -169,6 +171,7 @@ mod tests {
             title: format!("t{n}"),
             username_hash: None,
             usage: None,
+            has_totp: false,
         }
     }
 

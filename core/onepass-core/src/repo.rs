@@ -1167,9 +1167,13 @@ impl<S: RecordStore> Repository<S> {
 
     /// Forget `site` in every item of every vault this device opens (spec
     /// 7, erase by site), leaving a tombstone in each so other devices'
-    /// copies do not bring it back. Best effort, vault by vault: a vault
-    /// that cannot be read or written (an alert, a lost race) is skipped
-    /// and the others still go. Returns how many items were rewritten, each
+    /// copies do not bring it back. The vaults come from `vaults` (epoch and
+    /// `VaultMissing` checks: an alert there fails the whole call, nothing
+    /// written). Then best effort, vault by vault and item by item: a vault
+    /// that cannot be read or an item that cannot be written (an alert, a
+    /// lost race) does not stop the others, but the call still returns the
+    /// first such error once every vault was tried, so a caller never shows
+    /// a partial forget as done. Returns how many items were rewritten, each
     /// with its `updated_at` unchanged.
     pub fn forget_site_usage(&mut self, site: &str) -> Result<usize> {
         self.forget_site_usage_in(site, |_| true)
@@ -1184,20 +1188,30 @@ impl<S: RecordStore> Repository<S> {
     ) -> Result<usize> {
         let now = OffsetDateTime::now_utc();
         let mut rewritten = 0;
-        for vault in self.open_vaults()?.into_iter().filter(|v| keep(v)) {
-            let Ok(items) = self.items(&vault) else {
-                continue;
+        let mut first_err: Option<Error> = None;
+        for vault in self.vaults()?.into_iter().filter(|v| keep(v)) {
+            let items = match self.items(&vault) {
+                Ok(items) => items,
+                Err(e) => {
+                    first_err.get_or_insert(e);
+                    continue;
+                }
             };
             for mut item in items {
                 if item.forget_site_usage(site, now) {
-                    if self.save_item(&vault, item).is_err() {
-                        break;
+                    match self.save_item(&vault, item) {
+                        Ok(()) => rewritten += 1,
+                        Err(e) => {
+                            first_err.get_or_insert(e);
+                        }
                     }
-                    rewritten += 1;
                 }
             }
         }
-        Ok(rewritten)
+        match first_err {
+            Some(e) => Err(e),
+            None => Ok(rewritten),
+        }
     }
 
     /// Remove an item for good: manifest without it first, then its record
@@ -1887,6 +1901,57 @@ mod tests {
         assert_eq!(stored.usage.len(), 1);
         assert_eq!(stored.usage[0].site, "b.com");
         assert_eq!(stored.updated_at, item.updated_at);
+    }
+
+    #[test]
+    fn forget_by_site_skips_a_failing_vault_and_reports_it() {
+        use crate::fill_plan::context::FieldRole;
+        use crate::fill_plan::intent::Intent;
+        use crate::model::usage::{StepKind, form_shape_hash};
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let w = repo.create_vault(meta("B")).unwrap();
+        let now = OffsetDateTime::now_utc();
+        let u = SiteUsage {
+            site: "a.com".into(),
+            form_shape_hash: form_shape_hash(&[FieldRole::Username]),
+            intent: Intent::Login,
+            step_seq: vec![StepKind::Fill],
+            count: 1,
+            last_at: now,
+        };
+        for vault in [&v, &w] {
+            let item = login(vault, "alice");
+            repo.save_item(vault, item.clone()).unwrap();
+            assert!(
+                repo.record_usage(vault, item.id, u.clone(), now, false)
+                    .unwrap()
+            );
+        }
+        // The store serves an older manifest of `w`: an alert there.
+        let old = repo.store.get(RecordKind::Manifest, w.id).unwrap().unwrap();
+        repo.save_item(&w, login(&w, "bob")).unwrap();
+        let current = repo.store.get(RecordKind::Manifest, w.id).unwrap().unwrap();
+        repo.store.put(old).unwrap();
+        assert_eq!(integrity(repo.items(&w)), IntegrityError::ManifestRollback);
+
+        // The other vault still forgets; the call still says it failed.
+        assert_eq!(
+            integrity(repo.forget_site_usage("a.com")),
+            IntegrityError::ManifestRollback
+        );
+        assert!(repo.items(&v).unwrap()[0].usage.is_empty());
+        repo.store.put(current).unwrap();
+        assert!(repo.items(&w).unwrap().iter().any(|i| !i.usage.is_empty()));
+
+        // A vault the store hides is an alert for the whole call.
+        let key = repo.store.get(RecordKind::VaultKey, w.id).unwrap().unwrap();
+        repo.store.delete(RecordKind::VaultKey, w.id).unwrap();
+        assert_eq!(
+            integrity(repo.forget_site_usage("a.com")),
+            IntegrityError::VaultMissing
+        );
+        repo.store.put(key).unwrap();
+        assert_eq!(repo.forget_site_usage("a.com").unwrap(), 1);
     }
 
     /// Store an item record by hand, as an interrupted write would leave it.

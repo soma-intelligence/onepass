@@ -25,6 +25,7 @@ fn candidate(n: u8, kind: CandidateKind, quality: MatchQuality) -> Candidate {
         title: format!("item {n}"),
         username_hash: None,
         usage: None,
+        has_totp: n == 1,
     }
 }
 

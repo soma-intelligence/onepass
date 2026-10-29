@@ -83,11 +83,20 @@ fn cand(n: u8, kind: CandidateKind, quality: MatchQuality) -> Candidate {
         title: format!("t{n}"),
         username_hash: None,
         usage: None,
+        has_totp: false,
     }
 }
 
 fn login(n: u8) -> Candidate {
     cand(n, CandidateKind::Login, MatchQuality::Exact)
+}
+
+/// A Login holding a one-time code secret.
+fn coded(n: u8) -> Candidate {
+    Candidate {
+        has_totp: true,
+        ..login(n)
+    }
 }
 
 fn card(n: u8) -> Candidate {
@@ -289,14 +298,14 @@ fn login_with_empty_vault_shows_menu() {
 
 #[test]
 fn otp_alone_uses_last_on_site_item() {
-    let mut b = login(2);
+    let mut b = coded(2);
     b.usage = last_here();
     let ctx = page(vec![form(
         "code",
         vec![field("otp", FieldRole::Otp)],
         vec![button("go", ButtonClass::Submit)],
     )]);
-    let p = plan(&ctx, logins(vec![login(1), b])).unwrap();
+    let p = plan(&ctx, logins(vec![coded(1), b])).unwrap();
     assert_eq!(p.intent, Intent::Otp);
     assert_eq!(p.action, Action::FillAndSubmit);
     assert_eq!(p.confidence, Confidence::High);
@@ -314,7 +323,7 @@ fn otp_without_site_memory_only_fills() {
         vec![field("otp", FieldRole::Otp)],
         vec![button("go", ButtonClass::Submit)],
     )]);
-    let p = plan(&ctx, logins(vec![login(1)])).unwrap();
+    let p = plan(&ctx, logins(vec![coded(1)])).unwrap();
     assert_eq!(p.confidence, Confidence::High);
     assert_eq!(p.action, Action::Fill);
 }
@@ -340,7 +349,7 @@ fn otp_in_child_frame_fills_without_submit() {
         vec![],
     )]);
     ctx.frame_kind = FrameKind::SameOriginChild;
-    let p = plan(&ctx, logins(vec![login(1)])).unwrap();
+    let p = plan(&ctx, logins(vec![coded(1)])).unwrap();
     assert_eq!(p.action, Action::Fill);
     assert!(p.reasons.contains(&ReasonCode::ChildFrame));
 }
@@ -449,10 +458,11 @@ fn checkout_mixes_card_identity_email() {
     let p = plan(&ctx, pl).unwrap();
     assert_eq!(group(&p, GroupKind::Card).item, GroupItem::Item(id(12)));
 
-    // No country match: first identity.
+    // No country match: no rule pick, the identities tie, a menu.
     let ctx = page_at("https://shop.de", vec![checkout_form()]);
     let p = plan(&ctx, checkout_pool()).unwrap();
-    assert_eq!(group(&p, GroupKind::Identity).item, GroupItem::Item(id(20)));
+    assert_eq!(p.action, Action::ShowMenu);
+    assert_eq!(p.confidence, Confidence::Low);
 }
 
 #[test]
@@ -493,6 +503,235 @@ fn address_fills_identity_only() {
     assert_eq!(p.groups[0].kind, GroupKind::Identity);
     assert_eq!(p.groups[0].item, GroupItem::Item(id(20)));
     assert_eq!(refs(&p.groups[0]), ["name", "street", "city"]);
+}
+
+// Final review fixes.
+
+fn address_form() -> FormContext {
+    form(
+        "ship",
+        vec![
+            field("name", FieldRole::FullName),
+            field("street", FieldRole::AddressLine1),
+            field("city", FieldRole::City),
+        ],
+        vec![button("go", ButtonClass::Submit)],
+    )
+}
+
+fn address_pool() -> Pool {
+    let mut identity_country = HashMap::new();
+    identity_country.insert(id(20), "US".to_string());
+    identity_country.insert(id(21), "FR".to_string());
+    Pool {
+        identities: vec![identity(20), identity(21), identity(22)],
+        identity_country,
+        ..pool()
+    }
+}
+
+#[test]
+fn identity_is_picked_by_rule_only_when_the_country_matches() {
+    // The origin's country matches one identity: it fills.
+    let p = plan(
+        &page_at("https://boutique.fr", vec![address_form()]),
+        address_pool(),
+    )
+    .unwrap();
+    assert_eq!(p.action, Action::Fill);
+    assert_eq!(group(&p, GroupKind::Identity).item, GroupItem::Item(id(21)));
+
+    // No country (a .com, a .test) or none matching: a menu, never the
+    // first identity by rule.
+    for top in [
+        "https://example.com",
+        "https://shop.test",
+        "https://shop.de",
+    ] {
+        let p = plan(&page_at(top, vec![address_form()]), address_pool()).unwrap();
+        assert_eq!(p.action, Action::ShowMenu, "{top}");
+        assert_eq!(p.confidence, Confidence::Low, "{top}");
+    }
+
+    // The identity used here last time still fills without a country.
+    let mut pl = address_pool();
+    pl.identities[2].usage = last_here();
+    let p = plan(&page_at("https://shop.test", vec![address_form()]), pl).unwrap();
+    assert_eq!(p.action, Action::Fill);
+    assert_eq!(group(&p, GroupKind::Identity).item, GroupItem::Item(id(22)));
+}
+
+fn signup_form(button_class: ButtonClass) -> FormContext {
+    form(
+        "signup",
+        vec![
+            field("user", FieldRole::Username),
+            field("pw", FieldRole::NewPassword),
+            field("pw2", FieldRole::ConfirmPassword),
+        ],
+        vec![button("go", button_class)],
+    )
+}
+
+#[test]
+fn signup_identity_fills_a_username_field_with_its_email() {
+    let pl = Pool {
+        identities: vec![identity(5)],
+        ..pool()
+    };
+    let p = plan(&page(vec![signup_form(ButtonClass::Create)]), pl).unwrap();
+    assert_eq!(p.intent, Intent::Signup);
+    let ident = group(&p, GroupKind::Identity);
+    assert_eq!(ident.item, GroupItem::Item(id(5)));
+    assert_eq!(refs(ident), ["user"]);
+    assert_eq!(refs(group(&p, GroupKind::GeneratedPassword)), ["pw", "pw2"]);
+}
+
+#[test]
+fn signup_without_identity_still_plans_the_generated_password() {
+    let p = plan(&page(vec![signup_form(ButtonClass::Create)]), pool()).unwrap();
+    assert_eq!(p.intent, Intent::Signup);
+    assert_eq!(p.action, Action::Fill);
+    assert_ne!(p.confidence, Confidence::Low);
+    assert_eq!(p.groups.len(), 1);
+    assert_eq!(p.groups[0].item, GroupItem::GeneratedPassword);
+    assert_eq!(refs(&p.groups[0]), ["pw", "pw2"]);
+
+    // Several identities and none to choose by rule: no identity is
+    // guessed, the generated password still is.
+    let pl = Pool {
+        identities: vec![identity(5), identity(6)],
+        ..pool()
+    };
+    let p = plan(&page(vec![signup_form(ButtonClass::Create)]), pl).unwrap();
+    assert_eq!(p.action, Action::Fill);
+    assert_eq!(p.groups.len(), 1);
+    assert_eq!(p.groups[0].item, GroupItem::GeneratedPassword);
+}
+
+#[test]
+fn email_new_password_and_continue_is_a_signup_never_sent() {
+    let f = form(
+        "step",
+        vec![
+            field("mail", FieldRole::Email),
+            field("pw", FieldRole::NewPassword),
+        ],
+        vec![button("go", ButtonClass::Next)],
+    );
+    let p = plan(&page(vec![f]), logins(vec![login(1)])).unwrap();
+    assert_eq!(p.intent, Intent::Signup);
+    assert_eq!(p.action, Action::Fill);
+    assert!(p.groups.iter().all(|g| g.kind != GroupKind::Login));
+}
+
+fn otp_form() -> FormContext {
+    form(
+        "code",
+        vec![field("otp", FieldRole::Otp)],
+        vec![button("go", ButtonClass::Submit)],
+    )
+}
+
+#[test]
+fn otp_picks_the_login_holding_a_code_and_submits_it() {
+    // The uncoded login was used here last; the coded one is the only
+    // one that can fill a code, remembered among the coded ones.
+    let mut plain = login(1);
+    plain.usage = last_here();
+    let mut with_code = coded(2);
+    with_code.usage = last_here();
+    let p = plan(&page(vec![otp_form()]), logins(vec![plain, with_code])).unwrap();
+    assert_eq!(p.intent, Intent::Otp);
+    assert_eq!(p.groups.len(), 1);
+    assert_eq!(p.groups[0].item, GroupItem::Item(id(2)));
+    assert_eq!(p.action, Action::FillAndSubmit);
+    assert!(!p.alternatives.contains(&id(1)));
+
+    // No login holds a code: nothing to fill, a menu.
+    let mut plain = login(1);
+    plain.usage = last_here();
+    let p = plan(&page(vec![otp_form()]), logins(vec![plain])).unwrap();
+    assert_eq!(p.action, Action::ShowMenu);
+    assert!(p.groups.is_empty());
+}
+
+#[test]
+fn typed_password_holds_the_chain() {
+    let mut f = login_form();
+    f.fields[1].prefilled = Prefilled::Typed;
+    let p = plan(&page(vec![f]), logins(vec![login(1)])).unwrap();
+    assert_eq!(p.confidence, Confidence::High);
+    assert_eq!(p.action, Action::Fill);
+    assert_eq!(refs(&p.groups[0]), ["user"]);
+
+    // A typed username that matched the chosen account does not hold it.
+    let hash = [9u8; 32];
+    let mut f = login_form();
+    f.fields[0].prefilled = Prefilled::Typed;
+    let mut ctx = page(vec![f]);
+    ctx.typed_username_hash = Some(hash);
+    let mut b = login(2);
+    b.username_hash = Some(hash);
+    let p = plan(&ctx, logins(vec![login(1), b])).unwrap();
+    assert_eq!(p.groups[0].item, GroupItem::Item(id(2)));
+    assert_eq!(p.action, Action::OpenChain);
+
+    // A typed username that matched nobody holds it.
+    let mut f = login_form();
+    f.fields[0].prefilled = Prefilled::Typed;
+    let mut ctx = page(vec![f]);
+    ctx.typed_username_hash = Some(hash);
+    let p = plan(&ctx, logins(vec![login(1)])).unwrap();
+    assert_eq!(p.action, Action::Fill);
+}
+
+#[test]
+fn alternatives_never_hold_the_chosen_item() {
+    let mut b = login(2);
+    b.usage = last_here();
+    let p = plan(
+        &page(vec![login_form()]),
+        logins(vec![login(1), b, login(3)]),
+    )
+    .unwrap();
+    assert_eq!(p.groups[0].item, GroupItem::Item(id(2)));
+    assert!(!p.alternatives.contains(&id(2)));
+    assert_eq!(p.alternatives.len(), 2);
+}
+
+#[test]
+fn typed_username_hash_json_matches_the_extension_shape() {
+    // The extension sends the hash as number[32] (`hash_matches_rust_vector`).
+    let hex = "a2d55ed8b5a8ec8839231c0db36ebe5fd98d0bc6e8268b889a44f408e72c0d35";
+    let bytes: Vec<u8> = (0..32)
+        .map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap())
+        .collect();
+    let list = bytes
+        .iter()
+        .map(u8::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    let json = format!(
+        r#"{{"origin":"https://a.test","top_origin":"https://a.test","frame_kind":"top",
+            "forms":[],"typed_username_hash":[{list}]}}"#
+    );
+    let ctx: PageContext = serde_json::from_str(&json).unwrap();
+    assert_eq!(ctx.typed_username_hash.map(|h| h.to_vec()), Some(bytes));
+    // And back: the same array of 32 numbers.
+    let back = serde_json::to_value(&ctx).unwrap();
+    assert_eq!(
+        back["typed_username_hash"],
+        serde_json::from_str::<serde_json::Value>(&format!("[{list}]")).unwrap()
+    );
+    // 31 or 33 numbers are refused.
+    let short = json.replace(
+        &format!("[{list}]"),
+        &format!("[{}]", &list[..list.rfind(',').unwrap()]),
+    );
+    assert!(serde_json::from_str::<PageContext>(&short).is_err());
+    let long = json.replace(&format!("[{list}]"), &format!("[{list},1]"));
+    assert!(serde_json::from_str::<PageContext>(&long).is_err());
 }
 
 // Spec 8.1, Ignore.

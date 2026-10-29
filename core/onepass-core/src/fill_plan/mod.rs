@@ -7,4 +7,6 @@ pub mod intent;
 pub mod score;
 pub mod weights;
 
-pub use compose::{Action, FillPlan, GroupItem, GroupKind, PlanGroup, Pool, ReasonCode, plan};
+pub use compose::{
+    Action, FillPlan, GroupItem, GroupKind, PlanGroup, Pool, ReasonCode, page_intent, plan,
+};
