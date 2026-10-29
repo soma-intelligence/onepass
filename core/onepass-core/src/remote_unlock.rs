@@ -78,16 +78,23 @@ pub fn clamp_window_minutes(m: u32) -> u32 {
     m.clamp(MIN_WINDOW_MINUTES, MAX_WINDOW_MINUTES)
 }
 
-/// Rate limit of unlock requests to one phone: one per 10 minutes, and an
-/// hour of silence after three refusals in a row. Persisted by the caller;
-/// persisted values are untrusted, so a timestamp from the future (a block
-/// further out than an hour, a request later than now) is ignored and never
-/// locks anyone out for longer than the rule itself.
+/// Rate limit of unlock requests, kept per Mac: one per 10 minutes, and an
+/// hour of silence after three refusals in a row. Persisted by the caller.
+/// A limit is active while `now` is within its window on either side of the
+/// stored instant, so a clock stepped back (NTP, manual change) does not lift
+/// it; a stored instant years away from `now` is outside the window and
+/// never locks anyone out for good.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnlockThrottle {
     last_request: Option<i64>,
     refusals: u8,
-    blocked_until: Option<i64>,
+    blocked_since: Option<i64>,
+}
+
+/// `at` is within `window` seconds of `now`, either side (never panics).
+fn within(now: i64, at: i64, window: i64) -> bool {
+    let d = now.saturating_sub(at);
+    d > -window && d < window
 }
 
 impl UnlockThrottle {
@@ -96,21 +103,15 @@ impl UnlockThrottle {
     }
 
     pub fn may_request(&self, now: i64) -> bool {
-        if let Some(until) = self.blocked_until {
-            // A genuine block ends at most BLOCK_SECS from now; a stored value
-            // further out is corrupt (or the clock went back) and is ignored.
-            let left = until.saturating_sub(now);
-            if left > 0 && left <= BLOCK_SECS {
-                return false;
-            }
+        if self
+            .blocked_since
+            .is_some_and(|t| within(now, t, BLOCK_SECS))
+        {
+            return false;
         }
-        if let Some(last) = self.last_request {
-            let elapsed = now.saturating_sub(last);
-            if (0..REQUEST_INTERVAL_SECS).contains(&elapsed) {
-                return false;
-            }
-        }
-        true
+        !self
+            .last_request
+            .is_some_and(|t| within(now, t, REQUEST_INTERVAL_SECS))
     }
 
     /// A request went out at `now`.
@@ -118,16 +119,18 @@ impl UnlockThrottle {
         self.last_request = Some(now);
     }
 
-    /// The phone refused (or the request timed out unanswered).
+    /// The phone refused, or the request timed out unanswered (policy: an
+    /// unanswered request counts as a refusal).
     pub fn refused(&mut self, now: i64) {
         self.refusals = self.refusals.saturating_add(1);
         if self.refusals >= REFUSALS_BEFORE_BLOCK {
             self.refusals = 0;
-            self.blocked_until = Some(now.saturating_add(BLOCK_SECS));
+            self.blocked_since = Some(now);
         }
     }
 
-    /// The phone approved: the run of refusals is over.
+    /// The phone approved: clears the run of refusals. It does not lift an
+    /// active block (no request can be sent while blocked).
     pub fn approved(&mut self) {
         self.refusals = 0;
     }
@@ -260,22 +263,44 @@ mod tests {
         let hostile = UnlockThrottle {
             last_request: Some(i64::MAX),
             refusals: 2,
-            blocked_until: Some(i64::MAX),
+            blocked_since: Some(i64::MAX),
         };
-        for now in [i64::MIN, 0, 1_000, i64::MAX] {
+        for now in [i64::MIN, -1, 0, 1_000, i64::MAX] {
             let _ = hostile.may_request(now);
         }
+        assert!(hostile.may_request(0));
+        assert!(hostile.may_request(i64::MIN));
+        let past = UnlockThrottle {
+            last_request: Some(i64::MIN),
+            refusals: 0,
+            blocked_since: Some(i64::MIN),
+        };
+        assert!(past.may_request(0));
+        assert!(past.may_request(i64::MAX));
         let mut t = hostile;
         t.requested(i64::MAX);
         t.refused(i64::MAX);
         t.refused(i64::MIN);
         assert!(t.may_request(0));
-        let past = UnlockThrottle {
-            last_request: Some(i64::MIN),
-            refusals: 0,
-            blocked_until: Some(i64::MIN),
-        };
-        assert!(past.may_request(0));
+    }
+
+    #[test]
+    fn limits_survive_a_clock_step_back() {
+        let mut t = UnlockThrottle::new();
+        t.requested(10_000);
+        assert!(!t.may_request(9_999));
+        assert!(!t.may_request(9_700));
+        assert!(t.may_request(10_000 + 600));
+        assert!(t.may_request(10_000 - 600));
+        let mut b = UnlockThrottle::new();
+        for _ in 0..3 {
+            b.refused(10_000);
+        }
+        assert!(!b.may_request(9_999));
+        assert!(!b.may_request(9_700));
+        assert!(!b.may_request(10_000 + 3599));
+        assert!(b.may_request(10_000 + 3600));
+        assert!(b.may_request(10_000 - 3600));
     }
 
     #[test]
