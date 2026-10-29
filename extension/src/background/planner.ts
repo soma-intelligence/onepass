@@ -53,9 +53,18 @@ export function loginFieldsFor(roles: readonly FieldRole[]): FillField[] {
 
 const SUBMITTING: ReadonlySet<FillAction> = new Set<FillAction>(["open_chain", "fill_and_submit"]);
 
+/** What a plan was made for: its page, and the frame and document it may run in. */
+interface Made {
+  context: PageContext;
+  tabId: number;
+  frameId: number;
+  origin: string;
+  documentId: string | undefined;
+}
+
 export class Planner {
-  /** The context each plan was made for, to check its forms' buttons before a submit. */
-  private readonly contexts = new WeakMap<PlanOut, PageContext>();
+  /** Per plan, what it was made for (its forms' buttons, its target). */
+  private readonly made = new WeakMap<PlanOut, Made>();
 
   constructor(
     private readonly session: Pick<Session, "request">,
@@ -78,12 +87,20 @@ export class Planner {
     // A same-origin child's top is at its very origin.
     const context: PageContext = { ...ctx, origin: t.origin, top_origin: t.origin, frame_kind: frame };
     const { plan } = await this.session.request({ op: "plan_fill", ctx: "menu", origin: t.origin, context });
-    this.contexts.set(plan, context);
+    this.made.set(plan, { context, tabId: t.tabId, frameId: t.frameId, origin: t.origin, documentId: t.documentId });
     return plan;
   }
 
   /** Carry out `plan` in the frame of `t`. */
   async run(t: FillTarget, plan: PlanOut): Promise<RunOutcome> {
+    // A plan made for another tab, frame, origin or document: the menu instead.
+    const made = this.made.get(plan);
+    if (
+      made &&
+      (made.tabId !== t.tabId || made.frameId !== t.frameId || made.origin !== t.origin || made.documentId !== t.documentId)
+    ) {
+      return "menu";
+    }
     const action = this.guarded(t, plan);
     switch (action) {
       case "nothing":
@@ -100,21 +117,35 @@ export class Planner {
       case "fill_and_submit": {
         if (plan.groups.length === 0) return "nothing";
         let generated: string | undefined;
-        for (const g of plan.groups) {
-          const gt: FillTarget = { ...t, formRef: g.form_ref };
-          const roles = g.fields.map((f) => f.role);
-          if (g.kind === "generated_password") {
-            // One new password per run: every generated group gets the same.
-            generated ??= (await this.session.request({ op: "generate", ctx: "menu", recipe: { kind: "smart" } })).password;
-            await this.filler.fillGenerated(gt, generated, roles);
-            continue;
+        let remembered = false;
+        /** Every group wrote at least one value, and the code went in when it is a code. */
+        let complete = true;
+        let otpWritten = false;
+        try {
+          for (const g of plan.groups) {
+            const gt: FillTarget = { ...t, formRef: g.form_ref };
+            const roles = g.fields.map((f) => f.role);
+            let written = 0;
+            if (g.kind === "generated_password") {
+              // One new password per run: every generated group gets the same.
+              generated ??= (await this.session.request({ op: "generate", ctx: "menu", recipe: { kind: "smart" } })).password;
+              written = await this.filler.fillGenerated(gt, generated, roles);
+              // In the page now: the save prompt must know it, whatever happens next.
+              if (written > 0 && !remembered) {
+                this.saveFlow.rememberGenerated(t.tabId, t.origin, generated);
+                remembered = true;
+              }
+            } else if (g.item_id !== null) {
+              written = await this.fillGroup(gt, g, g.item_id, roles);
+              // The count is of distinct roles: all of them written means the code was too.
+              if (g.kind === "login" && roles.includes("otp") && written === new Set(roles).size) otpWritten = true;
+            }
+            if (written === 0) complete = false;
           }
-          if (g.item_id === null) continue;
-          await this.fillGroup(gt, g, g.item_id, roles);
+        } finally {
+          generated = undefined;
         }
-        if (generated !== undefined) this.saveFlow.rememberGenerated(t.tabId, t.origin, generated);
-        generated = undefined;
-        if (action === "fill_and_submit") {
+        if (action === "fill_and_submit" && complete && (plan.intent !== "otp" || otpWritten)) {
           const last = plan.groups[plan.groups.length - 1] as PlanGroupOut;
           await this.filler.submit({ ...t, formRef: last.form_ref });
         }
@@ -123,19 +154,19 @@ export class Planner {
     }
   }
 
-  private async fillGroup(t: FillTarget, g: PlanGroupOut, itemId: string, roles: FieldRole[]): Promise<void> {
+  /** Roles written for a group with an item (0 when none had a value). */
+  private async fillGroup(t: FillTarget, g: PlanGroupOut, itemId: string, roles: FieldRole[]): Promise<number> {
     switch (g.kind) {
       case "login": {
         const fields = loginFieldsFor(roles);
-        if (fields.length > 0) await this.filler.fillLogin(t, itemId, fields, "menu", roles);
-        return;
+        return fields.length > 0 ? this.filler.fillLogin(t, itemId, fields, "menu", roles) : 0;
       }
       case "card":
-        await this.filler.fillCard(t, itemId, "menu", roles);
-        return;
+        return this.filler.fillCard(t, itemId, "menu", roles);
       case "identity":
-        await this.filler.fillIdentity(t, itemId, "menu", roles);
-        return;
+        return this.filler.fillIdentity(t, itemId, "menu", roles);
+      case "generated_password":
+        return 0;
     }
   }
 
@@ -148,11 +179,13 @@ export class Planner {
   private guarded(t: FillTarget, plan: PlanOut): FillAction {
     if (!SUBMITTING.has(plan.action)) return plan.action;
     if (plan.intent !== "login" && plan.intent !== "otp") return "fill";
+    if (plan.confidence !== "high") return "fill";
     if (t.frameId !== 0) return "fill";
     if (plan.reasons.includes("pay_button") || plan.reasons.includes("create_button")) return "fill";
-    const ctx = this.contexts.get(plan);
-    if (!ctx) return "fill";
     const planned = new Set(plan.groups.map((g) => g.form_ref));
+    if (planned.size > 1) return "fill";
+    const ctx = this.made.get(plan)?.context;
+    if (!ctx) return "fill";
     for (const f of ctx.forms) {
       if (planned.has(f.form_ref) && f.buttons.some((b) => b.class === "pay" || b.class === "create")) return "fill";
     }

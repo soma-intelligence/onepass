@@ -61,7 +61,7 @@ interface Calls {
 }
 
 /** Fake session, filler, chain and save flow; `answer` scripts the bridge. */
-function fakes(answer: (r: Record<string, unknown>) => unknown) {
+function fakes(answer: (r: Record<string, unknown>) => unknown, failLogin = false) {
   const calls: Calls = { requests: [], filler: [], chain: [], remembered: [] };
   const session = {
     request: async (r: Record<string, unknown>) => {
@@ -73,6 +73,8 @@ function fakes(answer: (r: Record<string, unknown>) => unknown) {
     (name: string) =>
     async (...a: unknown[]) => {
       calls.filler.push([name, ...a]);
+      if (name === "fillLogin" && failLogin) throw new Error("boom");
+      return 1;
     };
   const filler = {
     fillLogin: rec("fillLogin"),
@@ -228,6 +230,59 @@ describe("planner", () => {
     expect(loginFieldsFor(["email", "username", "current_password"])).toEqual(["username", "password"]);
     expect(loginFieldsFor(["otp"])).toEqual(["totp"]);
     expect(loginFieldsFor(["given_name"])).toEqual([]);
+  });
+});
+
+describe("planner fix round 1", () => {
+  const otpPlan = () => plan({ intent: "otp", action: "fill_and_submit", groups: [{ ...loginGroup(), fields: [{ field_ref: "f1e0", role: "otp" }] }] });
+  const otpCtx = () => context([form("f1", ["otp"], [{ button_ref: "b1", class: "submit" }])]);
+
+  it("an otp plan whose code got no value never submits", async () => {
+    const ext = new FakeExt();
+    ext.setFrame(7, 0, `${SITE}/otp`, "doc-1");
+    const store = new Store(ext, new MemoryPairingStore());
+    await store.setPairing(record());
+    const client = new FakeClient((r) => (r.op === "plan_fill" ? { plan: otpPlan() } : r.op === "fill_login" ? {} : {}));
+    const session = new Session({ store, newClient: () => client });
+    const planner = new Planner(session, new Filler(ext.tabs, new Frames(ext.webNavigation), session), { start: async () => undefined } as never, { rememberGenerated: () => undefined } as never);
+    const outcome = await planner.run(target(), await planner.plan(target(), otpCtx()));
+    expect(outcome).toBe("filled");
+    expect(ext.sentToTabs).toEqual([]);
+  });
+
+  it("a generated password in the page is remembered even when a later group fails", async () => {
+    const f = fakes((r) => (r.op === "plan_fill" ? { plan: p } : r.op === "generate" ? { password: "Gen-Secret-42!", entropy_bits: 90 } : {}), true);
+    const p = plan({
+      intent: "signup",
+      groups: [
+        { form_ref: "f1", kind: "generated_password", item_id: null, fields: [{ field_ref: "f1e1", role: "new_password" }] },
+        loginGroup(),
+      ],
+    });
+    const got = await f.planner.plan(target(), context([form("f1", ["username", "new_password"])]));
+    await expect(f.planner.run(target(), got)).rejects.toThrow();
+    expect(f.calls.remembered).toEqual([[7, SITE, "Gen-Secret-42!"]]);
+  });
+
+  it("only a high-confidence single-form plan submits or opens the chain", async () => {
+    const one = context([form("f1", ["username", "current_password"]), form("f2", ["username", "current_password"])]);
+    const medium = await planAndRun(plan({ action: "open_chain", confidence: "medium", groups: [loginGroup()] }), one);
+    expect(medium.outcome).toBe("filled");
+    expect(medium.calls.chain).toEqual([]);
+    const two = await planAndRun(plan({ action: "fill_and_submit", groups: [loginGroup("f1"), loginGroup("f2")] }), one);
+    expect(two.outcome).toBe("filled");
+    expect(two.calls.filler.map((c) => c[0])).toEqual(["fillLogin", "fillLogin"]);
+    const chain2 = await planAndRun(plan({ action: "open_chain", groups: [loginGroup("f1"), loginGroup("f2")] }), one);
+    expect(chain2.calls.chain).toEqual([]);
+  });
+
+  it("a plan runs only in the frame and document it was made for", async () => {
+    const f = fakes((r) => (r.op === "plan_fill" ? { plan: plan({ action: "fill", groups: [loginGroup()] }) } : {}));
+    const got = await f.planner.plan(target(), context([form("f1", ["username", "current_password"])]));
+    for (const other of [{ tabId: 8 }, { frameId: 2, sameOriginAsTop: true }, { origin: "https://other.test" }, { documentId: "doc-2" }]) {
+      expect(await f.planner.run(target(other), got)).toBe("menu");
+    }
+    expect(f.calls.filler).toEqual([]);
   });
 });
 

@@ -196,8 +196,8 @@ describe("fill of a planned group", () => {
   it("delivers only the planned roles", async () => {
     const { ext, filler } = await setup();
     ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
-    await filler.fillIdentity(target(), "it_02", "menu", ["email"]);
-    await filler.fillGenerated(target(), "Gen-1", ["new_password"]);
+    expect(await filler.fillIdentity(target(), "it_02", "menu", ["email", "tel"])).toBe(1);
+    expect(await filler.fillGenerated(target(), "Gen-1", ["new_password"])).toBe(1);
     expect(ext.sentToTabs.map((s) => (s.message as { values: unknown }).values)).toEqual([
       { email: "alex@atlas.dev" },
       { new_password: "Gen-1" },
@@ -207,7 +207,7 @@ describe("fill of a planned group", () => {
   it("sends nothing when no planned role has a value", async () => {
     const { ext, filler } = await setup();
     ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
-    await filler.fillIdentity(target(), "it_02", "menu", ["tel"]);
+    expect(await filler.fillIdentity(target(), "it_02", "menu", ["tel"])).toBe(0);
     expect(ext.sentToTabs).toEqual([]);
   });
 

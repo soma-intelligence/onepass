@@ -56,23 +56,29 @@ export class Filler {
     if (!c.ok) throw new BgError(c.code);
   }
 
-  private async deliver(t: FillTarget, all: FillValues, roles?: readonly FieldRole[]): Promise<void> {
+  /** Sends the values; resolves with how many roles had one (0: nothing sent). */
+  private async deliver(t: FillTarget, all: FillValues, roles?: readonly FieldRole[]): Promise<number> {
     const values = only(all, roles);
+    const written = Object.keys(values).length;
     // A planned group whose roles got no value: nothing to write.
-    if (roles !== undefined && Object.keys(values).length === 0) return;
+    if (roles !== undefined && written === 0) return 0;
     // The host may have taken seconds (Touch ID): the page could have moved.
     await this.verify(t);
     const msg: BgToCs = { type: "fill", origin: t.origin, formRef: t.formRef, values };
     // documentId pins the exact document; frameId alone where unsupported.
     const opts = t.documentId !== undefined ? { documentId: t.documentId } : { frameId: t.frameId };
     await this.tabs.sendMessage(t.tabId, msg, opts);
+    return written;
   }
 
-  /** `roles`: a planned group's roles, the only ones written (likewise below). */
-  async fillLogin(t: FillTarget, itemId: string, fields: FillField[], ctx: Ctx = "menu", roles?: readonly FieldRole[]): Promise<void> {
+  /**
+   * `roles`: a planned group's roles, the only ones written (likewise below).
+   * Each fill resolves with the roles it sent a value for.
+   */
+  async fillLogin(t: FillTarget, itemId: string, fields: FillField[], ctx: Ctx = "menu", roles?: readonly FieldRole[]): Promise<number> {
     await this.verify(t);
     const r = await this.session.request({ op: "fill_login", ctx, item_id: itemId, origin: t.origin, fields });
-    await this.deliver(t, loginValues(r), roles);
+    return this.deliver(t, loginValues(r), roles);
   }
 
   /**
@@ -100,7 +106,7 @@ export class Filler {
     await this.deliver(t, loginValues(r));
   }
 
-  async fillCard(t: FillTarget, itemId: string, ctx: Ctx = "menu", roles?: readonly FieldRole[]): Promise<void> {
+  async fillCard(t: FillTarget, itemId: string, ctx: Ctx = "menu", roles?: readonly FieldRole[]): Promise<number> {
     await this.verify(t);
     const r = await this.session.request({ op: "fill_card", ctx, item_id: itemId, origin: t.origin });
     const values: FillValues = {};
@@ -110,11 +116,11 @@ export class Filler {
     put(values, "cc_exp_year", r.exp_year);
     if (r.exp_month !== "" && r.exp_year !== "") put(values, "cc_exp", `${r.exp_month}/${r.exp_year.slice(-2)}`);
     put(values, "cc_csc", r.cvv);
-    await this.deliver(t, values, roles);
+    return this.deliver(t, values, roles);
   }
 
   /** With `roles`, the identity's e-mail alone can go into a signup or checkout group. */
-  async fillIdentity(t: FillTarget, itemId: string, ctx: Ctx = "menu", roles?: readonly FieldRole[]): Promise<void> {
+  async fillIdentity(t: FillTarget, itemId: string, ctx: Ctx = "menu", roles?: readonly FieldRole[]): Promise<number> {
     await this.verify(t);
     const r = await this.session.request({ op: "fill_identity", ctx, item_id: itemId, origin: t.origin });
     const values: FillValues = {};
@@ -134,15 +140,15 @@ export class Filler {
       put(values, "region", a.region);
       put(values, "country", a.country);
     }
-    await this.deliver(t, values, roles);
+    return this.deliver(t, values, roles);
   }
 
   /** A freshly generated password into the new and confirm fields. */
-  async fillGenerated(t: FillTarget, password: string, roles?: readonly FieldRole[]): Promise<void> {
+  async fillGenerated(t: FillTarget, password: string, roles?: readonly FieldRole[]): Promise<number> {
     const values: FillValues = {};
     put(values, "new_password", password);
     put(values, "confirm_password", password);
-    await this.deliver(t, values, roles);
+    return this.deliver(t, values, roles);
   }
 
   /** Submit `t.formRef` (a plan's `FillAndSubmit`), after the same frame check as a fill. */
