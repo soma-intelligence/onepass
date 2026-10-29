@@ -38,6 +38,8 @@ pub enum BlobKind {
     Companion = 11,
     /// A frame of the pairing channel (milestone 2b, `pairing::channel`).
     Pairing = 12,
+    /// The sealed body of a remote approval request (`remote`).
+    Remote = 13,
 }
 
 /// Context a blob is bound to. Opening under any other context fails.
@@ -274,6 +276,7 @@ mod tests {
     fn blob_kind_companion_code() {
         assert_eq!(BlobKind::Companion as u8, 11);
         assert_eq!(BlobKind::Pairing as u8, 12);
+        assert_eq!(BlobKind::Remote as u8, 13);
     }
 
     use super::*;
