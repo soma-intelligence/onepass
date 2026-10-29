@@ -123,11 +123,11 @@ public final class VaultSession {
         if state == .unlocked, let session {
             let gen = generation
             do {
-                // After a sync commit too (`reload`): a device the list now marks revoked is erased.
+                // After a sync commit too (`reload`): a device the list now marks revoked is locked.
                 let snapshot = try await background { try Self.load(session, purge: false, checkRevoked: true) }
                 if gen == generation { apply(snapshot) }
             } catch VaultError.deviceRevoked {
-                if gen == generation { await eraseRevokedDevice() }
+                if gen == generation { lockRevokedDevice() }
             } catch {
                 _ = handle(error, generation: gen)
             }
@@ -170,6 +170,15 @@ public final class VaultSession {
             lastError = .deviceRevoked
             revokedEraseFailed = true
             return
+        }
+        if settings.revokedLocked {
+            // Revoked and kept (`lockRevokedDevice`) while the store still holds the account.
+            if FileManager.default.fileExists(atPath: dbPath), (try? storeState(dbPath: dbPath)) == .account {
+                state = .failed(.deviceRevoked)
+                lastError = .deviceRevoked
+                return
+            }
+            settings.revokedLocked = false
         }
         do {
             var found = FfiStoreState.empty
@@ -283,11 +292,11 @@ public final class VaultSession {
     }
 
     /// The signed device list marks this device revoked (after an unlock or a sync commit, ruling A5):
-    /// the session is dropped, then the store, the Secret Key and the biometric enrollment are erased
-    /// like `resetForRecovery` does, and the state ends in `.failed(.deviceRevoked)`. `refresh` then
-    /// shows the onboarding. If the store cannot be emptied now, the failure stays and the next unlock
-    /// tries again.
-    func eraseRevokedDevice() async {
+    /// the session is dropped and the state ends in `.failed(.deviceRevoked)`, kept across launches.
+    /// Nothing is erased: the list is signed with the account's keys, which a revoked device holds too,
+    /// so it may come from a device that was itself revoked (key rotation v2 spec, rule 8.4). Only the
+    /// user erases the device (`eraseRevokedDevice`).
+    func lockRevokedDevice() {
         let wasOpen = session != nil
         generation &+= 1
         if let session {
@@ -297,14 +306,21 @@ public final class VaultSession {
         clearMemory()
         clipboard.clear()
         concealRevealed()
+        settings.revokedLocked = true
         state = .failed(.deviceRevoked)
         lastError = .deviceRevoked
         if wasOpen { notifySync { await $0.sessionLocked() } }
+    }
+
+    /// The user erases a device found revoked (`lockRevokedDevice`): the store, the Secret Key and the
+    /// biometric enrollment, like `resetForRecovery`. Done, the session shows the onboarding. If the
+    /// store cannot be emptied now, the revoked screen stays and every refresh tries again (L6).
+    public func eraseRevokedDevice() async {
+        guard state == .failed(.deviceRevoked) else { return }
         // Remembered until the erase completes: a relaunch shows the revoked screen and tries again.
         settings.revokedErasePending = true
         await retryRevokedErase()
-        state = .failed(.deviceRevoked)
-        lastError = .deviceRevoked
+        if !settings.revokedErasePending { evaluateStoredAccount() }
     }
 
     /// The erase of a revoked device (`eraseRevokedDevice`), again after a failure (L6).
@@ -314,6 +330,7 @@ public final class VaultSession {
         do {
             try await eraseLocalAccount(accountMissing: false)
             settings.revokedErasePending = false
+            settings.revokedLocked = false
             revokedEraseFailed = false
         } catch {
             Self.log.error("revoked device not fully erased")
@@ -555,7 +572,7 @@ public final class VaultSession {
                 }
             }
         } catch VaultError.deviceRevoked {
-            if gen == generation { await eraseRevokedDevice() }
+            if gen == generation { lockRevokedDevice() }
             throw fail(.deviceRevoked)
         } catch {
             throw unlockFailed(error, generation: gen)
@@ -636,7 +653,7 @@ public final class VaultSession {
                 }
             }
         } catch VaultError.deviceRevoked {
-            if gen == generation { await eraseRevokedDevice() }
+            if gen == generation { lockRevokedDevice() }
             throw fail(.deviceRevoked)
         } catch {
             let failure = VaultError(error)
@@ -1376,7 +1393,7 @@ public final class VaultSession {
     nonisolated private static func load(
         _ session: Session, purge: Bool, checkRevoked: Bool = false, register device: DeviceIdentity? = nil
     ) throws -> Snapshot {
-        // Only a list that reads as revoked erases; one that cannot be read now (the server behind
+        // Only a list that reads as revoked locks; one that cannot be read now (the server behind
         // after a lost zone, for example) never blocks the unlock or the reload.
         if checkRevoked, (try? session.isThisDeviceRevoked()) == true { throw VaultError.deviceRevoked }
         if let device, needsRegistration(session) {

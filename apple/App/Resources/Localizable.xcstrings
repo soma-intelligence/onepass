@@ -2640,6 +2640,16 @@
         }
       }
     },
+    "Ce qui n'a pas encore été synchronisé sera perdu. Tu pourras l'ajouter de nouveau depuis un autre appareil ou avec ton Emergency Kit." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anything not synced yet will be lost. You can add it again from another device or with your Emergency Kit."
+          }
+        }
+      }
+    },
     "Ce réglage suit le coffre sur tous tes appareils." : {
       "localizations" : {
         "en" : {
@@ -4930,6 +4940,16 @@
         }
       }
     },
+    "Effacer cet appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erase This Device"
+          }
+        }
+      }
+    },
     "Effacer la copie locale et restaurer" : {
       "localizations" : {
         "en" : {
@@ -4966,6 +4986,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clear Log?"
+          }
+        }
+      }
+    },
+    "Effacer les données OnePass de cet appareil ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erase the OnePass data on this device?"
           }
         }
       }
@@ -10720,12 +10750,12 @@
         }
       }
     },
-    "Ses données OnePass ont été effacées. Tu peux l'ajouter de nouveau depuis un autre appareil ou avec ton Emergency Kit." : {
+    "Ses données OnePass restent chiffrées sur cet appareil tant que tu ne l'effaces pas. Si tu ne l'as pas retiré depuis un autre de tes appareils, un appareil déjà retiré a pu le faire : vérifie tes appareils avant d'effacer." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Its OnePass data was erased. You can add it again from another device or with your Emergency Kit."
+            "value" : "Its OnePass data stays encrypted on this device until you erase it. If you didn't remove it from another of your devices, a device that was already removed may have done it: check your devices before erasing."
           }
         }
       }

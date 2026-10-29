@@ -406,8 +406,11 @@ impl<S: RecordStore> Repository<S> {
         })
     }
 
-    /// Whether the device list marks this device revoked: the app then
-    /// erases the device (spec 4.3). Brings the lists up to date first.
+    /// Whether the device list marks this device revoked (spec 4.3). Brings
+    /// the lists up to date first. Not proof of an honest revocation: the
+    /// list is signed with the account's keys, which a revoked device holds
+    /// too, so the app locks the device and never erases it on this answer
+    /// alone (key rotation v2 spec, rule 8.4).
     pub fn is_this_device_revoked(&mut self) -> Result<bool> {
         self.maintain_lists(None)?;
         self.is_revoked_here()

@@ -68,7 +68,7 @@ struct DevicesSessionTests {
         #expect(session.devices.first?.name == VaultSession.currentDeviceName())
     }
 
-    @Test func revokedDeviceWipes() async throws {
+    @Test func revokedDeviceLocksThenUserErases() async throws {
         let f = try await PairingFixture(server: true)
         defer { f.cleanUp() }
         try await f.pairFull()
@@ -82,21 +82,33 @@ struct DevicesSessionTests {
         try await f.approver.revokeDevice(other.id, password: testPassword)
         #expect(f.approver.devices.first { $0.id == other.id }?.revokedAt != nil)
 
-        // The revoked device learns it at its next sync commit and erases everything.
+        // The revoked device learns it at its next sync commit: locked, nothing erased (rule 8.4).
         let accountID = try #require(f.newcomerHarness.settings.accountID)
         try await #require(f.server).deliver(to: f.newcomerPath)
         await f.newcomer.reload()
         #expect(f.newcomer.state == .failed(.deviceRevoked))
         #expect(VaultError.deviceRevoked.localizedMessage == "Cet appareil a été retiré de ton compte OnePass.")
         #expect(f.newcomer.summaries.isEmpty)
+        #expect(f.newcomerHarness.settings.accountID == accountID)
+        #expect(try SecretKeyVault(keychain: f.newcomerHarness.keychain).load(accountID: accountID) != nil)
+        #expect(try storeState(dbPath: f.newcomerPath) == .account)
+
+        // A refresh or a relaunch keeps the revoked screen, never the lock screen.
+        await f.newcomer.refresh()
+        #expect(f.newcomer.state == .failed(.deviceRevoked))
+        let relaunched = VaultSession(environment: f.newcomerHarness.environment)
+        #expect(relaunched.state == .failed(.deviceRevoked))
+
+        // Only the user erases it.
+        await relaunched.eraseRevokedDevice()
+        #expect(relaunched.state == .noAccount)
         #expect(f.newcomerHarness.settings.accountID == nil)
+        #expect(!f.newcomerHarness.settings.revokedLocked)
         #expect(try SecretKeyVault(keychain: f.newcomerHarness.keychain).load(accountID: accountID) == nil)
         #expect(try storeState(dbPath: f.newcomerPath) == .empty)
-        await f.newcomer.refresh()
-        #expect(f.newcomer.state == .noAccount)
     }
 
-    @Test func revokedDeviceWipesAtUnlock() async throws {
+    @Test func revokedDeviceLocksAtUnlock() async throws {
         let f = try await PairingFixture(server: true)
         defer { f.cleanUp() }
         try await f.pairFull()
@@ -107,7 +119,7 @@ struct DevicesSessionTests {
         try await #require(f.server).deliver(to: f.newcomerPath)
         await #expect(throws: VaultError.deviceRevoked) { try await f.newcomer.unlock(password: testPassword) }
         #expect(f.newcomer.state == .failed(.deviceRevoked))
-        #expect(try storeState(dbPath: f.newcomerPath) == .empty)
+        #expect(try storeState(dbPath: f.newcomerPath) == .account)
     }
 
     @Test func deleteVaultUpdatesList() async throws {
