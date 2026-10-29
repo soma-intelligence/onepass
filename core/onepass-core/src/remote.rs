@@ -198,13 +198,12 @@ impl ReplayGuard {
         self.seen.push((request_id, now));
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
-        postcard::to_allocvec(self).unwrap_or_default()
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        postcard::to_allocvec(self).map_err(|_| Error::InvalidFormat("replay guard"))
     }
 
     pub fn from_bytes(b: &[u8]) -> Result<ReplayGuard> {
-        let guard: ReplayGuard =
-            postcard::from_bytes(b).map_err(|_| Error::InvalidFormat("replay guard"))?;
+        let guard: ReplayGuard = decode(b, "replay guard")?;
         if guard.seen.len() > MAX_REPLAY_ENTRIES {
             return Err(Error::InvalidFormat("replay guard"));
         }
@@ -287,6 +286,14 @@ fn body_aad(request_id: &[u8; 16]) -> Aad {
     }
 }
 
+/// One signed message has exactly one encoding: trailing bytes are refused.
+fn decode<'a, T: Deserialize<'a>>(bytes: &'a [u8], what: &'static str) -> Result<T> {
+    match postcard::take_from_bytes::<T>(bytes) {
+        Ok((value, [])) => Ok(value),
+        _ => Err(Error::InvalidFormat(what)),
+    }
+}
+
 fn encode_message<T: Serialize>(kind: u8, body: &T) -> Result<Vec<u8>> {
     let mut m = vec![VERSION, kind];
     let bytes = postcard::to_allocvec(body).map_err(|_| Error::InvalidFormat("remote message"))?;
@@ -306,8 +313,7 @@ fn parse_envelope(bytes: &[u8], kind: u8) -> Result<(Envelope, usize)> {
     if bytes.len() > MAX_MESSAGE_BYTES {
         return Err(Error::InvalidFormat("remote message size"));
     }
-    let env: Envelope =
-        postcard::from_bytes(bytes).map_err(|_| Error::InvalidFormat("remote message"))?;
+    let env: Envelope = decode(bytes, "remote message")?;
     if env.message.len() < 2 || env.message[0] != VERSION || env.message[1] != kind {
         return Err(Error::InvalidFormat("remote message"));
     }
@@ -357,10 +363,10 @@ fn check_body_shape(kind: RemoteKind, body: &RequestBody) -> Result<()> {
 }
 
 fn check_header_times(h: &RequestHeader) -> Result<()> {
-    if h.expires_at <= h.created_at || h.expires_at - h.created_at > REQUEST_TTL_SECS {
-        return Err(Error::InvalidFormat("remote request lifetime"));
+    match h.expires_at.checked_sub(h.created_at) {
+        Some(ttl) if ttl > 0 && ttl <= REQUEST_TTL_SECS => Ok(()),
+        _ => Err(Error::InvalidFormat("remote request lifetime")),
     }
-    Ok(())
 }
 
 /// Seal `body` to the phone `to` and sign the whole request as `signer`.
@@ -423,8 +429,7 @@ pub fn open_request(
     seen: &mut ReplayGuard,
 ) -> Result<(RemoteRequest, RequestBody)> {
     let (env, skip) = parse_envelope(bytes, TYPE_REQUEST)?;
-    let request: RemoteRequest = postcard::from_bytes(&env.message[skip..])
-        .map_err(|_| Error::InvalidFormat("remote request"))?;
+    let request: RemoteRequest = decode(&env.message[skip..], "remote request")?;
     if request.to != me.device_id {
         return Err(integrity(IntegrityError::RemoteWrongRecipient));
     }
@@ -461,8 +466,7 @@ pub fn open_request(
         &kem_context(&request.request_id, request.from, request.to),
     )?;
     let plain = open(&key, BlobKind::Remote, &body_aad(&request.request_id), blob)?;
-    let body: RequestBody =
-        postcard::from_bytes(&plain).map_err(|_| Error::InvalidFormat("remote request body"))?;
+    let body: RequestBody = decode(&plain, "remote request body")?;
     check_body_shape(request.kind, &body)?;
 
     seen.record(request.request_id, now);
@@ -515,8 +519,7 @@ pub fn open_response(
     now: i64,
 ) -> Result<RemoteResponse> {
     let (env, skip) = parse_envelope(bytes, TYPE_RESPONSE)?;
-    let response: RemoteResponse = postcard::from_bytes(&env.message[skip..])
-        .map_err(|_| Error::InvalidFormat("remote response"))?;
+    let response: RemoteResponse = decode(&env.message[skip..], "remote response")?;
     if response.to != me.device_id {
         return Err(integrity(IntegrityError::RemoteWrongRecipient));
     }
@@ -644,6 +647,9 @@ mod tests {
         Error::Integrity(e)
     }
 
+    /// What opening a body sealed to another key gives.
+    const WRONG_KEY: Error = Error::Integrity(IntegrityError::Commitment);
+
     #[test]
     fn request_round_trip() {
         let (mac, phone) = (party(1, ApproverRole::Mac), party(2, ApproverRole::Phone));
@@ -751,7 +757,7 @@ mod tests {
     fn request_accepted_within_skew() {
         let (mac, phone) = (party(1, ApproverRole::Mac), party(2, ApproverRole::Phone));
         let bytes = sealed(&mac, &phone);
-        for now in [T - 119, T + 60 + 119] {
+        for now in [T - 120, T - 119, T + 60 + 119, T + 60 + 120] {
             open_request(
                 &bytes,
                 &phone.id,
@@ -773,7 +779,7 @@ mod tests {
         let again = open_request(&bytes, &phone.id, &approvers, T + 1, &mut seen);
         assert_eq!(again.unwrap_err(), err(IntegrityError::RemoteReplay));
         // The guard survives a relaunch of the phone app.
-        let mut restored = ReplayGuard::from_bytes(&seen.to_bytes()).unwrap();
+        let mut restored = ReplayGuard::from_bytes(&seen.to_bytes().unwrap()).unwrap();
         let after = open_request(&bytes, &phone.id, &approvers, T + 2, &mut restored);
         assert_eq!(after.unwrap_err(), err(IntegrityError::RemoteReplay));
     }
@@ -968,7 +974,7 @@ mod tests {
         let approvers = vec![mac.entry.clone(), phone.entry.clone(), other.entry.clone()];
         let mut seen = ReplayGuard::new();
         let r = open_request(&resigned, &other.id, &approvers, T, &mut seen);
-        assert!(r.is_err());
+        assert_eq!(r.unwrap_err(), WRONG_KEY);
         assert!(!seen.contains(&[9; 16]));
         // The unmodified request opened with the wrong secret fails too.
         let wrong = ApproverIdentity {
@@ -976,7 +982,8 @@ mod tests {
             signing: HybridSigningKey::generate().unwrap(),
             kem: other.id.kem,
         };
-        assert!(open_request(&bytes, &wrong, &approvers, T, &mut ReplayGuard::new()).is_err());
+        let r = open_request(&bytes, &wrong, &approvers, T, &mut ReplayGuard::new());
+        assert_eq!(r.unwrap_err(), WRONG_KEY);
     }
 
     #[test]
@@ -997,7 +1004,8 @@ mod tests {
             (RemoteDecision::Once, Some(&k), None),
             (RemoteDecision::Once, None, Some(&eph)),
         ] {
-            assert!(seal_response(&phone.id.signing, &mac.entry, &req, d, key, e, T).is_err());
+            let r = seal_response(&phone.id.signing, &mac.entry, &req, d, key, e, T);
+            assert_eq!(r.unwrap_err(), Error::InvalidFormat("remote unlock key"));
         }
     }
 
@@ -1006,16 +1014,159 @@ mod tests {
         let (mac, phone) = (party(1, ApproverRole::Mac), party(2, ApproverRole::Phone));
         let mut h = header(&mac, &phone, RemoteKind::Approve);
         h.expires_at = h.created_at + REQUEST_TTL_SECS + 1;
-        assert!(seal_request(&mac.id.signing, &phone.entry, h, &body()).is_err());
+        let r = seal_request(&mac.id.signing, &phone.entry, h, &body());
+        assert_eq!(
+            r.unwrap_err(),
+            Error::InvalidFormat("remote request lifetime")
+        );
         // Unlock without an ephemeral key, Pair without a transfer key.
         for kind in [RemoteKind::Unlock, RemoteKind::Pair] {
             let h = header(&mac, &phone, kind);
-            assert!(seal_request(&mac.id.signing, &phone.entry, h, &body()).is_err());
+            let r = seal_request(&mac.id.signing, &phone.entry, h, &body());
+            assert_eq!(r.unwrap_err(), Error::InvalidFormat("remote request body"));
         }
         let other = party(3, ApproverRole::Phone);
         let h = header(&mac, &phone, RemoteKind::Approve);
         let r = seal_request(&mac.id.signing, &other.entry, h, &body());
         assert_eq!(r.unwrap_err(), err(IntegrityError::RemoteWrongRecipient));
+    }
+
+    #[test]
+    fn request_signed_by_a_phone_entry_rejected() {
+        let (mac, phone) = (party(1, ApproverRole::Mac), party(2, ApproverRole::Phone));
+        let bytes = sealed(&mac, &phone);
+        // The sender's device id is listed, with a valid key, but as a Phone.
+        let wrong_role = ApproverEntry {
+            role: ApproverRole::Phone,
+            ..mac.entry.clone()
+        };
+        let r = open_request(
+            &bytes,
+            &phone.id,
+            &[wrong_role, phone.entry.clone()],
+            T,
+            &mut ReplayGuard::new(),
+        );
+        assert_eq!(r.unwrap_err(), err(IntegrityError::RemoteUnknownDevice));
+    }
+
+    #[test]
+    fn request_from_retired_mac_entry_rejected() {
+        let (mac, phone) = (party(1, ApproverRole::Mac), party(2, ApproverRole::Phone));
+        let bytes = sealed(&mac, &phone);
+        let retired = ApproverEntry {
+            retired_at: Some(T - 1),
+            ..mac.entry.clone()
+        };
+        let r = open_request(
+            &bytes,
+            &phone.id,
+            &[retired, phone.entry.clone()],
+            T,
+            &mut ReplayGuard::new(),
+        );
+        assert_eq!(r.unwrap_err(), err(IntegrityError::RemoteUnknownDevice));
+    }
+
+    #[test]
+    fn response_signed_by_a_mac_entry_rejected() {
+        let (mac, phone) = (party(1, ApproverRole::Mac), party(2, ApproverRole::Phone));
+        let (resp, _, mut pending) = answered(&mac, &phone);
+        let wrong_role = ApproverEntry {
+            role: ApproverRole::Mac,
+            ..phone.entry.clone()
+        };
+        let r = open_response(
+            &resp,
+            &mac.id,
+            &[mac.entry.clone(), wrong_role],
+            &mut pending,
+            T + 1,
+        );
+        assert_eq!(r.unwrap_err(), err(IntegrityError::RemoteUnknownDevice));
+        assert_eq!(pending.len(), 1);
+    }
+
+    #[test]
+    fn response_from_retired_phone_entry_rejected() {
+        let (mac, phone) = (party(1, ApproverRole::Mac), party(2, ApproverRole::Phone));
+        let (resp, _, mut pending) = answered(&mac, &phone);
+        let retired = ApproverEntry {
+            retired_at: Some(T - 1),
+            ..phone.entry.clone()
+        };
+        let r = open_response(
+            &resp,
+            &mac.id,
+            &[mac.entry.clone(), retired],
+            &mut pending,
+            T + 1,
+        );
+        assert_eq!(r.unwrap_err(), err(IntegrityError::RemoteUnknownDevice));
+        assert_eq!(pending.len(), 1);
+    }
+
+    #[test]
+    fn trailing_bytes_refused() {
+        let (mac, phone) = (party(1, ApproverRole::Mac), party(2, ApproverRole::Phone));
+        let approvers = list(&mac, &phone);
+        let invalid = |r: Result<_>| matches!(r.map(|_: ()| ()), Err(Error::InvalidFormat(_)));
+
+        let mut req = sealed(&mac, &phone);
+        req.push(0);
+        let r = open_request(&req, &phone.id, &approvers, T, &mut ReplayGuard::new());
+        assert!(invalid(r.map(|_| ())));
+
+        // Trailing byte inside the signed message (re-signed, so the
+        // signature is valid): still not the one encoding.
+        let env: Envelope = postcard::from_bytes(&sealed(&mac, &phone)).unwrap();
+        let mut message = env.message.clone();
+        message.push(0);
+        let inner = sign_message(&mac.id.signing, message).unwrap();
+        let r = open_request(&inner, &phone.id, &approvers, T, &mut ReplayGuard::new());
+        assert!(invalid(r.map(|_| ())));
+
+        let (mut resp, _, mut pending) = answered(&mac, &phone);
+        resp.push(0);
+        let r = open_response(&resp, &mac.id, &approvers, &mut pending, T + 1);
+        assert!(invalid(r.map(|_| ())));
+        assert_eq!(pending.len(), 1);
+
+        let mut guard = ReplayGuard::new().to_bytes().unwrap();
+        guard.push(0);
+        assert!(invalid(ReplayGuard::from_bytes(&guard).map(|_| ())));
+    }
+
+    #[test]
+    fn extreme_lifetime_is_an_error_not_a_panic() {
+        let (mac, phone) = (party(1, ApproverRole::Mac), party(2, ApproverRole::Phone));
+        let mut h = header(&mac, &phone, RemoteKind::Approve);
+        h.created_at = i64::MIN;
+        h.expires_at = i64::MAX;
+        let r = seal_request(&mac.id.signing, &phone.entry, h, &body());
+        assert_eq!(
+            r.unwrap_err(),
+            Error::InvalidFormat("remote request lifetime")
+        );
+
+        // The same header as a hostile Mac signs it: the phone refuses it too.
+        let env: Envelope = postcard::from_bytes(&sealed(&mac, &phone)).unwrap();
+        let mut req: RemoteRequest = postcard::from_bytes(&env.message[2..]).unwrap();
+        req.created_at = i64::MIN;
+        req.expires_at = i64::MAX;
+        let forged =
+            sign_message(&mac.id.signing, encode_message(TYPE_REQUEST, &req).unwrap()).unwrap();
+        let r = open_request(
+            &forged,
+            &phone.id,
+            &list(&mac, &phone),
+            T,
+            &mut ReplayGuard::new(),
+        );
+        assert_eq!(
+            r.unwrap_err(),
+            Error::InvalidFormat("remote request lifetime")
+        );
     }
 
     #[test]
