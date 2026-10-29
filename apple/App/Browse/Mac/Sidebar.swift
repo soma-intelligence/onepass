@@ -462,7 +462,7 @@ struct AccountHeader: View {
 
 #if os(macOS)
 /// The account panel (Mac): who is signed in and on which device, then Nouveau coffre, Importer,
-/// Réglages, and Verrouiller apart in red. Glass card, rows highlighted under the pointer with
+/// Configurer un appareil, Réglages, and Verrouiller apart in red. Glass card, rows highlighted under the pointer with
 /// their shortcut on the right. Escape closes it.
 struct AccountMenuPanel: View {
     @Environment(AppModel.self) private var model
@@ -487,6 +487,11 @@ struct AccountMenuPanel: View {
                 model.showImport = true
             }
             .accessibilityIdentifier("account.import")
+            AccountMenuRow(title: "Configurer un appareil…", symbol: "qrcode", shortcut: nil) {
+                close()
+                model.showDeviceSetup = true
+            }
+            .accessibilityIdentifier("account.setUpDevice")
             AccountMenuRow(title: "Réglages…", symbol: "gearshape", shortcut: "⌘,") {
                 close()
                 openSettings()

@@ -514,6 +514,18 @@ final class OnboardingModel {
         flow.start()
     }
 
+    /// iPhone and iPad: the code scanned on the other device's screen (a Mac shows an invite, it never
+    /// scans): joins it in place of the QR this device showed.
+    func joinInvite(_ text: String) {
+        stopPairing()
+        errorMessage = nil
+        if pairDeviceMode != .public { mode = pairDeviceMode == .shared ? .shared : .personal }
+        let flow = PairingNewcomerFlow(
+            vault: session, mode: pairDeviceMode, invite: text, connector: LocalNetworkPairingConnector())
+        pairing = flow
+        flow.start()
+    }
+
     private func stopPairing() {
         pairing?.cancel()
         pairing = nil
