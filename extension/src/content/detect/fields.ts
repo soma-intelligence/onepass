@@ -53,7 +53,7 @@ export function isFieldCandidate(el: Element): el is FieldElement {
   return el instanceof HTMLInputElement && !NON_FIELD_INPUT_TYPES.has(el.type);
 }
 
-function controlType(el: FieldElement): string {
+export function controlType(el: FieldElement): string {
   if (el instanceof HTMLSelectElement) return "select";
   if (el instanceof HTMLTextAreaElement) return "textarea";
   return el.type;

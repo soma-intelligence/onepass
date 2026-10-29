@@ -3,6 +3,10 @@
     "message": "Fill your logins, cards and identities from the OnePass app.",
     "description": "Description of the extension in the store and the extensions page."
   },
+  "fillSmartCommand": {
+    "message": "Fill the page in one click with OnePass",
+    "description": "Description of the keyboard shortcut that runs smart fill in the active tab."
+  },
   "actionTitle": {
     "message": "OnePass",
     "description": "Tooltip of the toolbar button."

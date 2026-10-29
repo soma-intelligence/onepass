@@ -43,6 +43,16 @@ struct AutoFillSettings: View {
             } footer: {
                 Text("Pour te suggérer le bon compte, le système reçoit les domaines et les identifiants de tes Logins, jamais tes mots de passe, codes ou clés. Désactivées, plus rien n'est transmis : tu choisis alors le compte avec la touche clé du clavier.")
             }
+            Section {
+                NavigationLink {
+                    ForgetSiteChoices()
+                } label: {
+                    Label("Oublier les choix pour un site", systemImage: "eraser")
+                }
+                .accessibilityIdentifier("autofill.forgetSites")
+            } footer: {
+                Text("OnePass retient le compte que tu choisis sur chaque site pour te le proposer en premier la fois suivante.")
+            }
         }
         .formStyle(.grouped)
         .navigationTitle("Remplissage automatique")
@@ -118,6 +128,80 @@ struct AutoFillSettings: View {
         Task {
             await model.requestAutoFillActivation()
             requesting = false
+        }
+    }
+}
+
+/// "Oublier les choix pour un site": the sites the visible vaults remember a choice for, each with a
+/// button that forgets it in every item (other devices drop it at the next sync).
+struct ForgetSiteChoices: View {
+    @Environment(AppModel.self) private var model
+    @State private var sites: [String]?
+    @State private var forgetting: String?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Form {
+            if let errorMessage {
+                Section {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                }
+            }
+            Section {
+                switch sites {
+                case nil:
+                    ProgressView()
+                case let sites? where sites.isEmpty:
+                    Text("Aucun site retenu pour l'instant.")
+                        .foregroundStyle(.secondary)
+                case let sites?:
+                    ForEach(sites, id: \.self) { site in
+                        LabeledContent(site) {
+                            Button("Oublier", role: .destructive) { forgetting = site }
+                                .accessibilityIdentifier("autofill.forgetSites.forget")
+                        }
+                    }
+                }
+            } footer: {
+                Text("Oublier un site efface le compte retenu pour lui dans tous tes coffres visibles, sur tous tes appareils. Tes Logins ne changent pas.")
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Oublier les choix pour un site")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .task { await reload() }
+        .confirmationDialog(
+            "Oublier ce site ?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
+            titleVisibility: .visible, presenting: forgetting
+        ) { site in
+            Button("Oublier \(site)", role: .destructive) { Task { await forget(site) } }
+            Button("Annuler", role: .cancel) {}
+        }
+    }
+
+    private func reload() async {
+        do {
+            sites = try await model.session.knownUsageSites()
+            errorMessage = nil
+        } catch {
+            sites = []
+            errorMessage = VaultError(error).localizedMessage
+        }
+    }
+
+    private func forget(_ site: String) async {
+        forgetting = nil
+        do {
+            try await model.session.forgetSiteUsage(site: site)
+            await reload()
+        } catch {
+            // Never shown as done: some vaults may still remember the site.
+            let message = VaultError(error).localizedMessage
+            await reload()
+            errorMessage = message
         }
     }
 }

@@ -24,10 +24,12 @@ use onepass_bridge::{AppErrorCode, BridgeError};
 use onepass_core::account::Auk;
 use onepass_core::crypto::SecretKey;
 use onepass_core::model::Item;
+use onepass_core::model::usage::SiteUsage;
 use onepass_core::repo::{DeviceState, Repository};
 use onepass_core::store::{RecordStore, SqliteStore};
 use onepass_core::{Error, Id, IntegrityError};
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use crate::config::HostError;
@@ -212,6 +214,15 @@ impl<S: RecordStore> RepoVault<S> {
         self.fail(what, &msg, bridge_error(e))
     }
 
+    /// Run the after-save hook (device state of the dev source).
+    fn persist_after_save(&mut self) -> Result<(), BridgeError> {
+        let saved = match (self.after_save.as_mut(), self.repo.as_ref()) {
+            (Some(f), Some(repo)) => f(repo),
+            _ => Ok(()),
+        };
+        saved.map_err(|e| self.fail("device state save", &e, INTERNAL))
+    }
+
     pub fn set_lock_path(&mut self, path: PathBuf) {
         self.lock_path = Some(path);
     }
@@ -320,15 +331,62 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
             Ok(false) => return Err(BridgeError::App(AppErrorCode::NotFound)),
             Err(e) => return Err(self.core_fail("vault write", e)),
         }
-        let saved = match (self.after_save.as_mut(), self.repo.as_ref()) {
-            (Some(f), Some(repo)) => f(repo),
-            _ => Ok(()),
-        };
-        saved.map_err(|e| self.fail("device state save", &e, INTERNAL))
+        self.persist_after_save()
     }
 
     fn approve_reprompt(&mut self, _item_id: Id) -> bool {
         self.allow_reprompt
+    }
+
+    fn record_usage(
+        &mut self,
+        vault_id: Id,
+        item_id: Id,
+        u: SiteUsage,
+        now: OffsetDateTime,
+        force: bool,
+    ) -> onepass_bridge::Result<bool> {
+        if self.is_locked() {
+            return Err(LOCKED);
+        }
+        let _g = self.guard()?;
+        self.refresh_repo()?;
+        let repo = self.repo.as_mut().ok_or(LOCKED)?;
+        let written = repo.vaults().and_then(|vaults| {
+            let Some(vault) = vaults.iter().find(|v| v.id == vault_id) else {
+                return Err(Error::NotFound);
+            };
+            repo.record_usage(vault, item_id, u, now, force)
+        });
+        let written = match written {
+            Ok(w) => w,
+            Err(Error::NotFound) => return Err(BridgeError::App(AppErrorCode::NotFound)),
+            Err(e) => return Err(self.core_fail("usage write", e)),
+        };
+        // Persisted even without a write: the read may have moved a last
+        // seen manifest.
+        self.persist_after_save()?;
+        Ok(written)
+    }
+
+    fn forget_site_usage(&mut self, site: &str) -> onepass_bridge::Result<usize> {
+        if self.is_locked() {
+            return Err(LOCKED);
+        }
+        let _g = self.guard()?;
+        self.refresh_repo()?;
+        let repo = self.repo.as_mut().ok_or(LOCKED)?;
+        let rewritten = match repo.forget_site_usage(site) {
+            Ok(n) => n,
+            Err(e) => {
+                // Best effort: other vaults may have been rewritten before
+                // the failure, so the device state is still persisted.
+                let _ = self.persist_after_save();
+                return Err(self.core_fail("usage forget", e));
+            }
+        };
+        self.persist_after_save()?;
+        Ok(rewritten)
     }
 }
 
@@ -756,5 +814,140 @@ mod tests {
         let file = decode_device(&fs::read(dir.path().join(DEVICE_FILE)).unwrap()).unwrap();
         assert_eq!(file.secret_key.as_str(), "sk");
         assert_eq!(file.state, state);
+    }
+
+    /// Spec 1 success criterion: `plan_fill` over a 500-item vault under
+    /// 20 ms, end to end through the bridge service and a real repository
+    /// (every item decrypted and checked against its manifest, as the host
+    /// serves it). Release build only, debug crypto is far slower:
+    /// `cargo test --release -p onepass-native-host plan_fill_500_items`.
+    #[test]
+    fn plan_fill_500_items_under_20ms() {
+        use onepass_bridge::audit::MemoryAudit;
+        use onepass_bridge::service::Service;
+        use onepass_core::crypto::KdfParams;
+        use onepass_core::model::templates::new_item;
+        use onepass_core::model::{FieldValue, ItemType, ItemUrl, MatchRule};
+        use onepass_core::store::MemoryStore;
+        use std::time::Instant;
+
+        if cfg!(debug_assertions) {
+            eprintln!("plan_fill_500_items_under_20ms: release build only, skipped");
+            return;
+        }
+        let (mut repo, _) =
+            Repository::create_account(MemoryStore::new(), "pw", KdfParams::new_default().unwrap())
+                .unwrap();
+        let v = repo.vaults().unwrap().remove(0);
+        for i in 0..500u32 {
+            let item = match i % 25 {
+                // 40 cards and 20 identities, 440 logins of which 20 on the page's site.
+                0 | 1 => {
+                    let mut card = new_item(ItemType::CreditCard, v.id, &format!("Card {i}"));
+                    card.field_mut("cardholder").unwrap().value =
+                        FieldValue::Text(format!("Holder {i}"));
+                    card.field_mut("number").unwrap().value =
+                        FieldValue::Concealed("4111111111111111".to_owned().into());
+                    card.field_mut("expiry").unwrap().value = FieldValue::MonthYear {
+                        year: 2030,
+                        month: 4,
+                    };
+                    card
+                }
+                2 => {
+                    let mut id = new_item(ItemType::Identity, v.id, &format!("Identity {i}"));
+                    id.field_mut("first_name").unwrap().value = FieldValue::Text(format!("N{i}"));
+                    id
+                }
+                n => {
+                    let mut item = new_item(ItemType::Login, v.id, &format!("Login {i}"));
+                    item.field_mut("username").unwrap().value =
+                        FieldValue::Text(format!("user{i}@example.com"));
+                    item.field_mut("password").unwrap().value =
+                        FieldValue::Password(format!("pw-{i}-Xy9!").into());
+                    let host = if n == 3 {
+                        "shop.test".to_owned()
+                    } else {
+                        format!("site{i}.test")
+                    };
+                    item.urls.push(ItemUrl {
+                        label: "site web".into(),
+                        url: format!("https://{host}/login"),
+                        rule: MatchRule::Domain,
+                        primary: true,
+                    });
+                    item
+                }
+            };
+            repo.save_item(&v, item).unwrap();
+        }
+        assert_eq!(repo.items(&v).unwrap().len(), 500);
+        let mut access = RepoVault::new(Some(repo), "a");
+        assert_eq!(access.items().unwrap().len(), 500);
+        let mut svc = Service::new(access, Box::new(MemoryAudit::new()));
+        let field = |r: &str, role: &str| {
+            serde_json::json!({"field_ref":r,"role":role,"confidence":0.9,"visible":true,
+                               "prefilled":"empty"})
+        };
+        let form = |fields: Vec<serde_json::Value>, class: &str| {
+            serde_json::json!({"form_ref":"f","intent_hints":{"kind":null,"signup_words":false,
+                "reset_words":false,"checkout_words":false,"ignore":false},"step_index":null,
+                "fields":fields,"buttons":[{"button_ref":"b","class":class}]})
+        };
+        let login = form(
+            vec![field("u", "username"), field("p", "current_password")],
+            "submit",
+        );
+        let checkout = form(
+            [
+                "cc_name",
+                "cc_number",
+                "cc_exp",
+                "cc_csc",
+                "given_name",
+                "family_name",
+                "email",
+                "address_line1",
+                "city",
+                "postal_code",
+                "country",
+            ]
+            .iter()
+            .enumerate()
+            .map(|(i, r)| field(&format!("x{i}"), r))
+            .collect(),
+            "pay",
+        );
+        let o = "https://shop.test";
+        let mut next = 0u64;
+        for (name, f, intent) in [
+            ("login", login, "login"),
+            ("checkout", checkout, "checkout"),
+        ] {
+            let mut times: Vec<u128> = (0..41)
+                .map(|_| {
+                    // Each request id once (the service refuses a replay).
+                    next += 1;
+                    let req = serde_json::json!({"id":next,"op":"plan_fill","ctx":"menu",
+                        "origin":o,"context":{"origin":o,"top_origin":o,"frame_kind":"top",
+                        "forms":[f.clone()],"typed_username_hash":null}});
+                    let bytes = serde_json::to_vec(&req).unwrap();
+                    let t = Instant::now();
+                    let out = svc.handle(&bytes, 1_790_000_000);
+                    let us = t.elapsed().as_micros();
+                    let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+                    assert_eq!(v["ok"]["plan"]["intent"], intent, "{v}");
+                    us
+                })
+                .collect();
+            times.sort_unstable();
+            let median = times[times.len() / 2];
+            println!(
+                "plan_fill 500 items, {name}: median {median} us, max {} us",
+                times[40]
+            );
+            // The spec's budget (about 5 ms measured on an M-series Mac, 2026-10-29).
+            assert!(median < 20_000, "{name}: median {median} us");
+        }
     }
 }

@@ -2,26 +2,35 @@
 // scenario the way a user would and returns an Observation for the oracle,
 // never a verdict. one_click goes through the real overlay and the sign-in
 // chain, menu_fill through the in-field menu (trusted ArrowDown) and the
-// site's submit button, lookalike opens the trap copy and looks for the real
-// site's item, passkey_control proves the bench's WebAuthn relying party with
-// Chromium's virtual authenticator and no extension. The autofill itself is
+// site's submit button, smart_fill through a trusted click on the field's
+// OnePass icon (the toolbar Fill when the page has no field) and whatever the
+// plan does next (chain, fill, menu), lookalike opens the trap copy and looks
+// for the real site's item, passkey_control proves the bench's WebAuthn
+// relying party with Chromium's virtual authenticator and no extension.
+// Every driver counts its gestures toward OnePass (`clicks`), stamps the
+// moment it sent the form itself (`userSubmitAt`), and reports which fields
+// held another vault item's value (`foreign`, names only: values read in the
+// page stay in the driver's memory). The autofill itself is
 // reached only through the Driver interface (driver.ts). Driver steps that
 // the page cannot satisfy are recorded as observations; only bench failures
 // (navigation to a lab host, browser launch, host rate limit) carry `lab:`.
 import { createPrivateKey } from "node:crypto";
 import type { Frame, Page } from "@playwright/test";
-import type { FieldSpec, Site } from "../gen/model.ts";
+import type { Expect, FieldSpec, Site, World } from "../gen/model.ts";
 import { PAGE_PATH } from "../gen/render.ts";
 import type { LabEvent } from "../server/ledger.ts";
 import type { LabServer } from "../server/server.ts";
 import { focusField, type PlainBrowser, shadowField, sleep } from "./browser.ts";
 import type { Driver } from "./driver.ts";
+import { foreignFields } from "./items.ts";
+import { smartTarget } from "./target.ts";
 import type { Observation } from "./oracle.ts";
 
 /** What a scenario runs against: the autofill under test, the lab server, a fresh tab. */
 export interface ScenarioEnv {
   driver: Driver;
   server: LabServer;
+  world: World;
   newPage(): Promise<Page>;
 }
 
@@ -35,7 +44,7 @@ export const GENERATE_ROW = "Générer un mot de passe";
 const byId = (id: string) => `[id="${id.replace(/["\\]/g, "\\$&")}"]`;
 
 function blank(driver: Observation["driver"]): Observation {
-  return { driver, overlayShown: false, itemOffered: false, events: [], filled: {}, durationMs: 0 };
+  return { driver, overlayShown: false, itemOffered: false, events: [], filled: {}, clicks: 0, durationMs: 0 };
 }
 
 function message(e: unknown): string {
@@ -54,9 +63,10 @@ async function goto(page: Page, url: string): Promise<void> {
  * Which of the site's fields hold a value, in every frame of the page (open
  * shadow roots directly, a closed one through its page hook `__labField`).
  * Split OTP cells count for their field. ORed into `acc`, so a value seen
- * once stays seen.
+ * once stays seen. `values` (driver memory only, never in an Observation)
+ * keeps the last non-empty value of each field it can read.
  */
-async function snapshotFilled(page: Page, site: Site, acc: Record<string, boolean>): Promise<void> {
+async function snapshotFilled(page: Page, site: Site, acc: Record<string, boolean>, values?: Record<string, string>): Promise<void> {
   const fields = site.fields.map((f) => ({ id: f.id, name: f.name }));
   for (const f of fields) acc[f.name] ??= false;
   for (const frame of page.frames()) {
@@ -67,17 +77,22 @@ async function snapshotFilled(page: Page, site: Site, acc: Record<string, boolea
         for (const el of roots[k]!.querySelectorAll("*")) if (el.shadowRoot) roots.push(el.shadowRoot);
       }
       const hook = (window as unknown as { __labField?: (sel: string) => { filled: boolean } | null }).__labField;
-      const value = (id: string) => {
+      const read = (id: string): string | undefined => {
         const sel = `[id="${id.replace(/["\\]/g, "\\$&")}"]`;
         for (const r of roots) {
           const el = r.querySelector(sel) as HTMLInputElement | null;
-          if (el && "value" in el && el.value !== "") return true;
+          if (el && "value" in el && el.value !== "") return el.value;
         }
-        return hook?.(sel)?.filled === true;
+        return undefined;
       };
-      return list.filter((f) => value(f.id) || [1, 2, 3, 4, 5, 6].some((k) => value(`${f.id}-${k}`))).map((f) => f.name);
-    }, fields).catch(() => [] as string[]);
-    for (const name of seen) acc[name] = true;
+      const value = (id: string) => read(id) !== undefined || hook?.(`[id="${id.replace(/["\\]/g, "\\$&")}"]`)?.filled === true;
+      return list.filter((f) => value(f.id) || [1, 2, 3, 4, 5, 6].some((k) => value(`${f.id}-${k}`)))
+        .map((f) => [f.name, read(f.id) ?? ""] as [string, string]);
+    }, fields).catch(() => [] as [string, string][]);
+    for (const [name, v] of seen) {
+      acc[name] = true;
+      if (values && v !== "") values[name] = v;
+    }
   }
 }
 
@@ -121,6 +136,11 @@ async function debugDump(page: Page, o: Observation): Promise<void> {
 /** After the page closes, how long requests still in flight get to reach the server before its events are read. */
 const LATE_GRACE_MS = 500;
 
+/** The fields of `site` holding another item's value (names), from the values the driver read. */
+function foreign(env: ScenarioEnv, site: Site, o: Observation, values: Record<string, string>): void {
+  o.foreign = foreignFields(env.world, site, values, o.typed ?? []);
+}
+
 async function finish(env: ScenarioEnv, page: Page | undefined, o: Observation, started: number): Promise<Observation> {
   if (page && o.error === undefined && (await env.driver.rateLimited(page).catch(() => false))) o.error = "lab: rate_limited";
   if (page) await debugDump(page, o);
@@ -136,6 +156,7 @@ async function finish(env: ScenarioEnv, page: Page | undefined, o: Observation, 
 export async function oneClick(env: ScenarioEnv, site: Site): Promise<Observation> {
   const started = Date.now();
   const o = blank("one_click");
+  const values: Record<string, string> = {};
   let page: Page | undefined;
   try {
     page = await env.newPage();
@@ -145,9 +166,23 @@ export async function oneClick(env: ScenarioEnv, site: Site): Promise<Observatio
     if (ui && site.itemTitle) o.itemOffered = await ui.offers(site.itemTitle);
     if (ui && site.itemTitle && o.itemOffered) {
       await env.driver.pickAccount(ui, site.itemTitle);
+      o.clicks = 1;
+      await followChain(env, page, site, o, values);
+    } else {
+      await snapshotFilled(page, site, o.filled, values);
+    }
+  } catch (e) {
+    o.error = message(e);
+  }
+  foreign(env, site, o, values);
+  return finish(env, page, o, started);
+}
+
+/** Follows a sign-in chain of `site` to its end (or CHAIN_WAIT_MS), reading the fields on the way. */
+async function followChain(env: ScenarioEnv, page: Page, site: Site, o: Observation, values: Record<string, string>): Promise<void> {
       const end = Date.now() + CHAIN_WAIT_MS;
       for (;;) {
-        await snapshotFilled(page, site, o.filled);
+        await snapshotFilled(page, site, o.filled, values);
         const c = await env.driver.progress(site.host);
         if (c) o.chain = c;
         if ((c && c.status !== "running") || Date.now() >= end) {
@@ -158,13 +193,6 @@ export async function oneClick(env: ScenarioEnv, site: Site): Promise<Observatio
       }
       // The last post can still be in flight when the chain reports done.
       await waitEvents(env.server, signedIn(site), 3_000);
-    } else {
-      await snapshotFilled(page, site, o.filled);
-    }
-  } catch (e) {
-    o.error = message(e);
-  }
-  return finish(env, page, o, started);
 }
 
 /**
@@ -230,6 +258,7 @@ async function submitForm(scope: Frame): Promise<void> {
 export async function menuFill(env: ScenarioEnv, site: Site): Promise<Observation> {
   const started = Date.now();
   const o = blank("menu_fill");
+  const values: Record<string, string> = {};
   let page: Page | undefined;
   try {
     page = await env.newPage();
@@ -247,14 +276,115 @@ export async function menuFill(env: ScenarioEnv, site: Site): Promise<Observatio
     const menu = await env.driver.menuFill(page, scope, fields.map((f) => byId(f.id)), title, true);
     o.overlayShown = menu.shown;
     o.itemOffered = menu.offered;
+    // Two gestures: the menu opened from the field, then its row.
+    o.clicks = (menu.shown ? 1 : 0) + (menu.offered ? 1 : 0);
     if (menu.offered) await debugDump(page, o);
-    await snapshotFilled(page, site, o.filled);
-    await submitForm(scope).catch(() => undefined);
-    await waitEvents(env.server, submitted(site), 10_000);
-    await waitEvents(env.server, signedIn(site), site.flow === "signup" ? 3_000 : 0);
+    await snapshotFilled(page, site, o.filled, values);
+    await userSubmit(env, page, scope, site, o);
   } catch (e) {
     o.error = message(e);
   }
+  foreign(env, site, o, values);
+  return finish(env, page, o, started);
+}
+
+/** The user sends the form: stamped first (anything the site got before is OnePass's), then its button. */
+async function userSubmit(env: ScenarioEnv, page: Page, scope: Frame, site: Site, o: Observation): Promise<void> {
+  o.userSubmitAt = Date.now();
+  await submitForm(scope).catch(() => undefined);
+  await waitEvents(env.server, submitted(site), 10_000);
+  await waitEvents(env.server, signedIn(site), site.flow === "signup" ? 3_000 : 0);
+}
+
+/** How long smart_fill waits for the plan's first visible effect (chain, menu, a filled field). */
+const SMART_WAIT_MS = 10_000;
+/** After a first field fills: time for the plan's other groups. */
+const SMART_SETTLE_MS = 1_500;
+/** The menu row the user would pick for this site. */
+const menuTitle = (site: Site): string | undefined =>
+  site.flow === "signup" ? GENERATE_ROW : site.cardTitle ?? site.identityTitle ?? site.itemTitle;
+
+type SmartOutcome = "chain" | "menu" | "filled" | "nothing";
+
+/** What the click led to, first seen: a chain of this site started after `since`, the menu, or a filled field. */
+async function smartOutcome(env: ScenarioEnv, page: Page, site: Site, o: Observation, values: Record<string, string>,
+  since: number): Promise<SmartOutcome> {
+  const end = Date.now() + SMART_WAIT_MS + (site.delayMs ?? 0);
+  for (;;) {
+    const c = await env.driver.progress(site.host);
+    if (c && (c.startedAt ?? 0) >= since) return "chain";
+    if (await env.driver.menuShown(page)) return "menu";
+    await snapshotFilled(page, site, o.filled, values);
+    const typed = new Set(o.typed ?? []);
+    if (Object.entries(o.filled).some(([n, v]) => v && !typed.has(n))) {
+      await sleep(SMART_SETTLE_MS);
+      // A chain can start after its first fill shows (open_chain fills, then sends).
+      const late = await env.driver.progress(site.host);
+      if (late && (late.startedAt ?? 0) >= since) return "chain";
+      await snapshotFilled(page, site, o.filled, values);
+      return "filled";
+    }
+    if (Date.now() >= end) return "nothing";
+    await sleep(300);
+  }
+}
+
+/**
+ * smart_fill (spec 8.2): one trusted click on the OnePass icon of the form's
+ * field (the toolbar Fill when the page has none), then what the plan does.
+ * Chain: followed to its end, OnePass sends. Fill: the user presses the
+ * form's own button, as D2 wants for anything but a sign-in. Menu: a second
+ * gesture, the site's row (never on a "nofill" scenario), then the user's
+ * button. The signup email is typed by the user first, as in menu_fill.
+ */
+export async function smartFill(env: ScenarioEnv, site: Site, expectation: Expect): Promise<Observation> {
+  const started = Date.now();
+  const o = blank("smart_fill");
+  const values: Record<string, string> = {};
+  let page: Page | undefined;
+  try {
+    page = await env.newPage();
+    await goto(page, `https://${site.host}/`);
+    const scope = await formScope(page, site);
+    if (site.flow === "signup") {
+      const email = site.fields.find((f) => f.role === "email" || f.role === "username");
+      if (email && site.account) {
+        o.typed = [email.name];
+        await typeField(page, scope, email.id, site.account.username, fieldWait(site)).catch(() => undefined);
+      }
+    }
+    const target = smartTarget(site);
+    const since = Date.now();
+    await env.driver.smartFill(page, scope, target ? byId(target.id) : undefined, fieldWait(site));
+    o.clicks = 1;
+    const outcome = await smartOutcome(env, page, site, o, values, since);
+    if (process.env.LAB_DEBUG) console.log(`[lab debug] smart_fill outcome ${outcome}`);
+    o.overlayShown = outcome !== "nothing";
+    o.itemOffered = outcome === "chain" || outcome === "filled";
+    if (outcome === "chain") {
+      await followChain(env, page, site, o, values);
+    } else if (outcome === "menu") {
+      const title = menuTitle(site);
+      const menu = env.driver.menuFrame(page);
+      const offered = menu !== undefined && title !== undefined && (await env.driver.menuOffers(menu, title));
+      o.itemOffered = offered;
+      if (offered && expectation !== "nofill") {
+        await env.driver.menuPick(menu, title);
+        o.clicks = 2;
+        await sleep(1_500);
+        await snapshotFilled(page, site, o.filled, values);
+        await userSubmit(env, page, scope, site, o);
+      } else {
+        await page.keyboard.press("Escape");
+        await snapshotFilled(page, site, o.filled, values);
+      }
+    } else if (outcome === "filled") {
+      if (expectation !== "nofill") await userSubmit(env, page, scope, site, o);
+    }
+  } catch (e) {
+    o.error = message(e);
+  }
+  foreign(env, site, o, values);
   return finish(env, page, o, started);
 }
 
@@ -278,6 +408,7 @@ export async function lookalike(env: ScenarioEnv, site: Site): Promise<Observati
       if (menu.offered) o.itemOffered = true;
     }
     await snapshotFilled(page, site, o.filled);
+    o.userSubmitAt = Date.now();
     await submitForm(page.mainFrame()).catch(() => undefined);
     await sleep(1_500);
   } catch (e) {

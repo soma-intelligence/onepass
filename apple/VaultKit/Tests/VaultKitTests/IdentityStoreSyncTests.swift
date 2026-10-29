@@ -6,10 +6,11 @@ import Testing
 
 func identity(
     _ kind: FfiAutofillKind = .password, service: String = "exemple.fr", user: String = "camille@exemple.fr",
-    record: String = "aa:bb", favorite: Bool = false, credential: Data = Data(), handle: Data = Data()
+    record: String = "aa:bb", favorite: Bool = false, rank: UInt32 = 0, credential: Data = Data(),
+    handle: Data = Data()
 ) -> FfiAutofillIdentity {
     FfiAutofillIdentity(
-        kind: kind, service: service, user: user, recordId: record, favorite: favorite,
+        kind: kind, service: service, user: user, recordId: record, favorite: favorite, rank: rank,
         credentialId: credential, userHandle: handle)
 }
 
@@ -66,7 +67,7 @@ struct IdentityStoreSyncTests {
 
     @Test func builderMapsKindsAndRank() throws {
         let built = AutoFillIdentityBuilder.credentialIdentities([
-            identity(.password, service: "exemple.fr", user: "camille", record: "v:1", favorite: true),
+            identity(.password, service: "exemple.fr", user: "camille", record: "v:1", favorite: true, rank: 50),
             identity(.oneTimeCode, service: "exemple.fr", user: "camille", record: "v:1"),
             identity(
                 .passkey, service: "example.com", user: "camille", record: "v:2",
@@ -79,7 +80,7 @@ struct IdentityStoreSyncTests {
         #expect(password.serviceIdentifier.type == .domain)
         #expect(password.user == "camille")
         #expect(password.recordIdentifier == "v:1")
-        #expect(password.rank == 1)
+        #expect(password.rank == 50)
 
         let code = try #require(built[1] as? ASOneTimeCodeCredentialIdentity)
         #expect(code.serviceIdentifier.identifier == "exemple.fr")

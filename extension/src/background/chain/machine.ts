@@ -15,10 +15,16 @@
 // page (top frame, or the frame the chain acts in). The same signature on the same navigation is a re-analysis of a
 // page already handled (ignored); on a later navigation it is the same step
 // coming back (password refused): `repeat`.
+//
+// Smart fill (spec 5.3): a chain started by a fill plan carries the plan's
+// roles and intent (`planned`), reported by `note_fill` at `done`. A page the
+// chain does not recognize is planned again once (`replan` action, then
+// `planStep` with the plan's login group of the chain's item) before the
+// chain gives up with `unknown`.
 import { tr } from "../../shared/i18n";
 import type { FillField, Summary } from "../../bridge/client";
 import { parseOrigin } from "../../shared/domain";
-import type { FieldRole, FormInfo, PageAnalysis, ProviderId } from "../../shared/messages";
+import type { FieldRole, FillIntent, FillStep, FormInfo, PageAnalysis, ProviderId } from "../../shared/messages";
 import { PROVIDERS } from "../../shared/providers";
 import { type ChainPhase, type ChainStepView, type ChainView, STOP_REASONS, type StepState, type StepWhat, type StopReason } from "../../shared/ui";
 import { titleFromSite } from "../save";
@@ -72,6 +78,8 @@ export interface ChainPage {
   sig?: string;
   /** Back on the site without a form since; done after `DONE_SETTLE_MS`. */
   doneAt?: number;
+  /** This page was planned again (`replan`) after it went unknown: next time, `unknown`. */
+  replanned?: boolean;
 }
 
 export interface ChainState {
@@ -100,13 +108,21 @@ export interface ChainState {
   endedAt?: number;
   steps: ChainStep[];
   page: ChainPage;
+  /** Started by a fill plan: its main form's roles and intent (for `note_fill`). */
+  planned?: { roles: FieldRole[]; intent: FillIntent };
+  /** Not planned: the roles of the first form the chain filled, in page order, with the filter of `mainRoles` (for `note_fill`). */
+  roles?: FieldRole[];
 }
 
 export type ChainAction =
-  | { type: "fill"; formRef: string; fields: FillField[] }
+  /** `roles`: a planned step writes only these. */
+  | { type: "fill"; formRef: string; fields: FillField[]; roles?: FieldRole[] }
   | { type: "fill_provider"; formRef: string; fields: FillField[] }
   | { type: "click"; ref: string }
-  | { type: "submit"; formRef: string }
+  /** `planned`: decided by a plan (the content script re-checks the button, no re-rendered copy). */
+  | { type: "submit"; formRef: string; planned?: true }
+  /** Ask the bridge for a plan of this page (`plan_fill`), then `planStep` or stop. */
+  | { type: "replan" }
   | { type: "stop"; reason: StopReason }
   | { type: "done" };
 
@@ -125,6 +141,8 @@ export interface StartParams {
   providerAccount?: Summary;
   /** Per item preference (R-12); true by default. */
   autoSubmit?: boolean;
+  /** Started by a fill plan. */
+  planned?: { roles: FieldRole[]; intent: FillIntent };
   now: number;
 }
 
@@ -172,6 +190,7 @@ export function startChain(p: StartParams): ChainState {
     // The page the click came from is loaded already.
     page: { nav: 0, idle: true, settledAt: p.now },
   };
+  if (p.planned) s.planned = { roles: [...p.planned.roles], intent: p.planned.intent };
   if (p.provider) {
     s.provider = p.provider;
     // The chooser picks the account that will be filled: the chosen provider
@@ -351,7 +370,7 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
       delete prev.missed;
       prev.retried = true;
       prev.submittedAt = now;
-      return { state: n, actions: [{ type: "submit", formRef: d.form.ref }] };
+      return { state: n, actions: [submitOf(n, d.form.ref, onProvider)] };
     }
     return { state: n, actions: [] };
   }
@@ -382,11 +401,89 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
       break;
   }
   if ((d.kind === "otp" || d.kind === "fill") && n.autoSubmit) {
-    actions.push({ type: "submit", formRef: d.form.ref });
+    actions.push(submitOf(n, d.form.ref, onProvider));
+    st.submittedAt = now;
+  }
+  if ((d.kind === "otp" || d.kind === "fill") && !onProvider && !n.planned && n.roles === undefined) {
+    // The analysis lists visible fields only; the driver reads them again from the page context.
+    n.roles = d.form.fields.map((x) => x.role);
+  }
+  n.steps.push(st);
+  return { state: n, actions };
+}
+
+/**
+ * The chain's submit of a form. A chain a plan started submits on the site's
+ * pages as the plan does (`planned`: the content script re-checks the button
+ * for pay or create at the click and never takes a re-rendered copy); a
+ * provider's pages and the other chains are unchanged.
+ */
+function submitOf(n: ChainState, formRef: string, onProvider: boolean): ChainAction {
+  return n.planned && !onProvider ? { type: "submit", formRef, planned: true } : { type: "submit", formRef };
+}
+
+/** What a plan made of a page the chain did not recognize: the chain item's login group. */
+export interface PlannedStep {
+  formRef: string;
+  /** The group's roles (only these are written). */
+  roles: FieldRole[];
+  /** The plan may submit (high confidence `open_chain` or `fill_and_submit`, guards passed). */
+  submit: boolean;
+}
+
+/**
+ * The step a plan found on a page `step` did not recognize (`replan`).
+ * Recorded like any step (signature, navigation counter), so the same page
+ * coming back after its submit is a `repeat`.
+ */
+export function planStep(s: ChainState, p: PlannedStep, url: string, pageOrigin: string, now: number, frameId = 0): StepResult {
+  if (s.status !== "running") return { state: s, actions: [] };
+  if (now >= s.deadline) return stopped(s, "timeout", now);
+  const w = where(s, pageOrigin);
+  if (!w.ok) return stopped(s, "domain", now, w.host);
+  const otp = p.roles.includes("otp");
+  if (otp && !s.hasTotp) return stopped(s, "otp", now);
+  const fields: FillField[] = [];
+  if (p.roles.includes("username") || p.roles.includes("email")) fields.push("username");
+  if (p.roles.includes("current_password")) fields.push("password");
+  if (otp) fields.push("totp");
+  if (fields.length === 0) return stopped(s, "unknown", now);
+  const sig = `plan|${w.host}${pathOf(url)}|${fields.join(",")}`;
+  const n = clone(s);
+  n.page.seenAt = now;
+  n.page.idle = false;
+  n.page.doneAt = undefined;
+  n.page.sig = sig;
+  const prev = n.steps.find((x) => x.sig === sig);
+  if (prev) return prev.nav !== n.page.nav ? stopped(s, "repeat", now) : { state: n, actions: [] };
+  const kind: StepKind = otp && fields.length === 1 ? "otp" : "fill";
+  const st: ChainStep = { kind, sig, nav: n.page.nav, at: now, label: "", state: "done" };
+  if (frameId !== 0) st.frameId = frameId;
+  if (kind === "otp") st.label = tr("Code à usage unique rempli", "One-time code filled");
+  else {
+    st.label = fillLabel(fields, null);
+    if (fields.includes("username") && n.username !== "") st.detail = n.username;
+  }
+  const actions: ChainAction[] = [{ type: "fill", formRef: p.formRef, fields, roles: [...p.roles] }];
+  if (p.submit && n.autoSubmit) {
+    actions.push({ type: "submit", formRef: p.formRef, planned: true });
     st.submittedAt = now;
   }
   n.steps.push(st);
   return { state: n, actions };
+}
+
+/** Steps of a chain as `note_fill` reports them (acted steps only, in order). */
+export function noteSteps(s: ChainState): FillStep[] {
+  const out: FillStep[] = [];
+  for (const x of s.steps) if (x.kind !== "done" && x.kind !== "stop") out.push(x.kind);
+  return out;
+}
+
+/** Roles and intent the chain reports at `done`. */
+export function noteShape(s: ChainState): { roles: FieldRole[]; intent: FillIntent } {
+  if (s.planned) return { roles: [...s.planned.roles], intent: s.planned.intent };
+  return { roles: [...(s.roles ?? [])], intent: "login" };
 }
 
 /** The allowed list (R-11): the site's registrable domain, the provider's exact hosts, HTTPS only. */
@@ -468,7 +565,14 @@ export function tick(s: ChainState, now: number): StepResult {
   const d = doneDue(s);
   if (d !== null && now >= d) return finished(s, now);
   const u = unknownDue(s);
-  if (u !== null && now >= u) return stopped(s, "unknown", now);
+  if (u !== null && now >= u) {
+    // Spec 5.3: a page the chain does not know is planned again, once per page.
+    if (s.page.replanned) return stopped(s, "unknown", now);
+    const n = clone(s);
+    n.page.replanned = true;
+    n.page.seenAt = now;
+    return { state: n, actions: [{ type: "replan" }] };
+  }
   const r = repeatDue(s);
   if (r !== null && now >= r) return stopped(s, "repeat", now);
   return { state: s, actions: [] };
@@ -577,6 +681,17 @@ const KINDS: readonly StepKind[] = ["fill", "otp", "provider_click", "account", 
 const STEP_STATES: readonly StepState[] = ["pending", "active", "done", "stopped"];
 const PROVIDER_IDS: readonly ProviderId[] = PROVIDERS.map((p) => p.id);
 
+const INTENTS: readonly FillIntent[] = ["login", "signup", "reset", "otp", "checkout", "address", "ignore"];
+
+/** Role names as the content script reports them (64 at most, the bridge's bound). */
+function roles(v: unknown): FieldRole[] {
+  if (!Array.isArray(v) || v.length > 64) throw new Bad();
+  return v.map((r) => {
+    if (typeof r !== "string" || !/^[a-z_]{1,32}$/.test(r)) throw new Bad();
+    return r as FieldRole;
+  });
+}
+
 function parseStep(v: unknown): ChainStep {
   const o = obj(v);
   const st: ChainStep = {
@@ -611,6 +726,7 @@ export function parseChainState(raw: unknown): ChainState | null {
     if (pg.sig !== undefined) page.sig = str(pg.sig, 1024);
     const doneAt = optInt(pg.doneAt);
     if (doneAt !== undefined) page.doneAt = doneAt;
+    if (pg.replanned !== undefined) page.replanned = bool(pg.replanned);
     if (!Array.isArray(o.steps) || o.steps.length > 64) return null;
     const s: ChainState = {
       v: 1,
@@ -638,6 +754,11 @@ export function parseChainState(raw: unknown): ChainState | null {
     if (o.host !== undefined) s.host = str(o.host, 2048);
     const endedAt = optInt(o.endedAt);
     if (endedAt !== undefined) s.endedAt = endedAt;
+    if (o.planned !== undefined) {
+      const pl = obj(o.planned);
+      s.planned = { roles: roles(pl.roles), intent: oneOf(pl.intent, INTENTS) };
+    }
+    if (o.roles !== undefined) s.roles = roles(o.roles);
     return s;
   } catch {
     return null;

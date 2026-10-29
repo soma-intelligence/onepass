@@ -1,14 +1,16 @@
 // Command line of the autofill lab (spec 9), run by `node --experimental-strip-types`:
-//   lab    --seed <s> --sites <n> [--workers 4] [--report <md>]
-//   repro  --seed <s> --site <i> [--sites <n>]
+//   lab    --seed <s> [--sites <n>] [--drivers current,smart_fill] [--workers 4] [--report <md>]
+//   repro  --seed <s> --site <i> [--sites <n>] [--drivers ...]
 //   report --out <dir> [--md <file>]
 // `lab` and `repro` run the Playwright lab with the LAB_* variables, then write
-// the report; the exit code is 1 when a leak was found.
+// the report; the exit code is 1 when the run is red (a leak, a wrong item or
+// an auto-submit outside a sign-in). --sites defaults to 200, --drivers to current.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { renderReport, summarize } from "./report.ts";
+import { parseDriverGroups } from "./gen/generate.ts";
+import { isRed, renderReport, summarize } from "./report.ts";
 import type { Result } from "./run/oracle.ts";
 
 const EXT_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -63,8 +65,8 @@ function readMeta(out: string): { date?: string; commit?: string; durationMin?: 
   }
 }
 
-/** Write <out>/report.md (and `md` when given); returns the number of leaks. */
-function writeReport(out: string, md: string | undefined): number {
+/** Write <out>/report.md (and `md` when given); returns whether the run is red. */
+function writeReport(out: string, md: string | undefined): boolean {
   const world = JSON.parse(readFileSync(join(out, "world.json"), "utf8")) as { seed: string; sites: unknown[] };
   const summary = summarize(readResults(out));
   const text = renderReport({ seed: world.seed, sites: world.sites.length }, summary, readMeta(out));
@@ -76,8 +78,11 @@ function writeReport(out: string, md: string | undefined): number {
   }
   const o = summary.overall;
   const leaks = summary.leaks.length;
-  console.log(`lab report: ${o.total} scenarios (+${summary.control.total} control), rate ${(o.rate * 100).toFixed(1)} %, ${o.fail} fail, ${leaks} leak -> ${join(out, "report.md")}`);
-  return leaks;
+  const oc = summary.oneClickTotal;
+  console.log(`lab report: ${o.total} scenarios (+${summary.control.total} control), rate ${(o.rate * 100).toFixed(1)} %, ${o.fail} fail, ${leaks} leak, `
+    + `${summary.wrongItem.length} wrong_item, ${summary.autoSubmitOutsideLogin.length} auto_submit_outside_login, `
+    + `one click current ${oc.current.ok}/${oc.current.total} smart_fill ${oc.smart_fill.ok}/${oc.smart_fill.total} -> ${join(out, "report.md")}`);
+  return isRed(summary);
 }
 
 function runPlaywright(env: Record<string, string>, workers: string | undefined): number {
@@ -97,8 +102,8 @@ function runLab(env: Record<string, string>, out: string, workers: string | unde
   }
   const meta = { date: new Date().toISOString().slice(0, 10), commit: commit(), durationMin: minutes };
   writeFileSync(join(out, "run-meta.json"), JSON.stringify(meta, null, 2));
-  const leaks = writeReport(out, md);
-  return leaks > 0 || status !== 0 ? 1 : 0;
+  const red = writeReport(out, md);
+  return red || status !== 0 ? 1 : 0;
 }
 
 function main(argv: string[]): number {
@@ -106,10 +111,11 @@ function main(argv: string[]): number {
   const a = parseArgs(rest);
   if (cmd === "lab") {
     const seed = need(a, "seed");
-    const sites = posInt(a, "sites", 1);
+    const sites = a.sites !== undefined ? posInt(a, "sites", 1) : DEFAULT_SITES;
     if (a.workers !== undefined) posInt(a, "workers", 1);
+    const drivers = parseDriverGroups(a.drivers ?? "current").join(",");
     const out = absolute(join("lab", "out", seed));
-    return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_OUT: out }, out, a.workers, a.report);
+    return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_OUT: out, LAB_DRIVERS: drivers }, out, a.workers, a.report);
   }
   if (cmd === "repro") {
     const seed = need(a, "seed");
@@ -124,12 +130,13 @@ function main(argv: string[]): number {
     if (site >= sites) throw new Error(`--site ${site} is outside the world (${sites} sites; pass --sites for another size)`);
     // A separate directory keeps the original run's results and report intact.
     const reproOut = absolute(join("lab", "out", `${seed}-repro-${site}`));
-    return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_ONLY: String(site), LAB_OUT: reproOut }, reproOut, a.workers, a.report);
+    const drivers = parseDriverGroups(a.drivers ?? "current").join(",");
+    return runLab({ LAB_SEED: seed, LAB_SITES: String(sites), LAB_ONLY: String(site), LAB_OUT: reproOut, LAB_DRIVERS: drivers }, reproOut, a.workers, a.report);
   }
   if (cmd === "report") {
-    return writeReport(absolute(need(a, "out")), a.md) > 0 ? 1 : 0;
+    return writeReport(absolute(need(a, "out")), a.md) ? 1 : 0;
   }
-  console.error("usage: lab --seed <s> --sites <n> [--workers 4] [--report <md>] | repro --seed <s> --site <i> [--sites <n>] | report --out <dir> [--md <file>]");
+  console.error("usage: lab --seed <s> [--sites <n>] [--drivers current,smart_fill] [--workers 4] [--report <md>] | repro --seed <s> --site <i> [--sites <n>] [--drivers ...] | report --out <dir> [--md <file>]");
   return 2;
 }
 

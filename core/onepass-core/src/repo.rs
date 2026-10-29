@@ -58,6 +58,7 @@ use crate::manifest::{
 };
 use crate::model::Item;
 use crate::model::events::EventKind;
+use crate::model::usage::SiteUsage;
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
@@ -1125,6 +1126,94 @@ impl<S: RecordStore> Repository<S> {
         Ok(())
     }
 
+    /// Remember a fill of `u.site` by this item (`Item::note_usage`). The
+    /// item is saved only when the memory changed enough to be worth a
+    /// write (`true`), with its `updated_at` unchanged: a usage write never
+    /// beats a real edit from another device. The write is forced when
+    /// `force` (the caller saw another item, maybe in another vault, use
+    /// the site later) or when another live item of this vault used the
+    /// site after this item's entry, so this item becomes the last used
+    /// there again (A, B, then A within the hour). Archived, trashed and
+    /// unreadable items are skipped for that check.
+    pub fn record_usage(
+        &mut self,
+        vault: &Vault,
+        item_id: Id,
+        u: SiteUsage,
+        now: OffsetDateTime,
+        force: bool,
+    ) -> Result<bool> {
+        self.sync_epoch()?;
+        let loaded = self.served(vault, Use::Write)?;
+        let (_, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
+        let mut item = vault.open_item(rec)?;
+        let force = force
+            || item.site_last_at(&u.site).is_some_and(|own| {
+                loaded
+                    .records
+                    .iter()
+                    .filter(|(_, r)| r.item_id != item_id)
+                    .filter_map(|(_, r)| vault.open_item(r).ok())
+                    .filter(|other| !other.archived && other.trashed_at.is_none())
+                    .filter_map(|other| other.site_last_at(&u.site))
+                    .any(|at| at > own)
+            });
+        if !item.note_usage_with(u, now, force) {
+            return Ok(false);
+        }
+        self.save_item(vault, item)?;
+        Ok(true)
+    }
+
+    /// Forget `site` in every item of every vault this device opens (spec
+    /// 7, erase by site), leaving a tombstone in each so other devices'
+    /// copies do not bring it back. The vaults come from `vaults` (epoch and
+    /// `VaultMissing` checks: an alert there fails the whole call, nothing
+    /// written). Then best effort, vault by vault and item by item: a vault
+    /// that cannot be read or an item that cannot be written (an alert, a
+    /// lost race) does not stop the others, but the call still returns the
+    /// first such error once every vault was tried, so a caller never shows
+    /// a partial forget as done. Returns how many items were rewritten, each
+    /// with its `updated_at` unchanged.
+    pub fn forget_site_usage(&mut self, site: &str) -> Result<usize> {
+        self.forget_site_usage_in(site, |_| true)
+    }
+
+    /// `forget_site_usage` over the vaults `keep` accepts only (an app
+    /// leaves out the vaults it hides from the extension).
+    pub fn forget_site_usage_in(
+        &mut self,
+        site: &str,
+        keep: impl Fn(&Vault) -> bool,
+    ) -> Result<usize> {
+        let now = OffsetDateTime::now_utc();
+        let mut rewritten = 0;
+        let mut first_err: Option<Error> = None;
+        for vault in self.vaults()?.into_iter().filter(|v| keep(v)) {
+            let items = match self.items(&vault) {
+                Ok(items) => items,
+                Err(e) => {
+                    first_err.get_or_insert(e);
+                    continue;
+                }
+            };
+            for mut item in items {
+                if item.forget_site_usage(site, now) {
+                    match self.save_item(&vault, item) {
+                        Ok(()) => rewritten += 1,
+                        Err(e) => {
+                            first_err.get_or_insert(e);
+                        }
+                    }
+                }
+            }
+        }
+        match first_err {
+            Some(e) => Err(e),
+            None => Ok(rewritten),
+        }
+    }
+
     /// Remove an item for good: manifest without it first, then its record
     /// and its ignored leftovers.
     pub fn delete_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
@@ -1687,6 +1776,182 @@ mod tests {
 
     fn user(item: &Item) -> String {
         item.subtitle()
+    }
+
+    #[test]
+    fn usage_a_b_a_within_the_hour_rewrites_a() {
+        use crate::fill_plan::context::FieldRole;
+        use crate::fill_plan::intent::Intent;
+        use crate::model::usage::{StepKind, form_shape_hash};
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let (a, b) = (login(&v, "alice"), login(&v, "bob"));
+        repo.save_item(&v, a.clone()).unwrap();
+        repo.save_item(&v, b.clone()).unwrap();
+        let t0 = OffsetDateTime::now_utc();
+        let u = |at: OffsetDateTime| SiteUsage {
+            site: "a.com".into(),
+            form_shape_hash: form_shape_hash(&[FieldRole::Username]),
+            intent: Intent::Login,
+            step_seq: vec![StepKind::Fill],
+            count: 1,
+            last_at: at,
+        };
+        let min = time::Duration::minutes;
+        let (t10, t20) = (t0 + min(10), t0 + min(20));
+        assert!(repo.record_usage(&v, a.id, u(t0), t0, false).unwrap());
+        assert!(repo.record_usage(&v, b.id, u(t10), t10, false).unwrap());
+        // B used the site after A's entry: A is rewritten within the hour.
+        assert!(repo.record_usage(&v, a.id, u(t20), t20, false).unwrap());
+        let items = repo.items(&v).unwrap();
+        let last = |id: Id| items.iter().find(|i| i.id == id).unwrap().usage[0].last_at;
+        assert_eq!(last(a.id), t20);
+        assert_eq!(last(b.id), t10);
+        // A is now the newest: a repeat within the hour writes nothing.
+        let t25 = t0 + min(25);
+        assert!(!repo.record_usage(&v, a.id, u(t25), t25, false).unwrap());
+        // Unless the caller saw a newer use elsewhere (another vault).
+        let t30 = t0 + min(30);
+        assert!(repo.record_usage(&v, a.id, u(t30), t30, true).unwrap());
+    }
+
+    #[test]
+    fn usage_force_scan_skips_archived_and_trashed() {
+        use crate::fill_plan::context::FieldRole;
+        use crate::fill_plan::intent::Intent;
+        use crate::model::usage::{StepKind, form_shape_hash};
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let (a, b) = (login(&v, "alice"), login(&v, "bob"));
+        repo.save_item(&v, a.clone()).unwrap();
+        repo.save_item(&v, b.clone()).unwrap();
+        let t0 = OffsetDateTime::now_utc();
+        let min = time::Duration::minutes;
+        let u = |at: OffsetDateTime| SiteUsage {
+            site: "a.com".into(),
+            form_shape_hash: form_shape_hash(&[FieldRole::Username]),
+            intent: Intent::Login,
+            step_seq: vec![StepKind::Fill],
+            count: 1,
+            last_at: at,
+        };
+        assert!(repo.record_usage(&v, a.id, u(t0), t0, false).unwrap());
+        assert!(
+            repo.record_usage(&v, b.id, u(t0 + min(10)), t0 + min(10), false)
+                .unwrap()
+        );
+        repo.archive_item(&v, b.id).unwrap();
+        assert!(
+            !repo
+                .record_usage(&v, a.id, u(t0 + min(20)), t0 + min(20), false)
+                .unwrap()
+        );
+        repo.trash_item(&v, b.id).unwrap();
+        assert!(
+            !repo
+                .record_usage(&v, a.id, u(t0 + min(21)), t0 + min(21), false)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn usage_writes_only_when_worth_it_and_forgets_by_site() {
+        use crate::fill_plan::context::FieldRole;
+        use crate::fill_plan::intent::Intent;
+        use crate::model::usage::{StepKind, form_shape_hash};
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let item = login(&v, "alice");
+        repo.save_item(&v, item.clone()).unwrap();
+        let now = OffsetDateTime::now_utc();
+        let u = |site: &str| SiteUsage {
+            site: site.into(),
+            form_shape_hash: form_shape_hash(&[FieldRole::Username]),
+            intent: Intent::Login,
+            step_seq: vec![StepKind::Fill],
+            count: 1,
+            last_at: now,
+        };
+        let version = |repo: &mut Repository<MemoryStore>| {
+            repo.load(&v).unwrap().listed(item.id).unwrap().1.version
+        };
+        assert!(
+            repo.record_usage(&v, item.id, u("a.com"), now, false)
+                .unwrap()
+        );
+        assert!(
+            repo.record_usage(&v, item.id, u("b.com"), now, false)
+                .unwrap()
+        );
+        let written = version(&mut repo);
+        // Same site, same shape, within the hour: no write.
+        assert!(
+            !repo
+                .record_usage(&v, item.id, u("a.com"), now, false)
+                .unwrap()
+        );
+        assert_eq!(version(&mut repo), written);
+        let stored = repo.items(&v).unwrap().remove(0);
+        assert_eq!(stored.updated_at, item.updated_at);
+        assert_eq!(stored.usage.len(), 2);
+
+        // A vault left out keeps its memory.
+        assert_eq!(repo.forget_site_usage_in("a.com", |_| false).unwrap(), 0);
+        assert_eq!(repo.items(&v).unwrap()[0].usage.len(), 2);
+        assert_eq!(repo.forget_site_usage("a.com").unwrap(), 1);
+        assert_eq!(repo.forget_site_usage("a.com").unwrap(), 0);
+        let stored = repo.items(&v).unwrap().remove(0);
+        assert_eq!(stored.usage.len(), 1);
+        assert_eq!(stored.usage[0].site, "b.com");
+        assert_eq!(stored.updated_at, item.updated_at);
+    }
+
+    #[test]
+    fn forget_by_site_skips_a_failing_vault_and_reports_it() {
+        use crate::fill_plan::context::FieldRole;
+        use crate::fill_plan::intent::Intent;
+        use crate::model::usage::{StepKind, form_shape_hash};
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let w = repo.create_vault(meta("B")).unwrap();
+        let now = OffsetDateTime::now_utc();
+        let u = SiteUsage {
+            site: "a.com".into(),
+            form_shape_hash: form_shape_hash(&[FieldRole::Username]),
+            intent: Intent::Login,
+            step_seq: vec![StepKind::Fill],
+            count: 1,
+            last_at: now,
+        };
+        for vault in [&v, &w] {
+            let item = login(vault, "alice");
+            repo.save_item(vault, item.clone()).unwrap();
+            assert!(
+                repo.record_usage(vault, item.id, u.clone(), now, false)
+                    .unwrap()
+            );
+        }
+        // The store serves an older manifest of `w`: an alert there.
+        let old = repo.store.get(RecordKind::Manifest, w.id).unwrap().unwrap();
+        repo.save_item(&w, login(&w, "bob")).unwrap();
+        let current = repo.store.get(RecordKind::Manifest, w.id).unwrap().unwrap();
+        repo.store.put(old).unwrap();
+        assert_eq!(integrity(repo.items(&w)), IntegrityError::ManifestRollback);
+
+        // The other vault still forgets; the call still says it failed.
+        assert_eq!(
+            integrity(repo.forget_site_usage("a.com")),
+            IntegrityError::ManifestRollback
+        );
+        assert!(repo.items(&v).unwrap()[0].usage.is_empty());
+        repo.store.put(current).unwrap();
+        assert!(repo.items(&w).unwrap().iter().any(|i| !i.usage.is_empty()));
+
+        // A vault the store hides is an alert for the whole call.
+        let key = repo.store.get(RecordKind::VaultKey, w.id).unwrap().unwrap();
+        repo.store.delete(RecordKind::VaultKey, w.id).unwrap();
+        assert_eq!(
+            integrity(repo.forget_site_usage("a.com")),
+            IntegrityError::VaultMissing
+        );
+        repo.store.put(key).unwrap();
+        assert_eq!(repo.forget_site_usage("a.com").unwrap(), 1);
     }
 
     /// Store an item record by hand, as an interrupted write would leave it.

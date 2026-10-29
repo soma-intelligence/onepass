@@ -397,6 +397,10 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
         }
         case "/checkout":
           return send(page("Atlas Cloud - Paiement", "atlas/checkout.html"));
+        case "/checkout-full":
+          // Card, identity and e-mail in one form (smart fill); a POST is recorded, never expected.
+          if (post) state.captured.push({ host, path, body });
+          return send(page("Atlas Cloud - Paiement", "atlas/checkout-full.html"));
         case "/profile":
           return send(page("Atlas Cloud - Profil", "atlas/profile.html"));
         case "/oauth/callback": {

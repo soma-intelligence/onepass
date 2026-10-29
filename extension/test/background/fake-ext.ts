@@ -95,11 +95,17 @@ export class FakeExt implements BgExt {
   readonly tabs: BgExt["tabs"] = {
     sendMessage: async (tabId, message, options) => {
       this.sentToTabs.push({ tabId, message: structuredClone(message), options });
-      return undefined;
+      return this.tabReply?.(tabId, message, options);
     },
     onRemoved: this.onRemoved,
     query: async () => (this.activeTab ? [{ ...this.activeTab }] : []),
   };
+
+  /** The content script's reply to `tabs.sendMessage` (undefined by default). */
+  tabReply: ((tabId: number, message: unknown, options: { frameId?: number; documentId?: string }) => unknown) | undefined;
+
+  readonly onCommand = new Emitter<(command: string) => void>();
+  readonly commands: NonNullable<BgExt["commands"]> = { onCommand: this.onCommand };
 
   /** What `tabs.query({active, currentWindow})` returns. */
   activeTab: { id?: number; url?: string } | null = null;

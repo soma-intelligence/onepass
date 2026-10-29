@@ -378,3 +378,87 @@ describe("popup", () => {
     expect(text(r)).toContain("<img src=x onerror=alert(1)>");
   });
 });
+
+describe("popup: smart fill", () => {
+  const planned = () =>
+    worker((m) => {
+      if (m.type === "popup_suggestions") {
+        return { ok: { domain: "atlas-cloud.test", items, plan: { intent: "login", label: "tom@atlas.dev", steps: 2, mode: "chain" } } };
+      }
+      if (m.type === "popup_smart_fill") return { ok: { domain: "atlas-cloud.test" } };
+      if (m.type === "popup_forget_site") return { ok: { domain: "atlas-cloud.test", items: 1 } };
+      return null;
+    });
+
+  it("popup_shows_plan_line: one line with its Fill, the alternatives below", async () => {
+    const { r, w, handle } = setup(planned());
+    await handle.ready;
+    const line = r.querySelector(".plan-line") as HTMLElement;
+    expect(text(line.querySelector(".plan-text")!)).toBe("Se connecter en tant que tom@atlas.dev en 2 étapes");
+    // The line sits above the list of suggestions.
+    expect(line.nextElementSibling?.classList.contains("pp-list")).toBe(true);
+    button(line, "Remplir").click();
+    await handle.settled();
+    expect(w.sent.at(-1)).toEqual({ type: "popup_smart_fill" });
+    expect(text(r)).toContain("Remplissage lancé sur atlas-cloud.test");
+    // No item was picked: no item fill.
+    expect(w.types()).not.toContain("popup_fill");
+  });
+
+  it("no plan: no line", async () => {
+    const { r, handle } = setup();
+    await handle.ready;
+    expect(r.querySelector(".plan-line")).toBeNull();
+  });
+
+  it("popup_forget_site_calls_host: Oublier mes choix sur ce site", async () => {
+    const { r, w, handle } = setup(planned());
+    await handle.ready;
+    button(r, "Oublier mes choix sur ce site").click();
+    await handle.settled();
+    expect(w.sent.at(-1)).toEqual({ type: "popup_forget_site" });
+    expect(text(r)).toContain("Choix oubliés pour atlas-cloud.test");
+  });
+
+  it("a failed forget shows the error, never the success line", async () => {
+    const w = worker((m) => {
+      if (m.type === "popup_suggestions") {
+        return { ok: { domain: "atlas-cloud.test", items, plan: { intent: "login", label: "tom@atlas.dev", steps: 2, mode: "chain" } } };
+      }
+      if (m.type === "popup_forget_site") return { err: "internal" };
+      return null;
+    });
+    const { r, handle } = setup(w);
+    await handle.ready;
+    button(r, "Oublier mes choix sur ce site").click();
+    await handle.settled();
+    expect(text(r)).not.toContain("Choix oubliés");
+  });
+
+  it("the line's words for each intent, never an em dash", async () => {
+    const { planText } = await import("../../src/ui/popup");
+    const lines = [
+      planText({ intent: "login", label: "tom@atlas.dev", steps: 1, mode: "chain" }),
+      planText({ intent: "login", label: "", steps: 2, mode: "chain" }),
+      planText({ intent: "login", label: "tom@atlas.dev", steps: 2, mode: "fill" }),
+      planText({ intent: "login", label: "tom@atlas.dev", steps: 1, mode: "fill" }),
+      planText({ intent: "otp", label: "Atlas", steps: 1, mode: "fill" }),
+      planText({ intent: "signup", label: "", steps: 1, mode: "fill" }),
+      planText({ intent: "reset", label: "tom", steps: 1, mode: "fill" }),
+      planText({ intent: "checkout", label: "Visa", steps: 1, mode: "fill" }),
+      planText({ intent: "address", label: "", steps: 1, mode: "fill" }),
+    ];
+    expect(lines).toEqual([
+      "Se connecter en tant que tom@atlas.dev",
+      "Se connecter",
+      "Remplir l'identifiant de tom@atlas.dev",
+      "Remplir l'identifiant et le mot de passe de tom@atlas.dev",
+      "Remplir le code à usage unique",
+      "Créer le compte avec un mot de passe généré",
+      "Changer le mot de passe de tom",
+      "Remplir le paiement avec Visa",
+      "Remplir l'adresse",
+    ]);
+    for (const l of lines) expect(l).not.toContain(String.fromCharCode(0x2014));
+  });
+});

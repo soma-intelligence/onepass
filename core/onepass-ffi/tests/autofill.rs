@@ -540,6 +540,40 @@ fn candidates_order_favorites_then_recent() {
     assert_eq!(c[0].title, "a");
 }
 
+/// Twelve Logins, three qualities, some favorites: best match first, then
+/// favorites, then most recently updated. Frozen from the ranker before it
+/// went through `fill_plan::order`.
+#[test]
+fn candidates_order_is_frozen() {
+    let fx = fixture();
+    let mut ids = std::collections::HashMap::new();
+    for t in ["e1", "e2", "e3", "e4"] {
+        ids.insert(t, login(&fx, t, &["https://shop.example.com"]).id);
+    }
+    for t in ["d1", "d2", "d3", "d4"] {
+        ids.insert(t, login(&fx, t, &["https://www.example.com"]).id);
+    }
+    for t in ["o1", "o2", "o3", "o4"] {
+        ids.insert(t, login(&fx, t, &["https://other.test"]).id);
+    }
+    for t in ["e2", "d3", "d1", "o4", "e4"] {
+        fx.session
+            .set_favorite(fx.vault_id.clone(), ids[t].clone(), true)
+            .unwrap();
+    }
+    let c = fx
+        .session
+        .autofill_candidates("shop.example.com".into(), true, Vec::new())
+        .unwrap();
+    let got: Vec<&str> = c.iter().map(|c| c.title.as_str()).collect();
+    assert_eq!(
+        got,
+        [
+            "e4", "e2", "e3", "e1", "d1", "d3", "d4", "d2", "o4", "o3", "o2", "o1"
+        ]
+    );
+}
+
 #[test]
 fn candidates_respect_match_rule() {
     let fx = fixture();
@@ -834,5 +868,296 @@ fn locked_session_refuses() {
         s.passkey_assertion(fx.vault_id.clone(), item.id, vec![1; 16], vec![0; 32])
             .unwrap_err(),
         locked
+    );
+}
+
+// ---- site memory (smart fill, task 7) ---------------------------------------
+
+fn rank_of(ids: &[FfiAutofillIdentity], rid: &str, kind: FfiAutofillKind) -> u32 {
+    ids.iter()
+        .find(|i| i.record_id == rid && i.kind == kind)
+        .unwrap_or_else(|| panic!("no {kind:?} identity for {rid}: {ids:?}"))
+        .rank
+}
+
+fn note(fx: &Fixture, item: &FfiItem, service: &str) -> Result<bool, OnePassError> {
+    fx.session.note_autofill_use(
+        record_id(&item.vault_id, &item.id),
+        service.into(),
+        Vec::new(),
+    )
+}
+
+fn plan(fx: &Fixture, service: &str, request: FfiAutofillRequest) -> FfiAutofillPlan {
+    fx.session
+        .autofill_plan(service.into(), request, Vec::new())
+        .unwrap()
+}
+
+#[test]
+fn identity_rank_prefers_last_used_on_host() {
+    let fx = fixture();
+    let fav = login(&fx, "Favori", &["https://example.com"]);
+    fx.session
+        .set_favorite(fx.vault_id.clone(), fav.id.clone(), true)
+        .unwrap();
+    let used = login(&fx, "Utilise", &["https://example.com"]);
+    let plain = login(&fx, "Simple", &["https://example.com"]);
+    let elsewhere = login(&fx, "Ailleurs", &["https://ailleurs.org"]);
+    let rid = |i: &FfiItem| record_id(&i.vault_id, &i.id);
+
+    // No memory yet: the favorite rule alone.
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    assert_eq!(rank_of(&ids, &rid(&fav), FfiAutofillKind::Password), 50);
+    assert_eq!(rank_of(&ids, &rid(&used), FfiAutofillKind::Password), 0);
+    assert_eq!(rank_of(&ids, &rid(&plain), FfiAutofillKind::Password), 0);
+
+    // Last used beats favorite, on that host only.
+    note(&fx, &used, "https://example.com/login").unwrap();
+    note(&fx, &elsewhere, "ailleurs.org").unwrap();
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    assert_eq!(rank_of(&ids, &rid(&used), FfiAutofillKind::Password), 100);
+    assert_eq!(rank_of(&ids, &rid(&fav), FfiAutofillKind::Password), 50);
+    assert_eq!(rank_of(&ids, &rid(&plain), FfiAutofillKind::Password), 0);
+    assert_eq!(
+        rank_of(&ids, &rid(&elsewhere), FfiAutofillKind::Password),
+        100
+    );
+
+    // A, B, then A within the hour: A is the last used again.
+    note(&fx, &plain, "example.com").unwrap();
+    note(&fx, &used, "example.com").unwrap();
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    assert_eq!(rank_of(&ids, &rid(&used), FfiAutofillKind::Password), 100);
+    assert_eq!(rank_of(&ids, &rid(&plain), FfiAutofillKind::Password), 0);
+
+    // Forgetting the site leaves the favorite rule alone.
+    assert_eq!(
+        fx.session.known_usage_sites(Vec::new()).unwrap(),
+        ["ailleurs.org", "example.com"]
+    );
+    assert_eq!(
+        fx.session
+            .forget_site_usage("https://www.example.com".into(), Vec::new())
+            .unwrap(),
+        2
+    );
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    assert_eq!(rank_of(&ids, &rid(&used), FfiAutofillKind::Password), 0);
+    assert_eq!(rank_of(&ids, &rid(&fav), FfiAutofillKind::Password), 50);
+    assert_eq!(
+        fx.session.known_usage_sites(Vec::new()).unwrap(),
+        ["ailleurs.org"]
+    );
+}
+
+#[test]
+fn plan_partial_context_orders_by_memory() {
+    let fx = fixture();
+    let other = second_vault(&fx);
+    let old = login(&fx, "Ancien", &["https://example.com"]);
+    let new = login(&fx, "Recent", &["https://example.com"]);
+    let shared = login_in(
+        &fx,
+        &other,
+        "Famille",
+        &["https://example.com"],
+        "famille@exemple.fr",
+        false,
+    );
+    for i in 0..5 {
+        login(&fx, &format!("Domaine {i}"), &["https://www.example.com"]);
+    }
+    login(&fx, "Ailleurs", &["https://ailleurs.org"]);
+
+    // No memory: the candidates' order, capped at six, two equal tops.
+    let before = plan(&fx, "example.com", FfiAutofillRequest::Password);
+    let candidates: Vec<String> = fx
+        .session
+        .autofill_candidates("example.com".into(), false, Vec::new())
+        .unwrap()
+        .into_iter()
+        .map(|c| c.item_id)
+        .take(6)
+        .collect();
+    assert_eq!(before.item_ids, candidates);
+    assert_eq!(before.item_ids.len(), 6);
+    assert_eq!(before.confidence, FfiConfidence::Low);
+
+    // The older Login was used here: first, with a clear margin.
+    note(&fx, &old, "example.com").unwrap();
+    let after = plan(&fx, "example.com", FfiAutofillRequest::Password);
+    assert_eq!(after.item_ids[0], old.id);
+    assert_eq!(after.confidence, FfiConfidence::High);
+    assert_eq!(after.item_ids.len(), 6);
+
+    // Across vaults: A, B, then A again within the hour ends on A.
+    note(&fx, &shared, "example.com").unwrap();
+    assert_eq!(
+        plan(&fx, "example.com", FfiAutofillRequest::Password).item_ids[0],
+        shared.id
+    );
+    note(&fx, &old, "example.com").unwrap();
+    assert_eq!(
+        plan(&fx, "example.com", FfiAutofillRequest::Password).item_ids[0],
+        old.id
+    );
+
+    // A vault left out is never planned nor written.
+    let kept = fx
+        .session
+        .autofill_plan(
+            "example.com".into(),
+            FfiAutofillRequest::Password,
+            vec![other.clone()],
+        )
+        .unwrap();
+    assert!(!kept.item_ids.contains(&shared.id));
+    assert_eq!(
+        fx.session
+            .note_autofill_use(
+                record_id(&other, &shared.id),
+                "example.com".into(),
+                vec![other.clone()]
+            )
+            .unwrap_err(),
+        OnePassError::NotFound
+    );
+
+    // No site, no plan.
+    let none = plan(&fx, "", FfiAutofillRequest::Password);
+    assert!(none.item_ids.is_empty());
+    assert_eq!(none.confidence, FfiConfidence::Low);
+    let _ = new;
+}
+
+#[test]
+fn plan_one_time_code_only_items_with_totp() {
+    let fx = fixture();
+    let with_a = login_in(
+        &fx,
+        &fx.vault_id,
+        "Code A",
+        &["https://example.com"],
+        "a",
+        true,
+    );
+    let with_b = login_in(
+        &fx,
+        &fx.vault_id,
+        "Code B",
+        &["https://example.com"],
+        "b",
+        true,
+    );
+    let without = login(&fx, "Sans code", &["https://example.com"]);
+
+    let p = plan(&fx, "example.com", FfiAutofillRequest::OneTimeCode);
+    let mut got = p.item_ids.clone();
+    got.sort();
+    let mut want = vec![with_a.id.clone(), with_b.id.clone()];
+    want.sort();
+    assert_eq!(got, want);
+    assert!(!p.item_ids.contains(&without.id));
+
+    // A Login without a code used last does not take the code's place.
+    note(&fx, &without, "example.com").unwrap();
+    note(&fx, &with_a, "example.com").unwrap();
+    let p = plan(&fx, "example.com", FfiAutofillRequest::OneTimeCode);
+    assert_eq!(p.item_ids, [with_a.id.clone(), with_b.id.clone()]);
+    assert_eq!(p.confidence, FfiConfidence::High);
+    let pw = plan(&fx, "example.com", FfiAutofillRequest::Password);
+    assert_eq!(pw.item_ids[0], with_a.id);
+    assert_eq!(pw.item_ids.len(), 3);
+}
+
+#[test]
+fn note_autofill_use_rejects_other_site() {
+    let fx = fixture();
+    let item = login(&fx, "Exemple", &["https://example.com"]);
+
+    assert!(matches!(
+        note(&fx, &item, "https://other.org"),
+        Err(OnePassError::InvalidInput { .. })
+    ));
+    assert!(matches!(
+        note(&fx, &item, ""),
+        Err(OnePassError::InvalidInput { .. })
+    ));
+    assert!(matches!(
+        fx.session
+            .note_autofill_use("pas un record".into(), "example.com".into(), Vec::new()),
+        Err(OnePassError::InvalidInput { .. })
+    ));
+    assert!(fx.session.known_usage_sites(Vec::new()).unwrap().is_empty());
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    assert_eq!(ids[0].rank, 0);
+
+    // Archived, trashed and hidden Logins are not eligible.
+    let archived = login(&fx, "Archive", &["https://example.com"]);
+    fx.session
+        .archive_item(fx.vault_id.clone(), archived.id.clone())
+        .unwrap();
+    let trashed = login(&fx, "Corbeille", &["https://example.com"]);
+    fx.session
+        .trash_item(fx.vault_id.clone(), trashed.id.clone())
+        .unwrap();
+    let mut hidden = login(&fx, "Masque", &["https://example.com"]);
+    hidden.hide_from_autofill = true;
+    let hidden = fx.session.save_item(hidden).unwrap();
+    for i in [&archived, &trashed, &hidden] {
+        assert_eq!(
+            note(&fx, i, "example.com").unwrap_err(),
+            OnePassError::NotFound
+        );
+    }
+    assert!(fx.session.known_usage_sites(Vec::new()).unwrap().is_empty());
+
+    // The matching site is written, and leaves `updated_at` alone.
+    let before = fx
+        .session
+        .item(fx.vault_id.clone(), item.id.clone())
+        .unwrap();
+    note(&fx, &item, "https://login.example.com").unwrap();
+    let after = fx
+        .session
+        .item(fx.vault_id.clone(), item.id.clone())
+        .unwrap();
+    assert_eq!(before.updated_at, after.updated_at);
+    assert_eq!(
+        fx.session.known_usage_sites(Vec::new()).unwrap(),
+        ["example.com"]
+    );
+
+    fx.session.lock();
+    assert_eq!(
+        note(&fx, &item, "example.com").unwrap_err(),
+        OnePassError::Locked
+    );
+}
+
+#[test]
+fn otp_identity_rank_counts_logins_with_a_code_only() {
+    let fx = fixture();
+    let coded = login_in(
+        &fx,
+        &fx.vault_id,
+        "Code",
+        &["https://example.com"],
+        "a",
+        true,
+    );
+    let plain = login(&fx, "Sans code", &["https://example.com"]);
+    let rid = |i: &FfiItem| record_id(&i.vault_id, &i.id);
+    assert!(note(&fx, &coded, "example.com").is_ok());
+    assert!(note(&fx, &plain, "example.com").is_ok());
+
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    assert_eq!(rank_of(&ids, &rid(&plain), FfiAutofillKind::Password), 100);
+    assert_eq!(rank_of(&ids, &rid(&coded), FfiAutofillKind::Password), 0);
+    // The last Login used with a code is the code's first choice.
+    assert_eq!(
+        rank_of(&ids, &rid(&coded), FfiAutofillKind::OneTimeCode),
+        100
     );
 }

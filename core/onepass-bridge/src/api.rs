@@ -8,7 +8,12 @@
 
 use std::fmt;
 
+use onepass_core::fill_plan::context::{FieldRole, PageContext};
+use onepass_core::fill_plan::intent::Intent;
+use onepass_core::fill_plan::score::Confidence;
+use onepass_core::fill_plan::{Action, FillPlan, GroupItem, GroupKind, ReasonCode};
 use onepass_core::model::MatchRule;
+use onepass_core::model::usage::StepKind;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -101,6 +106,27 @@ impl From<Rule> for MatchRule {
             Rule::ExactHost => MatchRule::ExactHost,
             Rule::ExactUrl => MatchRule::ExactUrl,
             Rule::Never => MatchRule::Never,
+        }
+    }
+}
+
+/// One step of a fill, as `note_fill` reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Step {
+    Fill,
+    Otp,
+    ProviderClick,
+    Account,
+}
+
+impl From<Step> for StepKind {
+    fn from(s: Step) -> StepKind {
+        match s {
+            Step::Fill => StepKind::Fill,
+            Step::Otp => StepKind::Otp,
+            Step::ProviderClick => StepKind::ProviderClick,
+            Step::Account => StepKind::Account,
         }
     }
 }
@@ -240,6 +266,34 @@ pub enum Request {
         provider: ProviderId,
         account_item_id: String,
     },
+    FillSalt {
+        id: u64,
+        ctx: Ctx,
+    },
+    /// `origin` is the browser's origin of the frame; `context.origin` must
+    /// be the same.
+    PlanFill {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        context: PageContext,
+    },
+    /// `roles`: the planned form's roles, in page order, as `plan_fill`
+    /// hashes them for `same_shape`.
+    NoteFill {
+        id: u64,
+        ctx: Ctx,
+        item_id: String,
+        origin: String,
+        roles: Vec<FieldRole>,
+        intent: Intent,
+        steps: Vec<Step>,
+    },
+    ForgetSite {
+        id: u64,
+        ctx: Ctx,
+        site: String,
+    },
 }
 
 impl Request {
@@ -263,7 +317,11 @@ impl Request {
             | Self::Generate { id, .. }
             | Self::ProviderAccounts { id, .. }
             | Self::FillProvider { id, .. }
-            | Self::LinkProvider { id, .. } => *id,
+            | Self::LinkProvider { id, .. }
+            | Self::FillSalt { id, .. }
+            | Self::PlanFill { id, .. }
+            | Self::NoteFill { id, .. }
+            | Self::ForgetSite { id, .. } => *id,
         }
     }
 
@@ -288,6 +346,10 @@ impl Request {
             Self::ProviderAccounts { .. } => "provider_accounts",
             Self::FillProvider { .. } => "fill_provider",
             Self::LinkProvider { .. } => "link_provider",
+            Self::FillSalt { .. } => "fill_salt",
+            Self::PlanFill { .. } => "plan_fill",
+            Self::NoteFill { .. } => "note_fill",
+            Self::ForgetSite { .. } => "forget_site",
         }
     }
 }
@@ -351,6 +413,65 @@ pub enum CredentialStatus {
     New,
     Same,
     Update,
+}
+
+/// A field of a plan group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlanField {
+    pub field_ref: String,
+    pub role: FieldRole,
+}
+
+/// A group of `plan_fill`: the item as a hyphenated id, `null` for a
+/// generated password.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlanGroupOut {
+    pub form_ref: String,
+    pub kind: GroupKind,
+    pub item_id: Option<String>,
+    pub fields: Vec<PlanField>,
+}
+
+/// `FillPlan` on the wire: ids as the hyphenated strings of every other
+/// reply, fields as objects.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlanOut {
+    pub intent: Intent,
+    pub groups: Vec<PlanGroupOut>,
+    pub action: Action,
+    pub confidence: Confidence,
+    pub alternatives: Vec<String>,
+    pub reasons: Vec<ReasonCode>,
+}
+
+impl From<FillPlan> for PlanOut {
+    fn from(p: FillPlan) -> PlanOut {
+        let groups = p
+            .groups
+            .into_iter()
+            .map(|g| PlanGroupOut {
+                form_ref: g.form_ref,
+                kind: g.kind,
+                item_id: match g.item {
+                    GroupItem::Item(id) => Some(id.to_string()),
+                    GroupItem::GeneratedPassword => None,
+                },
+                fields: g
+                    .fields
+                    .into_iter()
+                    .map(|(field_ref, role)| PlanField { field_ref, role })
+                    .collect(),
+            })
+            .collect();
+        PlanOut {
+            intent: p.intent,
+            groups,
+            action: p.action,
+            confidence: p.confidence,
+            alternatives: p.alternatives.iter().map(|id| id.to_string()).collect(),
+            reasons: p.reasons,
+        }
+    }
 }
 
 /// The `ok` payload of a reply, one shape per operation.
@@ -430,6 +551,17 @@ pub enum Response {
         accounts: Vec<Summary>,
         #[serde(skip_serializing_if = "Option::is_none")]
         linked_item_id: Option<String>,
+    },
+    /// `fill_salt`: 32 bytes, lower-case hex.
+    Salt {
+        salt: String,
+    },
+    Plan {
+        plan: PlanOut,
+    },
+    /// `forget_site`: how many items forgot the site.
+    Forgotten {
+        items: usize,
     },
     /// `{}`.
     Empty {},
@@ -673,6 +805,88 @@ mod tests {
     }
 
     #[test]
+    fn request_json_round_trip_fill_salt() {
+        round_trip(
+            r#"{"id":21,"op":"fill_salt","ctx":"menu"}"#,
+            21,
+            "fill_salt",
+        );
+    }
+
+    #[test]
+    fn request_json_round_trip_plan_fill() {
+        let r = round_trip(
+            r#"{"id":22,"op":"plan_fill","ctx":"menu","origin":"https://atlas-cloud.test","context":{"origin":"https://atlas-cloud.test","top_origin":"https://atlas-cloud.test","frame_kind":"top","forms":[{"form_ref":"f","intent_hints":{"kind":"login","signup_words":false,"reset_words":false,"checkout_words":false,"ignore":false},"step_index":null,"fields":[{"field_ref":"u","role":"username","confidence":0.5,"visible":true,"prefilled":"empty"}],"buttons":[]}],"typed_username_hash":null}}"#,
+            22,
+            "plan_fill",
+        );
+        let Request::PlanFill { context, .. } = r else {
+            panic!()
+        };
+        assert_eq!(context.forms[0].fields[0].role, Some(FieldRole::Username));
+    }
+
+    #[test]
+    fn request_json_round_trip_note_fill() {
+        let r = round_trip(
+            r#"{"id":23,"op":"note_fill","ctx":"chain","item_id":"x","origin":"https://atlas-cloud.test","roles":["username","current_password"],"intent":"login","steps":["fill","provider_click"]}"#,
+            23,
+            "note_fill",
+        );
+        let Request::NoteFill { steps, .. } = r else {
+            panic!()
+        };
+        assert_eq!(StepKind::from(steps[1]), StepKind::ProviderClick);
+    }
+
+    #[test]
+    fn request_json_round_trip_forget_site() {
+        round_trip(
+            r#"{"id":24,"op":"forget_site","ctx":"popup","site":"atlas-cloud.test"}"#,
+            24,
+            "forget_site",
+        );
+    }
+
+    #[test]
+    fn plan_has_the_wire_shape() {
+        let item = onepass_core::Id([7u8; 16]);
+        let plan = FillPlan {
+            intent: Intent::Signup,
+            groups: vec![
+                onepass_core::fill_plan::PlanGroup {
+                    form_ref: "f".into(),
+                    item: GroupItem::Item(item),
+                    kind: GroupKind::Login,
+                    fields: vec![("u".into(), FieldRole::Email)],
+                },
+                onepass_core::fill_plan::PlanGroup {
+                    form_ref: "f".into(),
+                    item: GroupItem::GeneratedPassword,
+                    kind: GroupKind::GeneratedPassword,
+                    fields: vec![("p".into(), FieldRole::NewPassword)],
+                },
+            ],
+            action: Action::Fill,
+            confidence: Confidence::Medium,
+            alternatives: vec![item],
+            reasons: vec![ReasonCode::Tie],
+        };
+        let reply = Response::Plan { plan: plan.into() };
+        let id = "07070707-0707-0707-0707-070707070707";
+        assert_eq!(
+            serde_json::to_value(&reply).unwrap(),
+            json!({"plan":{"intent":"signup","action":"fill","confidence":"medium",
+                "alternatives":[id],"reasons":["tie"],
+                "groups":[
+                    {"form_ref":"f","kind":"login","item_id":id,
+                     "fields":[{"field_ref":"u","role":"email"}]},
+                    {"form_ref":"f","kind":"generated_password","item_id":null,
+                     "fields":[{"field_ref":"p","role":"new_password"}]}]}})
+        );
+    }
+
+    #[test]
     fn unknown_field_rejected() {
         for wire in [
             r#"{"id":1,"op":"status","extra":1}"#,
@@ -681,6 +895,9 @@ mod tests {
             r#"{"id":1,"op":"nope"}"#,
             r#"{"id":1,"op":"search","ctx":"page","query":"a"}"#,
             r#"{"id":1,"op":"provider_accounts","ctx":"menu","provider":"Google","origin":"https://a.test"}"#,
+            r#"{"id":1,"op":"fill_salt","ctx":"menu","x":1}"#,
+            r#"{"id":1,"op":"note_fill","ctx":"chain","item_id":"x","origin":"https://a.test","roles":[],"intent":"login","steps":["Fill"]}"#,
+            r#"{"id":1,"op":"forget_site","ctx":"popup"}"#,
         ] {
             assert!(serde_json::from_str::<Request>(wire).is_err(), "{wire}");
         }

@@ -4,10 +4,15 @@
 // Generator history: 20 entries in a module-level array of the service worker,
 // never written to any storage. It is cleared when the host answers `locked`
 // or the pairing is forgotten, and a worker restart starts it empty.
+//
+// Smart fill: the suggestions carry the plan of the active tab in one line
+// (`planLine`), its alternatives first; the line's Fill asks the tab's
+// content script to run smart fill (a gesture of the user); "Oublier mes
+// choix sur ce site" forgets the site memory of the tab's site.
 import type { FillField, Summary } from "../bridge/client";
 import { parseOrigin } from "../shared/domain";
-import type { FormInfo, FormKind } from "../shared/messages";
-import type { GeneratorEntry, PopupItem, PopupSuggestions } from "../shared/ui";
+import type { FormInfo, FormKind, PlanOut } from "../shared/messages";
+import type { GeneratorEntry, PopupItem, PopupPlanLine, PopupSuggestions } from "../shared/ui";
 import type { PageAnalyses } from "./analyses";
 import type { BgExt, StorageArea } from "./ext";
 import type { FillTarget, Filler } from "./fill";
@@ -38,6 +43,12 @@ export interface PopupDeps {
   onGenerated?: (tabId: number, origin: string, password: string) => void;
   /** The host reported a locked vault (secrets held elsewhere must go too). */
   onLock?: () => void;
+  /** The fill plan of the top frame of `tabId` (null: no plan, no context). */
+  plan?: (tabId: number, origin: string) => Promise<PlanOut | null>;
+  /** Run smart fill in the top frame of `tabId`, as a gesture of the user. */
+  smartFill?: (tabId: number) => Promise<void>;
+  /** The site memory of `origin`'s site was forgotten (the penalty goes too). */
+  onForgetSite?: (origin: string) => Promise<void>;
   now?: () => number;
 }
 
@@ -63,6 +74,52 @@ function pickForm(forms: FormInfo[], kinds: readonly FormKind[]): FormInfo | und
     if (f) return f;
   }
   return undefined;
+}
+
+/** Plans one click carries out (the line); `show_menu` and `nothing` have none. */
+const LINE_ACTIONS: ReadonlySet<PlanOut["action"]> = new Set<PlanOut["action"]>(["fill", "fill_and_submit", "open_chain"]);
+
+/**
+ * The plan in one line, or null. `label`: the username (else the title) of
+ * the plan's first item as the summaries show it; `steps`: 2 for a sign-in
+ * whose page asks for the identifier alone (the password comes next), 1
+ * otherwise. No value is read.
+ */
+export function planLine(plan: PlanOut, items: readonly Summary[]): PopupPlanLine | null {
+  if (!LINE_ACTIONS.has(plan.action) || plan.intent === "ignore" || plan.groups.length === 0) return null;
+  const first = plan.groups.find((g) => g.item_id !== null);
+  const s = first ? items.find((x) => x.item_id === first.item_id) : undefined;
+  const label = s ? (s.subtitle !== "" ? s.subtitle : s.title) : "";
+  const login = plan.groups.find((g) => g.kind === "login");
+  const roles = login?.fields.map((f) => f.role) ?? [];
+  const identifierOnly = roles.some((r) => r === "username" || r === "email") && !roles.includes("current_password");
+  const steps = plan.intent === "login" && identifierOnly ? 2 : 1;
+  // The sign-in wording only when one click signs in (a penalty already lowered High to Medium).
+  const mode = plan.action === "open_chain" && plan.confidence === "high" ? "chain" : "fill";
+  return { intent: plan.intent, label, steps, mode };
+}
+
+/**
+ * The plan's items best first: the chosen one (its first group with an item),
+ * then `alternatives`, which the bridge sends without the chosen one. No
+ * duplicate.
+ */
+export function rankedIds(plan: Pick<PlanOut, "groups" | "alternatives">): string[] {
+  const chosen = plan.groups.find((g) => g.item_id !== null)?.item_id;
+  const out: string[] = [];
+  for (const id of [...(chosen ? [chosen] : []), ...plan.alternatives]) {
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/** `items` with the plan's alternatives first, in the plan's order. */
+export function alternativesFirst<T extends { item_id: string }>(items: readonly T[], alternatives: readonly string[]): T[] {
+  const rank = (x: T) => {
+    const i = alternatives.indexOf(x.item_id);
+    return i < 0 ? alternatives.length : i;
+  };
+  return items.map((x, i) => ({ x, i })).sort((a, b) => rank(a.x) - rank(b.x) || a.i - b.i).map((e) => e.x);
 }
 
 export class PopupBackend {
@@ -135,7 +192,35 @@ export class PopupBackend {
     if (!tab) return { domain: null, items: [] };
     const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "popup", origin: tab.origin });
     this.remember(items, tab.origin);
-    return { domain: tab.host, items };
+    let plan: PlanOut | null = null;
+    try {
+      plan = (await this.deps.plan?.(tab.tabId, tab.origin)) ?? null;
+    } catch {
+      // No content script, a locked vault: the suggestions alone.
+      plan = null;
+    }
+    if (!plan) return { domain: tab.host, items };
+    const out: PopupSuggestions = { domain: tab.host, items: alternativesFirst(items, rankedIds(plan)) };
+    const line = planLine(plan, items);
+    if (line) out.plan = line;
+    return out;
+  }
+
+  /** The plan line's Fill: smart fill in the active tab. */
+  async smartFill(): Promise<{ domain: string }> {
+    const tab = await this.activeTab();
+    if (!tab || !this.deps.smartFill) throw new BgError("insecure_origin");
+    await this.deps.smartFill(tab.tabId);
+    return { domain: tab.host };
+  }
+
+  /** "Oublier mes choix sur ce site": the bridge reduces the tab's origin to its site. */
+  async forgetSite(): Promise<{ domain: string; items: number }> {
+    const tab = await this.activeTab();
+    if (!tab) throw new BgError("insecure_origin");
+    const r = await this.deps.session.request({ op: "forget_site", ctx: "popup", site: tab.origin });
+    await this.deps.onForgetSite?.(tab.origin).catch(() => undefined);
+    return { domain: tab.host, items: r.items };
   }
 
   async search(query: string): Promise<{ items: Summary[] }> {
@@ -232,6 +317,8 @@ export class PopupBackend {
         return {};
       },
       popup_forget: async () => this.forget(),
+      popup_smart_fill: async () => this.smartFill(),
+      popup_forget_site: async () => this.forgetSite(),
     };
   }
 }

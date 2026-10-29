@@ -1011,6 +1011,55 @@ public final class VaultSession {
         }
     }
 
+    /// The Logins to offer first for `service`, as item ids (at most six), ranked by the core with
+    /// what it remembers of the site; only Logins with a code for `.oneTimeCode`. Hidden vaults are
+    /// left out.
+    public func autofillPlan(service: String, request: FfiAutofillRequest) async throws -> FfiAutofillPlan {
+        let excluded = excludedVaultIDs
+        return try await read {
+            try $0.autofillPlan(service: service, request: request, excludedVaultIds: excluded)
+        }
+    }
+
+    /// Remembers that AutoFill filled `service` with the Login `recordID` (`"<vault id>:<item id>"`),
+    /// for the next plans and identity ranks. The Login must match `service`; one of a hidden vault is
+    /// `NotFound`. `true` when the core rewrote the item: only then is the sync layer told. A use
+    /// changes no list, so nothing is reloaded and the identities are not republished here (the
+    /// caller publishes them when it needs them now).
+    @discardableResult
+    public func noteAutofillUse(recordID: String, service: String) async throws -> Bool {
+        let excluded = excludedVaultIDs
+        let written = try await read {
+            try $0.noteAutofillUse(recordId: recordID, service: service, excludedVaultIds: excluded)
+        }
+        if written { notifySync { await $0.localChangesWritten() } }
+        return written
+    }
+
+    /// The sites the visible vaults remember a choice for (registrable domains, sorted).
+    public func knownUsageSites() async throws -> [String] {
+        let excluded = excludedVaultIDs
+        return try await read { try $0.knownUsageSites(excludedVaultIds: excluded) }
+    }
+
+    /// "Oublier les choix pour un site": forgets `site` in every item of the visible vaults (other
+    /// devices drop it at the next sync). Returns how many items were rewritten. Throws when any
+    /// vault could not be read or written; the core still went through the others, so the lists are
+    /// reloaded and the writes made are sent before the error is thrown.
+    @discardableResult
+    public func forgetSiteUsage(site: String) async throws -> Int {
+        let excluded = excludedVaultIDs
+        do {
+            return Int(try await write { try $0.forgetSiteUsage(site: site, excludedVaultIds: excluded) })
+        } catch {
+            if state == .unlocked {
+                await reload()
+                notifySync { await $0.localChangesWritten() }
+            }
+            throw error
+        }
+    }
+
     /// Creates a passkey (key pair generated and kept by the core) in an existing Login or a new one,
     /// then reloads the lists and publishes the new identity. `.other` when the relying party already
     /// holds one of `excludedCredentialIds` (`PasskeyExcluded`).

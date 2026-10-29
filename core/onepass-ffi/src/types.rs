@@ -488,6 +488,10 @@ pub struct FfiAutofillIdentity {
     /// `"<vault hex>:<item hex>"`.
     pub record_id: String,
     pub favorite: bool,
+    /// Order among the identities of one service, higher first: 100 for
+    /// the Login used last on the service's site, 50 for a favorite, 0
+    /// otherwise (last used beats favorite).
+    pub rank: u32,
     /// Empty unless `kind` is `Passkey`.
     pub credential_id: Vec<u8>,
     /// Empty unless `kind` is `Passkey`.
@@ -500,6 +504,31 @@ pub enum FfiMatchQuality {
     ExactHost,
     Domain,
     Other,
+}
+
+/// What the system asks to fill (see `Session::autofill_plan`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiAutofillRequest {
+    Password,
+    OneTimeCode,
+}
+
+/// How sure a plan is of its first item (`fill_plan::score::confidence`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, uniffi::Enum)]
+pub enum FfiConfidence {
+    Low,
+    Medium,
+    High,
+}
+
+/// The Logins to offer for a site, best first (see
+/// `Session::autofill_plan`). Item ids only: the list comes from
+/// `Session::autofill_candidates`.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiAutofillPlan {
+    /// At most six, ranked.
+    pub item_ids: Vec<String>,
+    pub confidence: FfiConfidence,
 }
 
 /// A passkey of a candidate, without its user handle or key.
