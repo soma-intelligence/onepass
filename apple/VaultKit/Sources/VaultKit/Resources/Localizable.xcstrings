@@ -97,6 +97,38 @@
         }
       }
     },
+    "1 heure" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 hour"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 heure"
+          }
+        }
+      }
+    },
+    "1 minute" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 minute"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 minute"
+          }
+        }
+      }
+    },
     "1 mot de passe apparaît dans une fuite." : {
       "localizations" : {
         "en" : {
@@ -157,6 +189,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 élément expire bientôt."
+          }
+        }
+      }
+    },
+    "15 minutes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minutes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minutes"
+          }
+        }
+      }
+    },
+    "5 minutes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 minutes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 minutes"
           }
         }
       }
@@ -1005,6 +1069,22 @@
         }
       }
     },
+    "Immédiatement" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immediately"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immédiatement"
+          }
+        }
+      }
+    },
     "Impossible d'ouvrir le socket." : {
       "localizations" : {
         "en" : {
@@ -1085,6 +1165,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imprime ce kit et range la feuille hors ligne, dans un endroit sûr (coffre, tiroir fermé à clé). Ne la photographie jamais et ne la stocke jamais dans le cloud (iCloud Drive, Photos, messageries)."
+          }
+        }
+      }
+    },
+    "Jamais" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Never"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamais"
           }
         }
       }

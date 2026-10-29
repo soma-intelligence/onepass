@@ -104,7 +104,7 @@ impl Invite {
         if h.session_id != self.session_id {
             return Err(IntegrityError::WrongContext.into());
         }
-        let started = Approver::start(&self.text, hello, h)?;
+        let started = Approver::start(&self.text, hello, h, true)?;
         self.used = true;
         Ok(started)
     }
@@ -155,7 +155,7 @@ mod tests {
     use crate::crypto::kem::wrap_key_labeled;
     use crate::crypto::{HybridKemSecret, SecretKey, SymmetricKey};
     use crate::devices::DeviceKind;
-    use crate::pairing::messages::{FullGrant, Grant, KeyExchange, Message};
+    use crate::pairing::messages::{FullGrant, Grant, KeyExchange, Message, ProfileCard};
     use crate::pairing::newcomer::Newcomer;
     use crate::{Error, Id};
     use zeroize::Zeroizing;
@@ -196,6 +196,24 @@ mod tests {
             a.on_frame_at(&confirmed, NOW + 6).unwrap(),
             Message::Confirmed
         );
+        let card = ProfileCard {
+            name: "Camille Durand".into(),
+            photo: vec![0x89, b'P', b'N', b'G'],
+        };
+        assert!(
+            a.seal_profile_at(card.clone(), false, NOW + 7).is_err(),
+            "before the user's ok"
+        );
+        let profile = a.seal_profile_at(card.clone(), true, NOW + 7).unwrap();
+        assert!(
+            a.seal_profile_at(card.clone(), true, NOW + 7).is_err(),
+            "once"
+        );
+        assert_eq!(
+            n.open_at(&profile, NOW + 7).unwrap(),
+            Message::Profile(card.clone())
+        );
+        assert_eq!(n.profile(), Some(&card));
         let grant = a.seal_grant_at(full_grant(), true, NOW + 7).unwrap();
         assert!(matches!(
             n.open_at(&grant, NOW + 7).unwrap(),
@@ -296,5 +314,33 @@ mod tests {
         let shown = format!("{invite:?}");
         assert!(!shown.contains(invite.qr_text()));
         assert!(!shown.contains("OPJOIN1"));
+    }
+
+    #[test]
+    fn a_profile_is_refused_outside_an_invite_and_when_too_large() {
+        // A session from the newcomer's QR never carries a profile.
+        let (mut n, qr, hello) = Newcomer::new(device(), DeviceMode::Personal, NOW).unwrap();
+        let (mut a, kx, _, _, _) = Approver::begin(&qr.to_text(), &hello, NOW).unwrap();
+        n.on_key_exchange(&kx, NOW).unwrap();
+        a.on_frame_at(&n.confirm().unwrap(), NOW).unwrap();
+        let card = ProfileCard {
+            name: "Camille".into(),
+            photo: vec![],
+        };
+        assert!(a.seal_profile_at(card.clone(), true, NOW).is_err());
+        // Even if a hostile approver sends one, the newcomer refuses it.
+        let frame = a.channel.seal_at(&Message::Profile(card), NOW).unwrap();
+        assert!(n.open_at(&frame, NOW).is_err());
+
+        let big = ProfileCard {
+            name: "Camille".into(),
+            photo: vec![0; 256 * 1024 + 1],
+        };
+        assert!(big.check().is_err());
+        let control = ProfileCard {
+            name: "Cam\u{7}ille".into(),
+            photo: vec![],
+        };
+        assert!(control.check().is_err());
     }
 }

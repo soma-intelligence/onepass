@@ -100,6 +100,38 @@ pub enum Message {
     Audit(AuditEvent),
     /// Either side: the session is over.
     End,
+    /// A -> N, invite sessions only (both sides know it), right before a
+    /// full grant: how the account shows itself (name and photo), so the
+    /// new device looks like the others. Appended: index 5.
+    Profile(ProfileCard),
+}
+
+/// The account's display name and photo, as the approver's settings hold
+/// them. Not secret, but only sent once both users confirmed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileCard {
+    pub name: String,
+    /// A small image (PNG or JPEG), empty for none.
+    pub photo: Vec<u8>,
+}
+
+/// Longest profile name, in characters.
+pub const MAX_PROFILE_NAME_CHARS: usize = 64;
+/// Largest profile photo, in bytes (the apps keep a 256 px square).
+pub const MAX_PROFILE_PHOTO_BYTES: usize = 256 * 1024;
+
+impl ProfileCard {
+    /// A name of at most 64 characters with no control character, a photo
+    /// of at most 256 KiB.
+    pub fn check(&self) -> Result<()> {
+        if self.name.chars().count() > MAX_PROFILE_NAME_CHARS
+            || self.name.chars().any(char::is_control)
+            || self.photo.len() > MAX_PROFILE_PHOTO_BYTES
+        {
+            return Err(Error::InvalidFormat("pairing profile"));
+        }
+        Ok(())
+    }
 }
 
 impl Message {

@@ -12,6 +12,8 @@ struct PairingInviteTests {
     @Test func aScannedInvitePairsAndUnlocks() async throws {
         let f = try await PairingFixture(server: false)
         defer { f.cleanUp() }
+        f.approverHarness.settings.displayName = "Camille Durand"
+        f.approverHarness.settings.profilePhoto = Data([0x89, 0x50, 0x4E, 0x47])
         let a = PairingApproverFlow(vault: f.approver, connector: f.network)
         let inviting = Task { await a.invite(listener: f.network) }
         var code: String?
@@ -45,6 +47,9 @@ struct PairingInviteTests {
         #expect(n.state == .done)
         #expect(f.newcomer.state == .unlocked)
         #expect(f.newcomer.summaries.map(\.title) == ["Messagerie exemple.fr"])
+        // The new device shows the account the way the approver does.
+        #expect(f.newcomerHarness.settings.displayName == "Camille Durand")
+        #expect(f.newcomerHarness.settings.profilePhoto == Data([0x89, 0x50, 0x4E, 0x47]))
     }
 
     @Test func aConnectionWithoutTheSecretLeavesTheInviteOpen() async throws {

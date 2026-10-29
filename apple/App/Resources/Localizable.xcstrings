@@ -4610,6 +4610,16 @@
         }
       }
     },
+    "Dès que OnePass quitte l'écran. Face ID ou ton mot de passe le rouvrent." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "As soon as OnePass leaves the screen. Face ID or your password opens it again."
+          }
+        }
+      }
+    },
     "Décision" : {
       "localizations" : {
         "en" : {
