@@ -15,7 +15,7 @@ use crate::id::Id;
 const MAX_ALTERNATIVES: usize = 5;
 
 /// Main intent of a page: the first of these found among its forms.
-const PRIORITY: [Intent; 6] = [
+pub const PRIORITY: [Intent; 6] = [
     Intent::Login,
     Intent::Otp,
     Intent::Reset,

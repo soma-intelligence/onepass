@@ -559,10 +559,10 @@ fn audit_records_secret_ops_without_values() {
     let events = h.audit.events();
     let ops: Vec<&str> = events.iter().map(|e| e.op).collect();
     assert_eq!(ops, ["fill_login", "totp", "reveal", "fill_card"]);
-    assert_eq!(events[0].item_id, id(atlas));
+    assert_eq!(events[0].item_id, Some(id(atlas)));
     assert_eq!(events[0].origin.as_deref(), Some(ATLAS));
     assert_eq!(events[0].at, NOW);
-    assert_eq!(events[3].item_id, id(card));
+    assert_eq!(events[3].item_id, Some(id(card)));
     let dump = format!("{events:?}");
     for s in SECRETS {
         assert!(!dump.contains(s), "leaked {s}");
@@ -926,5 +926,282 @@ fn list_for_origin_order_is_frozen() {
             "Alpha", "alpha2", "Beta", "mango", "zeta", "apple", "banana", "Cherry", "Yankee",
             "Zulu"
         ]
+    );
+}
+
+// Smart fill: fill_salt, plan_fill, note_fill, forget_site.
+
+const TWIN: &str = "https://twin.test";
+const FORM_REF: &str = "form-login-7";
+const USER_REF: &str = "ref-user-7";
+const PASS_REF: &str = "ref-pass-7";
+
+/// One login form: username then current password, a submit button.
+fn login_form() -> Value {
+    json!({"form_ref":FORM_REF,
+           "intent_hints":{"kind":"login","signup_words":false,"reset_words":false,
+                           "checkout_words":false,"ignore":false},
+           "step_index":null,
+           "fields":[
+               {"field_ref":USER_REF,"role":"username","confidence":0.9,"visible":true,
+                "prefilled":"empty"},
+               {"field_ref":PASS_REF,"role":"current_password","confidence":0.9,
+                "visible":true,"prefilled":"empty"}],
+           "buttons":[{"button_ref":"ref-submit-7","class":"submit"}]})
+}
+
+fn page(origin: &str, typed: Option<Vec<u8>>) -> Value {
+    json!({"origin":origin,"top_origin":origin,"frame_kind":"top","forms":[login_form()],
+           "typed_username_hash":typed})
+}
+
+fn plan_req(origin: &str, context: Value) -> Value {
+    json!({"op":"plan_fill","ctx":"menu","origin":origin,"context":context})
+}
+
+fn note(item: Id, origin: &str) -> Value {
+    json!({"op":"note_fill","ctx":"chain","item_id":id(item),"origin":origin,
+           "roles":["username","current_password"],"intent":"login","steps":["fill"]})
+}
+
+/// Two equal logins on `TWIN`: `(a, b)`, b's username is `tom@example.com`.
+fn twins(h: &mut H) -> (Id, Id) {
+    let v = h.svc.vault_mut();
+    let a = v.add_login("Twin A", "alex@twin.test", TWIN, MatchRule::Domain);
+    let b = v.add_login("Twin B", "tom@example.com", TWIN, MatchRule::Domain);
+    (a, b)
+}
+
+fn salt(h: &mut H) -> Vec<u8> {
+    let v = h.call(json!({"op":"fill_salt","ctx":"menu"}));
+    let hex = ok(&v)["salt"].as_str().unwrap().to_owned();
+    assert_eq!(hex.len(), 64, "{hex}");
+    data_encoding::HEXLOWER.decode(hex.as_bytes()).unwrap()
+}
+
+fn sha256(parts: &[&[u8]]) -> Vec<u8> {
+    let mut ctx = aws_lc_rs::digest::Context::new(&aws_lc_rs::digest::SHA256);
+    for p in parts {
+        ctx.update(p);
+    }
+    ctx.finish().as_ref().to_vec()
+}
+
+#[test]
+fn plan_fill_rejects_foreign_origin() {
+    let mut h = H::new();
+    for foreign in [
+        "https://evil.test",
+        "https://atlas-cloud.test.evil.test",
+        "https://admin.atlas-cloud.test",
+    ] {
+        let v = h.call(plan_req(ATLAS, page(foreign, None)));
+        assert_eq!(err(&v), "origin_mismatch", "{foreign}");
+    }
+    let v = h.call(plan_req(ATLAS, page("http://atlas-cloud.test", None)));
+    assert_eq!(err(&v), "insecure_origin");
+    assert!(h.audit.events().is_empty());
+}
+
+#[test]
+fn plan_fill_returns_open_chain_for_single_login() {
+    let mut h = H::new();
+    let atlas = h.ids.atlas;
+    let v = h.call(plan_req(ATLAS, page(ATLAS, None)));
+    let plan = &ok(&v)["plan"];
+    assert_eq!(plan["intent"], "login", "{plan}");
+    assert_eq!(plan["action"], "open_chain");
+    assert_eq!(plan["confidence"], "high");
+    assert_eq!(
+        plan["groups"],
+        json!([{"form_ref":FORM_REF,"kind":"login","item_id":id(atlas),
+                "fields":[{"field_ref":USER_REF,"role":"username"},
+                          {"field_ref":PASS_REF,"role":"current_password"}]}])
+    );
+    assert_eq!(plan["alternatives"], json!([]));
+    assert!(
+        plan["reasons"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("single_candidate"))
+    );
+    for s in SECRETS {
+        assert!(!v.to_string().contains(s), "leaked {s}");
+    }
+}
+
+#[test]
+fn plan_fill_uses_typed_username_hash() {
+    let mut h = H::new();
+    let (a, b) = twins(&mut h);
+    let v = h.call(plan_req(TWIN, page(TWIN, None)));
+    assert_eq!(ok(&v)["plan"]["confidence"], "low", "{v}");
+
+    let salt = salt(&mut h);
+    let typed = sha256(&[&salt, b"tom@example.com"]);
+    let v = h.call(plan_req(TWIN, page(TWIN, Some(typed))));
+    let plan = &ok(&v)["plan"];
+    assert_eq!(plan["confidence"], "high", "{plan}");
+    assert_eq!(plan["groups"][0]["item_id"], id(b));
+    assert_eq!(plan["alternatives"], json!([id(a)]));
+    assert!(
+        plan["reasons"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("typed_username"))
+    );
+
+    // A hash with another salt matches nothing.
+    let stale = sha256(&[&[0u8; 32], b"tom@example.com"]);
+    let v = h.call(plan_req(TWIN, page(TWIN, Some(stale))));
+    assert_eq!(ok(&v)["plan"]["confidence"], "low", "{v}");
+}
+
+#[test]
+fn plan_fill_rejects_oversized_context() {
+    let mut h = H::new();
+    let forms: Vec<Value> = (0..33)
+        .map(|n| {
+            let mut f = login_form();
+            f["form_ref"] = json!(format!("f{n}"));
+            f["fields"] = json!([]);
+            f
+        })
+        .collect();
+    let mut ctx = page(ATLAS, None);
+    ctx["forms"] = json!(forms);
+    assert_eq!(err(&h.call(plan_req(ATLAS, ctx))), "invalid");
+
+    let fields: Vec<Value> = (0..65)
+        .map(|n| {
+            json!({"field_ref":format!("x{n}"),"role":"unknown","confidence":0.5,
+                        "visible":true,"prefilled":"empty"})
+        })
+        .collect();
+    let mut ctx = page(ATLAS, None);
+    ctx["forms"][0]["fields"] = json!(fields);
+    assert_eq!(err(&h.call(plan_req(ATLAS, ctx))), "invalid");
+
+    let mut ctx = page(ATLAS, None);
+    ctx["forms"][0]["fields"][1]["field_ref"] = json!(USER_REF);
+    assert_eq!(err(&h.call(plan_req(ATLAS, ctx))), "invalid");
+
+    let mut ctx = page(ATLAS, None);
+    ctx["forms"][0]["extra"] = json!(true);
+    assert_eq!(err(&h.call(plan_req(ATLAS, ctx))), "invalid");
+}
+
+#[test]
+fn note_fill_then_plan_prefers_last_used() {
+    let mut h = H::new();
+    let (a, b) = twins(&mut h);
+    let v = h.call(plan_req(TWIN, page(TWIN, None)));
+    assert_eq!(ok(&v)["plan"]["confidence"], "low", "{v}");
+
+    assert_eq!(ok(&h.call(note(b, TWIN))), &json!({}));
+    let usage = &h.vault().item(b).usage;
+    assert_eq!(usage.len(), 1);
+    assert_eq!(usage[0].site, "twin.test");
+    assert!(h.vault().item(a).usage.is_empty());
+
+    let v = h.call(plan_req(TWIN, page(TWIN, None)));
+    let plan = &ok(&v)["plan"];
+    assert_eq!(plan["confidence"], "high", "{plan}");
+    assert_eq!(plan["groups"][0]["item_id"], id(b));
+    assert_eq!(plan["action"], "open_chain");
+    let reasons = plan["reasons"].as_array().unwrap();
+    assert!(reasons.contains(&json!("last_on_site")), "{plan}");
+    assert!(reasons.contains(&json!("same_shape")), "{plan}");
+}
+
+#[test]
+fn note_fill_rejects_item_of_other_site() {
+    let mut h = H::new();
+    let (_, b) = twins(&mut h);
+    let (atlas, google, card) = (h.ids.atlas, h.ids.google_perso, h.ids.card);
+    assert_eq!(err(&h.call(note(atlas, TWIN))), "origin_mismatch");
+    assert_eq!(err(&h.call(note(google, ATLAS))), "origin_mismatch");
+    assert_eq!(err(&h.call(note(card, ATLAS))), "origin_mismatch");
+    assert_eq!(
+        err(&h.call(note(b, "https://twin.test.evil.test"))),
+        "origin_mismatch"
+    );
+    assert_eq!(err(&h.call(note(h.ids.archived, ATLAS))), "not_found");
+    assert!(h.vault().items.iter().all(|i| i.usage.is_empty()));
+    assert!(h.audit.events().is_empty());
+}
+
+#[test]
+fn salt_changes_between_sessions() {
+    let mut h1 = H::new();
+    let mut h2 = H::new();
+    let s1 = salt(&mut h1);
+    assert_eq!(salt(&mut h1), s1, "one salt per session");
+    let s2 = salt(&mut h2);
+    assert_ne!(s1, s2);
+    assert_ne!(s1, vec![0u8; 32]);
+}
+
+#[test]
+fn plan_fill_audit_has_no_refs() {
+    let mut h = H::new();
+    let (_, b) = twins(&mut h);
+    ok(&h.call(json!({"op":"fill_salt","ctx":"menu"})));
+    ok(&h.call(plan_req(TWIN, page(TWIN, None))));
+    ok(&h.call(note(b, TWIN)));
+    let events = h.audit.events();
+    let ops: Vec<&str> = events.iter().map(|e| e.op).collect();
+    assert_eq!(ops, ["plan_fill", "note_fill"]);
+    assert_eq!(events[0].item_id, None);
+    assert_eq!(events[0].origin.as_deref(), Some("twin.test"));
+    let p = events[0].plan.expect("plan summary");
+    assert_eq!(
+        serde_json::to_value(p).unwrap(),
+        json!({"intent":"login","action":"show_menu","confidence":"low"})
+    );
+    assert_eq!(events[1].item_id.as_deref(), Some(id(b).as_str()));
+    assert_eq!(events[1].origin.as_deref(), Some("twin.test"));
+    assert!(events[1].plan.is_none());
+    let dump = format!("{events:?}");
+    for s in [
+        FORM_REF,
+        USER_REF,
+        PASS_REF,
+        "ref-submit-7",
+        "username",
+        "current_password",
+        "CurrentPassword",
+        "tom@example.com",
+    ] {
+        assert!(!dump.contains(s), "audit holds {s}: {dump}");
+    }
+}
+
+#[test]
+fn forget_site_only_from_popup() {
+    let mut h = H::new();
+    let (_, b) = twins(&mut h);
+    ok(&h.call(note(b, TWIN)));
+    for ctx in ["menu", "overlay", "chain", "save_prompt"] {
+        let v = h.call(json!({"op":"forget_site","ctx":ctx,"site":"twin.test"}));
+        assert_eq!(err(&v), "not_allowed", "{ctx}");
+    }
+    assert_eq!(h.vault().item(b).usage.len(), 1);
+    let v = h.call(json!({"op":"forget_site","ctx":"popup","site":" Twin.Test "}));
+    assert_eq!(ok(&v), &json!({"items":1}));
+    assert!(h.vault().item(b).usage.is_empty());
+    let v = h.call(json!({"op":"forget_site","ctx":"popup","site":"   "}));
+    assert_eq!(err(&v), "invalid");
+    let v = h.call(plan_req(TWIN, page(TWIN, None)));
+    assert_eq!(ok(&v)["plan"]["confidence"], "low", "{v}");
+}
+
+#[test]
+fn username_hash_vector() {
+    // Same vector as `hash_matches_rust_vector` in the extension.
+    let h = onepass_bridge::policy::username_hash(&[0u8; 32], "Tom@Example.com ");
+    assert_eq!(
+        data_encoding::HEXLOWER.encode(&h),
+        "a2d55ed8b5a8ec8839231c0db36ebe5fd98d0bc6e8268b889a44f408e72c0d35"
     );
 }

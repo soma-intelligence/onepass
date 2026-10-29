@@ -24,10 +24,12 @@ use onepass_bridge::{AppErrorCode, BridgeError};
 use onepass_core::account::Auk;
 use onepass_core::crypto::SecretKey;
 use onepass_core::model::Item;
+use onepass_core::model::usage::SiteUsage;
 use onepass_core::repo::{DeviceState, Repository};
 use onepass_core::store::{RecordStore, SqliteStore};
 use onepass_core::{Error, Id, IntegrityError};
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use crate::config::HostError;
@@ -212,6 +214,15 @@ impl<S: RecordStore> RepoVault<S> {
         self.fail(what, &msg, bridge_error(e))
     }
 
+    /// Run the after-save hook (device state of the dev source).
+    fn persist_after_save(&mut self) -> Result<(), BridgeError> {
+        let saved = match (self.after_save.as_mut(), self.repo.as_ref()) {
+            (Some(f), Some(repo)) => f(repo),
+            _ => Ok(()),
+        };
+        saved.map_err(|e| self.fail("device state save", &e, INTERNAL))
+    }
+
     pub fn set_lock_path(&mut self, path: PathBuf) {
         self.lock_path = Some(path);
     }
@@ -320,15 +331,56 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
             Ok(false) => return Err(BridgeError::App(AppErrorCode::NotFound)),
             Err(e) => return Err(self.core_fail("vault write", e)),
         }
-        let saved = match (self.after_save.as_mut(), self.repo.as_ref()) {
-            (Some(f), Some(repo)) => f(repo),
-            _ => Ok(()),
-        };
-        saved.map_err(|e| self.fail("device state save", &e, INTERNAL))
+        self.persist_after_save()
     }
 
     fn approve_reprompt(&mut self, _item_id: Id) -> bool {
         self.allow_reprompt
+    }
+
+    fn record_usage(
+        &mut self,
+        vault_id: Id,
+        item_id: Id,
+        u: SiteUsage,
+        now: OffsetDateTime,
+    ) -> onepass_bridge::Result<bool> {
+        if self.is_locked() {
+            return Err(LOCKED);
+        }
+        let _g = self.guard()?;
+        self.refresh_repo()?;
+        let repo = self.repo.as_mut().ok_or(LOCKED)?;
+        let written = repo.vaults().and_then(|vaults| {
+            let Some(vault) = vaults.iter().find(|v| v.id == vault_id) else {
+                return Err(Error::NotFound);
+            };
+            repo.record_usage(vault, item_id, u, now)
+        });
+        let written = match written {
+            Ok(w) => w,
+            Err(Error::NotFound) => return Err(BridgeError::App(AppErrorCode::NotFound)),
+            Err(e) => return Err(self.core_fail("usage write", e)),
+        };
+        // Persisted even without a write: the read may have moved a last
+        // seen manifest.
+        self.persist_after_save()?;
+        Ok(written)
+    }
+
+    fn forget_site_usage(&mut self, site: &str) -> onepass_bridge::Result<usize> {
+        if self.is_locked() {
+            return Err(LOCKED);
+        }
+        let _g = self.guard()?;
+        self.refresh_repo()?;
+        let repo = self.repo.as_mut().ok_or(LOCKED)?;
+        let rewritten = match repo.forget_site_usage(site) {
+            Ok(n) => n,
+            Err(e) => return Err(self.core_fail("usage forget", e)),
+        };
+        self.persist_after_save()?;
+        Ok(rewritten)
     }
 }
 

@@ -5,7 +5,10 @@
 //! autofill, and the current TOTP code, never the TOTP secret.
 
 use onepass_core::Id;
-use onepass_core::fill_plan::score::{Candidate, CandidateKind, MatchQuality as PlanQuality};
+use onepass_core::fill_plan::score::{
+    Candidate, CandidateKind, MatchQuality as PlanQuality, UsageSignal,
+};
+use onepass_core::model::usage::SiteUsage;
 use onepass_core::model::{Field, FieldValue, Item, ItemType, LoginMethod, MatchRule};
 use onepass_core::reference::otp_field_of;
 use onepass_core::totp::{code_at, parse_otpauth, seconds_remaining, totp_from_secret};
@@ -72,6 +75,53 @@ pub fn to_candidate(item: &Item, q: PlanQuality) -> Candidate {
         username_hash: None,
         usage: None,
     }
+}
+
+/// `SHA-256(salt || lowercase(trim(username)))`: what `plan_fill`
+/// compares with the hash the extension made of a typed username.
+pub fn username_hash(salt: &[u8; 32], username: &str) -> [u8; 32] {
+    let mut ctx = aws_lc_rs::digest::Context::new(&aws_lc_rs::digest::SHA256);
+    ctx.update(salt);
+    ctx.update(username.trim().to_lowercase().as_bytes());
+    let mut out = [0u8; 32];
+    out.copy_from_slice(ctx.finish().as_ref());
+    out
+}
+
+/// Candidates of one kind for `fill_plan::plan`, with their memory of
+/// `site`: `last_on_site` for the entry used last among them, `same_shape`
+/// when the entry saw `shape` (the main form's roles). A login also
+/// carries the salted hash of its identifier.
+pub fn plan_candidates(
+    items: &[(&Item, PlanQuality)],
+    site: &str,
+    shape: Option<[u8; 16]>,
+    salt: &[u8; 32],
+) -> Vec<Candidate> {
+    fn entry<'a>(i: &'a Item, site: &str) -> Option<&'a SiteUsage> {
+        i.usage.iter().find(|u| u.site == site)
+    }
+    let last = items
+        .iter()
+        .filter_map(|(i, _)| entry(i, site))
+        .map(|u| u.last_at)
+        .max();
+    items
+        .iter()
+        .map(|(i, q)| {
+            let mut c = to_candidate(i, *q);
+            if i.item_type == ItemType::Login {
+                c.username_hash = login_identifier(i).map(|u| username_hash(salt, u));
+            }
+            c.usage = entry(i, site).map(|u| UsageSignal {
+                last_on_site: Some(u.last_at) == last,
+                same_shape: Some(u.form_shape_hash) == shape,
+                count: u.count,
+                last_at: u.last_at.unix_timestamp(),
+            });
+            c
+        })
+        .collect()
 }
 
 /// The plan quality of a bridge match (`None` is no match: `Other`).

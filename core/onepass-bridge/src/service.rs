@@ -9,8 +9,13 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 
 use onepass_core::Id;
-use onepass_core::fill_plan::score::{Candidate, Tiebreak, order};
+use onepass_core::fill_plan::compose::PRIORITY;
+use onepass_core::fill_plan::context::{FieldRole, MAX_FIELDS, PageContext};
+use onepass_core::fill_plan::intent::{Intent, intent_of};
+use onepass_core::fill_plan::score::{Candidate, MatchQuality as PlanQuality, Tiebreak, order};
+use onepass_core::fill_plan::{Pool, plan};
 use onepass_core::generator::{self, CharsetOptions, PassphraseOptions, Wordlist};
+use onepass_core::model::usage::{SiteUsage, form_shape_hash};
 use onepass_core::model::{
     FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PasswordHistoryEntry, new_item,
     validate,
@@ -21,16 +26,17 @@ use zeroize::Zeroizing;
 
 use crate::api::{
     CredentialStatus, Ctx, ErrorBody, FillField, FillKind, Recipe, RecipeKind, Reply, Request,
-    Response, SecretString, Summary, SummaryKind, VaultEntry,
+    Response, SecretString, Step, Summary, SummaryKind, VaultEntry,
 };
-use crate::audit::{AuditEvent, AuditSink};
+use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
 use crate::policy::{
     card_values, eligible, identity_values, is_provider_account, item_match, login_identifier,
-    login_secrets, plan_quality, provider_url_matches, reveal_value, stored_password, summarize,
-    summary_kind, to_candidate, totp_now,
+    login_secrets, plan_candidates, plan_quality, provider_url_matches, reveal_value,
+    stored_password, summarize, summary_kind, to_candidate, totp_now,
 };
 use crate::provider::{ProviderId, from_host};
+use crate::session::UsernameSalt;
 use crate::{AppErrorCode, BridgeError, Result};
 
 /// Secret requests allowed per sliding window (spec 7.5).
@@ -39,6 +45,10 @@ pub const SECRET_LIMIT: usize = 60;
 pub const SECRET_WINDOW: u64 = 60;
 /// Label of the URL of a login saved from the extension.
 const SAVED_URL_LABEL: &str = "site web";
+/// Most steps `note_fill` takes for one fill.
+const MAX_STEPS: usize = 16;
+/// Longest site `forget_site` takes (a DNS name).
+const MAX_SITE_LEN: usize = 253;
 /// Initial capacity of a reply buffer. Replies with a secret are far
 /// smaller, so the buffer never reallocates (which would leave an
 /// unwiped copy behind).
@@ -76,6 +86,18 @@ pub trait VaultAccess {
     fn save(&mut self, vault_id: Id, item: Item) -> Result<()>;
     /// Ask the user to confirm access to an item marked `reprompt`.
     fn approve_reprompt(&mut self, item_id: Id) -> bool;
+    /// Remember a fill of `u.site` by an item (`Repository::record_usage`):
+    /// `true` when the item was rewritten.
+    fn record_usage(
+        &mut self,
+        vault_id: Id,
+        item_id: Id,
+        u: SiteUsage,
+        now: OffsetDateTime,
+    ) -> Result<bool>;
+    /// Forget `site` in every item (`Repository::forget_site_usage`): how
+    /// many items were rewritten.
+    fn forget_site_usage(&mut self, site: &str) -> Result<usize>;
 }
 
 type OpResult<T> = std::result::Result<T, AppErrorCode>;
@@ -146,6 +168,32 @@ fn sort(pairs: Vec<(Summary, Candidate)>) -> Vec<Summary> {
         .collect()
 }
 
+/// Roles of the page's main form (the first form of the main intent, as
+/// `fill_plan::plan` picks it): its visible fields with a role, in page
+/// order. `note_fill` sends the same list.
+fn main_roles(ctx: &PageContext) -> Option<Vec<FieldRole>> {
+    let intents: Vec<Intent> = ctx.forms.iter().map(intent_of).collect();
+    let main = PRIORITY.into_iter().find(|i| intents.contains(i))?;
+    let (form, _) = ctx.forms.iter().zip(&intents).find(|(_, i)| **i == main)?;
+    Some(
+        form.fields
+            .iter()
+            .filter(|f| f.visible)
+            .filter_map(|f| f.role)
+            .collect(),
+    )
+}
+
+/// Two-letter country of an identity's address, if it has one.
+fn identity_country(item: &Item) -> Option<String> {
+    match item.field("address").map(|f| &f.value) {
+        Some(FieldValue::Address(a)) if !a.country.trim().is_empty() => {
+            Some(a.country.trim().to_ascii_uppercase())
+        }
+        _ => None,
+    }
+}
+
 /// Equality of two secrets in constant time.
 fn same_secret(a: &str, b: &str) -> bool {
     aws_lc_rs::constant_time::verify_slices_are_equal(a.as_bytes(), b.as_bytes()).is_ok()
@@ -188,6 +236,9 @@ pub struct Service<V: VaultAccess> {
     audit: Box<dyn AuditSink>,
     seen: HashSet<u64>,
     secret_times: VecDeque<u64>,
+    /// Drawn at the first `fill_salt` or `plan_fill`, gone with the
+    /// session.
+    salt: Option<UsernameSalt>,
 }
 
 impl<V: VaultAccess> Service<V> {
@@ -197,6 +248,7 @@ impl<V: VaultAccess> Service<V> {
             audit,
             seen: HashSet::new(),
             secret_times: VecDeque::new(),
+            salt: None,
         }
     }
 
@@ -250,11 +302,20 @@ impl<V: VaultAccess> Service<V> {
     fn record(&mut self, op: &'static str, item_id: Id, origin: Option<&str>, ctx: Ctx, at: u64) {
         self.audit.record(AuditEvent {
             op,
-            item_id: item_id.to_string(),
+            item_id: Some(item_id.to_string()),
             origin: origin.map(str::to_owned),
             ctx,
             at,
+            plan: None,
         });
+    }
+
+    /// The session's username salt, drawn on first use.
+    fn salt(&mut self) -> OpResult<&UsernameSalt> {
+        if self.salt.is_none() {
+            self.salt = Some(UsernameSalt::generate().map_err(app_code)?);
+        }
+        self.salt.as_ref().ok_or(AppErrorCode::Internal)
     }
 
     /// Takes a slot in the secret request window, or `rate_limited`.
@@ -319,6 +380,12 @@ impl<V: VaultAccess> Service<V> {
                 let unlocked = self.vault.unlock().map_err(app_code)?;
                 return Ok(Response::Unlock { locked: !unlocked });
             }
+            // Not a vault value: served locked too.
+            Request::FillSalt { .. } => {
+                return Ok(Response::Salt {
+                    salt: self.salt()?.hex(),
+                });
+            }
             _ => {}
         }
         if self.vault.status().locked {
@@ -339,7 +406,9 @@ impl<V: VaultAccess> Service<V> {
             self.take_secret_slot(now)?;
         }
         match req {
-            Request::Status { .. } | Request::Unlock { .. } => Err(AppErrorCode::Internal),
+            Request::Status { .. } | Request::Unlock { .. } | Request::FillSalt { .. } => {
+                Err(AppErrorCode::Internal)
+            }
             Request::Vaults { .. } => self.vaults(),
             Request::ListForOrigin { origin: o, .. } => self.list_for_origin(o),
             Request::Search { ctx, query, .. } => self.search(*ctx, query),
@@ -448,6 +517,29 @@ impl<V: VaultAccess> Service<V> {
                 account_item_id,
                 ..
             } => self.link_provider(*ctx, site_origin, *provider, account_item_id, now),
+            Request::PlanFill {
+                ctx,
+                origin: o,
+                context,
+                ..
+            } => self.plan_fill(*ctx, o, context, now),
+            Request::NoteFill {
+                ctx,
+                item_id,
+                origin: o,
+                roles,
+                intent,
+                steps,
+                ..
+            } => {
+                let fill = Noted {
+                    roles,
+                    intent: *intent,
+                    steps,
+                };
+                self.note_fill(*ctx, item_id, o, fill, now)
+            }
+            Request::ForgetSite { ctx, site, .. } => self.forget_site(*ctx, site, now),
         }
     }
 
@@ -839,6 +931,126 @@ impl<V: VaultAccess> Service<V> {
             item_id: id.to_string(),
         })
     }
+
+    /// The plan for a page (spec 4.3). The page context must come from the
+    /// frame of `o`; the pool is what `list_for_origin` lists for logins,
+    /// and every card and identity.
+    fn plan_fill(
+        &mut self,
+        ctx: Ctx,
+        o: &str,
+        context: &PageContext,
+        now: u64,
+    ) -> OpResult<Response> {
+        let page = origin(o)?;
+        if origin(&context.origin)?.origin_string() != page.origin_string() {
+            return Err(AppErrorCode::OriginMismatch);
+        }
+        context.validate().map_err(|_| AppErrorCode::Invalid)?;
+        let site = page.site();
+        let shape = main_roles(context).map(|roles| form_shape_hash(&roles));
+        let all = self.items()?;
+        let usable = || all.iter().map(|(_, i)| i).filter(|i| eligible(i));
+        let logins: Vec<(&Item, PlanQuality)> = usable()
+            .filter(|i| i.item_type == ItemType::Login)
+            .filter_map(|i| item_match(i, &page).map(|q| (i, plan_quality(Some(q)))))
+            .collect();
+        let of_kind = |k: SummaryKind| -> Vec<(&Item, PlanQuality)> {
+            usable()
+                .filter(|i| summary_kind(i.item_type) == Some(k))
+                .map(|i| (i, plan_quality(None)))
+                .collect()
+        };
+        let (cards, identities) = (of_kind(SummaryKind::Card), of_kind(SummaryKind::Identity));
+        let identity_country = identities
+            .iter()
+            .filter_map(|(i, _)| identity_country(i).map(|c| (i.id, c)))
+            .collect();
+        let salt = self.salt()?.bytes();
+        let pool = Pool {
+            logins: plan_candidates(&logins, &site, shape, salt),
+            cards: plan_candidates(&cards, &site, shape, salt),
+            identities: plan_candidates(&identities, &site, shape, salt),
+            identity_country,
+            default_card: None,
+            now: i64::try_from(now).unwrap_or(i64::MAX),
+        };
+        let fill = plan(context, pool).map_err(|_| AppErrorCode::Invalid)?;
+        self.audit.record(AuditEvent {
+            op: "plan_fill",
+            item_id: None,
+            origin: Some(page.host().to_owned()),
+            ctx,
+            at: now,
+            plan: Some(PlanAudit::from(&fill)),
+        });
+        Ok(Response::Plan { plan: fill.into() })
+    }
+
+    /// Remember that an item filled this site, for the next plans.
+    fn note_fill(
+        &mut self,
+        ctx: Ctx,
+        item_id: &str,
+        o: &str,
+        fill: Noted<'_>,
+        now: u64,
+    ) -> OpResult<Response> {
+        let page = origin(o)?;
+        if fill.roles.len() > MAX_FIELDS || fill.steps.len() > MAX_STEPS {
+            return Err(AppErrorCode::Invalid);
+        }
+        let (vault, item) = self.eligible_item(item_id)?;
+        if item_match(&item, &page).is_none() {
+            return Err(AppErrorCode::OriginMismatch);
+        }
+        let at = unix(now);
+        let usage = SiteUsage {
+            site: page.site(),
+            form_shape_hash: form_shape_hash(fill.roles),
+            intent: fill.intent,
+            step_seq: fill.steps.iter().map(|s| (*s).into()).collect(),
+            count: 1,
+            last_at: at,
+        };
+        self.vault
+            .record_usage(vault.id, item.id, usage, at)
+            .map_err(app_code)?;
+        self.record("note_fill", item.id, Some(page.host()), ctx, now);
+        Ok(Response::Empty {})
+    }
+
+    /// Forget a site in every item. From the extension window only. `site`
+    /// is a registrable domain, or an https origin reduced to its own.
+    fn forget_site(&mut self, ctx: Ctx, site: &str, now: u64) -> OpResult<Response> {
+        if ctx != Ctx::Popup {
+            return Err(AppErrorCode::NotAllowed);
+        }
+        let site = match site.trim() {
+            s if s.contains("://") => origin(s)?.site(),
+            s => s.trim_end_matches('.').to_lowercase(),
+        };
+        if site.is_empty() || site.len() > MAX_SITE_LEN {
+            return Err(AppErrorCode::Invalid);
+        }
+        let items = self.vault.forget_site_usage(&site).map_err(app_code)?;
+        self.audit.record(AuditEvent {
+            op: "forget_site",
+            item_id: None,
+            origin: Some(site),
+            ctx,
+            at: now,
+            plan: None,
+        });
+        Ok(Response::Forgotten { items })
+    }
+}
+
+/// Input of `note_fill`.
+struct Noted<'a> {
+    roles: &'a [FieldRole],
+    intent: Intent,
+    steps: &'a [Step],
 }
 
 /// Input of `save_login`.
