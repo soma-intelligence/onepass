@@ -420,6 +420,7 @@ struct ValueRow<Accessory: View>: View {
     #if os(iOS)
     /// Shown while a finger holds the value (released: masked again at once).
     @State private var held = false
+    @State private var holdTask: Task<Void, Never>?
     /// Tilting the phone toward the face while a secret shows makes it larger to read.
     @State private var tilt = TiltReader()
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -443,6 +444,22 @@ struct ValueRow<Accessory: View>: View {
         self.onReveal = onReveal
         self.accessory = accessory()
     }
+
+    #if os(iOS)
+    /// The press began: reveal once it has lasted a moment. It ended or slid off: mask now.
+    private func holdChanged(_ pressing: Bool) {
+        holdTask?.cancel()
+        guard isSecret, !captured else { return }
+        if pressing {
+            holdTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                if !Task.isCancelled { held = true }
+            }
+        } else {
+            held = false
+        }
+    }
+    #endif
 
     private var hidden: Bool {
         #if os(iOS)
@@ -469,6 +486,13 @@ struct ValueRow<Accessory: View>: View {
                 .font(enlarged ? .system(.title, design: .monospaced).weight(.semibold)
                     : monospaced ? .body.monospaced() : .body)
                 .animation(.spring(duration: 0.3, bounce: 0.2), value: enlarged)
+                #if os(iOS)
+                // Hold to see, on the value itself: shown after a short press, masked the moment
+                // the finger lifts or slides away. Taps elsewhere on the row (copy) are untouched.
+                .onLongPressGesture(minimumDuration: 0.3, maximumDistance: 24, perform: {}) { pressing in
+                    holdChanged(pressing)
+                }
+                #endif
                 .textSelection(.disabled)
                 .accessibilityLabel(Text(label))
                 .accessibilityValue(Text(hidden ? "masqué" : value))
@@ -492,14 +516,6 @@ struct ValueRow<Accessory: View>: View {
         .onDisappear { if revealed { setRevealed(false) } }
         .onChange(of: concealToken) { if revealed { setRevealed(false) } }
         #if os(iOS)
-        // Hold to see: revealed after a short press, masked the moment the finger lifts.
-        // Simultaneous: the row's own tap (copy) and the drag lift keep working.
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.35, maximumDistance: 24)
-                .onEnded { _ in if isSecret, !captured { held = true } })
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onEnded { _ in held = false })
         .sensoryFeedback(.impact(weight: .medium), trigger: held) { _, now in now }
         // Folding the phone hides whatever was shown.
         .onChange(of: sizeClass) {
@@ -509,22 +525,9 @@ struct ValueRow<Accessory: View>: View {
         .onChange(of: !hidden && isSecret) { _, showing in
             if showing { tilt.start() } else { tilt.stop() }
         }
-        // Drag the value out to another app: a secret is produced only at the drop, the drag
-        // preview shows the field's name, never the value.
-        .onDrag {
-            let provider = NSItemProvider()
-            let text = value
-            provider.registerDataRepresentation(forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all) { load in
-                load(Data(text.utf8), nil)
-                return nil
-            }
-            provider.suggestedName = label
-            return provider
-        } preview: {
-            Label(label, systemImage: isSecret ? "key.fill" : "text.alignleft")
-                .padding(10)
-                .background(.regularMaterial, in: Capsule())
-        }
+        // Drag a plain value out to another app (the preview shows the field's name). Not a secret:
+        // the system's drag lift is itself a long press and would take the hold-to-see gesture.
+        .modifier(FieldDragOut(label: label, value: value, enabled: !isSecret))
         #endif
         // Captured: masked now, and still masked once the capture ends.
         .onChange(of: captured) { _, now in if now, revealed { setRevealed(false) } }
@@ -766,6 +769,34 @@ struct WebsiteRow: View {
 }
 
 #if os(iOS)
+/// A field's value dragged out as plain text, the drag preview showing only the field's name.
+private struct FieldDragOut: ViewModifier {
+    let label: String
+    let value: String
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.onDrag {
+                let provider = NSItemProvider()
+                let text = value
+                provider.registerDataRepresentation(forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all) { load in
+                    load(Data(text.utf8), nil)
+                    return nil
+                }
+                provider.suggestedName = label
+                return provider
+            } preview: {
+                Label(label, systemImage: "text.alignleft")
+                    .padding(10)
+                    .background(.regularMaterial, in: Capsule())
+            }
+        } else {
+            content
+        }
+    }
+}
+
 /// The phone tilted toward the face (screen nearly upright, top edge away): device motion only,
 /// no permission, running only while a secret is shown.
 @Observable
