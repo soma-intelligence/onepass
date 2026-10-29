@@ -176,7 +176,7 @@ final class AppModel {
         var storeSplit = false
         #if ONEPASS_CLOUDKIT
         let remote: (any RemoteRecordStore)? = demo == nil
-            ? CloudKitRemote(containerIdentifier: "iCloud.me.somalabs.onepass") : nil
+            ? CloudKitRemote(containerIdentifier: Self.cloudKitContainer) : nil
         cloudKitEnabled = demo == nil
         #else
         let remote: (any RemoteRecordStore)? = nil
@@ -256,6 +256,15 @@ final class AppModel {
     }
 
     var settings: VaultSettings { session.environment.settings }
+
+    /// The CloudKit container of this build: the `OnePassCloudKitContainer` Info.plist key
+    /// (`ONEPASS_CLOUDKIT_CONTAINER`, `iCloud.me.somalabs.onepass` by default; a fork or a personal
+    /// team signs with its own).
+    nonisolated static var cloudKitContainer: String {
+        let value = (Bundle.main.object(forInfoDictionaryKey: "OnePassCloudKitContainer") as? String)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        return value.isEmpty || value.contains("$(") ? "iCloud.me.somalabs.onepass" : value
+    }
 
     /// The milestone 2 store location (`Application Support/OnePass/vault.sqlite` of the app's own
     /// container) and settings (`UserDefaults.standard`).

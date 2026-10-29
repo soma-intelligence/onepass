@@ -1943,6 +1943,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
+				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
 				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				ONLY_ACTIVE_ARCH = YES;
@@ -2221,6 +2222,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
+				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
 				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2330,6 +2332,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
+				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
 				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2550,6 +2553,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
+				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
 				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				PRODUCT_NAME = "$(TARGET_NAME)";

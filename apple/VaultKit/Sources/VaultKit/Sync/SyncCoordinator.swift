@@ -555,6 +555,14 @@ public actor SyncCoordinator: SyncTrigger {
         if let stored, !stored.isEmpty {
             if stored != current { throw RemoteStoreError.accountChanged }
         } else {
+            // First sync of this store with any iCloud account. A store that already holds an account
+            // (received by pairing, or synced in another container) and meets an empty zone sends it
+            // all: as after a lost zone, every record the zone lacks is queued again once the complete
+            // fetch ends. A zone that holds anything is left to the usual checks.
+            let holdsAccount = try await CoreThread.run { try store.storeState() } == .account
+            if holdsAccount, try await remote.accountRecordIDs().isEmpty {
+                try await CoreThread.run { try store.beginZoneReset(tokenKey: Self.tokenKey) }
+            }
             try await CoreThread.run { try store.setMeta(key: Self.accountKey, value: current) }
         }
         verifiedIdentity = (checkedAt, changeCount)
