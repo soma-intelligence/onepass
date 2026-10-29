@@ -49,7 +49,7 @@ public struct StrengthMeter: View {
             Text(Self.label(forBits: bits)).font(.caption).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Force du mot de passe"))
+        .accessibilityLabel(Text("Force du mot de passe", bundle: DesignKitStrings.bundle))
         .accessibilityValue(Text(Self.label(forBits: bits)))
     }
 }
@@ -80,7 +80,7 @@ public struct StrengthBadge: View {
             .accessibilityHidden(true)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Force du mot de passe"))
+        .accessibilityLabel(Text("Force du mot de passe", bundle: DesignKitStrings.bundle))
         .accessibilityValue(Text(word))
     }
 }

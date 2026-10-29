@@ -16,6 +16,8 @@ private func location(_ p: GeoPoint, label: String = "Lieu") -> FfiLocation {
 
 @Suite("Location index (À proximité)")
 struct LocationIndexTests {
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     @Test func distanceIsHaversineInMeters() {
         #expect(LocationIndex.distance(hotelDeVille, hotelDeVille) == 0)
         let east = LocationIndex.distance(hotelDeVille, nearHotelDeVille)
