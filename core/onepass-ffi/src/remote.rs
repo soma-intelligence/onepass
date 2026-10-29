@@ -12,7 +12,8 @@
 //! - phone: the replay guard and, per Mac, the highest device list and
 //!   approver list `seq` its requests carried (a lower one is refused, spec
 //!   threat A5);
-//! - Mac: the remote unlock throttle and the request it waits on. Policy:
+//! - Mac: the replay guard of the phone's notices (`Lock`, `ForgetUnlock`),
+//!   the remote unlock throttle and the request it waits on. Policy:
 //!   a request whose answer never came counts as a refusal, settled by the
 //!   next `begin` (or `throttle_state`, read only) once it has expired.
 
@@ -44,6 +45,13 @@ const REPLAY_KEY: &str = "remote.replay_guard";
 const PEER_SEQS_KEY: &str = "remote.peer_seqs";
 const THROTTLE_KEY: &str = "remote.unlock_throttle";
 const WAITING_KEY: &str = "remote.unlock_waiting";
+const NOTICE_REPLAY_KEY: &str = "remote.notice_replay_guard";
+
+/// Serializes every read-modify-write of the remote memory in the local
+/// meta (throttle, waiting mark, replay guards) within this process, so two
+/// concurrent calls (two `begin` on one or two `RemoteUnlocker`s, two
+/// notices) never lose an update.
+static META: Mutex<()> = Mutex::new(());
 /// Most Macs whose last `seq` values a phone remembers.
 const MAX_PEERS: usize = 256;
 
@@ -209,7 +217,7 @@ pub struct FfiSealedRequest {
 }
 
 /// A request the phone accepted.
-#[derive(Clone, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FfiOpenedRequest {
     pub request_id: Vec<u8>,
     /// The Mac's device id and its name in the device list.
@@ -219,20 +227,32 @@ pub struct FfiOpenedRequest {
     pub created_at: i64,
     pub expires_at: i64,
     pub body: FfiRequestBody,
-    /// `K_r` of a `Pair` request, for the keychain only.
-    pub transfer_key: Option<Vec<u8>>,
 }
 
-impl std::fmt::Debug for FfiOpenedRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FfiOpenedRequest")
-            .field("from", &self.from)
-            .field("kind", &self.kind)
-            .field("expires_at", &self.expires_at)
-            .field("body", &self.body)
-            .field("transfer_key", &self.transfer_key.as_ref().map(|_| "**"))
-            .finish()
+/// What a phone may tell its Mac (spec 6.3, 6.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiNoticeKind {
+    /// "Verrouiller maintenant": end the agents-only window.
+    Lock,
+    /// The phone forgot `K_r`: erase `C`.
+    ForgetUnlock,
+}
+
+impl From<FfiNoticeKind> for RemoteKind {
+    fn from(k: FfiNoticeKind) -> Self {
+        match k {
+            FfiNoticeKind::Lock => RemoteKind::Lock,
+            FfiNoticeKind::ForgetUnlock => RemoteKind::ForgetUnlock,
+        }
     }
+}
+
+/// A notice the Mac accepted from an enrolled phone.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiNotice {
+    pub kind: FfiNoticeKind,
+    /// The phone's device id.
+    pub from: String,
 }
 
 /// A phone's answer the Mac accepted.
@@ -330,8 +350,8 @@ fn header(
     kind: RemoteKind,
     device_list_seq: u64,
     approver_list_seq: u64,
+    created_at: i64,
 ) -> Result<RequestHeader, OnePassError> {
-    let created_at = unix_now();
     Ok(RequestHeader {
         request_id: core_remote::new_request_id()?,
         from,
@@ -528,22 +548,47 @@ impl Session {
         }
     }
 
-    /// Seal and sign `body` to `phone`, and wait on it.
-    fn seal_to_phone(
+    /// Seal and sign `body` to `to` (holding the recipient role of `kind`).
+    /// A request from the Mac is waited on; a phone notice is not answered.
+    fn seal_to(
         &self,
         repo: &mut Repo,
         me: &ApproverIdentity,
-        phone: Id,
+        to: Id,
         kind: RemoteKind,
         body: &RequestBody,
     ) -> Result<FfiSealedRequest, OnePassError> {
         let approvers = repo.approvers()?;
-        let to = entry_of(&approvers, phone, ApproverRole::Phone)?;
+        let entry = entry_of(&approvers, to, kind.recipient_role())?;
         let (d, a) = list_seqs(repo);
-        let h = header(me.device_id, phone, kind, d, a)?;
-        let blob = core_remote::seal_request(&me.signing, to, h.clone(), body)?;
-        lock(&self.pending).insert_header(&h);
+        let h = header(me.device_id, to, kind, d, a, unix_now())?;
+        let blob = core_remote::seal_request(&me.signing, entry, h.clone(), body)?;
+        if kind.sender_role() == ApproverRole::Mac {
+            lock(&self.pending).insert_header(&h);
+        }
         Ok(sealed(&h, blob))
+    }
+
+    /// The phone side check shared by the answers: `request_blob` verifies
+    /// in full against a fresh guard, and the stored guard already holds it
+    /// (opened, so shown, before).
+    fn reopen(
+        repo: &mut Repo,
+        me: &ApproverIdentity,
+        request_blob: &[u8],
+    ) -> Result<(Vec<ApproverEntry>, core_remote::RemoteRequest, RequestBody), OnePassError> {
+        let approvers = repo.approvers()?;
+        let (request, body) = core_remote::open_request(
+            request_blob,
+            me,
+            &approvers,
+            unix_now(),
+            &mut ReplayGuard::new(),
+        )?;
+        if !load_replay(repo.store())?.contains(&request.request_id) {
+            return Err(integrity(IntegrityError::RemoteUnknownRequest));
+        }
+        Ok((approvers, request, body))
     }
 }
 
@@ -557,7 +602,9 @@ impl Session {
     }
 
     /// End of the agents-only window (Unix seconds); `None` for a session
-    /// opened on this device.
+    /// opened on this device. The keys stay in memory until the first use
+    /// of the session after that instant (which drops them): Swift must run
+    /// a timer that calls `lock` at this deadline.
     pub fn agent_window_ends_at(&self) -> Option<i64> {
         self.agent_window()
     }
@@ -600,8 +647,9 @@ impl Session {
     }
 
     /// Mac side: a signed request to the phone `to`, its body sealed to the
-    /// phone. `Approve`, `Lock` and `ForgetUnlock` only: the unlock kinds
-    /// go through `RemoteUnlocker`, pairing through `remote_unlock_enroll`.
+    /// phone. `Approve` only: the unlock kinds go through `RemoteUnlocker`,
+    /// pairing through `remote_unlock_enroll`, and `Lock` and
+    /// `ForgetUnlock` are phone notices (`seal_remote_notice`).
     pub fn seal_remote_request(
         &self,
         keys: FfiApproverKeys,
@@ -610,17 +658,14 @@ impl Session {
         body: FfiRequestBody,
     ) -> Result<FfiSealedRequest, OnePassError> {
         let kind = RemoteKind::from(kind);
-        if !matches!(
-            kind,
-            RemoteKind::Approve | RemoteKind::Lock | RemoteKind::ForgetUnlock
-        ) {
+        if kind != RemoteKind::Approve {
             return Err(invalid("remote kind"));
         }
         let phone = parse_id(&to)?;
         let body = body_to_core(body, None, None, None);
         let me = self.with(|repo| this_device(repo))?;
         let me = identity(keys, me)?;
-        self.with(|repo| self.seal_to_phone(repo, &me, phone, kind, &body))
+        self.with(|repo| self.seal_to(repo, &me, phone, kind, &body))
     }
 
     /// Mac side: the phone's answer to a request this session sent and
@@ -660,6 +705,7 @@ impl Session {
     ) -> Result<FfiOpenedRequest, OnePassError> {
         let me = self.with(|repo| this_device(repo))?;
         let me = identity(keys, me)?;
+        let _meta = lock(&META);
         self.with(|repo| {
             let approvers = repo.approvers()?;
             let mut guard = load_replay(repo.store())?;
@@ -684,7 +730,6 @@ impl Session {
                 created_at: request.created_at,
                 expires_at: request.expires_at,
                 body: body_to_ffi(&body),
-                transfer_key: body.transfer_key.as_ref().map(|k| k.to_vec()),
             })
         })
     }
@@ -704,19 +749,7 @@ impl Session {
         let me = self.with(|repo| this_device(repo))?;
         let me = identity(keys, me)?;
         self.with(|repo| {
-            let approvers = repo.approvers()?;
-            // Verified again in full, against a fresh guard: the stored one
-            // must already hold it (opened, so shown, before).
-            let (request, body) = core_remote::open_request(
-                &request_blob,
-                &me,
-                &approvers,
-                unix_now(),
-                &mut ReplayGuard::new(),
-            )?;
-            if !load_replay(repo.store())?.contains(&request.request_id) {
-                return Err(integrity(IntegrityError::RemoteUnknownRequest));
-            }
+            let (approvers, request, body) = Self::reopen(repo, &me, &request_blob)?;
             let mac = entry_of(&approvers, request.from, ApproverRole::Mac)?;
             let unlocks = matches!(
                 request.kind,
@@ -725,9 +758,12 @@ impl Session {
             let key = match (&unlock_key, decision) {
                 (_, RemoteDecision::Denied) => None,
                 (Some(k), _) if unlocks => {
-                    let bytes: [u8; 32] =
-                        k.as_slice().try_into().map_err(|_| invalid("unlock key"))?;
-                    Some(SymmetricKey::from_bytes(bytes))
+                    let mut bytes = Zeroizing::new([0u8; 32]);
+                    if k.len() != bytes.len() {
+                        return Err(invalid("unlock key"));
+                    }
+                    bytes.copy_from_slice(k);
+                    Some(SymmetricKey::from_bytes(*bytes))
                 }
                 (None, _) if !unlocks => None,
                 _ => return Err(invalid("unlock key")),
@@ -797,16 +833,73 @@ impl Session {
                 strong_required: true,
                 confirm_code: code.clone(),
                 unlock_eph_pub: None,
-                transfer_key: Some(Zeroizing::new(*k_r.expose())),
+                transfer_key: Some({
+                    let mut t = Zeroizing::new([0u8; 32]);
+                    t.copy_from_slice(k_r.expose());
+                    t
+                }),
                 window_minutes: None,
             };
-            let transfer_request = self.seal_to_phone(repo, &me, phone, RemoteKind::Pair, &body)?;
+            let transfer_request = self.seal_to(repo, &me, phone, RemoteKind::Pair, &body)?;
             Ok(FfiEnrollment {
                 c,
                 confirm_code: code.clone(),
                 transfer_request,
             })
         })
+    }
+}
+
+#[uniffi::export]
+impl Session {
+    /// Phone side, after Face ID: `K_r` of a `Pair` request opened before
+    /// with `open_remote_request` (verified again in full), for the
+    /// keychain only. `open_remote_request` never returns it.
+    pub fn accept_enrollment(
+        &self,
+        keys: FfiApproverKeys,
+        request_blob: Vec<u8>,
+    ) -> Result<Vec<u8>, OnePassError> {
+        let me = self.with(|repo| this_device(repo))?;
+        let me = identity(keys, me)?;
+        self.with(|repo| {
+            let (_, request, body) = Self::reopen(repo, &me, &request_blob)?;
+            match (request.kind, body.transfer_key.as_ref()) {
+                (RemoteKind::Pair, Some(k)) => Ok(k.to_vec()),
+                _ => Err(invalid("remote kind")),
+            }
+        })
+    }
+
+    /// Phone side: a signed notice to the Mac `mac` ("Verrouiller
+    /// maintenant", or `K_r` forgotten), sealed to the Mac's key.
+    pub fn seal_remote_notice(
+        &self,
+        keys: FfiApproverKeys,
+        mac: String,
+        kind: FfiNoticeKind,
+    ) -> Result<FfiSealedRequest, OnePassError> {
+        let mac = parse_id(&mac)?;
+        let kind = RemoteKind::from(kind);
+        let body = RequestBody {
+            client: "OnePass".into(),
+            client_verified: true,
+            action: match kind {
+                RemoteKind::Lock => "lock".into(),
+                _ => "forget_unlock".into(),
+            },
+            details: Vec::new(),
+            targets: Vec::new(),
+            remember_allowed: false,
+            strong_required: false,
+            confirm_code: String::new(),
+            unlock_eph_pub: None,
+            transfer_key: None,
+            window_minutes: None,
+        };
+        let me = self.with(|repo| this_device(repo))?;
+        let me = identity(keys, me)?;
+        self.with(|repo| self.seal_to(repo, &me, mac, kind, &body))
     }
 }
 
@@ -877,9 +970,71 @@ impl RemoteUnlocker {
         body: FfiRequestBody,
         window_minutes: u32,
     ) -> Result<FfiSealedRequest, OnePassError> {
-        let phone = parse_id(&phone_id)?;
+        self.begin_at(phone_id, body, window_minutes, unix_now())
+    }
+
+    /// The phone's answer: an approval opens `c` with `K_r` and the store
+    /// with the AUK, as an agents-only session for the window of `begin`.
+    /// A refusal is `Validation("remote_unlock", "denied")`; an answer
+    /// after the request expired counts as a refusal and is
+    /// `Integrity("remote_expired")`; an AUK that no longer opens the
+    /// account (password changed elsewhere) is `RemoteUnlockStale`, and the
+    /// caller erases `c` and asks to enroll again. A forged or misdirected
+    /// answer is refused and the wait goes on. `K_r`, the AUK and the
+    /// ephemeral key are wiped.
+    pub fn finish(&self, response_blob: Vec<u8>, c: Vec<u8>) -> Result<Arc<Session>, OnePassError> {
+        self.finish_at(response_blob, c, unix_now())
+    }
+
+    /// Mac side, locked, agents-only or open: a notice from an enrolled
+    /// phone (`Lock`: end the agents-only window; `ForgetUnlock`: erase
+    /// `C`), checked like a request (signing phone in the verified list,
+    /// addressed to this Mac, expiry, replay with a guard kept in the local
+    /// meta). Any other kind is refused.
+    pub fn open_remote_notice(&self, blob: Vec<u8>) -> Result<FfiNotice, OnePassError> {
+        let _meta = lock(&META);
         let mut store = self.store()?;
-        let now = unix_now();
+        let approvers = locked_approvers(&store)?;
+        let mut guard = match store.meta(NOTICE_REPLAY_KEY)? {
+            Some(b) => ReplayGuard::from_bytes(&b)?,
+            None => ReplayGuard::new(),
+        };
+        let (request, _) =
+            core_remote::open_request(&blob, &self.me, &approvers.entries, unix_now(), &mut guard)?;
+        let kind = match request.kind {
+            RemoteKind::Lock => FfiNoticeKind::Lock,
+            RemoteKind::ForgetUnlock => FfiNoticeKind::ForgetUnlock,
+            _ => return Err(invalid("remote kind")),
+        };
+        store.set_meta(NOTICE_REPLAY_KEY, &guard.to_bytes()?)?;
+        Ok(FfiNotice {
+            kind,
+            from: id_hex(request.from),
+        })
+    }
+
+    /// The phone's decision in the last answer `finish` accepted (`Once` or
+    /// `Grant5m` also cover the agent request that asked).
+    pub fn last_decision(&self) -> Option<FfiRemoteDecision> {
+        *lock(&self.last_decision)
+    }
+}
+
+impl RemoteUnlocker {
+    /// `begin` with the clock given (tests).
+    #[doc(hidden)]
+    pub fn begin_at(
+        &self,
+        phone_id: String,
+        body: FfiRequestBody,
+        window_minutes: u32,
+        now: i64,
+    ) -> Result<FfiSealedRequest, OnePassError> {
+        let phone = parse_id(&phone_id)?;
+        // Held from the throttle read to its write: no two requests slip
+        // through one interval.
+        let _meta = lock(&META);
+        let mut store = self.store()?;
         let mut throttle = load_throttle(&store)?;
         let waiting = load_waiting(&store)?;
         if settle(&mut throttle, waiting, now) {
@@ -899,6 +1054,7 @@ impl RemoteUnlocker {
             RemoteKind::ApproveAndUnlock,
             approvers.device_list_seq,
             approvers.approver_list_seq,
+            now,
         )?;
         let blob = core_remote::seal_request(&self.me.signing, to, h.clone(), &body)?;
         throttle.requested(now);
@@ -915,20 +1071,21 @@ impl RemoteUnlocker {
         Ok(sealed(&h, blob))
     }
 
-    /// The phone's answer: an approval opens `c` with `K_r` and the store
-    /// with the AUK, as an agents-only session for the window of `begin`.
-    /// A refusal is `Validation("remote_unlock", "denied")`; an AUK that
-    /// no longer opens the account (password changed elsewhere) is
-    /// `RemoteUnlockStale`, and the caller erases `c` and asks to enroll
-    /// again. `K_r`, the AUK and the ephemeral key are wiped.
-    pub fn finish(&self, response_blob: Vec<u8>, c: Vec<u8>) -> Result<Arc<Session>, OnePassError> {
+    /// `finish` with the clock given (tests).
+    #[doc(hidden)]
+    pub fn finish_at(
+        &self,
+        response_blob: Vec<u8>,
+        c: Vec<u8>,
+        now: i64,
+    ) -> Result<Arc<Session>, OnePassError> {
         let c = Zeroizing::new(c);
+        let meta = lock(&META);
         let mut slot = lock(&self.waiting);
         let mut waiting = slot
             .take()
             .ok_or_else(|| integrity(IntegrityError::RemoteUnknownRequest))?;
         let mut store = self.store()?;
-        let now = unix_now();
         let approvers = locked_approvers(&store)?;
         let response = match core_remote::open_response(
             &response_blob,
@@ -960,9 +1117,10 @@ impl RemoteUnlocker {
         }
         throttle.approved();
         save_throttle(&mut store, &throttle, None)?;
+        drop(meta);
 
         let stale = |e: Error| match e {
-            Error::WrongPassword | Error::Crypto | Error::Integrity(IntegrityError::Aead) => {
+            Error::WrongPassword | Error::Integrity(IntegrityError::Aead) => {
                 OnePassError::RemoteUnlockStale
             }
             other => other.into(),
@@ -976,12 +1134,6 @@ impl RemoteUnlocker {
         repo.persist_device_state()?;
         let ends_at = now.saturating_add(i64::from(waiting.window_minutes) * 60);
         Session::new_agent_only(repo, ends_at)
-    }
-
-    /// The phone's decision in the last answer `finish` accepted (`Once` or
-    /// `Grant5m` also cover the agent request that asked).
-    pub fn last_decision(&self) -> Option<FfiRemoteDecision> {
-        *lock(&self.last_decision)
     }
 }
 
@@ -1023,7 +1175,7 @@ mod tests {
     }
 
     #[test]
-    fn approver_keys_round_trip_and_debug_hides_secrets() {
+    fn approver_keys_round_trip() {
         let keys = generate_approver_keys().unwrap();
         let id = identity(keys.clone(), Id([3; 16])).unwrap();
         assert_eq!(id.device_id, Id([3; 16]));
@@ -1037,33 +1189,5 @@ mod tests {
             )
             .is_err()
         );
-        let opened = FfiOpenedRequest {
-            request_id: vec![0; 16],
-            from: String::new(),
-            from_name: String::new(),
-            kind: FfiRemoteKind::Pair,
-            created_at: 0,
-            expires_at: 0,
-            body: body_to_ffi(&body_to_core(
-                FfiRequestBody {
-                    client: String::new(),
-                    client_verified: false,
-                    action: String::new(),
-                    details: Vec::new(),
-                    targets: Vec::new(),
-                    remember_allowed: false,
-                    strong_required: false,
-                    confirm_code: String::new(),
-                    window_minutes: None,
-                },
-                None,
-                None,
-                None,
-            )),
-            transfer_key: Some(vec![0xAB; 32]),
-        };
-        let shown = format!("{opened:?}");
-        assert!(!shown.contains("171"), "{shown}");
-        assert!(shown.contains("**"));
     }
 }
