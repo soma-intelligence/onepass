@@ -24,6 +24,7 @@ pub mod model;
 pub mod pairing;
 pub mod reference;
 pub mod remote;
+pub mod remote_unlock;
 pub mod repo;
 pub mod store;
 pub mod sync;
