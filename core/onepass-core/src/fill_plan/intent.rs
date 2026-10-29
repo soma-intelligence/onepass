@@ -45,8 +45,12 @@ pub fn intent_of(form: &FormContext) -> Intent {
         return Intent::Signup;
     }
     // 5. A one-time code alone ("remember me" is not a fill target).
-    let mut fillable = roles.iter().filter(|r| **r != FieldRole::RememberMe);
-    if fillable.clone().next().is_some() && fillable.all(|r| *r == FieldRole::Otp) {
+    let fillable: Vec<FieldRole> = roles
+        .iter()
+        .copied()
+        .filter(|r| *r != FieldRole::RememberMe)
+        .collect();
+    if !fillable.is_empty() && fillable.iter().all(|r| *r == FieldRole::Otp) {
         return Intent::Otp;
     }
     // 6. A current password, or an identifier alone.
@@ -54,9 +58,10 @@ pub fn intent_of(form: &FormContext) -> Intent {
         return Intent::Login;
     }
     // 7. Address or identity fields only.
-    if roles
-        .iter()
-        .all(|r| r.is_identity_or_address() || *r == FieldRole::RememberMe)
+    if roles.iter().any(|r| r.is_identity_or_address())
+        && roles
+            .iter()
+            .all(|r| r.is_identity_or_address() || *r == FieldRole::RememberMe)
     {
         return Intent::Address;
     }
@@ -169,5 +174,21 @@ mod tests {
     fn identity_fields_only_is_address() {
         let f = form(&[FieldRole::GivenName, FieldRole::City, FieldRole::PostalCode]);
         assert_eq!(intent_of(&f), Intent::Address);
+    }
+
+    #[test]
+    fn remember_me_alone_is_ignore() {
+        assert_eq!(intent_of(&form(&[FieldRole::RememberMe])), Intent::Ignore);
+    }
+
+    #[test]
+    fn identity_with_remember_me_is_address() {
+        let f = form(&[FieldRole::GivenName, FieldRole::RememberMe]);
+        assert_eq!(intent_of(&f), Intent::Address);
+    }
+
+    #[test]
+    fn unknown_only_is_ignore() {
+        assert_eq!(intent_of(&form(&[FieldRole::Unknown])), Intent::Ignore);
     }
 }

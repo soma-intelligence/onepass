@@ -328,6 +328,18 @@ mod tests {
     }
 
     #[test]
+    fn rejects_duplicate_field_ref_in_one_form() {
+        let p = page(vec![form(
+            "f",
+            vec![
+                field("a", FieldRole::Username),
+                field("a", FieldRole::Email),
+            ],
+        )]);
+        assert_eq!(p.validate(), Err(ContextError::DuplicateRef));
+    }
+
+    #[test]
     fn rejects_duplicate_form_ref() {
         let p = page(vec![form("f", vec![]), form("f", vec![])]);
         assert_eq!(p.validate(), Err(ContextError::DuplicateRef));
