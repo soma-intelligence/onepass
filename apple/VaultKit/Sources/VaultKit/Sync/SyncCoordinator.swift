@@ -588,9 +588,9 @@ public actor SyncCoordinator: SyncTrigger {
         try await CoreThread.run { try store.beginZoneReset(tokenKey: Self.tokenKey) }
     }
 
-    /// A record the core can stage: known kind (1 to 9), canonical id, version that fits SQLite.
+    /// A record the core can stage: known kind (1 to 10), canonical id, version that fits SQLite.
     static func isValid(_ record: RemoteRecord) -> Bool {
-        (1...9).contains(record.name.kind)
+        (1...10).contains(record.name.kind)
             && RecordName(string: record.name.string) == record.name
             && record.version <= UInt64(Int64.max)
     }
