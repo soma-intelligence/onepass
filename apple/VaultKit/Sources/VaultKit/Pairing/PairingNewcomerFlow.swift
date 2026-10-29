@@ -19,6 +19,8 @@ public final class PairingNewcomerFlow {
         case idle
         /// Show `qrText` as a QR code until `expiresAt` (a new one replaces it before).
         case showingCode(qrText: String, expiresAt: Date)
+        /// A code was scanned or typed: connecting to the device that shows it.
+        case joining
         /// Compare `sas` with the approver's screen.
         case comparing(sas: String)
         /// Confirmed here; the approver confirms and grants.
@@ -36,7 +38,7 @@ public final class PairingNewcomerFlow {
 
         public static func == (a: State, b: State) -> Bool {
             switch (a, b) {
-            case (.idle, .idle), (.waitingForApproval, .waitingForApproval), (.receivedFull, .receivedFull),
+            case (.idle, .idle), (.joining, .joining), (.waitingForApproval, .waitingForApproval), (.receivedFull, .receivedFull),
                 (.importing, .importing), (.done, .done), (.cancelled, .cancelled):
                 true
             case (.showingCode(let q1, let e1), .showingCode(let q2, let e2)): q1 == q2 && e1 == e2
@@ -119,6 +121,21 @@ public final class PairingNewcomerFlow {
             return
         }
         run = Task { [weak self] in await self?.pair() }
+    }
+
+    /// The other direction (rendezvous): the unlocked device shows a code (QR or `XXXX-XXXX`), this one
+    /// scans or types it, connects to the service that code names, proves it knows the code in its
+    /// Hello and gets the key exchange. Then the same code comparison, confirmation and grant as
+    /// `start()`. A malformed code ends at once with `badCode`; a code nobody shows, after the
+    /// connector's timeout, with `hostNotFound`.
+    public func join(code: String, connector: any PairingConnector) {
+        guard state == .idle else { return }
+        if vault.state != .noAccount, mode != .public {
+            state = .failed(.accountExists)
+            return
+        }
+        state = .joining
+        run = Task { [weak self] in await self?.joinHost(code: code, connector: connector) }
     }
 
     /// The user saw the same code on both screens: tells the approver.
@@ -214,6 +231,46 @@ public final class PairingNewcomerFlow {
         transport = connection.transport
         state = .comparing(sas: connection.sas)
         await receiveGrant(newcomer: connection.newcomer, transport: connection.transport)
+    }
+
+    private func joinHost(code: String, connector: any PairingConnector) async {
+        let (name, kind, mode) = (deviceName, deviceKind, mode)
+        let nowUnix = Int64(now().timeIntervalSince1970)
+        let newcomer: PairingNewcomer
+        do {
+            newcomer = try await CoreThread.run {
+                try PairingNewcomer.join(name: name, kind: kind, mode: mode, code: code, now: nowUnix)
+            }
+        } catch {
+            stop(.failed(.badCode))
+            return
+        }
+        let transport: any PairingTransport
+        let sas: String
+        do {
+            transport = try await connector.connect(serviceName: newcomer.serviceName())
+            do {
+                let exchange = try await Self.handshake(transport, hello: newcomer.hello(), within: handshakeTimeout)
+                let received = Int64(now().timeIntervalSince1970)
+                sas = try await CoreThread.run { try newcomer.onKeyExchange(bytes: exchange, now: received) }
+                try Task.checkCancellation()
+            } catch {
+                transport.close()
+                throw error
+            }
+        } catch is CancellationError {
+            return
+        } catch PairingTransportError.notFound {
+            stop(.failed(.hostNotFound))
+            return
+        } catch {
+            stop(.failed(PairingFailure(error)))
+            return
+        }
+        self.newcomer = newcomer
+        self.transport = transport
+        state = .comparing(sas: sas)
+        await receiveGrant(newcomer: newcomer, transport: transport)
     }
 
     /// Publishes a QR until an approver's key exchange is validated, a new QR every `renewEvery`
