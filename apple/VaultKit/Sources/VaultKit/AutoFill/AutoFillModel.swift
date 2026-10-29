@@ -44,6 +44,9 @@ public final class AutoFillModel {
     @ObservationIgnored private let ownAppIDs: Set<String>
     @ObservationIgnored private let onComplete: (AutoFillResult) -> Void
     @ObservationIgnored private var wrote = false
+    /// The service each Login of the current list matched (`"<vault id>:<item id>"` to service): what a
+    /// fill from the list remembers. `others` are not in it.
+    @ObservationIgnored private var listedServices: [String: String] = [:]
 
     /// `ownAppIDs`: the containing app's bundle identifier, with and without the team prefix.
     public init(
@@ -191,9 +194,12 @@ public final class AutoFillModel {
 
     // MARK: - Lists
 
+    /// The matches of each service follow the core's plan for it (the Login used last there first),
+    /// then the rest in the candidates' order.
     private func listScreen(services: [String], passkey: PasskeyRequest?, oneTimeCode: Bool) async throws -> Screen {
         var matches: [FfiAutofillCandidate] = []
         var seen = Set<String>()
+        listedServices = [:]
         if let passkey {
             for candidate in try await session.autofillCandidates(service: passkey.rpID, includeAll: false) {
                 let offered = offering(candidate)
@@ -201,9 +207,11 @@ public final class AutoFillModel {
             }
         }
         for service in services {
-            for candidate in try await session.autofillCandidates(service: service, includeAll: false)
-            where seen.insert(candidate.itemId).inserted {
+            let candidates = try await session.autofillCandidates(service: service, includeAll: false)
+            let plan = try await session.autofillPlan(service: service, request: oneTimeCode ? .oneTimeCode : .password)
+            for candidate in Self.ordered(candidates, by: plan) where seen.insert(candidate.itemId).inserted {
                 matches.append(offering(candidate))
+                listedServices["\(candidate.vaultId):\(candidate.itemId)"] = service
             }
         }
         let anchor = services.first ?? passkey?.rpID ?? ""
@@ -215,6 +223,18 @@ public final class AutoFillModel {
             others.removeAll { !$0.hasTotp }
         }
         return .list(matches, others: others)
+    }
+
+    /// `candidates` with the plan's items first, in the plan's order; the others keep their order.
+    nonisolated static func ordered(_ candidates: [FfiAutofillCandidate], by plan: FfiAutofillPlan) -> [FfiAutofillCandidate] {
+        let position = Dictionary(plan.itemIds.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return candidates.enumerated()
+            .sorted { a, b in
+                let pa = position[a.element.itemId] ?? Int.max
+                let pb = position[b.element.itemId] ?? Int.max
+                return pa != pb ? pa < pb : a.offset < b.offset
+            }
+            .map(\.element)
     }
 
     /// The candidate with only the passkeys this request accepts (none without a passkey request).
@@ -256,9 +276,16 @@ public final class AutoFillModel {
         guard !isFinished, session.state == .unlocked, let kind = listKind, listed(candidate) != nil else { return }
         do {
             let item = try await session.loadItem(vaultID: candidate.vaultId, itemID: candidate.itemId)
+            let service = listedServices["\(candidate.vaultId):\(candidate.itemId)"]
             if kind == .oneTimeCode {
-                finish(try oneTimeCodeResult(item) ?? .cancelled(.credentialNotFound))
+                guard let result = try oneTimeCodeResult(item) else {
+                    finish(.cancelled(.credentialNotFound))
+                    return
+                }
+                await noteUse(item, service: service)
+                finish(result)
             } else {
+                await noteUse(item, service: service)
                 finish(passwordResult(item))
             }
         } catch {
@@ -308,12 +335,14 @@ public final class AutoFillModel {
         switch kind {
         case .password:
             if let item {
+                await noteUse(item, service: services.first)
                 finish(passwordResult(item))
             } else {
                 screen = try await listScreen(services: services, passkey: nil, oneTimeCode: false)
             }
         case .oneTimeCode:
             if let item, let result = try oneTimeCodeResult(item) {
+                await noteUse(item, service: services.first)
                 finish(result)
             } else {
                 screen = try await listScreen(services: services, passkey: nil, oneTimeCode: true)
@@ -355,6 +384,20 @@ public final class AutoFillModel {
             return nil
         }
         return item
+    }
+
+    /// Remembers a fill of `service` by `item` (site memory: the next plans and identity ranks), then
+    /// publishes the new ranks before the session locks. Best effort: a failure never stops the fill.
+    /// Nil `service` (a Login from `others`, or a direct request without a service) remembers nothing.
+    private func noteUse(_ item: FfiItem, service: String?) async {
+        guard let service, !service.isEmpty, !isFinished else { return }
+        do {
+            try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", service: service)
+        } catch {
+            return
+        }
+        wrote = true
+        await session.publishAutofillIdentitiesNow()
     }
 
     private func assertion(

@@ -12,6 +12,7 @@
 //! usage over (`merge_trailers`). Forgetting a site leaves a tombstone in
 //! the trailer, so the union of that merge does not bring the site back.
 
+use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,8 @@ use time::{Duration, OffsetDateTime};
 
 use crate::fill_plan::context::FieldRole;
 use crate::fill_plan::intent::Intent;
+use crate::fill_plan::score::UsageSignal;
+use crate::id::Id;
 use crate::model::item::Item;
 
 /// Most sites remembered per item: the least recently used go first.
@@ -159,6 +162,20 @@ pub fn merge_trailers(a: &UsageTrailer, b: &UsageTrailer) -> UsageTrailer {
     UsageTrailer { sites, forgotten }
 }
 
+/// The one item among `items` used last on `site`: the latest `last_at`, a
+/// tie to the higher count, then the lowest item id. The caller passes the
+/// candidates of one kind, so there is exactly one `last_on_site` per kind.
+pub fn last_used_on<'a>(items: impl IntoIterator<Item = &'a Item>, site: &str) -> Option<Id> {
+    items
+        .into_iter()
+        .filter_map(|i| {
+            i.usage_on(site)
+                .map(|u| (u.last_at, u.count, Reverse(i.id), i.id))
+        })
+        .max()
+        .map(|(.., id)| id)
+}
+
 impl Item {
     /// Remember a fill of `u.site` at `now`. `true` when the item must be
     /// saved: the site is new for it, or its shape or intent changed, or its
@@ -205,6 +222,46 @@ impl Item {
         bury(&mut self.usage, &self.usage_forgotten);
         settle(&mut self.usage);
         write && self.usage.iter().any(|e| e.site == site)
+    }
+
+    /// What this item remembers of `site`.
+    pub fn usage_on(&self, site: &str) -> Option<&SiteUsage> {
+        self.usage.iter().find(|e| e.site == site)
+    }
+
+    /// The ranking signal of this item's memory of `site`, for
+    /// `fill_plan::score`: `last` is `last_used_on` of the candidates,
+    /// `shape` the form shape of the page if known.
+    pub fn usage_signal(
+        &self,
+        site: &str,
+        last: Option<Id>,
+        shape: Option<[u8; 16]>,
+    ) -> Option<UsageSignal> {
+        self.usage_on(site).map(|u| UsageSignal {
+            last_on_site: Some(self.id) == last,
+            same_shape: Some(u.form_shape_hash) == shape,
+            count: u.count,
+            last_at: u.last_at.unix_timestamp(),
+        })
+    }
+
+    /// Another of `others` (the caller keeps the eligible items of this
+    /// item's kind) used `site` after this item did: a new use of this item
+    /// must then be written even within `REWRITE_AFTER_SECS`, or the other
+    /// stays the last used there (A, B, then A within the hour).
+    pub fn used_later_by_another<'a>(
+        &self,
+        site: &str,
+        others: impl IntoIterator<Item = &'a Item>,
+    ) -> bool {
+        self.site_last_at(site).is_some_and(|own| {
+            others
+                .into_iter()
+                .filter(|o| o.id != self.id)
+                .filter_map(|o| o.site_last_at(site))
+                .any(|at| at > own)
+        })
     }
 
     /// When this item last filled `site`, if it remembers it.
@@ -288,6 +345,39 @@ mod tests {
             form_shape_hash(&[FieldRole::CurrentPassword, FieldRole::Username]),
             form_shape_hash(LOGIN)
         );
+    }
+
+    #[test]
+    fn last_used_on_breaks_ties_by_count_then_lowest_id() {
+        let t1 = T0 + Duration::minutes(1);
+        let (mut a, mut b, c) = (item(), item(), item());
+        a.id = Id([2; 16]);
+        b.id = Id([1; 16]);
+        assert_eq!(last_used_on([&a, &b, &c], "example.com"), None);
+        a.note_usage(usage("example.com", LOGIN, T0), T0);
+        b.note_usage(usage("example.com", LOGIN, T0), T0);
+        assert_eq!(last_used_on([&a, &b], "example.com"), Some(b.id));
+        a.note_usage_with(usage("example.com", LOGIN, T0), T0, true);
+        assert_eq!(last_used_on([&a, &b], "example.com"), Some(a.id));
+        b.note_usage_with(usage("example.com", LOGIN, t1), t1, true);
+        assert_eq!(last_used_on([&a, &b, &c], "example.com"), Some(b.id));
+        let signal = |i: &Item| i.usage_signal("example.com", Some(b.id), None);
+        assert!(signal(&b).is_some_and(|u| u.last_on_site && !u.same_shape));
+        assert!(signal(&a).is_some_and(|u| !u.last_on_site && u.count == 2));
+        assert_eq!(signal(&c), None);
+    }
+
+    #[test]
+    fn used_later_by_another_needs_an_own_entry_and_a_later_other() {
+        let t1 = T0 + Duration::minutes(1);
+        let (mut a, mut b) = (item(), item());
+        assert!(!a.used_later_by_another("example.com", [&b]));
+        b.note_usage(usage("example.com", LOGIN, T0), T0);
+        assert!(!a.used_later_by_another("example.com", [&b]));
+        a.note_usage(usage("example.com", LOGIN, t1), t1);
+        assert!(!a.used_later_by_another("example.com", [&a, &b]));
+        assert!(b.used_later_by_another("example.com", [&a, &b]));
+        assert!(!b.used_later_by_another("other.com", [&a, &b]));
     }
 
     #[test]

@@ -1011,6 +1011,40 @@ public final class VaultSession {
         }
     }
 
+    /// The Logins to offer first for `service`, as item ids (at most six), ranked by the core with
+    /// what it remembers of the site; only Logins with a code for `.oneTimeCode`. Hidden vaults are
+    /// left out.
+    public func autofillPlan(service: String, request: FfiAutofillRequest) async throws -> FfiAutofillPlan {
+        let excluded = excludedVaultIDs
+        return try await read {
+            try $0.autofillPlan(service: service, request: request, excludedVaultIds: excluded)
+        }
+    }
+
+    /// Remembers that AutoFill filled `service` with the Login `recordID` (`"<vault id>:<item id>"`),
+    /// for the next plans and identity ranks. The Login must match `service`; one of a hidden vault is
+    /// `NotFound`.
+    public func noteAutofillUse(recordID: String, service: String) async throws {
+        let excluded = excludedVaultIDs
+        try await write {
+            try $0.noteAutofillUse(recordId: recordID, service: service, excludedVaultIds: excluded)
+        }
+    }
+
+    /// The sites the visible vaults remember a choice for (registrable domains, sorted).
+    public func knownUsageSites() async throws -> [String] {
+        let excluded = excludedVaultIDs
+        return try await read { try $0.knownUsageSites(excludedVaultIds: excluded) }
+    }
+
+    /// "Oublier les choix pour un site": forgets `site` in every item of the visible vaults (other
+    /// devices drop it at the next sync). Returns how many items were rewritten.
+    @discardableResult
+    public func forgetSiteUsage(site: String) async throws -> Int {
+        let excluded = excludedVaultIDs
+        return Int(try await write { try $0.forgetSiteUsage(site: site, excludedVaultIds: excluded) })
+    }
+
     /// Creates a passkey (key pair generated and kept by the core) in an existing Login or a new one,
     /// then reloads the lists and publishes the new identity. `.other` when the relying party already
     /// holds one of `excludedCredentialIds` (`PasskeyExcluded`).

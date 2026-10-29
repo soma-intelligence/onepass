@@ -2,12 +2,15 @@
 //! passkey registration and assertion. No secret value crosses here, and the
 //! passkey private key never leaves the Rust.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use onepass_core::Id;
+use onepass_core::fill_plan::intent::Intent;
 use onepass_core::fill_plan::score::{
-    Candidate, CandidateKind, MatchQuality as PlanQuality, Tiebreak, order,
+    Candidate, CandidateKind, Confidence, MatchQuality as PlanQuality, Tiebreak, confidence, order,
+    score,
 };
+use onepass_core::model::usage::{SiteUsage, StepKind, form_shape_hash, last_used_on};
 use onepass_core::model::{
     self, Field, FieldType, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule,
     PasskeyCredential,
@@ -23,6 +26,12 @@ use crate::session::{Repo, Session, find_item, find_vault};
 use crate::types::*;
 
 const PASSKEYS: &str = "passkeys";
+/// `FfiAutofillIdentity::rank` of the Login used last on the site.
+const RANK_LAST_USED: u32 = 100;
+/// `FfiAutofillIdentity::rank` of a favorite.
+const RANK_FAVORITE: u32 = 50;
+/// Most items in an `FfiAutofillPlan`.
+const PLAN_MAX: usize = 6;
 
 /// Host of a site as compared for AutoFill: lower-case ASCII (punycode), an
 /// IP address marked as such.
@@ -63,6 +72,15 @@ fn site(raw: &str) -> Option<Site> {
         return None;
     }
     Some(Site { host, ip })
+}
+
+/// The key of a site in the usage memory, as the bridge writes it: the
+/// registrable domain (eTLD+1), the address itself for an IP.
+fn usage_site(s: &Site) -> String {
+    if s.ip {
+        return s.host.clone();
+    }
+    psl::domain_str(&s.host).unwrap_or(&s.host).to_owned()
 }
 
 /// How the URL of a Login matches the requested site under its rule.
@@ -135,6 +153,30 @@ fn record_id(item: &Item) -> String {
     format!("{}:{}", id_hex(item.vault_id), id_hex(item.id))
 }
 
+/// `"<vault id>:<item id>"` back to its two ids.
+fn parse_record_id(record: &str) -> Result<(Id, Id), OnePassError> {
+    let (vault, item) = record.split_once(':').ok_or_else(|| invalid("record id"))?;
+    Ok((parse_id(vault)?, parse_id(item)?))
+}
+
+/// A Login the system AutoFill may offer: live and not hidden from AutoFill.
+fn offerable(item: &Item) -> bool {
+    live_login(item) && !item.hide_from_autofill
+}
+
+fn ffi_confidence(c: Confidence) -> FfiConfidence {
+    match c {
+        Confidence::Low => FfiConfidence::Low,
+        Confidence::Medium => FfiConfidence::Medium,
+        Confidence::High => FfiConfidence::High,
+    }
+}
+
+/// Unix seconds, the clock of `UsageSignal::last_at`.
+fn unix_now() -> i64 {
+    OffsetDateTime::now_utc().unix_timestamp()
+}
+
 /// Every item of every vault but the excluded ones.
 fn visible_items(repo: &mut Repo, excluded: &HashSet<Id>) -> Result<Vec<Item>, OnePassError> {
     let mut out = Vec::new();
@@ -150,11 +192,26 @@ fn parse_ids(ids: &[String]) -> Result<HashSet<Id>, OnePassError> {
     ids.iter().map(|s| parse_id(s)).collect()
 }
 
-fn identities_of(item: &Item, out: &mut Vec<FfiAutofillIdentity>) {
+/// The identities of one Login. `last_used`: the Login used last on each
+/// usage site, which gets `RANK_LAST_USED` on that site's identities.
+fn identities_of(item: &Item, last_used: &HashMap<String, Id>, out: &mut Vec<FfiAutofillIdentity>) {
     let user = item.subtitle();
+    let rank = |service: &str| {
+        let last = site(service)
+            .map(|s| usage_site(&s))
+            .and_then(|s| last_used.get(&s).copied());
+        if last == Some(item.id) {
+            RANK_LAST_USED
+        } else if item.favorite {
+            RANK_FAVORITE
+        } else {
+            0
+        }
+    };
     let entry =
         |kind, service: String, credential_id, user_handle, user: &str| FfiAutofillIdentity {
             kind,
+            rank: rank(&service),
             service,
             user: user.to_owned(),
             record_id: record_id(item),
@@ -328,17 +385,29 @@ impl Session {
     /// not hidden from AutoFill, a password identity per URL host, a one-time
     /// code identity per URL host when the TOTP is filled, and a passkey
     /// identity per passkey. Items of `excluded_vault_ids` are skipped.
+    /// `rank`: the Login used last on the identity's site (of those
+    /// published) first, then favorites.
     pub fn autofill_identities(
         &self,
         excluded_vault_ids: Vec<String>,
     ) -> Result<Vec<FfiAutofillIdentity>, OnePassError> {
         let excluded = parse_ids(&excluded_vault_ids)?;
         self.with(|repo| {
+            let items: Vec<Item> = visible_items(repo, &excluded)?
+                .into_iter()
+                .filter(offerable)
+                .collect();
+            let sites: BTreeSet<&str> = items
+                .iter()
+                .flat_map(|i| i.usage.iter().map(|u| u.site.as_str()))
+                .collect();
+            let last_used: HashMap<String, Id> = sites
+                .into_iter()
+                .filter_map(|s| last_used_on(&items, s).map(|id| (s.to_owned(), id)))
+                .collect();
             let mut out = Vec::new();
-            for item in visible_items(repo, &excluded)? {
-                if live_login(&item) && !item.hide_from_autofill {
-                    identities_of(&item, &mut out);
-                }
+            for item in &items {
+                identities_of(item, &last_used, &mut out);
             }
             let mut seen = HashSet::new();
             out.retain(|i| {
@@ -409,6 +478,140 @@ impl Session {
                 .iter()
                 .filter_map(|c| by_id.get_mut(&c.item_id)?.pop_front())
                 .collect())
+        })
+    }
+
+    /// The Logins to offer first for `service` (a domain or a URL from the
+    /// system), as item ids, at most six: the candidates of
+    /// `autofill_candidates` (without `include_all`), with a TOTP for a
+    /// `OneTimeCode` request, ranked by `fill_plan::score::order` with their
+    /// memory of the site. The system never shows the page, so there is no
+    /// form context: no typed username, no form shape, and the field asked
+    /// for counts as recognized for the confidence. Without memory the order
+    /// is that of `autofill_candidates`. No site gives an empty `Low` plan.
+    pub fn autofill_plan(
+        &self,
+        service: String,
+        request: FfiAutofillRequest,
+        excluded_vault_ids: Vec<String>,
+    ) -> Result<FfiAutofillPlan, OnePassError> {
+        let excluded = parse_ids(&excluded_vault_ids)?;
+        let Some(target) = site(&service) else {
+            return Ok(FfiAutofillPlan {
+                item_ids: Vec::new(),
+                confidence: FfiConfidence::Low,
+            });
+        };
+        let key = usage_site(&target);
+        self.with(|repo| {
+            let items = visible_items(repo, &excluded)?;
+            let matched: Vec<(&Item, FfiMatchQuality)> = items
+                .iter()
+                .filter(|i| offerable(i))
+                .filter(|i| request == FfiAutofillRequest::Password || filled(i, "totp"))
+                .filter_map(|i| item_quality(&target, i).map(|(q, _)| (i, q)))
+                .collect();
+            let last = last_used_on(matched.iter().map(|(i, _)| *i), &key);
+            let mut cands: Vec<Candidate> = matched
+                .iter()
+                .map(|(i, q)| {
+                    let mut c = to_candidate(i, *q);
+                    c.usage = i.usage_signal(&key, last, None);
+                    c
+                })
+                .collect();
+            let now = unix_now();
+            order(&mut cands, None, now, Tiebreak::FavoriteThenRecent);
+            let scores: Vec<i64> = cands.iter().map(|c| score(c, None, now)).collect();
+            Ok(FfiAutofillPlan {
+                confidence: ffi_confidence(confidence(&cands, &scores, true)),
+                item_ids: cands
+                    .iter()
+                    .take(PLAN_MAX)
+                    .map(|c| id_hex(c.item_id))
+                    .collect(),
+            })
+        })
+    }
+
+    /// Remember that the system AutoFill filled `service` with the Login
+    /// `record_id` (`"<vault id>:<item id>"`), for the next plans and
+    /// identity ranks. The Login must be offerable (live, not hidden from
+    /// AutoFill, outside `excluded_vault_ids`: `NotFound` otherwise) and
+    /// match `service` as `autofill_candidates` matches it (`InvalidInput`
+    /// otherwise, nothing written). The page is never seen: no field roles,
+    /// intent `Login`, one `Fill` step. Written with the force rule of the
+    /// bridge's `note_fill` across the vaults not excluded.
+    pub fn note_autofill_use(
+        &self,
+        record_id: String,
+        service: String,
+        excluded_vault_ids: Vec<String>,
+    ) -> Result<(), OnePassError> {
+        let (vault_id, item_id) = parse_record_id(&record_id)?;
+        let excluded = parse_ids(&excluded_vault_ids)?;
+        if excluded.contains(&vault_id) {
+            return Err(OnePassError::NotFound);
+        }
+        let target = site(&service).ok_or_else(|| invalid("service"))?;
+        let key = usage_site(&target);
+        self.with(|repo| {
+            let items = visible_items(repo, &excluded)?;
+            let item = items
+                .iter()
+                .find(|i| i.id == item_id && i.vault_id == vault_id && offerable(i))
+                .ok_or(OnePassError::NotFound)?;
+            if item_quality(&target, item).is_none() {
+                return Err(invalid("service"));
+            }
+            let force = item.used_later_by_another(&key, items.iter().filter(|i| offerable(i)));
+            let now = OffsetDateTime::now_utc();
+            let usage = SiteUsage {
+                site: key.clone(),
+                form_shape_hash: form_shape_hash(&[]),
+                intent: Intent::Login,
+                step_seq: vec![StepKind::Fill],
+                count: 1,
+                last_at: now,
+            };
+            let vault = find_vault(repo, vault_id)?;
+            repo.record_usage(&vault, item_id, usage, now, force)?;
+            Ok(())
+        })
+    }
+
+    /// The sites the items of the vaults not excluded remember (registrable
+    /// domains, sorted), for "forget the choices for a site".
+    pub fn known_usage_sites(
+        &self,
+        excluded_vault_ids: Vec<String>,
+    ) -> Result<Vec<String>, OnePassError> {
+        let excluded = parse_ids(&excluded_vault_ids)?;
+        self.with(|repo| {
+            let sites: BTreeSet<String> = visible_items(repo, &excluded)?
+                .into_iter()
+                .flat_map(|i| i.usage.into_iter().map(|u| u.site))
+                .collect();
+            Ok(sites.into_iter().collect())
+        })
+    }
+
+    /// Forget `site` (a domain or a URL, reduced to its registrable domain)
+    /// in every item of the vaults not excluded, as the bridge's
+    /// `forget_site` does (`Repository::forget_site_usage_in`, best effort).
+    /// Returns how many items were rewritten.
+    pub fn forget_site_usage(
+        &self,
+        site: String,
+        excluded_vault_ids: Vec<String>,
+    ) -> Result<u32, OnePassError> {
+        let excluded = parse_ids(&excluded_vault_ids)?;
+        let key = self::site(&site)
+            .map(|s| usage_site(&s))
+            .ok_or_else(|| invalid("site"))?;
+        self.with(|repo| {
+            let n = repo.forget_site_usage_in(&key, |v| !excluded.contains(&v.id))?;
+            Ok(u32::try_from(n).unwrap_or(u32::MAX))
         })
     }
 

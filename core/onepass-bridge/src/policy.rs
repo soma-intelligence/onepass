@@ -4,13 +4,9 @@
 //! A summary never holds a secret. A fill gives only fields marked for
 //! autofill, and the current TOTP code, never the TOTP secret.
 
-use std::cmp::Reverse;
-
 use onepass_core::Id;
-use onepass_core::fill_plan::score::{
-    Candidate, CandidateKind, MatchQuality as PlanQuality, UsageSignal,
-};
-use onepass_core::model::usage::SiteUsage;
+use onepass_core::fill_plan::score::{Candidate, CandidateKind, MatchQuality as PlanQuality};
+use onepass_core::model::usage::last_used_on;
 use onepass_core::model::{Field, FieldValue, Item, ItemType, LoginMethod, MatchRule};
 use onepass_core::reference::otp_field_of;
 use onepass_core::totp::{code_at, parse_otpauth, seconds_remaining, totp_from_secret};
@@ -101,14 +97,7 @@ pub fn plan_candidates(
     shape: Option<[u8; 16]>,
     salt: &[u8; 32],
 ) -> Vec<Candidate> {
-    fn entry<'a>(i: &'a Item, site: &str) -> Option<&'a SiteUsage> {
-        i.usage.iter().find(|u| u.site == site)
-    }
-    let last = items
-        .iter()
-        .filter_map(|(i, _)| entry(i, site).map(|u| (u.last_at, u.count, Reverse(i.id), i.id)))
-        .max()
-        .map(|(.., id)| id);
+    let last = last_used_on(items.iter().map(|(i, _)| *i), site);
     items
         .iter()
         .map(|(i, q)| {
@@ -116,12 +105,7 @@ pub fn plan_candidates(
             if i.item_type == ItemType::Login {
                 c.username_hash = login_identifier(i).map(|u| username_hash(salt, u));
             }
-            c.usage = entry(i, site).map(|u| UsageSignal {
-                last_on_site: Some(i.id) == last,
-                same_shape: Some(u.form_shape_hash) == shape,
-                count: u.count,
-                last_at: u.last_at.unix_timestamp(),
-            });
+            c.usage = i.usage_signal(site, last, shape);
             c
         })
         .collect()

@@ -1030,13 +1030,12 @@ impl<V: VaultAccess> Service<V> {
         let site = page.site();
         // Another eligible item of this kind, in any vault, used the site
         // after this one: rewrite, or it stays `last_on_site` (spec 6.2).
-        let force = item.site_last_at(&site).is_some_and(|own| {
+        let force = item.used_later_by_another(
+            &site,
             all.iter()
                 .map(|(_, i)| i)
-                .filter(|i| i.id != id && eligible(i) && summary_kind(i.item_type) == Some(kind))
-                .filter_map(|i| i.site_last_at(&site))
-                .any(|at| at > own)
-        });
+                .filter(|i| eligible(i) && summary_kind(i.item_type) == Some(kind)),
+        );
         let (vault_id, item_id) = (vault.id, item.id);
         let at = unix(now);
         let usage = SiteUsage {
