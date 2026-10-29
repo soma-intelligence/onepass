@@ -100,6 +100,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   });
   // The chain plans unknown pages; the planner starts chains.
   const plannerRef: { current: Planner | null } = { current: null };
+  const notesRef: { current: FillNotes | null } = { current: null };
   const runner = opts.chain
     ? null
     : new ChainRunner({
@@ -113,12 +114,16 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         overlays: { open: (cs, anchor) => overlays.open(cs, anchor), hasTab: (t) => overlays.tokens.hasTab(t) },
         menuOpen: (t) => menus.hasTab(t),
         replan: (cs, itemId) => replanForChain(cs, itemId),
+        formRoles: (cs, formRef) => pageFormRoles(cs, formRef),
+        // One note per fill: a chain notes its own at done.
+        onChain: (tabId) => notesRef.current?.forget(tabId),
         ...(opts.now ? { now: opts.now } : {}),
       });
   const chain: ChainDriver = opts.chain ?? (runner as ChainRunner);
   chainRef.current = chain;
   const chainRunning = async (tabId: number) => (runner ? runner.isRunning(tabId) : false);
   const notes = new FillNotes({ session, now });
+  notesRef.current = notes;
   const savePrompts = new SavePrompts({
     ext,
     session,
@@ -152,7 +157,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   session.onLocked(() => saveFlow.clearGenerated());
   const planner = new Planner(session, filler, chain, saveFlow, {
     penalized: (origin) => hasPenalty(store.session, origin),
-    onFilled: (t, note) => notes.filled(t.tabId, t.origin, note),
+    onFilled: async (t, note) => notes.filled(t.tabId, t.origin, note, (await frames.details(t.tabId, 0))?.url ?? null),
   });
   plannerRef.current = planner;
   /** Smart fill origins of a content script frame; null for a cross-origin child (or an unknown top). */
@@ -196,6 +201,13 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     return { t, plan: await planner.plan(t, context) };
   };
 
+  /** Roles of form `formRef` in frame `cs` as the bridge's `main_roles` reads them (visible, with a role, page order). */
+  async function pageFormRoles(cs: CsContext, formRef: string): Promise<FieldRole[] | null> {
+    const body = await requestContext(cs);
+    const f = body?.forms.find((x) => x.form_ref === formRef);
+    return f ? mainRoles(body as PlanContextBody, [{ form_ref: formRef, kind: "login", item_id: null, fields: [] }]) : null;
+  }
+
   /** Spec 5.3: a chain's unknown page planned again; the plan's login group of the chain's item, if any. */
   async function replanForChain(cs: CsContext, itemId: string) {
     if (!plannerRef.current) return null;
@@ -233,8 +245,13 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     },
     smartFill: smartFillTab,
     onForgetSite: async (origin) => {
+      // The computed site and the raw host: whichever key the chain filed the penalty under.
+      const keys = new Set<string>();
       const site = siteOf(origin);
-      if (site !== null) await clearPenalty(store.session, site);
+      if (site !== null) keys.add(site);
+      const host = parseOrigin(origin)?.host;
+      if (host !== undefined) keys.add(host);
+      for (const k of keys) await clearPenalty(store.session, k);
     },
     ...(opts.now ? { now: opts.now } : {}),
   });
@@ -273,9 +290,10 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         const field: MenuField = { formRef: m.formRef, fieldRef: m.fieldRef, formKind: m.formKind };
         // Right after a plan of this very document answered "menu": its alternatives first.
         const key = `${from.tabId}:${from.frameId}`;
-        const left = planMenus.get(key);
-        planMenus.delete(key);
-        if (!m.auto && left && now() - left.at <= PLAN_MENU_MS && left.documentId === from.documentId) {
+        const left = m.auto ? undefined : planMenus.get(key);
+        // An auto menu (click into the field) leaves it for the gesture's own menu.
+        if (!m.auto) planMenus.delete(key);
+        if (left && now() - left.at <= PLAN_MENU_MS && left.documentId === from.documentId) {
           field.first = left.alternatives;
           field.planned = left.planned;
         }
@@ -388,7 +406,9 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         else if (kind === "identity") written = await filler.fillIdentity(t, m.itemId);
         else throw new BgError("invalid");
         // A pick in a menu a plan opened: the site memory learns it once the page moves on.
-        if (rec.planned && written > 0) notes.filled(rec.tabId, rec.origin, { items: [m.itemId], ...rec.planned });
+        if (rec.planned && written > 0) {
+          notes.filled(rec.tabId, rec.origin, { items: [m.itemId], ...rec.planned }, (await frames.details(rec.tabId, 0))?.url ?? null);
+        }
         return {};
       },
       menu_generate: async (m, from) => {

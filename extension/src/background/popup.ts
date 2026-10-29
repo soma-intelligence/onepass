@@ -94,7 +94,9 @@ export function planLine(plan: PlanOut, items: readonly Summary[]): PopupPlanLin
   const roles = login?.fields.map((f) => f.role) ?? [];
   const identifierOnly = roles.some((r) => r === "username" || r === "email") && !roles.includes("current_password");
   const steps = plan.intent === "login" && identifierOnly ? 2 : 1;
-  return { intent: plan.intent, label, steps };
+  // The sign-in wording only when one click signs in (a penalty already lowered High to Medium).
+  const mode = plan.action === "open_chain" && plan.confidence === "high" ? "chain" : "fill";
+  return { intent: plan.intent, label, steps, mode };
 }
 
 /** `items` with the plan's alternatives first, in the plan's order. */

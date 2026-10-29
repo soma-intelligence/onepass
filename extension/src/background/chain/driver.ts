@@ -31,7 +31,7 @@
 // of the same origin), and on every page of a running chain.
 import type { Summary } from "../../bridge/client";
 import { parseOrigin } from "../../shared/domain";
-import type { BgToCs, FormInfo, PageAnalysis, ProviderId } from "../../shared/messages";
+import type { BgToCs, FieldRole, FormInfo, PageAnalysis, ProviderId } from "../../shared/messages";
 import type { ChainView } from "../../shared/ui";
 import type { PageAnalyses } from "../analyses";
 import type { BgExt, StorageArea } from "../ext";
@@ -92,6 +92,14 @@ export interface ChainDeps {
    * login group of that item. Absent: an unknown page stops the chain.
    */
   replan?: (cs: CsContext, itemId: string) => Promise<(PlannedStep & { url: string }) | null>;
+  /**
+   * Roles of form `formRef` in frame `cs` with the filter of the bridge's
+   * `main_roles` (visible, with a role, page order), from the page context;
+   * null when the content script does not answer.
+   */
+  formRoles?: (cs: CsContext, formRef: string) => Promise<FieldRole[] | null>;
+  /** A chain started or ended `done` in this tab (the site memory drops the tab's pending fill). */
+  onChain?: (tabId: number, event: "start" | "done") => void;
   now?: () => number;
   timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(id: unknown): void };
 }
@@ -226,6 +234,7 @@ export class ChainRunner implements ChainDriver {
         now: this.now(),
       });
       await this.save(s);
+      this.deps.onChain?.(tabId, "start");
       // The page the click came from: act on it now.
       const view = await this.view(tabId, viaProvider);
       if (view?.at && view.top.origin === origin) {
@@ -417,10 +426,12 @@ export class ChainRunner implements ChainDriver {
     try {
       let missed = false;
       for (const a of r.actions) if ((await this.run(r.state, a, cs)) === "missed") missed = true;
-      if (!missed) return r.state;
+      let n = await this.exactRoles(prev, r, cs);
+      if (!missed) return n;
       // The content script found no form to submit (re-rendered meanwhile).
-      const n = submitMissed(r.state);
-      if (n !== r.state) await this.save(n);
+      const m = submitMissed(n);
+      if (m !== n) await this.save(m);
+      n = m;
       return n;
     } catch (e) {
       const code = toBgError(e).code;
@@ -428,6 +439,29 @@ export class ChainRunner implements ChainDriver {
       await this.save(n);
       return n;
     }
+  }
+
+  /**
+   * The first form a chain without a plan filled: its roles read again from
+   * the page context, with the filter of the bridge's `main_roles`, so the
+   * note's `form_shape_hash` matches the plans'. Kept from the analysis when
+   * the content script does not answer.
+   */
+  private async exactRoles(prev: ChainState, r: { state: ChainState; actions: ChainAction[] }, cs: CsContext): Promise<ChainState> {
+    const s = r.state;
+    if (s.planned || s.roles === undefined || prev.roles !== undefined || !this.deps.formRoles) return s;
+    const fill = r.actions.find((a): a is Extract<ChainAction, { type: "fill" }> => a.type === "fill");
+    if (!fill) return s;
+    let roles: FieldRole[] | null = null;
+    try {
+      roles = await this.deps.formRoles(cs, fill.formRef);
+    } catch {
+      roles = null;
+    }
+    if (roles === null) return s;
+    const n: ChainState = { ...s, roles };
+    await this.save(n);
+    return n;
   }
 
   private target(cs: CsContext, formRef: string): FillTarget {
@@ -547,6 +581,7 @@ export class ChainRunner implements ChainDriver {
   private async ended(s: ChainState): Promise<void> {
     try {
       if (s.status === "done") {
+        this.deps.onChain?.(s.tabId, "done");
         await clearPenalty(this.deps.area, s.site);
         const { roles, intent } = noteShape(s);
         await noteFill(this.deps.session, { ctx: "chain", item_id: s.itemId, origin: s.siteOrigin, roles, intent, steps: noteSteps(s) });

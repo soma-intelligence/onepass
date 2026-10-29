@@ -110,7 +110,7 @@ export interface ChainState {
   page: ChainPage;
   /** Started by a fill plan: its main form's roles and intent (for `note_fill`). */
   planned?: { roles: FieldRole[]; intent: FillIntent };
-  /** Not planned: the roles of the first form the chain filled, in page order (for `note_fill`). */
+  /** Not planned: the roles of the first form the chain filled, in page order, with the filter of `mainRoles` (for `note_fill`). */
   roles?: FieldRole[];
 }
 
@@ -405,7 +405,8 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
     st.submittedAt = now;
   }
   if ((d.kind === "otp" || d.kind === "fill") && !onProvider && !n.planned && n.roles === undefined) {
-    n.roles = d.form.fields.filter((x) => x.role !== "unknown").map((x) => x.role);
+    // The analysis lists visible fields only; the driver reads them again from the page context.
+    n.roles = d.form.fields.map((x) => x.role);
   }
   n.steps.push(st);
   return { state: n, actions };

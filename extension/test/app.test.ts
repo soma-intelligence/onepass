@@ -139,6 +139,12 @@ describe("icon click (plan_context with the gesture's form and field)", () => {
     const init = (await t.ext.send({ type: "menu_init", token }, uiSender(`menu.html#${token}`, 7))) as { ok: { items: { item_id: string }[]; best?: string } };
     expect(init.ok.items.map((x) => x.item_id)).toEqual([A, B, C]);
     expect(init.ok.best).toBeUndefined();
+    // Fix 1.7: the auto menu leaves the plan's alternatives to the next non-auto open.
+    const open2 = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login" }, t.top)) as { ok: { url: string } };
+    const token2 = open2.ok.url.split("#")[1] as string;
+    const init2 = (await t.ext.send({ type: "menu_init", token: token2 }, uiSender(`menu.html#${token2}`, 7))) as { ok: { items: { item_id: string }[]; best?: string } };
+    expect(init2.ok.items.map((x) => x.item_id)).toEqual([C, B, A]);
+    expect(init2.ok.best).toBe(C);
   });
 
   it("gesture_form_scopes_the_run: an icon runs its form's groups only, none left is the menu", async () => {
@@ -199,6 +205,41 @@ describe("site memory (note_fill)", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(t.notes()).toHaveLength(1);
     expect(JSON.stringify(t.notes())).not.toMatch(new RegExp(SECRETS.map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")));
+  });
+
+  it("a reload or a redirect to the filled page (same path) is no success: no note; another path is", async () => {
+    const t = await bg(() => plan({ action: "fill", confidence: "medium", groups: [loginGroup(A)] }));
+    await t.ext.send({ type: "plan_context", formRef: "f1", context: body(LOGIN_FORM) }, t.top);
+    t.ext.navigate(7, 0, `${SITE}/login`, "doc-2");
+    t.ext.navigate(7, 0, `${SITE}/login?error=1#top`, "doc-3");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(t.notes()).toEqual([]);
+    t.ext.navigate(7, 0, `${SITE}/home`, "doc-4");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(t.notes()).toEqual([expect.objectContaining({ item_id: A })]);
+  });
+
+  it("a plan's own fill_and_submit writes no memory (ruling: chain done, save, or fill then navigation)", async () => {
+    const t = await bg(() => plan({ intent: "otp", action: "fill_and_submit", groups: [loginGroup(A, "f1", ["otp"])] }), (r) =>
+      r.op === "fill_login" ? { totp: "123456" } : undefined,
+    );
+    const otp = body([form("f1", ["otp"], [{ button_ref: "b1", class: "submit" }])]);
+    expect(await t.ext.send({ type: "plan_context", formRef: "f1", context: otp }, t.top)).toEqual({ ok: { outcome: "filled" } });
+    expect(t.toTab("submit")).toHaveLength(1);
+    t.ext.navigate(7, 0, `${SITE}/home`, "doc-2");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(t.notes()).toEqual([]);
+  });
+
+  it("one note per fill: a confirmed save takes the fill, a later navigation notes nothing more", async () => {
+    const t = await bg(() => plan({ action: "fill", confidence: "medium", groups: [loginGroup(A)] }));
+    await t.ext.send({ type: "plan_context", formRef: "f1", context: body(LOGIN_FORM) }, t.top);
+    const token = await t.b.saves.open({ tabId: 7, origin: SITE, documentId: "doc-1", kind: "login", status: "update", username: "alex", password: "pw", update: { itemId: A, title: "Atlas" } });
+    await t.ext.send({ type: "save_decide", token, decision: "update" }, uiSender(`save.html#${token}`, 7));
+    expect(t.notes()).toHaveLength(1);
+    t.ext.navigate(7, 0, `${SITE}/home`, "doc-2");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(t.notes()).toHaveLength(1);
   });
 
   it("no note for a navigation to another site, or after 2 minutes", async () => {
@@ -277,7 +318,7 @@ describe("popup and command", () => {
     t.ext.activeTab = { id: 7, url: `${SITE}/login` };
     replyContext(t, [form("f1", ["email"], [{ button_ref: "b1", class: "next" }])]);
     const r = (await t.ext.send({ type: "popup_suggestions" }, uiSender("popup.html"))) as { ok: { items: { item_id: string }[]; plan: unknown } };
-    expect(r.ok.plan).toEqual({ intent: "login", label: "bo@atlas.dev", steps: 2 });
+    expect(r.ok.plan).toEqual({ intent: "login", label: "bo@atlas.dev", steps: 2, mode: "chain" });
     expect(r.ok.items.map((x) => x.item_id)).toEqual([B, A, C]);
     // The context came from that very document; no click, so no typed username.
     expect(t.toTab("plan_request")).toEqual([expect.objectContaining({ tabId: 7, options: { documentId: "doc-1" } })]);
@@ -287,6 +328,20 @@ describe("popup and command", () => {
     // Showing the line fills nothing.
     expect(t.ops().filter((o) => String(o).startsWith("fill_"))).toEqual([]);
     expect(t.chainCalls).toEqual([]);
+  });
+
+  it("the sign-in line only for a high open_chain; a fill (medium, or penalized) gets the fill wording", async () => {
+    for (const [p, penalty] of [
+      [plan({ action: "fill", confidence: "medium", groups: [loginGroup(B, "f1", ["email"])] }), false],
+      [plan({ action: "open_chain", groups: [loginGroup(B, "f1", ["email"])] }), true],
+    ] as const) {
+      const t = await bg(() => p);
+      t.ext.activeTab = { id: 7, url: `${SITE}/login` };
+      if (penalty) await t.ext.session.set({ [penaltyKey("atlas-cloud.test")]: { at: 1 } });
+      replyContext(t, [form("f1", ["email"])]);
+      const r = (await t.ext.send({ type: "popup_suggestions" }, uiSender("popup.html"))) as { ok: { plan: unknown } };
+      expect(r.ok.plan).toEqual({ intent: "login", label: "bo@atlas.dev", steps: 2, mode: "fill" });
+    }
   });
 
   it("no content script answer: the suggestions alone", async () => {
@@ -305,6 +360,12 @@ describe("popup and command", () => {
     expect(r).toEqual({ ok: { domain: "atlas-cloud.test", items: 2 } });
     expect(t.client.requests).toContainEqual({ op: "forget_site", ctx: "popup", site: SITE });
     expect(t.ext.session.data.has(penaltyKey("atlas-cloud.test"))).toBe(false);
+    // Fix 1.3: the key of the raw host goes too (a host tldts reduces differently than the bridge).
+    t.ext.activeTab = { id: 7, url: "https://www.atlas-cloud.test/login" };
+    await t.ext.session.set({ [penaltyKey("atlas-cloud.test")]: { at: 1 }, [penaltyKey("www.atlas-cloud.test")]: { at: 1 } });
+    await t.ext.send({ type: "popup_forget_site" }, uiSender("popup.html"));
+    expect(t.ext.session.data.has(penaltyKey("atlas-cloud.test"))).toBe(false);
+    expect(t.ext.session.data.has(penaltyKey("www.atlas-cloud.test"))).toBe(false);
     // Another extension page cannot ask for it.
     const before = t.client.requests.length;
     await t.ext.send({ type: "popup_forget_site" }, uiSender("menu.html#AbCdEfGhIjKlMnOpQrStUv", 7));

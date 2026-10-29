@@ -383,7 +383,7 @@ describe("popup: smart fill", () => {
   const planned = () =>
     worker((m) => {
       if (m.type === "popup_suggestions") {
-        return { ok: { domain: "atlas-cloud.test", items, plan: { intent: "login", label: "tom@atlas.dev", steps: 2 } } };
+        return { ok: { domain: "atlas-cloud.test", items, plan: { intent: "login", label: "tom@atlas.dev", steps: 2, mode: "chain" } } };
       }
       if (m.type === "popup_smart_fill") return { ok: { domain: "atlas-cloud.test" } };
       if (m.type === "popup_forget_site") return { ok: { domain: "atlas-cloud.test", items: 1 } };
@@ -423,17 +423,21 @@ describe("popup: smart fill", () => {
   it("the line's words for each intent, never an em dash", async () => {
     const { planText } = await import("../../src/ui/popup");
     const lines = [
-      planText({ intent: "login", label: "tom@atlas.dev", steps: 1 }),
-      planText({ intent: "login", label: "", steps: 2 }),
-      planText({ intent: "otp", label: "Atlas", steps: 1 }),
-      planText({ intent: "signup", label: "", steps: 1 }),
-      planText({ intent: "reset", label: "tom", steps: 1 }),
-      planText({ intent: "checkout", label: "Visa", steps: 1 }),
-      planText({ intent: "address", label: "", steps: 1 }),
+      planText({ intent: "login", label: "tom@atlas.dev", steps: 1, mode: "chain" }),
+      planText({ intent: "login", label: "", steps: 2, mode: "chain" }),
+      planText({ intent: "login", label: "tom@atlas.dev", steps: 2, mode: "fill" }),
+      planText({ intent: "login", label: "tom@atlas.dev", steps: 1, mode: "fill" }),
+      planText({ intent: "otp", label: "Atlas", steps: 1, mode: "fill" }),
+      planText({ intent: "signup", label: "", steps: 1, mode: "fill" }),
+      planText({ intent: "reset", label: "tom", steps: 1, mode: "fill" }),
+      planText({ intent: "checkout", label: "Visa", steps: 1, mode: "fill" }),
+      planText({ intent: "address", label: "", steps: 1, mode: "fill" }),
     ];
     expect(lines).toEqual([
       "Se connecter en tant que tom@atlas.dev",
       "Se connecter",
+      "Remplir l'identifiant de tom@atlas.dev",
+      "Remplir l'identifiant et le mot de passe de tom@atlas.dev",
       "Remplir le code à usage unique",
       "Créer le compte avec un mot de passe généré",
       "Changer le mot de passe de tom",

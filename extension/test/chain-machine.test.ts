@@ -165,6 +165,44 @@ describe("penalty", () => {
   });
 });
 
+describe("note roles and one note per fill (fix round 1)", () => {
+  it("a chain from the menu notes its form's visible roles as the page context gives them (mainRoles filter)", async () => {
+    const t = await setup();
+    t.ext.tabReply = (_tab, m) => {
+      if ((m as { type: string }).type !== "plan_request") return undefined;
+      const f = form("f1", ["email", "current_password", "unknown", "given_name"]);
+      // A hidden field: out of the shape, as in the bridge's main_roles.
+      (f.fields[3] as { visible: boolean }).visible = false;
+      return { ok: true, context: { forms: [f], typed_username_hash: null } };
+    };
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]), "doc-1");
+    await t.runner.start(7, "it_01");
+    t.ext.navigate(7, 0, `${SITE}/home`, "doc-2");
+    t.ext.complete(7, 0);
+    await analyze(t, `${SITE}/home`, page(`${SITE}/home`), "doc-2");
+    t.clock.t += UNKNOWN_MS;
+    expect((await t.runner.state(7))?.status).toBe("done");
+    expect(notes(t)).toEqual([expect.objectContaining({ roles: ["email", "current_password", "unknown"] })]);
+  });
+
+  it("a plan fill then a chain in the same tab: one note, the chain's", async () => {
+    const t = await setup(() => plan({ action: "fill", confidence: "medium", groups: [loginGroup("it_01")] }));
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]), "doc-1");
+    await t.ext.send(
+      { type: "plan_context", formRef: "f1", context: { forms: [form("f1", ["email", "current_password"])], typed_username_hash: null } },
+      csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }),
+    );
+    await t.runner.start(7, "it_01");
+    t.ext.navigate(7, 0, `${SITE}/home`, "doc-2");
+    t.ext.complete(7, 0);
+    await analyze(t, `${SITE}/home`, page(`${SITE}/home`), "doc-2");
+    t.clock.t += UNKNOWN_MS;
+    expect((await t.runner.state(7))?.status).toBe("done");
+    await vi.runAllTimersAsync();
+    expect(notes(t)).toEqual([expect.objectContaining({ ctx: "chain" })]);
+  });
+});
+
 describe("unknown page", () => {
   it("unknown_step_replans: the plan's group of the chain's item is filled and submitted", async () => {
     let planned = 0;

@@ -236,7 +236,12 @@ function planLine(v: unknown): PopupPlanLine {
   const o = obj(v);
   const steps = num(o.steps);
   if (!Number.isInteger(steps) || steps < 1 || steps > 9) throw new Bad();
-  return { intent: oneOf<PopupPlanLine["intent"]>(o.intent, LINE_INTENTS), label: str(o.label, 320), steps };
+  return {
+    intent: oneOf<PopupPlanLine["intent"]>(o.intent, LINE_INTENTS),
+    label: str(o.label, 320),
+    steps,
+    mode: oneOf<PopupPlanLine["mode"]>(o.mode, ["chain", "fill"]),
+  };
 }
 
 export const parseSuggestions = (v: unknown): PopupSuggestions | null =>

@@ -85,6 +85,13 @@ export function planText(p: PopupPlanLine): string {
   const who = p.label;
   switch (p.intent) {
     case "login":
+      if (p.mode === "fill") {
+        // Fills this page, sends nothing: no promise of a sign-in.
+        if (p.steps > 1) return who === "" ? tr("Remplir l'identifiant", "Fill the username") : tr(`Remplir l'identifiant de ${who}`, `Fill the username of ${who}`);
+        return who === ""
+          ? tr("Remplir l'identifiant et le mot de passe", "Fill the username and password")
+          : tr(`Remplir l'identifiant et le mot de passe de ${who}`, `Fill the username and password of ${who}`);
+      }
       if (who === "") return tr("Se connecter", "Sign in");
       return p.steps > 1
         ? tr(`Se connecter en tant que ${who} en ${p.steps} étapes`, `Sign in as ${who} in ${p.steps} steps`)

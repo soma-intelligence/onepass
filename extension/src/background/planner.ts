@@ -73,8 +73,8 @@ export function mainRoles(ctx: Pick<PageContext, "forms">, groups: readonly Plan
 export interface PlannerHooks {
   /** The site of `origin` lost a level of confidence (penalty.ts). */
   penalized?: (origin: string) => Promise<boolean>;
-  /** A run wrote values without a chain (for the site memory, notes.ts). */
-  onFilled?: (t: FillTarget, note: FilledNote) => void;
+  /** A run wrote values without a chain and without a submit (for the site memory, notes.ts). */
+  onFilled?: (t: FillTarget, note: FilledNote) => void | Promise<void>;
 }
 
 export interface RunOptions {
@@ -212,13 +212,20 @@ export class Planner {
         } finally {
           generated = undefined;
         }
+        let submitted = false;
         if (action === "fill_and_submit" && complete && (plan.intent !== "otp" || otpWritten)) {
           const last = plan.groups[plan.groups.length - 1] as PlanGroupOut;
           await this.filler.submit({ ...t, formRef: last.form_ref });
+          submitted = true;
         }
-        // Something went in (a generated password alone too: a save of it is noted with these roles).
-        if (wrote && made) {
-          this.hooks.onFilled?.(t, { items, roles: mainRoles(made.context, plan.groups), intent: plan.intent });
+        // Ruling: memory only after a fill without submit (then a navigation or a save), never
+        // after the plan's own submit. A generated password alone counts (its save is noted).
+        if (wrote && made && !submitted) {
+          try {
+            await this.hooks.onFilled?.(t, { items, roles: mainRoles(made.context, plan.groups), intent: plan.intent });
+          } catch {
+            // The memory is a hint: the fill stands.
+          }
         }
         return "filled";
       }

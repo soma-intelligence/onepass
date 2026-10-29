@@ -164,6 +164,8 @@ export interface PopupPlanLine {
   label: string;
   /** Steps of a sign-in (identifier then password: 2); 1 otherwise. */
   steps: number;
+  /** `chain`: one click signs in (high confidence `OpenChain`); `fill`: it fills this page, nothing is sent. */
+  mode: "chain" | "fill";
 }
 
 export interface PopupItem {
