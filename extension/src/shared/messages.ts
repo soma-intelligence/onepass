@@ -226,7 +226,17 @@ export type CsToBg =
    * open: the menu moves its highlight or activates it, the focus stays in
    * the page (spec 8.3, keyboard).
    */
-  | { type: "menu_key"; key: MenuKey };
+  | { type: "menu_key"; key: MenuKey }
+  /** The bridge session's username salt, to hash a typed username here (`withTypedUsernameHash`). */
+  | { type: "fill_salt" }
+  /**
+   * Plan the fill of this page and run the plan; `formRef` is the form the
+   * gesture came from. The origins of the context are the background's.
+   */
+  | { type: "plan_context"; formRef: string; context: PlanContextBody };
+
+/** What the content script sends of a `PageContext`: everything but the origins and frame kind. */
+export type PlanContextBody = Pick<PageContext, "forms" | "typed_username_hash">;
 
 /** Keys the content script relays to an open menu. */
 export type MenuKey = "down" | "up" | "enter";
@@ -320,6 +330,8 @@ const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "provider_click",
   "account_click",
   "menu_key",
+  "fill_salt",
+  "plan_context",
 ]);
 
 /** Cheap discriminant check for messages received from content scripts. */

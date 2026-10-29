@@ -13,12 +13,13 @@ import { SaveFlow } from "./chain/save-flow";
 import type { ChainDriver } from "./chain/types";
 import type { BgExt } from "./ext";
 import { type FillTarget, Filler } from "./fill";
-import { Frames } from "./frames";
+import { type CsContext, Frames } from "./frames";
 import { KeyRelay, type MenuRecord, MenuTokens } from "./menu";
 import { openTransport } from "./native";
 import { NeverSave } from "./never-save";
 import { Overlays, removeFrame, resizeFrame } from "./overlay";
 import { PairingFlow } from "./pairing";
+import { Planner, framesFromSender } from "./planner";
 import { PopupBackend, loginFields } from "./popup";
 import { type Handlers, createRouter } from "./router";
 import { type SavePending, SavePrompts } from "./save";
@@ -116,6 +117,10 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     ...(opts.now ? { now: opts.now } : {}),
   });
   session.onLocked(() => saveFlow.clearGenerated());
+  const planner = new Planner(session, filler, chain, saveFlow);
+  /** Smart fill origins of a content script frame; null for a cross-origin child (or an unknown top). */
+  const planOrigins = async (from: CsContext) =>
+    framesFromSender(from, from.frameId === 0 ? from.origin : await frames.frameOrigin(from.tabId, 0));
   const popup = new PopupBackend({
     ext,
     area: store.session,
@@ -176,6 +181,22 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       account_click: async (m, from) => {
         await providerFlows.onAccountClick(from, m.email);
         return {};
+      },
+      fill_salt: async (_m, from) => {
+        if (!from.origin.startsWith("https://")) throw new BgError("insecure_origin");
+        if (!(await planOrigins(from))) throw new BgError("cross_site_frame");
+        return { salt: await session.fillSalt() };
+      },
+      plan_context: async (m, from) => {
+        if (!from.origin.startsWith("https://")) throw new BgError("insecure_origin");
+        const origins = await planOrigins(from);
+        // A cross-origin child frame gets no plan: the menu, as before.
+        if (!origins) return { outcome: "menu" };
+        const t: FillTarget = { tabId: from.tabId, frameId: from.frameId, origin: from.origin, formRef: m.formRef };
+        if (from.documentId !== undefined) t.documentId = from.documentId;
+        if (from.frameId !== 0) t.sameOriginAsTop = true;
+        const plan = await planner.plan(t, { ...m.context, ...origins });
+        return { outcome: await planner.run(t, plan) };
       },
       menu_key: async (m, from) => {
         // Only to the menu of this very frame (and document).
@@ -318,6 +339,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     chain,
     runner,
     saveFlow,
+    planner,
     providerFlows,
     neverSave,
     overlays,

@@ -191,3 +191,34 @@ describe("Frames.frameOrigin", () => {
     expect(await f.frameOrigin(2, 0)).toBeNull();
   });
 });
+
+describe("fill of a planned group", () => {
+  it("delivers only the planned roles", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    await filler.fillIdentity(target(), "it_02", "menu", ["email"]);
+    await filler.fillGenerated(target(), "Gen-1", ["new_password"]);
+    expect(ext.sentToTabs.map((s) => (s.message as { values: unknown }).values)).toEqual([
+      { email: "alex@atlas.dev" },
+      { new_password: "Gen-1" },
+    ]);
+  });
+
+  it("sends nothing when no planned role has a value", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    await filler.fillIdentity(target(), "it_02", "menu", ["tel"]);
+    expect(ext.sentToTabs).toEqual([]);
+  });
+
+  it("submits the form in the verified frame", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
+    await filler.submit(target());
+    expect(ext.sentToTabs).toEqual([
+      { tabId: 7, message: { type: "submit", origin: SITE, ref: "f1" }, options: { documentId: "doc-1" } },
+    ]);
+    ext.setFrame(7, 0, "https://elsewhere.test/", "doc-2");
+    expect(await code(filler.submit(target()))).toBe("origin_mismatch");
+  });
+});
