@@ -899,7 +899,19 @@ impl Session {
         };
         let me = self.with(|repo| this_device(repo))?;
         let me = identity(keys, me)?;
-        self.with(|repo| self.seal_to(repo, &me, mac, kind, &body))
+        self.with(|repo| {
+            let mine = repo.approvers()?;
+            if !mine
+                .iter()
+                .any(|e| e.device_id == me.device_id && e.role == ApproverRole::Phone)
+            {
+                return Err(OnePassError::Validation {
+                    field: "approver".into(),
+                    reason: "not a phone".into(),
+                });
+            }
+            self.seal_to(repo, &me, mac, kind, &body)
+        })
     }
 }
 
@@ -986,12 +998,20 @@ impl RemoteUnlocker {
         self.finish_at(response_blob, c, unix_now())
     }
 
-    /// Mac side, locked, agents-only or open: a notice from an enrolled
-    /// phone (`Lock`: end the agents-only window; `ForgetUnlock`: erase
-    /// `C`), checked like a request (signing phone in the verified list,
+    /// Mac side, locked, agents-only or open: a notice from a phone
+    /// (`Lock`: end the agents-only window; `ForgetUnlock`: erase `C`),
+    /// checked like a request (signing phone in the verified list,
     /// addressed to this Mac, expiry, replay with a guard kept in the local
-    /// meta). Any other kind is refused.
-    pub fn open_remote_notice(&self, blob: Vec<u8>) -> Result<FfiNotice, OnePassError> {
+    /// meta). `Lock` comes from any active phone; `ForgetUnlock` only from
+    /// `enrolled_phone`, the phone whose `C` this Mac holds (`None`: no
+    /// enrollment, refused as `RemoteUnknownDevice`). Any other kind is
+    /// refused. A refused notice is not remembered.
+    pub fn open_remote_notice(
+        &self,
+        blob: Vec<u8>,
+        enrolled_phone: Option<String>,
+    ) -> Result<FfiNotice, OnePassError> {
+        let enrolled = enrolled_phone.as_deref().map(parse_id).transpose()?;
         let _meta = lock(&META);
         let mut store = self.store()?;
         let approvers = locked_approvers(&store)?;
@@ -1003,7 +1023,12 @@ impl RemoteUnlocker {
             core_remote::open_request(&blob, &self.me, &approvers.entries, unix_now(), &mut guard)?;
         let kind = match request.kind {
             RemoteKind::Lock => FfiNoticeKind::Lock,
-            RemoteKind::ForgetUnlock => FfiNoticeKind::ForgetUnlock,
+            RemoteKind::ForgetUnlock if enrolled == Some(request.from) => {
+                FfiNoticeKind::ForgetUnlock
+            }
+            RemoteKind::ForgetUnlock => {
+                return Err(integrity(IntegrityError::RemoteUnknownDevice));
+            }
             _ => return Err(invalid("remote kind")),
         };
         store.set_meta(NOTICE_REPLAY_KEY, &guard.to_bytes()?)?;
