@@ -13,6 +13,7 @@ use crate::model::Item;
 use crate::{Error, Id, Result};
 
 const HELLO_MAGIC: &[u8; 4] = b"OPH1";
+const JOIN_HELLO_MAGIC: &[u8; 4] = b"OPH2";
 const KEY_EXCHANGE_MAGIC: &[u8; 4] = b"OPK1";
 /// A Hello is about 1.7 KB: anything much larger is refused unread.
 const MAX_HELLO_BYTES: usize = 4096;
@@ -59,6 +60,50 @@ impl Hello {
         HybridKemPublic::from_bytes(&hello.ephemeral_public.to_bytes())?;
         check_name(&hello.device.name)?;
         Ok(hello)
+    }
+}
+
+/// Length of the proof that closes a `JoinHello`.
+pub const JOIN_PROOF_LEN: usize = 32;
+
+/// N -> A in the rendezvous direction (the approver shows the code): a
+/// `Hello` plus an HMAC tag proving N knows the code, over the exact Hello
+/// bytes. Wire: `"OPH2" || postcard(Hello) || proof (32 bytes)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JoinHello {
+    pub hello: Hello,
+    pub proof: [u8; JOIN_PROOF_LEN],
+}
+
+impl JoinHello {
+    /// The bytes the proof covers: `"OPH2" || postcard(hello)`.
+    pub fn signed_part(hello: &Hello) -> Result<Vec<u8>> {
+        let mut out = JOIN_HELLO_MAGIC.to_vec();
+        let body =
+            postcard::to_allocvec(hello).map_err(|_| Error::InvalidFormat("pairing join hello"))?;
+        out.extend_from_slice(&body);
+        Ok(out)
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        let mut out = Self::signed_part(&self.hello)?;
+        out.extend_from_slice(&self.proof);
+        Ok(out)
+    }
+
+    /// Parse and check the Hello inside; the proof is checked by the host,
+    /// which knows the codes.
+    pub fn from_bytes(b: &[u8]) -> Result<JoinHello> {
+        const BAD: Error = Error::InvalidFormat("pairing join hello");
+        if b.len() > MAX_HELLO_BYTES + JOIN_PROOF_LEN {
+            return Err(BAD);
+        }
+        let body = b.strip_prefix(JOIN_HELLO_MAGIC).ok_or(BAD)?;
+        let (hello, rest): (Hello, _) = postcard::take_from_bytes(body).map_err(|_| BAD)?;
+        let proof: [u8; JOIN_PROOF_LEN] = rest.try_into().map_err(|_| BAD)?;
+        HybridKemPublic::from_bytes(&hello.ephemeral_public.to_bytes())?;
+        check_name(&hello.device.name)?;
+        Ok(JoinHello { hello, proof })
     }
 }
 

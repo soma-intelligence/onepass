@@ -9,10 +9,13 @@ use crate::crypto::{HybridKemSecret, SecretKey, random_array};
 use crate::devices::{DeviceMode, check_name};
 
 use super::channel::Channel;
-use super::messages::{DeviceInfo, Grant, Hello, KeyExchange, Message};
+use super::messages::{DeviceInfo, Grant, Hello, JoinHello, KeyExchange, Message};
 use super::qr::{PairingQr, QR_VERSION};
+use super::rendezvous::RendezvousCode;
 use super::snapshot::check_snapshot;
-use super::{KEM_LABEL, QR_LIFETIME_SECS, now_unix, refused, sas, sha256, transcript};
+use super::{
+    KEM_LABEL, KEM_LABEL_RV, QR_LIFETIME_SECS, now_unix, refused, sas, sha256, transcript,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -31,6 +34,7 @@ pub struct Newcomer {
     expires_at: i64,
     mode: DeviceMode,
     transcript: [u8; 32],
+    label: &'static [u8],
     channel: Option<Channel>,
     state: State,
     public_granted: bool,
@@ -68,12 +72,48 @@ impl Newcomer {
             expires_at: qr.expires_at,
             mode,
             transcript: transcript(&qr.to_text(), &hello),
+            label: KEM_LABEL,
             channel: None,
             state: State::AwaitingKey,
             public_granted: false,
             acked: false,
         };
         Ok((newcomer, qr, hello))
+    }
+
+    /// Join an approver that shows `code`: a fresh ephemeral key pair and
+    /// session id, and the `JoinHello` to send once connected. Valid
+    /// `QR_LIFETIME_SECS` from `now`.
+    pub fn join(
+        device: DeviceInfo,
+        mode: DeviceMode,
+        code: &RendezvousCode,
+        now: i64,
+    ) -> Result<(Newcomer, Vec<u8>)> {
+        check_name(&device.name)?;
+        let secret = HybridKemSecret::generate()?;
+        let session_id = random_array()?;
+        let hello = Hello {
+            session_id,
+            ephemeral_public: secret.public()?,
+            device,
+            requested_mode: mode,
+        };
+        let proof = code.proof(&JoinHello::signed_part(&hello)?)?;
+        let join_hello = JoinHello { hello, proof }.to_bytes()?;
+        let newcomer = Newcomer {
+            secret: Some(secret),
+            session_id,
+            expires_at: now.checked_add(QR_LIFETIME_SECS).ok_or(refused("time"))?,
+            mode,
+            transcript: transcript(&code.qr_text(), &join_hello),
+            label: KEM_LABEL_RV,
+            channel: None,
+            state: State::AwaitingKey,
+            public_granted: false,
+            acked: false,
+        };
+        Ok((newcomer, join_hello))
     }
 
     pub fn session_id(&self) -> [u8; 16] {
@@ -106,7 +146,7 @@ impl Newcomer {
             return Err(refused("qr expired"));
         }
         let kx = KeyExchange::from_bytes(bytes)?;
-        let k = unwrap_key_labeled(&secret, &kx.envelope, KEM_LABEL, &self.transcript)?;
+        let k = unwrap_key_labeled(&secret, &kx.envelope, self.label, &self.transcript)?;
         drop(secret);
         let code = sas(&k, &self.transcript)?;
         self.channel = Some(Channel::newcomer(&k, self.session_id)?);
