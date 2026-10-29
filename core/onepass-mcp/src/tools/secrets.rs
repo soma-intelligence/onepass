@@ -253,7 +253,7 @@ fn otp_config(value: &FieldValue) -> Option<TotpConfig> {
 impl<P: VaultPort> McpTools<P> {
     /// Locates `reference` (vault, live item, field) without reading the
     /// value, and records it as a target of `call`.
-    fn locate(&mut self, reference: &str, call: &mut Call) -> Result<Located, Refusal> {
+    fn locate(&mut self, reference: &str, call: &mut Call<'_>) -> Result<Located, Refusal> {
         let (vault, item, r) = self.locate_restricted(reference)?;
         let field_id = match field_of(&item, &r) {
             Ok(f) => f.id.clone(),
@@ -330,7 +330,7 @@ impl<P: VaultPort> McpTools<P> {
         remember_allowed: bool,
         key: Option<String>,
         vault_id: Option<Id>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> Result<(), Refusal> {
         if self.audit.ready().is_err() {
             return Err(Refusal::AuditUnusable);
@@ -383,8 +383,21 @@ impl<P: VaultPort> McpTools<P> {
             details,
             targets,
             remember_allowed,
+            strong_required: needs_strong(action),
+            // Drawn by the guard right before the prompt.
+            confirm_code: String::new(),
         };
-        let gated = self.gate.approve(&self.client.client_id, &gate_key, &req);
+        // Tell the agent a human is being asked, with the code to confirm,
+        // before waiting for the answer.
+        let notice = &mut call.notice;
+        let gated =
+            self.gate
+                .approve_notifying(&self.client.client_id, &gate_key, &req, &mut |code| {
+                    if let Some(n) = notice.as_mut() {
+                        n.pending(code);
+                    }
+                });
+        call.approved_on = gated.approved_on.clone();
         // A prompt allowed for a tool that also needs strong authentication
         // ends the run of denials only once strong authentication succeeds
         // (see `strong_auth`): a client cannot reset it by having the user
@@ -463,7 +476,7 @@ impl<P: VaultPort> McpTools<P> {
     fn locate_for_use<'n>(
         &mut self,
         refs: impl IntoIterator<Item = &'n str>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> Result<Vec<Located>, Refusal> {
         let mut located = Vec::new();
         for r in refs {
@@ -480,7 +493,7 @@ impl<P: VaultPort> McpTools<P> {
         &mut self,
         client: &ClientInfo,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         let argv: Vec<String> = args
             .get("command")
@@ -608,7 +621,7 @@ impl<P: VaultPort> McpTools<P> {
         &mut self,
         client: &ClientInfo,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         let template_path = str_arg(args, "template_path").unwrap_or_default();
         let output_path = str_arg(args, "output_path").unwrap_or_default();
@@ -685,7 +698,7 @@ impl<P: VaultPort> McpTools<P> {
         &mut self,
         client: &ClientInfo,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         let title = str_arg(args, "title").unwrap_or_default();
         let url = str_arg(args, "url");
@@ -805,7 +818,7 @@ impl<P: VaultPort> McpTools<P> {
         &mut self,
         client: &ClientInfo,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         let l = self.locate(str_arg(args, "reference").unwrap_or_default(), call)?;
         self.require(&l.vault, Scope::Totp)?;
@@ -845,7 +858,7 @@ impl<P: VaultPort> McpTools<P> {
         &mut self,
         client: &ClientInfo,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         let l = self.locate(str_arg(args, "reference").unwrap_or_default(), call)?;
         self.require(&l.vault, Scope::Reveal)?;

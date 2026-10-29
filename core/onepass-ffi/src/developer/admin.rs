@@ -598,6 +598,7 @@ pub(crate) fn audit_admin(
         field: None,
         decision: "allowed".into(),
         outcome: "ok".into(),
+        approved_on: None,
     });
 }
 

@@ -25,8 +25,8 @@ pub use policy::{
 };
 pub use port::{PortError, RepoPort, VaultInfo, VaultPort};
 pub use protocol::{
-    ClientInfo, MAX_LINE, PROTOCOL_VERSIONS, Session, ToolHost, ToolOutcome, ToolSpec, handle_line,
-    serve,
+    CallContext, ClientInfo, MAX_LINE, PROTOCOL_VERSIONS, Session, ToolHost, ToolOutcome, ToolSpec,
+    handle_line, handle_line_notifying, serve,
 };
 pub use tools::{McpTools, PolicySource};
 pub use workspace::{LocalWorkspace, MAX_TEMPLATE, Workspace, WorkspaceRefusal};

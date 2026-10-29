@@ -20,13 +20,13 @@ mod secrets;
 use crate::guards::{ClientContext, LivenessFn, McpGuards, RegistryFn};
 use crate::policy::{ClientScopes, Narrowing, Policy, Scope, effective_for_client};
 use crate::port::{PortError, VaultInfo, VaultPort};
-use crate::protocol::{ClientInfo, ToolHost, ToolOutcome, ToolSpec};
+use crate::protocol::{CallContext, ClientInfo, ToolHost, ToolOutcome, ToolSpec};
 use crate::workspace::{LocalWorkspace, Workspace, WorkspaceRefusal};
 use onepass_core::Id;
 use onepass_core::model::Item;
 use onepass_core::reference::{SecretRef, parse_ref};
 use onepass_guard::{
-    ApprovalRequest, Approver, AuditEntry, AuditSink, Clock, Decision, GrantStore, LocalSigner,
+    Answer, ApprovalRequest, Approver, AuditEntry, AuditSink, Clock, GrantStore, LocalSigner,
     OUTCOME_CLIENT_COOLING_DOWN, OUTCOME_NOT_PAIRED, OUTCOME_RATE_LIMITED,
     OUTCOME_REGISTRY_UNUSABLE, OUTCOME_STRONG_AUTH_FAILED, PromptGate, StrongAuth, Surface,
     Throttle,
@@ -132,11 +132,45 @@ impl Refusal {
     }
 }
 
+/// The text sent to the agent while a human is asked. Fixed: it never
+/// carries a name, a target or a value, only the confirmation code.
+pub(crate) fn pending_text(code: &str) -> String {
+    format!("Approve on your Mac or iPhone. Code: {code}")
+}
+
+/// Where a call announces that it waits for an approval.
+pub(crate) struct Notice<'n> {
+    /// The request's `_meta.progressToken`: a progress notification when
+    /// present, else a log message.
+    token: Option<Value>,
+    send: &'n mut dyn FnMut(String),
+}
+
+impl Notice<'_> {
+    /// Sends the pending-approval notice for `code`.
+    pub(crate) fn pending(&mut self, code: &str) {
+        let text = pending_text(code);
+        let msg = match &self.token {
+            Some(token) => json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/progress",
+                "params": {"progressToken": token, "progress": 0, "message": text},
+            }),
+            None => json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/message",
+                "params": {"level": "info", "data": text},
+            }),
+        };
+        (self.send)(msg.to_string());
+    }
+}
+
 /// An approver shared behind an `Arc`, for [`PromptGate`].
 pub(crate) struct SharedApprover(pub(crate) Arc<dyn Approver>);
 
 impl Approver for SharedApprover {
-    fn approve(&self, req: &ApprovalRequest) -> Decision {
+    fn approve(&self, req: &ApprovalRequest) -> Answer {
         self.0.approve(req)
     }
 }
@@ -187,7 +221,7 @@ impl From<PortError> for Failure {
 pub(crate) type CallResult = Result<Value, Failure>;
 
 /// What a call touched, for its audit entries. Ids only.
-pub(crate) struct Call {
+pub(crate) struct Call<'n> {
     pub(crate) vault_id: Option<Id>,
     pub(crate) item_id: Option<Id>,
     pub(crate) field: Option<String>,
@@ -198,9 +232,13 @@ pub(crate) struct Call {
     /// `"grant_15m"`, `"grant_60m"` (see `onepass_guard::decision_label`),
     /// `"remembered"`, or `"policy"` when no one was asked.
     pub(crate) decision: &'static str,
+    /// Where the approval was given, as the approver said.
+    pub(crate) approved_on: Option<String>,
+    /// Where to announce a pending approval, if the client can be told.
+    pub(crate) notice: Option<Notice<'n>>,
 }
 
-impl Default for Call {
+impl Default for Call<'_> {
     fn default() -> Self {
         Call {
             vault_id: None,
@@ -208,11 +246,13 @@ impl Default for Call {
             field: None,
             more: Vec::new(),
             decision: "policy",
+            approved_on: None,
+            notice: None,
         }
     }
 }
 
-impl Call {
+impl Call<'_> {
     /// Adds a target: the first one fills the main fields, the next ones
     /// go to `more`.
     pub(crate) fn target(&mut self, vault_id: Id, item_id: Id, field: Option<String>) {
@@ -564,7 +604,7 @@ impl<P: VaultPort> McpTools<P> {
         client: &ClientInfo,
         name: &str,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         match name {
             "list_vaults" => self.list_vaults(),
@@ -600,6 +640,7 @@ impl<P: VaultPort> McpTools<P> {
                 field,
                 decision: call.decision.to_owned(),
                 outcome: outcome.to_owned(),
+                approved_on: call.approved_on.clone(),
             });
             if let Err(err) = written {
                 eprintln!("onepass: audit log write failed: {err}");
@@ -614,9 +655,33 @@ impl<P: VaultPort> ToolHost for McpTools<P> {
     }
 
     fn call(&mut self, client: &ClientInfo, name: &str, args: &Map<String, Value>) -> ToolOutcome {
+        self.call_with_context(
+            client,
+            name,
+            args,
+            &mut CallContext {
+                progress_token: None,
+                notify: &mut |_| {},
+            },
+        )
+    }
+
+    fn call_with_context(
+        &mut self,
+        client: &ClientInfo,
+        name: &str,
+        args: &Map<String, Value>,
+        ctx: &mut CallContext<'_>,
+    ) -> ToolOutcome {
         self.refresh_policy();
         let known = schema::all().iter().any(|t| t.name == name);
-        let mut call = Call::default();
+        let mut call = Call {
+            notice: Some(Notice {
+                token: ctx.progress_token.clone(),
+                send: &mut *ctx.notify,
+            }),
+            ..Call::default()
+        };
         let mut before_pairing = false;
         let result = match schema::validate_args(name, args) {
             Ok(()) => match self.admit_client() {

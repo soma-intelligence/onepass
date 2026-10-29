@@ -77,6 +77,10 @@ pub struct AuditEntry {
     pub decision: String,
     /// Result of the action (free-form label).
     pub outcome: String,
+    /// Where the approval was given: `mac` or `phone:<device_id>`. Absent
+    /// in entries written before it existed and when nobody was asked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approved_on: Option<String>,
 }
 
 /// An entry as stored, with its position and time.
@@ -120,6 +124,10 @@ struct Line {
     field: Option<String>,
     decision: String,
     outcome: String,
+    // Last before `prev`, and omitted when absent: lines written before it
+    // keep their exact bytes (the hash chain covers those bytes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    approved_on: Option<String>,
     prev: String,
 }
 
@@ -284,6 +292,7 @@ impl AuditLog {
             field: e.field.clone(),
             decision: e.decision.clone(),
             outcome: e.outcome.clone(),
+            approved_on: e.approved_on.clone(),
             prev: state.hash.clone(),
         };
         let json = serde_json::to_string(&line).map_err(|_| GuardError::Format("audit line"))?;
@@ -426,6 +435,7 @@ pub fn verify_log(path: &Path, signer: &dyn LocalSigner) -> Result<AuditVerifica
                 field: l.field.clone(),
                 decision: l.decision.clone(),
                 outcome: l.outcome.clone(),
+                approved_on: l.approved_on.clone(),
             },
         });
         last = Some(l);
@@ -505,6 +515,7 @@ mod tests {
             field: None,
             decision: "allow_once".into(),
             outcome: "ok".into(),
+            approved_on: None,
         }
     }
 
@@ -904,6 +915,66 @@ mod tests {
         assert_eq!(recs[1].entry, new);
         // The old line is untouched on disk.
         assert_eq!(lines(&path)[0], OLD_LINE);
+    }
+
+    /// A line exactly as written by the build that has `client_id` and
+    /// `client_label` but not `approved_on` (frozen: never regenerate it).
+    const PRE_APPROVED_ON_LINE: &str = r#"{"seq":1,"ts":"2026-10-27T09:30:00Z","surface":"mcp","client":"claude","client_id":"team:ABCDE12345:com.example.agent","client_label":"Example agent","action":"reveal_secret","vault_id":"v1","item_id":"i1","field":"password","decision":"once","outcome":"ok","prev":"0000000000000000000000000000000000000000000000000000000000000000"}"#;
+
+    #[test]
+    fn audit_entry_without_approved_on_still_verifies() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.log");
+        let signer = TestSigner::new();
+        fs::write(&path, format!("{PRE_APPROVED_ON_LINE}\n")).unwrap();
+        let head = seal_head(&signer, 1, &hash_line(PRE_APPROVED_ON_LINE)).unwrap();
+        fs::write(head_path(&path), head).unwrap();
+
+        let v = verify_log(&path, &signer).unwrap();
+        assert_eq!(v.records.len(), 1);
+        assert!(!v.unsealed_tail);
+        assert_eq!(v.records[0].entry.approved_on, None);
+        assert_eq!(
+            v.records[0].entry.client_label.as_deref(),
+            Some("Example agent")
+        );
+
+        // The chain goes on, with and without the new field, and the old
+        // line keeps its exact bytes.
+        let mut log = AuditLog::open(&path).unwrap();
+        let mut with = entry(2);
+        with.approved_on = Some("phone:p1".into());
+        log.append(&signer, &with).unwrap();
+        log.append(&signer, &entry(3)).unwrap();
+        let recs = verify_log(&path, &signer).unwrap().records;
+        assert_eq!(recs.len(), 3);
+        assert_eq!(recs[0].entry.approved_on, None);
+        assert_eq!(recs[1].entry, with);
+        assert_eq!(lines(&path)[0], PRE_APPROVED_ON_LINE);
+    }
+
+    #[test]
+    fn approved_on_logged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.log");
+        let signer = TestSigner::new();
+        let mut log = AuditLog::open(&path).unwrap();
+        let mut on_mac = entry(1);
+        on_mac.approved_on = Some("mac".into());
+        let mut on_phone = entry(2);
+        on_phone.approved_on = Some("phone:7f3a".into());
+        let nobody = entry(3);
+        for e in [&on_mac, &on_phone, &nobody] {
+            log.append(&signer, e).unwrap();
+        }
+        let recs = verify_log(&path, &signer).unwrap().records;
+        assert_eq!(recs[0].entry.approved_on.as_deref(), Some("mac"));
+        assert_eq!(recs[1].entry.approved_on.as_deref(), Some("phone:7f3a"));
+        assert_eq!(recs[2].entry.approved_on, None);
+        let l = lines(&path);
+        let second: serde_json::Value = serde_json::from_str(&l[1]).unwrap();
+        assert_eq!(second["approved_on"], "phone:7f3a");
+        assert!(!l[2].contains("approved_on"));
     }
 
     #[test]

@@ -20,7 +20,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use common::*;
-use onepass_guard::{ApprovalRequest, Approver, Decision, DevAutoApprover};
+use onepass_guard::{Answer, ApprovalRequest, Approver, Decision, DevAutoApprover};
 use onepass_ssh_agent::keys::{AgentKey, KeyType, fingerprint_of_blob};
 use onepass_ssh_agent::{Agent, AgentConfig, bind_socket, serve};
 use tempfile::TempDir;
@@ -34,7 +34,7 @@ struct Recording {
 }
 
 impl Approver for Recording {
-    fn approve(&self, req: &ApprovalRequest) -> Decision {
+    fn approve(&self, req: &ApprovalRequest) -> Answer {
         self.seen.lock().unwrap().push(req.clone());
         self.inner.approve(req)
     }

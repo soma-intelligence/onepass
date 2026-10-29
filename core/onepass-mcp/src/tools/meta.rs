@@ -89,7 +89,7 @@ impl<P: VaultPort> McpTools<P> {
     fn metadata_targets(
         &mut self,
         key: Option<&str>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> Result<Vec<VaultInfo>, Refusal> {
         match key {
             Some(key) => {
@@ -149,7 +149,11 @@ impl<P: VaultPort> McpTools<P> {
     }
 
     /// `list_items {vault?, type?, tag?, include_archived?}`.
-    pub(super) fn list_items(&mut self, args: &Map<String, Value>, call: &mut Call) -> CallResult {
+    pub(super) fn list_items(
+        &mut self,
+        args: &Map<String, Value>,
+        call: &mut Call<'_>,
+    ) -> CallResult {
         let vaults = self.metadata_targets(arg_str(args, "vault"), call)?;
         let item_type = arg_str(args, "type");
         let tag = arg_str(args, "tag").map(str::to_lowercase);
@@ -172,7 +176,7 @@ impl<P: VaultPort> McpTools<P> {
     pub(super) fn search_items(
         &mut self,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         let vaults = self.metadata_targets(arg_str(args, "vault"), call)?;
         let query = arg_str(args, "query").unwrap_or_default().to_lowercase();
@@ -187,7 +191,11 @@ impl<P: VaultPort> McpTools<P> {
     /// `get_item {item, vault?}`: one card. Without `vault`, the item is
     /// looked up only in the visible vaults that grant `metadata`: a title
     /// held by a vault without that scope is neither found nor ambiguous.
-    pub(super) fn get_item(&mut self, args: &Map<String, Value>, call: &mut Call) -> CallResult {
+    pub(super) fn get_item(
+        &mut self,
+        args: &Map<String, Value>,
+        call: &mut Call<'_>,
+    ) -> CallResult {
         let key = arg_str(args, "item").unwrap_or_default();
         let ambiguous = "ambiguous item, use its id";
         let (vault, item) = match arg_str(args, "vault") {

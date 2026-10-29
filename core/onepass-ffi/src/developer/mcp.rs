@@ -365,6 +365,7 @@ fn refused(ctx: &Ctx, client: &str, action: &str) {
             field: None,
             decision: "denied".into(),
             outcome: OUTCOME_NOT_PAIRED.into(),
+            approved_on: None,
         });
     }
 }

@@ -14,7 +14,7 @@ use onepass_core::reference::SecretRef;
 use onepass_core::store::MemoryStore;
 use onepass_core::vault::VaultMeta;
 use onepass_guard::testing::ScriptedApprover;
-use onepass_guard::{ApprovalRequest, Approver, Decision, render_prompt};
+use onepass_guard::{Answer, ApprovalRequest, Approver, Decision, render_prompt};
 use onepass_mcp::tools::McpTools;
 use onepass_mcp::{
     ClientInfo, Narrowing, Policy, PortError, RepoPort, Scope, ToolHost, VaultInfo, VaultPort,
@@ -239,9 +239,9 @@ fn narrowing_cannot_grant_reveal() {
 struct Rendering(Mutex<Vec<String>>);
 
 impl Approver for Rendering {
-    fn approve(&self, req: &ApprovalRequest) -> Decision {
+    fn approve(&self, req: &ApprovalRequest) -> Answer {
         self.0.lock().unwrap().push(render_prompt(req, "ab"));
-        Decision::AllowOnce
+        Answer::new(Decision::AllowOnce)
     }
 }
 

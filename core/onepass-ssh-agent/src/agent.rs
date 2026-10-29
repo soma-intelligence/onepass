@@ -16,7 +16,8 @@ use onepass_core::model::{FieldValue, Item, ItemType};
 use onepass_core::repo::Repository;
 use onepass_core::store::RecordStore;
 use onepass_guard::{
-    ApprovalRequest, Approver, AuditEntry, AuditSink, Decision, Surface, Target, decision_label,
+    ApprovalRequest, Approver, AuditEntry, AuditSink, Decision, Surface, Target, challenge_code,
+    decision_label,
 };
 use onepass_peer::effective_uid;
 use zeroize::Zeroizing;
@@ -474,13 +475,29 @@ impl<K: KeySource> Agent<K> {
         }
         let now = Instant::now();
         self.grants.retain(|_, until| *until > now);
+        let mut approved_on: Option<String> = None;
         let decision = if rememberable && self.grants.contains_key(&grant_key) {
             "remembered"
         } else {
-            let req = self.approval_request(conn, peer, &key, &exe, data, forwarded, rememberable);
-            match self.approver.approve(&req) {
+            let mut req =
+                self.approval_request(conn, peer, &key, &exe, data, forwarded, rememberable);
+            // The guard draws the code the user confirms; no code, no prompt.
+            let Some(code) = challenge_code() else {
+                self.record_sign(&exe, Some(&key), "denied", "refused");
+                return Reply::failure();
+            };
+            req.confirm_code = code;
+            let answer = self.approver.approve(&req);
+            approved_on = answer.approved_on;
+            match answer.decision {
                 Decision::Deny => {
-                    self.record_sign(&exe, Some(&key), "denied", "refused");
+                    self.record_sign_on(
+                        &exe,
+                        Some(&key),
+                        "denied",
+                        "refused",
+                        approved_on.as_deref(),
+                    );
                     return Reply::failure();
                 }
                 Decision::AllowOnce => "once",
@@ -502,11 +519,11 @@ impl<K: KeySource> Agent<K> {
             .and_then(|k| k.sign(data, flags).ok());
         match signature {
             Some(sig) => {
-                self.record_sign(&exe, Some(&key), decision, "ok");
+                self.record_sign_on(&exe, Some(&key), decision, "ok", approved_on.as_deref());
                 Reply::send(Response::Signature(sig))
             }
             None => {
-                self.record_sign(&exe, Some(&key), decision, "error");
+                self.record_sign_on(&exe, Some(&key), decision, "error", approved_on.as_deref());
                 Reply::failure()
             }
         }
@@ -572,6 +589,9 @@ impl<K: KeySource> Agent<K> {
                 field: Some(KEY_FIELD.to_owned()),
             }],
             remember_allowed,
+            strong_required: false,
+            // Drawn right before the prompt.
+            confirm_code: String::new(),
         }
     }
 
@@ -599,6 +619,18 @@ impl<K: KeySource> Agent<K> {
     /// already returned: it goes to stderr. Signing itself checked the log
     /// with [`AuditSink::ready`] first.
     fn record_sign(&mut self, exe: &str, key: Option<&KeyInfo>, decision: &str, outcome: &str) {
+        self.record_sign_on(exe, key, decision, outcome, None);
+    }
+
+    /// [`Self::record_sign`] with the place where the approval was given.
+    fn record_sign_on(
+        &mut self,
+        exe: &str,
+        key: Option<&KeyInfo>,
+        decision: &str,
+        outcome: &str,
+        approved_on: Option<&str>,
+    ) {
         let written = self.audit.record(&AuditEntry {
             surface: Surface::Ssh,
             client: exe.to_owned(),
@@ -610,6 +642,7 @@ impl<K: KeySource> Agent<K> {
             field: key.map(|_| KEY_FIELD.to_owned()),
             decision: decision.to_owned(),
             outcome: outcome.to_owned(),
+            approved_on: approved_on.map(str::to_owned),
         });
         report_audit_failure(written);
     }
@@ -630,6 +663,7 @@ impl<K: KeySource> Agent<K> {
             field: None,
             decision: "policy".to_owned(),
             outcome: outcome.to_owned(),
+            approved_on: None,
         });
         report_audit_failure(written);
     }
