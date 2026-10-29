@@ -1023,12 +1023,17 @@ public final class VaultSession {
 
     /// Remembers that AutoFill filled `service` with the Login `recordID` (`"<vault id>:<item id>"`),
     /// for the next plans and identity ranks. The Login must match `service`; one of a hidden vault is
-    /// `NotFound`.
-    public func noteAutofillUse(recordID: String, service: String) async throws {
+    /// `NotFound`. `true` when the core rewrote the item: only then is the sync layer told. A use
+    /// changes no list, so nothing is reloaded and the identities are not republished here (the
+    /// caller publishes them when it needs them now).
+    @discardableResult
+    public func noteAutofillUse(recordID: String, service: String) async throws -> Bool {
         let excluded = excludedVaultIDs
-        try await write {
+        let written = try await read {
             try $0.noteAutofillUse(recordId: recordID, service: service, excludedVaultIds: excluded)
         }
+        if written { notifySync { await $0.localChangesWritten() } }
+        return written
     }
 
     /// The sites the visible vaults remember a choice for (registrable domains, sorted).

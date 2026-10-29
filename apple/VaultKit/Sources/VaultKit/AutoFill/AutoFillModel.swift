@@ -199,7 +199,7 @@ public final class AutoFillModel {
     private func listScreen(services: [String], passkey: PasskeyRequest?, oneTimeCode: Bool) async throws -> Screen {
         var matches: [FfiAutofillCandidate] = []
         var seen = Set<String>()
-        listedServices = [:]
+        var served: [String: String] = [:]
         if let passkey {
             for candidate in try await session.autofillCandidates(service: passkey.rpID, includeAll: false) {
                 let offered = offering(candidate)
@@ -208,10 +208,11 @@ public final class AutoFillModel {
         }
         for service in services {
             let candidates = try await session.autofillCandidates(service: service, includeAll: false)
-            let plan = try await session.autofillPlan(service: service, request: oneTimeCode ? .oneTimeCode : .password)
-            for candidate in Self.ordered(candidates, by: plan) where seen.insert(candidate.itemId).inserted {
+            // The plan only orders: without it, the candidates' order.
+            let ranked = await plan(service: service, oneTimeCode: oneTimeCode).map { Self.ordered(candidates, by: $0) }
+            for candidate in ranked ?? candidates where seen.insert(candidate.itemId).inserted {
                 matches.append(offering(candidate))
-                listedServices["\(candidate.vaultId):\(candidate.itemId)"] = service
+                served["\(candidate.vaultId):\(candidate.itemId)"] = service
             }
         }
         let anchor = services.first ?? passkey?.rpID ?? ""
@@ -222,7 +223,19 @@ public final class AutoFillModel {
             matches.removeAll { !$0.hasTotp }
             others.removeAll { !$0.hasTotp }
         }
+        listedServices = served
         return .list(matches, others: others)
+    }
+
+    /// The core's plan for `service`, nil when it fails (the list then keeps the candidates' order).
+    /// An integrity failure or a lock still shows through the session's state.
+    private func plan(service: String, oneTimeCode: Bool) async -> FfiAutofillPlan? {
+        do {
+            return try await session.autofillPlan(service: service, request: oneTimeCode ? .oneTimeCode : .password)
+        } catch {
+            if session.state == .unlocked { session.lastError = nil }
+            return nil
+        }
     }
 
     /// `candidates` with the plan's items first, in the plan's order; the others keep their order.
@@ -386,16 +399,22 @@ public final class AutoFillModel {
         return item
     }
 
-    /// Remembers a fill of `service` by `item` (site memory: the next plans and identity ranks), then
-    /// publishes the new ranks before the session locks. Best effort: a failure never stops the fill.
-    /// Nil `service` (a Login from `others`, or a direct request without a service) remembers nothing.
+    /// Remembers a fill of `service` by `item` (site memory: the next plans and identity ranks), before
+    /// the credential goes back (the extension may be killed right after). Only when the core wrote
+    /// (not throttled) does the request post `store-changed` and publish the new ranks before the
+    /// session locks. Best effort: a failure never stops the fill; an integrity failure leaves its
+    /// state as for any other call, any other error is cleared. Nil `service` (a Login from `others`,
+    /// or a direct request without a service) remembers nothing.
     private func noteUse(_ item: FfiItem, service: String?) async {
         guard let service, !service.isEmpty, !isFinished else { return }
+        let written: Bool
         do {
-            try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", service: service)
+            written = try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", service: service)
         } catch {
+            if session.state == .unlocked { session.lastError = nil }
             return
         }
+        guard written else { return }
         wrote = true
         await session.publishAutofillIdentitiesNow()
     }

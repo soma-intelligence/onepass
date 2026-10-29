@@ -880,7 +880,7 @@ fn rank_of(ids: &[FfiAutofillIdentity], rid: &str, kind: FfiAutofillKind) -> u32
         .rank
 }
 
-fn note(fx: &Fixture, item: &FfiItem, service: &str) -> Result<(), OnePassError> {
+fn note(fx: &Fixture, item: &FfiItem, service: &str) -> Result<bool, OnePassError> {
     fx.session.note_autofill_use(
         record_id(&item.vault_id, &item.id),
         service.into(),
@@ -1133,5 +1133,31 @@ fn note_autofill_use_rejects_other_site() {
     assert_eq!(
         note(&fx, &item, "example.com").unwrap_err(),
         OnePassError::Locked
+    );
+}
+
+#[test]
+fn otp_identity_rank_counts_logins_with_a_code_only() {
+    let fx = fixture();
+    let coded = login_in(
+        &fx,
+        &fx.vault_id,
+        "Code",
+        &["https://example.com"],
+        "a",
+        true,
+    );
+    let plain = login(&fx, "Sans code", &["https://example.com"]);
+    let rid = |i: &FfiItem| record_id(&i.vault_id, &i.id);
+    assert!(note(&fx, &coded, "example.com").is_ok());
+    assert!(note(&fx, &plain, "example.com").is_ok());
+
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    assert_eq!(rank_of(&ids, &rid(&plain), FfiAutofillKind::Password), 100);
+    assert_eq!(rank_of(&ids, &rid(&coded), FfiAutofillKind::Password), 0);
+    // The last Login used with a code is the code's first choice.
+    assert_eq!(
+        rank_of(&ids, &rid(&coded), FfiAutofillKind::OneTimeCode),
+        100
     );
 }

@@ -959,6 +959,41 @@ struct AutoFillModelTests {
         }
     }
 
+    /// A fill the core does not write (same Login again within the hour) neither posts
+    /// `store-changed`, nor tells the sync layer, nor republishes the identities.
+    @Test func throttledUseNeitherPostsNorRepublishes() async throws {
+        let store = InMemoryIdentityStore()
+        let f = try Fixture(identityStore: store)
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+        await seed.waitForAutofillIdentities()
+        let posts = f.watchPosts()
+
+        func fill() async -> VaultSession {
+            let (model, session, done) = f.model(
+                .credential(recordID: "\(login.vaultId):\(login.id)", kind: .password, passkey: nil, service: "example.com"))
+            await model.start()
+            await model.unlock(password: testPassword)
+            #expect(done.results == [.password(user: loginUser, password: loginPassword)])
+            await session.waitForSyncNotifications()
+            return session
+        }
+
+        _ = await fill()
+        #expect(await eventually { posts.count >= 1 })
+        // The other sessions' answers to that post (they tell the sync layer) settle first.
+        try await Task.sleep(for: .milliseconds(300))
+        let (replaced, writes, seen) = (store.replaceCount, f.written(), posts.count)
+        #expect(replaced >= 1)
+
+        _ = await fill()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(store.replaceCount == replaced)
+        #expect(f.written() == writes)
+        #expect(posts.count == seen)
+    }
+
     /// The list follows the core's plan: a Login chosen on a site comes first there next time, ahead
     /// of a more recently edited one.
     @Test func providerListFollowsPlanOrder() async throws {

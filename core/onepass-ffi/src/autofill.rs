@@ -192,14 +192,53 @@ fn parse_ids(ids: &[String]) -> Result<HashSet<Id>, OnePassError> {
     ids.iter().map(|s| parse_id(s)).collect()
 }
 
+/// The Login used last on each usage site, among the Logins with a code
+/// for the one-time code identities and among all of them for the others.
+struct LastUsed {
+    any: HashMap<String, Id>,
+    with_code: HashMap<String, Id>,
+}
+
+impl LastUsed {
+    fn of(items: &[Item]) -> Self {
+        let sites: BTreeSet<&str> = items
+            .iter()
+            .flat_map(|i| i.usage.iter().map(|u| u.site.as_str()))
+            .collect();
+        let by_site = |pool: &[&Item]| -> HashMap<String, Id> {
+            sites
+                .iter()
+                .filter_map(|s| {
+                    last_used_on(pool.iter().copied(), s).map(|id| ((*s).to_owned(), id))
+                })
+                .collect()
+        };
+        let all: Vec<&Item> = items.iter().collect();
+        let coded: Vec<&Item> = items.iter().filter(|i| filled(i, "totp")).collect();
+        LastUsed {
+            any: by_site(&all),
+            with_code: by_site(&coded),
+        }
+    }
+
+    fn get(&self, kind: FfiAutofillKind, site: &str) -> Option<Id> {
+        match kind {
+            FfiAutofillKind::OneTimeCode => self.with_code.get(site),
+            _ => self.any.get(site),
+        }
+        .copied()
+    }
+}
+
 /// The identities of one Login. `last_used`: the Login used last on each
-/// usage site, which gets `RANK_LAST_USED` on that site's identities.
-fn identities_of(item: &Item, last_used: &HashMap<String, Id>, out: &mut Vec<FfiAutofillIdentity>) {
+/// usage site, which gets `RANK_LAST_USED` on that site's identities of
+/// its kind.
+fn identities_of(item: &Item, last_used: &LastUsed, out: &mut Vec<FfiAutofillIdentity>) {
     let user = item.subtitle();
-    let rank = |service: &str| {
+    let rank = |kind: FfiAutofillKind, service: &str| {
         let last = site(service)
             .map(|s| usage_site(&s))
-            .and_then(|s| last_used.get(&s).copied());
+            .and_then(|s| last_used.get(kind, &s));
         if last == Some(item.id) {
             RANK_LAST_USED
         } else if item.favorite {
@@ -211,7 +250,7 @@ fn identities_of(item: &Item, last_used: &HashMap<String, Id>, out: &mut Vec<Ffi
     let entry =
         |kind, service: String, credential_id, user_handle, user: &str| FfiAutofillIdentity {
             kind,
-            rank: rank(&service),
+            rank: rank(kind, &service),
             service,
             user: user.to_owned(),
             record_id: record_id(item),
@@ -397,14 +436,7 @@ impl Session {
                 .into_iter()
                 .filter(offerable)
                 .collect();
-            let sites: BTreeSet<&str> = items
-                .iter()
-                .flat_map(|i| i.usage.iter().map(|u| u.site.as_str()))
-                .collect();
-            let last_used: HashMap<String, Id> = sites
-                .into_iter()
-                .filter_map(|s| last_used_on(&items, s).map(|id| (s.to_owned(), id)))
-                .collect();
+            let last_used = LastUsed::of(&items);
             let mut out = Vec::new();
             for item in &items {
                 identities_of(item, &last_used, &mut out);
@@ -539,15 +571,18 @@ impl Session {
     /// identity ranks. The Login must be offerable (live, not hidden from
     /// AutoFill, outside `excluded_vault_ids`: `NotFound` otherwise) and
     /// match `service` as `autofill_candidates` matches it (`InvalidInput`
-    /// otherwise, nothing written). The page is never seen: no field roles,
-    /// intent `Login`, one `Fill` step. Written with the force rule of the
-    /// bridge's `note_fill` across the vaults not excluded.
+    /// otherwise, nothing written). The page is never seen: a site the Login
+    /// already remembers keeps its shape, intent and steps (only the use
+    /// moves); a new one gets no field roles, intent `Login`, one `Fill`
+    /// step. Written with the force rule of the bridge's `note_fill` across
+    /// the vaults not excluded. `true` when the item was rewritten (`false`:
+    /// throttled within the hour, nothing changed).
     pub fn note_autofill_use(
         &self,
         record_id: String,
         service: String,
         excluded_vault_ids: Vec<String>,
-    ) -> Result<(), OnePassError> {
+    ) -> Result<bool, OnePassError> {
         let (vault_id, item_id) = parse_record_id(&record_id)?;
         let excluded = parse_ids(&excluded_vault_ids)?;
         if excluded.contains(&vault_id) {
@@ -566,17 +601,25 @@ impl Session {
             }
             let force = item.used_later_by_another(&key, items.iter().filter(|i| offerable(i)));
             let now = OffsetDateTime::now_utc();
-            let usage = SiteUsage {
-                site: key.clone(),
-                form_shape_hash: form_shape_hash(&[]),
-                intent: Intent::Login,
-                step_seq: vec![StepKind::Fill],
-                count: 1,
-                last_at: now,
+            // A known entry (maybe the extension's) keeps its shape, intent
+            // and steps: only the use moves, and the hourly throttle holds.
+            let usage = match item.usage_on(&key) {
+                Some(known) => SiteUsage {
+                    count: 1,
+                    last_at: now,
+                    ..known.clone()
+                },
+                None => SiteUsage {
+                    site: key.clone(),
+                    form_shape_hash: form_shape_hash(&[]),
+                    intent: Intent::Login,
+                    step_seq: vec![StepKind::Fill],
+                    count: 1,
+                    last_at: now,
+                },
             };
             let vault = find_vault(repo, vault_id)?;
-            repo.record_usage(&vault, item_id, usage, now, force)?;
-            Ok(())
+            Ok(repo.record_usage(&vault, item_id, usage, now, force)?)
         })
     }
 
@@ -725,6 +768,107 @@ mod tests {
             rule,
             primary: false,
         }
+    }
+
+    /// A fresh account with two Logins of `https://example.com`.
+    fn two_logins() -> (tempfile::TempDir, std::sync::Arc<Session>, Id, Id, Id) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("onepass.db").to_string_lossy().into_owned();
+        let kdf = FfiKdfParams {
+            m_kib: 8192,
+            t: 1,
+            p: 1,
+        };
+        let session = crate::create_account_with_kdf(path, "Cafe-etoile".into(), kdf)
+            .unwrap()
+            .session;
+        let vault = session.vaults().unwrap()[0].id.clone();
+        let mut ids = Vec::new();
+        for title in ["A", "B"] {
+            let mut item = session
+                .new_item(vault.clone(), FfiItemType::Login, title.into())
+                .unwrap();
+            item.urls = vec![FfiUrl {
+                label: String::new(),
+                url: "https://example.com".into(),
+                rule: FfiMatchRule::Domain,
+                primary: true,
+            }];
+            for f in item.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+                if f.id == "username" {
+                    f.value = FfiFieldValue::Text {
+                        value: title.to_lowercase(),
+                    };
+                }
+            }
+            ids.push(parse_id(&session.save_item(item).unwrap().id).unwrap());
+        }
+        (dir, session, parse_id(&vault).unwrap(), ids[0], ids[1])
+    }
+
+    fn usage_of(session: &Session, vault_id: Id, item_id: Id) -> SiteUsage {
+        session
+            .with(|repo| {
+                let vault = find_vault(repo, vault_id)?;
+                find_item(repo, &vault, item_id)
+            })
+            .unwrap()
+            .usage_on("example.com")
+            .cloned()
+            .unwrap()
+    }
+
+    /// The extension remembered a shape, an intent and steps; a system
+    /// AutoFill use only moves `last_at` and `count`, and stays throttled
+    /// within the hour unless another Login used the site since.
+    #[test]
+    fn note_autofill_use_keeps_the_extension_entry() {
+        use onepass_core::fill_plan::context::FieldRole;
+        let (_dir, session, vault_id, a, b) = two_logins();
+        let now = OffsetDateTime::now_utc();
+        let shape = form_shape_hash(&[FieldRole::Username, FieldRole::CurrentPassword]);
+        let steps = vec![StepKind::Fill, StepKind::ProviderClick];
+        let bridge = |at: OffsetDateTime| SiteUsage {
+            site: "example.com".into(),
+            form_shape_hash: shape,
+            intent: Intent::Signup,
+            step_seq: steps.clone(),
+            count: 1,
+            last_at: at,
+        };
+        session
+            .with(|repo| {
+                let vault = find_vault(repo, vault_id)?;
+                let t0 = now - time::Duration::minutes(10);
+                let t1 = now - time::Duration::minutes(5);
+                repo.record_usage(&vault, a, bridge(t0), t0, false)?;
+                repo.record_usage(&vault, b, bridge(t1), t1, false)?;
+                Ok(())
+            })
+            .unwrap();
+        let record = |id: Id| format!("{}:{}", id_hex(vault_id), id_hex(id));
+        let note = |id: Id| {
+            session
+                .note_autofill_use(record(id), "example.com".into(), Vec::new())
+                .unwrap()
+        };
+
+        // B used the site after A: forced, and only the use moves.
+        assert!(note(a));
+        let u = usage_of(&session, vault_id, a);
+        assert_eq!(u.form_shape_hash, shape);
+        assert_eq!(u.intent, Intent::Signup);
+        assert_eq!(u.step_seq, steps);
+        assert_eq!(u.count, 2);
+        assert!(u.last_at > now - time::Duration::minutes(1));
+
+        // Within the hour, nothing else used the site: nothing written.
+        assert!(!note(a));
+        assert_eq!(usage_of(&session, vault_id, a).count, 2);
+        // B is not the last any more: forced again, its entry kept too.
+        assert!(note(b));
+        let u = usage_of(&session, vault_id, b);
+        assert_eq!((u.form_shape_hash, u.count), (shape, 2));
     }
 
     #[test]
