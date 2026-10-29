@@ -308,6 +308,31 @@ fn otp_alone_uses_last_on_site_item() {
 }
 
 #[test]
+fn otp_without_site_memory_only_fills() {
+    let ctx = page(vec![form(
+        "code",
+        vec![field("otp", FieldRole::Otp)],
+        vec![button("go", ButtonClass::Submit)],
+    )]);
+    let p = plan(&ctx, logins(vec![login(1)])).unwrap();
+    assert_eq!(p.confidence, Confidence::High);
+    assert_eq!(p.action, Action::Fill);
+}
+
+#[test]
+fn two_login_forms_never_submit() {
+    let mut second = login_form();
+    second.form_ref = "login2".into();
+    second.fields[0].field_ref = "user2".into();
+    second.fields[1].field_ref = "pass2".into();
+    let p = plan(&page(vec![login_form(), second]), logins(vec![login(1)])).unwrap();
+    assert_eq!(p.confidence, Confidence::High);
+    assert_eq!(p.groups.len(), 2);
+    assert_eq!(p.action, Action::Fill);
+    assert!(p.reasons.contains(&ReasonCode::MultipleForms));
+}
+
+#[test]
 fn otp_in_child_frame_fills_without_submit() {
     let mut ctx = page(vec![form(
         "code",

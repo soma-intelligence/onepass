@@ -73,6 +73,7 @@ pub enum ReasonCode {
     PayButton,
     CreateButton,
     ChildFrame,
+    MultipleForms,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -246,8 +247,9 @@ fn ignored() -> FillPlan {
 /// The plan for the whole page. Carries ids, refs and roles, never a value.
 ///
 /// Auto-submit is decided here and only here: `OpenChain` (Login) or
-/// `FillAndSubmit` (Otp) need High confidence, the top frame, and no `Pay`
-/// or `Create` button in any planned form.
+/// `FillAndSubmit` (Otp) need High confidence, the top frame, exactly one
+/// planned form, and no `Pay` or `Create` button in it; Otp also needs the
+/// item used on this site last time.
 pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
     ctx.validate()?;
     let intents: Vec<Intent> = ctx.forms.iter().map(intent_of).collect();
@@ -397,6 +399,21 @@ pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
         }
         if buttons().any(|b| b.class == ButtonClass::Create) {
             push(&mut reasons, ReasonCode::CreateButton);
+            held = true;
+        }
+        // Which form to send is ambiguous with more than one planned.
+        let mut planned: Vec<&str> = groups.iter().map(|g| g.form_ref.as_str()).collect();
+        planned.dedup();
+        if planned.len() > 1 {
+            push(&mut reasons, ReasonCode::MultipleForms);
+            held = true;
+        }
+        // A code is sent only for the item used on this site last time.
+        let remembered = slots
+            .first()
+            .and_then(|s| s.ranked.first())
+            .is_some_and(|c| c.usage.is_some_and(|u| u.last_on_site));
+        if intent == Intent::Otp && !remembered {
             held = true;
         }
         match (held, intent) {
