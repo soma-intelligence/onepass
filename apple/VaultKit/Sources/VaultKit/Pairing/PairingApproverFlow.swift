@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Synchronization
 import os
 
 /// One line of a public session's journal, as the approver shows it. Memory only.
@@ -12,7 +13,9 @@ public struct PairingAuditEntry: Equatable, Identifiable, Sendable {
     public let action: FfiAuditAction
 }
 
-/// The unlocked device's side of a pairing (spec 2b 5.1). `begin(qrText:)` connects to the service
+/// The unlocked device's side of a pairing (spec 2b 5.1). Two ways in: `begin(qrText:)` scans the new
+/// device's QR, `startHosting()` shows a code (QR and `XXXX-XXXX`) for the new device to scan or type.
+/// `begin(qrText:)` connects to the service
 /// named in the scanned QR, reads the Hello and answers the key exchange; both screens then show the
 /// 6-digit code. Nothing more leaves this device before the user here confirms, a fresh presence check
 /// passes (Face ID, else the master password, ruling A8) and the new device confirmed too.
@@ -22,6 +25,9 @@ public final class PairingApproverFlow {
     public enum State: Equatable {
         case idle
         case connecting
+        /// Hosting: show `code` (its QR text and the typed form) until it expires; a newer one replaces it
+        /// every 30 s. The new device scans or types it.
+        case hosting(code: FfiHostCode)
         /// Compare `sas` with the new device's screen; `peer` and `requestedMode` are what it asks for.
         case comparing(sas: String, peer: FfiPeerDevice, requestedMode: FfiDeviceMode)
         /// Approved here; waiting for the new device's confirmation.
@@ -42,7 +48,12 @@ public final class PairingApproverFlow {
     public private(set) var approvalError: VaultError?
 
     @ObservationIgnored private let vault: VaultSession
-    @ObservationIgnored private let connector: any PairingConnector
+    @ObservationIgnored private let connector: (any PairingConnector)?
+    @ObservationIgnored private let listener: (any PairingListener)?
+    @ObservationIgnored private let renewEvery: Duration
+    @ObservationIgnored private let handshakeTimeout: Duration
+    @ObservationIgnored private var host: PairingHost?
+    @ObservationIgnored private var hostTask: Task<Void, Never>?
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private var approver: PairingApprover?
     @ObservationIgnored private var transport: (any PairingTransport)?
@@ -67,17 +78,46 @@ public final class PairingApproverFlow {
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "pairing")
 
+    /// How often a new code replaces the one on screen while hosting.
+    public static let renewInterval: Duration = .seconds(30)
+    /// How long a connection has to send its Hello while hosting (nothing is authenticated yet).
+    public static let handshakeTimeout: Duration = .seconds(10)
+    /// Connections checked at the same time while hosting; more are closed at once.
+    static let maxPendingHandshakes = 4
+
     public init(
         vault: VaultSession, connector: any PairingConnector, peerTimeout: Duration = PairingApproverFlow.peerTimeout,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.vault = vault
         self.connector = connector
+        self.listener = nil
         self.peerTimeout = peerTimeout
+        self.renewEvery = Self.renewInterval
+        self.handshakeTimeout = Self.handshakeTimeout
+        self.now = now
+    }
+
+    /// An approver that shows a code (`startHosting()`): `listener` publishes one service per code
+    /// (`LocalNetworkPairingListener` in the apps).
+    public init(
+        vault: VaultSession, listener: any PairingListener, peerTimeout: Duration = PairingApproverFlow.peerTimeout,
+        renewEvery: Duration = PairingApproverFlow.renewInterval,
+        handshakeTimeout: Duration = PairingApproverFlow.handshakeTimeout,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.vault = vault
+        self.connector = nil
+        self.listener = listener
+        self.peerTimeout = peerTimeout
+        self.renewEvery = renewEvery
+        self.handshakeTimeout = handshakeTimeout
         self.now = now
     }
 
     isolated deinit {
+        hostTask?.cancel()
+        host?.close()
         receiver?.cancel()
         ticker?.cancel()
         transport?.close()
@@ -89,6 +129,10 @@ public final class PairingApproverFlow {
         guard state == .idle else { return }
         guard vault.state == .unlocked else {
             state = .failed(.other(VaultError.passwordRequired.localizedMessage))
+            return
+        }
+        guard let connector else {
+            state = .failed(.refused)
             return
         }
         state = .connecting
@@ -113,6 +157,167 @@ public final class PairingApproverFlow {
             startReceiving(approver: approver, transport: transport)
         } catch {
             fail(PairingFailure(error))
+        }
+    }
+
+    // MARK: - Hosting (the code is shown here)
+
+    private enum HostEvent: Sendable {
+        case renew
+        case connection(any PairingTransport)
+        case hello(id: Int, Data)
+        case failed(id: Int)
+    }
+
+    /// Shows a code and waits for the new device (rendezvous direction). A new code every
+    /// `renewEvery`; each stays valid for 120 s. The first connection that sends a Hello proving a
+    /// live code goes to the code comparison; the codes are spent then, the services withdrawn.
+    public func startHosting() {
+        guard state == .idle else { return }
+        guard vault.state == .unlocked, listener != nil else {
+            state = .failed(.other(VaultError.passwordRequired.localizedMessage))
+            return
+        }
+        do {
+            host = try PairingHost()
+        } catch {
+            state = .failed(PairingFailure(error))
+            return
+        }
+        state = .connecting
+        hostTask = Task { [weak self] in await self?.runHost() }
+    }
+
+    private func runHost() async {
+        guard let host, let listener else { return }
+        let (events, sink) = AsyncStream<HostEvent>.makeStream()
+        /// Connections accepted and not handed over yet, by id.
+        let open = Mutex<[Int: any PairingTransport]>([:])
+        var services: [(expiresAt: Int64, task: Task<Void, Never>)] = []
+        var nextID = 0
+        let timeout = handshakeTimeout
+        let renew = renewEvery
+        let renewal = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: renew)
+                if Task.isCancelled { return }
+                sink.yield(.renew)
+            }
+        }
+        defer {
+            renewal.cancel()
+            for s in services { s.task.cancel() }
+            sink.finish()
+            for t in open.withLock({ o in defer { o = [:] }; return Array(o.values) }) { t.close() }
+        }
+
+        /// A new code on screen and its service published.
+        func issue() async -> Bool {
+            let nowUnix = Int64(now().timeIntervalSince1970)
+            do {
+                let code = try await CoreThread.run { try host.issue(now: nowUnix) }
+                services.removeAll { s in
+                    guard s.expiresAt < nowUnix else { return false }
+                    s.task.cancel()
+                    return true
+                }
+                let connections = listener.connections(serviceName: code.serviceName)
+                let task = Task {
+                    do {
+                        for try await transport in connections { sink.yield(.connection(transport)) }
+                    } catch {}
+                }
+                services.append((code.expiresAt, task))
+                state = .hosting(code: code)
+                return true
+            } catch {
+                fail(PairingFailure(error))
+                return false
+            }
+        }
+
+        guard await issue() else { return }
+        for await event in events {
+            switch event {
+            case .renew:
+                guard await issue() else { return }
+            case .connection(let transport):
+                let id = nextID
+                nextID += 1
+                let admitted = open.withLock { o -> Bool in
+                    guard o.count < Self.maxPendingHandshakes else { return false }
+                    o[id] = transport
+                    return true
+                }
+                guard admitted else {
+                    transport.close()
+                    continue
+                }
+                Task {
+                    do {
+                        // Nothing is authenticated yet: a Hello is small.
+                        let hello = try await Self.receiveWithin(
+                            transport, maxBytes: PairingFrame.maxHandshakeBytes, deadline: timeout)
+                        sink.yield(.hello(id: id, hello))
+                    } catch {
+                        sink.yield(.failed(id: id))
+                    }
+                }
+            case .failed(let id):
+                open.withLock { $0.removeValue(forKey: id) }?.close()
+            case .hello(let id, let hello):
+                guard let transport = open.withLock({ $0.removeValue(forKey: id) }) else { continue }
+                let nowUnix = Int64(now().timeIntervalSince1970)
+                let approver: PairingApprover
+                do {
+                    approver = try await CoreThread.run { try host.accept(joinHello: hello, now: nowUnix) }
+                } catch {
+                    // Wrong code or a malformed Hello: that connection is dropped. Too many close the host.
+                    transport.close()
+                    if !host.isOpen() { fail(.refused); return }
+                    continue
+                }
+                guard state != .idle, !isFinished else {
+                    transport.close()
+                    return
+                }
+                self.approver = approver
+                self.transport = transport
+                do {
+                    try await transport.send(approver.keyExchange())
+                } catch {
+                    fail(PairingFailure(error))
+                    return
+                }
+                guard !isFinished else { return }
+                state = .comparing(sas: approver.sas(), peer: approver.peer(), requestedMode: approver.requestedMode())
+                startReceiving(approver: approver, transport: transport)
+                // The `defer` withdraws the services and closes the other connections.
+                return
+            }
+        }
+    }
+
+    private var isFinished: Bool {
+        switch state {
+        case .done, .failed: true
+        default: false
+        }
+    }
+
+    /// One frame, at most `maxBytes` long, within `deadline`.
+    nonisolated private static func receiveWithin(
+        _ transport: any PairingTransport, maxBytes: Int, deadline: Duration
+    ) async throws -> Data {
+        try await withThrowingTaskGroup(of: Data?.self) { group in
+            group.addTask { try await transport.receive(maxBytes: maxBytes) }
+            group.addTask {
+                try await Task.sleep(for: deadline)
+                return nil
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next(), let frame = first else { throw PairingTransportError.closed }
+            return frame
         }
     }
 
@@ -342,6 +547,7 @@ public final class PairingApproverFlow {
 
     private func finish() {
         if state == .done, transport == nil { return }
+        stopHosting()
         receiver?.cancel()
         ticker?.cancel()
         transport?.close()
@@ -351,7 +557,15 @@ public final class PairingApproverFlow {
         state = .done
     }
 
+    /// Spends the codes and withdraws the services (idempotent).
+    private func stopHosting() {
+        hostTask?.cancel()
+        hostTask = nil
+        host?.close()
+    }
+
     private func fail(_ failure: PairingFailure) {
+        stopHosting()
         receiver?.cancel()
         ticker?.cancel()
         transport?.close()
