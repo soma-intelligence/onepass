@@ -266,7 +266,8 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
             ...(post ? { post: ` · ${post}` } : {}),
             lead: wayArt(it, undefined),
             act: isLinked ? tr(`Utilisé pour ${linked.site}`, `Used for ${linked.site}`) : fill,
-            accent: isLinked,
+            // The best item of a plan that could not choose (listed first by the worker).
+            accent: isLinked || init.best === it.item_id,
             run: pick(it.item_id),
           }),
         );

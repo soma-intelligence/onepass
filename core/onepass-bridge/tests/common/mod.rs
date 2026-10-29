@@ -5,10 +5,11 @@
 use onepass_bridge::service::{VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError, Result};
 use onepass_core::Id;
+use onepass_core::model::usage::SiteUsage;
 use onepass_core::model::{
     Address, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, Provider, new_item,
 };
-use time::{Date, Month};
+use time::{Date, Month, OffsetDateTime};
 use zeroize::Zeroizing;
 
 /// Fictional TOTP secret of the Atlas Cloud login.
@@ -309,6 +310,26 @@ impl FakeVault {
         (vault, ids)
     }
 
+    /// Add a login with one URL to the personal vault.
+    pub fn add_login(&mut self, title: &str, user: &str, u: &str, rule: MatchRule) -> Id {
+        self.add_login_in(self.vaults[0].id, title, user, u, rule)
+    }
+
+    /// Add a login with one URL to `vault`.
+    pub fn add_login_in(
+        &mut self,
+        vault: Id,
+        title: &str,
+        user: &str,
+        u: &str,
+        rule: MatchRule,
+    ) -> Id {
+        let item = login(vault, title, user, "Twin-Pass-0011", u, rule);
+        let id = item.id;
+        self.items.push(item);
+        id
+    }
+
     pub fn item(&self, id: Id) -> &Item {
         self.items.iter().find(|i| i.id == id).expect("item")
     }
@@ -365,5 +386,43 @@ impl VaultAccess for FakeVault {
 
     fn approve_reprompt(&mut self, _item_id: Id) -> bool {
         self.approve_reprompt
+    }
+
+    fn record_usage(
+        &mut self,
+        _vault_id: Id,
+        item_id: Id,
+        u: SiteUsage,
+        now: OffsetDateTime,
+        forced: bool,
+    ) -> Result<bool> {
+        // As `Repository::record_usage`: `forced`, or another live item of
+        // the vault used the site after this one.
+        let vault = self.item(item_id).vault_id;
+        let own = self.item(item_id).site_last_at(&u.site);
+        let force = self
+            .items
+            .iter()
+            .filter(|i| i.id != item_id && i.vault_id == vault)
+            .filter(|i| !i.archived && i.trashed_at.is_none())
+            .filter_map(|i| i.site_last_at(&u.site))
+            .any(|at| own.is_some_and(|o| at > o));
+        let item = self
+            .items
+            .iter_mut()
+            .find(|i| i.id == item_id)
+            .ok_or(BridgeError::App(AppErrorCode::NotFound))?;
+        Ok(item.note_usage_with(u, now, force || forced))
+    }
+
+    fn forget_site_usage(&mut self, site: &str) -> Result<usize> {
+        let now = OffsetDateTime::now_utc();
+        let mut rewritten = 0;
+        for item in &mut self.items {
+            if item.forget_site_usage(site, now) {
+                rewritten += 1;
+            }
+        }
+        Ok(rewritten)
     }
 }

@@ -1,4 +1,6 @@
-// Lab run (spec 7.2, 7.5): one test per batch of LAB_BATCH sites. A batch
+// Lab run (spec 7.2, 7.5): one test per batch of LAB_BATCH sites and driver
+// set (current, smart_fill: never in the same profile, so one set's site
+// memory never helps the other). A batch
 // launches a fresh profile with the real extension, pairs once, then plays
 // its scenarios one after the other (server reset, new tab, driver, oracle).
 // A failed scenario is replayed once in a fresh paired profile: a pass on
@@ -17,10 +19,11 @@ import { loadCert } from "../../e2e/cert.ts";
 import type { Scenario, Site, World } from "../gen/model.ts";
 import { type LabServer, startLabServer } from "../server/server.ts";
 import { type Lab, launchLab, launchPlain, networkViolations, readState, readWorld } from "./browser.ts";
-import { lookalike, menuFill, oneClick, passkeyControl, type ScenarioEnv } from "./drive.ts";
+import { groupOf } from "../gen/generate.ts";
+import { lookalike, menuFill, oneClick, passkeyControl, type ScenarioEnv, smartFill } from "./drive.ts";
 import { extensionDriver } from "./driver.ts";
 import { EXT_ROOT, isSmoke, type LabState } from "./global-setup.ts";
-import { judge, type Judgement, type Observation, type Result, type Verdict } from "./oracle.ts";
+import { afterReplay, judge, type Judgement, type Observation, oneClickOf, replayable, type Result, type Verdict } from "./oracle.ts";
 
 const state: LabState = readState();
 const world: World = readWorld(state);
@@ -40,10 +43,14 @@ const test = base.extend<object, { server: LabServer }>({
 
 function batches(): Scenario[][] {
   const indices = world.sites.map((s) => s.index).filter((i) => config.only === undefined || i === config.only);
+  const groups = [...new Set(world.scenarios.map((s) => groupOf(s.driver)))];
   const out: Scenario[][] = [];
-  for (let k = 0; k < indices.length; k += config.batch) {
-    const chunk = new Set(indices.slice(k, k + config.batch));
-    out.push(world.scenarios.filter((s) => chunk.has(s.site)));
+  for (const g of groups) {
+    for (let k = 0; k < indices.length; k += config.batch) {
+      const chunk = new Set(indices.slice(k, k + config.batch));
+      const batch = world.scenarios.filter((s) => chunk.has(s.site) && groupOf(s.driver) === g);
+      if (batch.length > 0) out.push(batch);
+    }
   }
   return out;
 }
@@ -101,9 +108,10 @@ async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Pr
   } catch (e) {
     return labError(s.driver, e);
   }
-  const env: ScenarioEnv = { driver: extensionDriver(l), server, newPage: () => l.newPage() };
+  const env: ScenarioEnv = { driver: extensionDriver(l), server, world, newPage: () => l.newPage() };
   switch (s.driver) {
     case "one_click": return oneClick(env, site);
+    case "smart_fill": return smartFill(env, site, s.expect);
     case "menu_fill": return menuFill(env, site);
     case "lookalike": return lookalike(env, site);
   }
@@ -114,11 +122,13 @@ async function safeAttempt(s: Scenario, site: Site, server: LabServer, lab: () =
   return attempt(s, site, server, lab, closeErrors).catch((e: unknown) => labError(s.driver, e));
 }
 
-function record(s: Scenario, site: Site, j: Judgement, retried: boolean, durationMs: number): Result {
+function record(s: Scenario, site: Site, j: Judgement, retried: boolean, durationMs: number, seen: Observation): Result {
+  const oneClick = oneClickOf(s, j.verdict, seen);
   const r: Result = {
     worldSeed: world.seed, site: site.index, siteSeed: site.seed, flow: site.flow, traits: site.traits, lang: site.lang,
     labelLang: site.labelLang, driver: s.driver, expect: s.expect, ...(s.reason ? { reason: s.reason } : {}), verdict: j.verdict, ...(j.cause ? { cause: j.cause } : {}),
-    retried, durationMs, repro: `npm run lab:repro -- --seed ${world.seed} --site ${site.index}`,
+    retried, durationMs, repro: `npm run lab:repro -- --seed ${world.seed} --site ${site.index}${s.driver === "smart_fill" ? " --drivers smart_fill" : ""}`,
+    ...(oneClick !== undefined ? { oneClick } : {}),
   };
   appendFileSync(state.results, `${JSON.stringify(r)}\n`);
   return r;
@@ -141,6 +151,8 @@ batches().forEach((scenarios, k) => {
         const first = await safeAttempt(s, site, server, batchLab, closeErrors);
         if (process.env.LAB_DEBUG) console.log(`[lab debug] ${s.id} ${JSON.stringify({ ...first, durationMs: undefined })}`);
         let j = judge(s, site, first);
+        // The attempt the verdict stands on (the replay for a flaky pass).
+        let seen = first;
         let duration = first.durationMs;
         let retried = false;
         // A broken profile is not reused (bench error path: its close error is not the verdict).
@@ -149,8 +161,9 @@ batches().forEach((scenarios, k) => {
           shared = undefined;
           await broken.close().catch(() => undefined);
         }
-        // A forbidden fill or offer (expect nofill) is a security event: never replayed into a pass.
-        if (j.verdict === "fail" && s.expect !== "nofill") {
+        // A forbidden fill or offer (expect nofill) and a safety failure (wrong item, auto-submit
+        // outside a sign-in) are security events: never replayed into a pass.
+        if (replayable(s, j)) {
           retried = true;
           let fresh: Lab | undefined;
           let second: Observation;
@@ -161,11 +174,12 @@ batches().forEach((scenarios, k) => {
             if (used) await closeInto(closeErrors, `${s.id} replay profile`, () => used.close());
           }
           duration += second.durationMs;
-          const again = judge(s, site, second);
-          if (again.verdict === "pass") j = { verdict: "flaky", cause: j.cause };
-          else if (again.verdict === "leak") j = again;
+          // A violation seen on the replay is kept, never dropped for the first failure.
+          const settled = afterReplay(j, judge(s, site, second));
+          j = settled.judgement;
+          if (settled.replay) seen = second;
         }
-        const r = record(s, site, j, retried, duration);
+        const r = record(s, site, j, retried, duration, seen);
         verdicts.push(r.verdict);
         console.log(`${s.id} ${site.flow} [${site.traits.join(",")}] expect ${s.expect}: ${r.verdict}${r.cause ? ` (${r.cause})` : ""}`);
       }

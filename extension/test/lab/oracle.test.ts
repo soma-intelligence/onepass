@@ -44,8 +44,8 @@ describe("judge", () => {
   });
   it("pass_on_signin_for_right_user", () => {
     expect(judge(scenario(login, "pass"), login, obs({ events: [signin(login.host, "ada")] }))).toEqual({ verdict: "pass" });
-    // Another user is a wrong fill, not a pass.
-    expect(judge(scenario(login, "pass"), login, obs({ events: [signin(login.host, "bob")] }))).toEqual({ verdict: "fail", cause: "wrong_fill" });
+    // Another user is a wrong item (smart fill metrics), not a pass.
+    expect(judge(scenario(login, "pass"), login, obs({ events: [signin(login.host, "bob")] }))).toEqual({ verdict: "fail", cause: "wrong_item" });
   });
   it("nofill_pass_when_nothing_filled", () => {
     const o = obs({ overlayShown: false, itemOffered: false, filled: { user: false, pw: false } });
@@ -132,6 +132,7 @@ describe("judge", () => {
   it("form_flow_passes_on_accepted_submit", () => {
     const card: Site = { ...login, index: 4, host: "woven-estuary-85.test", flow: "checkout_card", account: undefined, cardTitle: "Carte" };
     const ok: LabEvent = { at: 1, host: card.host, kind: "submit", form: "checkout_card", ok: true, fields: [] };
-    expect(judge(scenario(card, "pass", "menu_fill"), card, obs({ driver: "menu_fill", events: [ok] }))).toEqual({ verdict: "pass" });
+    // The driver (as the user) sent the form before the site's answer.
+    expect(judge(scenario(card, "pass", "menu_fill"), card, obs({ driver: "menu_fill", userSubmitAt: 0, events: [ok] }))).toEqual({ verdict: "pass" });
   });
 });

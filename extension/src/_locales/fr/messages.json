@@ -3,6 +3,10 @@
     "message": "Remplis tes logins, cartes et identités depuis l'app OnePass.",
     "description": "Description of the extension in the store and the extensions page."
   },
+  "fillSmartCommand": {
+    "message": "Remplir la page en un clic avec OnePass",
+    "description": "Description of the keyboard shortcut that runs smart fill in the active tab."
+  },
   "actionTitle": {
     "message": "OnePass",
     "description": "Tooltip of the toolbar button."

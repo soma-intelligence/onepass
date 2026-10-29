@@ -37,7 +37,9 @@ export interface Site {
   cardTitle?: string; identityTitle?: string;  // menu item titles (checkout_card / address, identity)
   itemTitle?: string;             // overlay title of the login item ("<brand>" or "<brand> via <Provider>")
 }
-export type DriverId = "one_click" | "menu_fill" | "lookalike" | "passkey_control";
+export type DriverId = "one_click" | "menu_fill" | "lookalike" | "passkey_control" | "smart_fill";
+/** Driver sets a run plays: "current" (overlay, menu, lookalike, passkey control) and "smart_fill" (field icon, plan). */
+export type DriverGroup = "current" | "smart_fill";
 export type Expect = "pass" | "xfail" | "nofill";
 export interface Scenario { id: string /* "<site index>:<driver>" */; site: number; driver: DriverId; expect: Expect; reason?: string; }
 export interface IdpAccount { email: string; password: string; name: string; itemTitle: string; }
