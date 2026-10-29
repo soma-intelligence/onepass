@@ -64,6 +64,24 @@ pub enum RemoteKind {
 }
 
 impl RemoteKind {
+    /// Who sends this kind: `Lock` and `ForgetUnlock` are notices from the
+    /// phone to the Mac (spec 6.3, 6.4); every other kind goes from the Mac
+    /// to the phone.
+    pub fn sender_role(self) -> ApproverRole {
+        match self {
+            RemoteKind::Lock | RemoteKind::ForgetUnlock => ApproverRole::Phone,
+            _ => ApproverRole::Mac,
+        }
+    }
+
+    /// Who receives this kind (the other role).
+    pub fn recipient_role(self) -> ApproverRole {
+        match self.sender_role() {
+            ApproverRole::Mac => ApproverRole::Phone,
+            ApproverRole::Phone => ApproverRole::Mac,
+        }
+    }
+
     fn needs_unlock_key(self) -> bool {
         matches!(self, RemoteKind::Unlock | RemoteKind::ApproveAndUnlock)
     }
@@ -369,14 +387,16 @@ fn check_header_times(h: &RequestHeader) -> Result<()> {
     }
 }
 
-/// Seal `body` to the phone `to` and sign the whole request as `signer`.
+/// Seal `body` to `to` (the phone, or the Mac for a phone notice) and sign
+/// the whole request as `signer`. `to` must hold the recipient role of the
+/// kind.
 pub fn seal_request(
     signer: &HybridSigningKey,
     to: &ApproverEntry,
     header: RequestHeader,
     body: &RequestBody,
 ) -> Result<Vec<u8>> {
-    if header.to != to.device_id {
+    if header.to != to.device_id || to.role != header.kind.recipient_role() {
         return Err(integrity(IntegrityError::RemoteWrongRecipient));
     }
     check_header_times(&header)?;
@@ -419,8 +439,9 @@ pub fn seal_request(
     sign_message(signer, encode_message(TYPE_REQUEST, &request)?)
 }
 
-/// The phone side: check recipient, sender, signature, expiry (with the
-/// phone's clock tolerance) and replay, then open the body.
+/// The receiving side: check recipient, sender (a Mac, or a phone for the
+/// notices `Lock` and `ForgetUnlock`), signature, expiry (with the phone's
+/// clock tolerance) and replay, then open the body.
 pub fn open_request(
     bytes: &[u8],
     me: &ApproverIdentity,
@@ -433,7 +454,7 @@ pub fn open_request(
     if request.to != me.device_id {
         return Err(integrity(IntegrityError::RemoteWrongRecipient));
     }
-    verify_sender(&env, request.from, ApproverRole::Mac, approvers)?;
+    verify_sender(&env, request.from, request.kind.sender_role(), approvers)?;
 
     if now.saturating_add(PHONE_CLOCK_SKEW_SECS) < request.created_at
         || now > request.expires_at.saturating_add(PHONE_CLOCK_SKEW_SECS)
@@ -649,6 +670,57 @@ mod tests {
 
     /// What opening a body sealed to another key gives.
     const WRONG_KEY: Error = Error::Integrity(IntegrityError::Commitment);
+
+    #[test]
+    fn notices_go_from_the_phone_to_the_mac() {
+        let (mac, phone) = (party(1, ApproverRole::Mac), party(2, ApproverRole::Phone));
+        let list = list(&mac, &phone);
+        for kind in [RemoteKind::Lock, RemoteKind::ForgetUnlock] {
+            let mut b = body();
+            b.client = "OnePass".into();
+            let notice = seal_request(
+                &phone.id.signing,
+                &mac.entry,
+                header(&phone, &mac, kind),
+                &b,
+            )
+            .unwrap();
+            let mut seen = ReplayGuard::new();
+            let (req, _) = open_request(&notice, &mac.id, &list, T + 1, &mut seen).unwrap();
+            assert_eq!(req.kind, kind);
+            assert_eq!(req.from, phone.id.device_id);
+            // Sealed the wrong way round: refused at sealing.
+            assert_eq!(
+                seal_request(
+                    &mac.id.signing,
+                    &phone.entry,
+                    header(&mac, &phone, kind),
+                    &b
+                )
+                .unwrap_err(),
+                err(IntegrityError::RemoteWrongRecipient)
+            );
+        }
+        // A notice signed by a Mac is refused: only a phone sends one.
+        let mut h = header(&phone, &mac, RemoteKind::Lock);
+        h.from = mac.id.device_id;
+        let forged = seal_request(&mac.id.signing, &mac.entry, h, &body()).unwrap();
+        assert_eq!(
+            open_request(&forged, &mac.id, &list, T + 1, &mut ReplayGuard::new()).unwrap_err(),
+            err(IntegrityError::RemoteUnknownDevice)
+        );
+        // An Approve request cannot be addressed to a Mac either.
+        assert_eq!(
+            seal_request(
+                &phone.id.signing,
+                &mac.entry,
+                header(&phone, &mac, RemoteKind::Approve),
+                &body()
+            )
+            .unwrap_err(),
+            err(IntegrityError::RemoteWrongRecipient)
+        );
+    }
 
     #[test]
     fn request_round_trip() {

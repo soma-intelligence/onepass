@@ -189,7 +189,12 @@ fn enroll(mac: &Device, phone: &Device) -> (Vec<u8>, Vec<u8>) {
     assert_eq!(opened.from, mac.id);
     assert_eq!(opened.from_name, "Mac de Camille");
     assert_eq!(opened.body.confirm_code, enrollment.confirm_code);
-    let k_r = opened.transfer_key.clone().unwrap();
+    // K_r only after Face ID, through its own call.
+    assert!(!format!("{opened:?}").contains("transfer"));
+    let k_r = phone
+        .session
+        .accept_enrollment(phone.keys.clone(), enrollment.transfer_request.blob.clone())
+        .unwrap();
     assert_eq!(k_r.len(), 32);
     let ack = phone
         .session
@@ -227,7 +232,13 @@ fn remote_unlock(
         .unwrap();
     assert_eq!(opened.kind, FfiRemoteKind::ApproveAndUnlock);
     assert_eq!(opened.body.window_minutes, Some(window));
-    assert!(opened.transfer_key.is_none());
+    // No K_r to accept in an unlock request.
+    assert!(
+        phone
+            .session
+            .accept_enrollment(phone.keys.clone(), sealed.blob.clone())
+            .is_err()
+    );
     let response = phone
         .session
         .seal_remote_response(
@@ -359,6 +370,14 @@ fn mac_request_phone_response_round_trip() {
             )
             .is_err()
     );
+    // Notices go the other way: a Mac does not seal them.
+    for kind in [FfiRemoteKind::Lock, FfiRemoteKind::ForgetUnlock] {
+        assert!(
+            mac.session
+                .seal_remote_request(mac.keys.clone(), phone.id.clone(), kind, body("x"))
+                .is_err()
+        );
+    }
     // Unlock kinds have their own entry points.
     assert!(
         mac.session
@@ -441,6 +460,152 @@ fn a_denied_unlock_counts_against_the_throttle() {
         })
     );
     assert!(!throttle_state(mac.path.clone()).unwrap().may_request);
+}
+
+#[test]
+fn a_forged_response_leaves_the_wait_open() {
+    let (mac, phone) = mac_and_phone();
+    let (c, k_r) = enroll(&mac, &phone);
+    mac.session.lock();
+    let unlocker = RemoteUnlocker::new(mac.path.clone(), mac.keys.clone()).unwrap();
+    let sealed = unlocker
+        .begin(phone.id.clone(), body("list_vaults"), 60)
+        .unwrap();
+    phone
+        .session
+        .open_remote_request(phone.keys.clone(), sealed.blob.clone())
+        .unwrap();
+    let response = phone
+        .session
+        .seal_remote_response(
+            phone.keys.clone(),
+            sealed.blob,
+            FfiRemoteDecision::Once,
+            Some(k_r),
+        )
+        .unwrap();
+    let mut forged = response.clone();
+    let last = forged.len() - 1;
+    forged[last] ^= 1;
+    assert!(unlocker.finish(forged, c.clone()).is_err());
+    assert!(unlocker.finish(b"junk".to_vec(), c.clone()).is_err());
+    let s = unlocker.finish(response, c).unwrap();
+    assert!(s.is_agent_only());
+}
+
+#[test]
+fn an_expired_response_counts_as_refused() {
+    let (mac, phone) = mac_and_phone();
+    let (c, k_r) = enroll(&mac, &phone);
+    mac.session.lock();
+    let unlocker = RemoteUnlocker::new(mac.path.clone(), mac.keys.clone()).unwrap();
+    let t0 = now();
+    let sealed = unlocker
+        .begin_at(phone.id.clone(), body("list_vaults"), 60, t0)
+        .unwrap();
+    phone
+        .session
+        .open_remote_request(phone.keys.clone(), sealed.blob.clone())
+        .unwrap();
+    let response = phone
+        .session
+        .seal_remote_response(
+            phone.keys.clone(),
+            sealed.blob,
+            FfiRemoteDecision::Once,
+            Some(k_r),
+        )
+        .unwrap();
+    // The answer lands after the request expired on the Mac's clock.
+    assert_eq!(
+        unlocker.finish_at(response, c, t0 + 61).err(),
+        Some(OnePassError::Integrity {
+            kind: "remote_expired".into()
+        })
+    );
+    // Refusal 1 above; two unanswered requests settle as refusals 2 and 3
+    // at the following begins, and the third blocks remote unlock.
+    unlocker
+        .begin_at(phone.id.clone(), body("list_vaults"), 60, t0 + 601)
+        .unwrap();
+    unlocker
+        .begin_at(phone.id.clone(), body("list_vaults"), 60, t0 + 1202)
+        .unwrap();
+    assert_eq!(
+        unlocker
+            .begin_at(phone.id.clone(), body("list_vaults"), 60, t0 + 1803)
+            .err(),
+        Some(OnePassError::Validation {
+            field: "remote_unlock".into(),
+            reason: "throttled".into()
+        })
+    );
+}
+
+#[test]
+fn phone_notices_reach_the_mac() {
+    let (mac, phone) = mac_and_phone();
+    let (_c, _k_r) = enroll(&mac, &phone);
+    mac.session.lock();
+    let unlocker = RemoteUnlocker::new(mac.path.clone(), mac.keys.clone()).unwrap();
+
+    // "Verrouiller maintenant" on the phone.
+    let lock = phone
+        .session
+        .seal_remote_notice(phone.keys.clone(), mac.id.clone(), FfiNoticeKind::Lock)
+        .unwrap();
+    assert_eq!(lock.to, mac.id);
+    let notice = unlocker.open_remote_notice(lock.blob.clone()).unwrap();
+    assert_eq!(
+        notice,
+        FfiNotice {
+            kind: FfiNoticeKind::Lock,
+            from: phone.id.clone()
+        }
+    );
+    // Replayed, even by a new unlocker (the guard is in the local meta).
+    let again = RemoteUnlocker::new(mac.path.clone(), mac.keys.clone()).unwrap();
+    assert_eq!(
+        again.open_remote_notice(lock.blob).unwrap_err(),
+        OnePassError::Integrity {
+            kind: "remote_replay".into()
+        }
+    );
+
+    let forget = phone
+        .session
+        .seal_remote_notice(
+            phone.keys.clone(),
+            mac.id.clone(),
+            FfiNoticeKind::ForgetUnlock,
+        )
+        .unwrap();
+    assert_eq!(
+        unlocker.open_remote_notice(forget.blob).unwrap().kind,
+        FfiNoticeKind::ForgetUnlock
+    );
+
+    // A notice signed by the Mac (or any non-phone) is refused, and so is
+    // a Mac request, which is not a notice.
+    let mac_session =
+        unlock_with_password(mac.path.clone(), PASSWORD.into(), mac.secret_key.clone()).unwrap();
+    assert!(
+        mac_session
+            .session
+            .seal_remote_notice(mac.keys.clone(), mac.id.clone(), FfiNoticeKind::Lock)
+            .and_then(|n| unlocker.open_remote_notice(n.blob))
+            .is_err()
+    );
+    let request = mac_session
+        .session
+        .seal_remote_request(
+            mac.keys.clone(),
+            phone.id.clone(),
+            FfiRemoteKind::Approve,
+            body("x"),
+        )
+        .unwrap();
+    assert!(unlocker.open_remote_notice(request.blob).is_err());
 }
 
 #[test]
