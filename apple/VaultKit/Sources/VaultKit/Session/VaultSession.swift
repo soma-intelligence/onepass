@@ -1271,9 +1271,17 @@ public final class VaultSession {
     /// A wrong password (or any failure) leaves the store empty and the grant in the core, so the user
     /// can try again. Wrong passwords count toward the unlock lockout like an unlock (M3). The caller
     /// wipes `password`.
+    /// A pairing can bring the account here: no account yet, or one the sync brought without its
+    /// Secret Key (the core takes it only if this device never opened it).
+    public var acceptsPairing: Bool {
+        state == .noAccount || (state == .locked && needsSecretKey)
+    }
+
     func importPaired(_ newcomer: PairingNewcomer, password: SecretBytes, mode: DeviceMode) async throws {
         try checkStoreUsable()
-        guard session == nil, state == .noAccount else { throw fail(.accountExists) }
+        guard session == nil, acceptsPairing else { throw fail(.accountExists) }
+        // The sync brought the account before the pairing: the store keeps its records on failure.
+        let synced = state == .locked
         try checkLockout()
         try beginPasswordCheck()
         defer { passwordCheckInFlight = false }
@@ -1289,7 +1297,7 @@ public final class VaultSession {
                 guard let released = newcomer.takeSecretKey() else {
                     auk.wipe()
                     session.lock()
-                    try? resetStore(dbPath: path)
+                    if !synced { try? resetStore(dbPath: path) }
                     throw VaultError.other(Self.secretKeyNotStoredOnRestore)
                 }
                 let secretKey = SecretBytes(utf8: released)
@@ -1320,9 +1328,13 @@ public final class VaultSession {
             // Without its Secret Key the account could never open again here: the import is undone.
             Self.log.error("Secret Key not stored in the keychain, pairing import undone")
             let session = opened.opened.session
-            _ = try? await environment.sync.resetStore {
+            if synced {
                 session.lock()
-                try resetStore(dbPath: path)
+            } else {
+                _ = try? await environment.sync.resetStore {
+                    session.lock()
+                    try resetStore(dbPath: path)
+                }
             }
             if gen == generation { evaluateStoredAccount() }
             throw fail(.other(Self.secretKeyNotStoredOnRestore))

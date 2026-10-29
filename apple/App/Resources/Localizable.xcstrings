@@ -1470,6 +1470,22 @@
         }
       }
     },
+    "Appairer avec mon autre appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair with My Other Device"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appairer avec mon autre appareil"
+          }
+        }
+      }
+    },
     "Appairer un agent IA ?" : {
       "localizations" : {
         "en" : {
