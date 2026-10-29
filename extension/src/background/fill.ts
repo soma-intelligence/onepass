@@ -151,10 +151,14 @@ export class Filler {
     return this.deliver(t, values, roles);
   }
 
-  /** Submit `t.formRef` (a plan's `FillAndSubmit`), after the same frame check as a fill. */
+  /**
+   * Submit `t.formRef` (a plan's `FillAndSubmit`), after the same frame check
+   * as a fill. `planned`: the content script re-checks the button's class at
+   * click time and refuses a re-rendered copy of the form.
+   */
   async submit(t: FillTarget): Promise<void> {
     await this.verify(t);
-    const msg: BgToCs = { type: "submit", origin: t.origin, ref: t.formRef };
+    const msg: BgToCs = { type: "submit", origin: t.origin, ref: t.formRef, planned: true };
     const opts = t.documentId !== undefined ? { documentId: t.documentId } : { frameId: t.frameId };
     await this.tabs.sendMessage(t.tabId, msg, opts);
   }

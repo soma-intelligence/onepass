@@ -20,6 +20,11 @@
 //   re-armed from the persisted due times on any event (the overlay polls
 //   `state` every 500 ms while a chain runs).
 //
+// Smart fill (spec 5.3, 7): an unknown page is planned again once
+// (`replan`, through `ChainDeps.replan`); at the end of a chain, `done`
+// clears the site's penalty and notes the fill (`note_fill`), `repeat` sets
+// the penalty (penalty.ts).
+//
 // Also here, since it shares the same analyses: showing the overlay on a
 // recognized sign-in page of a site that has logins (once per sign-in form of
 // a top document, so a form built late is offered too, and a form in a frame
@@ -32,6 +37,8 @@ import type { PageAnalyses } from "../analyses";
 import type { BgExt, StorageArea } from "../ext";
 import type { FillTarget, Filler } from "../fill";
 import type { CsContext, Frames } from "../frames";
+import { noteFill } from "../notes";
+import { clearPenalty, setPenalty } from "../penalty";
 import { BgError, type Session, toBgError } from "../session";
 import {
   type ChainAction,
@@ -39,6 +46,10 @@ import {
   chainView,
   navigated,
   nextDue,
+  noteShape,
+  noteSteps,
+  type PlannedStep,
+  planStep,
   parseChainState,
   settled,
   startChain,
@@ -75,6 +86,12 @@ export interface ChainDeps {
   overlays: OverlayPort;
   /** An inline menu is open in this tab: the overlay is not offered over it (one surface). */
   menuOpen?: (tabId: number) => Promise<boolean>;
+  /**
+   * A plan of the page in frame `cs` for the chain's item (`plan_fill` on the
+   * page context the content script reports), or null when the plan has no
+   * login group of that item. Absent: an unknown page stops the chain.
+   */
+  replan?: (cs: CsContext, itemId: string) => Promise<(PlannedStep & { url: string }) | null>;
   now?: () => number;
   timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(id: unknown): void };
 }
@@ -204,6 +221,7 @@ export class ChainRunner implements ChainDriver {
         siteOrigin: origin,
         ...(viaProvider ? { provider: viaProvider } : {}),
         ...(providerAccount ? { providerAccount } : {}),
+        ...(opts.planned ? { planned: opts.planned } : {}),
         autoSubmit,
         now: this.now(),
       });
@@ -350,8 +368,36 @@ export class ChainRunner implements ChainDriver {
     const r = tick(s, this.now());
     if (r.state === s) return s;
     await this.save(r.state);
-    this.arm(r.state);
-    return r.state;
+    let n = r.state;
+    if (r.actions.some((a) => a.type === "replan")) n = await this.replan(n);
+    this.arm(n);
+    return n;
+  }
+
+  /**
+   * Spec 5.3: the page went unknown; plan it again. The plan's login group of
+   * the chain's item is acted on as a step; no plan, no such group, or a
+   * failure: the chain stops (`unknown`).
+   */
+  private async replan(s: ChainState): Promise<ChainState> {
+    const stop = async () => {
+      const n = stopChain(s, "unknown", this.now());
+      await this.save(n);
+      return n;
+    };
+    if (!this.deps.replan || s.status !== "running") return stop();
+    const view = await this.view(s.tabId, s.provider);
+    const cs = view?.at?.cs ?? view?.top;
+    if (!cs) return stop();
+    let p: (PlannedStep & { url: string }) | null;
+    try {
+      p = await this.deps.replan(cs, s.itemId);
+    } catch {
+      p = null;
+    }
+    if (!p) return stop();
+    const { url, ...planned } = p;
+    return this.advance(s, planStep(s, planned, url, cs.origin, this.now(), cs.frameId), cs);
   }
 
   private async forget(tabId: number): Promise<void> {
@@ -393,7 +439,7 @@ export class ChainRunner implements ChainDriver {
   private async run(s: ChainState, a: ChainAction, cs: CsContext): Promise<"missed" | undefined> {
     switch (a.type) {
       case "fill":
-        await this.deps.filler.fillLogin(this.target(cs, a.formRef), s.itemId, a.fields, "chain");
+        await this.deps.filler.fillLogin(this.target(cs, a.formRef), s.itemId, a.fields, "chain", a.roles);
         return;
       case "fill_provider":
         if (!s.account || !s.provider) throw new BgError("invalid");
@@ -403,13 +449,17 @@ export class ChainRunner implements ChainDriver {
       case "submit": {
         const c = await this.deps.frames.checkFillTarget(cs.tabId, cs.frameId, cs.origin, cs.documentId, "same_origin");
         if (!c.ok) throw new BgError(c.code);
-        const msg: BgToCs = { type: a.type, origin: cs.origin, ref: a.type === "click" ? a.ref : a.formRef };
+        const msg: BgToCs =
+          a.type === "click"
+            ? { type: "click", origin: cs.origin, ref: a.ref }
+            : { type: "submit", origin: cs.origin, ref: a.formRef, ...(a.planned ? { planned: true as const } : {}) };
         const opts = cs.documentId !== undefined ? { documentId: cs.documentId } : { frameId: cs.frameId };
         const reply: unknown = await this.deps.ext.tabs.sendMessage(cs.tabId, msg, opts);
         return a.type === "submit" && (reply as { ok?: unknown } | null | undefined)?.ok === false ? "missed" : undefined;
       }
       case "stop":
       case "done":
+      case "replan":
         return;
     }
   }
@@ -486,8 +536,26 @@ export class ChainRunner implements ChainDriver {
   }
 
   private async save(s: ChainState): Promise<void> {
+    const prev = this.mem.get(s.tabId);
     this.mem.set(s.tabId, s);
     await this.deps.area.set({ [PREFIX + s.tabId]: s });
+    // The chain just ended (this very chain: same start).
+    if (prev?.status === "running" && s.status !== "running" && prev.startedAt === s.startedAt) await this.ended(s);
+  }
+
+  /** `done`: the penalty goes, the fill is noted. `repeat`: the site is penalized. Never fails. */
+  private async ended(s: ChainState): Promise<void> {
+    try {
+      if (s.status === "done") {
+        await clearPenalty(this.deps.area, s.site);
+        const { roles, intent } = noteShape(s);
+        await noteFill(this.deps.session, { ctx: "chain", item_id: s.itemId, origin: s.siteOrigin, roles, intent, steps: noteSteps(s) });
+      } else if (s.reason === "repeat") {
+        await setPenalty(this.deps.area, s.site, this.now());
+      }
+    } catch {
+      // Storage gone: the memory is a hint, the chain's outcome stands.
+    }
   }
 
   private disarm(tabId: number): void {

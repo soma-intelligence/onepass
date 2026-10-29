@@ -112,7 +112,8 @@ describe("planner", () => {
       context([form("f1", ["username", "current_password"], [{ button_ref: "b1", class: "submit" }])]),
     );
     expect(outcome).toBe("chain");
-    expect(calls.chain).toEqual([[7, ITEM, undefined, {}]]);
+    // The plan's main form roles and intent go with it (note_fill at done).
+    expect(calls.chain).toEqual([[7, ITEM, undefined, { planned: { roles: ["username", "current_password"], intent: "login" } }]]);
     expect(calls.filler).toEqual([]);
     // The request carries the background's origins, never the content script's.
     expect(calls.requests[0]).toEqual({

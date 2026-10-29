@@ -1,27 +1,36 @@
 // Wiring of the service worker: one session, the pairing flow, menu,
 // overlay and save prompt tokens, the fill pipeline, the popup backend, the
 // sign-in chain, the save and provider-link proposals, and the router.
+//
+// Smart fill (Task 10): the content script's `plan_context` (icon click, or
+// `smart_fill` from the popup's Fill and the `fill-smart` command) is
+// planned and run; "menu" registers the plan's alternatives for the menu the
+// content script opens next. The chain's unknown pages are planned again on
+// a context the content script replies to `plan_request`. Fills are noted
+// for the site memory (notes.ts), the penalty lives in penalty.ts.
 import { BridgeClient, type Summary } from "../bridge/client";
 import { parseOrigin, sameSite } from "../shared/domain";
-import type { ProviderId } from "../shared/messages";
+import type { BgToCs, FieldRole, FillIntent, PageContext, PlanContextBody, PlanOut, ProviderId } from "../shared/messages";
 import type { MenuInit } from "../shared/ui";
 import { signInChoices } from "./chain/choices";
 import { PageAnalyses } from "./analyses";
 import { ChainRunner } from "./chain/driver";
 import { ProviderFlows } from "./chain/provider-flow";
 import { SaveFlow } from "./chain/save-flow";
-import type { ChainDriver } from "./chain/types";
+import type { ChainDriver, StartOptions } from "./chain/types";
 import type { BgExt } from "./ext";
 import { type FillTarget, Filler } from "./fill";
 import { type CsContext, Frames } from "./frames";
-import { KeyRelay, type MenuRecord, MenuTokens } from "./menu";
+import { KeyRelay, type MenuField, type MenuRecord, MenuTokens } from "./menu";
 import { openTransport } from "./native";
 import { NeverSave } from "./never-save";
+import { FillNotes } from "./notes";
 import { Overlays, removeFrame, resizeFrame } from "./overlay";
 import { PairingFlow } from "./pairing";
-import { Planner, framesFromSender } from "./planner";
-import { PopupBackend, loginFields } from "./popup";
-import { type Handlers, createRouter } from "./router";
+import { clearPenalty, hasPenalty, siteOf } from "./penalty";
+import { Planner, type PlanOrigins, framesFromSender, mainRoles } from "./planner";
+import { PopupBackend, alternativesFirst, loginFields } from "./popup";
+import { type Handlers, createRouter, parsePlanContextBody } from "./router";
 import { type SavePending, SavePrompts } from "./save";
 import { BgError, type BridgeLike, Session } from "./session";
 import { IdbPairingStore, type PairingStore, Store } from "./store";
@@ -37,6 +46,11 @@ export interface BackgroundOptions {
   chain?: ChainDriver;
 }
 
+/** The command of manifests/base.json that runs smart fill in the active tab. */
+export const FILL_SMART_COMMAND = "fill-smart";
+/** A menu opened this soon after a plan answered "menu" lists that plan's alternatives first. */
+export const PLAN_MENU_MS = 30_000;
+
 /** Forms the menu offers sign-ins on (provider methods start the chain there). */
 const SIGN_IN_FORMS: ReadonlySet<string> = new Set(["login", "signup", "change_password", "otp"]);
 /** Forms where the menu offers to generate a password, items or not. */
@@ -48,7 +62,16 @@ function targetOf(rec: MenuRecord): FillTarget {
   return t;
 }
 
+/** What a plan that answered "menu" left for the menu of its frame. */
+interface PlanForMenu {
+  alternatives: string[];
+  planned: { roles: FieldRole[]; intent: FillIntent };
+  documentId: string | undefined;
+  at: number;
+}
+
 export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
+  const now = opts.now ?? Date.now;
   const store = new Store(ext, opts.pairings ?? new IdbPairingStore());
   const newClient = opts.newClient ?? (() => new BridgeClient(openTransport(ext.runtime)));
   const session = new Session({ store, newClient, ...(opts.sleep ? { sleep: opts.sleep } : {}) });
@@ -75,6 +98,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     chain: lateChain,
     ...(opts.now ? { now: opts.now } : {}),
   });
+  // The chain plans unknown pages; the planner starts chains.
+  const plannerRef: { current: Planner | null } = { current: null };
   const runner = opts.chain
     ? null
     : new ChainRunner({
@@ -87,12 +112,20 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         analyses,
         overlays: { open: (cs, anchor) => overlays.open(cs, anchor), hasTab: (t) => overlays.tokens.hasTab(t) },
         menuOpen: (t) => menus.hasTab(t),
+        replan: (cs, itemId) => replanForChain(cs, itemId),
         ...(opts.now ? { now: opts.now } : {}),
       });
   const chain: ChainDriver = opts.chain ?? (runner as ChainRunner);
   chainRef.current = chain;
   const chainRunning = async (tabId: number) => (runner ? runner.isRunning(tabId) : false);
-  const savePrompts = new SavePrompts({ ext, session, neverSave, ...(opts.now ? { now: opts.now } : {}) });
+  const notes = new FillNotes({ session, now });
+  const savePrompts = new SavePrompts({
+    ext,
+    session,
+    neverSave,
+    onSaved: (tabId, origin, itemId) => notes.onSaved(tabId, origin, itemId),
+    ...(opts.now ? { now: opts.now } : {}),
+  });
   // One surface: a save prompt takes the place of an offered overlay (both sit at the top right).
   const saves = {
     open: async (p: SavePending) => {
@@ -117,10 +150,71 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     ...(opts.now ? { now: opts.now } : {}),
   });
   session.onLocked(() => saveFlow.clearGenerated());
-  const planner = new Planner(session, filler, chain, saveFlow);
+  const planner = new Planner(session, filler, chain, saveFlow, {
+    penalized: (origin) => hasPenalty(store.session, origin),
+    onFilled: (t, note) => notes.filled(t.tabId, t.origin, note),
+  });
+  plannerRef.current = planner;
   /** Smart fill origins of a content script frame; null for a cross-origin child (or an unknown top). */
   const planOrigins = async (from: CsContext) =>
     framesFromSender(from, from.frameId === 0 ? from.origin : await frames.frameOrigin(from.tabId, 0));
+  const fillTarget = (cs: CsContext, formRef: string): FillTarget => {
+    const t: FillTarget = { tabId: cs.tabId, frameId: cs.frameId, origin: cs.origin, formRef };
+    if (cs.documentId !== undefined) t.documentId = cs.documentId;
+    if (cs.frameId !== 0) t.sameOriginAsTop = true;
+    return t;
+  };
+  /** Per frame (`tab:frame`): the alternatives of a plan that answered "menu". */
+  const planMenus = new Map<string, PlanForMenu>();
+
+  /**
+   * The page context of frame `cs`, asked of its content script
+   * (`plan_request`, delivered to that very document) and rebuilt and bounded
+   * as a `plan_context` is; null when it does not answer.
+   */
+  const requestContext = async (cs: CsContext): Promise<PlanContextBody | null> => {
+    const msg: BgToCs = { type: "plan_request" };
+    const where = cs.documentId !== undefined ? { documentId: cs.documentId } : { frameId: cs.frameId };
+    let reply: unknown;
+    try {
+      reply = await ext.tabs.sendMessage(cs.tabId, msg, where);
+    } catch {
+      return null;
+    }
+    const ctx = (reply as { ok?: unknown; context?: unknown } | null | undefined)?.context;
+    return ctx === undefined ? null : parsePlanContextBody(ctx);
+  };
+
+  /** A plan of frame `cs` on a context its content script replied (no click: nothing typed is hashed). */
+  const planWithoutGesture = async (cs: CsContext): Promise<{ t: FillTarget; plan: PlanOut } | null> => {
+    const origins: PlanOrigins | null = await planOrigins(cs);
+    if (!origins) return null;
+    const body = await requestContext(cs);
+    if (!body) return null;
+    const t = fillTarget(cs, body.forms[0]?.form_ref ?? "");
+    const context: PageContext = { ...body, ...origins };
+    return { t, plan: await planner.plan(t, context) };
+  };
+
+  /** Spec 5.3: a chain's unknown page planned again; the plan's login group of the chain's item, if any. */
+  async function replanForChain(cs: CsContext, itemId: string) {
+    if (!plannerRef.current) return null;
+    const r = await planWithoutGesture(cs);
+    if (!r || (r.plan.intent !== "login" && r.plan.intent !== "otp")) return null;
+    const g = r.plan.groups.find((x) => x.kind === "login" && x.item_id === itemId && x.fields.length > 0);
+    if (!g) return null;
+    const f = await frames.details(cs.tabId, cs.frameId);
+    if (!f) return null;
+    return { formRef: g.form_ref, roles: g.fields.map((x) => x.role), submit: planner.submits(r.t, r.plan), url: f.url };
+  }
+
+  /** The popup's Fill and the command: the tab's top frame runs smart fill as if its user clicked. */
+  const smartFillTab = async (tabId: number): Promise<void> => {
+    const f = await frames.details(tabId, 0);
+    if (!f || parseOrigin(f.url)?.https !== true) throw new BgError("insecure_origin");
+    const msg: BgToCs = { type: "smart_fill" };
+    await ext.tabs.sendMessage(tabId, msg, f.documentId !== undefined ? { documentId: f.documentId } : { frameId: 0 });
+  };
   const popup = new PopupBackend({
     ext,
     area: store.session,
@@ -130,6 +224,18 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     analyses,
     onLock: () => saveFlow.clearGenerated(),
     onGenerated: (tabId, origin, password) => saveFlow.rememberGenerated(tabId, origin, password),
+    plan: async (tabId, origin) => {
+      const f = await frames.details(tabId, 0);
+      if (!f || parseOrigin(f.url)?.origin !== origin) return null;
+      const cs: CsContext = { tabId, frameId: 0, origin };
+      if (f.documentId !== undefined) cs.documentId = f.documentId;
+      return (await planWithoutGesture(cs))?.plan ?? null;
+    },
+    smartFill: smartFillTab,
+    onForgetSite: async (origin) => {
+      const site = siteOf(origin);
+      if (site !== null) await clearPenalty(store.session, site);
+    },
     ...(opts.now ? { now: opts.now } : {}),
   });
 
@@ -164,7 +270,16 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         if (m.auto && !NEW_PASSWORD_FORMS.has(m.formKind) && !(await offersAnything(from.origin, m.formKind))) throw new BgError("not_found");
         // One surface: the menu replaces an offered overlay; a running chain keeps the page.
         if (await overlays.yieldTo(from.tabId)) throw new BgError("not_allowed");
-        const token = await menus.register(from, { formRef: m.formRef, fieldRef: m.fieldRef, formKind: m.formKind });
+        const field: MenuField = { formRef: m.formRef, fieldRef: m.fieldRef, formKind: m.formKind };
+        // Right after a plan of this very document answered "menu": its alternatives first.
+        const key = `${from.tabId}:${from.frameId}`;
+        const left = planMenus.get(key);
+        planMenus.delete(key);
+        if (!m.auto && left && now() - left.at <= PLAN_MENU_MS && left.documentId === from.documentId) {
+          field.first = left.alternatives;
+          field.planned = left.planned;
+        }
+        const token = await menus.register(from, field);
         return { url: `${ext.runtime.getURL("menu.html")}#${token}` };
       },
       close_menu: async (_m, from) => {
@@ -192,11 +307,23 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         const origins = await planOrigins(from);
         // A cross-origin child frame gets no plan: the menu, as before.
         if (!origins) return { outcome: "menu" };
-        const t: FillTarget = { tabId: from.tabId, frameId: from.frameId, origin: from.origin, formRef: m.formRef };
-        if (from.documentId !== undefined) t.documentId = from.documentId;
-        if (from.frameId !== 0) t.sameOriginAsTop = true;
+        const t = fillTarget(from, m.formRef ?? m.context.forms[0]?.form_ref ?? "");
         const plan = await planner.plan(t, { ...m.context, ...origins });
-        return { outcome: await planner.run(t, plan) };
+        const run: { form?: string; anchorRef?: string } = {};
+        // An icon click: its form only (the popup and the command run the whole plan).
+        if (m.formRef !== undefined) run.form = m.formRef;
+        if (m.fieldRef !== undefined) run.anchorRef = m.fieldRef;
+        const outcome = await planner.run(t, plan, run);
+        if (outcome === "menu") {
+          const ctx = planner.contextOf(plan);
+          planMenus.set(`${from.tabId}:${from.frameId}`, {
+            alternatives: plan.alternatives.slice(0, 8),
+            planned: { roles: ctx ? mainRoles(ctx, plan.groups) : [], intent: plan.intent },
+            documentId: from.documentId,
+            at: now(),
+          });
+        }
+        return { outcome };
       },
       menu_key: async (m, from) => {
         // Only to the menu of this very frame (and document).
@@ -215,7 +342,11 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         } else {
           items = (await session.request({ op: "list_for_origin", ctx: "menu", origin: rec.origin })).items;
         }
+        // Opened after a plan that could not choose: its alternatives first, the best on top.
+        if (rec.first && rec.first.length > 0) items = alternativesFirst(items, rec.first);
         const out: MenuInit = { origin: rec.origin, formKind: rec.formKind, items };
+        const best = rec.first?.[0];
+        if (best !== undefined && items[0]?.item_id === best) out.best = best;
         // On a provider's pages during a sign-in to a site: the account linked to it.
         const flow = rec.frameId === 0 ? await providerFlows.signingInto(rec.tabId, rec.origin) : null;
         if (flow) {
@@ -251,10 +382,13 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         // Only an item the menu showed; its kind comes from the host.
         const kind = rec.offered && Object.hasOwn(rec.offered, m.itemId) ? rec.offered[m.itemId] : undefined;
         const t = targetOf(rec);
-        if (kind === "login") await filler.fillLogin(t, m.itemId, loginFields(rec.formKind));
-        else if (kind === "card") await filler.fillCard(t, m.itemId);
-        else if (kind === "identity") await filler.fillIdentity(t, m.itemId);
+        let written: number;
+        if (kind === "login") written = await filler.fillLogin(t, m.itemId, loginFields(rec.formKind));
+        else if (kind === "card") written = await filler.fillCard(t, m.itemId);
+        else if (kind === "identity") written = await filler.fillIdentity(t, m.itemId);
         else throw new BgError("invalid");
+        // A pick in a menu a plan opened: the site memory learns it once the page moves on.
+        if (rec.planned && written > 0) notes.filled(rec.tabId, rec.origin, { items: [m.itemId], ...rec.planned });
         return {};
       },
       menu_generate: async (m, from) => {
@@ -286,8 +420,9 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         // The menu goes first: its place is where the progress shows (one surface).
         await menus.revokeFrame(rec.tabId, rec.frameId);
         await removeFrame(ext.tabs, rec, "menu");
-        const start: { accountId?: string; anchorRef?: string } = {};
+        const start: StartOptions = {};
         if (m.accountId !== undefined) start.accountId = m.accountId;
+        if (rec.planned) start.planned = rec.planned;
         if (rec.frameId === 0) start.anchorRef = rec.fieldRef;
         await chain.start(rec.tabId, m.itemId, m.provider, start);
         return {};
@@ -340,6 +475,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     runner,
     saveFlow,
     planner,
+    notes,
     providerFlows,
     neverSave,
     overlays,
@@ -362,6 +498,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       });
       ext.webNavigation.onCommitted.addListener((d) => {
         if (d.frameId !== 0) return;
+        void notes.onNavigation(d.tabId, d.url).catch(() => undefined);
         saveFlow.onNavigation(d.tabId);
         void providerFlows.onNavigation(d.tabId, d.url).catch(() => undefined);
       });
@@ -370,9 +507,19 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       });
       ext.tabs.onRemoved.addListener((tabId) => {
         saveFlow.onTabRemoved(tabId);
+        notes.onTabRemoved(tabId);
+        for (const k of planMenus.keys()) if (k.startsWith(`${tabId}:`)) planMenus.delete(k);
         void providerFlows.drop(tabId).catch(() => undefined);
       });
       ext.runtime.onMessage.addListener(createRouter(ext.runtime, handlers));
+      // Ctrl+Shift+L / Command+Shift+L: smart fill in the active tab (a gesture of the user).
+      ext.commands?.onCommand.addListener((command) => {
+        if (command !== FILL_SMART_COMMAND) return;
+        void (async () => {
+          const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
+          if (typeof tab?.id === "number") await smartFillTab(tab.id);
+        })().catch(() => undefined);
+      });
     },
   };
 }

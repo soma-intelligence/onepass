@@ -239,6 +239,15 @@ function formContext(v: unknown): FormContext {
   };
 }
 
+/** A page context body a content script replied to `plan_request`, rebuilt and bounded; null when malformed. */
+export function parsePlanContextBody(v: unknown): PlanContextBody | null {
+  try {
+    return planContext(v);
+  } catch {
+    return null;
+  }
+}
+
 function planContext(v: unknown): PlanContextBody {
   const o = obj(v);
   let hash: number[] | null = null;
@@ -284,8 +293,12 @@ export function parseCsToBg(m: unknown): CsToBg | null {
         return { type: "menu_key", key: member(o.key, MENU_KEYS) };
       case "fill_salt":
         return { type: "fill_salt" };
-      case "plan_context":
-        return { type: "plan_context", formRef: ref(o.formRef), context: planContext(o.context) };
+      case "plan_context": {
+        const r: CsToBg = { type: "plan_context", context: planContext(o.context) };
+        if (o.formRef !== undefined) r.formRef = ref(o.formRef);
+        if (o.fieldRef !== undefined) r.fieldRef = ref(o.fieldRef);
+        return r;
+      }
       default:
         return null;
     }
@@ -382,6 +395,8 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "popup_pair_approve":
       case "popup_pair_cancel":
       case "popup_forget":
+      case "popup_smart_fill":
+      case "popup_forget_site":
         return { type: o.type };
       case "popup_search":
         return { type: "popup_search", query: str(o.query, MAX_QUERY) };

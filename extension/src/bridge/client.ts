@@ -143,6 +143,8 @@ interface Ops {
   plan_fill: { req: PlanFillRequest; res: PlanFillResponse };
   /** What was filled where, for the site memory. */
   note_fill: { req: NoteFillRequest; res: NoteFillResponse };
+  /** Forget a site in every item's memory (popup only); `site` is a host or an https origin, reduced by the host. */
+  forget_site: { req: { ctx: Ctx; site: string }; res: { items: number } };
 }
 
 export type Op = keyof Ops;

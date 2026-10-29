@@ -6,6 +6,14 @@
 // runtime (tests use jsdom and a fake); the bottom of this file starts it for
 // real. Nothing is exposed on `window` or `document`.
 //
+// Smart fill: a trusted click on a field's icon, and the worker's
+// `smart_fill` (popup Fill, `fill-smart` command), build the page context
+// here (no value in it, the typed username only as a salted hash), and send
+// it as `plan_context`; the worker plans and fills. These are the only
+// senders of `fill_salt` and `plan_context`: never a focus, a click into a
+// field (`auto`), a page load or a mutation. When the worker answers "menu",
+// fails or does not answer, the menu opens instead (never a blind fill).
+//
 // Limit: fields inside the page's own shadow roots are not detected (the
 // analysis queries the document tree only). Closed roots are never attempted;
 // open roots are left for later, since walking every element for `shadowRoot`
@@ -13,6 +21,7 @@
 import { ext as browserExt } from "../shared/browser";
 import { parseOrigin } from "../shared/domain";
 import type { BgToCs, CsToBg, FieldRole, FrameKind, PageAnalysis } from "../shared/messages";
+import { buildPageContext, findTypedUsername, withTypedUsernameHash } from "./context";
 import { analyzeDocument } from "./detect/forms";
 import { FormLineage, RefRegistry } from "./detect/refs";
 import { domGeometry, type Geometry } from "./detect/visibility";
@@ -72,6 +81,12 @@ function fillValues(v: unknown): Partial<Record<FieldRole, string>> | null {
 
 const isControl = (t: EventTarget | null): boolean =>
   t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement;
+
+/** Field `k` of a reply's `ok` payload (`{ok: {k}}`), or undefined (error envelope, no reply). */
+function okField(r: unknown, k: string): unknown {
+  const ok = (r as { ok?: unknown } | null)?.ok;
+  return typeof ok === "object" && ok !== null ? (ok as Record<string, unknown>)[k] : undefined;
+}
 
 /** The URL in an `open_menu` reply (`{ok: {url}}`), or null. */
 function replyUrl(r: unknown): string | null {
@@ -158,6 +173,44 @@ export function createContentScript(o: ContentOptions): ContentScript {
     parts.frames.showFrame("menu", url, t.el);
   };
 
+  let smartSeq = 0;
+  /** Where the menu opens for a gesture without a field (popup, command): the focused field, else the first one. */
+  const fallbackTarget = (): IconTarget | null => {
+    if (!parts) return null;
+    const focused = parts.icons.targetOf(doc.activeElement);
+    if (focused) return focused;
+    return parts.icons.all().find((x) => x.el.isConnected) ?? null;
+  };
+
+  /**
+   * Smart fill, from a trusted gesture only: `t` is the field whose icon was
+   * clicked, null for the popup's Fill and the `fill-smart` command.
+   */
+  const smartFill = async (t: IconTarget | null) => {
+    const origin = currentOrigin();
+    if (!parts || stopped || origin === null) return;
+    const seq = ++smartSeq;
+    const a = parts.observer.refresh();
+    const salt = okField(await send({ type: "fill_salt" }), "salt");
+    if (seq !== smartSeq || !parts || stopped) return;
+    let ctx = buildPageContext(doc, refs, a, { origin, topOrigin: origin, frame: "top" }, geometry);
+    // No salt (bridge down): no hash; the plan just does without the typed username.
+    if (typeof salt === "string") ctx = await withTypedUsernameHash(ctx, salt, findTypedUsername(a, refs));
+    const msg: CsToBg = { type: "plan_context", context: { forms: ctx.forms, typed_username_hash: ctx.typed_username_hash } };
+    if (t) {
+      msg.formRef = t.form.ref;
+      msg.fieldRef = t.fieldRef;
+    }
+    const outcome = okField(await send(msg), "outcome");
+    if (seq !== smartSeq || !parts || stopped) return;
+    if (outcome === "filled" || outcome === "chain") return;
+    // Nothing to do for a gesture without a field (an ignored page).
+    if (outcome === "nothing" && !t) return;
+    // "menu", an error (bridge down, invalid context, origin mismatch) or no answer: the menu.
+    const target = t?.el.isConnected ? t : fallbackTarget();
+    if (target) await openMenu(target);
+  };
+
   const pinned = (origin: unknown): boolean => {
     const here = currentOrigin();
     return typeof origin === "string" && here !== null && origin === here;
@@ -181,8 +234,21 @@ export function createContentScript(o: ContentOptions): ContentScript {
         if (pinned(m.origin) && typeof m.ref === "string") ok = parts.submit.clickRef(m.ref);
         break;
       case "submit":
-        if (pinned(m.origin) && typeof m.ref === "string") ok = parts.submit.submitForm(m.ref);
+        if (pinned(m.origin) && typeof m.ref === "string") ok = parts.submit.submitForm(m.ref, m.planned === true);
         break;
+      case "smart_fill":
+        // Our worker, on a click in the popup or the command's key: a gesture of the user.
+        void smartFill(null);
+        ok = true;
+        break;
+      case "plan_request": {
+        // A context to plan with (popup line, chain replan): no hash, nothing typed leaves.
+        const origin = currentOrigin();
+        if (origin === null) break;
+        const ctx = buildPageContext(doc, refs, parts.observer.refresh(), { origin, topOrigin: origin, frame: "top" }, geometry);
+        sendResponse({ ok: true, context: { forms: ctx.forms, typed_username_hash: null } });
+        return undefined;
+      }
       case "show_frame": {
         if (typeof m.kind !== "string" || !FRAME_KINDS.has(m.kind) || typeof m.url !== "string") break;
         // An origin pin (delivery by frameId only) must match this document.
@@ -242,7 +308,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         refs,
         geometry,
         isTrusted,
-        onOpen: (t) => void openMenu(t),
+        onOpen: (t) => void smartFill(t),
         onLayout: queueLayout,
       });
       const observer = createObserver({

@@ -11,12 +11,19 @@
 // `OpenChain` and `FillAndSubmit` fall back to `Fill` unless the intent is
 // `login` or `otp`, the frame is the top frame and no planned form has a
 // pay or create button.
+//
+// Task 10 adds: the site penalty (a site whose last chain ended in `repeat`
+// gets `Medium` instead of `High`, penalty.ts), the gesture's form scoping
+// (an icon click runs only its form's groups), the anchor of the chain's
+// progress, and the report of a fill for the site memory (notes.ts).
 import type { FillField } from "../bridge/client";
 import type { FieldRole, FillAction, PageContext, PageFrameKind, PlanGroupOut, PlanOut } from "../shared/messages";
 import type { SaveFlow } from "./chain/save-flow";
-import type { ChainDriver } from "./chain/types";
+import type { ChainDriver, StartOptions } from "./chain/types";
 import type { FillTarget, Filler } from "./fill";
 import type { CsContext } from "./frames";
+import type { FilledNote } from "./notes";
+import { penalized } from "./penalty";
 import { BgError, type Session } from "./session";
 
 /** What a run did: values written, a chain started, the menu to open instead, or nothing. */
@@ -51,7 +58,35 @@ export function loginFieldsFor(roles: readonly FieldRole[]): FillField[] {
   return out;
 }
 
+/**
+ * Roles of the plan's main form (the form of its first group): its visible
+ * fields with a role, in page order. What `note_fill` reports, the list the
+ * bridge hashes into `form_shape_hash` (`main_roles` in onepass-bridge).
+ */
+export function mainRoles(ctx: Pick<PageContext, "forms">, groups: readonly PlanGroupOut[]): FieldRole[] {
+  const ref = groups[0]?.form_ref;
+  const form = ref === undefined ? undefined : ctx.forms.find((f) => f.form_ref === ref);
+  if (!form) return [];
+  return form.fields.filter((f) => f.visible && f.role !== null).map((f) => f.role as FieldRole);
+}
+
+export interface PlannerHooks {
+  /** The site of `origin` lost a level of confidence (penalty.ts). */
+  penalized?: (origin: string) => Promise<boolean>;
+  /** A run wrote values without a chain (for the site memory, notes.ts). */
+  onFilled?: (t: FillTarget, note: FilledNote) => void;
+}
+
+export interface RunOptions {
+  /** The form of the gesture (icon click): only its groups run; none left, the menu. */
+  form?: string;
+  /** The field of the gesture: the chain's progress shows under it (top frame). */
+  anchorRef?: string;
+}
+
 const SUBMITTING: ReadonlySet<FillAction> = new Set<FillAction>(["open_chain", "fill_and_submit"]);
+/** Actions whose groups a gesture's form narrows. */
+const SCOPED: ReadonlySet<FillAction> = new Set<FillAction>(["open_chain", "fill_and_submit", "fill"]);
 
 /** What a plan was made for: its page, and the frame and document it may run in. */
 interface Made {
@@ -71,6 +106,7 @@ export class Planner {
     private readonly filler: Pick<Filler, "fillLogin" | "fillCard" | "fillIdentity" | "fillGenerated" | "submit">,
     private readonly chain: Pick<ChainDriver, "start">,
     private readonly saveFlow: Pick<SaveFlow, "rememberGenerated">,
+    private readonly hooks: PlannerHooks = {},
   ) {}
 
   /**
@@ -86,22 +122,47 @@ export class Planner {
     else throw new BgError("cross_site_frame");
     // A same-origin child's top is at its very origin.
     const context: PageContext = { ...ctx, origin: t.origin, top_origin: t.origin, frame_kind: frame };
-    const { plan } = await this.session.request({ op: "plan_fill", ctx: "menu", origin: t.origin, context });
+    const reply = await this.session.request({ op: "plan_fill", ctx: "menu", origin: t.origin, context });
+    // A refused password on this site: no auto-submit, no chain, until a chain gets through.
+    const plan = (await this.isPenalized(t.origin)) ? penalized(reply.plan) : reply.plan;
     this.made.set(plan, { context, tabId: t.tabId, frameId: t.frameId, origin: t.origin, documentId: t.documentId });
     return plan;
   }
 
-  /** Carry out `plan` in the frame of `t`. */
-  async run(t: FillTarget, plan: PlanOut): Promise<RunOutcome> {
+  private async isPenalized(origin: string): Promise<boolean> {
+    try {
+      return (await this.hooks.penalized?.(origin)) === true;
+    } catch {
+      // Storage unreadable: assume the worst (no auto-submit).
+      return true;
+    }
+  }
+
+  /** The plan's context (its page), when this planner made it. */
+  contextOf(plan: PlanOut): PageContext | undefined {
+    return this.made.get(plan)?.context;
+  }
+
+  /**
+   * Carry out `plan` in the frame of `t`. With `opts.form` (an icon click),
+   * only the groups of that form run; when it has none, the menu.
+   */
+  async run(t: FillTarget, full: PlanOut, opts: RunOptions = {}): Promise<RunOutcome> {
     // A plan made for another tab, frame, origin or document: the menu instead.
-    const made = this.made.get(plan);
+    const made = this.made.get(full);
     if (
       made &&
       (made.tabId !== t.tabId || made.frameId !== t.frameId || made.origin !== t.origin || made.documentId !== t.documentId)
     ) {
       return "menu";
     }
-    const action = this.guarded(t, plan);
+    let plan = full;
+    if (opts.form !== undefined && SCOPED.has(full.action)) {
+      const groups = full.groups.filter((g) => g.form_ref === opts.form);
+      if (groups.length === 0) return "menu";
+      plan = { ...full, groups };
+    }
+    const action = this.guarded(t, plan, made?.context);
     switch (action) {
       case "nothing":
         return "nothing";
@@ -110,7 +171,9 @@ export class Planner {
       case "open_chain": {
         const login = plan.groups.find((g) => g.kind === "login" && g.item_id !== null);
         if (!login?.item_id) return "menu";
-        await this.chain.start(t.tabId, login.item_id, undefined, {});
+        const start: StartOptions = { planned: { roles: made ? mainRoles(made.context, plan.groups) : [], intent: plan.intent } };
+        if (opts.anchorRef !== undefined && t.frameId === 0) start.anchorRef = opts.anchorRef;
+        await this.chain.start(t.tabId, login.item_id, undefined, start);
         return "chain";
       }
       case "fill":
@@ -121,6 +184,8 @@ export class Planner {
         /** Every group wrote at least one value, and the code went in when it is a code. */
         let complete = true;
         let otpWritten = false;
+        const items: string[] = [];
+        let wrote = false;
         try {
           for (const g of plan.groups) {
             const gt: FillTarget = { ...t, formRef: g.form_ref };
@@ -139,8 +204,10 @@ export class Planner {
               written = await this.fillGroup(gt, g, g.item_id, roles);
               // The count is of distinct roles: all of them written means the code was too.
               if (g.kind === "login" && roles.includes("otp") && written === new Set(roles).size) otpWritten = true;
+              if (written > 0 && !items.includes(g.item_id)) items.push(g.item_id);
             }
             if (written === 0) complete = false;
+            else wrote = true;
           }
         } finally {
           generated = undefined;
@@ -149,9 +216,18 @@ export class Planner {
           const last = plan.groups[plan.groups.length - 1] as PlanGroupOut;
           await this.filler.submit({ ...t, formRef: last.form_ref });
         }
+        // Something went in (a generated password alone too: a save of it is noted with these roles).
+        if (wrote && made) {
+          this.hooks.onFilled?.(t, { items, roles: mainRoles(made.context, plan.groups), intent: plan.intent });
+        }
         return "filled";
       }
     }
+  }
+
+  /** `plan` may submit in the frame of `t` (`OpenChain` or `FillAndSubmit` after every guard). */
+  submits(t: FillTarget, plan: PlanOut): boolean {
+    return SUBMITTING.has(this.guarded(t, plan, this.made.get(plan)?.context));
   }
 
   /** Roles written for a group with an item (0 when none had a value). */
@@ -176,7 +252,7 @@ export class Planner {
    * frame, next to a pay or create button, or for a plan this planner did
    * not make (its page is unknown).
    */
-  private guarded(t: FillTarget, plan: PlanOut): FillAction {
+  private guarded(t: FillTarget, plan: PlanOut, ctx: PageContext | undefined): FillAction {
     if (!SUBMITTING.has(plan.action)) return plan.action;
     if (plan.intent !== "login" && plan.intent !== "otp") return "fill";
     if (plan.confidence !== "high") return "fill";
@@ -184,7 +260,6 @@ export class Planner {
     if (plan.reasons.includes("pay_button") || plan.reasons.includes("create_button")) return "fill";
     const planned = new Set(plan.groups.map((g) => g.form_ref));
     if (planned.size > 1) return "fill";
-    const ctx = this.made.get(plan)?.context;
     if (!ctx) return "fill";
     for (const f of ctx.forms) {
       if (planned.has(f.form_ref) && f.buttons.some((b) => b.class === "pay" || b.class === "create")) return "fill";

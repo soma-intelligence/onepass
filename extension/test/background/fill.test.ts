@@ -216,7 +216,7 @@ describe("fill of a planned group", () => {
     ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
     await filler.submit(target());
     expect(ext.sentToTabs).toEqual([
-      { tabId: 7, message: { type: "submit", origin: SITE, ref: "f1" }, options: { documentId: "doc-1" } },
+      { tabId: 7, message: { type: "submit", origin: SITE, ref: "f1", planned: true }, options: { documentId: "doc-1" } },
     ]);
     ext.setFrame(7, 0, "https://elsewhere.test/", "doc-2");
     expect(await code(filler.submit(target()))).toBe("origin_mismatch");

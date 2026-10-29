@@ -230,10 +230,14 @@ export type CsToBg =
   /** The bridge session's username salt, to hash a typed username here (`withTypedUsernameHash`). */
   | { type: "fill_salt" }
   /**
-   * Plan the fill of this page and run the plan; `formRef` is the form the
-   * gesture came from. The origins of the context are the background's.
+   * Plan the fill of this page and run the plan. Sent only from a trusted
+   * gesture (field icon, popup Fill, `fill-smart` command), never on focus.
+   * `formRef` and `fieldRef`: the form and field of an icon click (the run
+   * keeps that form's groups only, the progress shows under the field);
+   * absent for the popup and the command (the whole plan runs). The origins
+   * of the context are the background's.
    */
-  | { type: "plan_context"; formRef: string; context: PlanContextBody };
+  | { type: "plan_context"; formRef?: string; fieldRef?: string; context: PlanContextBody };
 
 /** What the content script sends of a `PageContext`: everything but the origins and frame kind. */
 export type PlanContextBody = Pick<PageContext, "forms" | "typed_username_hash">;
@@ -301,7 +305,11 @@ export type UiToBg =
   | { type: "popup_pair_start" }
   | { type: "popup_pair_approve" }
   | { type: "popup_pair_cancel" }
-  | { type: "popup_forget" };
+  | { type: "popup_forget" }
+  /** The plan line's Fill: smart fill in the active tab (a trusted gesture). */
+  | { type: "popup_smart_fill" }
+  /** "Oublier mes choix sur ce site": the site memory of the active tab's site. */
+  | { type: "popup_forget_site" };
 
 /**
  * Background to content script. `origin` on `fill`, `click` and `submit` is a
@@ -314,7 +322,16 @@ export type BgToCs =
   /** Values keyed by role; the content script writes them into the fields of `formRef` only. */
   | { type: "fill"; origin: string; formRef: string; values: Partial<Record<FieldRole, string>> }
   | { type: "click"; origin: string; ref: string }
-  | { type: "submit"; origin: string; ref: string }
+  /**
+   * `planned`: a submit decided by a fill plan. The content script then
+   * refuses a re-rendered copy of the form (no lineage substitution) and a
+   * form whose submit control reads as pay or create at click time.
+   */
+  | { type: "submit"; origin: string; ref: string; planned?: true }
+  /** Run smart fill in this frame as if its user clicked (popup Fill, `fill-smart` command). */
+  | { type: "smart_fill" }
+  /** The page context of this frame, for a plan made without a click (popup line, chain replan): replied, never sent. */
+  | { type: "plan_request" }
   /** `origin`: when set, shown only by a frame still at exactly this origin (no documentId pin). */
   | { type: "show_frame"; kind: FrameKind; url: string; ref?: string; origin?: string }
   | { type: "remove_frame"; kind: FrameKind }
