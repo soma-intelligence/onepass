@@ -865,6 +865,16 @@ fn ffi_invite_pairing_grants_the_account() {
         ap.on_frame(n.confirm().unwrap()).unwrap(),
         FfiPairingMessage::Confirmed
     );
+    let profile = ap
+        .seal_profile("Camille Durand".into(), vec![1, 2, 3])
+        .unwrap();
+    assert_eq!(
+        n.open(profile).unwrap(),
+        FfiPairingMessage::Profile {
+            name: "Camille Durand".into(),
+            photo: vec![1, 2, 3]
+        }
+    );
     let frame = ap
         .seal_full_grant(
             a.session.clone(),

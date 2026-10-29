@@ -9,7 +9,7 @@ use crate::devices::DeviceMode;
 use crate::{IntegrityError, Result};
 
 use super::channel::Channel;
-use super::messages::{DeviceInfo, Grant, Hello, KeyExchange, Message};
+use super::messages::{DeviceInfo, Grant, Hello, KeyExchange, Message, ProfileCard};
 use super::qr::PairingQr;
 use super::snapshot::check_snapshot;
 use super::{
@@ -24,6 +24,9 @@ pub struct Approver {
     /// `Some(public)` once a grant went out.
     granted: Option<bool>,
     acked: bool,
+    /// Started from an invite: the newcomer takes a `Profile`.
+    invite: bool,
+    profile_sent: bool,
 }
 
 impl Approver {
@@ -55,7 +58,7 @@ impl Approver {
         if h.session_id != qr.session_id || sha256(&h.ephemeral_public.to_bytes()) != qr.key_hash {
             return Err(IntegrityError::WrongContext.into());
         }
-        Approver::start(qr_text, hello, h)
+        Approver::start(qr_text, hello, h, false)
     }
 
     /// The key exchange for a checked Hello: `qr_text` is the text both
@@ -64,6 +67,7 @@ impl Approver {
         qr_text: &str,
         hello: &[u8],
         h: Hello,
+        invite: bool,
     ) -> Result<(Approver, Vec<u8>, String, DeviceInfo, DeviceMode)> {
         let t = transcript(qr_text, hello);
         let k = SymmetricKey::generate()?;
@@ -76,6 +80,8 @@ impl Approver {
             peer_confirmed: false,
             granted: None,
             acked: false,
+            invite,
+            profile_sent: false,
         };
         let kx = KeyExchange { envelope }.to_bytes();
         Ok((approver, kx, code, h.device, h.requested_mode))
@@ -95,7 +101,7 @@ impl Approver {
             Message::Ack => self.granted.is_some() && !self.acked,
             Message::Audit(_) => self.granted == Some(true),
             Message::End => true,
-            Message::Grant(_) => false,
+            Message::Grant(_) | Message::Profile(_) => false,
         };
         if !ok {
             self.channel.close();
@@ -155,6 +161,31 @@ impl Approver {
 
     pub fn seal(&mut self, msg: &Message) -> Result<Vec<u8>> {
         self.seal_at(msg, now_unix())
+    }
+
+    /// Seal the account's profile, once, in an invite session, after both
+    /// confirmations and before a full grant (`user_confirmed` as for the
+    /// grant). Refused in a session from the newcomer's QR: an older
+    /// newcomer would not read it.
+    pub fn seal_profile_at(
+        &mut self,
+        card: ProfileCard,
+        user_confirmed: bool,
+        now: i64,
+    ) -> Result<Vec<u8>> {
+        if !self.invite || self.profile_sent || self.granted.is_some() {
+            return Err(refused("profile not allowed now"));
+        }
+        if !self.peer_confirmed || !user_confirmed {
+            return Err(refused("not confirmed"));
+        }
+        if self.requested == DeviceMode::Public {
+            return Err(refused("profile for a public session"));
+        }
+        card.check()?;
+        let frame = self.channel.seal_at(&Message::Profile(card), now)?;
+        self.profile_sent = true;
+        Ok(frame)
     }
 
     /// Seal `End`: the grant goes through `seal_grant`.

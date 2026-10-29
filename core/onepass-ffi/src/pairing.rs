@@ -14,7 +14,8 @@ use onepass_core::devices::{DeviceEntry, DeviceMode};
 use onepass_core::model::{FieldValue, Item};
 use onepass_core::pairing::{
     Approver, AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Invite, InviteQr, Message,
-    Newcomer, PairingQr, PublicGrant, SnapshotRecord, check_snapshot_size, snapshot_from_store,
+    Newcomer, PairingQr, ProfileCard, PublicGrant, SnapshotRecord, check_snapshot_size,
+    snapshot_from_store,
 };
 use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::{AccountState, SyncStore};
@@ -80,6 +81,12 @@ pub enum FfiPairingMessage {
         action: FfiAuditAction,
     },
     End,
+    /// Invite sessions: the approver's display name and photo (empty for
+    /// none), right before its full grant.
+    Profile {
+        name: String,
+        photo: Vec<u8>,
+    },
 }
 
 impl From<AuditAction> for FfiAuditAction {
@@ -122,6 +129,10 @@ fn message_to_ffi(msg: &Message) -> FfiPairingMessage {
             action: e.action.clone().into(),
         },
         Message::End => FfiPairingMessage::End,
+        Message::Profile(p) => FfiPairingMessage::Profile {
+            name: p.name.clone(),
+            photo: p.photo.clone(),
+        },
     }
 }
 
@@ -600,6 +611,19 @@ impl PairingApprover {
             s.peer_confirmed = true;
         }
         Ok(message_to_ffi(&msg))
+    }
+
+    /// Invite sessions only: the account's display name and photo (at most
+    /// 64 characters and 256 KiB), sent once, after the newcomer confirmed
+    /// and the user here approved (calling this is that approval), before
+    /// `seal_full_grant`. Refused in a session from the newcomer's QR.
+    pub fn seal_profile(&self, name: String, photo: Vec<u8>) -> Result<Vec<u8>, OnePassError> {
+        let mut s = lock(&self.state);
+        if !s.peer_confirmed {
+            return Err(refused("the new device has not confirmed the code"));
+        }
+        Ok(s.core
+            .seal_profile_at(ProfileCard { name, photo }, true, now_unix())?)
     }
 
     /// Grant the account to a personal or shared device, once the newcomer
