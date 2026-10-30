@@ -3,6 +3,8 @@ import Synchronization
 
 /// `RemoteChannel` in memory, for tests and previews: a fake CloudKit zone shared by the devices of
 /// one test. `reachable = false` makes every post fail like an unreachable CloudKit.
+/// `dropsExpiredUnread`: a record that expired before its recipient started reading is gone when it
+/// does (CloudKit's expired records are purged, so nobody can count on reading them late).
 public final class InMemoryRemoteChannel: RemoteChannel {
     private struct State {
         var records: [RemoteMessage] = []
@@ -13,9 +15,11 @@ public final class InMemoryRemoteChannel: RemoteChannel {
     private let state = Mutex(State())
     /// The fake server's clock: stamps `sentAt` on every post.
     private let now: @Sendable () -> Date
+    private let dropsExpiredUnread: Bool
 
-    public init(now: @escaping @Sendable () -> Date = { Date() }) {
+    public init(now: @escaping @Sendable () -> Date = { Date() }, dropsExpiredUnread: Bool = false) {
         self.now = now
+        self.dropsExpiredUnread = dropsExpiredUnread
     }
 
     public var reachable: Bool {
@@ -47,8 +51,11 @@ public final class InMemoryRemoteChannel: RemoteChannel {
     public func messages(for device: String) -> AsyncStream<RemoteMessage> {
         let (stream, continuation) = AsyncStream.makeStream(of: RemoteMessage.self)
         let id = UUID()
+        let current = now()
+        let dropsExpired = dropsExpiredUnread
         // Registered and replayed under one lock: no message posted meanwhile is lost or doubled.
         state.withLock { s in
+            if dropsExpired { s.records.removeAll { $0.to == device && $0.expiresAt < current } }
             for m in s.records where m.to == device { continuation.yield(m) }
             s.subscribers[id] = (device, continuation)
         }

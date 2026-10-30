@@ -364,6 +364,39 @@ struct RemoteResponderTests {
         #expect(lockNotice.kind == .lock)
     }
 
+    /// The phone forgot this Mac while the Mac read nothing (asleep or quit): the notice expired
+    /// unread, as CloudKit loses it. The next unlock request finds no `K_r`: the phone hides it and
+    /// tells the Mac again, without Face ID, and the Mac drops `C` and asks no more.
+    @Test func unlockRequestWithoutKeyResendsForget() async throws {
+        let server = PhoneClock()
+        let channel = InMemoryRemoteChannel(now: server.now, dropsExpiredUnread: true)
+        let f = try await RemoteUnlockFixture.make(timeout: .seconds(10), channel: channel)
+        defer { f.cleanUp() }
+        let p = await phone(f)
+        defer { Task { await p.responder.stop() } }
+        _ = try await enroll(f, p)
+        await f.lockMac()
+        let prompts = p.presence.biometricPrompts
+
+        try await p.responder.forget(mac: f.macId)
+        #expect(toMac(f).count == 1)
+        // Nobody reads on the Mac until the notice expired.
+        server.set(180)
+
+        #expect(await f.coordinator.handleLockedRequest(client: f.client) == false)
+        #expect(f.coordinator.enrolledPhone == nil)
+        #expect(try f.store.load() == nil)
+        #expect(await p.responder.pending().isEmpty)
+        #expect(p.presence.biometricPrompts == prompts)
+        #expect(p.keyring.reads == 0)
+
+        // No more requests reach the phone.
+        let phoneID = f.phone.id
+        try await waitUntil { f.channel.stored().allSatisfy { $0.to != phoneID } }
+        #expect(await f.coordinator.handleLockedRequest(client: f.client) == false)
+        #expect(f.channel.stored().allSatisfy { $0.to != phoneID })
+    }
+
     @Test func revokedMacClearsKey() async throws {
         let f = try await RemoteUnlockFixture.make()
         defer { f.cleanUp() }
