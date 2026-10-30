@@ -19,6 +19,7 @@ pub mod generator;
 pub mod icon;
 pub mod id;
 pub mod import;
+pub mod lineage;
 pub mod lists;
 pub mod manifest;
 pub mod model;
