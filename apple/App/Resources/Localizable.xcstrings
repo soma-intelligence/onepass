@@ -10360,6 +10360,16 @@
         }
       }
     },
+    "Saisis le code affiché sur ton autre appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the code shown on your other device."
+          }
+        }
+      }
+    },
     "Saisis ton mot de passe maître" : {
       "localizations" : {
         "en" : {
