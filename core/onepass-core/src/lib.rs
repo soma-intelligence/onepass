@@ -8,6 +8,7 @@ pub mod archive;
 pub mod chain;
 pub mod companion;
 pub mod crypto;
+pub mod device_keys;
 pub mod devices;
 pub mod epoch;
 pub mod error;

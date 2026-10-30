@@ -21,8 +21,8 @@ use crate::{Error, IntegrityError, Result};
 const SIG_PREFIX: &[u8] = b"onepass/sig/v1";
 const SEED_LEN: usize = 32;
 const HYBRID_SECRET_LEN: usize = 2 * SEED_LEN;
-const MLDSA_PUBLIC_LEN: usize = 2592;
-const MLDSA_SIG_LEN: usize = 4627;
+pub(crate) const MLDSA_PUBLIC_LEN: usize = 2592;
+pub(crate) const MLDSA_SIG_LEN: usize = 4627;
 /// SLH-DSA-SHA2-256s: n = 32.
 const SLH_N: usize = 32;
 /// `sk_seed || sk_prf || pk_seed || pk_root`.
@@ -35,7 +35,7 @@ type SlhSigningKey = SigningKey<Sha2_256s>;
 type SlhVerifyingKey = VerifyingKey<Sha2_256s>;
 
 /// Frame `msg` under `domain`. Domains longer than `u16::MAX` are rejected.
-fn signed_message(domain: &[u8], msg: &[u8]) -> Result<Vec<u8>> {
+pub(crate) fn signed_message(domain: &[u8], msg: &[u8]) -> Result<Vec<u8>> {
     let len = u16::try_from(domain.len())
         .map_err(|_| Error::InvalidFormat("signature domain too long"))?;
     let mut out = Vec::with_capacity(SIG_PREFIX.len() + 2 + domain.len() + msg.len());
@@ -179,6 +179,27 @@ impl HybridVerifyingKey {
             Err(bad_signature())
         }
     }
+}
+
+/// ML-DSA-87 key pair rebuilt from its 32-byte seed (pure signing).
+pub(crate) fn mldsa_from_seed(seed: &[u8]) -> Result<PqdsaKeyPair> {
+    PqdsaKeyPair::from_seed(&ML_DSA_87_SIGNING, seed).map_err(|_| Error::Crypto)
+}
+
+/// Public Ed25519 key of a 32-byte seed.
+pub(crate) fn ed25519_public_of(seed: &[u8; 32]) -> Result<[u8; 32]> {
+    let key = Ed25519KeyPair::from_seed_unchecked(seed).map_err(|_| Error::Crypto)?;
+    key.public_key()
+        .as_ref()
+        .try_into()
+        .map_err(|_| Error::Crypto)
+}
+
+/// Ed25519 signature of `m` with a 32-byte seed.
+pub(crate) fn ed25519_sign(seed: &[u8; 32], m: &[u8]) -> Result<[u8; 64]> {
+    let key = Ed25519KeyPair::from_seed_unchecked(seed).map_err(|_| Error::Crypto)?;
+    let sig = key.try_sign(m).map_err(|_| Error::Crypto)?;
+    sig.as_ref().try_into().map_err(|_| Error::Crypto)
 }
 
 /// Root identity key (SLH-DSA-SHA2-256s), stored as its FIPS 205 encoding
