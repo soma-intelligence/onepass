@@ -431,7 +431,11 @@ fn import_onto_store_the_sync_filled() {
     let vault_id = created.session.vaults().unwrap()[0].id.clone();
     created
         .session
-        .register_this_device("Mac de Camille".into(), FfiDeviceKind::Mac, FfiDeviceMode::Personal)
+        .register_this_device(
+            "Mac de Camille".into(),
+            FfiDeviceKind::Mac,
+            FfiDeviceMode::Personal,
+        )
         .unwrap();
     let a = Device {
         _dir: dir,
@@ -443,7 +447,10 @@ fn import_onto_store_the_sync_filled() {
     save_login(&a, &a.vault_id, "Messagerie exemple.fr", "pw-atlas-1");
     let dev = empty_device();
     sync(&a.path, &dev.path);
-    assert_eq!(store_state(dev.path.clone()).unwrap(), FfiStoreState::Account);
+    assert_eq!(
+        store_state(dev.path.clone()).unwrap(),
+        FfiStoreState::Account
+    );
 
     let (n, ap) = confirmed(FfiDeviceMode::Personal);
     let frame = ap
@@ -462,7 +469,10 @@ fn import_onto_store_the_sync_filled() {
         Some(OnePassError::WrongPassword)
     );
     assert_eq!(n.take_secret_key(), None);
-    assert_eq!(store_state(dev.path.clone()).unwrap(), FfiStoreState::Account);
+    assert_eq!(
+        store_state(dev.path.clone()).unwrap(),
+        FfiStoreState::Account
+    );
 
     let unlocked = n
         .import_snapshot(dev.path.clone(), PASSWORD.into())
