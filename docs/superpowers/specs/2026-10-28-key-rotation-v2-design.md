@@ -1,7 +1,7 @@
 # Account key rotation v2: trust anchored in device keys
 
 Date: 2026-10-28
-Status: draft for the owner's review (rulings R1 to R24 proposed, open questions in section 17). Nothing is implemented.
+Status: draft for the owner's review (rulings R1 to R24 proposed; owner questions O1 to O8 ruled 2026-10-30, section 17). Nothing is implemented.
 Branch: `docs/key-rotation-v2`, from the private `main` (`df19ac8`).
 Scope: audit finding F1 (device revocation only flags the device; password change keeps the keys). Replaces the protocol part of `2026-10-28-key-rotation-design.md` (branch `fix/key-rotation`, tip `0f1c58b`, rulings K1 to K20, principles P1 to P3) and keeps its re-keying part (section 14).
 Formal model: `formal/proverif/rotation.pv`, `rotation_core.pvl`, negative controls `rotation_autofollow.pv` and `rotation_account_anchor.pv` (section 13).
@@ -73,7 +73,7 @@ Non-goals:
 | Quorum of devices (k of n co-signatures) | A single-device account (A plus the lost B) has no quorum; two-device accounts are the common case. Kept as a possible later hardening, not a base. |
 | Server timestamps or "first seen" ordering | The server chooses both. |
 | Re-pair every remaining device (QR and SAS) after a rotation (K4) | Sound but heavy, and the user must hold two devices side by side for each. Kept as the universal fallback (section 8.6). |
-| Deliver the new Secret Key to the Secure Enclave key of each device's biometric enrollment | The SE public key changes with `.biometryCurrentSet` and is not pinned anywhere today; open question O5. |
+| Deliver the new Secret Key to the Secure Enclave key of each device's biometric enrollment | The SE public key changes with `.biometryCurrentSet` and is not pinned anywhere today; rejected by the owner (O5, 2026-10-30): following asks the master password once. |
 
 ## 5. Device keys
 
@@ -133,12 +133,14 @@ All bodies are `postcard`, decoded strictly (whole buffer, canonical re-encoding
 | `onepass/genesis/identity/v1` | signature domain | identity (SLH-DSA) | `GenesisBody` |
 | `onepass/rotation/v1` | signature domain | rotator's device key | `RotationBody` |
 | `onepass/rotation/identity/v1` | signature domain | new identity (SLH-DSA) | `RotationBody` |
+| `onepass/device-ack/v1` | signature domain | acknowledging device's key | `AckBody` (6.8) |
 | `onepass/legacy-device/v1` | signature domain | account signing key of the current identity | `LegacyIntroBody` (section 15) |
 | `onepass/rotation/secret-key/v1` | `wrap_key_labeled` label | recipient's device KEM key | the 32-byte new Secret Key, context `postcard((account_id, lineage_hash, recipient_id))` |
 | `onepass/lineage/v1` | hash prefix | | lineage hash of a genesis or rotation body |
 | `onepass/identity-id/v1` | hash prefix | | identity record id |
 | `onepass/delivery-id/v1` | hash prefix | | delivery record id |
 | `onepass/intro-id/v1` | hash prefix | | intro record id |
+| `onepass/ack-id/v1` | hash prefix | | acknowledgment record id |
 | `onepass/rotation/code/v1` | HKDF info | | 6-digit rotation code |
 | `onepass/device-fpr/v1` | hash prefix | | device fingerprint |
 
@@ -202,6 +204,15 @@ Params format unchanged (`OPP2`, epoch). The epoch now counts password changes *
 ### 6.7 Vault content
 
 Unchanged formats. A vault keeps its id and its single-slot records (`VaultKey`, `VaultMeta`, `Manifest`, id = vault id); items get new record ids at every version, as today. Under the new identity the first manifest of a vault has `prev_hash = from_heads[v].hash` and `seq = from_heads[v].seq + 1`, signed by the new signing key.
+
+### 6.8 Follow acknowledgment (O6)
+
+```
+AckBody { format: 1, account_id, head: [u8; 32], device_id, acked_at: i64 }
+SignedAck { body, sig }   // acknowledging device's key, onepass/device-ack/v1
+```
+
+Record `RecordKind::DeviceAck` (13), id = `SHA-256("onepass/ack-id/v1" || head || device_id)[..16]`, immutable. A device writes the ack for head `h` in the same local transaction that pins `h` (follow, switch, `Reapply`, `Finish`). A device shows a roster entry as "à jour" when an ack for its own current head verifies under that entry's pinned key, else "en attente". Display only: the resolver never reads acks, so a forged ack fails verification and a withheld ack only shows "en attente". Acks for other heads are ignored.
 
 ## 7. Flows
 
@@ -339,6 +350,7 @@ Not proved in ProVerif (stateful ordering); proved by a property test over inter
 | Device not in the winner's roster (paired concurrently) | its introducer re-introduces it under the new head automatically; otherwise re-pair or kit |
 | Rotator lost after phase 1 (identity adopted, content not pushed) | followers keep reading their local copy; any of them can run a `Finish` child rotation from its own copy, allowed only for vaults whose local head equals `from_heads` (password asked) |
 | Deliveries or records withheld by the server | after 24 h in `Candidate` without completeness: "Les nouvelles clés n'arrivent pas. Ajoute de nouveau cet appareil depuis iPhone de Quentin." (re-pair) |
+| Rotation signed by a `Tofu` device, rotating device not at hand | read-only until "Vérifier" with that device (O7); or Emergency Kit |
 | Quarantined by a forged record | "Ce n'était pas moi" with the password, within 7 days |
 | Mutual revocation | user picks the device they still hold |
 | User excluded an honest device by mistake | Réglages > Sécurité > "Rotations ignorées": revisit and confirm; or re-pair that device |
@@ -357,9 +369,9 @@ Not proved in ProVerif (stateful ordering); proved by a property test over inter
 
 ## 9. User-visible flows (app texts in French, the app's language)
 
-- **Rotator, after "Retirer cet appareil"**: presence, password, then "Retrait en cours…" and, after the local commit: the new Emergency Kit to save and confirm (as at creation), the rotation code, "Tes autres appareils te demanderont de confirmer avec ce code et ton mot de passe." Réglages > Appareils shows each remaining device as "à jour" or "en attente" (from the lineage head it last introduced or acknowledged, open question O6).
+- **Rotator, after "Retirer cet appareil"**: presence, password, then "Retrait en cours…" and, after the local commit: the new Emergency Kit to save and confirm (as at creation), the rotation code, "Tes autres appareils te demanderont de confirmer avec ce code et ton mot de passe." Réglages > Appareils shows each remaining device as "à jour" or "en attente" (from a signed acknowledgment of the current head, 6.8, O6).
 - **Follower, confirmation**: title "Les clés de ton compte ont changé"; text "iPhone de Quentin a fait tourner les clés le 28 oct. à 14:02 et a retiré iPad de Quentin." (names from the local roster, never from the record); "Code de rotation : 482 913, le même s'affiche sur iPhone de Quentin."; buttons "C'est moi" and "Ce n'était pas moi", same weight, no default. "C'est moi" asks the master password. While the screen is pending, the app reads but does not write (banner "Lecture seule jusqu'à ta réponse").
-- **Rotator signed by a legacy (TOFU) device**: extra line "Cet appareil n'a pas été vérifié depuis la mise à jour." (section 15).
+- **Rotation signed by a legacy (TOFU) device**: no "C'est moi" until the user verifies that device (O7). Text "Cet appareil n'a pas été vérifié depuis la mise à jour. Vérifie-le avant de confirmer." with "Vérifier" (pairing QR and SAS of section 15 step 4, with the rotating device at hand) and "Ce n'était pas moi". The device stays read-only meanwhile (R10).
 - **"Ce n'était pas moi"**: "OnePass ne fait plus confiance à iPad de Quentin sur cet appareil. Retire-le de ton compte pour couper son accès." with "Retirer et faire tourner les clés" (password) and "Plus tard".
 - **Mutual revocation, quarantine, orphaned, outdated kit, keys not arriving**: texts in sections 8.3, 8.4, 7.5, 8.6.
 - **Switch after honest concurrency**: text in 8.5.
@@ -479,11 +491,11 @@ Accounts and devices from before this design have no lineage and no device keys.
 1. On the first unlock after the update (password or Face ID: both open a Rust session), a device creates its device keys.
 2. If the account has no lineage, the device writes a **legacy genesis**: `GenesisBody` for the current identity (generation 0, ids unchanged), signed by its new device key and by the current identity. It is trusted on first use: a device revoked under milestone 2b, or a thief holding the account keys, could race to write a genesis of its own. Rule: among genesis records for the account, a device accepts the one whose creator is itself, else the one with the smallest hash whose creator is not revoked in the account-signed device list; a second genesis seen later is an alert, never followed silently.
 3. Every other legacy device publishes a **legacy intro**: `LegacyIntroBody { account_id, genesis_hash, entry, pop }` signed by its device key (`pop`) and by the account signing key of the current identity (domain `onepass/legacy-device/v1`). Accepted only for a device id present and not revoked in the account-signed device list, once per id; two different keys for one id put that id in `excluded` everywhere until verified.
-4. Legacy entries have level `Tofu`. **"Vérifier mes appareils"** (Réglages > Appareils) runs the pairing QR and SAS between two devices with no grant, exchanges `DevicePublic`, and upgrades both to `Verified`. A rotation signed by a `Tofu` device carries the warning of section 9.
+4. Legacy entries have level `Tofu`. **"Vérifier mes appareils"** (Réglages > Appareils) runs the pairing QR and SAS between two devices with no grant, exchanges `DevicePublic`, and upgrades both to `Verified`. A rotation signed by a `Tofu` device cannot be confirmed until that device is verified (section 9, O7).
 5. If the account-signed device list has a device revoked under milestone 2b and no rotation followed, every device shows once: "Un appareil retiré garde encore les clés de ton compte. Fais tourner les clés maintenant." (F1 for existing accounts.)
 6. New accounts write a genesis at creation; devices paired with the extended protocol are `Verified`.
 
-Open question O4: if no account in use has more than one device yet, skip steps 2 to 4 and ask legacy multi-device users to re-pair.
+O4, ruled 2026-10-30: steps 2 to 4 stay. Multi-device accounts exist outside development, so re-pairing is not forced.
 
 ## 16. Rulings
 
@@ -505,7 +517,7 @@ Format: decision - why - cost if wrong.
 - **R14** Emergency Kit restore pins the roster through the identity signature on the lineage record; an identity with visible children is an outdated kit and is refused; a kit-restored device is pinned by others only on the user's yes - 2SKD authenticates the identity, the identity authenticates the roster (`rotation.pv`, `restore_new`) - an outdated kit with a server hiding the rotation lands on the old identity (limit, `restore_old`).
 - **R15** Device keys are hybrid (ML-DSA-87 + Ed25519, ML-KEM-1024 + X25519); on Apple the ML-DSA-87 and ML-KEM-1024 halves are Secure Enclave keys, the classical halves and the SE blobs sit in the Keychain, `WhenUnlockedThisDeviceOnly`, app-only access group - same post-quantum stance as the account keys, and since iOS/macOS 26 the SE holds exactly those two algorithms, so no new primitive and no format change - malware on the unlocked device can still use the keys there, but nothing copied off the device can (O3, ruled 2026-10-30).
 - **R16** Pairing carries device keys inside the SAS channel (`ConfirmedWithKey`, `Grant::FullV2` with a trust snapshot) and the approver writes a signed intro - the SAS already authenticates that channel - an old approver pairs a legacy device.
-- **R17** Migration by legacy genesis and legacy intros, trusted on first use, upgraded by a SAS verification; conflicting claims are excluded; existing 2b revocations prompt a rotation - no forced re-pairing - TOFU window for a device already stolen before the update (O4).
+- **R17** Migration by legacy genesis and legacy intros, trusted on first use, upgraded by a SAS verification, which a rotation signed by a `Tofu` device requires before it can be confirmed (O7); conflicting claims are excluded; existing 2b revocations prompt a rotation - no forced re-pairing - TOFU window for a device already stolen before the update (O4, ruled 2026-10-30).
 - **R18** The new keyset carries the retired KEM secrets (at most 16), never retired signing or identity keys; archives signed by a retired key open with a warning - old backups and travel states stay readable; the revoked device already holds those KEM keys - a forged old-key archive file can be imported if the user accepts the warning.
 - **R19** Rotation refused in Travel Mode on the rotator; a follower in Travel Mode adopts and `travel off` uses `from_heads` - travel state is bound to the old keys - none.
 - **R20** The sync contest of the first design (K10, K13, K14, K16, K17, K19, P1, P3) and the known-keys memory (K15, K18, K20, P2) are removed - they tried to decide from data the attacker also produces - code to delete, tests to port as attack regressions.
@@ -517,13 +529,13 @@ Format: decision - why - cost if wrong.
 ## 17. Open questions for the owner
 
 - **O1** Ruled 2026-10-30: automatic erase, 7 days after the device first reads its own revocation (R8, 8.4).
-- **O2** Rotation code: shown on both sides (proposed), or mandatory comparison before "C'est moi" (stronger against a careless click, but the user rarely has the rotating device at hand)?
+- **O2** Ruled 2026-10-30: the rotation code is shown on both sides; comparing it is not mandatory (9).
 - **O3** Ruled 2026-10-30: Secure Enclave. The ML-DSA-87 and ML-KEM-1024 halves of the device keys live in the SE on Apple (5.1, R15).
-- **O4** Do accounts with more than one device exist outside development? If not, drop the TOFU migration and require re-pairing.
-- **O5** Deliver the new AUK to each device's biometric Secure Enclave key too, so a biometric device follows without typing the password? Needs that SE public key pinned and kept current.
-- **O6** Per-device acknowledgment records (signed "I am on head h") so the rotator shows who followed? Small, but one more record kind.
-- **O7** Should a rotation signed by a `Tofu` device require a verification first, instead of a warning?
-- **O8** Spec language: written in English as requested, while the other specs in this folder and the first rotation spec are in French. Translate?
+- **O4** Ruled 2026-10-30: keep the TOFU migration (15, R17). Multi-device accounts exist outside development.
+- **O5** Ruled 2026-10-30: no delivery to the biometric Secure Enclave key. Following asks the master password once (4.1, 8.6).
+- **O6** Ruled 2026-10-30: yes. Signed per-device acknowledgments, `RecordKind::DeviceAck` (6.8), shown on the rotator (9).
+- **O7** Ruled 2026-10-30: a rotation signed by a `Tofu` device requires verifying that device first; a warning is not enough (9, 15, R17).
+- **O8** Ruled 2026-10-30: the spec stays in English.
 
 ## 18. Implementation plan (TDD)
 
@@ -541,7 +553,7 @@ Tasks:
 2. **Lineage records** (`lineage.rs`): genesis, rotation, intro, legacy intro, delivery ids; strict canonical codec; sign and verify with the six domains; lineage hash and record ids; structural checks of 6.3. Tests: each domain separated (a signature under one domain fails under every other), unsorted or duplicate lists refused, rotator in `revoked` refused, roster without rotator refused, 64-entry cap, golden hex vectors.
 3. **Trust state** (`trust.rs`): `TrustState` codec, persisted with `put_all_if_version_with_chain`-style transactions; monotone `revoked`; bounded `ignored`. Tests: strict decode, monotonicity, transaction atomicity on a cut.
 4. **Lineage resolver** (pure): `resolve(&TrustState, &[LineageRecord], completeness) -> Decision`. Tests: table of 8.2 transitions; 8.3 race in all three orders; exclusion and order of 8.5; proptest over random interleavings, withholding and attacker-signed records asserting (a) no `Adopt` without a user choice, (b) honest devices that saw the same records reach the same head, (c) at most one switch per divergence, (d) no automatic action ever creates a sibling of a decided divergence.
-5. **Store kinds**: `Lineage = 10`, `DeviceIntro = 11`, `KeyDelivery = 12` added at the end; identity-keyed params, keyset, lists, epochs; immutability; `commit_remote` refuses deletions of the three new kinds and of identity records. Tests: put twice refused, server deletion refused and logged, generation 0 ids unchanged.
+5. **Store kinds**: `Lineage = 10`, `DeviceIntro = 11`, `KeyDelivery = 12`, `DeviceAck = 13` added at the end; identity-keyed params, keyset, lists, epochs; immutability; `commit_remote` refuses deletions of the three new kinds and of identity records. Tests: put twice refused, server deletion refused and logged, generation 0 ids unchanged.
 6. **Account**: port `Account::rotate`; keyset `OPK3` with `retired_kem`; verified params decoding everywhere (G8). Tests: `OPK2` still opens, `OPK3` round trip, retired keys bounded to 16, unverified server params ignored by the password-change path (hold-out 4).
 7. **Rotator**: `Repository::rotate` building phases 1 and 2 in memory, one local transaction, `TrustState` to `Rotating`. Port the vault pass of `repo/rotation.rs`. Tests: K11, K12, travel refused, `VaultMissing` refuses, revoking self refused, roster and deliveries exact, old items still readable locally until phase 3.
 8. **Sync phases** (`sync/store.rs`): phase ordering, phase 1 never conflicting, R21 overwrite, leftover item records of foreign key generations ignored, phase 3 deletion scope. Tests: cut between phases resumes; `zz2_hostile_epoch_inflation` and the epoch wedge become no-ops (ported as assertions).
