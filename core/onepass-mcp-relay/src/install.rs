@@ -99,6 +99,15 @@ impl Client {
         })
     }
 
+    fn display_name(self) -> &'static str {
+        match self {
+            Client::ClaudeCode => "Claude Code",
+            Client::ClaudeDesktop => "Claude desktop",
+            Client::Codex => "Codex",
+            Client::Cursor => "Cursor",
+        }
+    }
+
     fn is_toml(self) -> bool {
         self == Client::Codex
     }
@@ -222,6 +231,11 @@ pub fn run(action: Action, args: &[OsString], out: &mut dyn Write) -> Result<(),
                     "removed from"
                 };
                 writeln!(out, "OnePass {verb} {}", path.display())?;
+                writeln!(
+                    out,
+                    "Quit {} first if it is running, then start it again: it can rewrite its configuration file and undo this change.",
+                    o.client.display_name()
+                )?;
             }
         }
     }
@@ -303,11 +317,26 @@ fn edit_toml(src: Option<&str>, action: Action, e: &Entry, force: bool) -> Resul
             if existing.is_none() {
                 return Ok(Edit::Unchanged("OnePass is not in this file"));
             }
+            // A comment block above the table goes to whatever follows it.
+            let old = existing.as_ref().and_then(Item::as_table);
+            let comment = old
+                .and_then(|t| t.decor().prefix().and_then(|p| p.as_str()))
+                .filter(|p| p.contains('#'))
+                .map(str::to_owned);
+            let old_pos = old.and_then(Table::position);
             let servers = doc
                 .get_mut("mcp_servers")
                 .and_then(Item::as_table_like_mut)
                 .ok_or_else(|| Error::failed("mcp_servers is not a table"))?;
             servers.remove(SERVER);
+            if let Some(comment) = comment {
+                let next = old_pos.and_then(|p| next_position(doc.as_table(), p));
+                let moved = next.is_some_and(|n| prepend_to_table(doc.as_table_mut(), n, &comment));
+                if !moved {
+                    let trailing = doc.trailing().as_str().unwrap_or("").to_owned();
+                    doc.set_trailing(format!("{comment}{trailing}"));
+                }
+            }
         }
         Action::Install => {
             if same {
@@ -330,6 +359,11 @@ fn edit_toml(src: Option<&str>, action: Action, e: &Entry, force: bool) -> Resul
             args.push("--socket");
             args.push(e.socket.as_str());
             t["args"] = value(args);
+            // Replacing keeps the old table's comments, header note and place.
+            if let Some(old) = existing.as_ref().and_then(Item::as_table) {
+                *t.decor_mut() = old.decor().clone();
+                t.set_position(old.position());
+            }
             servers.insert(SERVER, Item::Table(t));
         }
     }
@@ -340,6 +374,52 @@ fn edit_toml(src: Option<&str>, action: Action, e: &Entry, force: bool) -> Resul
         ))
     })?;
     Ok(Edit::Changed(new))
+}
+
+/// The smallest table position greater than `after` under `t`.
+fn next_position(t: &toml_edit::Table, after: isize) -> Option<isize> {
+    let mut best = t.position().filter(|p| *p > after);
+    for (_, item) in t.iter() {
+        let found = match item {
+            toml_edit::Item::Table(sub) => next_position(sub, after),
+            toml_edit::Item::ArrayOfTables(a) => {
+                a.iter().filter_map(|sub| next_position(sub, after)).min()
+            }
+            _ => None,
+        };
+        best = match (best, found) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
+    best
+}
+
+/// Puts `text` before the header of the table at `position`.
+fn prepend_to_table(t: &mut toml_edit::Table, position: isize, text: &str) -> bool {
+    if t.position() == Some(position) {
+        let old = t
+            .decor()
+            .prefix()
+            .and_then(|p| p.as_str())
+            .unwrap_or("")
+            .to_owned();
+        t.decor_mut().set_prefix(format!("{text}{old}"));
+        return true;
+    }
+    for (_, item) in t.iter_mut() {
+        let done = match item {
+            toml_edit::Item::Table(sub) => prepend_to_table(sub, position, text),
+            toml_edit::Item::ArrayOfTables(a) => a
+                .iter_mut()
+                .any(|sub| prepend_to_table(sub, position, text)),
+            _ => false,
+        };
+        if done {
+            return true;
+        }
+    }
+    false
 }
 
 // ---- JSON ------------------------------------------------------------
@@ -443,14 +523,39 @@ fn members(s: &[u8], open: usize) -> Result<(Vec<Member>, usize), Error> {
     }
 }
 
-/// Text of `value` laid out for a member whose line is indented by `indent`
-/// (pretty, 2-space steps) or compact.
-fn render(value: &serde_json::Value, pretty: bool, indent: &str) -> String {
+fn json_str(s: &str) -> String {
+    serde_json::Value::from(s).to_string()
+}
+
+/// The entry as text, keys in the order type, command, args, for a member
+/// whose line is indented by `indent` (pretty, 2-space steps) or compact.
+fn entry_text(e: &Entry, pretty: bool, nl: &str, indent: &str) -> String {
+    let (command, socket) = (json_str(&e.command), json_str(&e.socket));
     if !pretty {
-        return value.to_string();
+        let ty = if e.typed { "\"type\":\"stdio\"," } else { "" };
+        return format!("{{{ty}\"command\":{command},\"args\":[\"--socket\",{socket}]}}");
     }
-    let text = serde_json::to_string_pretty(value).unwrap_or_default();
-    text.replace('\n', &format!("\n{indent}"))
+    let (i1, i2) = (format!("{indent}  "), format!("{indent}    "));
+    let ty = if e.typed {
+        format!("{nl}{i1}\"type\": \"stdio\",")
+    } else {
+        String::new()
+    };
+    format!(
+        "{{{ty}{nl}{i1}\"command\": {command},{nl}{i1}\"args\": [{nl}{i2}\"--socket\",{nl}{i2}{socket}{nl}{i1}]{nl}{indent}}}"
+    )
+}
+
+/// `{ "onepass": <entry> }`, the value of a new `mcpServers` member.
+fn servers_text(e: &Entry, pretty: bool, nl: &str, indent: &str) -> String {
+    if !pretty {
+        return format!("{{\"{SERVER}\":{}}}", entry_text(e, false, nl, ""));
+    }
+    let inner = format!("{indent}  ");
+    format!(
+        "{{{nl}{inner}\"{SERVER}\": {}{nl}{indent}}}",
+        entry_text(e, true, nl, &inner)
+    )
 }
 
 /// Indentation of the line that holds offset `at`.
@@ -462,13 +567,29 @@ fn line_indent(text: &str, at: usize) -> String {
         .collect()
 }
 
-/// Inserts or replaces `key` in the object at `open`; returns the new text.
+/// How the file is laid out, so the new text matches it.
+struct Style {
+    pretty: bool,
+    nl: &'static str,
+}
+
+impl Style {
+    fn of(text: &str) -> Self {
+        Style {
+            pretty: text.trim_end().contains('\n'),
+            nl: if text.contains("\r\n") { "\r\n" } else { "\n" },
+        }
+    }
+}
+
+/// Inserts or replaces `key` in the object at `open`; `value(indent)` is the
+/// text of the value for a member line indented by `indent`.
 fn set_member(
     text: &str,
     open: usize,
     key: &str,
-    value: &serde_json::Value,
-    pretty: bool,
+    st: &Style,
+    value: &dyn Fn(&str) -> String,
 ) -> Result<String, Error> {
     let s = text.as_bytes();
     let (ms, close) = members(s, open)?;
@@ -477,65 +598,62 @@ fn set_member(
         return Ok(format!(
             "{}{}{}",
             &text[..m.val_start],
-            render(value, pretty, &indent),
+            value(&indent),
             &text[m.val_end..]
         ));
     }
-    let key_json = serde_json::Value::from(key).to_string();
+    let key_json = json_str(key);
+    let colon = if st.pretty { ": " } else { ":" };
     if let Some(last) = ms.last() {
-        let first = &ms[0];
-        let lead = &text[open + 1..first.key_start];
+        let lead = &text[open + 1..ms[0].key_start];
         let indent = lead
             .rsplit('\n')
             .next()
             .filter(|_| lead.contains('\n'))
             .unwrap_or("");
-        let colon = if pretty { ": " } else { ":" };
-        let member = format!("{key_json}{colon}{}", render(value, pretty, indent));
+        let member = format!("{key_json}{colon}{}", value(indent));
         Ok(format!(
             "{},{lead}{member}{}",
             &text[..last.val_end],
             &text[last.val_end..]
         ))
+    } else if st.pretty {
+        let base = line_indent(text, open);
+        let inner = format!("{base}  ");
+        let nl = st.nl;
+        let member = format!("{key_json}{colon}{}", value(&inner));
+        Ok(format!(
+            "{}{nl}{inner}{member}{nl}{base}{}",
+            &text[..open + 1],
+            &text[close..]
+        ))
     } else {
-        let colon = if pretty { ": " } else { ":" };
-        if pretty {
-            let base = line_indent(text, open);
-            let inner = format!("{base}  ");
-            let member = format!("{key_json}{colon}{}", render(value, true, &inner));
-            Ok(format!(
-                "{}\n{inner}{member}\n{base}{}",
-                &text[..open + 1],
-                &text[close..]
-            ))
-        } else {
-            let member = format!("{key_json}{colon}{}", render(value, false, ""));
-            Ok(format!("{}{member}{}", &text[..open + 1], &text[close..]))
-        }
+        let member = format!("{key_json}{colon}{}", value(""));
+        Ok(format!("{}{member}{}", &text[..open + 1], &text[close..]))
     }
 }
 
-/// Removes member `idx` of `ms` (with its comma).
-fn remove_member(text: &str, ms: &[Member], idx: usize) -> String {
+/// Removes member `idx` of `ms` (with its comma). The only member leaves `{}`.
+fn remove_member(text: &str, ms: &[Member], idx: usize, open: usize, close: usize) -> String {
     let m = &ms[idx];
-    let (from, to) = if idx + 1 < ms.len() {
+    let (from, to) = if ms.len() == 1 {
+        (open + 1, close)
+    } else if idx + 1 < ms.len() {
         (m.key_start, ms[idx + 1].key_start)
-    } else if idx > 0 {
-        (ms[idx - 1].val_end, m.val_end)
     } else {
-        (m.key_start, m.val_end)
+        (ms[idx - 1].val_end, m.val_end)
     };
     format!("{}{}", &text[..from], &text[to..])
 }
 
 fn edit_json(src: Option<&str>, action: Action, e: &Entry, force: bool) -> Result<Edit, Error> {
-    let mut entry = serde_json::Map::new();
+    let mut same_entry = serde_json::json!({
+        "command": e.command,
+        "args": ["--socket", e.socket],
+    });
     if e.typed {
-        entry.insert("type".into(), "stdio".into());
+        same_entry["type"] = "stdio".into();
     }
-    entry.insert("command".into(), e.command.clone().into());
-    entry.insert("args".into(), serde_json::json!(["--socket", e.socket]));
-    let entry = serde_json::Value::Object(entry);
 
     let text = match src {
         Some(t) if !t.trim().is_empty() => t,
@@ -543,10 +661,10 @@ fn edit_json(src: Option<&str>, action: Action, e: &Entry, force: bool) -> Resul
             if action == Action::Uninstall {
                 return Ok(Edit::Unchanged("OnePass is not in this file"));
             }
-            let doc = serde_json::json!({ "mcpServers": { SERVER: entry } });
-            let mut s = serde_json::to_string_pretty(&doc).unwrap_or_default();
-            s.push('\n');
-            return Ok(Edit::Changed(s));
+            return Ok(Edit::Changed(format!(
+                "{{\n  \"mcpServers\": {}\n}}\n",
+                servers_text(e, true, "\n", "  ")
+            )));
         }
     };
     serde_json::from_str::<serde::de::IgnoredAny>(text).map_err(|err| {
@@ -561,9 +679,18 @@ fn edit_json(src: Option<&str>, action: Action, e: &Entry, force: bool) -> Resul
             "the file is not a JSON object, nothing changed",
         ));
     }
-    let pretty = text.contains('\n');
+    let st = Style::of(text);
     let (root_ms, _) = members(s, root)?;
-    let servers = root_ms.iter().find(|m| m.key == "mcpServers");
+    let mut servers = root_ms.iter().filter(|m| m.key == "mcpServers");
+    let servers = servers
+        .next()
+        .map(|first| (first, servers.next().is_some()));
+    if servers.is_some_and(|(_, dup)| dup) {
+        return Err(Error::failed(
+            "mcpServers appears more than once in the file (clients use the last one), nothing changed",
+        ));
+    }
+    let servers = servers.map(|(m, _)| m);
     if let Some(sv) = servers
         && s[sv.val_start] != b'{'
     {
@@ -571,31 +698,39 @@ fn edit_json(src: Option<&str>, action: Action, e: &Entry, force: bool) -> Resul
             "mcpServers is not an object, nothing changed",
         ));
     }
+    // (open, close, members, index of onepass)
     let found = match servers {
         Some(sv) => {
-            let (ms, _) = members(s, sv.val_start)?;
-            let idx = ms.iter().position(|m| m.key == SERVER);
-            Some((sv.val_start, ms, idx))
+            let (ms, close) = members(s, sv.val_start)?;
+            let mut hits = ms.iter().enumerate().filter(|(_, m)| m.key == SERVER);
+            let idx = hits.next().map(|(i, _)| i);
+            if hits.next().is_some() {
+                return Err(Error::failed(
+                    "onepass appears more than once in mcpServers, nothing changed",
+                ));
+            }
+            Some((sv.val_start, close, ms, idx))
         }
         None => None,
     };
     let existing: Option<serde_json::Value> = match &found {
-        Some((_, ms, Some(i))) => {
+        Some((_, _, ms, Some(i))) => {
             serde_json::from_str(&text[ms[*i].val_start..ms[*i].val_end]).ok()
         }
         _ => None,
     };
-    let present = matches!(&found, Some((_, _, Some(_))));
+    let present = matches!(&found, Some((_, _, _, Some(_))));
     let new = match action {
         Action::Uninstall => {
-            let Some((_, ms, Some(i))) = &found else {
+            let Some((open, close, ms, Some(i))) = &found else {
                 return Ok(Edit::Unchanged("OnePass is not in this file"));
             };
-            remove_member(text, ms, *i)
+            remove_member(text, ms, *i, *open, *close)
         }
         Action::Install => {
             let same = existing.as_ref().is_some_and(|v| {
-                v.get("command") == entry.get("command") && v.get("args") == entry.get("args")
+                v.get("command") == same_entry.get("command")
+                    && v.get("args") == same_entry.get("args")
             });
             if same {
                 return Ok(Edit::Unchanged("OnePass is already installed"));
@@ -604,11 +739,12 @@ fn edit_json(src: Option<&str>, action: Action, e: &Entry, force: bool) -> Resul
                 return Err(needs_force("this file"));
             }
             match &found {
-                Some((open, _, _)) => set_member(text, *open, SERVER, &entry, pretty)?,
-                None => {
-                    let wrapper = serde_json::json!({ SERVER: entry });
-                    set_member(text, root, "mcpServers", &wrapper, pretty)?
-                }
+                Some((open, _, _, _)) => set_member(text, *open, SERVER, &st, &|ind| {
+                    entry_text(e, st.pretty, st.nl, ind)
+                })?,
+                None => set_member(text, root, "mcpServers", &st, &|ind| {
+                    servers_text(e, st.pretty, st.nl, ind)
+                })?,
             }
         }
     };
@@ -679,13 +815,29 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), Error> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let tmp = dir.join(format!(".{name}.onepass-tmp-{}", std::process::id()));
+    let mut tmp = dir.join(format!(".{name}.onepass-tmp-{:016x}", random()));
     let result = (|| -> io::Result<()> {
-        let mut f = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(mode)
-            .open(&tmp)?;
+        // A stale temporary file with the same name cannot block the write:
+        // the name is random, and a collision picks another one.
+        let mut f = None;
+        for _ in 0..8 {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(mode)
+                .open(&tmp)
+            {
+                Ok(file) => {
+                    f = Some(file);
+                    break;
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                    tmp = dir.join(format!(".{name}.onepass-tmp-{:016x}", random()));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        let mut f = f.ok_or_else(|| io::Error::from(io::ErrorKind::AlreadyExists))?;
         f.write_all(data)?;
         // The umask may have narrowed the mode at creation.
         f.set_permissions(fs::Permissions::from_mode(mode))?;
@@ -696,4 +848,12 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), Error> {
         let _ = fs::remove_file(&tmp);
     }
     result.map_err(|e| Error::failed(format!("cannot write {}: {e}", path.display())))
+}
+
+/// A random 64-bit number (the std hasher is seeded by the OS).
+fn random() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish()
 }
