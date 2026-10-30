@@ -53,14 +53,14 @@ Non-goals:
 
 ## 4. Design in brief
 
-1. Every device has a device key pair (hybrid signing ML-DSA-87 + Ed25519, hybrid KEM ML-KEM-1024 + X25519), created on the device, kept in its Keychain, never synced.
+1. Every device has a device key pair (hybrid signing ML-DSA-87 + Ed25519, hybrid KEM ML-KEM-1024 + X25519), created on the device, kept in its Keychain, never synced. On Apple the ML-DSA-87 and ML-KEM-1024 halves are Secure Enclave keys (O3, 5.1).
 2. Device public keys are exchanged inside the SAS-verified pairing channel and pinned in local device state, never trusted from the server. A device learns devices paired by others through `Intro` records signed by a device it already trusts.
 3. The account has a **lineage**: genesis, then a chain of rotation records. Each rotation record is signed by the rotating device's key and by the new identity (proof of possession), names its parent, the revoked devices and the full roster of devices trusted afterwards.
 4. A device moves to a child of its current head only if the rotator is in its roster and not revoked or excluded, the record is well formed, and the user confirms it on that device, which also asks the master password.
 5. The new Secret Key reaches each remaining device sealed to its device KEM key. Typing a Secret Key is only for the Emergency Kit.
 6. Params, keyset, signed lists and restore epochs of each identity live in records keyed by that identity: two rotations never overwrite each other's account records.
 7. Races are settled by the user when two records exclude each other's signer; honest concurrent rotations by a deterministic order, the losers re-applying their removals on top.
-8. Nothing is ever dropped: a device that moves to another identity replays its own writes under the new keys; a device that reads its own revocation is quarantined, not erased.
+8. Nothing is ever dropped: a device that moves to another identity replays its own writes under the new keys; a device that reads its own revocation is quarantined, then erases itself 7 days later unless the user says it was not them (O1, 8.4).
 9. The Emergency Kit restores through the identity signature on the rotation record (2SKD authenticates the identity, the identity authenticates the roster).
 10. ProVerif proves secrecy, authentication and the race property, and two negative controls show that dropping either the device keys or the user step reopens the attacks.
 
@@ -82,7 +82,7 @@ Non-goals:
 `DeviceKeys { sign: HybridSigningKey, kem: HybridKemSecret }` (existing types of `crypto/sign.rs` and `crypto/kem.rs`). `DevicePublic { device_id: Id, sign_pub: HybridVerifyingKey, kem_pub: HybridKemPublic }`. Fingerprint: `SHA-256("onepass/device-fpr/v1" || postcard(DevicePublic))`.
 
 - **Apple:** one generic Keychain item per account, `device.<account_id>`, data-protection keychain, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, in the app's own access group, not the group shared with the AutoFill extension (the extension never signs or follows a rotation; it shows "Ouvre OnePass pour continuer"). Same protection class as the Secret Key. Read only by the unlocked app for pairing, rotation, follow and intro, each of which already requires presence (Face ID, or the master password). Never in iCloud Keychain, never in a backup restorable elsewhere.
-- **Secure Enclave:** the SE only signs P-256, so the hybrid keys cannot live in it (R15). An optional third component, a P-256 SE key that must also sign, is open question O3.
+- **Secure Enclave (O3, ruled 2026-10-30):** since iOS and macOS 26 (the app's deployment target), CryptoKit has Secure Enclave ML-DSA-87 and ML-KEM-1024 keys (`SecureEnclave.MLDSA87.PrivateKey`, `SecureEnclave.MLKEM1024.PrivateKey`). On Apple, the post-quantum half of both device keys is created in the SE and never leaves it; the Keychain item stores only its `dataRepresentation` (an SE-wrapped blob, useless on any other device) next to the Ed25519 and X25519 halves. Access control: `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` with `.privateKeyUsage` only, no biometry flag, so a Face ID re-enrollment does not destroy the key (presence is already required by every flow that signs). The wire format, `DevicePublic`, the domains of 6.1 and the formal model are unchanged: a verifier cannot tell an SE key from a software key, and does not need to. Signature interop: the SE signs pure ML-DSA-87 with an empty context over `signed_message(domain, msg)`, exactly what `HybridVerifyingKey::verify` checks; ML-KEM-1024 ciphertexts are FIPS 203 on both sides. The Swift plan proves both on a real device (the simulator has no SE). Where no SE exists (simulator, CLI, a Mac without one) the half is a software key, as before. Gain: copying the Keychain item off the device no longer lets anyone sign as the device or open its key deliveries; malware must run on the unlocked device itself.
 - **CLI:** `device.bin` already holds the Secret Key in clear (development CLI, `core/README.md`); the device keys go next to it, same protection. Documented, as today.
 - **Fuzzing:** `DevicePublic` and every record of section 6 decode strictly (whole buffer, canonical re-encoding) and get fuzz targets.
 
@@ -274,7 +274,7 @@ On a device with no pins (new device, or after "Restaurer avec mon Emergency Kit
 | `Current { head }` | normal | yes |
 | `Candidate { head, children }` | at least one valid child of `head` is known, not yet decided by the user | **no**: read-only (R10) |
 | `Rotating { head, phase }` | this device made `head`, pushing phases 1 to 3 | yes, under the new identity |
-| `Quarantined { head, by }` | a valid child of `head` revokes this device | no; locked, biometric enrollment deleted |
+| `Quarantined { head, by, since }` | a valid child of `head` revokes this device, first read at device time `since` | no; locked, biometric enrollment deleted, erased at `since` + 7 days |
 | `Orphaned { head, child }` | a valid child of `head` does not list this device | no; local data readable after unlock |
 
 ### 8.2 Transitions
@@ -292,6 +292,7 @@ On a device with no pins (new device, or after "Restaurer avec mon Emergency Kit
 | `Rotating` | phase 3 confirmed | `Current` | yes |
 | `Rotating` or `Current` | valid sibling S of own head wins the order (8.5) | `Candidate { children: [S] }` with the switch explained | yes (blocks writes) |
 | `Quarantined` | user: "Effacer cet appareil" | erased (as spec 2b A5) | user |
+| `Quarantined` | device time reaches `since` + 7 days, checked at launch and on the quarantine screen | erased | yes |
 | `Quarantined` | user: "Ce n'était pas moi", password | `Current`, signer excluded, offer to remove it | user |
 | `Orphaned` | an intro for me under the child, from a trusted device | `Candidate` | yes |
 | `Orphaned` | re-pair or Emergency Kit | `Current` | user |
@@ -313,7 +314,7 @@ A record signed by B that does not revoke A (B rotates "for itself") is excluded
 
 ### 8.4 Reading one's own revocation
 
-A valid child that revokes this device may be honest (the user removed this device, maybe lost) or forged by a device the user has not removed yet. The device therefore does not erase itself (this changes rulings B6 and A5 of milestone 2b): it locks, deletes its biometric enrollment, and shows "iPhone de Quentin a retiré cet appareil le 28 oct. Si c'est toi, efface-le. Sinon, garde-le et retire plutôt iPhone de Quentin." The local database stays encrypted under the old keys, which the revoked device's finder cannot use without the master password. Erasing is a button (R8, open question O1). The same rule now applies to the account-signed device list: a `revoked_at` there no longer erases anything, since today any holder of the account signing key (including a device revoked under milestone 2b) can sign such a list.
+A valid child that revokes this device may be honest (the user removed this device, maybe lost) or forged by a device the user has not removed yet. The device therefore does not erase itself at once (this changes rulings B6 and A5 of milestone 2b): it locks, deletes its biometric enrollment, records `since` (its own clock), and shows "iPhone de Quentin a retiré cet appareil le 28 oct. Il sera effacé le 4 nov. Si c'est toi, efface-le maintenant. Sinon, garde-le et retire plutôt iPhone de Quentin." Until then the local database stays encrypted under the old keys, which the revoked device's finder cannot use without the master password. Erasing now is a button; after 7 days the device erases itself (R8, O1 ruled 2026-10-30). "Ce n'était pas moi" with the password cancels the erase. Only a valid lineage record triggers this path (device signature from the local roster and identity signature, resolver decision `Quarantine`); nothing else read from storage or the server ever erases. A clock moved back only delays the erase; it never brings it forward. The same rule now applies to the account-signed device list: a `revoked_at` there no longer erases anything, since today any holder of the account signing key (including a device revoked under milestone 2b) can sign such a list.
 
 ### 8.5 Honest concurrency and convergence
 
@@ -338,7 +339,7 @@ Not proved in ProVerif (stateful ordering); proved by a property test over inter
 | Device not in the winner's roster (paired concurrently) | its introducer re-introduces it under the new head automatically; otherwise re-pair or kit |
 | Rotator lost after phase 1 (identity adopted, content not pushed) | followers keep reading their local copy; any of them can run a `Finish` child rotation from its own copy, allowed only for vaults whose local head equals `from_heads` (password asked) |
 | Deliveries or records withheld by the server | after 24 h in `Candidate` without completeness: "Les nouvelles clés n'arrivent pas. Ajoute de nouveau cet appareil depuis iPhone de Quentin." (re-pair) |
-| Quarantined by a forged record | "Ce n'était pas moi" with the password |
+| Quarantined by a forged record | "Ce n'était pas moi" with the password, within 7 days |
 | Mutual revocation | user picks the device they still hold |
 | User excluded an honest device by mistake | Réglages > Sécurité > "Rotations ignorées": revisit and confirm; or re-pair that device |
 | All remaining devices lost | latest Emergency Kit on a new device (7.5) |
@@ -350,7 +351,7 @@ Not proved in ProVerif (stateful ordering); proved by a property test over inter
 ### 8.7 What never happens silently
 
 - A device never adopts an identity without the user's confirmation on that device and the master password.
-- A device never erases itself or drops local items, pending writes or own writes because of anything it reads.
+- A device never erases itself or drops local items, pending writes or own writes because of anything it reads, except the erase 7 days after a valid lineage record revoked it (8.4).
 - A device never treats a record signed by an account key, or anything from the server, as proof of a rotation.
 - A Secret Key is never typed to follow a rotation (only to restore from a kit).
 
@@ -410,6 +411,7 @@ The extension never follows a rotation and never holds device keys; in `Candidat
 - Server denial of service delays following; the exit is re-pairing.
 - Each rotation rewrites every vault (as the first design).
 - Writes by other devices under the old identity after the rotator's snapshot reach the new identity only when their author follows and replays them.
+- A revoked device that writes "B revokes A" before the user removes it quarantines A; if nobody answers A's screen within 7 days, A erases itself and its unsynced writes are lost (O1). The user's other devices still see the record as a prompt naming B, so the exit is "Ce n'était pas moi" on any of them, then removing B.
 
 ## 12. Attack catalogue (reviewer repros) under v2
 
@@ -466,7 +468,7 @@ Not modeled: sibling ordering, re-application and convergence (state, covered by
 | K10, K13, K14, K16, K17, K19, P1, P3 (pair-first push, rotation marker, reissue, overtaken flags, first complete wins) | removed: identity-keyed records and the lineage make the contest disappear (R3, R20) |
 | K15, K18, K20, P2 (known Secret Keys memory) | removed: device keys replace it (R20) |
 | `unlock_after_rotation`, `keys_rotated`, `RotationOvertaken`, `password_change_overtaken`, `note_secret_key` | removed; replaced by `pending_rotation`, `follow_rotation`, `reject_rotation` (section 18) |
-| erase on revocation (2b B6, A5) | replaced by quarantine (R8) |
+| erase on revocation (2b B6, A5) | replaced by quarantine, then erase after 7 days (R8) |
 
 The implementation starts again from `main` and ports the kept parts; `fix/key-rotation` stays as a reference and is not merged.
 
@@ -494,14 +496,14 @@ Format: decision - why - cost if wrong.
 - **R5** Every adoption of a new identity is a user step on that device (summary from local pins, rotation code, master password); never automatic - without it the race of 8.3 ends silently on the attacker's side on any device that has not yet seen the honest record (`rotation_autofollow.pv`) - one confirmation per device and rotation, which the password entry needed anyway.
 - **R6** The user arbitrates races: mutual exclusion asks which device they still hold; "Ce n'était pas moi" excludes the signer locally and offers to remove it - the device cannot tell the two records apart, the user can - a user who answers wrong adopts the attacker's identity (limit 11).
 - **R7** Never drop local data automatically: own writes are replayed after any adoption or switch, under the new keys - G4 - a replay log to keep (bounded, 10.4).
-- **R8** A device that reads its own revocation is quarantined (locked, biometric enrollment deleted, data kept encrypted); erasing is a user action; the account-signed device list never erases - a forged record or list must not destroy unsynced data - a lost device that is never touched keeps its encrypted database (open question O1).
+- **R8** A device that reads its own revocation in a valid lineage record is quarantined (locked, biometric enrollment deleted, data kept encrypted) and erases itself 7 days later unless the user answers "Ce n'était pas moi"; the account-signed device list never erases - a lost device must not keep data forever, and a forged record must leave the user a window to object - a forged record nobody answers for 7 days destroys that device's unsynced data (O1, ruled 2026-10-30).
 - **R9** Honest concurrent rotations: exclusion first, then the smallest lineage hash; losers switch with the user and re-apply uncovered removals as a child of the winner's tip - deterministic, server-independent, no livelock (8.5) - two confirmations on each device in the rare case of two concurrent rotations.
 - **R10** `Candidate` is read-only - writing under the old keys while a real revocation is pending would hand new secrets to the revoked device - an attacker-signed record blocks writes until the user answers once.
 - **R11** Nothing signed by a left identity is accepted as new content; each device replays only its own writes - the revoked device can sign under the left identity - other devices' late writes wait for their authors to follow.
 - **R12** The rotation record's `from_heads` replaces the `KeyRotation` restore epoch; adoption sets `last_seen` from it - one signed, confirmed source of truth instead of an epoch the revoked device or the server could replay or inflate - none.
 - **R13** Every params record is verified under an identity of the device's lineage before any use; unverified records are ignored - hold-out 4 - none.
 - **R14** Emergency Kit restore pins the roster through the identity signature on the lineage record; an identity with visible children is an outdated kit and is refused; a kit-restored device is pinned by others only on the user's yes - 2SKD authenticates the identity, the identity authenticates the roster (`rotation.pv`, `restore_new`) - an outdated kit with a server hiding the rotation lands on the old identity (limit, `restore_old`).
-- **R15** Device keys are hybrid (ML-DSA-87 + Ed25519, ML-KEM-1024 + X25519) in the Keychain, `WhenUnlockedThisDeviceOnly`, app-only access group; not in the Secure Enclave - same post-quantum stance as the account keys; the SE signs P-256 only - malware with Keychain access on an unlocked device could sign (out of scope; O3 adds an SE component).
+- **R15** Device keys are hybrid (ML-DSA-87 + Ed25519, ML-KEM-1024 + X25519); on Apple the ML-DSA-87 and ML-KEM-1024 halves are Secure Enclave keys, the classical halves and the SE blobs sit in the Keychain, `WhenUnlockedThisDeviceOnly`, app-only access group - same post-quantum stance as the account keys, and since iOS/macOS 26 the SE holds exactly those two algorithms, so no new primitive and no format change - malware on the unlocked device can still use the keys there, but nothing copied off the device can (O3, ruled 2026-10-30).
 - **R16** Pairing carries device keys inside the SAS channel (`ConfirmedWithKey`, `Grant::FullV2` with a trust snapshot) and the approver writes a signed intro - the SAS already authenticates that channel - an old approver pairs a legacy device.
 - **R17** Migration by legacy genesis and legacy intros, trusted on first use, upgraded by a SAS verification; conflicting claims are excluded; existing 2b revocations prompt a rotation - no forced re-pairing - TOFU window for a device already stolen before the update (O4).
 - **R18** The new keyset carries the retired KEM secrets (at most 16), never retired signing or identity keys; archives signed by a retired key open with a warning - old backups and travel states stay readable; the revoked device already holds those KEM keys - a forged old-key archive file can be imported if the user accepts the warning.
@@ -514,9 +516,9 @@ Format: decision - why - cost if wrong.
 
 ## 17. Open questions for the owner
 
-- **O1** Quarantine instead of erase (R8): keep the encrypted database of a device that reads its own revocation until the user erases it? Add an automatic erase after N days?
+- **O1** Ruled 2026-10-30: automatic erase, 7 days after the device first reads its own revocation (R8, 8.4).
 - **O2** Rotation code: shown on both sides (proposed), or mandatory comparison before "C'est moi" (stronger against a careless click, but the user rarely has the rotating device at hand)?
-- **O3** Add a Secure Enclave P-256 signature as a third mandatory component of device signatures on Apple?
+- **O3** Ruled 2026-10-30: Secure Enclave. The ML-DSA-87 and ML-KEM-1024 halves of the device keys live in the SE on Apple (5.1, R15).
 - **O4** Do accounts with more than one device exist outside development? If not, drop the TOFU migration and require re-pairing.
 - **O5** Deliver the new AUK to each device's biometric Secure Enclave key too, so a biometric device follows without typing the password? Needs that SE public key pinned and kept current.
 - **O6** Per-device acknowledgment records (signed "I am on head h") so the rotator shows who followed? Small, but one more record kind.
@@ -531,7 +533,7 @@ New branch from `main` (not from `fix/key-rotation`); kept parts are ported. Eac
 - `Repository::pending_rotation(store, device_state) -> Result<RotationPrompt>` (no unlock: summary, names from the local roster, code, kind: single, mutual, switch, self-revoked, orphaned, outdated)
 - `Repository::follow_rotation(store, choice: [u8; 32], password, device_keys) -> Result<(Repository, Auk)>`
 - `Repository::reject_rotation(store, choice, exclude: bool)`
-- `Repository::quarantine_resolve(store, Erase | NotMe { password })`
+- `Repository::quarantine_resolve(store, Erase | NotMe { password })`, `quarantine_tick(store, now)`
 
 Tasks:
 
@@ -546,7 +548,7 @@ Tasks:
 9. **Follow**: `pending_rotation`, `follow_rotation`, `reject_rotation`; delivery opening; `last_seen` reset; biometric re-enrollment AUK returned. Tests: honest follow; `zz6` biometric device follows with the password only; `zz_biometric_device_has_no_known_keys` cannot be built any more (forged record refused or prompts); follow without completeness waits.
 10. **Own-write log and replay**: log on every write, replay after adoption and switch. Tests: C writes during A's rotation (`zz2_epoch_drop...` scenario) and keeps its item; a write by B under the old identity after `from_heads` is not imported; bounds.
 11. **Siblings and re-application**: switch flow, `Reapply` child, password re-application. Tests: `zz3`, `zz5` converge in at most two turns per device; re-application dropped when covered.
-12. **Quarantine and exclusion**: self-revocation lock without erase; "not me" exclusion; remove-and-rotate from the prompt; device list `revoked_at` no longer erases. Tests: `zz4` on A, on C in both orders; forged device-list revocation of A by a 2b-revoked device.
+12. **Quarantine and exclusion**: self-revocation lock, erase 7 days later; "not me" exclusion; remove-and-rotate from the prompt; device list `revoked_at` no longer erases. Tests: `zz4` on A, on C in both orders; forged device-list revocation of A by a 2b-revoked device.
 13. **Pairing v2**: `ConfirmedWithKey`, `Grant::FullV2` with trust snapshot, intro written with the grant in one transaction, re-intro after adoption. Tests: pop mismatch refused, intro by a revoked or excluded device refused, old peer falls back to legacy, snapshot lineage imported and pinned.
 14. **Genesis and migration**: genesis at creation; legacy genesis and legacy intros; conflicting genesis or keys; verify ceremony; the one-time "rotate now" prompt flag. Tests: two legacy devices migrate in both orders; a 2b-revoked device's legacy intro refused; conflicting keys excluded.
 15. **Emergency Kit restore**: lineage-aware restore, roster pinned through the identity signature, outdated kit refused when children are visible, kit-restored device intro needing a yes. Tests mirror `rotation.pv` (`restore_new`, `restore_old`).
