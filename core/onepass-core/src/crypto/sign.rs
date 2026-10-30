@@ -28,8 +28,8 @@ const SLH_N: usize = 32;
 /// `sk_seed || sk_prf || pk_seed || pk_root`.
 const SLH_SECRET_LEN: usize = 4 * SLH_N;
 /// `pk_seed || pk_root`.
-const SLH_PUBLIC_LEN: usize = 2 * SLH_N;
-const SLH_SIG_LEN: usize = 29792;
+pub(crate) const SLH_PUBLIC_LEN: usize = 2 * SLH_N;
+pub(crate) const SLH_SIG_LEN: usize = 29792;
 
 type SlhSigningKey = SigningKey<Sha2_256s>;
 type SlhVerifyingKey = VerifyingKey<Sha2_256s>;
@@ -296,7 +296,19 @@ impl fmt::Debug for IdentityKey {
     }
 }
 
+impl IdentitySignature {
+    /// Raw signature bytes.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 impl IdentityVerifyingKey {
+    /// `pk_seed || pk_root`.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
     /// Malformed signatures fail as `Signature`, a malformed key as
     /// `InvalidFormat`.
     pub fn verify(&self, domain: &[u8], msg: &[u8], sig: &IdentitySignature) -> Result<()> {
