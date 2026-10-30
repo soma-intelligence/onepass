@@ -33,6 +33,11 @@ final class AppModel {
     @ObservationIgnored private var approvalPanel: ApprovalPanelController?
     #endif
     @ObservationIgnored private let remote: (any RemoteRecordStore)?
+    #if os(iOS)
+    /// The requests of the Mac's agents this iPhone answers (agent-ready spec 5 to 7). Its transport
+    /// exists in the CloudKit build only; the Agents page says so otherwise.
+    let phoneAgents: PhoneAgents?
+    #endif
 
     /// Built with `ONEPASS_CLOUDKIT` (signed Release-CloudKit configuration, ruling R8).
     let cloudKitEnabled: Bool
@@ -231,6 +236,15 @@ final class AppModel {
         self.remote = remote
         session = VaultSession(environment: environment)
         if storeSplit { session.refuseStore(.other(Self.storeSplitMessage)) }
+        #if os(iOS)
+        #if ONEPASS_CLOUDKIT
+        let remoteChannel: (any RemoteChannel)? = demo == nil && !isolated ? CloudKitRemoteChannel() : nil
+        #else
+        let remoteChannel: (any RemoteChannel)? = nil
+        #endif
+        phoneAgents = storeSplit ? nil : PhoneAgents(
+            vault: session, channel: remoteChannel, sharedDefaults: UserDefaults(suiteName: AppGroup.identifier))
+        #endif
         #if os(macOS)
         browserBridge =
             demo == nil && !isolated && !storeSplit && resolved.isShared
@@ -319,6 +333,10 @@ final class AppModel {
         lockIfRequested()
         #endif
         companion.start()
+        #if os(iOS)
+        // Nothing stays after a quit: the records that expired meanwhile are erased (spec 5.2).
+        if let phoneAgents { tasks.append(Task { await phoneAgents.purgeExpired() }) }
+        #endif
         #if os(macOS)
         if let browserBridge {
             browserBridge.start()
@@ -692,6 +710,10 @@ final class AppModel {
             resetNavigation()
         }
         companion.sessionChanged()
+        #if os(iOS)
+        // The phone reads its agent requests only while the vault is open.
+        if let phoneAgents { Task { await phoneAgents.sessionChanged() } }
+        #endif
         #if os(macOS)
         if approvalPanel == nil { approvalPanel = ApprovalPanelController(hosts: developer) }
         if state == .unlocked {

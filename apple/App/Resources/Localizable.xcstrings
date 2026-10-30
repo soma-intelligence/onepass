@@ -138,6 +138,16 @@
         }
       }
     },
+    "%@ est verrouillé. Déverrouiller pour les agents et autoriser cette demande ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is locked. Unlock it for the agents and allow this request?"
+          }
+        }
+      }
+    },
     "%@ n'a pas été confirmé : rien n'a été activé." : {
       "localizations" : {
         "en" : {
@@ -1040,6 +1050,26 @@
         }
       }
     },
+    "Activer le déverrouillage à distance" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on remote unlock"
+          }
+        }
+      }
+    },
+    "Activer le déverrouillage à distance de %@ ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on remote unlock for %@?"
+          }
+        }
+      }
+    },
     "Activé" : {
       "localizations" : {
         "en" : {
@@ -1156,6 +1186,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SSH Agent"
+          }
+        }
+      }
+    },
+    "Agents" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agents"
           }
         }
       }
@@ -1590,6 +1630,16 @@
         }
       }
     },
+    "Approuver les demandes sur cet iPhone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approve requests on this iPhone"
+          }
+        }
+      }
+    },
     "Après l'enregistrement, tu ne pourras plus te connecter à ce site avec cette passkey. Le site la garde dans ton compte : supprime-la aussi dans ses réglages." : {
       "localizations" : {
         "en" : {
@@ -1970,6 +2020,16 @@
         }
       }
     },
+    "Aucune demande en attente" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No pending request"
+          }
+        }
+      }
+    },
     "Aucune imprimante n'est disponible sur cet appareil." : {
       "localizations" : {
         "en" : {
@@ -2026,6 +2086,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Allow OnePass to use your location to see items saved near you. It stays on this device."
+          }
+        }
+      }
+    },
+    "Autoriser 5 min" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow for 5 min"
           }
         }
       }
@@ -2730,6 +2800,26 @@
         }
       }
     },
+    "Cet iPhone approuve les demandes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This iPhone approves requests"
+          }
+        }
+      }
+    },
+    "Cet iPhone efface sa clé et %@ efface la sienne. Pour le réactiver, recommence depuis le Mac." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This iPhone erases its key and %@ erases its own. To turn it on again, start over from the Mac."
+          }
+        }
+      }
+    },
     "Cet élément demande une confirmation avant d'afficher son contenu." : {
       "localizations" : {
         "en" : {
@@ -3386,6 +3476,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verification code"
+          }
+        }
+      }
+    },
+    "Code montré à l'agent" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code shown to the agent"
           }
         }
       }
@@ -4240,6 +4340,26 @@
         }
       }
     },
+    "Demande d'un agent sur %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request from an agent on %@"
+          }
+        }
+      }
+    },
+    "Demande de %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request from %@"
+          }
+        }
+      }
+    },
     "Demande de copie expirée" : {
       "localizations" : {
         "en" : {
@@ -4266,6 +4386,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ask at Every Use"
+          }
+        }
+      }
+    },
+    "Demandes des agents" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent requests"
           }
         }
       }
@@ -4680,6 +4810,16 @@
         }
       }
     },
+    "Déverrouillage à distance" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote unlock"
+          }
+        }
+      }
+    },
     "Déverrouillage..." : {
       "localizations" : {
         "en" : {
@@ -4746,6 +4886,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unlock with %@"
+          }
+        }
+      }
+    },
+    "Déverrouiller pour les agents" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock for the agents"
           }
         }
       }
@@ -5386,6 +5536,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Favorites"
+          }
+        }
+      }
+    },
+    "Fenêtre agents" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agents window"
+          }
+        }
+      }
+    },
+    "Fenêtre agents : %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agents window: %@"
           }
         }
       }
@@ -7170,6 +7340,26 @@
         }
       }
     },
+    "Les demandes des agents de ton Mac apparaissent ici pendant une minute." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requests from your Mac's agents show up here for one minute."
+          }
+        }
+      }
+    },
+    "Les demandes des agents passent par iCloud, chiffrées de bout en bout entre ton Mac et cet iPhone." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent requests go through iCloud, end-to-end encrypted between your Mac and this iPhone."
+          }
+        }
+      }
+    },
     "Les dernières lignes ne sont pas encore scellées (arrêt pendant une écriture)." : {
       "localizations" : {
         "en" : {
@@ -8290,6 +8480,16 @@
         }
       }
     },
+    "Nécessite la version iCloud de OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requires the iCloud version of OnePass"
+          }
+        }
+      }
+    },
     "OK" : {
       "localizations" : {
         "en" : {
@@ -8496,6 +8696,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Forget Extension"
+          }
+        }
+      }
+    },
+    "Oublier le déverrouillage à distance" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget Remote Unlock"
+          }
+        }
+      }
+    },
+    "Oublier le déverrouillage à distance ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget remote unlock?"
           }
         }
       }
@@ -9230,6 +9450,16 @@
         }
       }
     },
+    "Quand un agent de ton Mac demande un secret, cet iPhone reçoit une notification. Tu réponds dans l'app, avec Face ID. Rien ne se décide depuis la notification." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When an agent on your Mac asks for a secret, this iPhone gets a notification. You answer in the app, with Face ID. Nothing is decided from the notification."
+          }
+        }
+      }
+    },
     "Que veux-tu ajouter ?" : {
       "localizations" : {
         "en" : {
@@ -9266,6 +9496,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Leaves the device"
+          }
+        }
+      }
+    },
+    "REMOTE_REQUEST_ALERT" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request from an agent"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demande d'un agent"
           }
         }
       }
@@ -11340,6 +11587,16 @@
         }
       }
     },
+    "Ton iPhone gardera une clé qui permet à ce Mac de s'ouvrir pour les agents, chaque fois avec ton accord et Face ID." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your iPhone will keep a key that lets this Mac open for the agents, each time with your approval and Face ID."
+          }
+        }
+      }
+    },
     "Ton mot de passe maître" : {
       "localizations" : {
         "en" : {
@@ -12170,6 +12427,16 @@
         }
       }
     },
+    "Voir les demandes en attente (%lld)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "See pending requests (%lld)"
+          }
+        }
+      }
+    },
     "Voir les solutions" : {
       "localizations" : {
         "en" : {
@@ -12266,6 +12533,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Check What's in the File Before Importing"
+          }
+        }
+      }
+    },
+    "Vérifie que le Mac montre le même code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check that the Mac shows the same code"
           }
         }
       }
@@ -12706,6 +12983,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "identities"
+          }
+        }
+      }
+    },
+    "jusqu'à %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "until %@"
           }
         }
       }
