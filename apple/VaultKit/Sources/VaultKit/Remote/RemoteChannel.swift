@@ -9,12 +9,16 @@ public struct RemoteMessage: Sendable, Equatable, Identifiable {
     public var to: String
     public var blob: Data
     public var expiresAt: Date
+    /// When the transport stored it, on the server's clock (CloudKit's creation date). Set by the
+    /// channel, never by the sender; nil when unknown. A third clock for the phone's skew check.
+    public var sentAt: Date?
 
-    public init(id: String, to: String, blob: Data, expiresAt: Date) {
+    public init(id: String, to: String, blob: Data, expiresAt: Date, sentAt: Date? = nil) {
         self.id = id
         self.to = to
         self.blob = blob
         self.expiresAt = expiresAt
+        self.sentAt = sentAt
     }
 }
 

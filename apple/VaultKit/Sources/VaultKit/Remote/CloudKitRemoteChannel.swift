@@ -144,7 +144,8 @@ public actor CloudKitRemoteChannel: RemoteChannel {
         guard let to = record[Field.to] as? String, let blob = record[Field.blob] as? Data,
               let expiresAt = record[Field.expiresAt] as? Date
         else { return nil }
-        return RemoteMessage(id: record.recordID.recordName, to: to, blob: blob, expiresAt: expiresAt)
+        return RemoteMessage(
+            id: record.recordID.recordName, to: to, blob: blob, expiresAt: expiresAt, sentAt: record.creationDate)
     }
 }
 #endif
