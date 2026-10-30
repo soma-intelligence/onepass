@@ -106,8 +106,9 @@ struct RemoteApproverTests {
         #expect(answer.approvedOn == "phone:phone-a")
         try await waitUntil { await approver.lateAnswers == ["phone-b"] }
         #expect(await approver.phonesAvailable)
-        // Every request and every answer is gone from the channel.
-        try await waitUntil { channel.stored().isEmpty }
+        // Every request and every answer is gone from the channel. The forged one, opened by
+        // nobody, stays for another reader until it expires (then purged).
+        try await waitUntil { channel.stored().map(\.id) == ["forged"] }
     }
 
     @Test func lateDenialIgnoredAfterApproval() async throws {

@@ -72,7 +72,16 @@ public final class RemoteUnlockCoordinator {
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
     @ObservationIgnored private var pending: Task<Bool, Never>?
     @ObservationIgnored private var deadline: Task<Void, Never>?
-    @ObservationIgnored private var noticeListener: Task<Void, Never>?
+    /// The Mac's one reader of its remote messages (shared with the window's approver).
+    @ObservationIgnored private var mailbox: RemoteMailbox?
+    /// The notice consumer while a window is open.
+    @ObservationIgnored private var noticeSubscription: (RemoteMailbox, UUID)?
+    /// Bumped by `lockNow` and every end of a window: an answer that arrives after it never opens one.
+    @ObservationIgnored private var generation = 0
+    /// The approver the window's first tool request races with (tests read it).
+    @ObservationIgnored private(set) var windowApprover: RemoteApprover?
+    /// Tests: runs after the phone's approval, right before the window opens.
+    @ObservationIgnored var beforeOpenWindow: ((Session) async -> Void)?
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "remote")
 
     /// `notifications`: where sleep and session changes are posted (the workspace center on the
@@ -95,11 +104,9 @@ public final class RemoteUnlockCoordinator {
         self.timeout = timeout
         self.windowTimer = windowTimer
         self.now = now
-        enrolledPhone = (try? store.load())?.phone
         vault.agentWindowEnded = { [weak self] in self?.windowClosed() }
         vault.passwordChangedHere = { [weak self] in self?.forgetAll() }
         vault.devicesRefreshed = { [weak self] in self?.devicesRefreshed($0) }
-        if enrolledPhone != nil { installGateHandler() }
         for name in Self.endingNotifications {
             observers.append(notifications.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
                 Task { @MainActor in self?.lockNow() }
@@ -110,7 +117,6 @@ public final class RemoteUnlockCoordinator {
     isolated deinit {
         for observer in observers { notifications.removeObserver(observer) }
         deadline?.cancel()
-        noticeListener?.cancel()
         pending?.cancel()
     }
 
@@ -138,11 +144,28 @@ public final class RemoteUnlockCoordinator {
 
     // MARK: - Launch
 
-    /// At launch: the expired records of a quit or a sleep are erased (Review Focus 4), and a
-    /// locked, enrolled Mac holds the MCP socket with the gate.
+    /// At launch: reads the enrollment (off the main actor), erases the expired records of a quit
+    /// or a sleep (Review Focus 4), and a locked, enrolled Mac holds the MCP socket with the gate.
     public func start() async {
+        let store = self.store
+        let entry = await Self.offMain { try? store.load() }
+        enrolledPhone = entry?.phone
+        if entry != nil { installGateHandler() }
         await channel.purgeExpired(now: now())
         if enrolledPhone != nil, vault.state == .locked, vault.agentSession == nil { hosts.armGate() }
+    }
+
+    /// Keychain reads never run on the main actor.
+    nonisolated private static func offMain<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        await Task.detached(priority: .userInitiated) { work() }.value
+    }
+
+    /// The one reader of `device`'s messages.
+    private func mailbox(for device: String) -> RemoteMailbox {
+        if let mailbox, mailbox.device == device { return mailbox }
+        let box = RemoteMailbox(channel: channel, device: device, now: now)
+        mailbox = box
+        return box
     }
 
     // MARK: - Enrollment
@@ -156,8 +179,11 @@ public final class RemoteUnlockCoordinator {
         guard vault.state == .unlocked, vault.coreSession != nil else { throw VaultError.passwordRequired }
         let auk = try await vault.accountKeyWithTouchID(prompt: Self.enrollPrompt)
         defer { auk.wipe() }
-        let hadKeys = try approverKeys.load() != nil
-        let keys = try approverKeys.loadOrCreate()
+        let approverKeys = self.approverKeys
+        let (hadKeys, keys) = try await Task.detached { () throws -> (Bool, FfiApproverKeys) in
+            let had = try approverKeys.load() != nil
+            return (had, try approverKeys.loadOrCreate())
+        }.value
         // This Mac's approval keys must be in the signed list for the phone to trust its requests.
         try await vault.write { core in
             guard let me = core.thisDeviceId() else { throw VaultError.integrity(kind: "unregistered") }
@@ -188,7 +214,7 @@ public final class RemoteUnlockCoordinator {
     /// Forgets the remote unlock with `phone` on this Mac: `C` is erased here and nothing is sent
     /// (the phone's `K_r` alone opens nothing).
     public func forget(phone: String) async {
-        guard enrolledPhone == phone || (try? store.load())?.phone == phone else { return }
+        guard enrolledPhone == phone else { return }
         clearEnrollment()
     }
 
@@ -213,7 +239,8 @@ public final class RemoteUnlockCoordinator {
         }
     }
 
-    /// A device list read while unlocked: an enrolled phone now revoked loses its pairing (spec 6.4).
+    /// A device list read while unlocked (the verified list): an enrolled phone now revoked loses
+    /// its pairing (spec 6.4).
     private func devicesRefreshed(_ devices: [FfiDevice]) {
         guard let phone = enrolledPhone,
             devices.contains(where: { $0.id == phone && $0.revokedAt != nil })
@@ -225,15 +252,38 @@ public final class RemoteUnlockCoordinator {
 
     /// An agent connected while the app is locked (the gate asks, spec 6.2): asks the enrolled phone
     /// to unlock for the agents, and opens the agents-only window on its approval. True when a
-    /// session now serves the agents. Answers within `timeout` (60 s), false at the latest then.
+    /// session now serves the agents. The whole of it (request, wait, hand-over) is bounded by
+    /// `timeout` (60 s): false at the latest then, and an approval after that opens nothing.
     /// Concurrent agents share one request.
     public func handleLockedRequest(client: FfiMcpClient) async -> Bool {
         if vault.state == .unlocked || vault.agentSession != nil { return true }
-        if let pending { return await pending.value }
-        let task = Task { await self.unlock(for: client) }
-        pending = task
-        let ok = await task.value
+        let task: Task<Bool, Never>
+        if let pending {
+            task = pending
+        } else {
+            let deadline = ContinuousClock.now + timeout
+            task = Task { await self.unlock(for: client, deadline: deadline) }
+            pending = task
+        }
+        let limit = timeout
+        let gen = generation
+        let ok = await withTaskGroup(of: Bool?.self) { group in
+            group.addTask { await task.value }
+            group.addTask {
+                try? await Task.sleep(for: limit)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
         if pending == task { pending = nil }
+        guard let ok else {
+            // Out of time: the request still running must not open a window any more.
+            if generation == gen { generation &+= 1 }
+            task.cancel()
+            return refuse(.timedOut)
+        }
         return ok
     }
 
@@ -242,10 +292,14 @@ public final class RemoteUnlockCoordinator {
         case stale, denied, expired, forgotten, timedOut
     }
 
-    private func unlock(for client: FfiMcpClient) async -> Bool {
-        let started = ContinuousClock.now
-        guard vault.state == .locked, let entry = try? store.load() else { return false }
-        guard let keys = try? approverKeys.load() else { return refuse(.unavailable) }
+    private func unlock(for client: FfiMcpClient, deadline: ContinuousClock.Instant) async -> Bool {
+        let gen = generation
+        guard vault.state == .locked else { return false }
+        let store = self.store
+        let approverKeys = self.approverKeys
+        let (entry, keys) = await Self.offMain { (try? store.load(), try? approverKeys.load()) }
+        guard let entry else { return false }
+        guard let keys else { return refuse(.unavailable) }
         let path = vault.dbPath
         let window = UInt32(hosts.settings.agentWindowMinutes)
         // The agent's identity and the window only (the tool request comes after, with its code).
@@ -262,33 +316,49 @@ public final class RemoteUnlockCoordinator {
             }
         } catch OnePassError.Validation(let field, let reason) where field == "remote_unlock" && reason == "throttled" {
             return refuse(.throttled)
-        } catch OnePassError.NotFound {
-            // The phone left the approver list (revoked, or its keys retired): its half is useless.
-            clearEnrollment()
-            return refuse(.unavailable)
         } catch {
+            // `C` is erased only from the verified device list (`devicesRefreshed`), never on a
+            // refusal here.
             Self.log.error("remote unlock request not sealed")
             return refuse(.unavailable)
         }
         let record = "unlock-" + RemoteApprover.hex(sealed.requestId)
-        do {
-            try await channel.post(RemoteMessage(
-                id: record, to: sealed.to, blob: sealed.blob,
-                expiresAt: Date(timeIntervalSince1970: TimeInterval(sealed.expiresAt))))
-        } catch {
-            return refuse(.unavailable)
+        let channel = self.channel
+        let message = RemoteMessage(
+            id: record, to: sealed.to, blob: sealed.blob,
+            expiresAt: Date(timeIntervalSince1970: TimeInterval(sealed.expiresAt)))
+        let posted = await Self.within(deadline) { () -> Bool in
+            do {
+                try await channel.post(message)
+                return true
+            } catch {
+                return false
+            }
         }
-        let left = timeout - (ContinuousClock.now - started)
-        let outcome = await Self.waitForAnswer(
-            channel: channel, unlocker: unlocker, entry: entry, within: max(left, .zero))
-        await channel.delete(record)
+        guard posted == true else {
+            Task { await channel.delete(record) }
+            return refuse(posted == nil ? .timedOut : .unavailable)
+        }
+        let outcome = await waitForAnswer(unlocker: unlocker, entry: entry, deadline: deadline)
+        // Withdrawn off the critical path.
+        Task { await channel.delete(record) }
 
         switch outcome {
         case .opened(let session):
+            if let beforeOpenWindow { await beforeOpenWindow(session) }
+            // A lock, a sleep or the deadline came in meanwhile: nothing opens.
+            guard gen == generation, !Task.isCancelled, ContinuousClock.now < deadline, vault.state == .locked else {
+                Self.lockOffMain(session)
+                return vault.state == .unlocked ? true : refuse(.timedOut)
+            }
             let endsAt = session.agentWindowEndsAt().map { Date(timeIntervalSince1970: TimeInterval($0)) }
                 ?? now().addingTimeInterval(TimeInterval(window) * 60)
+            guard endsAt > now() else {
+                // The window is already over: closed at once.
+                Self.lockOffMain(session)
+                return refuse(.timedOut)
+            }
             guard await openWindow(session, endsAt: endsAt, entry: entry, keys: keys, unlocker: unlocker) else {
-                // Unlocked meanwhile: the full session serves.
                 return vault.state == .unlocked
             }
             lastFailure = nil
@@ -312,62 +382,92 @@ public final class RemoteUnlockCoordinator {
         return false
     }
 
-    /// The first conclusive message for this Mac, or `.timedOut` after `within`.
-    nonisolated private static func waitForAnswer(
-        channel: any RemoteChannel, unlocker: RemoteUnlocker, entry: RemoteUnlockKeyStore.Entry, within: Duration
-    ) async -> Outcome {
-        let stream = channel.messages(for: entry.mac)
-        return await withTaskGroup(of: Outcome?.self) { group in
+    nonisolated private static func lockOffMain(_ session: Session) {
+        Task { _ = try? await CoreThread.run { session.lock() } }
+    }
+
+    /// `work`'s result, or nil once `deadline` passed.
+    nonisolated private static func within<T: Sendable>(
+        _ deadline: ContinuousClock.Instant, _ work: @escaping @Sendable () async -> T
+    ) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { await work() }
             group.addTask {
-                for await message in stream {
-                    if let outcome = await consider(message, channel: channel, unlocker: unlocker, entry: entry) {
-                        return outcome
-                    }
-                }
+                try? await Task.sleep(until: deadline, clock: .continuous)
                 return nil
             }
-            group.addTask {
-                try? await Task.sleep(for: within)
-                return .timedOut
-            }
-            var result = Outcome.timedOut
-            while let next = await group.next() {
-                if let next {
-                    result = next
-                    break
-                }
-            }
+            let first = await group.next() ?? nil
             group.cancelAll()
-            return result
+            return first
         }
     }
 
-    /// A notice (`ForgetUnlock` ends the wait, `Lock` has nothing to end), then an answer to the
-    /// request. Anything else (forged, misdirected, another request's answer) is left alone.
-    nonisolated private static func consider(
-        _ message: RemoteMessage, channel: any RemoteChannel, unlocker: RemoteUnlocker,
-        entry: RemoteUnlockKeyStore.Entry
-    ) async -> Outcome? {
-        let blob = message.blob
+    /// The first conclusive message for this request through the Mac's mailbox (notices first,
+    /// then the answer), or `.timedOut` at `deadline`. A session opened after the deadline won is
+    /// locked at once.
+    private func waitForAnswer(
+        unlocker: RemoteUnlocker, entry: RemoteUnlockKeyStore.Entry, deadline: ContinuousClock.Instant
+    ) async -> Outcome {
+        let box = mailbox(for: entry.mac)
+        let (results, sink) = AsyncStream.makeStream(of: Outcome.self)
         let phone = entry.phone
-        if let notice = try? await CoreThread.run({ try unlocker.openRemoteNotice(blob: blob, enrolledPhone: phone) }) {
-            await channel.delete(message.id)
-            return notice.kind == .forgetUnlock ? .forgotten : nil
-        }
         let c = entry.c
-        let outcome: Outcome
-        do {
-            outcome = .opened(try await CoreThread.run { try unlocker.finish(responseBlob: blob, c: c) })
-        } catch OnePassError.RemoteUnlockStale {
-            outcome = .stale
-        } catch OnePassError.Validation(let field, let reason) where field == "remote_unlock" && reason == "denied" {
-            outcome = .denied
-        } catch OnePassError.Integrity(let kind) where kind == "remote_expired" {
-            outcome = .expired
-        } catch {
-            return nil
+        let notices = await box.register(.notice) { message in
+            let blob = message.blob
+            guard let notice = try? await CoreThread.run({
+                try unlocker.openRemoteNotice(blob: blob, enrolledPhone: phone)
+            }) else { return false }
+            if notice.kind == .forgetUnlock { sink.yield(.forgotten) }
+            return true
         }
-        await channel.delete(message.id)
+        let answers = await box.register(.unlock) { message in
+            let blob = message.blob
+            let outcome: Outcome
+            do {
+                outcome = .opened(try await CoreThread.run { try unlocker.finish(responseBlob: blob, c: c) })
+            } catch OnePassError.RemoteUnlockStale {
+                outcome = .stale
+            } catch OnePassError.Validation(let field, let reason) where field == "remote_unlock" && reason == "denied" {
+                outcome = .denied
+            } catch OnePassError.Integrity(let kind) where kind == "remote_expired" {
+                outcome = .expired
+            } catch {
+                // Forged, misdirected, or not an unlock answer: left alone, the wait goes on.
+                return false
+            }
+            // The wait already ended: a session nobody will use is locked at once.
+            if case .terminated = sink.yield(outcome), case .opened(let session) = outcome {
+                Self.lockOffMain(session)
+            }
+            return true
+        }
+        let timer = Task {
+            try? await Task.sleep(until: deadline, clock: .continuous)
+            sink.yield(.timedOut)
+        }
+        // A lock or sleep while waiting (the request task is cancelled) ends the wait too.
+        let outcome = await withTaskCancellationHandler {
+            var first: Outcome = .timedOut
+            for await outcome in results {
+                first = outcome
+                break
+            }
+            return first
+        } onCancel: {
+            sink.yield(.timedOut)
+        }
+        timer.cancel()
+        await box.unregister(notices)
+        await box.unregister(answers)
+        sink.finish()
+        // An approval that came after the outcome was decided: its session is locked at once.
+        for await late in results {
+            if case .opened(let session) = late { Self.lockOffMain(session) }
+        }
+        if case .opened(let session) = outcome, ContinuousClock.now >= deadline {
+            Self.lockOffMain(session)
+            return .timedOut
+        }
         return outcome
     }
 
@@ -378,13 +478,16 @@ public final class RemoteUnlockCoordinator {
         unlocker: RemoteUnlocker
     ) async -> Bool {
         guard vault.openAgentWindow(session, endsAt: endsAt) else { return false }
+        let gen = generation
         startDeadline(endsAt)
-        startNoticeListener(entry: entry, unlocker: unlocker)
+        let box = mailbox(for: entry.mac)
+        await startNotices(box: box, phone: entry.phone, unlocker: unlocker)
         let store = vault.environment.databaseURL.deletingLastPathComponent().path
-        let approver = RemoteApprover(channel: channel, session: session, keys: keys)
+        let approver = RemoteApprover(channel: channel, session: session, keys: keys, now: now, mailbox: box)
+        windowApprover = approver
         await hosts.agentWindowOpened(session, store: store, approver: approver)
         // Ended while the servers started: they stop again.
-        if vault.agentSession !== session {
+        if gen != generation || vault.agentSession !== session {
             hosts.agentWindowEnded(rearm: vault.state == .locked && enrolledPhone != nil)
             return false
         }
@@ -407,40 +510,46 @@ public final class RemoteUnlockCoordinator {
     }
 
     /// While the window is open: `Lock` from any active phone ends it, `ForgetUnlock` from the
-    /// enrolled phone erases `C`.
-    private func startNoticeListener(entry: RemoteUnlockKeyStore.Entry, unlocker: RemoteUnlocker) {
-        noticeListener?.cancel()
-        let stream = channel.messages(for: entry.mac)
-        let channel = self.channel
-        let phone = entry.phone
-        noticeListener = Task { [weak self] in
-            for await message in stream {
-                let blob = message.blob
-                guard let notice = try? await CoreThread.run({
-                    try unlocker.openRemoteNotice(blob: blob, enrolledPhone: phone)
-                }) else { continue }
-                await channel.delete(message.id)
-                guard let self else { return }
+    /// enrolled phone erases `C`. Through the Mac's mailbox, ahead of the approval answers.
+    private func startNotices(box: RemoteMailbox, phone: String, unlocker: RemoteUnlocker) async {
+        stopNotices()
+        let id = await box.register(.notice) { [weak self] message in
+            let blob = message.blob
+            guard let notice = try? await CoreThread.run({
+                try unlocker.openRemoteNotice(blob: blob, enrolledPhone: phone)
+            }) else { return false }
+            await MainActor.run {
                 switch notice.kind {
-                case .lock: self.lockNow()
-                case .forgetUnlock: self.clearEnrollment()
+                case .lock: self?.lockNow()
+                case .forgetUnlock: self?.clearEnrollment()
                 }
             }
+            return true
         }
+        noticeSubscription = (box, id)
     }
 
-    /// "Verrouiller maintenant": ends the agents-only window (and any unlock request waiting).
+    private func stopNotices() {
+        guard let (box, id) = noticeSubscription else { return }
+        noticeSubscription = nil
+        Task { await box.unregister(id) }
+    }
+
+    /// "Verrouiller maintenant": ends the agents-only window, and any unlock request waiting (an
+    /// approval that arrives after this opens nothing).
     public func lockNow() {
+        generation &+= 1
         pending?.cancel()
         vault.endAgentWindow()
     }
 
     /// The vault ended the window (lock, deadline, notice, sleep, full unlock).
     private func windowClosed() {
+        generation &+= 1
         deadline?.cancel()
         deadline = nil
-        noticeListener?.cancel()
-        noticeListener = nil
+        stopNotices()
+        windowApprover = nil
         hosts.agentWindowEnded(rearm: vault.state == .locked && enrolledPhone != nil)
     }
 }
