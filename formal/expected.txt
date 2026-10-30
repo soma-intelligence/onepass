@@ -185,25 +185,35 @@ emergency_kit.pv | not event(Pinned(restore_kit_lost,a,i)) | false
 emergency_kit.pv | not event(AukDerived(restore_no_keyset)) | false
 
 # remote_unlock.pv : déverrouillage à distance depuis l'iPhone (spec agent-ready 6) ;
-# CloudKit = réseau de l'attaquant, C public, horloges et expiration non modélisées.
+# CloudKit = réseau de l'attaquant, C public, horloges et expiration non modélisées ;
+# un second Mac (mac2) et un second téléphone (phone2) compromis, clés d'approbation publiques.
 # Secret de l'AUK.
 remote_unlock.pv | not attacker(auk[]) | true
 # Authenticité : une session AgentOnly ouverte pour la demande r implique que le
 # téléphone a répondu à r, avec la même décision.
-remote_unlock.pv | event(AgentOnly(m_13,p,r,d_4)) ==> event(PhoneAnswered(m_13,p,r,d_4)) | true
+remote_unlock.pv | event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d_8)) | true
 # Injectivité : une réponse n'ouvre qu'une session (demande en attente à usage unique).
-remote_unlock.pv | inj-event(AgentOnly(m_13,p,r,d_4)) ==> inj-event(PhoneAnswered(m_13,p,r,d_4)) | true
-# Sanité : enrôlement du téléphone, session AgentOnly ouverte pour Once et pour Grant5m.
-remote_unlock.pv | not event(PhoneEnrolled(m_13,k_6)) | false
-remote_unlock.pv | not event(AgentOnly(m_13,p,r,dec_once)) | false
-remote_unlock.pv | not event(AgentOnly(m_13,p,r,dec_grant5m)) | false
+remote_unlock.pv | inj-event(AgentOnly(m_29,p,r,d_8)) ==> inj-event(PhoneAnswered(m_29,p,r,d_8)) | true
+# Sanité : enrôlement du téléphone (aussi auprès de mac2), réponse à mac2,
+# session AgentOnly ouverte pour Once et pour Grant5m.
+remote_unlock.pv | not event(PhoneEnrolled(m_29,k_11)) | false
+remote_unlock.pv | not event(PhoneEnrolled(mac2_id,k_11)) | false
+remote_unlock.pv | not event(PhoneAnswered(mac2_id,p,r,dec_once)) | false
+remote_unlock.pv | not event(AgentOnly(m_29,p,r,dec_once)) | false
+remote_unlock.pv | not event(AgentOnly(m_29,p,r,dec_grant5m)) | false
 
 # remote_unlock_sig_broken.pv : signature des réponses retirée (variante cassée).
 # L'AUK reste secrète.
 remote_unlock_sig_broken.pv | not attacker(auk[]) | true
 # Attendu faux : l'attaquant garde sealed_unlock et change la décision (Once en Grant5m).
-remote_unlock_sig_broken.pv | event(AgentOnly(m_13,p,r,d_4)) ==> event(PhoneAnswered(m_13,p,r,d_4)) | false
+remote_unlock_sig_broken.pv | event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d_8)) | false
 # L'accord sur la demande seule (toute décision) tient : K_r reste nécessaire pour ouvrir C.
-remote_unlock_sig_broken.pv | event(AgentOnly(m_13,p,r,d_4)) ==> event(PhoneAnswered(m_13,p,r,d2)) | true
+remote_unlock_sig_broken.pv | event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d2)) | true
 # Sanité.
-remote_unlock_sig_broken.pv | not event(AgentOnly(m_13,p,r,dec_once)) | false
+remote_unlock_sig_broken.pv | not event(AgentOnly(m_29,p,r,dec_once)) | false
+
+# remote_unlock_lookup_broken.pv : le téléphone cherche K_r sans la clé du Mac demandeur
+# (variante cassée). Attendu faux : mac2 obtient le K_r du vrai Mac, qui ouvre C.
+remote_unlock_lookup_broken.pv | not attacker(auk[]) | false
+# Sanité.
+remote_unlock_lookup_broken.pv | not event(AgentOnly(m_29,p,r,dec_once)) | false

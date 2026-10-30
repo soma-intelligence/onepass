@@ -101,15 +101,19 @@
 | manifest.pv | `not event(Fetched(d_3,v_84,seen(2,h0),3,mh_12))` | false | false |
 | manifest.pv | `not event(ItemAccepted(d_3,v_84,one_entry(i_6,ver_9,rh_6)))` | false | false |
 | remote_unlock.pv | `not attacker(auk[])` | true | true |
-| remote_unlock.pv | `event(AgentOnly(m_13,p,r,d_4)) ==> event(PhoneAnswered(m_13,p,r,d_4))` | true | true |
-| remote_unlock.pv | `inj-event(AgentOnly(m_13,p,r,d_4)) ==> inj-event(PhoneAnswered(m_13,p,r,d_4))` | true | true |
-| remote_unlock.pv | `not event(PhoneEnrolled(m_13,k_6))` | false | false |
-| remote_unlock.pv | `not event(AgentOnly(m_13,p,r,dec_once))` | false | false |
-| remote_unlock.pv | `not event(AgentOnly(m_13,p,r,dec_grant5m))` | false | false |
+| remote_unlock.pv | `event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d_8))` | true | true |
+| remote_unlock.pv | `inj-event(AgentOnly(m_29,p,r,d_8)) ==> inj-event(PhoneAnswered(m_29,p,r,d_8))` | true | true |
+| remote_unlock.pv | `not event(PhoneEnrolled(m_29,k_11))` | false | false |
+| remote_unlock.pv | `not event(PhoneEnrolled(mac2_id,k_11))` | false | false |
+| remote_unlock.pv | `not event(PhoneAnswered(mac2_id,p,r,dec_once))` | false | false |
+| remote_unlock.pv | `not event(AgentOnly(m_29,p,r,dec_once))` | false | false |
+| remote_unlock.pv | `not event(AgentOnly(m_29,p,r,dec_grant5m))` | false | false |
+| remote_unlock_lookup_broken.pv | `not attacker(auk[])` | false | false |
+| remote_unlock_lookup_broken.pv | `not event(AgentOnly(m_29,p,r,dec_once))` | false | false |
 | remote_unlock_sig_broken.pv | `not attacker(auk[])` | true | true |
-| remote_unlock_sig_broken.pv | `event(AgentOnly(m_13,p,r,d_4)) ==> event(PhoneAnswered(m_13,p,r,d_4))` | false | false |
-| remote_unlock_sig_broken.pv | `event(AgentOnly(m_13,p,r,d_4)) ==> event(PhoneAnswered(m_13,p,r,d2))` | true | true |
-| remote_unlock_sig_broken.pv | `not event(AgentOnly(m_13,p,r,dec_once))` | false | false |
+| remote_unlock_sig_broken.pv | `event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d_8))` | false | false |
+| remote_unlock_sig_broken.pv | `event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d2))` | true | true |
+| remote_unlock_sig_broken.pv | `not event(AgentOnly(m_29,p,r,dec_once))` | false | false |
 | sanity.pv | `not attacker(secret_msg[])` | true | true |
 | sanity.pv | `not attacker(auk_msg[])` | true | true |
 | sanity.pv | `not attacker(bridge_msg[])` | true | true |
