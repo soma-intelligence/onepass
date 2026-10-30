@@ -1,0 +1,26 @@
+{
+  "sourceLanguage" : "fr",
+  "strings" : {
+    "Demande d'un agent" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request from an agent"
+          }
+        }
+      }
+    },
+    "Demande d'un agent sur %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request from an agent on %@"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

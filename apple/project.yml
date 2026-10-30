@@ -73,6 +73,9 @@ targets:
       # Widgets and Controls: iPhone and iPad only.
       - target: OnePassWidgets
         destinationFilters: [iOS]
+      # The alert of an agent request (time sensitive, Mac name): iPhone and iPad only.
+      - target: OnePassNotifications
+        destinationFilters: [iOS]
       # AutoFill credential provider: iPhone, iPad and Mac (no visionOS slice).
       - target: OnePassAutoFill
         destinationFilters: [iOS, macOS]
@@ -112,6 +115,8 @@ targets:
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        # CloudKit pushes: sync rounds, and the agent requests of the Mac (agent-ready spec 5.2).
+        # The Push Notifications capability is `aps-environment` in the CloudKit entitlements.
         UIBackgroundModes: [remote-notification]
         # Deep links from the widgets and Controls (GlanceKit `OnePassLink`).
         CFBundleURLTypes:
@@ -473,6 +478,48 @@ targets:
         CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_ENTITLEMENTS: Widgets/OnePassWidgets.entitlements
+      configs:
+        Release-CloudKit:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+
+  # Notification Service Extension (agent-ready spec 5.2), embedded in the iOS app: makes the
+  # CloudKit alert of an agent request time sensitive and names the Mac from the App Group (names
+  # the app writes). No vault data, no Rust core, no action in the notification.
+  OnePassNotifications:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NotificationService
+        excludes:
+          - "Info.plist"
+          - "*.entitlements"
+    info:
+      path: NotificationService/Info.plist
+      properties:
+        CFBundleDisplayName: OnePass
+        CFBundleDevelopmentRegion: fr
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.notifications
+        PRODUCT_NAME: OnePassNotifications
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: NotificationService/OnePassNotifications.entitlements
       configs:
         Release-CloudKit:
           CODE_SIGN_STYLE: Automatic

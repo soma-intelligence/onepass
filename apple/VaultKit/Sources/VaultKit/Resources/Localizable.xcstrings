@@ -171,6 +171,16 @@
         }
       }
     },
+    "Activer le déverrouillage à distance de ce Mac" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on remote unlock for this Mac"
+          }
+        }
+      }
+    },
     "Ajouter un appareil à ton compte" : {
       "localizations" : {
         "en" : {
@@ -267,6 +277,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unknown permission."
+          }
+        }
+      }
+    },
+    "Autorisé 5 min" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allowed for 5 min"
+          }
+        }
+      }
+    },
+    "Autorisé une fois" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allowed once"
           }
         }
       }
@@ -531,6 +561,36 @@
         }
       }
     },
+    "Cette demande a expiré." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This request expired."
+          }
+        }
+      }
+    },
+    "Cette demande n'est plus disponible." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This request is no longer available."
+          }
+        }
+      }
+    },
+    "Cette réponse n'est pas permise pour cette demande." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That answer is not allowed for this request."
+          }
+        }
+      }
+    },
     "Cette sauvegarde a été modifiée ou abîmée : sa signature ou son contenu ne correspond pas. Rien n'a été restauré." : {
       "localizations" : {
         "en" : {
@@ -769,6 +829,16 @@
         }
       }
     },
+    "Déverrouillage à distance activé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote unlock turned on"
+          }
+        }
+      }
+    },
     "Email" : {
       "localizations" : {
         "en" : {
@@ -903,6 +973,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Espace iCloud insuffisant."
+          }
+        }
+      }
+    },
+    "Face ID est nécessaire pour répondre." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face ID is required to answer."
           }
         }
       }
@@ -1235,6 +1315,16 @@
         }
       }
     },
+    "Le Mac est injoignable pour l'instant. Réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Mac can't be reached right now. Try again."
+          }
+        }
+      }
+    },
     "Le Travel Mode est déjà activé." : {
       "localizations" : {
         "en" : {
@@ -1351,6 +1441,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le délai est dépassé. Le compte reçu a été effacé de cet appareil : recommence l'appairage."
+          }
+        }
+      }
+    },
+    "Le déverrouillage à distance n'est pas activé pour ce Mac : active-le depuis le Mac." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote unlock is not on for this Mac: turn it on from the Mac."
           }
         }
       }
@@ -1707,6 +1807,16 @@
         }
       }
     },
+    "Refusé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denied"
+          }
+        }
+      }
+    },
     "Remplir un élément protégé" : {
       "localizations" : {
         "en" : {
@@ -1751,6 +1861,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Réglages du générateur invalides."
+          }
+        }
+      }
+    },
+    "Répondre à la demande de l'agent" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Answer the agent's request"
           }
         }
       }
@@ -2297,6 +2417,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vide ce coffre avant de le supprimer."
+          }
+        }
+      }
+    },
+    "Vérifie l'heure de ton iPhone : une demande semble venir du futur." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check your iPhone's clock: a request seems to come from the future."
           }
         }
       }

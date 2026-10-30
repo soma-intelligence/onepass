@@ -167,46 +167,10 @@ struct ApprovalView: View {
     }
 
     /// French names of the detail lines the servers send (fixed English keys).
-    static func detailLabel(_ label: String) -> String {
-        switch label {
-        case "key": String(localized: "Clé")
-        case "fingerprint": String(localized: "Empreinte")
-        case "process": String(localized: "Programme")
-        case "destination": String(localized: "Destination")
-        case "forwarded": String(localized: "Connexion transférée")
-        case "namespace": String(localized: "Espace de noms")
-        case "warning": String(localized: "Attention")
-        case "command": String(localized: "Commande")
-        case "cwd": String(localized: "Dossier")
-        case "template": String(localized: "Modèle")
-        case "output": String(localized: "Fichier écrit")
-        case "overwrite": String(localized: "Remplacer")
-        case "reference": String(localized: "Secret")
-        case "title": String(localized: "Titre")
-        case "username": String(localized: "Identifiant")
-        case "url": String(localized: "Site")
-        default: label
-        }
-    }
+    static func detailLabel(_ label: String) -> String { AgentRequestText.detailLabel(label) }
 
-    static func detailValue(_ value: String) -> String {
-        switch value {
-        case "yes": String(localized: "oui")
-        case "no": String(localized: "non")
-        default: value
-        }
-    }
+    static func detailValue(_ value: String) -> String { AgentRequestText.detailValue(value) }
 
-    static func actionTitle(_ action: String) -> String {
-        switch action {
-        case "ssh_sign": String(localized: "Signer avec une clé SSH")
-        case "run_with_secrets": String(localized: "Lancer une commande avec des secrets")
-        case "fill_template": String(localized: "Remplir un fichier avec des secrets")
-        case "create_login": String(localized: "Créer un identifiant")
-        case "totp_code": String(localized: "Lire un code à usage unique")
-        case "reveal_secret": String(localized: "Révéler un secret")
-        default: action
-        }
-    }
+    static func actionTitle(_ action: String) -> String { AgentRequestText.actionTitle(action) }
 }
 #endif
