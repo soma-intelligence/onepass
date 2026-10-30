@@ -230,6 +230,8 @@ public final class DeveloperHosts {
     /// On lock: every server stops and every pending question is refused. With remote unlock
     /// enrolled, the gate then holds the MCP socket.
     public func sessionLocked() {
+        // No iPhone request leaves a locked Mac (the next unlock sets the approver again).
+        useRemoteApprover(nil)
         stopServers()
         armGate()
     }

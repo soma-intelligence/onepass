@@ -22,16 +22,20 @@ final class FakeRemoteSession: RemoteApprovalSession {
     let macId: String
     let phones: [FfiApprover]
     private let state = Mutex(State())
+    /// This Mac's own entry is in the list (false: a phone enrolled before the Mac registered).
+    let macListed: Mutex<Bool>
 
-    init(macId: String = "mac-1", phones: [String]) {
+    init(macId: String = "mac-1", phones: [String], macListed: Bool = true) {
         self.macId = macId
         self.phones = phones.map { FfiApprover(deviceId: $0, deviceName: "iPhone \($0)", role: .phone) }
-            + [FfiApprover(deviceId: macId, deviceName: "Mac", role: .mac)]
+        self.macListed = Mutex(macListed)
     }
 
     func thisDeviceId() -> String? { macId }
 
-    func approvers() throws -> [FfiApprover] { phones }
+    func approvers() throws -> [FfiApprover] {
+        phones + (macListed.withLock { $0 } ? [FfiApprover(deviceId: macId, deviceName: "Mac", role: .mac)] : [])
+    }
 
     func sealRemoteRequest(keys: FfiApproverKeys, to: String, kind: FfiRemoteKind, body: FfiRequestBody) throws
         -> FfiSealedRequest
@@ -111,6 +115,42 @@ struct RemoteApproverTests {
         // Every request and every answer is gone from the channel. The forged one, opened by
         // nobody, stays for another reader until it expires (then purged).
         try await waitUntil { channel.stored().map(\.id) == ["forged"] }
+    }
+
+    /// A phone listed while this Mac's own approval keys are not: a request would be ignored by the
+    /// phone, so the Mac registers first; without a way to register, the panel alone answers.
+    @Test func unlistedMacRegistersBeforeAsking() async throws {
+        let channel = InMemoryRemoteChannel()
+        let session = FakeRemoteSession(phones: ["phone-a"], macListed: false)
+        let unregistered = RemoteApprover(
+            channel: channel, session: session, keys: testApproverKeys,
+            mailbox: RemoteMailbox(channel: channel, device: "mac-1"))
+        #expect(await unregistered.ask(approvalRequest()) == nil)
+        #expect(await !unregistered.phonesAvailable)
+        #expect(channel.stored().isEmpty)
+
+        let registrations = Mutex(0)
+        let approver = RemoteApprover(
+            channel: channel, session: session, keys: testApproverKeys,
+            mailbox: RemoteMailbox(channel: channel, device: "mac-1"),
+            register: {
+                registrations.withLock { $0 += 1 }
+                session.macListed.withLock { $0 = true }
+                return true
+            })
+        let asked = Task { await approver.ask(approvalRequest()) }
+        try await waitUntil { channel.stored().contains { $0.to == "phone-a" } }
+        #expect(registrations.withLock { $0 } == 1)
+        try await phoneAnswers(channel, phone: "phone-a", decision: "once")
+        #expect(await asked.value?.approvedOn == "phone:phone-a")
+
+        // Registration refused: nothing sent.
+        let other = InMemoryRemoteChannel()
+        let refused = RemoteApprover(
+            channel: other, session: FakeRemoteSession(phones: ["phone-a"], macListed: false), keys: testApproverKeys,
+            mailbox: RemoteMailbox(channel: other, device: "mac-1"), register: { false })
+        #expect(await refused.ask(approvalRequest()) == nil)
+        #expect(other.stored().isEmpty)
     }
 
     @Test func lateDenialIgnoredAfterApproval() async throws {

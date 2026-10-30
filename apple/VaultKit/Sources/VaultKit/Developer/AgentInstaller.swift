@@ -33,6 +33,12 @@ public struct HelperResult: Equatable, Sendable {
     }
 
     public var succeeded: Bool { status == 0 }
+
+    /// The app's sandbox stopped the helper reading or writing the client's file (the helper
+    /// inherits it): the terminal is the way then.
+    public var blockedBySandbox: Bool {
+        !succeeded && (output.contains("Operation not permitted") || output.contains("Permission denied"))
+    }
 }
 
 /// Runs a helper of the app's bundle. The tests and the demo pass a fake: no test ever writes a real

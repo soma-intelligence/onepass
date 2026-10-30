@@ -81,6 +81,19 @@ struct AgentInstallerTests {
             == "'\(paths.relay.path)' install --client claude-code --socket '\(paths.mcpSocket.path)'")
     }
 
+    /// The sandbox stops the helper reading the client's file: a plain sentence, not the raw error.
+    @Test func sandboxRefusalIsRecognized() async {
+        let runner = FakeHelperRunner([HelperResult(
+            status: 1, output: "onepass-mcp: cannot read /Users/camille/.claude.json: Operation not permitted (os error 1)")])
+        let installer = AgentInstaller(paths: paths, home: URL(fileURLWithPath: "/Users/camille"), runner: runner)
+        await installer.previewInstall()
+        #expect(installer.preview?.blockedBySandbox == true)
+        #expect(!installer.canInstall)
+        #expect(HelperResult(status: 1, output: "cannot write /x: Permission denied (os error 13)").blockedBySandbox)
+        #expect(!HelperResult(status: 1, output: "already has an onepass entry, pass --force").blockedBySandbox)
+        #expect(!HelperResult(status: 0, output: "Operation not permitted").blockedBySandbox)
+    }
+
     @Test func clientsMatchTheRelay() {
         #expect(AgentClient.allCases.map(\.rawValue) == ["claude-code", "claude-desktop", "codex", "cursor"])
     }

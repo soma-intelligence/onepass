@@ -39,21 +39,18 @@ public final class PhoneApprovals {
     public let coordinator: RemoteUnlockCoordinator?
     @ObservationIgnored private let vault: VaultSession
     @ObservationIgnored private let hosts: DeveloperHosts
-    @ObservationIgnored private let approverKeys: ApproverKeyStore
     @ObservationIgnored private var started: Task<Void, Never>?
+    /// The refresh in flight: refreshes run one after the other, never interleaved.
+    @ObservationIgnored private var wiring: Task<Void, Never>?
     #if DEBUG
     private var demoUnlockPhone: String??
     #endif
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "remote")
 
-    public init(
-        vault: VaultSession, hosts: DeveloperHosts, coordinator: RemoteUnlockCoordinator?,
-        approverKeys: ApproverKeyStore = ApproverKeyStore()
-    ) {
+    public init(vault: VaultSession, hosts: DeveloperHosts, coordinator: RemoteUnlockCoordinator?) {
         self.vault = vault
         self.hosts = hosts
         self.coordinator = coordinator
-        self.approverKeys = approverKeys
     }
 
     /// CloudKit is there: the iPhone can approve and unlock.
@@ -96,9 +93,17 @@ public final class PhoneApprovals {
 
     /// Reads the phones and sets (or clears) the iPhone approver of the next approvals.
     public func refreshAndWire() async {
-        await start()
-        await refresh()
-        await wire()
+        let previous = wiring
+        let task = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            await self.start()
+            await self.refresh()
+            await self.wire()
+        }
+        wiring = task
+        await task.value
+        if wiring == task { wiring = nil }
     }
 
     private func refresh() async {

@@ -30,6 +30,9 @@ public actor RemoteApprover {
 
     private let channel: any RemoteChannel
     private let session: any RemoteApprovalSession
+    /// Puts this Mac's approval keys in the signed list when a phone is listed but this Mac is not
+    /// (true once done). Nil: such a request is not sent.
+    private let register: (@Sendable () async -> Bool)?
     private let keys: FfiApproverKeys
     private let timeout: Duration
     private let now: @Sendable () -> Date
@@ -59,12 +62,13 @@ public actor RemoteApprover {
 
     /// `timeout` is the request lifetime of the spec (60 s); the tests pass less. `mailbox`: the
     /// Mac's one reader of its messages (`RemoteUnlockCoordinator.mailbox(for:)` in the app), shared
-    /// with the remote unlock.
+    /// with the remote unlock. `register`: see `register`.
     public init(
         channel: any RemoteChannel, session: any RemoteApprovalSession, keys: FfiApproverKeys,
         timeout: Duration = .seconds(60), now: @escaping @Sendable () -> Date = { Date() },
-        mailbox: RemoteMailbox
+        mailbox: RemoteMailbox, register: (@Sendable () async -> Bool)? = nil
     ) {
+        self.register = register
         self.mailbox = mailbox
         self.channel = channel
         self.session = session
@@ -108,6 +112,17 @@ public actor RemoteApprover {
         guard !phones.isEmpty, !Task.isCancelled else {
             phonesAvailable = false
             return nil
+        }
+        // A phone ignores requests from a Mac missing from the signed list (a phone enrolled after
+        // this Mac's unlock): register first, else the panel alone answers.
+        if !approvers.contains(where: { $0.deviceId == me && $0.role == .mac }) {
+            guard let register, await register(),
+                let listed = try? await CoreThread.run({ try session.approvers() }),
+                listed.contains(where: { $0.deviceId == me && $0.role == .mac }), !stopped
+            else {
+                phonesAvailable = false
+                return nil
+            }
         }
 
         let id = UUID()

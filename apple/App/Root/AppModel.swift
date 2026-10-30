@@ -266,7 +266,7 @@ final class AppModel {
         #if DEBUG
         // Demo data and UI tests never run the real relay against the real home.
         agentInstaller = demo != nil || isolated
-            ? AgentInstaller(paths: developer.paths, runner: DemoHelperRunner())
+            ? AgentInstaller(paths: developer.paths, home: URL(fileURLWithPath: "/Users/camille"), runner: DemoHelperRunner())
             : AgentInstaller(paths: developer.paths)
         #else
         agentInstaller = AgentInstaller(paths: developer.paths)

@@ -1200,16 +1200,6 @@
         }
       }
     },
-    "Ajoute OnePass à ton client MCP en un clic : seule son entrée « onepass » change, une sauvegarde est gardée." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add OnePass to your MCP client in one click: only its “onepass” entry changes, and a backup is kept."
-          }
-        }
-      }
-    },
     "Ajoute ce tag à un élément pour le retrouver ici." : {
       "localizations" : {
         "en" : {
@@ -2940,6 +2930,16 @@
         }
       }
     },
+    "Cette commande ajoute seulement l'entrée « onepass » à la configuration de ton client et garde une copie de sauvegarde." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This command adds only the “onepass” entry to your client's configuration and keeps a backup."
+          }
+        }
+      }
+    },
     "Cette image n'a pas pu être lue. Essaie un JPEG, un PNG ou un HEIC." : {
       "localizations" : {
         "en" : {
@@ -4416,6 +4416,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "In `~/.ssh/config`:"
+          }
+        }
+      }
+    },
+    "Dans ton terminal :" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In your terminal:"
           }
         }
       }
@@ -7136,6 +7146,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The JSON contains all of the item’s secrets, passwords included. The clipboard is cleared after 90 s."
+          }
+        }
+      }
+    },
+    "Le bac à sable de l'app bloque l'accès : lance la commande dans ton terminal" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The app sandbox blocks access: run the command in your terminal"
           }
         }
       }
