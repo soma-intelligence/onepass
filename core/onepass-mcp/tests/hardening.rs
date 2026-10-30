@@ -19,8 +19,8 @@ use onepass_core::repo::Repository;
 use onepass_core::store::MemoryStore;
 use onepass_guard::testing::{FakeClock, ScriptedApprover};
 use onepass_guard::{
-    AuditEntry, Decision, GrantRequest, GrantStore, Limits, Revoke, StrongAuth, StrongOutcome,
-    Surface,
+    Answer, AuditEntry, Decision, GrantRequest, GrantStore, Limits, Revoke, StrongAuth,
+    StrongOutcome, Surface,
 };
 use onepass_mcp::tools::McpTools;
 use onepass_mcp::{
@@ -105,6 +105,8 @@ struct Setup {
     /// `None`: the client is not paired.
     scopes: Option<ScopesFn>,
     answers: Vec<Decision>,
+    /// Where each answer was given, in order (missing: nowhere said).
+    origins: Vec<Option<&'static str>>,
     strong: StrongOutcome,
     limits: Limits,
 }
@@ -115,6 +117,7 @@ impl Default for Setup {
             policy: Box::new(|_| Policy::default_for(&account_id())),
             scopes: Some(Box::new(all_scopes)),
             answers: Vec::new(),
+            origins: Vec::new(),
             strong: StrongOutcome::Verified,
             limits: loose_limits(),
         }
@@ -145,7 +148,16 @@ fn build(s: Setup) -> H {
     };
     let clock = Arc::new(FakeClock::new(T0));
     let strong = Strong::new(s.strong);
-    let approver = Arc::new(ScriptedApprover::new(s.answers));
+    let answers = s
+        .answers
+        .into_iter()
+        .enumerate()
+        .map(|(i, d)| match s.origins.get(i).copied().flatten() {
+            Some(place) => Answer::on(d, place),
+            None => Answer::new(d),
+        })
+        .collect();
+    let approver = Arc::new(ScriptedApprover::with_answers(answers));
     let (tools, audit, grants) = server(
         &data,
         port.clone(),
@@ -658,6 +670,74 @@ fn reveal_requires_strong_auth() {
     });
     ok(hcall(&mut h.tools, "run_with_secrets", run_args(&["true"])));
     assert!(h.strong.reasons().is_empty());
+}
+
+#[test]
+fn phone_face_id_counts_as_strong_auth() {
+    // Touch ID on the Mac would fail: only the phone's Face ID can pass.
+    let mut h = build(Setup {
+        policy: Box::new(open_policy),
+        answers: vec![Decision::AllowOnce; 2],
+        origins: vec![Some("phone:7f3a9c"); 2],
+        strong: StrongOutcome::Denied,
+        ..Setup::default()
+    });
+    add_mail_h(&h);
+    let v = ok(hcall(
+        &mut h.tools,
+        "reveal_secret",
+        json!({"reference": "onepass://Dev/GitHub/password"}),
+    ));
+    assert_eq!(v["untrusted_vault_data"]["value"], GITHUB_PW);
+    let v = ok(hcall(
+        &mut h.tools,
+        "totp_code",
+        json!({"reference": "onepass://Dev/Mail/totp"}),
+    ));
+    assert_eq!(v["code"].as_str().unwrap().len(), 6);
+    assert!(h.strong.reasons().is_empty(), "the Mac is not asked");
+    assert_eq!(outcomes(&h.audit), ["ok", "ok"]);
+
+    // Answered on the Mac, nowhere said, or from a place that is not a
+    // device id: the Mac check runs (and fails here).
+    for origin in [Some("mac"), None, Some("phone:"), Some("phone:bad id")] {
+        let mut h = build(Setup {
+            policy: Box::new(open_policy),
+            answers: vec![Decision::AllowOnce],
+            origins: vec![origin],
+            strong: StrongOutcome::Denied,
+            ..Setup::default()
+        });
+        let out = hcall(
+            &mut h.tools,
+            "reveal_secret",
+            json!({"reference": "onepass://Dev/GitHub/password"}),
+        );
+        assert_eq!(refused(out), "strong authentication failed", "{origin:?}");
+        assert_eq!(h.strong.reasons().len(), 1, "{origin:?}");
+        assert_eq!(*h.port.resolved.borrow(), 0);
+    }
+
+    // A phone approval counts as a success for the throttle: it ends the
+    // run of Mac failures, so four failures in all never cool down.
+    let mut h = build(Setup {
+        policy: Box::new(open_policy),
+        answers: vec![Decision::AllowOnce; 5],
+        origins: vec![None, None, Some("phone:7f3a9c"), None, None],
+        strong: StrongOutcome::Denied,
+        limits: Limits::mcp(),
+        ..Setup::default()
+    });
+    let reveal = json!({"reference": "onepass://Dev/GitHub/password"});
+    for expected in [false, false, true, false, false] {
+        let out = hcall(&mut h.tools, "reveal_secret", reveal.clone());
+        if expected {
+            ok(out);
+        } else {
+            assert_eq!(refused(out), "strong authentication failed");
+        }
+    }
+    assert_eq!(h.approver.calls().len(), 5, "never cooling down");
 }
 
 /// Adds the `Mail` login (with a TOTP secret) to `Dev`.

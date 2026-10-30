@@ -126,10 +126,9 @@ struct DeveloperHostsTests {
         let result = await answer.value
         #expect(result.decision == .allowOnce)
         #expect(result.approvedOn == "phone:phone-a")
+        // The panel closed by itself: its prompt is gone without any click.
         try await waitUntil { @MainActor in hosts.prompts.isEmpty }
-        // A click on the closed panel changes nothing.
-        hosts.answer(prompt.id, with: .deny)
-        #expect(result.decision == .allowOnce)
+        #expect(!hosts.prompts.contains { $0.id == prompt.id })
         try await waitUntil { channel.stored().isEmpty }
     }
 

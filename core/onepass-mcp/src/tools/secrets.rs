@@ -96,6 +96,22 @@ fn needs_strong(action: &str) -> bool {
     matches!(action, "reveal_secret" | "totp_code")
 }
 
+/// Longest device id a `phone:` origin may name (as the app's audit check).
+const MAX_DEVICE_ID: usize = 64;
+
+/// The approval was given on an enrolled phone (`phone:<device_id>`, ASCII
+/// letters, digits and `-`): Face ID there was its strong gesture (spec
+/// 5.3). `mac`, no origin or anything else is not.
+fn approved_on_phone(approved_on: Option<&str>) -> bool {
+    approved_on
+        .and_then(|o| o.strip_prefix("phone:"))
+        .is_some_and(|id| {
+            !id.is_empty()
+                && id.len() <= MAX_DEVICE_ID
+                && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        })
+}
+
 fn invalid(m: &str) -> Refusal {
     Refusal::Invalid(m.to_owned())
 }
@@ -450,8 +466,20 @@ impl<P: VaultPort> McpTools<P> {
     /// that return a value. The reason names the client and the target. A
     /// failed authentication counts as a user denial (toward the cooling
     /// down period), a success ends the run of denials; `Unavailable` (no
-    /// method could run) counts as neither.
-    fn strong_auth(&mut self, action: &str, l: &Located) -> Result<(), Refusal> {
+    /// method could run) counts as neither. A request that required the
+    /// strong gesture and was approved on a phone (`approved_on`) already
+    /// had Face ID there: the Mac is not asked, and it counts as a success.
+    fn strong_auth(
+        &mut self,
+        action: &str,
+        l: &Located,
+        approved_on: Option<&str>,
+    ) -> Result<(), Refusal> {
+        if needs_strong(action) && approved_on_phone(approved_on) {
+            self.throttle
+                .record_decision(&*self.clock, &self.client.client_id, false);
+            return Ok(());
+        }
         let reason = sanitize_for_display(&format!(
             "{action} for {}: {}",
             self.client.label,
@@ -843,7 +871,8 @@ impl<P: VaultPort> McpTools<P> {
             Some(l.vault.id),
             call,
         )?;
-        self.strong_auth("totp_code", &l)?;
+        let on = call.approved_on.clone();
+        self.strong_auth("totp_code", &l, on.as_deref())?;
         let code = self.read_value(&l.vault, &l.r)?;
         Ok(json!({
             "code": code.as_str(),
@@ -872,7 +901,8 @@ impl<P: VaultPort> McpTools<P> {
             Some(l.vault.id),
             call,
         )?;
-        self.strong_auth("reveal_secret", &l)?;
+        let on = call.approved_on.clone();
+        self.strong_auth("reveal_secret", &l, on.as_deref())?;
         let value = self.read_value(&l.vault, &l.r)?;
         Ok(super::untrusted(json!({"value": value.as_str()})))
     }

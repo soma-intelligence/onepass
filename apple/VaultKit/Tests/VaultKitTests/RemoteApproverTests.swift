@@ -149,6 +149,7 @@ struct RemoteApproverTests {
     @Test func approverKeysStayInTheInjectedKeychain() throws {
         let keychain = InMemoryKeychain()
         let store = ApproverKeyStore(keychain: keychain)
+        #expect(ApproverKeyStore.service != SystemKeychain.defaultService)
         #expect(try store.load() == nil)
         let keys = try store.loadOrCreate()
         #expect(try store.load() == keys)
