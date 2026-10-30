@@ -195,9 +195,10 @@ Export to a signed, encrypted `.onepass` archive (passphrase or account recipien
 <details>
 <summary><b>Developer tools</b></summary>
 
-All in Settings > Developer on the Mac, and stopped as soon as the app locks.
+All in Settings > Developer on the Mac, and stopped as soon as the app locks (unless your iPhone unlocks it for agents, below).
 
 - **MCP server**: AI clients launch `OnePass.app/Contents/Helpers/onepass-mcp` (a copyable `mcpServers` block is in the app). Scoped tools (`metadata`, `use`, `write`, `totp`, `reveal`), vaults exposed only if a signed policy lists them, per-client grants you can revoke. Commands run with secrets injected and masked in output. Every secret request asks you in a floating panel, with Touch ID.
+- **Agent-ready MCP**: one command adds OnePass to an AI client, `OnePass.app/Contents/Helpers/onepass-mcp install --client claude-code|claude-desktop|codex|cursor` (`--dry-run` shows the diff, a backup is kept, only the `onepass` entry changes; Settings > Developer gives you the command to copy). Approve each request on the Mac panel or on your iPhone with Face ID, whichever answers first; the agent is told a 4-letter code to match on screen, and the audit log records where you approved. Away from a locked Mac, your iPhone can unlock it for agents only: the app's own screens stay locked, the window lasts 1 hour by default (15 minutes to 8 hours) and ends on sleep, lock or "Lock now" on the phone. Off by default, enrolled per Mac and iPhone pair.
 - **SSH agent**: Ed25519, ECDSA P-256/384/521 and RSA 3072/4096 keys from your vaults, generated or imported in the app. Approval for every signature, or for 5, 15 or 60 minutes. Agent forwarding refused by default.
 - **Audit log**: hash-chained and signed, readable in the app.
 - **Travel Mode** (Mac and iOS): mark vaults "Safe for Travel", and the others leave the device before you cross a border without being deleted from iCloud. Back home, they come back and are checked against the last manifests seen.
@@ -378,6 +379,7 @@ onepass/
 | ✅ | M6 | Apple Watch, Vision Pro, widgets, Shortcuts | Done |
 | ✅ | M7 | MCP server, SSH agent, Travel Mode | Done, in the Mac app |
 | ✅ | M2b | QR device linking, signed device list, revocation, public computer mode | Done, in the apps (two-device iCloud verification pending) |
+| ✅ | Agent-ready | Approval on iPhone, remote unlock for agents, one-command install in MCP clients | Done (real device and CloudKit verification pending) |
 | ⬜ | M8 | External audit, public launch | Planned |
 | ⬜ | Later | Self-hosted server, sharing and organizations, web app (WASM), recovery codes | Planned |
 
