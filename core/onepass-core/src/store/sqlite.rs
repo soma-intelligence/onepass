@@ -5,7 +5,12 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{Record, RecordKind, RecordStore};
+use crate::chain::ChainState;
+use crate::trust::TrustState;
 use crate::{Error, Id, Result};
+
+/// `meta` key of the local trust state.
+const TRUST_KEY: &str = "trust";
 
 pub struct SqliteStore {
     conn: Connection,
@@ -62,6 +67,10 @@ impl SqliteStore {
                  version INTEGER NOT NULL,
                  data BLOB NOT NULL,
                  PRIMARY KEY (kind, id)
+             );
+             CREATE TABLE IF NOT EXISTS meta (
+                 key TEXT NOT NULL PRIMARY KEY,
+                 value BLOB NOT NULL
              );",
         )
         .map_err(store_err)?;
@@ -136,6 +145,45 @@ impl RecordStore for SqliteStore {
         for (kind, id) in deletes {
             delete_on(&tx, kind, id)?;
         }
+        tx.commit().map_err(store_err)
+    }
+
+    fn trust_state(&self) -> Result<Option<TrustState>> {
+        let bytes: Option<Vec<u8>> = self
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = ?1",
+                params![TRUST_KEY],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(store_err)?;
+        bytes.map(|b| TrustState::decode(&b)).transpose()
+    }
+
+    /// Records, deletions and the trust row in one transaction. This store
+    /// keeps no chain state (`persists_chain` is false): `chain` is not
+    /// saved, as in `put_all_if_version_with_chain`.
+    fn put_all_if_version_with_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        let _ = chain;
+        let tx = self.conn.transaction().map_err(store_err)?;
+        for (r, expected) in &writes {
+            put_if_version_on(&tx, r, *expected)?;
+        }
+        for (kind, id) in deletes {
+            delete_on(&tx, kind, id)?;
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+            params![TRUST_KEY, trust.encode()],
+        )
+        .map_err(store_err)?;
         tx.commit().map_err(store_err)
     }
 
@@ -328,5 +376,79 @@ mod tests {
             data: vec![],
         };
         assert!(matches!(s.put(r), Err(Error::InvalidFormat(_))));
+    }
+
+    fn item(id: Id, version: u64, n: u8) -> Record {
+        Record {
+            id,
+            kind: RecordKind::Item,
+            version,
+            data: vec![n],
+        }
+    }
+
+    #[test]
+    fn sqlite_trust_written_with_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = SqliteStore::open(&dir.path().join("db")).unwrap();
+        assert_eq!(s.trust_state().unwrap(), None);
+        let (a, gone) = (Id::new(), Id::new());
+        s.put(item(gone, 1, 9)).unwrap();
+        let mut trust = crate::trust::tests::sample();
+        s.put_all_if_version_with_trust(
+            vec![(item(a, 1, 1), None)],
+            vec![(RecordKind::Item, gone)],
+            None,
+            &trust,
+        )
+        .unwrap();
+        assert_eq!(s.trust_state().unwrap(), Some(trust.clone()));
+        assert!(s.get(RecordKind::Item, a).unwrap().is_some());
+        assert_eq!(s.get(RecordKind::Item, gone).unwrap(), None);
+
+        // A conditional put with the wrong expected version fails and
+        // leaves records, deletions and trust state as they were.
+        let before = trust.clone();
+        trust.add_revoked(&[Id([0xEE; 16])]);
+        let b = Id::new();
+        let r = s.put_all_if_version_with_trust(
+            vec![(item(b, 1, 2), None), (item(a, 2, 3), Some(7))],
+            vec![(RecordKind::Item, a)],
+            None,
+            &trust,
+        );
+        assert_eq!(r, Err(Error::Conflict));
+        assert_eq!(s.trust_state().unwrap(), Some(before));
+        assert_eq!(s.get(RecordKind::Item, b).unwrap(), None);
+        assert_eq!(s.get(RecordKind::Item, a).unwrap().unwrap().version, 1);
+    }
+
+    #[test]
+    fn sqlite_trust_survives_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let trust = crate::trust::tests::sample();
+        {
+            let mut s = SqliteStore::open(&path).unwrap();
+            s.put_all_if_version_with_trust(vec![], vec![], None, &trust)
+                .unwrap();
+        }
+        let s = SqliteStore::open(&path).unwrap();
+        assert_eq!(s.trust_state().unwrap(), Some(trust));
+    }
+
+    #[test]
+    fn sqlite_corrupt_trust_row_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = SqliteStore::open(&dir.path().join("db")).unwrap();
+        let mut bytes = crate::trust::tests::sample().encode();
+        bytes.push(0);
+        s.conn
+            .execute(
+                "INSERT INTO meta (key, value) VALUES ('trust', ?1)",
+                params![bytes],
+            )
+            .unwrap();
+        assert!(matches!(s.trust_state(), Err(Error::InvalidFormat(_))));
     }
 }

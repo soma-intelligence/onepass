@@ -29,6 +29,7 @@ pub mod repo;
 pub mod store;
 pub mod sync;
 pub mod totp;
+pub mod trust;
 pub mod vault;
 pub mod vaultlist;
 pub mod watchtower;

@@ -8,6 +8,7 @@ pub use memory::MemoryStore;
 pub use sqlite::SqliteStore;
 
 use crate::chain::ChainState;
+use crate::trust::TrustState;
 use crate::{Error, Id, IntegrityError, Result};
 
 /// What a record holds. The numeric codes are the on-disk encoding: append
@@ -220,6 +221,26 @@ pub trait RecordStore {
     ) -> Result<()> {
         let _ = chain;
         self.put_all_if_version(writes)
+    }
+
+    /// The local trust state of this device (key rotation v2, spec 5.3), if
+    /// one was saved. A store that keeps none refuses.
+    fn trust_state(&self) -> Result<Option<TrustState>> {
+        Err(Error::Store("trust state unsupported".into()))
+    }
+
+    /// `put_all_if_version_and_delete`, and the trust state (and `chain`,
+    /// on a store that persists it) in the same transaction: all or nothing.
+    /// A store that keeps no trust state refuses and writes nothing.
+    fn put_all_if_version_with_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        let _ = (writes, deletes, chain, trust);
+        Err(Error::Store("trust state unsupported".into()))
     }
 }
 
