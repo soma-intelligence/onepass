@@ -24,4 +24,4 @@ query m: bitstring, p: bitstring, r: bitstring;
   event(AgentOnly(m, p, r, dec_once)).
 
 process
-  RemoteUnlock(sig_skipped)
+  RemoteUnlock(sig_skipped, lookup_keyed)

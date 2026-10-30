@@ -3,7 +3,10 @@
    6), the Mac checks the phone's signature on every response. Processes,
    events and abstractions in remote_unlock_core.pvl. Any number of
    enrollments, unlock requests and phone answers (Once, Grant5m, Denied);
-   CloudKit is the attacker's network; C is public. *)
+   CloudKit is the attacker's network; C is public. A compromised second
+   Mac (mac2) and a compromised second phone (phone2) are in the approver
+   list with their approval keys public; the honest phone serves mac2
+   like the honest Mac. *)
 
 query attacker(auk).
 
@@ -15,11 +18,14 @@ query m: bitstring, p: bitstring, r: bitstring, d: bitstring;
   inj-event(AgentOnly(m, p, r, d)) ==> inj-event(PhoneAnswered(m, p, r, d)).
 
 (* Sanity (expected false): the phone enrolls, the Mac opens an
-   agents-only session for each approving decision. *)
+   agents-only session for each approving decision, the phone enrolls
+   the compromised mac2 and releases mac2's K_r to it. *)
 query m: bitstring, p: bitstring, r: bitstring, k: key;
   event(PhoneEnrolled(m, k));
+  event(PhoneEnrolled(mac2_id, k));
+  event(PhoneAnswered(mac2_id, p, r, dec_once));
   event(AgentOnly(m, p, r, dec_once));
   event(AgentOnly(m, p, r, dec_grant5m)).
 
 process
-  RemoteUnlock(sig_checked)
+  RemoteUnlock(sig_checked, lookup_keyed)

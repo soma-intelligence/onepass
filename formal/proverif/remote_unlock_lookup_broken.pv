@@ -1,0 +1,19 @@
+(* formal-lib: remote_unlock_core.pvl *)
+(* OnePass formal model: the remote unlock model of remote_unlock.pv
+   (processes in remote_unlock_core.pvl, compromised mac2 and phone2
+   included) with the phone's K_r lookup unkeyed: an unlock request from
+   any Mac of the list gets any stored K_r (get phone_kr(xx, k_r)), not the
+   one the requesting Mac enrolled.
+
+   Expected: AUK secrecy is false. The compromised mac2 asks for an
+   unlock, the phone releases the honest Mac's K_r sealed to mac2's
+   ephemeral key, and K_r opens C, which is public (A7). *)
+
+query attacker(auk).
+
+(* Sanity (expected false): an agents-only session still opens. *)
+query m: bitstring, p: bitstring, r: bitstring;
+  event(AgentOnly(m, p, r, dec_once)).
+
+process
+  RemoteUnlock(sig_checked, lookup_any)
