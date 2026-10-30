@@ -53,6 +53,18 @@ public struct DeveloperSettings: Sendable, Equatable {
     public var mcpEnabled = false
     /// Security-scoped bookmark of the `known_hosts` file the user chose.
     public var knownHostsBookmark: Data?
+    /// Length of an agents-only window opened from the iPhone (spec 6.3): 1 h by default, 15 min
+    /// to 8 h.
+    public var agentWindowMinutes = DeveloperSettings.defaultAgentWindowMinutes {
+        didSet { agentWindowMinutes = Self.clampWindow(agentWindowMinutes) }
+    }
+
+    public static let defaultAgentWindowMinutes = 60
+    public static let agentWindowRange = 15...480
+
+    static func clampWindow(_ minutes: Int) -> Int {
+        min(max(minutes, agentWindowRange.lowerBound), agentWindowRange.upperBound)
+    }
 
     public init() {}
 
@@ -62,6 +74,7 @@ public struct DeveloperSettings: Sendable, Equatable {
         static let forwarded = "onepass.dev.sshAllowForwarded"
         static let mcp = "onepass.dev.mcpEnabled"
         static let knownHosts = "onepass.dev.knownHostsBookmark"
+        static let agentWindow = "onepass.dev.agentWindowMinutes"
     }
 
     public static func load(from defaults: UserDefaults) -> DeveloperSettings {
@@ -71,6 +84,7 @@ public struct DeveloperSettings: Sendable, Equatable {
         s.sshAllowForwarded = defaults.bool(forKey: Key.forwarded)
         s.mcpEnabled = defaults.bool(forKey: Key.mcp)
         s.knownHostsBookmark = defaults.data(forKey: Key.knownHosts)
+        s.agentWindowMinutes = defaults.object(forKey: Key.agentWindow) as? Int ?? defaultAgentWindowMinutes
         return s
     }
 
@@ -79,6 +93,7 @@ public struct DeveloperSettings: Sendable, Equatable {
         defaults.set(sshRequirePresence, forKey: Key.presence)
         defaults.set(sshAllowForwarded, forKey: Key.forwarded)
         defaults.set(mcpEnabled, forKey: Key.mcp)
+        defaults.set(agentWindowMinutes, forKey: Key.agentWindow)
         if let knownHostsBookmark {
             defaults.set(knownHostsBookmark, forKey: Key.knownHosts)
         } else {
@@ -126,12 +141,19 @@ public struct DeveloperPrompt: Identifiable, Sendable {
 
 /// Runs the SSH agent and the MCP server of the Mac app on the unlocked session, and relays their
 /// questions to the UI (`prompts`). Every server stops on lock: no key or secret is served locked.
+///
+/// With remote unlock enrolled (`RemoteUnlockCoordinator`), a locked Mac keeps an `McpGate` on the
+/// MCP socket: an agent that connects is held while the iPhone is asked, and an agents-only window
+/// (agent-ready spec 6.3) runs the servers on the session the phone opened. While a gate runs, the
+/// MCP server always starts through `McpGate.handOver` (full unlock or agents-only window).
 @MainActor
 @Observable
 public final class DeveloperHosts {
     public private(set) var settings: DeveloperSettings
     public private(set) var sshRunning = false
     public private(set) var mcpRunning = false
+    /// The gate holds the MCP socket while the Mac is locked (remote unlock enrolled).
+    public private(set) var gateRunning = false
     /// The last start failure, shown by the settings (nil once a start works).
     public private(set) var sshError: String?
     public private(set) var mcpError: String?
@@ -148,6 +170,15 @@ public final class DeveloperHosts {
     @ObservationIgnored private var answers: [UUID: AnswerBox] = [:]
     @ObservationIgnored private lazy var bridge = PromptBridge(owner: self, presence: presence)
     @ObservationIgnored private var knownHostsURL: URL?
+    @ObservationIgnored private var gate: McpGate?
+    /// The last word between `armGate` and `disarmGate`: a start still queued after a disarm is dropped.
+    @ObservationIgnored private var gateWanted = false
+    @ObservationIgnored private lazy var gateBridge = GateBridge(owner: self)
+    /// Answers the gate (set by `RemoteUnlockCoordinator` while remote unlock is enrolled; nil: no
+    /// gate, a lock stops MCP as before).
+    @ObservationIgnored private(set) var lockedRequestHandler: (@MainActor (FfiMcpClient) async -> Bool)?
+    /// Server stops and gate starts, in order: a socket is free before the next listener binds it.
+    @ObservationIgnored private var work: Task<Void, Never>?
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "developer")
 
     public init(paths: DeveloperPaths = .app, defaults: UserDefaults = .standard,
@@ -162,20 +193,113 @@ public final class DeveloperHosts {
 
     // MARK: - Lifecycle
 
-    /// After an unlock: starts what the settings enable.
+    /// After an unlock: starts what the settings enable (MCP through the gate when one runs).
     public func sessionUnlocked(_ session: VaultSession) async {
-        if settings.sshEnabled { await startSSH(session) }
-        if settings.mcpEnabled { await startMCP(session) }
+        guard let core = session.coreSession else { return }
+        let store = Self.storeFolder(session)
+        if settings.sshEnabled { await startSSH(core) }
+        if settings.mcpEnabled { await startMCP(core, store: store) }
+        // Unlocked: nothing is held any more.
+        disarmGate()
     }
 
-    /// On lock: every server stops and every pending question is refused.
+    /// On lock: every server stops and every pending question is refused. With remote unlock
+    /// enrolled, the gate then holds the MCP socket.
     public func sessionLocked() {
+        stopServers()
+        armGate()
+    }
+
+    /// An agents-only window opened (spec 6.3): the servers run on `core`, the first tool request
+    /// races the panel and the iPhone through `approver`.
+    func agentWindowOpened(_ core: Session, store: String, approver: RemoteApprover?) async {
+        bridge.remote = approver
+        if settings.sshEnabled { await startSSH(core) }
+        if settings.mcpEnabled { await startMCP(core, store: store) }
+    }
+
+    /// The agents-only window ended: everything stops as on a lock; `rearm` puts the gate back
+    /// (still locked and enrolled).
+    func agentWindowEnded(rearm: Bool) {
+        stopServers()
+        if rearm { armGate() }
+    }
+
+    /// Set by the coordinator: who answers the gate (nil stops it).
+    func setLockedRequestHandler(_ handler: (@MainActor (FfiMcpClient) async -> Bool)?) {
+        lockedRequestHandler = handler
+        if handler == nil { disarmGate() }
+    }
+
+    /// The iPhone approver of the next approvals is set (tests).
+    var remoteApproverSet: Bool { bridge.remote != nil }
+
+    /// Waits for the pending server stops and gate starts (tests, and before a start).
+    func settle() async {
+        var last: Task<Void, Never>?
+        while let current = work, current != last {
+            last = current
+            await current.value
+        }
+    }
+
+    private func stopServers() {
         stopSSH()
         stopMCP()
         // No iPhone request leaves a locked Mac; Task 10 sets the approver again after an unlock.
         bridge.remote = nil
         // Refused by the lock, not by anyone: no origin.
         for prompt in prompts { settle(prompt.id, with: FfiAnswer(decision: .deny, approvedOn: nil)) }
+    }
+
+    private func enqueue(_ op: @escaping @MainActor () async -> Void) {
+        let previous = work
+        work = Task { @MainActor in
+            await previous?.value
+            await op()
+        }
+    }
+
+    // MARK: - Gate
+
+    /// Starts the gate on the MCP socket when remote unlock is enrolled and MCP is on.
+    func armGate() {
+        gateWanted = true
+        enqueue { [weak self] in await self?.startGate() }
+    }
+
+    private func startGate() async {
+        guard gateWanted, gate == nil, mcp == nil, lockedRequestHandler != nil, settings.mcpEnabled else { return }
+        let socket = paths.mcpSocket.path
+        let relay = paths.relay.path
+        let ui = gateBridge
+        do {
+            gate = try await CoreThread.run { try McpGate.start(socketPath: socket, relayPath: relay, ui: ui) }
+            gateRunning = true
+        } catch {
+            mcpError = VaultError(error).localizedMessage
+            Self.log.error("MCP gate did not start")
+        }
+    }
+
+    /// Stops the gate (held connections are refused).
+    func disarmGate() {
+        gateWanted = false
+        guard let gate else { return }
+        self.gate = nil
+        gateRunning = false
+        enqueue { _ = try? await CoreThread.run { gate.stop() } }
+    }
+
+    /// Called by the gate bridge on the main actor.
+    fileprivate func answerLockedRequest(_ client: FfiMcpClient) async -> Bool {
+        guard let lockedRequestHandler else { return false }
+        return await lockedRequestHandler(client)
+    }
+
+    /// The store's folder: no tool may read or write it through the relay.
+    private static func storeFolder(_ session: VaultSession) -> String {
+        session.environment.databaseURL.deletingLastPathComponent().path
     }
 
     public func update(_ change: (inout DeveloperSettings) -> Void, session: VaultSession) async {
@@ -186,18 +310,27 @@ public final class DeveloperHosts {
             || before.sshRequirePresence != settings.sshRequirePresence
             || before.sshAllowForwarded != settings.sshAllowForwarded
             || before.knownHostsBookmark != settings.knownHostsBookmark
+        // The full session, else the agents-only one, else nothing (locked).
+        let core = session.coreSession ?? session.agentSession
         if sshChanged {
             stopSSH()
-            if settings.sshEnabled { await startSSH(session) }
+            if settings.sshEnabled, let core { await startSSH(core) }
         }
         if before.mcpEnabled != settings.mcpEnabled {
             stopMCP()
-            if settings.mcpEnabled { await startMCP(session) }
+            disarmGate()
+            if settings.mcpEnabled {
+                if let core {
+                    await startMCP(core, store: Self.storeFolder(session))
+                } else {
+                    armGate()
+                }
+            }
         }
     }
 
-    private func startSSH(_ session: VaultSession) async {
-        guard ssh == nil, let core = session.coreSession else { return }
+    private func startSSH(_ core: Session) async {
+        guard ssh == nil else { return }
         let knownHosts = resolveKnownHosts()
         let config = FfiSshAgentConfig(
             dataDir: dataDirectory, socketPath: paths.sshSocket.path,
@@ -228,14 +361,32 @@ public final class DeveloperHosts {
         }
     }
 
-    private func startMCP(_ session: VaultSession) async {
-        guard mcp == nil, let core = session.coreSession else { return }
-        // The store's folder: no tool may read or write it through the relay.
-        let store = session.environment.databaseURL.deletingLastPathComponent().path
+    /// `store`: the store's folder, which no tool may read or write through the relay. With a gate
+    /// on the socket the server starts through `handOver` (held connections go to it); if that
+    /// fails the gate stops and the server starts alone.
+    private func startMCP(_ core: Session, store: String) async {
+        // A server or a gate being stopped frees the socket first.
+        await settle()
+        guard mcp == nil else { return }
         let config = FfiMcpHostConfig(
             dataDir: dataDirectory, socketPath: paths.mcpSocket.path, relayPath: paths.relay.path,
             protectedDirs: [store])
         let ui = bridge
+        if let gate {
+            self.gate = nil
+            gateRunning = false
+            gateWanted = false
+            do {
+                let host = try await CoreThread.run { try gate.handOver(session: core, config: config, ui: ui) }
+                mcp = host
+                mcpRunning = true
+                mcpError = nil
+                return
+            } catch {
+                Self.log.error("MCP gate did not hand over")
+                _ = try? await CoreThread.run { gate.stop() }
+            }
+        }
         do {
             let host = try await CoreThread.run { try McpHost.start(session: core, config: config, ui: ui) }
             mcp = host
@@ -250,7 +401,7 @@ public final class DeveloperHosts {
     private func stopMCP() {
         if let host = mcp {
             mcp = nil
-            Task.detached { host.stop() }
+            enqueue { _ = try? await CoreThread.run { host.stop() } }
         }
         mcpRunning = false
     }
@@ -429,5 +580,35 @@ final class PromptBridge: FfiDeveloperUi, @unchecked Sendable {
             owner?.expire(id)
             owner?.touched()
         }
+    }
+}
+
+/// `FfiGateUi` for the core: called on a gate thread when an agent connects to a locked Mac. It asks
+/// the main actor (`RemoteUnlockCoordinator.handleLockedRequest`) without blocking it, and blocks
+/// only its own thread, at most `timeout`: the coordinator answers within 60 s, the grace covers a
+/// busy main actor. No answer refuses.
+final class GateBridge: FfiGateUi, @unchecked Sendable {
+    weak var owner: DeveloperHosts?
+    let timeout: TimeInterval
+    static let timeout: TimeInterval = PromptBridge.timeout + 5
+
+    @MainActor init(owner: DeveloperHosts, timeout: TimeInterval = GateBridge.timeout) {
+        self.owner = owner
+        self.timeout = timeout
+    }
+
+    func lockedRequest(client: FfiMcpClient) -> Bool {
+        let semaphore = DispatchSemaphore(value: 0)
+        let result = OSAllocatedUnfairLock(initialState: false)
+        let task = Task { @MainActor [weak owner] in
+            let ok = await owner?.answerLockedRequest(client) ?? false
+            result.withLock { $0 = ok }
+            semaphore.signal()
+        }
+        guard semaphore.wait(timeout: .now() + timeout) == .success else {
+            task.cancel()
+            return false
+        }
+        return result.withLock { $0 }
     }
 }

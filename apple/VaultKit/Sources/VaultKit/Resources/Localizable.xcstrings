@@ -161,6 +161,16 @@
         }
       }
     },
+    "Activer le déverrouillage depuis ton iPhone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on unlocking from your iPhone"
+          }
+        }
+      }
+    },
     "Ajouter un appareil à ton compte" : {
       "localizations" : {
         "en" : {
@@ -749,6 +759,16 @@
         }
       }
     },
+    "Déverrouillage refusé sur l'iPhone." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock refused on the iPhone."
+          }
+        }
+      }
+    },
     "Email" : {
       "localizations" : {
         "en" : {
@@ -951,6 +971,16 @@
         }
       }
     },
+    "Identifiant" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identifier"
+          }
+        }
+      }
+    },
     "Identifiant du compte : %@" : {
       "localizations" : {
         "en" : {
@@ -1095,6 +1125,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'autre appareil a annulé l'appairage."
+          }
+        }
+      }
+    },
+    "L'iPhone n'a pas répondu à temps." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The iPhone did not answer in time."
           }
         }
       }
@@ -1907,6 +1947,16 @@
         }
       }
     },
+    "Ton mot de passe maître a changé : réactive le déverrouillage depuis ton iPhone." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your master password changed: turn on unlocking from your iPhone again."
+          }
+        }
+      }
+    },
     "Tous tes coffres sont marqués sûrs en voyage : aucun ne quitterait cet appareil." : {
       "localizations" : {
         "en" : {
@@ -1945,6 +1995,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Trop d'essais. Réessaie après %@."
+          }
+        }
+      }
+    },
+    "Trop de demandes de déverrouillage : réessaie plus tard." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many unlock requests: try again later."
           }
         }
       }
@@ -2257,6 +2317,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iPhone unavailable: approve here"
+          }
+        }
+      }
+    },
+    "iPhone injoignable : déverrouille l'app sur ce Mac." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone unreachable: unlock the app on this Mac."
           }
         }
       }

@@ -82,6 +82,7 @@ extension VaultSession {
         let (list, me) = try await read { session in (try session.devices(), session.thisDeviceId()) }
         devices = list
         thisDeviceID = me
+        devicesRefreshed?(list)
     }
 
     /// Marks another device revoked (ruling A8: fresh presence first, Face ID or Touch ID, else
@@ -164,6 +165,8 @@ extension VaultSession {
             }
         }
         biometricsRevision += 1
+        // Every remote unlock envelope sealed the old AUK: erased, enroll again (spec 6.1).
+        passwordChangedHere?()
         notifySync { await $0.localChangesWritten() }
     }
 

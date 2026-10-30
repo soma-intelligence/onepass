@@ -86,6 +86,20 @@ public final class VaultSession {
     @ObservationIgnored private(set) var storeChangeObserver: Task<Void, Never>?
     /// Places of the items, read once per item version (memory only, emptied on lock).
     @ObservationIgnored private var locationIndex = LocationIndex()
+    /// End of the agents-only window opened from the iPhone (agent-ready spec 6.3), nil without one.
+    /// The state stays `locked` meanwhile: the UI, AutoFill, the browser bridge, the widgets and the
+    /// companion never see that session.
+    public internal(set) var agentWindowEndsAt: Date?
+    /// The agents-only session (`Session.isAgentOnly()`), for the MCP and SSH servers only. Never in
+    /// `session`, never told through `coreSessionChanged`.
+    @ObservationIgnored internal(set) var agentSession: Session?
+    /// Told when the agents-only window ends (lock, full unlock, failure), once per window.
+    @ObservationIgnored var agentWindowEnded: (() -> Void)?
+    /// Told after the master password changed on this device (every remote unlock envelope is then
+    /// stale: spec 6.1).
+    @ObservationIgnored var passwordChangedHere: (() -> Void)?
+    /// Told with the device list each time `refreshDevices` reads it.
+    @ObservationIgnored var devicesRefreshed: (([FfiDevice]) -> Void)?
 
     static let maxRecents = 20
     nonisolated static let trashRetentionDays: UInt32 = 30
@@ -290,6 +304,7 @@ public final class VaultSession {
     func eraseRevokedDevice() async {
         let wasOpen = session != nil
         generation &+= 1
+        endAgentWindow()
         if let session {
             self.session = nil
             release(session)
@@ -747,6 +762,8 @@ public final class VaultSession {
     /// Drops the keys, every summary and recent id, and tells the sync layer.
     public func lock() {
         generation &+= 1
+        // A manual lock of the Mac ends an agents-only window too (spec 6.3).
+        endAgentWindow()
         let wasOpen = session != nil || state == .unlocking || state == .unlocked
         if let session {
             self.session = nil
@@ -1414,6 +1431,11 @@ public final class VaultSession {
         }
     }
 
+    /// Locks an agents-only session off the main actor, in order with the other releases.
+    func releaseAgentSession(_ session: Session) {
+        release(session)
+    }
+
     /// A new unlock supersedes any one in flight.
     private func beginUnlocking() -> Int {
         generation &+= 1
@@ -1434,6 +1456,15 @@ public final class VaultSession {
     }
 
     private func install(_ session: Session, _ snapshot: Snapshot) {
+        // An agents-only session never reaches the UI (spec 6.3).
+        if session.isAgentOnly() {
+            Self.log.error("agents-only session refused by the UI")
+            release(session)
+            state = .locked
+            return
+        }
+        // The owner unlocked for real: the full session replaces the agents-only one.
+        endAgentWindow()
         self.session = session
         apply(snapshot)
         passwordChangedElsewhere = false
