@@ -138,6 +138,7 @@ public final class PhoneAgents {
     public func expireStale() async {
         guard let responder else { return }
         requests = await responder.pending()
+        clockLooksWrong = await responder.clockLooksWrong
     }
 
     // MARK: - Settings

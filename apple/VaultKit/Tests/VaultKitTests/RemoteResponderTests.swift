@@ -65,6 +65,7 @@ final class FakeFaceIDGate: FaceIDGate {
         }
     }
 
+    func isArmed() -> Bool? { armed }
     func arm() throws { state.withLock { $0.armed = true } }
     func disarm() throws { state.withLock { $0.armed = false } }
 }
@@ -81,6 +82,9 @@ final class PhoneClock: Sendable {
 @MainActor
 @Suite("Remote responder", .timeLimit(.minutes(5)))
 struct RemoteResponderTests {
+    /// Messages are compared in French, the source language, whatever the machine's language.
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     struct Phone {
         let responder: RemoteResponder
         let presence: FakePresence
@@ -272,6 +276,16 @@ struct RemoteResponderTests {
         let p = await phone(f)
         defer { Task { await p.responder.stop() } }
 
+        // A record a sleeping Mac left behind, read from the backlog ten minutes later by a phone
+        // whose clock is right: hidden, erased, no hint.
+        await p.responder.stop()
+        try await macAsks(f)
+        p.clock.set(600)
+        await p.responder.start()
+        try await waitUntil { f.channel.stored().allSatisfy { $0.to != f.phone.id } }
+        #expect(await p.responder.pending().isEmpty)
+        #expect(await !p.responder.clockLooksWrong)
+
         // Long expired on every clock (the server stored it as late as the phone reads it, a blob
         // put back long after): hidden, erased, no hint.
         server.set(600)
@@ -281,8 +295,8 @@ struct RemoteResponderTests {
         #expect(await p.responder.pending().isEmpty)
         #expect(await !p.responder.clockLooksWrong)
 
-        // Phone ten minutes ahead: the server stored it when the Mac made it, only the phone calls
-        // it expired. Hidden, with the hint.
+        // Phone ten minutes ahead, message delivered live: the server stored it when the Mac made
+        // it, only the phone calls it expired. Hidden, with the hint.
         server.set(0)
         try await macAsks(f)
         try await waitUntil { await p.responder.clockLooksWrong }
@@ -302,6 +316,9 @@ struct RemoteResponderTests {
         try await macAsks(f)
         try await waitUntil { await p.responder.clockLooksWrong }
         #expect(await p.responder.pending().count == 1)
+        // Without new evidence the hint fades (here, 700 s later on the phone's clock).
+        p.clock.set(100)
+        #expect(await !p.responder.clockLooksWrong)
 
         // Shown, then expired on screen: hidden from the list, refused if answered.
         p.clock.set(100)
@@ -477,5 +494,18 @@ struct RemoteResponderTests {
         await #expect(throws: RemoteResponderError.unknownRequest) {
             try await p.responder.acceptEnrollment(pair.id)
         }
+    }
+
+    @Test func faceIDChangeSeenAtStart() async throws {
+        let f = try await RemoteUnlockFixture.make()
+        defer { f.cleanUp() }
+        // Face ID changed while the vault was locked: known as soon as reading starts, before any
+        // answer, without a Face ID prompt.
+        let gate = FakeFaceIDGate()
+        gate.invalidate()
+        let p = await phone(f, presence: gate)
+        defer { Task { await p.responder.stop() } }
+        #expect(await p.responder.faceIDNeedsReset)
+        #expect(gate.checks == 0)
     }
 }
