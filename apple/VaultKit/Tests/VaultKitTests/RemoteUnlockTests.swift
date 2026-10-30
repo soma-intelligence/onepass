@@ -28,6 +28,61 @@ private func sync(_ from: String, _ to: String) throws {
     _ = try h.commitRemote()
 }
 
+/// A channel whose stored records the tests can list.
+protocol ListableRemoteChannel: RemoteChannel {
+    func stored() -> [RemoteMessage]
+}
+
+extension InMemoryRemoteChannel: ListableRemoteChannel {}
+
+/// A fake CloudKit where each message reaches one reader only (the latest subscribed): two readers of
+/// one device lose each other's messages, as two pollers racing to delete do over real CloudKit.
+final class SingleDeliveryRemoteChannel: ListableRemoteChannel {
+    private struct State {
+        var records: [RemoteMessage] = []
+        var delivered: Set<String> = []
+        var subscribers: [(id: UUID, device: String, continuation: AsyncStream<RemoteMessage>.Continuation)] = []
+    }
+    private let state = Mutex(State())
+
+    func stored() -> [RemoteMessage] { state.withLock { $0.records } }
+
+    func post(_ m: RemoteMessage) async throws {
+        let target = state.withLock { s -> AsyncStream<RemoteMessage>.Continuation? in
+            s.records.removeAll { $0.id == m.id }
+            s.records.append(m)
+            guard let first = s.subscribers.last(where: { $0.device == m.to }) else { return nil }
+            s.delivered.insert(m.id)
+            return first.continuation
+        }
+        target?.yield(m)
+    }
+
+    func messages(for device: String) -> AsyncStream<RemoteMessage> {
+        let (stream, continuation) = AsyncStream.makeStream(of: RemoteMessage.self)
+        let id = UUID()
+        state.withLock { s in
+            for m in s.records where m.to == device && !s.delivered.contains(m.id) {
+                s.delivered.insert(m.id)
+                continuation.yield(m)
+            }
+            s.subscribers.append((id, device, continuation))
+        }
+        continuation.onTermination = { [weak self] _ in
+            self?.state.withLock { $0.subscribers.removeAll { $0.id == id } }
+        }
+        return stream
+    }
+
+    func delete(_ id: String) async {
+        state.withLock { $0.records.removeAll { $0.id == id } }
+    }
+
+    func purgeExpired(now: Date) async {
+        state.withLock { $0.records.removeAll { $0.expiresAt < now } }
+    }
+}
+
 /// The window timer of the coordinator, held by the test: `fire()` ends the wait.
 final class ManualTimer: Sendable {
     private struct State {
@@ -74,7 +129,8 @@ final class RemoteUnlockFixture {
     let harness: SessionHarness
     let vault: VaultSession
     let hosts: DeveloperHosts
-    let channel = InMemoryRemoteChannel()
+    let channel: any ListableRemoteChannel
+    let now: @Sendable () -> Date
     let macKeychain: InMemoryKeychain
     let center = NotificationCenter()
     let timer = ManualTimer()
@@ -87,8 +143,11 @@ final class RemoteUnlockFixture {
 
     private init(
         harness: SessionHarness, vault: VaultSession, hosts: DeveloperHosts, macKeychain: InMemoryKeychain,
-        socketDir: URL, suite: String, macId: String, phone: Phone
+        socketDir: URL, suite: String, macId: String, phone: Phone, channel: any ListableRemoteChannel,
+        now: @escaping @Sendable () -> Date
     ) {
+        self.channel = channel
+        self.now = now
         self.harness = harness
         self.macKeychain = macKeychain
         self.vault = vault
@@ -100,7 +159,10 @@ final class RemoteUnlockFixture {
         self.phone = phone
     }
 
-    static func make(timeout: Duration = .seconds(600)) async throws -> RemoteUnlockFixture {
+    static func make(
+        timeout: Duration = .seconds(600), channel: any ListableRemoteChannel = InMemoryRemoteChannel(),
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) async throws -> RemoteUnlockFixture {
         let harness = try SessionHarness()
         let vault = harness.makeSession()
         let secretKey = try await vault.createAccount(password: testPassword, displayName: "", mode: .personal)
@@ -145,7 +207,7 @@ final class RemoteUnlockFixture {
             defaults: UserDefaults(suiteName: suite)!, presence: harness.presence)
         let fixture = RemoteUnlockFixture(
             harness: harness, vault: vault, hosts: hosts, macKeychain: macKeychain, socketDir: socketDir, suite: suite, macId: macId,
-            phone: phone)
+            phone: phone, channel: channel, now: now)
         fixture.coordinator = fixture.makeCoordinator(vault: vault, timeout: timeout)
         return fixture
     }
@@ -157,7 +219,7 @@ final class RemoteUnlockFixture {
             approverKeys: ApproverKeyStore(keychain: macKeychain),
             store: RemoteUnlockKeyStore(keychain: macKeychain),
             notifications: center, timeout: timeout,
-            windowTimer: { try await timer.sleep($0) })
+            windowTimer: { try await timer.sleep($0) }, now: now)
     }
 
     var store: RemoteUnlockKeyStore { RemoteUnlockKeyStore(keychain: macKeychain) }
@@ -486,6 +548,81 @@ struct RemoteUnlockTests {
         await #expect(throws: VaultError.self) { try await f.coordinator.enroll(phone: f.phone.id) }
         #expect(try f.store.load() == nil)
         #expect(f.channel.stored().isEmpty)
+    }
+
+    /// One reader routes the Mac's messages: with a channel that gives each message to one reader
+    /// only, a phone's `Lock` sent while a tool approval waits on the phone still ends the window.
+    @Test func lockFromPhoneWhileApprovalOutstandingEndsWindow() async throws {
+        let f = try await RemoteUnlockFixture.make(channel: SingleDeliveryRemoteChannel())
+        defer { f.cleanUp() }
+        try await f.openWindow()
+        let approver = try #require(f.coordinator.windowApprover)
+        let phoneID = f.phone.id
+        let asked = Task { await approver.ask(approvalRequest()) }
+        try await waitUntil { f.channel.stored().contains { $0.to == phoneID } }
+
+        try await f.phoneSends(.lock)
+        try await waitUntil { @MainActor in f.vault.agentWindowEndsAt == nil }
+        #expect(f.vault.agentSession == nil)
+        asked.cancel()
+        _ = await asked.value
+    }
+
+    /// A lock (or a sleep) between the phone's approval and the window: nothing opens, the session
+    /// the phone opened is locked.
+    @Test func lockNowBetweenAnswerAndWindowLeavesSessionLocked() async throws {
+        let f = try await RemoteUnlockFixture.make()
+        defer { f.cleanUp() }
+        let kr = try await f.enroll()
+        await f.lockMac()
+        let opened = Mutex<Session?>(nil)
+        f.coordinator.beforeOpenWindow = { [coordinator = f.coordinator!] session in
+            opened.withLock { $0 = session }
+            coordinator.lockNow()
+        }
+        async let ok = f.coordinator.handleLockedRequest(client: f.client)
+        try await f.phoneAnswersUnlock(kr: kr, decision: .once)
+        #expect(await ok == false)
+        #expect(f.vault.agentWindowEndsAt == nil)
+        #expect(f.vault.agentSession == nil)
+        #expect(!f.hosts.mcpRunning)
+        let session = try #require(opened.withLock { $0 })
+        try await waitUntil { (try? await CoreThread.run { try session.vaults() }) == nil }
+    }
+
+    /// Two agents at once: one request to the phone, one answer for both.
+    @Test func concurrentLockedRequestsShareOneRequest() async throws {
+        let f = try await RemoteUnlockFixture.make()
+        defer { f.cleanUp() }
+        let kr = try await f.enroll()
+        await f.lockMac()
+        async let first = f.coordinator.handleLockedRequest(client: f.client)
+        async let second = f.coordinator.handleLockedRequest(client: f.client)
+        let phoneID = f.phone.id
+        try await waitUntil { f.channel.stored().contains { $0.to == phoneID } }
+        #expect(f.channel.stored().filter { $0.to == phoneID }.count == 1)
+        try await f.phoneAnswersUnlock(kr: kr, decision: .once)
+        let results = await [first, second]
+        #expect(results == [true, true])
+        #expect(f.channel.stored().filter { $0.to == phoneID }.count <= 1)
+    }
+
+    /// A window whose deadline already passed when it would open is closed at once.
+    @Test func deadlineAlreadyPassedLocksImmediately() async throws {
+        // The Mac's clock says two hours later than the core's: the one-hour window is over.
+        let f = try await RemoteUnlockFixture.make(now: { Date().addingTimeInterval(7200) })
+        defer { f.cleanUp() }
+        let kr = try await f.enroll()
+        await f.lockMac()
+        let opened = Mutex<Session?>(nil)
+        f.coordinator.beforeOpenWindow = { session in opened.withLock { $0 = session } }
+        async let ok = f.coordinator.handleLockedRequest(client: f.client)
+        try await f.phoneAnswersUnlock(kr: kr, decision: .once)
+        #expect(await ok == false)
+        #expect(f.vault.agentWindowEndsAt == nil)
+        #expect(f.vault.agentSession == nil)
+        let session = try #require(opened.withLock { $0 })
+        try await waitUntil { (try? await CoreThread.run { try session.vaults() }) == nil }
     }
 
     /// The gate's thread blocks, never the main actor: the handler runs there and may await.

@@ -18,8 +18,10 @@ extension Session: RemoteApprovalSession {}
 /// valid answer of any of them. A valid answer that comes after the decision (a second phone, a
 /// refusal after an approval) is logged `late` and changes nothing.
 ///
-/// One listener reads the Mac's messages while a request waits or may still be answered (until its
-/// expiry), and opens each answer once: the core accepts one answer per request.
+/// It reads the Mac's messages through a `RemoteMailbox` (shared with the remote unlock, so one reader
+/// routes every message) while a request waits or may still be answered (until its expiry), and
+/// opens each answer once: the core accepts one answer per request. Only the answers it opens are
+/// claimed (deleted); anything else is left to the other consumers.
 public actor RemoteApprover {
     /// At least one phone got the last request (false: no phone enrolled, or CloudKit unreachable).
     public private(set) var phonesAvailable = false
@@ -47,15 +49,19 @@ public actor RemoteApprover {
 
     private var waiters: [UUID: Waiter] = [:]
     private var issued: [Data: Issued] = [:]
-    private var listener: Task<Void, Never>?
+    private var mailbox: RemoteMailbox?
+    private var subscription: UUID?
     private var stopTimer: Task<Void, Never>?
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "remote")
 
-    /// `timeout` is the request lifetime of the spec (60 s); the tests pass less.
+    /// `timeout` is the request lifetime of the spec (60 s); the tests pass less. `mailbox`: the
+    /// Mac's shared reader (nil: one of its own, made on first use).
     public init(
         channel: any RemoteChannel, session: any RemoteApprovalSession, keys: FfiApproverKeys,
-        timeout: Duration = .seconds(60), now: @escaping @Sendable () -> Date = { Date() }
+        timeout: Duration = .seconds(60), now: @escaping @Sendable () -> Date = { Date() },
+        mailbox: RemoteMailbox? = nil
     ) {
+        self.mailbox = mailbox
         self.channel = channel
         self.session = session
         self.keys = keys
@@ -88,7 +94,7 @@ public actor RemoteApprover {
 
         let id = UUID()
         waiters[id] = Waiter()
-        startListening(me)
+        await startListening(me)
         let body = Self.body(of: r)
         var sentTo: [String] = []
         for phone in phones where waiters[id]?.result == nil && !Task.isCancelled {
@@ -172,30 +178,36 @@ public actor RemoteApprover {
 
     // MARK: - Listening
 
-    private func startListening(_ me: String) {
+    private func startListening(_ me: String) async {
         stopTimer?.cancel()
         stopTimer = nil
-        guard listener == nil else { return }
-        let stream = channel.messages(for: me)
-        listener = Task { [weak self] in
-            for await message in stream {
-                guard let self else { return }
-                await self.handle(message)
-            }
+        guard subscription == nil else { return }
+        let box = mailbox ?? RemoteMailbox(channel: channel, device: me, now: now)
+        mailbox = box
+        subscription = await box.register(.approval) { [weak self] message in
+            await self?.claim(message) ?? false
         }
     }
 
-    private func handle(_ message: RemoteMessage) async {
+    private func stopListening() {
+        guard let subscription, let mailbox else { return }
+        self.subscription = nil
+        Task { await mailbox.unregister(subscription) }
+    }
+
+    /// True when this approver opened `message` (an answer to one of its requests, on time or late).
+    private func claim(_ message: RemoteMessage) async -> Bool {
         let session = self.session
         let keys = self.keys
         let blob = message.blob
-        let opened = try? await CoreThread.run { try session.openRemoteResponse(keys: keys, blob: blob) }
-        await channel.delete(message.id)
+        guard let response = try? await CoreThread.run({ try session.openRemoteResponse(keys: keys, blob: blob) })
+        else { return false }
+        await handle(response)
+        return true
+    }
+
+    private func handle(_ response: FfiRemoteResponse) async {
         defer { scheduleStop() }
-        guard let response = opened else {
-            Self.log.notice("remote answer refused")
-            return
-        }
         let entry = issued.removeValue(forKey: response.requestId)
         if let entry {
             // Answered: its request record goes too.
@@ -223,8 +235,7 @@ public actor RemoteApprover {
         guard let last = issued.values.map(\.expiresAt).max() else {
             stopTimer?.cancel()
             stopTimer = nil
-            listener?.cancel()
-            listener = nil
+            stopListening()
             return
         }
         guard stopTimer == nil else { return }
