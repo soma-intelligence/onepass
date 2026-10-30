@@ -90,7 +90,7 @@ struct DeveloperHostsTests {
         let channel = InMemoryRemoteChannel()
         let approver = RemoteApprover(
             channel: channel, session: FakeRemoteSession(phones: phones), keys: testApproverKeys,
-            timeout: .seconds(timeout))
+            timeout: .seconds(timeout), mailbox: RemoteMailbox(channel: channel, device: "mac-1"))
         let bridge = PromptBridge(owner: hosts, presence: FakePresence(), timeout: timeout)
         bridge.remote = approver
         return (hosts, bridge, channel)

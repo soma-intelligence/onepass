@@ -90,7 +90,9 @@ struct RemoteApproverTests {
     @Test func twoPhonesFirstValidWinsSecondLoggedLate() async throws {
         let channel = InMemoryRemoteChannel()
         let session = FakeRemoteSession(phones: ["phone-a", "phone-b"])
-        let approver = RemoteApprover(channel: channel, session: session, keys: testApproverKeys)
+        let approver = RemoteApprover(
+            channel: channel, session: session, keys: testApproverKeys,
+            mailbox: RemoteMailbox(channel: channel, device: "mac-1"))
         let asked = Task { await approver.ask(approvalRequest()) }
         try await waitUntil { channel.stored().filter { $0.to.hasPrefix("phone-") }.count == 2 }
 
@@ -114,7 +116,9 @@ struct RemoteApproverTests {
     @Test func lateDenialIgnoredAfterApproval() async throws {
         let channel = InMemoryRemoteChannel()
         let session = FakeRemoteSession(phones: ["phone-a", "phone-b"])
-        let approver = RemoteApprover(channel: channel, session: session, keys: testApproverKeys)
+        let approver = RemoteApprover(
+            channel: channel, session: session, keys: testApproverKeys,
+            mailbox: RemoteMailbox(channel: channel, device: "mac-1"))
         let asked = Task { await approver.ask(approvalRequest()) }
         try await waitUntil { channel.stored().filter { $0.to.hasPrefix("phone-") }.count == 2 }
         let sent = channel.stored()
@@ -134,6 +138,26 @@ struct RemoteApproverTests {
         #expect(answer.decision == .allowForMinutes(minutes: 5))
     }
 
+    /// An approver dropped with a request still unexpired gives its consumer back: the reader stops.
+    @Test func droppedApproverReleasesItsConsumer() async throws {
+        let channel = InMemoryRemoteChannel()
+        let box = RemoteMailbox(channel: channel, device: "mac-1")
+        var approver: RemoteApprover? = RemoteApprover(
+            channel: channel, session: FakeRemoteSession(phones: ["phone-a"]), keys: testApproverKeys,
+            mailbox: box)
+        let asked = Task { [approver] in await approver?.ask(approvalRequest()) }
+        try await waitUntil { channel.stored().contains { $0.to == "phone-a" } }
+        #expect(await box.consumerCount == 1)
+        // The Mac answered: the request is withdrawn, but the approver keeps listening until it
+        // expires (a late answer is still recognized).
+        asked.cancel()
+        _ = await asked.value
+        #expect(await box.consumerCount == 1)
+        approver = nil
+        try await waitUntil { await box.consumerCount == 0 }
+        #expect(await box.isReading == false)
+    }
+
     @Test func expiredRecordsPurgedAtLaunch() async throws {
         let now = Date()
         let channel = InMemoryRemoteChannel()
@@ -142,7 +166,7 @@ struct RemoteApproverTests {
         try await channel.post(RemoteMessage(id: "live", to: "phone-a", blob: Data([3]), expiresAt: now.addingTimeInterval(30)))
         let approver = RemoteApprover(
             channel: channel, session: FakeRemoteSession(phones: ["phone-a"]), keys: testApproverKeys,
-            now: { now })
+            now: { now }, mailbox: RemoteMailbox(channel: channel, device: "mac-1"))
         await approver.purgeExpired()
         #expect(channel.stored().map(\.id) == ["live"])
     }

@@ -625,6 +625,78 @@ struct RemoteUnlockTests {
         try await waitUntil { (try? await CoreThread.run { try session.vaults() }) == nil }
     }
 
+    /// A window that ends while a tool approval still waits on the phone: the approver's consumer
+    /// goes and the Mac stops reading (no CloudKit poll left behind).
+    @Test func windowEndWithPendingApprovalReleasesTheMailbox() async throws {
+        let f = try await RemoteUnlockFixture.make()
+        defer { f.cleanUp() }
+        try await f.openWindow()
+        let box = f.coordinator.mailbox(for: f.macId)
+        let approver = try #require(f.coordinator.windowApprover)
+        let phoneID = f.phone.id
+        let asked = Task { await approver.ask(approvalRequest()) }
+        try await waitUntil { f.channel.stored().contains { $0.to == phoneID && $0.id.hasPrefix("request-") } }
+        #expect(await box.consumerCount == 2)
+
+        f.coordinator.lockNow()
+        // Well before the request's own 60 s expiry would stop the approver anyway.
+        let limit = Date().addingTimeInterval(20)
+        while await box.consumerCount > 0, Date() < limit { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(await box.consumerCount == 0)
+        #expect(await box.isReading == false)
+        asked.cancel()
+        _ = await asked.value
+    }
+
+    /// The 60 s limit lands while the servers start on the window: the window closes for good (the
+    /// session is locked) and the next agent asks the phone again instead of being let through.
+    @Test func timeoutDuringServerStartClosesTheWindow() async throws {
+        let f = try await RemoteUnlockFixture.make()
+        defer { f.cleanUp() }
+        await f.hosts.update({ $0.mcpEnabled = true }, session: f.vault)
+        let kr = try await f.enroll()
+        await f.lockMac()
+        let opened = Mutex<Session?>(nil)
+        f.coordinator.beforeOpenWindow = { session in opened.withLock { $0 = session } }
+        f.coordinator.whileServersStart = { [coordinator = f.coordinator!] in
+            coordinator.abandonPendingRequestForTesting()
+        }
+        async let ok = f.coordinator.handleLockedRequest(client: f.client)
+        try await f.phoneAnswersUnlock(kr: kr, decision: .once)
+        #expect(await ok == false)
+        #expect(f.vault.agentWindowEndsAt == nil)
+        #expect(f.vault.agentSession == nil)
+        await f.hosts.settle()
+        #expect(!f.hosts.mcpRunning)
+        let session = try #require(opened.withLock { $0 })
+        try await waitUntil { (try? await CoreThread.run { try session.vaults() }) == nil }
+
+        // Not let through: the next agent goes to the phone again (refused here by the throttle).
+        f.coordinator.whileServersStart = nil
+        #expect(await f.coordinator.handleLockedRequest(client: f.client) == false)
+        #expect(f.coordinator.lastFailure == .throttled)
+    }
+
+    /// A pairing whose phone has no active approver entry any more is erased on the next device
+    /// list read, and reported like a stale enrollment; this works before `start()` read the
+    /// keychain.
+    @Test func phoneWithoutApproverEntryClearsCBeforeStart() async throws {
+        let f = try await RemoteUnlockFixture.make()
+        defer { f.cleanUp() }
+        let stranger = String(repeating: "ab", count: 16)
+        try f.store.save(RemoteUnlockKeyStore.Entry(mac: f.macId, phone: stranger, c: Data([1, 2, 3])))
+        let fresh = f.makeCoordinator(vault: f.vault)
+        try await f.vault.refreshDevices()
+        try await waitUntil { @MainActor in fresh.lastFailure == .staleEnrollment }
+        #expect(try f.store.load() == nil)
+
+        // forget(phone:) before start() as well.
+        try f.store.save(RemoteUnlockKeyStore.Entry(mac: f.macId, phone: stranger, c: Data([1])))
+        let another = f.makeCoordinator(vault: f.vault)
+        await another.forget(phone: stranger)
+        #expect(try f.store.load() == nil)
+    }
+
     /// The gate's thread blocks, never the main actor: the handler runs there and may await.
     @Test func gateBridgeAsksTheMainActorAndTimesOut() async throws {
         #expect(GateBridge.timeout >= 60)

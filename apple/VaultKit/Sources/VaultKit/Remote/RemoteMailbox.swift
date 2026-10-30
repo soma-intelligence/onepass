@@ -61,7 +61,13 @@ public actor RemoteMailbox {
         }
     }
 
+    /// Removes every consumer of `priority` (the approvers of a window that ended).
+    public func unregisterAll(_ priority: Priority) {
+        for (id, consumer) in consumers where consumer.priority == priority { unregister(id) }
+    }
+
     var isReading: Bool { reader != nil }
+    var consumerCount: Int { consumers.count }
 
     private func dispatch(_ message: RemoteMessage) async {
         let ordered = consumers.values.sorted { $0.priority.rawValue < $1.priority.rawValue }
