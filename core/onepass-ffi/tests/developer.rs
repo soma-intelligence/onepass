@@ -222,6 +222,36 @@ fn a_failed_presence_check_refuses_the_signature() {
 }
 
 #[test]
+fn a_phone_approval_skips_the_mac_presence_check() {
+    let fx = fixture();
+    fx.session
+        .generate_ssh_key(FfiSshKeyType::Ed25519, new_key(&fx, "Github", true))
+        .unwrap();
+    let blob = public_blob(&fx.session.agent_keys().unwrap()[0].public_key);
+    // Touch ID would fail: only the phone's Face ID stands behind the answer.
+    let ui = ScriptedUi::new(FfiDecision::AllowOnce, false);
+    *ui.origin.lock().unwrap() = Some("phone:7f3a9c".into());
+    let host = start(&fx, ui.clone(), true);
+    let mut sock = UnixStream::connect(fx.socket()).unwrap();
+    let signed = request(&mut sock, &sign_request(&blob));
+    assert_eq!(signed[0], 14, "SIGN_RESPONSE");
+    assert_eq!(ui.presence_checks.load(Ordering::SeqCst), 0);
+
+    // Answered on the Mac, or from a place the audit refuses: Touch ID again.
+    for origin in [Some("mac"), Some("phone:bad id"), None] {
+        *ui.origin.lock().unwrap() = origin.map(String::from);
+        assert_eq!(
+            request(&mut sock, &sign_request(&blob)),
+            vec![5],
+            "{origin:?}"
+        );
+    }
+    assert_eq!(ui.presence_checks.load(Ordering::SeqCst), 3);
+    drop(sock);
+    host.stop();
+}
+
+#[test]
 fn a_locked_session_offers_no_key() {
     let fx = fixture();
     fx.session

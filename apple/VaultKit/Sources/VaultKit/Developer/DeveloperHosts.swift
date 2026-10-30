@@ -94,9 +94,34 @@ public struct DeveloperPrompt: Identifiable, Sendable {
         case pairing(FfiMcpClient)
     }
 
+    /// Where the iPhone stands in the race of an approval (spec 5.3).
+    public enum PhoneStatus: Sendable, Equatable {
+        /// No iPhone approval for this question (setting off, or a pairing).
+        case off
+        /// The requests are being sent.
+        case asking
+        /// The names of the phones that got the request.
+        case sent([String])
+        /// No phone enrolled, or CloudKit unreachable: the panel alone answers.
+        case unavailable
+    }
+
     public let id = UUID()
     public let kind: Kind
     public let askedAt: Date
+    public internal(set) var phoneStatus: PhoneStatus = .off
+
+    /// The line the panel shows about the iPhone, if any.
+    public var phoneNotice: String? {
+        switch phoneStatus {
+        case .off, .asking:
+            nil
+        case .sent(let names):
+            String(localized: "Envoyé à \(names.formatted(.list(type: .and)))", bundle: VaultKitStrings.bundle)
+        case .unavailable:
+            String(localized: "iPhone indisponible : approuve ici", bundle: VaultKitStrings.bundle)
+        }
+    }
 }
 
 /// Runs the SSH agent and the MCP server of the Mac app on the unlocked session, and relays their
@@ -147,7 +172,8 @@ public final class DeveloperHosts {
     public func sessionLocked() {
         stopSSH()
         stopMCP()
-        for prompt in prompts { answer(prompt.id, with: .deny) }
+        // Refused by the lock, not by anyone: no origin.
+        for prompt in prompts { settle(prompt.id, with: FfiAnswer(decision: .deny, approvedOn: nil)) }
     }
 
     public func update(_ change: (inout DeveloperSettings) -> Void, session: VaultSession) async {
@@ -246,9 +272,25 @@ public final class DeveloperHosts {
 
     /// The user's answer to a prompt. Unknown ids (already timed out) are ignored.
     public func answer(_ id: UUID, with decision: FfiDecision) {
+        settle(id, with: FfiAnswer(decision: decision, approvedOn: "mac"))
+    }
+
+    /// The iPhone approver the next approvals race against the panel (nil: the panel alone). Set
+    /// after an unlock, cleared on lock.
+    public func useRemoteApprover(_ approver: RemoteApprover?) {
+        bridge.remote = approver
+    }
+
+    private func settle(_ id: UUID, with answer: FfiAnswer) {
         prompts.removeAll { $0.id == id }
-        answers.removeValue(forKey: id)?.resolve(decision)
+        answers.removeValue(forKey: id)?.resolve(answer)
         revision &+= 1
+    }
+
+    /// The race moved on: what the panel says about the iPhone. Unknown ids are ignored.
+    fileprivate func setPhoneStatus(_ id: UUID, _ status: DeveloperPrompt.PhoneStatus) {
+        guard let index = prompts.firstIndex(where: { $0.id == id }) else { return }
+        prompts[index].phoneStatus = status
     }
 
     /// Called by the bridge on the main actor: shows the prompt and keeps its answer box.
@@ -257,7 +299,7 @@ public final class DeveloperHosts {
         prompts.append(prompt)
     }
 
-    /// The server gave up waiting: the prompt goes away.
+    /// The question is settled (answered anywhere, or given up): the prompt goes away.
     fileprivate func expire(_ id: UUID) {
         prompts.removeAll { $0.id == id }
         answers.removeValue(forKey: id)
@@ -269,43 +311,93 @@ public final class DeveloperHosts {
     }
 }
 
-/// One answer, handed from the main actor to a waiting server thread.
+/// One answer, handed to a waiting server thread. The first answer wins; any later one (a second
+/// phone, a click on a closed panel) is refused, and so is any answer after the wait ended.
 final class AnswerBox: @unchecked Sendable {
     private let semaphore = DispatchSemaphore(value: 0)
     private let lock = NSLock()
-    private var decision: FfiDecision = .deny
+    private var answer: FfiAnswer?
+    private var closed = false
 
-    func resolve(_ d: FfiDecision) {
-        lock.withLock { decision = d }
-        semaphore.signal()
+    /// False when the question was already settled: the answer is ignored.
+    @discardableResult
+    func resolve(_ a: FfiAnswer) -> Bool {
+        let first = lock.withLock { () -> Bool in
+            guard answer == nil, !closed else { return false }
+            answer = a
+            return true
+        }
+        if first { semaphore.signal() }
+        return first
     }
 
-    /// Waits for the answer; a question nobody answers in time is refused.
-    func wait(timeout: DispatchTime) -> FfiDecision? {
-        guard semaphore.wait(timeout: timeout) == .success else { return nil }
-        return lock.withLock { decision }
+    /// Waits for the answer; a question nobody answers in time is refused (nil).
+    func wait(timeout: DispatchTime) -> FfiAnswer? {
+        _ = semaphore.wait(timeout: timeout)
+        return lock.withLock {
+            closed = true
+            return answer
+        }
     }
 }
 
 /// `FfiDeveloperUi` for the core: called on server threads, it posts to the main actor and blocks
-/// until the user answers (at most `timeout`, then refuses).
+/// until the user answers (at most `timeout`, then refuses). An approval races the Mac panel against
+/// the iPhone (`remote`): the first valid answer wins, the other side is withdrawn (spec 5.3).
 final class PromptBridge: FfiDeveloperUi, @unchecked Sendable {
     weak var owner: DeveloperHosts?
     let presence: any PresenceChecker
-    static let timeout: TimeInterval = 90
+    /// The request lifetime of the spec (60 s): a question nobody answers is refused.
+    static let timeout: TimeInterval = 60
+    let timeout: TimeInterval
+    private let remoteApprover = OSAllocatedUnfairLock<RemoteApprover?>(initialState: nil)
+    private static let log = Logger(subsystem: "me.somalabs.onepass", category: "developer")
 
-    @MainActor init(owner: DeveloperHosts, presence: any PresenceChecker) {
+    @MainActor init(owner: DeveloperHosts, presence: any PresenceChecker, timeout: TimeInterval = PromptBridge.timeout) {
         self.owner = owner
         self.presence = presence
+        self.timeout = timeout
+    }
+
+    var remote: RemoteApprover? {
+        get { remoteApprover.withLock { $0 } }
+        set { remoteApprover.withLock { $0 = newValue } }
     }
 
     func approve(request: FfiApprovalRequest) -> FfiAnswer {
-        // Where it was answered comes with the Mac and iPhone race.
-        FfiAnswer(decision: ask(.approval(request)) ?? .deny, approvedOn: nil)
+        let remote = self.remote
+        let box = AnswerBox()
+        let prompt = DeveloperPrompt(
+            kind: .approval(request), askedAt: Date(), phoneStatus: remote == nil ? .off : .asking)
+        show(prompt, box: box)
+        var phone: Task<Void, Never>?
+        if let remote {
+            let id = prompt.id
+            phone = Task.detached { [weak owner] in
+                let answer = await remote.ask(request) { names in
+                    Task { @MainActor in owner?.setPhoneStatus(id, .sent(names)) }
+                }
+                if let answer {
+                    if !box.resolve(answer) { Self.log.notice("late iPhone answer ignored") }
+                } else if !Task.isCancelled {
+                    await MainActor.run { owner?.setPhoneStatus(id, .unavailable) }
+                }
+            }
+        }
+        let answer = box.wait(timeout: .now() + timeout)
+        // The Mac answered or time ran out: the iPhone requests are withdrawn.
+        phone?.cancel()
+        close(prompt.id)
+        return answer ?? FfiAnswer(decision: .deny, approvedOn: nil)
     }
 
     func pairRequest(client: FfiMcpClient) -> Bool {
-        guard let answer = ask(.pairing(client)), answer != .deny else { return false }
+        let box = AnswerBox()
+        let prompt = DeveloperPrompt(kind: .pairing(client), askedAt: Date())
+        show(prompt, box: box)
+        let answer = box.wait(timeout: .now() + timeout)
+        close(prompt.id)
+        guard let answer, answer.decision != .deny else { return false }
         return verifyPresence(reason: String(localized: "Appairer \(client.label) avec OnePass", bundle: VaultKitStrings.bundle))
     }
 
@@ -318,22 +410,22 @@ final class PromptBridge: FfiDeveloperUi, @unchecked Sendable {
             result.withLock { $0 = ok }
             semaphore.signal()
         }
-        guard semaphore.wait(timeout: .now() + Self.timeout) == .success else { return false }
+        guard semaphore.wait(timeout: .now() + timeout) == .success else { return false }
         return result.withLock { $0 }
     }
 
-    private func ask(_ kind: DeveloperPrompt.Kind) -> FfiDecision? {
-        let box = AnswerBox()
-        let prompt = DeveloperPrompt(kind: kind, askedAt: Date())
+    private func show(_ prompt: DeveloperPrompt, box: AnswerBox) {
         Task { @MainActor [weak owner] in
-            guard let owner else { box.resolve(.deny); return }
+            guard let owner else { box.resolve(FfiAnswer(decision: .deny, approvedOn: nil)); return }
             owner.enqueue(prompt, box: box)
         }
-        let decision = box.wait(timeout: .now() + Self.timeout)
+    }
+
+    /// The panel closes, however the question ended.
+    private func close(_ id: UUID) {
         Task { @MainActor [weak owner] in
-            if decision == nil { owner?.expire(prompt.id) }
+            owner?.expire(id)
             owner?.touched()
         }
-        return decision
     }
 }
