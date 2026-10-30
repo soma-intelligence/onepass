@@ -249,6 +249,17 @@ struct LockView: View {
                 .padding(.top, 8)
                 .accessibilityIdentifier("lock.passwordChangedElsewhere")
         }
+        if message == nil, model.biometricOfferDue {
+            // Face ID is not set up on this device yet: it needs one password unlock first.
+            Label(
+                "Déverrouille une fois avec ton mot de passe : OnePass te proposera \(OnboardingModel.biometryName).",
+                systemImage: "faceid")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 10)
+                .accessibilityIdentifier("lock.biometricsHint")
+        }
         if let message {
             Text(message)
                 .font(.footnote)

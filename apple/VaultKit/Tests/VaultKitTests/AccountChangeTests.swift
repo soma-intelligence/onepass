@@ -59,6 +59,8 @@ func dropAccountParams(_ path: String) throws {
 @MainActor
 @Suite("iCloud account change and recovery", .timeLimit(.minutes(4)))
 struct AccountChangeTests {
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     /// Device A synced with account "a", then "b" signs in. Returns A, the switching remote and the zones.
     func switchedDevice(zoneB: InMemoryRemote) async throws -> (SyncDevice, AccountSwitchingRemote, InMemoryRemote) {
         let zoneA = InMemoryRemote()
@@ -126,6 +128,29 @@ struct AccountChangeTests {
         #expect(await a.coordinator.status.isIdle)
         #expect(try await a.pendingChanges().isEmpty)
         // The whole vault went to the new zone: a new device restores from it.
+        #expect(try await zoneB.accountRecordIDs() == [a.settings.accountID!])
+        let fresh = try SyncDevice(remote: zoneB, name: "Nouveau")
+        defer { fresh.cleanUp() }
+        #expect(try await fresh.coordinator.remoteHasAccount())
+        await fresh.session.reload()
+        try await fresh.session.restore(secretKey: try #require(a.secretKey), password: testPassword)
+        #expect(fresh.titles == ["Projet Atlas"])
+    }
+
+    /// A store that holds an account but never met any iCloud account (received by pairing, or synced
+    /// in another container) and finds an empty zone sends its whole vault at the first sync.
+    @Test func firstSyncOfAnExistingVaultFillsAnEmptyZone() async throws {
+        let zoneB = InMemoryRemote()
+        let (a, _, _) = try await switchedDevice(zoneB: zoneB)
+        defer { a.cleanUp() }
+        // As if this store had never been bound to an iCloud account.
+        let store = a.store
+        try await CoreThread.run { try store.setMeta(key: SyncCoordinator.accountKey, value: Data()) }
+
+        await a.coordinator.syncNow()
+        await a.coordinator.syncNow()
+        #expect(await a.coordinator.status.isIdle)
+        #expect(try await a.pendingChanges().isEmpty)
         #expect(try await zoneB.accountRecordIDs() == [a.settings.accountID!])
         let fresh = try SyncDevice(remote: zoneB, name: "Nouveau")
         defer { fresh.cleanUp() }

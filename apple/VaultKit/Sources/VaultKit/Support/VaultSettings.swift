@@ -2,10 +2,28 @@ import Foundation
 import Synchronization
 
 public enum AutoLockDelay: String, Codable, Sendable, CaseIterable {
+    /// Locks as soon as the app leaves the screen (background, screen off); 5 minutes of inactivity
+    /// while it is open.
+    case immediately
     case oneMinute, fiveMinutes, fifteenMinutes, oneHour, never
 
+    /// The default: immediately on iPhone and iPad (the app leaves the screen all the time), 15 minutes
+    /// on the Mac.
+    public static var platformDefault: AutoLockDelay {
+        #if os(iOS)
+        .immediately
+        #else
+        .fifteenMinutes
+        #endif
+    }
+
+    /// Locks when the app goes to the background, whatever the time spent there.
+    public var locksInBackground: Bool { self == .immediately }
+
+    /// Inactivity before locking while the app is open (and time in the background, for the others).
     public var seconds: TimeInterval? {
         switch self {
+        case .immediately: 300
         case .oneMinute: 60
         case .fiveMinutes: 300
         case .fifteenMinutes: 900
@@ -16,11 +34,12 @@ public enum AutoLockDelay: String, Codable, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .oneMinute: "1 minute"
-        case .fiveMinutes: "5 minutes"
-        case .fifteenMinutes: "15 minutes"
-        case .oneHour: "1 heure"
-        case .never: "Jamais"
+        case .immediately: String(localized: "Immédiatement", bundle: VaultKitStrings.bundle)
+        case .oneMinute: String(localized: "1 minute", bundle: VaultKitStrings.bundle)
+        case .fiveMinutes: String(localized: "5 minutes", bundle: VaultKitStrings.bundle)
+        case .fifteenMinutes: String(localized: "15 minutes", bundle: VaultKitStrings.bundle)
+        case .oneHour: String(localized: "1 heure", bundle: VaultKitStrings.bundle)
+        case .never: String(localized: "Jamais", bundle: VaultKitStrings.bundle)
         }
     }
 }
@@ -73,7 +92,7 @@ public final class VaultSettings: @unchecked Sendable {
     }
 
     public var autoLockDelay: AutoLockDelay {
-        get { defaults.string(forKey: Key.autoLock).flatMap(AutoLockDelay.init(rawValue:)) ?? .fifteenMinutes }
+        get { defaults.string(forKey: Key.autoLock).flatMap(AutoLockDelay.init(rawValue:)) ?? .platformDefault }
         set { defaults.set(newValue.rawValue, forKey: Key.autoLock) }
     }
 

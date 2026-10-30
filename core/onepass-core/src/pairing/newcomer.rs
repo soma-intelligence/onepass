@@ -9,8 +9,9 @@ use crate::crypto::{HybridKemSecret, SecretKey, random_array};
 use crate::devices::{DeviceMode, check_name};
 
 use super::channel::Channel;
-use super::messages::{DeviceInfo, Grant, Hello, KeyExchange, Message};
-use super::qr::{PairingQr, QR_VERSION};
+use super::invite::signed_hello;
+use super::messages::{DeviceInfo, Grant, Hello, KeyExchange, Message, ProfileCard};
+use super::qr::{InviteQr, PairingQr, QR_VERSION};
 use super::snapshot::check_snapshot;
 use super::{KEM_LABEL, QR_LIFETIME_SECS, now_unix, refused, sas, sha256, transcript};
 
@@ -35,6 +36,9 @@ pub struct Newcomer {
     state: State,
     public_granted: bool,
     acked: bool,
+    /// Joined from an invite: the approver may send its `Profile`.
+    joined: bool,
+    profile: Option<ProfileCard>,
 }
 
 impl Newcomer {
@@ -72,8 +76,52 @@ impl Newcomer {
             state: State::AwaitingKey,
             public_granted: false,
             acked: false,
+            joined: false,
+            profile: None,
         };
         Ok((newcomer, qr, hello))
+    }
+
+    /// Join from a scanned invite (`invite`): the new ephemeral key pair,
+    /// the invite's session, and the Hello signed with its secret, the frame
+    /// to send once connected. The key exchange is taken for
+    /// `QR_LIFETIME_SECS` from `now`, on this device's clock.
+    pub fn join(
+        invite_text: &str,
+        device: DeviceInfo,
+        mode: DeviceMode,
+        now: i64,
+    ) -> Result<(Newcomer, Vec<u8>)> {
+        check_name(&device.name)?;
+        let session_id = InviteQr::parse(invite_text)?.session_id;
+        let secret = HybridKemSecret::generate()?;
+        let hello = Hello {
+            session_id,
+            ephemeral_public: secret.public()?,
+            device,
+            requested_mode: mode,
+        }
+        .to_bytes()?;
+        let (_, frame) = signed_hello(invite_text, &hello, now)?;
+        let newcomer = Newcomer {
+            secret: Some(secret),
+            session_id,
+            expires_at: now.checked_add(QR_LIFETIME_SECS).ok_or(refused("time"))?,
+            mode,
+            transcript: transcript(invite_text, &hello),
+            channel: None,
+            state: State::AwaitingKey,
+            public_granted: false,
+            acked: false,
+            joined: true,
+            profile: None,
+        };
+        Ok((newcomer, frame))
+    }
+
+    /// The approver's profile, when it sent one (invite sessions).
+    pub fn profile(&self) -> Option<&ProfileCard> {
+        self.profile.as_ref()
     }
 
     pub fn session_id(&self) -> [u8; 16] {
@@ -135,6 +183,14 @@ impl Newcomer {
         let r = match &msg {
             Message::Grant(g) if self.state == State::Confirmed => self.accept(g, now),
             Message::Grant(_) => Err(refused("grant before confirmation")),
+            Message::Profile(p)
+                if self.joined
+                    && self.state == State::Confirmed
+                    && self.mode != DeviceMode::Public
+                    && self.profile.is_none() =>
+            {
+                p.check().map(|()| self.profile = Some(p.clone()))
+            }
             Message::End => Ok(()),
             _ => Err(refused("unexpected message")),
         };

@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import os
+import Synchronization
 
 /// One line of a public session's journal, as the approver shows it. Memory only.
 public struct PairingAuditEntry: Equatable, Identifiable, Sendable {
@@ -21,6 +22,9 @@ public struct PairingAuditEntry: Equatable, Identifiable, Sendable {
 public final class PairingApproverFlow {
     public enum State: Equatable {
         case idle
+        /// `invite(listener:)`: show `qrText` as a QR code for the new device to scan, until
+        /// `expiresAt` (a new one replaces it before).
+        case inviting(qrText: String, expiresAt: Date)
         case connecting
         /// Compare `sas` with the new device's screen; `peer` and `requestedMode` are what it asks for.
         case comparing(sas: String, peer: FfiPeerDevice, requestedMode: FfiDeviceMode)
@@ -57,6 +61,16 @@ public final class PairingApproverFlow {
     /// An approval runs (presence, wait, grant): a second one is refused, set before the first await.
     @ObservationIgnored private var approving = false
     @ObservationIgnored private let peerTimeout: Duration
+    @ObservationIgnored private var inviteRun: Task<Void, Never>?
+    /// The session started from an invite: the new device takes this account's name and photo.
+    @ObservationIgnored private var fromInvite = false
+
+    /// A shown invite is replaced this long before it expires, so a scan never lands on a dead code.
+    public static let inviteRenewalMargin: Duration = .seconds(20)
+    /// How long a connection to an invite has to send its Hello (M2).
+    public static let inviteHelloTimeout: Duration = .seconds(10)
+    /// Connections to an invite checked at the same time; more are closed at once (M2).
+    static let maxPendingInviteConnections = 4
 
     /// How long the approver waits for the new device's confirmation once presence passed (L5).
     public static let peerTimeout: Duration = .seconds(60)
@@ -78,6 +92,7 @@ public final class PairingApproverFlow {
     }
 
     isolated deinit {
+        inviteRun?.cancel()
         receiver?.cancel()
         ticker?.cancel()
         transport?.close()
@@ -116,6 +131,22 @@ public final class PairingApproverFlow {
         }
     }
 
+    /// The other direction, for a device that cannot scan (the Mac, ruling A2): shows an invite code
+    /// that the new device scans, publishes its service and takes the first connection whose Hello
+    /// carries the code's secret. Then the same comparison and approval as `begin(qrText:)`. A new
+    /// code replaces the shown one `inviteRenewalMargin` before it expires; a connection that fails
+    /// its check is closed and the code stays (M2). Returns once a peer is found or the flow stops.
+    public func invite(listener: any PairingListener) async {
+        guard state == .idle else { return }
+        guard vault.state == .unlocked else {
+            state = .failed(.other(VaultError.passwordRequired.localizedMessage))
+            return
+        }
+        let run = Task { [weak self] in _ = await self?.runInvite(listener: listener) }
+        inviteRun = run
+        await run.value
+    }
+
     /// "Les codes sont identiques" for a personal or shared device: fresh presence (or `password`),
     /// then, once the new device confirmed, the grant. With a sync server this device syncs first and
     /// seals the server's view (refused when the account is not on the server yet); without one, its
@@ -138,6 +169,7 @@ public final class PairingApproverFlow {
             if state == .granting { fail(.connectionLost) }
             return
         }
+        if fromInvite { await sendProfile(approver: approver, transport: transport) }
         do {
             let secretKey = try vault.loadSecretKey()
             defer { secretKey.secretKey.wipe() }
@@ -225,6 +257,161 @@ public final class PairingApproverFlow {
 
     // MARK: - Steps
 
+    /// Invite sessions: this account's display name and photo, so the new device shows the same.
+    /// Best effort: a refused or unsent profile never stops the grant.
+    private func sendProfile(approver: PairingApprover, transport: any PairingTransport) async {
+        let settings = vault.environment.settings
+        let scalars = settings.displayName.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
+        let name = String(String(String.UnicodeScalarView(scalars)).prefix(Self.maxProfileNameLength))
+        let photo = settings.profilePhoto.flatMap { $0.count <= Self.maxProfilePhotoBytes ? $0 : nil } ?? Data()
+        guard !name.isEmpty || !photo.isEmpty else { return }
+        do {
+            let frame = try await CoreThread.run { try approver.sealProfile(name: name, photo: photo) }
+            try await transport.send(frame)
+        } catch {
+            Self.log.notice("pairing profile not sent")
+        }
+    }
+
+    /// The core's limits on a profile (64 characters, 256 KiB).
+    static let maxProfileNameLength = 64
+    static let maxProfilePhotoBytes = 256 * 1024
+
+    private func runInvite(listener: any PairingListener) async {
+        do {
+            while true {
+                try Task.checkCancellation()
+                let nowUnix = Int64(now().timeIntervalSince1970)
+                let invite = try await CoreThread.run { try PairingInvite(now: nowUnix) }
+                guard let (approver, transport) = try await publish(invite, listener: listener) else { continue }
+                guard case .inviting = state else {
+                    transport.close()
+                    return
+                }
+                self.approver = approver
+                self.transport = transport
+                fromInvite = true
+                state = .connecting
+                try await transport.send(approver.keyExchange())
+                guard state == .connecting else { return }
+                state = .comparing(sas: approver.sas(), peer: approver.peer(), requestedMode: approver.requestedMode())
+                startReceiving(approver: approver, transport: transport)
+                return
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            fail(PairingFailure(error))
+        }
+    }
+
+    private enum InviteEvent: Sendable {
+        case hello(id: Int, Data)
+        case failed(id: Int)
+        case renew
+    }
+
+    /// One invite on screen and its service published. Every connection must send a Hello (16 KiB at
+    /// most) within `inviteHelloTimeout`; the first one the core accepts wins, the others are closed
+    /// and the service is withdrawn. Nil: show a new invite (time is up and no connection is checked).
+    private func publish(
+        _ invite: PairingInvite, listener: any PairingListener
+    ) async throws -> (PairingApprover, any PairingTransport)? {
+        let expiresAt = Date(timeIntervalSince1970: TimeInterval(invite.expiresAt()))
+        state = .inviting(qrText: invite.qrText(), expiresAt: expiresAt)
+        let connections = listener.connections(serviceName: invite.serviceName())
+        let (events, sink) = AsyncStream<InviteEvent>.makeStream()
+        let open = Mutex<[Int: any PairingTransport]>([:])
+        let closeAll: @Sendable () -> Void = {
+            for t in open.withLock({ o in defer { o = [:] }; return Array(o.values) }) { t.close() }
+        }
+        let timeout = Self.inviteHelloTimeout
+        let accepting = Task {
+            var next = 0
+            do {
+                for try await transport in connections {
+                    let id = next
+                    next += 1
+                    let admitted = open.withLock { o -> Bool in
+                        guard o.count < Self.maxPendingInviteConnections else { return false }
+                        o[id] = transport
+                        return true
+                    }
+                    guard admitted else {
+                        transport.close()
+                        continue
+                    }
+                    Task {
+                        do {
+                            let hello = try await Self.receiveHello(transport, within: timeout)
+                            sink.yield(.hello(id: id, hello))
+                        } catch {
+                            sink.yield(.failed(id: id))
+                        }
+                    }
+                }
+            } catch {
+                // The listener stopped: the renewal publishes again.
+            }
+        }
+        let renewIn = max(.zero, Duration.seconds(expiresAt.timeIntervalSince(now())) - Self.inviteRenewalMargin)
+        let renewal = Task {
+            try? await Task.sleep(for: renewIn)
+            sink.yield(.renew)
+        }
+        defer {
+            accepting.cancel()
+            renewal.cancel()
+            sink.finish()
+            closeAll()
+        }
+        var renewDue = false
+        for await event in events {
+            guard case .inviting = state else { throw CancellationError() }
+            switch event {
+            case .renew:
+                if open.withLock({ $0.isEmpty }) { return nil }
+                renewDue = true
+            case .failed(let id):
+                open.withLock { $0.removeValue(forKey: id) }?.close()
+                if renewDue, open.withLock({ $0.isEmpty }) { return nil }
+            case .hello(let id, let hello):
+                guard let transport = open.withLock({ $0.removeValue(forKey: id) }) else { continue }
+                let nowUnix = Int64(now().timeIntervalSince1970)
+                do {
+                    let approver = try await CoreThread.run { try invite.accept(hello: hello, now: nowUnix) }
+                    try Task.checkCancellation()
+                    return (approver, transport)
+                } catch is CancellationError {
+                    transport.close()
+                    throw CancellationError()
+                } catch {
+                    // Not the device that scanned this code: the code stays for the right one.
+                    Self.log.notice("pairing invite connection refused")
+                    transport.close()
+                    if renewDue, open.withLock({ $0.isEmpty }) { return nil }
+                }
+            }
+        }
+        throw CancellationError()
+    }
+
+    /// The first frame of a connection to an invite, within `deadline`. The caller closes on error.
+    nonisolated private static func receiveHello(_ transport: any PairingTransport, within deadline: Duration) async throws -> Data {
+        try await withThrowingTaskGroup(of: Data?.self) { group in
+            group.addTask { try await transport.receive(maxBytes: PairingFrame.maxHandshakeBytes) }
+            group.addTask {
+                try await Task.sleep(for: deadline)
+                return nil
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next(), let hello = first else {
+                throw PairingTransportError.closed
+            }
+            return hello
+        }
+    }
+
     private var isComparing: Bool {
         if case .comparing = state { true } else { false }
     }
@@ -301,7 +488,7 @@ public final class PairingApproverFlow {
             if case .publicRunning(_, let expires) = state { state = .publicRunning(journal: journal, expiresAt: expires) }
         case .end:
             if case .publicRunning = state { finish() } else { peerGone(.cancelledByPeer) }
-        case .fullGrant, .publicGrant:
+        case .fullGrant, .publicGrant, .profile:
             // Never sent to an approver.
             peerGone(.refused)
         }
@@ -342,6 +529,7 @@ public final class PairingApproverFlow {
 
     private func finish() {
         if state == .done, transport == nil { return }
+        inviteRun?.cancel()
         receiver?.cancel()
         ticker?.cancel()
         transport?.close()
@@ -352,6 +540,7 @@ public final class PairingApproverFlow {
     }
 
     private func fail(_ failure: PairingFailure) {
+        inviteRun?.cancel()
         receiver?.cancel()
         ticker?.cancel()
         transport?.close()
