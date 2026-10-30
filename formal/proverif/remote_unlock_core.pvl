@@ -1,0 +1,327 @@
+(* OnePass formal model: remote unlock from the iPhone (agent-ready spec
+   sections 5.1, 6 and 9), shared by remote_unlock.pv and its broken
+   variant remote_unlock_sig_broken.pv (loaded after common.pvl with the
+   "formal-lib: remote_unlock_core.pvl" directive).
+
+   Sources: core/onepass-core/src/remote.rs (seal_request, open_request,
+   seal_response, open_response, open_unlock, PendingRequests),
+   core/onepass-core/src/remote_unlock.rs (enroll, open),
+   core/onepass-ffi/src/remote.rs (Session::remote_unlock_enroll,
+   accept_enrollment, seal_remote_response, seal_remote_notice,
+   RemoteUnlocker::begin_at and finish_at), spec
+   docs/superpowers/specs/2026-10-28-agent-ready-design.md.
+
+   Protocol:
+   - Enrollment (spec 6.1): the Mac, in a full session, holds the AUK. It
+     draws K_r, computes C = seal(K_r, RemoteUnlock, blob id =
+     H(domain || mac || phone), AUK) and keeps C. K_r goes to the phone in
+     the sealed body of a Pair request signed by the Mac. The phone keeps
+     K_r after Face ID (accept_enrollment).
+   - Unlock (spec 6.2): the locked Mac draws a fresh hybrid KEM key pair
+     (unlock_eph) and a fresh request_id, and sends an ApproveAndUnlock
+     request signed by the Mac, its body (with unlock_eph_pub) sealed to
+     the phone. The phone answers with a signed response carrying the
+     decision and K_r sealed to unlock_eph_pub. The Mac checks the
+     signature of the listed phone, the pending request_id, the decision,
+     opens K_r with the ephemeral key, opens C with K_r and opens an
+     agents-only session.
+
+   Attacker (spec 9, A5): CloudKit is the public channel c. Every request,
+   response and notice goes over c; the attacker reads, drops, replays,
+   reorders and forges. C is published too (A7: a stolen Mac disk or
+   keychain gives C, which alone opens nothing).
+
+   Primitives: ideal signatures and ideal hybrid KEM from common.pvl, as
+   in the other models. Messages:
+   - wire envelope postcard { message, signature }: the pair
+     (message, sign_dom(sk, dom_remote_msg, message));
+   - message = version || type || postcard(body): an injective tuple headed
+     by t_req or t_resp (TYPE_REQUEST, TYPE_RESPONSE), the version byte is
+     a constant and not modeled;
+   - sealed request body = KEM envelope || blob: the pair (envelope, blob),
+     envelope = wrap_key_labeled(phone kem_pub, fresh key,
+     "onepass/remote/request/v1", request_id || from || to), blob = AEAD
+     of the body under that key (BlobKind::Remote, blob id = request_id);
+   - sealed_unlock = wrap_key_labeled(unlock_eph_pub, K_r,
+     "onepass/remote/unlock/v1", request_id || phone || mac);
+   - RequestBody: data constructors per kind, which is what
+     check_body_shape enforces (unlock_eph_pub present exactly for the
+     unlock kinds, transfer_key exactly for Pair). Client, action, detail
+     lines and targets are one public value; the confirm code is public.
+
+   Abstractions (each one only removes refusals, or gives the attacker
+   more, unless said otherwise):
+   - clocks and expiry: created_at, expires_at (60 s), the phone's 120 s
+     skew and the Mac's expiry check in open_response are not modeled;
+     neither are the unlock throttle (1 request per 10 min, 3 refusals
+     block 1 h) nor the agents-only window length. They only refuse.
+   - the approver list: one Mac and one phone whose public keys every
+     process takes as parameters (the verified, signed list of spec 4).
+     The device list and approver list seqs (check_peer_seqs) and
+     revocation are not modeled; a retired entry only refuses more.
+   - the phone's ReplayGuard is not modeled: the phone answers a replayed
+     request again (stronger attacker). Injectivity does not rest on it:
+     it rests on the Mac's one-use pending request below.
+   - PendingRequests one use (RemoteUnlocker::finish_at: waiting is taken
+     out of its slot, then open_response takes the request_id): one
+     MacUnlock instance is one begin_at and accepts at most one answer,
+     then ends. No table or cell is needed: the request_id is fresh per
+     instance and the one-use rule is the shape of the process. In the
+     code, a refused answer (forged, misdirected) puts the wait back and
+     the Mac reads the next one; here the instance stops on a refused
+     answer. A refused answer emits nothing and changes no state, so the
+     attacker loses nothing (it may send the accepted message first), the
+     same argument as the failure branches of manifest.pv.
+   - Face ID and the keychain classes (.biometryCurrentSet): the phone is
+     honest and approves; a stolen phone (A6) is not modeled. Touch ID at
+     enrollment is not modeled either.
+   - the phone's decision: each PhoneAnswer instance is the user's choice,
+     Once or Grant5m (an approval releases K_r) or Denied (no K_r).
+   - Repository::unlock_with_auk is the opening of C: in the model C only
+     ever holds the account's AUK (the stale-AUK case of a password
+     changed elsewhere is a refusal, RemoteUnlockStale).
+   - the Mac's own Approve flow and the handling of Lock / ForgetUnlock
+     notices on the Mac are not modeled (they open no session); the
+     phone's signed notices are on c, so the attacker can try them where
+     a response is expected (type confusion).
+   - one K_r and one C per enrollment, any number of enrollments; the
+     Mac picks any stored C for the phone (in the code it holds one). *)
+
+(* ------------------------------------------------------------------ *)
+(* Constants named after the code                                      *)
+(* ------------------------------------------------------------------ *)
+
+(* remote.rs: SIGN_DOMAIN, REQUEST_LABEL, UNLOCK_LABEL. *)
+const dom_remote_msg: bitstring.
+const lbl_remote_request: bitstring.
+const lbl_remote_unlock: bitstring.
+(* remote.rs: TYPE_REQUEST, TYPE_RESPONSE (second byte of the message). *)
+const t_req: bitstring.
+const t_resp: bitstring.
+(* aead.rs: BlobKind::Remote, BlobKind::RemoteUnlock. *)
+const kind_remote: bitstring.
+const kind_remote_unlock: bitstring.
+(* remote_unlock.rs: BLOB_ID_DOMAIN. *)
+const lbl_ru_blob_id: bitstring.
+
+(* remote.rs: RemoteKind (the kinds this model sends). *)
+const kind_pair: bitstring.
+const kind_approve_unlock: bitstring.
+const kind_lock: bitstring.
+
+(* remote.rs: RemoteDecision. *)
+const dec_denied: bitstring.
+const dec_once: bitstring.
+const dec_grant5m: bitstring.
+
+(* RemoteResponse.sealed_unlock = None. *)
+const no_unlock: bitstring.
+
+(* The public part of a request body (client, action, details, targets,
+   confirm code), one value per kind. *)
+const detail_unlock: bitstring.
+const detail_pair: bitstring.
+const detail_notice: bitstring.
+
+(* Device ids, public (the clear "to" field of the CloudKit record). *)
+const mac_id: bitstring.
+const phone_id: bitstring.
+
+(* Which variant runs: the Mac checks the phone's signature on the
+   response (sig_checked), or not (sig_skipped, the broken variant). *)
+const sig_checked: bitstring.
+const sig_skipped: bitstring.
+
+(* The account's AUK. *)
+free auk: key [private].
+
+(* ------------------------------------------------------------------ *)
+(* Message terms                                                       *)
+(* ------------------------------------------------------------------ *)
+
+(* RequestBody, one constructor per shape check_body_shape accepts. *)
+fun body_unlock(bitstring, mlkem_pk, x25519_pk): bitstring [data].
+fun body_pair(bitstring, key): bitstring [data].
+fun body_notice(bitstring): bitstring [data].
+
+(* remote.rs: kem_context, request_id || from || to. *)
+letfun remote_ctx(rid: bitstring, from: bitstring, to: bitstring) =
+  (rid, from, to).
+
+(* remote.rs: body_aad, blob id = request_id, no vault. *)
+letfun remote_body_aad(rid: bitstring) = blob_aad(kind_remote, rid, no_vault).
+
+(* remote_unlock.rs: context, blob id = SHA-256(BLOB_ID_DOMAIN || mac ||
+   phone) truncated, no vault. *)
+letfun ru_aad(mac: bitstring, phone: bitstring) =
+  blob_aad(kind_remote_unlock, h((lbl_ru_blob_id, mac, phone)), no_vault).
+
+(* remote.rs: seal_request, the RemoteRequest message before signing
+   (sealed body = KEM envelope || blob). rm, rx: KEM coins, kb: the random
+   body key. *)
+letfun request_msg(pkm: mlkem_pk, pkx: x25519_pk, rm: seed, rx: seed,
+                   kb: key, rid: bitstring, from: bitstring, to: bitstring,
+                   kind: bitstring, body: bitstring) =
+  let env = core_wrap_labeled(pkm, pkx, rm, rx, lbl_remote_request,
+                              remote_ctx(rid, from, to), kb) in
+  (t_req, rid, from, to, kind,
+   (env, aead_seal(kb, remote_body_aad(rid), body))).
+
+(* remote.rs: open_request, the sealed body opened with the recipient's
+   KEM secret key. *)
+letfun open_body(skm: seed, skx: seed, rid: bitstring, from: bitstring,
+                 to: bitstring, sealed: bitstring) =
+  let (env: bitstring, blob: bitstring) = sealed in
+  let kb = core_unwrap_labeled(skm, skx, lbl_remote_request,
+                               remote_ctx(rid, from, to), env) in
+  aead_open(kb, remote_body_aad(rid), blob).
+
+(* remote.rs: sign_message, the wire envelope. *)
+letfun signed(sk: skey, m: bitstring) = (m, sign_dom(sk, dom_remote_msg, m)).
+
+(* ------------------------------------------------------------------ *)
+(* Events                                                              *)
+(* ------------------------------------------------------------------ *)
+
+(* The phone kept K_r for this Mac (accept_enrollment, after Face ID). *)
+event PhoneEnrolled(bitstring, key).
+(* The phone answered request rid of mac with decision (mac, phone, rid,
+   decision), about to send the signed response. *)
+event PhoneAnswered(bitstring, bitstring, bitstring, bitstring).
+(* The Mac opened an agents-only session for its request rid
+   (Session::new_agent_only in finish_at): (mac, phone, rid, decision). *)
+event AgentOnly(bitstring, bitstring, bitstring, bitstring).
+
+(* ------------------------------------------------------------------ *)
+(* Stores                                                              *)
+(* ------------------------------------------------------------------ *)
+
+(* The Mac's keychain: C per phone. The phone's keychain: K_r per Mac. *)
+table mac_c(bitstring, bitstring).
+table phone_kr(bitstring, key).
+
+(* ------------------------------------------------------------------ *)
+(* Mac                                                                 *)
+(* ------------------------------------------------------------------ *)
+
+(* Session::remote_unlock_enroll: full session, AUK in hand.
+   remote_unlock::enroll draws K_r and seals the AUK; the Pair request
+   carries K_r (transfer_key) sealed to the phone. C is published (A7). *)
+let MacEnroll(sk_mac: skey, pkm_ph: mlkem_pk, pkx_ph: x25519_pk) =
+  new k_r: key;
+  let cc = aead_seal(k_r, ru_aad(mac_id, phone_id), k2b(auk)) in
+  insert mac_c(phone_id, cc);
+  out(c, cc);
+  new rid: bitstring; new kb: key; new rm: seed; new rx: seed;
+  let m = request_msg(pkm_ph, pkx_ph, rm, rx, kb, rid, mac_id, phone_id,
+                      kind_pair, body_pair(detail_pair, k_r)) in
+  out(c, signed(sk_mac, m)).
+
+(* RemoteUnlocker::finish_at after the signature check: open_response
+   (the rest of it), the decision, open_unlock, remote_unlock::open. *)
+let MacFinish(rid: bitstring, skm_e: seed, skx_e: seed, resp: bitstring) =
+  (* Type, to = this Mac, from = the phone the pending request went to,
+     request_id pending (taken: this instance ends after it). *)
+  let (=t_resp, =rid, =phone_id, =mac_id, dec: bitstring, su: bitstring) =
+    resp in
+  (* finish_at: a refusal opens nothing. *)
+  if dec <> dec_denied then
+  (* open_unlock: K_r with the ephemeral secret key. *)
+  let k_r = core_unwrap_labeled(skm_e, skx_e, lbl_remote_unlock,
+                                remote_ctx(rid, phone_id, mac_id), su) in
+  (* remote_unlock::open: C with K_r, bound to (mac, phone). *)
+  get mac_c(=phone_id, cc) in
+  let k2b(a) = aead_open(k_r, ru_aad(mac_id, phone_id), cc) in
+  (* unlock_with_auk, then Session::new_agent_only. *)
+  event AgentOnly(mac_id, phone_id, rid, dec).
+
+(* RemoteUnlocker::begin_at then finish_at. One instance = one request
+   and at most one accepted answer (see PendingRequests in the header).
+   mode = sig_skipped is the broken variant: verify_sender is removed
+   from open_response, the response is taken as is. *)
+let MacUnlock(mode: bitstring, sk_mac: skey, vk_ph: pkey, pkm_ph: mlkem_pk,
+              pkx_ph: x25519_pk) =
+  (* begin_at: fresh ephemeral KEM key and request id. *)
+  new rid: bitstring; new skm_e: seed; new skx_e: seed;
+  new kb: key; new rm: seed; new rx: seed;
+  let m = request_msg(pkm_ph, pkx_ph, rm, rx, kb, rid, mac_id, phone_id,
+                      kind_approve_unlock,
+                      body_unlock(detail_unlock, kem_pk_m(skm_e),
+                                  kem_pk_x(skx_e))) in
+  out(c, signed(sk_mac, m));
+  (* finish_at -> open_response: verify_sender (the listed phone). *)
+  in(c, (resp: bitstring, sig: bitstring));
+  if mode = sig_skipped then
+    MacFinish(rid, skm_e, skx_e, resp)
+  else if verify_dom(vk_ph, dom_remote_msg, resp, sig) = true then
+    MacFinish(rid, skm_e, skx_e, resp).
+
+(* ------------------------------------------------------------------ *)
+(* Phone                                                               *)
+(* ------------------------------------------------------------------ *)
+
+(* open_request of a Pair request, then accept_enrollment after Face ID:
+   K_r goes to the keychain. *)
+let PhoneEnroll(vk_mac: pkey, skm_ph: seed, skx_ph: seed) =
+  in(c, (m: bitstring, sig: bitstring));
+  if verify_dom(vk_mac, dom_remote_msg, m, sig) = true then
+  let (=t_req, rid: bitstring, =mac_id, =phone_id, =kind_pair,
+       sealed: bitstring) = m in
+  let body_pair(d: bitstring, k_r: key) =
+    open_body(skm_ph, skx_ph, rid, mac_id, phone_id, sealed) in
+  event PhoneEnrolled(mac_id, k_r);
+  insert phone_kr(mac_id, k_r).
+
+(* open_request of an ApproveAndUnlock request, then seal_remote_response
+   with the user's decision dec. An approval releases K_r (Face ID) sealed
+   to unlock_eph_pub; a refusal carries no key. *)
+let PhoneAnswer(dec: bitstring, sk_ph: skey, vk_mac: pkey, skm_ph: seed,
+                skx_ph: seed) =
+  in(c, (m: bitstring, sig: bitstring));
+  if verify_dom(vk_mac, dom_remote_msg, m, sig) = true then
+  let (=t_req, rid: bitstring, =mac_id, =phone_id, =kind_approve_unlock,
+       sealed: bitstring) = m in
+  let body_unlock(d: bitstring, pkm_e: mlkem_pk, pkx_e: x25519_pk) =
+    open_body(skm_ph, skx_ph, rid, mac_id, phone_id, sealed) in
+  if dec = dec_denied then (
+    event PhoneAnswered(mac_id, phone_id, rid, dec);
+    out(c, signed(sk_ph, (t_resp, rid, phone_id, mac_id, dec, no_unlock))))
+  else (
+    get phone_kr(=mac_id, k_r) in
+    new rm: seed; new rx: seed;
+    let su = core_wrap_labeled(pkm_e, pkx_e, rm, rx, lbl_remote_unlock,
+                               remote_ctx(rid, phone_id, mac_id), k_r) in
+    event PhoneAnswered(mac_id, phone_id, rid, dec);
+    out(c, signed(sk_ph, (t_resp, rid, phone_id, mac_id, dec, su)))).
+
+(* seal_remote_notice: a Lock notice, signed by the phone with the same
+   key and domain, sealed to the Mac (type request). *)
+let PhoneNotice(sk_ph: skey, pkm_mac: mlkem_pk, pkx_mac: x25519_pk) =
+  new rid: bitstring; new kb: key; new rm: seed; new rx: seed;
+  out(c, signed(sk_ph, request_msg(pkm_mac, pkx_mac, rm, rx, kb, rid,
+                                   phone_id, mac_id, kind_lock,
+                                   body_notice(detail_notice)))).
+
+(* ------------------------------------------------------------------ *)
+(* Everything, any number of times                                     *)
+(* ------------------------------------------------------------------ *)
+
+let RemoteUnlock(mode: bitstring) =
+  new sk_mac: skey; new sk_ph: skey;
+  new skm_mac: seed; new skx_mac: seed;
+  new skm_ph: seed; new skx_ph: seed;
+  let vk_mac = pk(sk_mac) in
+  let vk_ph = pk(sk_ph) in
+  let pkm_mac = kem_pk_m(skm_mac) in
+  let pkx_mac = kem_pk_x(skx_mac) in
+  let pkm_ph = kem_pk_m(skm_ph) in
+  let pkx_ph = kem_pk_x(skx_ph) in
+  (* The approver list is public. *)
+  out(c, (vk_mac, vk_ph, pkm_mac, pkx_mac, pkm_ph, pkx_ph));
+  ((! MacEnroll(sk_mac, pkm_ph, pkx_ph)) |
+   (! MacUnlock(mode, sk_mac, vk_ph, pkm_ph, pkx_ph)) |
+   (! PhoneEnroll(vk_mac, skm_ph, skx_ph)) |
+   (! PhoneAnswer(dec_once, sk_ph, vk_mac, skm_ph, skx_ph)) |
+   (! PhoneAnswer(dec_grant5m, sk_ph, vk_mac, skm_ph, skx_ph)) |
+   (! PhoneAnswer(dec_denied, sk_ph, vk_mac, skm_ph, skx_ph)) |
+   (! PhoneNotice(sk_ph, pkm_mac, pkx_mac))).

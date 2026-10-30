@@ -5,6 +5,7 @@ Modèles ProVerif 2.05 des constructions cryptographiques de OnePass. La documen
 - `proverif/common.pvl` : bibliothèque commune (types, AEAD avec engagement, HKDF, signatures, KEM hybride, Argon2).
 - `proverif/*.pv` : un modèle par construction ; `sanity.pv` teste la bibliothèque et le harnais.
 - `proverif/account_core.pvl` : processus du compte (création, déverrouillage, coffres, items), partagés par `account.pv` et ses deux variantes à KEM cassé. Un modèle charge une bibliothèque supplémentaire de `proverif/` après `common.pvl` par une ligne exacte `(* formal-lib: nom.pvl *)`.
+- `proverif/remote_unlock_core.pvl` : déverrouillage à distance depuis l'iPhone (enrôlement, demande signée, réponse signée avec `K_r` scellé pour la clé éphémère, session `AgentOnly`), partagé par `remote_unlock.pv` (secret de l'AUK, authenticité, injectivité) et `remote_unlock_sig_broken.pv` (signature des réponses retirée : l'authenticité tombe). CloudKit est le réseau de l'attaquant ; horloges, expiration et limites de fréquence ne sont pas modélisées.
 - `expected.txt` : résultat attendu de chaque requête (`fichier.pv | requête telle qu'imprimée | true|false`).
 - `run.sh` : lance les modèles (300 s maximum par fichier), compare à `expected.txt`, écrit `docs/security/formal/results.md`.
 
