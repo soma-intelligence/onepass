@@ -447,3 +447,120 @@ fn unknown_client_and_missing_flags_are_usage_errors() {
     let o = Command::new(BIN).arg("install").output().unwrap();
     assert_eq!(o.status.code(), Some(64));
 }
+
+#[test]
+fn toml_comment_above_onepass_survives_force_and_uninstall() {
+    let c = &CLIENTS[2];
+    let h = home();
+    let original = "[mcp_servers.a]\ncommand = \"a\"\n\n# OnePass, set up by hand\n# keep me\n[mcp_servers.onepass] # header note\ncommand = \"/elsewhere\"\nargs = [\"--socket\", \"/s\"]\n\n[mcp_servers.b]\ncommand = \"b\"\n";
+    let p = write_file(h.path(), c, original);
+    ok(&run("install", h.path(), c.name, &["--force"]));
+    let after = fs::read_to_string(&p).unwrap();
+    assert!(
+        after.contains(
+            "# OnePass, set up by hand\n# keep me\n[mcp_servers.onepass] # header note\n"
+        ),
+        "{after}"
+    );
+    // Same place: still between a and b.
+    assert!(after.find("mcp_servers.onepass").unwrap() < after.find("mcp_servers.b").unwrap());
+    assert_eq!(entry(&p, c).unwrap().0, relay_path());
+    ok(&run("uninstall", h.path(), c.name, &[]));
+    let after = fs::read_to_string(&p).unwrap();
+    assert!(
+        after.contains("# OnePass, set up by hand\n# keep me\n"),
+        "{after}"
+    );
+    assert!(
+        after.contains("# keep me\n\n[mcp_servers.b]")
+            || after.contains("# keep me\n[mcp_servers.b]"),
+        "{after}"
+    );
+    assert!(entry(&p, c).is_none());
+
+    // The table is the last one: the comment stays at the end of the file.
+    let last = "[mcp_servers.a]\ncommand = \"a\"\n\n# only mine\n[mcp_servers.onepass]\ncommand = \"/elsewhere\"\nargs = [\"--socket\", \"/s\"]\n";
+    let p = write_file(h.path(), c, last);
+    ok(&run("uninstall", h.path(), c.name, &[]));
+    let after = fs::read_to_string(&p).unwrap();
+    assert!(after.contains("# only mine"), "{after}");
+    assert!(entry(&p, c).is_none());
+}
+
+#[test]
+fn duplicate_mcp_servers_is_refused() {
+    for c in CLIENTS.iter().filter(|c| c.format == Format::Json) {
+        let h = home();
+        let dup = "{\"mcpServers\":{\"a\":{}},\"mcpServers\":{\"b\":{}}}";
+        let p = write_file(h.path(), c, dup);
+        for sub in ["install", "uninstall"] {
+            let o = run(sub, h.path(), c.name, &["--force"]);
+            assert!(!o.status.success(), "{} {sub}", c.name);
+            assert!(String::from_utf8_lossy(&o.stderr).contains("more than once"));
+            assert_eq!(fs::read_to_string(&p).unwrap(), dup);
+        }
+    }
+}
+
+#[test]
+fn json_style_one_line_crlf_and_only_server() {
+    let c = &CLIENTS[3];
+    // One line with a trailing newline stays one line.
+    let h = home();
+    let one = "{\"theme\":\"dark\",\"mcpServers\":{\"other\":{\"command\":\"o\"}}}\n";
+    let p = write_file(h.path(), c, one);
+    ok(&run("install", h.path(), c.name, &[]));
+    let after = fs::read_to_string(&p).unwrap();
+    assert_eq!(after.trim_end().lines().count(), 1, "{after}");
+    assert!(after.ends_with("}\n") && entry(&p, c).is_some());
+    ok(&run("uninstall", h.path(), c.name, &[]));
+    assert_eq!(fs::read_to_string(&p).unwrap(), one);
+
+    // CRLF files get CRLF, and come back exactly.
+    let h = home();
+    let crlf = "{\r\n  \"mcpServers\": {\r\n    \"other\": {\r\n      \"command\": \"o\"\r\n    }\r\n  }\r\n}\r\n";
+    let p = write_file(h.path(), c, crlf);
+    ok(&run("install", h.path(), c.name, &[]));
+    let after = fs::read_to_string(&p).unwrap();
+    assert_eq!(
+        after.matches('\n').count(),
+        after.matches("\r\n").count(),
+        "{after:?}"
+    );
+    assert!(entry(&p, c).is_some());
+    ok(&run("uninstall", h.path(), c.name, &[]));
+    assert_eq!(fs::read_to_string(&p).unwrap(), crlf);
+
+    // Removing the only server leaves {} and nothing else behind.
+    let h = home();
+    let p = write_file(h.path(), c, "{\n  \"mcpServers\": {}\n}\n");
+    ok(&run("install", h.path(), c.name, &[]));
+    ok(&run("uninstall", h.path(), c.name, &[]));
+    assert_eq!(
+        fs::read_to_string(&p).unwrap(),
+        "{\n  \"mcpServers\": {}\n}\n"
+    );
+}
+
+#[test]
+fn claude_code_entry_keys_are_ordered_and_message_says_quit() {
+    let c = &CLIENTS[0];
+    let h = home();
+    let o = run("install", h.path(), c.name, &[]);
+    ok(&o);
+    let text = fs::read_to_string(file_of(h.path(), c)).unwrap();
+    let at = |k: &str| text.find(k).unwrap_or_else(|| panic!("{k} in {text}"));
+    assert!(
+        at("\"type\"") < at("\"command\"") && at("\"command\"") < at("\"args\""),
+        "{text}"
+    );
+    assert!(String::from_utf8_lossy(&o.stdout).contains("Quit Claude Code first"));
+    // A stale temporary file cannot block the write.
+    fs::write(h.path().join(".claude.json.onepass-tmp-0"), "x").unwrap();
+    ok(&run(
+        "install",
+        h.path(),
+        c.name,
+        &["--force", "--socket", "/tmp/x.sock"],
+    ));
+}
