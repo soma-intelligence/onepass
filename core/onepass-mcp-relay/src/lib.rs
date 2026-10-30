@@ -9,4 +9,5 @@
 //! [`wire`] holds the messages of the socket, shared with the app side.
 #![deny(unsafe_code)]
 
+pub mod install;
 pub mod wire;

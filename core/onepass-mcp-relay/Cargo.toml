@@ -24,6 +24,8 @@ onepass-peer = { path = "../onepass-peer" }
 serde.workspace = true
 serde_json.workspace = true
 zeroize.workspace = true
+# Edits the Codex config.toml keeping its comments and order (install).
+toml_edit = "0.25"
 
 [dev-dependencies]
 tempfile = "3"
