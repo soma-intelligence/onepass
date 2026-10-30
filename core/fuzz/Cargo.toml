@@ -158,3 +158,10 @@ path = "fuzz_targets/plan_fill.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "device_public"
+path = "fuzz_targets/device_public.rs"
+test = false
+doc = false
+bench = false

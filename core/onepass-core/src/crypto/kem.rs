@@ -23,7 +23,7 @@ use super::aead::{Aad, BlobKind, HEADER_LEN, LEN_PREFIX, TAG_LEN, open, padded_l
 use super::key::{SymmetricKey, hkdf32};
 use crate::{Error, Id, Result};
 
-const MLKEM_PUBLIC_LEN: usize = 1568;
+pub(crate) const MLKEM_PUBLIC_LEN: usize = 1568;
 const MLKEM_SECRET_LEN: usize = 3168;
 const MLKEM_CT_LEN: usize = 1568;
 const X25519_LEN: usize = 32;
@@ -301,6 +301,44 @@ fn unwrap_with_info(
     info: &[&[u8]],
     aad_context: &[u8],
 ) -> Result<SymmetricKey> {
+    let x = secret.x25519_key()?;
+    unwrap_split(&x, envelope, info, aad_context, |ct| {
+        mlkem_decapsulate(&secret.mlkem, ct)
+    })
+}
+
+/// FIPS 203 decapsulation with a raw 3168-byte decapsulation key.
+pub(crate) fn mlkem_decapsulate(dk: &[u8], ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
+    let dk = DecapsulationKey::new(&ML_KEM_1024, dk).map_err(|_| Error::Crypto)?;
+    let ss = dk
+        .decapsulate(Ciphertext::from(ciphertext))
+        .map_err(|_| Error::Crypto)?;
+    Ok(Zeroizing::new(ss.as_ref().to_vec()))
+}
+
+/// Unwrap a `wrap_key_labeled` envelope when the ML-KEM half is somewhere
+/// else (a device's Secure Enclave): `decapsulate` receives the ML-KEM
+/// ciphertext and returns its 32-byte shared secret. The X25519 half is
+/// the device's own 32-byte secret.
+pub(crate) fn unwrap_key_labeled_split(
+    x25519_secret: &[u8; 32],
+    envelope: &[u8],
+    label: &[u8],
+    context: &[u8],
+    decapsulate: impl FnOnce(&[u8]) -> Result<Zeroizing<Vec<u8>>>,
+) -> Result<SymmetricKey> {
+    let info = labeled_info(label, context)?;
+    let x = PrivateKey::from_private_key(&X25519, x25519_secret).map_err(|_| Error::Crypto)?;
+    unwrap_split(&x, envelope, &[&info], &info, decapsulate)
+}
+
+fn unwrap_split(
+    x: &PrivateKey,
+    envelope: &[u8],
+    info: &[&[u8]],
+    aad_context: &[u8],
+    decapsulate: impl FnOnce(&[u8]) -> Result<Zeroizing<Vec<u8>>>,
+) -> Result<SymmetricKey> {
     if envelope.len() != envelope_len() {
         return Err(Error::InvalidFormat("kem envelope length"));
     }
@@ -310,16 +348,16 @@ fn unwrap_with_info(
         .try_into()
         .map_err(|_| Error::InvalidFormat("kem envelope"))?;
 
-    let dk = DecapsulationKey::new(&ML_KEM_1024, &secret.mlkem).map_err(|_| Error::Crypto)?;
-    let ss_mlkem = dk
-        .decapsulate(Ciphertext::from(ct))
-        .map_err(|_| Error::Crypto)?;
+    let ss_mlkem = decapsulate(ct)?;
+    // ML-KEM-1024 shared secrets are 32 bytes (FIPS 203).
+    if ss_mlkem.len() != 32 {
+        return Err(Error::Crypto);
+    }
 
-    let x = secret.x25519_key()?;
-    let own_pub = x25519_public(&x)?;
-    let ss_x25519 = x25519_agree(&x, &eph_pub)?;
+    let own_pub = x25519_public(x)?;
+    let ss_x25519 = x25519_agree(x, &eph_pub)?;
 
-    let ss = combine(ss_mlkem.as_ref(), &ss_x25519, ct, &eph_pub, &own_pub, info)?;
+    let ss = combine(&ss_mlkem, &ss_x25519, ct, &eph_pub, &own_pub, info)?;
     let plain = open(&ss, BlobKind::VaultKey, &blob_aad(aad_context), blob)?;
     if plain.len() != 32 {
         return Err(Error::InvalidFormat("wrapped key length"));
@@ -328,6 +366,32 @@ fn unwrap_with_info(
     let mut key = SymmetricKey::zeroed();
     key.bytes_mut().copy_from_slice(&plain);
     Ok(key)
+}
+
+/// Generate a raw ML-KEM-1024 decapsulation key (3168 bytes).
+pub(crate) fn mlkem_generate() -> Result<Zeroizing<Vec<u8>>> {
+    let dk = DecapsulationKey::generate(&ML_KEM_1024).map_err(|_| Error::Crypto)?;
+    let bytes = dk.key_bytes().map_err(|_| Error::Crypto)?;
+    Ok(Zeroizing::new(bytes.as_ref().to_vec()))
+}
+
+/// Input check of a raw decapsulation key (FIPS 203: embedded key matches
+/// its hash, aws-lc parses it). Returns the 1568-byte encapsulation key.
+pub(crate) fn mlkem_check_secret(dk: &[u8]) -> Result<Vec<u8>> {
+    if dk.len() != MLKEM_SECRET_LEN {
+        return Err(Error::InvalidFormat("kem secret length"));
+    }
+    let h = digest::digest(&SHA3_256, &dk[MLKEM_EK_START..MLKEM_EK_END]);
+    verify_slices_are_equal(h.as_ref(), &dk[MLKEM_EK_END..MLKEM_HASH_END])
+        .map_err(|_| Error::InvalidFormat("kem secret"))?;
+    DecapsulationKey::new(&ML_KEM_1024, dk).map_err(|_| Error::InvalidFormat("kem secret"))?;
+    Ok(dk[MLKEM_EK_START..MLKEM_EK_END].to_vec())
+}
+
+/// Public X25519 key of a 32-byte secret.
+pub(crate) fn x25519_public_of(secret: &[u8; 32]) -> Result<[u8; 32]> {
+    let key = PrivateKey::from_private_key(&X25519, secret).map_err(|_| Error::Crypto)?;
+    x25519_public(&key)
 }
 
 #[cfg(test)]
