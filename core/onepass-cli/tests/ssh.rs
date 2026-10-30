@@ -18,6 +18,10 @@ use std::time::{Duration, Instant};
 use assert_cmd::Command;
 use serde_json::Value;
 
+/// The development secret store of every test run (`secret_store.rs`):
+/// a directory standing in for the keychain or the Secret Service.
+const SECRET_STORE: &str = concat!("dir:", env!("CARGO_TARGET_TMPDIR"), "/secret-store");
+
 const PASSWORD: &str = "correct horse battery";
 const PASSPHRASE: &str = "key pass phrase 7";
 
@@ -33,6 +37,7 @@ fn onepass(dir: &Path, home: &Path) -> Command {
     c.env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
         .env("ONEPASS_PASSWORD", PASSWORD)
         .env("ONEPASS_DEV_FAST_KDF", "1")
+        .env("ONEPASS_DEV_SECRET_STORE", SECRET_STORE)
         .env("ONEPASS_DEV_NO_TTY", "1")
         .env_remove("ONEPASS_DEV_SSH_PASSPHRASE")
         .env_remove("SSH_AUTH_SOCK")
@@ -643,6 +648,7 @@ impl AgentProc {
         let child = StdCommand::new(assert_cmd::cargo::cargo_bin("onepass"))
             .env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
             .env("ONEPASS_PASSWORD", PASSWORD)
+            .env("ONEPASS_DEV_SECRET_STORE", SECRET_STORE)
             .env("ONEPASS_DEV_AUTO_APPROVE", "once")
             .env("HOME", e.home.path())
             .env_remove("SSH_AUTH_SOCK")

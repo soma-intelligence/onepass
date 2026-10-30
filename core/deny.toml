@@ -1,10 +1,19 @@
 [advisories]
 version = 2
 yanked = "deny"
-# RUSTSEC-2026-0173: proc-macro-error2 is unmaintained. It is reached only
-# through the libcrux dev-dependencies (hax-lib-macros), not a vulnerability.
+# Kept in step with core/.cargo/audit.toml (cargo audit): same advisories,
+# same reasons, same review dates.
 ignore = [
-    "RUSTSEC-2026-0173",
+    # proc-macro-error2 is unmaintained. Reached only through the libcrux
+    # dev-dependencies (hax-lib-macros), compile time, not shipped code; not a
+    # vulnerability. Review by 2027-01-31.
+    { id = "RUSTSEC-2026-0173", reason = "unmaintained proc macro, libcrux dev-dependencies only; review by 2027-01-31" },
+    # basic-toml is unmaintained. Reached only through askama_derive, a proc
+    # macro of the uniffi bindings generator (onepass-ffi, feature bindgen),
+    # compile time, not shipped code; not a vulnerability. cargo deny does not
+    # see it (feature off in its graph), cargo audit reads the whole lockfile.
+    # Review by 2027-01-31.
+    { id = "RUSTSEC-2026-0374", reason = "unmaintained, uniffi bindgen proc macro only; review by 2027-01-31" },
 ]
 
 [licenses]

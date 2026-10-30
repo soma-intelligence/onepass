@@ -11,6 +11,10 @@ use std::sync::OnceLock;
 
 use assert_cmd::Command;
 
+/// The development secret store of every test run (`secret_store.rs`):
+/// a directory standing in for the keychain or the Secret Service.
+const SECRET_STORE: &str = concat!("dir:", env!("CARGO_TARGET_TMPDIR"), "/secret-store");
+
 const PASSWORD: &str = "correct horse battery";
 
 struct Out {
@@ -24,6 +28,7 @@ fn onepass(dir: &Path) -> Command {
     c.env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
         .env("ONEPASS_PASSWORD", PASSWORD)
         .env("ONEPASS_DEV_FAST_KDF", "1")
+        .env("ONEPASS_DEV_SECRET_STORE", SECRET_STORE)
         .arg("--data-dir")
         .arg(dir);
     c
@@ -279,15 +284,18 @@ fn hidden_vault_bytes_gone_from_sqlite_file() {
 fn last_seen(
     dir: &Path,
 ) -> std::collections::BTreeMap<onepass_core::Id, onepass_core::manifest::SeenManifest> {
+    // Version 3: header, then the state first (the Secret Key location
+    // follows and is not read here).
     #[derive(serde::Deserialize)]
     struct DeviceFile {
-        #[allow(dead_code)]
-        secret_key: String,
         #[serde(with = "onepass_core::format::device_state_bytes")]
         state: onepass_core::repo::DeviceState,
     }
     let bytes = fs::read(dir.join("device.bin")).unwrap();
-    let file: DeviceFile = postcard::from_bytes(&bytes).unwrap();
+    let body = bytes
+        .strip_prefix(b"ODF\x03")
+        .expect("device.bin version 3");
+    let (file, _): (DeviceFile, _) = postcard::take_from_bytes(body).unwrap();
     file.state.last_seen
 }
 
@@ -397,6 +405,7 @@ impl AgentProc {
         let child = std::process::Command::new(assert_cmd::cargo::cargo_bin("onepass"))
             .env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
             .env("ONEPASS_PASSWORD", PASSWORD)
+            .env("ONEPASS_DEV_SECRET_STORE", SECRET_STORE)
             .env("ONEPASS_DEV_AUTO_APPROVE", "once")
             .env("HOME", &home)
             .env_remove("SSH_AUTH_SOCK")

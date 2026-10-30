@@ -1,7 +1,9 @@
 //! `onepass`: development CLI over `onepass-core` (milestone 1).
 //!
-//! Dev mode: the Secret Key sits in clear in `<data-dir>/device.bin`, and
-//! every command that touches the data directory says so on stderr.
+//! Dev mode: every command that touches the data directory says so on
+//! stderr. The Secret Key lives in the secret store of the system (macOS
+//! login keychain, Secret Service on Linux), never in `device.bin` unless
+//! `--insecure-file-secret-key` says so.
 //! Exit codes: 0 success, 1 usage error, 2 wrong password, 3 integrity
 //! error, 4 not found, 5 concurrent write (nothing was saved, retry).
 //! Commands that open the data directory hold its lock (`<data-dir>/lock`)
@@ -11,6 +13,7 @@
 //! So 5 only comes from a writer that bypasses the lock.
 
 mod commands;
+mod secret_store;
 mod session;
 mod signer;
 
@@ -45,6 +48,11 @@ struct Cli {
     /// Print JSON instead of text.
     #[arg(long, global = true)]
     json: bool,
+    /// Keep the Secret Key in clear in <data-dir>/device.bin instead of the
+    /// system secret store (for machines without one). Anyone who reads
+    /// that file then needs only the password.
+    #[arg(long, global = true)]
+    insecure_file_secret_key: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -116,6 +124,8 @@ fn run(cli: Cli) -> Result<(), CliError> {
     let detached = Ctx {
         data_dir: PathBuf::new(),
         json: cli.json,
+        secrets: std::sync::Arc::new(secret_store::NoStore::new("no data directory")),
+        insecure_file_key: false,
     };
     let command = match cli.command {
         Command::Generate(args) => return commands::generate::run(&detached, args),
@@ -130,6 +140,8 @@ fn run(cli: Cli) -> Result<(), CliError> {
             None => default_data_dir()?,
         },
         json: cli.json,
+        secrets: secret_store::system()?,
+        insecure_file_key: cli.insecure_file_secret_key,
     };
     ctx.banner();
     match command {
