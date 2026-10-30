@@ -1,0 +1,25 @@
+(* formal-lib: remote_unlock_core.pvl *)
+(* OnePass formal model: remote unlock from the iPhone (agent-ready spec
+   6), the Mac checks the phone's signature on every response. Processes,
+   events and abstractions in remote_unlock_core.pvl. Any number of
+   enrollments, unlock requests and phone answers (Once, Grant5m, Denied);
+   CloudKit is the attacker's network; C is public. *)
+
+query attacker(auk).
+
+query m: bitstring, p: bitstring, r: bitstring, d: bitstring;
+  (* Authenticity: an agents-only session opened for request r implies
+     that the listed phone answered r, with the same decision. *)
+  event(AgentOnly(m, p, r, d)) ==> event(PhoneAnswered(m, p, r, d));
+  (* Injectivity: one phone answer opens at most one session. *)
+  inj-event(AgentOnly(m, p, r, d)) ==> inj-event(PhoneAnswered(m, p, r, d)).
+
+(* Sanity (expected false): the phone enrolls, the Mac opens an
+   agents-only session for each approving decision. *)
+query m: bitstring, p: bitstring, r: bitstring, k: key;
+  event(PhoneEnrolled(m, k));
+  event(AgentOnly(m, p, r, dec_once));
+  event(AgentOnly(m, p, r, dec_grant5m)).
+
+process
+  RemoteUnlock(sig_checked)

@@ -1,0 +1,27 @@
+(* formal-lib: remote_unlock_core.pvl *)
+(* OnePass formal model: the remote unlock model of remote_unlock.pv
+   (processes in remote_unlock_core.pvl) with the phone's signature on
+   responses removed: the Mac takes any well-formed response for its
+   pending request (verify_sender dropped from open_response).
+
+   Expected: authenticity (same decision) is false. The attacker takes the
+   phone's genuine answer, keeps sealed_unlock and changes the decision
+   (Once into Grant5m): sealed_unlock binds request_id, phone and Mac but
+   not the decision, only the signature does. The AUK stays secret and
+   agreement on the request alone (any decision) stays true: K_r is still
+   needed to open C, and only the phone holds it. *)
+
+query attacker(auk).
+
+query m: bitstring, p: bitstring, r: bitstring, d: bitstring, d2: bitstring;
+  (* Authenticity, expected false without the signature. *)
+  event(AgentOnly(m, p, r, d)) ==> event(PhoneAnswered(m, p, r, d));
+  (* Agreement on the request only (expected true): what K_r alone gives. *)
+  event(AgentOnly(m, p, r, d)) ==> event(PhoneAnswered(m, p, r, d2)).
+
+(* Sanity (expected false): an agents-only session opens. *)
+query m: bitstring, p: bitstring, r: bitstring;
+  event(AgentOnly(m, p, r, dec_once)).
+
+process
+  RemoteUnlock(sig_skipped)
