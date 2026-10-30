@@ -78,7 +78,7 @@ struct AgentsSettings: View {
                     mac.unlockEnrolled ? Text("Activé") : Text("Désactivé")
                 }
                 if let end = mac.windowEndsAt {
-                    LabeledContent("Fenêtre agents") {
+                    LabeledContent("Fenêtre agents demandée") {
                         Text("jusqu'à \(end.formatted(date: .omitted, time: .shortened))")
                     }
                 }

@@ -97,21 +97,32 @@ public actor CloudKitRemoteChannel: RemoteChannel {
 
     // MARK: - Private
 
+    /// A record still in the zone this long after it was delivered was opened by nobody (a reader
+    /// deletes what it opens): it is delivered again, for a reader that can open it now (the
+    /// approver list synced meanwhile). The mailbox erases it once expired.
+    static let redeliverAfter: Duration = .seconds(10)
+
     private func poll(device: String, into continuation: AsyncStream<RemoteMessage>.Continuation) async {
-        var seen: Set<String> = []
+        var seen: [String: ContinuousClock.Instant] = [:]
         var logged = false
         // The first read is the backlog; what a later read finds was stored since: live.
         var backlog = true
         while !Task.isCancelled {
             do {
                 let found = try await query(NSPredicate(format: "%K == %@", Field.to, device))
-                for var m in found where seen.insert(m.id).inserted {
-                    m.isLive = !backlog
+                let current = ContinuousClock.now
+                for var m in found {
+                    let first = seen[m.id] == nil
+                    if let at = seen[m.id], current - at < Self.redeliverAfter { continue }
+                    seen[m.id] = current
+                    // A record delivered again is old news, never live.
+                    m.isLive = first && !backlog
                     continuation.yield(m)
                 }
                 backlog = false
-                // Forget what is gone: the set stays the size of the zone.
-                seen.formIntersection(found.map(\.id))
+                // Forget what is gone: the map stays the size of the zone.
+                let present = Set(found.map(\.id))
+                seen = seen.filter { present.contains($0.key) }
             } catch {
                 // Once per stream: a dead network would otherwise log every 2 s.
                 if !logged { Self.log.error("remote messages not read") }
