@@ -295,6 +295,9 @@ final class OnboardingModel {
             }
             return String(localized: "Saisis ton mot de passe maître.")
         case .pairing:
+            if pairing == nil, effectivePairMethod == .type {
+                return String(localized: "Saisis le code affiché sur ton autre appareil.")
+            }
             return String(localized: "Saisis ton mot de passe maître.")
         default:
             return nil
