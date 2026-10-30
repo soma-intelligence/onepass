@@ -93,6 +93,176 @@ fn concurrent_edits_of_same_item_newest_wins() {
 }
 
 #[test]
+fn remote_password_change_wins_and_keeps_local_usage() {
+    use onepass_core::fill_plan::context::FieldRole;
+    use onepass_core::fill_plan::intent::Intent;
+    use onepass_core::model::usage::{SiteUsage, StepKind, form_shape_hash};
+
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let x = &items[0];
+    // B remembers a fill: a usage write, `updated_at` unchanged.
+    let site = SiteUsage {
+        site: "exemple.fr".into(),
+        form_shape_hash: form_shape_hash(&[FieldRole::Username, FieldRole::CurrentPassword]),
+        intent: Intent::Login,
+        step_seq: vec![StepKind::Fill],
+        count: 1,
+        last_at: at(T0 + 5),
+    };
+    let v = b.vault();
+    assert!(
+        b.repo()
+            .record_usage(&v, x.id, site.clone(), at(T0 + 5), false)
+            .unwrap()
+    );
+    // A changes the password, later, and pushes first.
+    let mut changed = x.clone();
+    changed.field_mut("password").unwrap().value = FieldValue::Password("n3w".to_owned().into());
+    changed.updated_at = at(T0 + 10);
+    a.save(&changed);
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    let got = b.items().remove(0);
+    assert_eq!(got.field("password"), changed.field("password"));
+    assert_eq!(got.updated_at, changed.updated_at);
+    assert_eq!(got.usage, vec![site]);
+    assert_eq!(a.items(), b.items());
+}
+
+fn site_usage(site: &str, when: i64) -> onepass_core::model::usage::SiteUsage {
+    use onepass_core::fill_plan::context::FieldRole;
+    use onepass_core::fill_plan::intent::Intent;
+    use onepass_core::model::usage::{SiteUsage, StepKind, form_shape_hash};
+    SiteUsage {
+        site: site.into(),
+        form_shape_hash: form_shape_hash(&[FieldRole::Username, FieldRole::CurrentPassword]),
+        intent: Intent::Login,
+        step_seq: vec![StepKind::Fill],
+        count: 1,
+        last_at: at(when),
+    }
+}
+
+#[test]
+fn forget_survives_concurrent_usage_write() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let x = &items[0];
+    let v = a.vault();
+    assert!(
+        a.repo()
+            .record_usage(&v, x.id, site_usage("x.fr", T0 + 5), at(T0 + 5), false)
+            .unwrap()
+    );
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    assert_eq!(b.items()[0].usage.len(), 1);
+
+    // A forgets x.fr while B, not synced yet, remembers y.fr on the item.
+    assert_eq!(a.repo().forget_site_usage("x.fr").unwrap(), 1);
+    let v = b.vault();
+    assert!(
+        b.repo()
+            .record_usage(&v, x.id, site_usage("y.fr", T0 + 20), at(T0 + 20), false)
+            .unwrap()
+    );
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    for dev in [&mut a, &mut b] {
+        let got = dev.items().remove(0);
+        let sites: Vec<&str> = got.usage.iter().map(|u| u.site.as_str()).collect();
+        assert_eq!(sites, ["y.fr"]);
+        assert_eq!(got.updated_at, x.updated_at);
+    }
+    assert_eq!(a.items(), b.items());
+}
+
+#[test]
+fn usage_only_write_never_beats_a_remote_edit_with_an_older_clock() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let x = &items[0];
+    let v = b.vault();
+    assert!(
+        b.repo()
+            .record_usage(
+                &v,
+                x.id,
+                site_usage("exemple.fr", T0 + 5),
+                at(T0 + 5),
+                false
+            )
+            .unwrap()
+    );
+    // A's clock is behind: its real edit is dated before the ancestor.
+    a.save(&edited(x, "x.a", T0 - 50));
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    let got = b.items().remove(0);
+    assert_eq!(got.subtitle(), "x.a");
+    assert_eq!(got.usage.len(), 1);
+    assert_eq!(a.items(), b.items());
+}
+
+#[test]
+fn local_edit_with_an_older_clock_beats_a_remote_usage_only_write() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let x = &items[0];
+    // A remembers a fill (usage only, `updated_at` unchanged) and pushes.
+    let v = a.vault();
+    assert!(
+        a.repo()
+            .record_usage(
+                &v,
+                x.id,
+                site_usage("exemple.fr", T0 + 5),
+                at(T0 + 5),
+                false
+            )
+            .unwrap()
+    );
+    sync(&mut server, &mut a).unwrap();
+    // B's clock is behind: its real edit is dated before the ancestor.
+    b.save(&edited(x, "x.b", T0 - 50));
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    let got = a.items().remove(0);
+    assert_eq!(got.subtitle(), "x.b");
+    assert_eq!(got.usage.len(), 1);
+    assert_eq!(a.items(), b.items());
+}
+
+#[test]
+fn usage_only_write_never_resurrects_a_remotely_deleted_item() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0), ("y", T0)]);
+    let x = &items[0];
+    a.delete(x.id);
+    sync(&mut server, &mut a).unwrap();
+    // B, not synced yet, remembers a fill on the deleted item.
+    let v = b.vault();
+    assert!(
+        b.repo()
+            .record_usage(&v, x.id, site_usage("x.fr", T0 + 5), at(T0 + 5), false)
+            .unwrap()
+    );
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    assert_eq!(users(&a.items()), vec!["y"]);
+    assert_eq!(a.items(), b.items());
+}
+
+#[test]
 fn same_timestamp_edits_converge() {
     let mut server = Server::default();
     let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);

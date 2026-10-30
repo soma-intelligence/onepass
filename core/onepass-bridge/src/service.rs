@@ -5,11 +5,17 @@
 //! the origin the browser gave it. A reply holding a secret is built in a
 //! `Zeroizing` buffer and journaled without its value.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 
 use onepass_core::Id;
+use onepass_core::fill_plan::compose::PRIORITY;
+use onepass_core::fill_plan::context::{FieldRole, FrameKind, MAX_FIELDS, PageContext};
+use onepass_core::fill_plan::intent::{Intent, intent_of};
+use onepass_core::fill_plan::score::{Candidate, MatchQuality as PlanQuality, Tiebreak, order};
+use onepass_core::fill_plan::{Pool, page_intent, plan};
 use onepass_core::generator::{self, CharsetOptions, PassphraseOptions, Wordlist};
+use onepass_core::model::usage::{SiteUsage, form_shape_hash};
 use onepass_core::model::{
     FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PasswordHistoryEntry, new_item,
     validate,
@@ -20,16 +26,17 @@ use zeroize::Zeroizing;
 
 use crate::api::{
     CredentialStatus, Ctx, ErrorBody, FillField, FillKind, Recipe, RecipeKind, Reply, Request,
-    Response, SecretString, Summary, SummaryKind, VaultEntry,
+    Response, SecretString, Step, Summary, SummaryKind, VaultEntry,
 };
-use crate::audit::{AuditEvent, AuditSink};
+use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
 use crate::policy::{
     card_values, eligible, identity_values, is_provider_account, item_match, login_identifier,
-    login_secrets, provider_url_matches, reveal_value, stored_password, summarize, summary_kind,
-    totp_now,
+    login_secrets, otp_field, plan_candidates, plan_quality, provider_url_matches, reveal_value,
+    stored_password, summarize, summary_kind, to_candidate, totp_now,
 };
 use crate::provider::{ProviderId, from_host};
+use crate::session::UsernameSalt;
 use crate::{AppErrorCode, BridgeError, Result};
 
 /// Secret requests allowed per sliding window (spec 7.5).
@@ -38,6 +45,10 @@ pub const SECRET_LIMIT: usize = 60;
 pub const SECRET_WINDOW: u64 = 60;
 /// Label of the URL of a login saved from the extension.
 const SAVED_URL_LABEL: &str = "site web";
+/// Most steps `note_fill` takes for one fill.
+const MAX_STEPS: usize = 16;
+/// Longest site `forget_site` takes (a DNS name).
+const MAX_SITE_LEN: usize = 253;
 /// Initial capacity of a reply buffer. Replies with a secret are far
 /// smaller, so the buffer never reallocates (which would leave an
 /// unwiped copy behind).
@@ -75,6 +86,21 @@ pub trait VaultAccess {
     fn save(&mut self, vault_id: Id, item: Item) -> Result<()>;
     /// Ask the user to confirm access to an item marked `reprompt`.
     fn approve_reprompt(&mut self, item_id: Id) -> bool;
+    /// Remember a fill of `u.site` by an item (`Repository::record_usage`):
+    /// `true` when the item was rewritten. `force`: another item, in any
+    /// vault, used the site after this one, so the entry is rewritten even
+    /// within the hour.
+    fn record_usage(
+        &mut self,
+        vault_id: Id,
+        item_id: Id,
+        u: SiteUsage,
+        now: OffsetDateTime,
+        force: bool,
+    ) -> Result<bool>;
+    /// Forget `site` in every item (`Repository::forget_site_usage`): how
+    /// many items were rewritten.
+    fn forget_site_usage(&mut self, site: &str) -> Result<usize>;
 }
 
 type OpResult<T> = std::result::Result<T, AppErrorCode>;
@@ -129,13 +155,46 @@ fn rank(q: Option<MatchQuality>) -> u8 {
     }
 }
 
-/// Sorts summaries: best match first, then by title.
-fn sort(items: &mut [Summary]) {
-    items.sort_by(|a, b| {
-        rank(a.match_quality)
-            .cmp(&rank(b.match_quality))
-            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
-    });
+/// Sorts summaries through `fill_plan::order`: best match first, then by
+/// title. No usage and no typed username, so `now` never enters a score.
+fn sort(pairs: Vec<(Summary, Candidate)>) -> Vec<Summary> {
+    let mut by_id: HashMap<Id, VecDeque<Summary>> = HashMap::new();
+    let mut cands = Vec::with_capacity(pairs.len());
+    for (s, c) in pairs {
+        by_id.entry(c.item_id).or_default().push_back(s);
+        cands.push(c);
+    }
+    order(&mut cands, None, 0, Tiebreak::Title);
+    cands
+        .iter()
+        .filter_map(|c| by_id.get_mut(&c.item_id)?.pop_front())
+        .collect()
+}
+
+/// Roles of the page's main form (the first form of the main intent, as
+/// `fill_plan::plan` picks it): its visible fields with a role, in page
+/// order. `note_fill` sends the same list.
+fn main_roles(ctx: &PageContext) -> Option<Vec<FieldRole>> {
+    let intents: Vec<Intent> = ctx.forms.iter().map(intent_of).collect();
+    let main = PRIORITY.into_iter().find(|i| intents.contains(i))?;
+    let (form, _) = ctx.forms.iter().zip(&intents).find(|(_, i)| **i == main)?;
+    Some(
+        form.fields
+            .iter()
+            .filter(|f| f.visible)
+            .filter_map(|f| f.role)
+            .collect(),
+    )
+}
+
+/// Two-letter country of an identity's address, if it has one.
+fn identity_country(item: &Item) -> Option<String> {
+    match item.field("address").map(|f| &f.value) {
+        Some(FieldValue::Address(a)) if !a.country.trim().is_empty() => {
+            Some(a.country.trim().to_ascii_uppercase())
+        }
+        _ => None,
+    }
 }
 
 /// Equality of two secrets in constant time.
@@ -180,6 +239,9 @@ pub struct Service<V: VaultAccess> {
     audit: Box<dyn AuditSink>,
     seen: HashSet<u64>,
     secret_times: VecDeque<u64>,
+    /// Drawn at the first `fill_salt` or `plan_fill`, gone with the
+    /// session.
+    salt: Option<UsernameSalt>,
 }
 
 impl<V: VaultAccess> Service<V> {
@@ -189,6 +251,7 @@ impl<V: VaultAccess> Service<V> {
             audit,
             seen: HashSet::new(),
             secret_times: VecDeque::new(),
+            salt: None,
         }
     }
 
@@ -242,11 +305,20 @@ impl<V: VaultAccess> Service<V> {
     fn record(&mut self, op: &'static str, item_id: Id, origin: Option<&str>, ctx: Ctx, at: u64) {
         self.audit.record(AuditEvent {
             op,
-            item_id: item_id.to_string(),
+            item_id: Some(item_id.to_string()),
             origin: origin.map(str::to_owned),
             ctx,
             at,
+            plan: None,
         });
+    }
+
+    /// The session's username salt, drawn on first use.
+    fn salt(&mut self) -> OpResult<&UsernameSalt> {
+        if self.salt.is_none() {
+            self.salt = Some(UsernameSalt::generate().map_err(app_code)?);
+        }
+        self.salt.as_ref().ok_or(AppErrorCode::Internal)
     }
 
     /// Takes a slot in the secret request window, or `rate_limited`.
@@ -311,6 +383,12 @@ impl<V: VaultAccess> Service<V> {
                 let unlocked = self.vault.unlock().map_err(app_code)?;
                 return Ok(Response::Unlock { locked: !unlocked });
             }
+            // Not a vault value: served locked too.
+            Request::FillSalt { .. } => {
+                return Ok(Response::Salt {
+                    salt: self.salt()?.hex(),
+                });
+            }
             _ => {}
         }
         if self.vault.status().locked {
@@ -331,7 +409,9 @@ impl<V: VaultAccess> Service<V> {
             self.take_secret_slot(now)?;
         }
         match req {
-            Request::Status { .. } | Request::Unlock { .. } => Err(AppErrorCode::Internal),
+            Request::Status { .. } | Request::Unlock { .. } | Request::FillSalt { .. } => {
+                Err(AppErrorCode::Internal)
+            }
             Request::Vaults { .. } => self.vaults(),
             Request::ListForOrigin { origin: o, .. } => self.list_for_origin(o),
             Request::Search { ctx, query, .. } => self.search(*ctx, query),
@@ -440,6 +520,29 @@ impl<V: VaultAccess> Service<V> {
                 account_item_id,
                 ..
             } => self.link_provider(*ctx, site_origin, *provider, account_item_id, now),
+            Request::PlanFill {
+                ctx,
+                origin: o,
+                context,
+                ..
+            } => self.plan_fill(*ctx, o, context, now),
+            Request::NoteFill {
+                ctx,
+                item_id,
+                origin: o,
+                roles,
+                intent,
+                steps,
+                ..
+            } => {
+                let fill = Noted {
+                    roles,
+                    intent: *intent,
+                    steps,
+                };
+                self.note_fill(*ctx, item_id, o, fill, now)
+            }
+            Request::ForgetSite { ctx, site, .. } => self.forget_site(*ctx, site, now),
         }
     }
 
@@ -470,13 +573,14 @@ impl<V: VaultAccess> Service<V> {
                 .and_then(|(_, i)| login_identifier(i))
                 .map(str::to_owned)
         };
-        let mut out: Vec<Summary> = all
+        let pairs = all
             .iter()
             .filter(|(_, i)| eligible(i) && summary_kind(i.item_type).is_some())
-            .filter_map(|(v, i)| pick(i).map(|q| summarize(v, i, q, &email)))
+            .filter_map(|(v, i)| {
+                pick(i).map(|q| (summarize(v, i, q, &email), to_candidate(i, plan_quality(q))))
+            })
             .collect();
-        sort(&mut out);
-        out
+        sort(pairs)
     }
 
     fn list_for_origin(&mut self, o: &str) -> OpResult<Response> {
@@ -830,6 +934,163 @@ impl<V: VaultAccess> Service<V> {
             item_id: id.to_string(),
         })
     }
+
+    /// The plan for a page (spec 4.3). The page context must come from the
+    /// frame of `o`; the pool is what `list_for_origin` lists for logins,
+    /// and every card and identity.
+    fn plan_fill(
+        &mut self,
+        ctx: Ctx,
+        o: &str,
+        context: &PageContext,
+        now: u64,
+    ) -> OpResult<Response> {
+        let page = origin(o)?;
+        if origin(&context.origin)?.origin_string() != page.origin_string() {
+            return Err(AppErrorCode::OriginMismatch);
+        }
+        context.validate().map_err(|_| AppErrorCode::Invalid)?;
+        // A top frame is its own top: anything else is a forged context.
+        if context.frame_kind == FrameKind::Top
+            && Origin::parse(&context.top_origin)
+                .ok()
+                .map(|t| t.origin_string())
+                != Some(page.origin_string())
+        {
+            return Err(AppErrorCode::Invalid);
+        }
+        let site = page.site();
+        let shape = main_roles(context).map(|roles| form_shape_hash(&roles));
+        let all = self.items()?;
+        let usable = || all.iter().map(|(_, i)| i).filter(|i| eligible(i));
+        // A code page is filled from a Login holding a code only, and the
+        // one used here last is found among those (as the system AutoFill
+        // does for a one-time code).
+        let otp = page_intent(context) == Intent::Otp;
+        let logins: Vec<(&Item, PlanQuality)> = usable()
+            .filter(|i| i.item_type == ItemType::Login)
+            .filter(|i| !otp || otp_field(i).is_some())
+            .filter_map(|i| item_match(i, &page).map(|q| (i, plan_quality(Some(q)))))
+            .collect();
+        let of_kind = |k: SummaryKind| -> Vec<(&Item, PlanQuality)> {
+            usable()
+                .filter(|i| summary_kind(i.item_type) == Some(k))
+                .map(|i| (i, plan_quality(None)))
+                .collect()
+        };
+        let (cards, identities) = (of_kind(SummaryKind::Card), of_kind(SummaryKind::Identity));
+        let identity_country = identities
+            .iter()
+            .filter_map(|(i, _)| identity_country(i).map(|c| (i.id, c)))
+            .collect();
+        let salt = self.salt()?.bytes();
+        let pool = Pool {
+            logins: plan_candidates(&logins, &site, shape, salt),
+            cards: plan_candidates(&cards, &site, shape, salt),
+            identities: plan_candidates(&identities, &site, shape, salt),
+            identity_country,
+            default_card: None,
+            now: i64::try_from(now).unwrap_or(i64::MAX),
+        };
+        let fill = plan(context, pool).map_err(|_| AppErrorCode::Invalid)?;
+        self.audit.record(AuditEvent {
+            op: "plan_fill",
+            item_id: None,
+            origin: Some(page.host().to_owned()),
+            ctx,
+            at: now,
+            plan: Some(PlanAudit::from(&fill)),
+        });
+        Ok(Response::Plan { plan: fill.into() })
+    }
+
+    /// Remember that an item filled this site, for the next plans. A login
+    /// must match the origin; a card or an identity has no URL, so the
+    /// origin is only the site key.
+    fn note_fill(
+        &mut self,
+        ctx: Ctx,
+        item_id: &str,
+        o: &str,
+        fill: Noted<'_>,
+        now: u64,
+    ) -> OpResult<Response> {
+        let page = origin(o)?;
+        if fill.roles.len() > MAX_FIELDS || fill.steps.len() > MAX_STEPS {
+            return Err(AppErrorCode::Invalid);
+        }
+        let id = parse_id(item_id)?;
+        let all = self.items()?;
+        let (vault, item) = all
+            .iter()
+            .find(|(_, i)| i.id == id && eligible(i))
+            .ok_or(AppErrorCode::NotFound)?;
+        let kind = match summary_kind(item.item_type) {
+            Some(SummaryKind::Login) if item_match(item, &page).is_none() => {
+                return Err(AppErrorCode::OriginMismatch);
+            }
+            Some(k) => k,
+            None => return Err(AppErrorCode::NotFound),
+        };
+        let site = page.site();
+        // Another eligible item of this kind, in any vault, used the site
+        // after this one: rewrite, or it stays `last_on_site` (spec 6.2).
+        let force = item.used_later_by_another(
+            &site,
+            all.iter()
+                .map(|(_, i)| i)
+                .filter(|i| eligible(i) && summary_kind(i.item_type) == Some(kind)),
+        );
+        let (vault_id, item_id) = (vault.id, item.id);
+        let at = unix(now);
+        let usage = SiteUsage {
+            site,
+            form_shape_hash: form_shape_hash(fill.roles),
+            intent: fill.intent,
+            step_seq: fill.steps.iter().map(|s| (*s).into()).collect(),
+            count: 1,
+            last_at: at,
+        };
+        self.vault
+            .record_usage(vault_id, item_id, usage, at, force)
+            .map_err(app_code)?;
+        self.record("note_fill", item_id, Some(page.host()), ctx, now);
+        Ok(Response::Empty {})
+    }
+
+    /// Forget a site in every item. From the extension window only. `site`
+    /// is a host or an https origin, reduced as `Origin::site` does (IDN to
+    /// punycode, lower case, registrable domain).
+    fn forget_site(&mut self, ctx: Ctx, site: &str, now: u64) -> OpResult<Response> {
+        if ctx != Ctx::Popup {
+            return Err(AppErrorCode::NotAllowed);
+        }
+        let site = match site.trim() {
+            "" => return Err(AppErrorCode::Invalid),
+            s if s.contains("://") => origin(s)?.site(),
+            s => origin(&format!("https://{s}"))?.site(),
+        };
+        if site.len() > MAX_SITE_LEN {
+            return Err(AppErrorCode::Invalid);
+        }
+        let items = self.vault.forget_site_usage(&site).map_err(app_code)?;
+        self.audit.record(AuditEvent {
+            op: "forget_site",
+            item_id: None,
+            origin: Some(site),
+            ctx,
+            at: now,
+            plan: None,
+        });
+        Ok(Response::Forgotten { items })
+    }
+}
+
+/// Input of `note_fill`.
+struct Noted<'a> {
+    roles: &'a [FieldRole],
+    intent: Intent,
+    steps: &'a [Step],
 }
 
 /// Input of `save_login`.

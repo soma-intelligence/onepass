@@ -5,10 +5,9 @@ import Foundation
 /// suggestions, passkey sheet). Only metadata: host, user name, record id, passkey credential id and
 /// user handle (ruling A8). Never a password, a code or a key.
 public enum AutoFillIdentityBuilder {
-    /// Rank of a favorite item: the system shows a higher rank first for the same service.
-    public static let favoriteRank = 1
-
-    /// Service identifiers are domains (`.domain`); a favorite gets `favoriteRank`.
+    /// Service identifiers are domains (`.domain`). The rank is the core's (`FfiAutofillIdentity.rank`:
+    /// the Login used last on the site first, then favorites): the system shows a higher rank first
+    /// for the same service.
     public static func credentialIdentities(_ identities: [FfiAutofillIdentity]) -> [any ASCredentialIdentity] {
         identities.map { identity -> any ASCredentialIdentity in
             let service = ASCredentialServiceIdentifier(identifier: identity.service, type: .domain)
@@ -27,7 +26,7 @@ public enum AutoFillIdentityBuilder {
                     credentialID: identity.credentialId, userHandle: identity.userHandle,
                     recordIdentifier: identity.recordId)
             }
-            if identity.favorite { built.rank = favoriteRank }
+            built.rank = Int(identity.rank)
             return built
         }
     }

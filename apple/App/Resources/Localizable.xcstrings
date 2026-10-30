@@ -1906,6 +1906,16 @@
         }
       }
     },
+    "Aucun site retenu pour l'instant." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No site remembered yet."
+          }
+        }
+      }
+    },
     "Aucun élément avec ce tag" : {
       "localizations" : {
         "en" : {
@@ -8706,6 +8716,16 @@
         }
       }
     },
+    "OnePass retient le compte que tu choisis sur chaque site pour te le proposer en premier la fois suivante." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass remembers the account you pick on each site and offers it first the next time."
+          }
+        }
+      }
+    },
     "OnePass se verrouille après ce délai d'inactivité et quand l'app reste en arrière-plan aussi longtemps." : {
       "localizations" : {
         "en" : {
@@ -8786,6 +8806,16 @@
         }
       }
     },
+    "Oublier %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget %@"
+          }
+        }
+      }
+    },
     "Oublier %@ ?" : {
       "localizations" : {
         "en" : {
@@ -8796,12 +8826,42 @@
         }
       }
     },
+    "Oublier ce site ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget this site?"
+          }
+        }
+      }
+    },
     "Oublier l'extension" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Forget Extension"
+          }
+        }
+      }
+    },
+    "Oublier les choix pour un site" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget choices for a site"
+          }
+        }
+      }
+    },
+    "Oublier un site efface le compte retenu pour lui dans tous tes coffres visibles, sur tous tes appareils. Tes Logins ne changent pas." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forgetting a site erases the account remembered for it in all your visible vaults, on all your devices. Your Logins don't change."
           }
         }
       }

@@ -550,6 +550,19 @@ mod tests {
         fn approve_reprompt(&mut self, _: Id) -> bool {
             false
         }
+        fn record_usage(
+            &mut self,
+            _: Id,
+            _: Id,
+            _: onepass_core::model::usage::SiteUsage,
+            _: time::OffsetDateTime,
+            _: bool,
+        ) -> crate::Result<bool> {
+            Ok(false)
+        }
+        fn forget_site_usage(&mut self, _: &str) -> crate::Result<usize> {
+            Ok(0)
+        }
     }
 
     /// Collects written bytes, sends each complete frame on flush.

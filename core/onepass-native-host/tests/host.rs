@@ -297,6 +297,71 @@ fn pairing_then_session_then_fill() {
 }
 
 #[test]
+fn plan_fill_round_trip() {
+    let env = setup("auto", json!({}));
+    let rec = pair(&env);
+    let (mut host, mut ch) = open_session(&env, &rec);
+
+    let salt = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 1, "op": "fill_salt", "ctx": "menu"}),
+    );
+    assert_eq!(salt["ok"]["salt"].as_str().unwrap().len(), 64, "{salt}");
+
+    let form = json!({"form_ref": "f1",
+        "intent_hints": {"kind": "login", "signup_words": false, "reset_words": false,
+                         "checkout_words": false, "ignore": false},
+        "step_index": null,
+        "fields": [
+            {"field_ref": "u1", "role": "username", "confidence": 0.9, "visible": true,
+             "prefilled": "empty"},
+            {"field_ref": "p1", "role": "current_password", "confidence": 0.9,
+             "visible": true, "prefilled": "empty"}],
+        "buttons": [{"button_ref": "b1", "class": "submit"}]});
+    let context = json!({"origin": ATLAS, "top_origin": ATLAS, "frame_kind": "top",
+                         "forms": [form], "typed_username_hash": null});
+    let plan = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 2, "op": "plan_fill", "ctx": "menu", "origin": ATLAS,
+               "context": context}),
+    );
+    let p = &plan["ok"]["plan"];
+    assert_eq!(p["intent"], "login", "{plan}");
+    // Atlas Cloud and Atlas Cloud (multi) tie: a menu, never a chain.
+    assert_eq!(p["action"], "show_menu", "{plan}");
+    let first = p["groups"][0]["item_id"].as_str().unwrap().to_owned();
+    assert_eq!(first.len(), 36, "hyphenated id: {first}");
+    assert_eq!(p["alternatives"].as_array().unwrap().len(), 1, "{plan}");
+    assert!(!plan.to_string().contains(ATLAS_PASSWORD));
+
+    let noted = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 3, "op": "note_fill", "ctx": "chain", "item_id": first,
+               "origin": ATLAS, "roles": ["username", "current_password"],
+               "intent": "login", "steps": ["fill"]}),
+    );
+    assert_eq!(noted["ok"], json!({}), "{noted}");
+    let again = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 4, "op": "plan_fill", "ctx": "menu", "origin": ATLAS,
+               "context": context}),
+    );
+    assert_eq!(again["ok"]["plan"]["confidence"], "high", "{again}");
+    assert_eq!(again["ok"]["plan"]["groups"][0]["item_id"], first.as_str());
+    assert!(host.wait().success());
+
+    let audit = fs::read_to_string(env.data.join("audit.log")).unwrap();
+    assert!(audit.contains("plan_fill"), "{audit}");
+    assert!(audit.contains("note_fill"), "{audit}");
+    assert!(!audit.contains("\"u1\""), "{audit}");
+    assert!(!audit.contains("current_password"), "{audit}");
+}
+
+#[test]
 fn firefox_arguments_are_accepted() {
     let env = setup("auto", json!({}));
     let mut host = Host::spawn(

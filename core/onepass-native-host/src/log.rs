@@ -84,13 +84,18 @@ impl FileAudit {
 
 impl AuditSink for FileAudit {
     fn record(&mut self, e: AuditEvent) {
-        let line = serde_json::json!({
+        let mut line = serde_json::json!({
             "at": e.at,
             "op": e.op,
             "item_id": e.item_id,
             "origin": e.origin,
             "ctx": e.ctx.as_str(),
         });
+        if let (Some(p), Some(obj)) = (e.plan, line.as_object_mut()) {
+            obj.insert("intent".into(), serde_json::json!(p.intent));
+            obj.insert("action".into(), serde_json::json!(p.action));
+            obj.insert("confidence".into(), serde_json::json!(p.confidence));
+        }
         let _ = append(&self.path, &line.to_string());
     }
 }
