@@ -230,7 +230,21 @@ public final class RemoteUnlockCoordinator {
         guard let me = try await CoreThread.run({ core.thisDeviceId() }) else {
             throw VaultError.integrity(kind: "unregistered")
         }
-        return RemoteApprover(channel: channel, session: core, keys: keys, now: now, mailbox: mailbox(for: me))
+        let register: @Sendable () async -> Bool = { [weak self] in await self?.registerMacApprover() ?? false }
+        return RemoteApprover(
+            channel: channel, session: core, keys: keys, now: now, mailbox: mailbox(for: me), register: register)
+    }
+
+    /// A phone appeared after the approver was built: this Mac joins the signed list now.
+    private func registerMacApprover() async -> Bool {
+        guard vault.state == .unlocked else { return false }
+        do {
+            _ = try await macApproverKeys(register: true)
+            return true
+        } catch {
+            Self.log.error("Mac approval keys not registered")
+            return false
+        }
     }
 
     /// Forgets the remote unlock with `phone` on this Mac: `C` is erased here and nothing is sent

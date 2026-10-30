@@ -13,9 +13,7 @@ struct PhoneApprovalsTests {
     init() { VaultKitStrings.pinSourceLanguage() }
 
     private func card(_ f: RemoteUnlockFixture) -> PhoneApprovals {
-        PhoneApprovals(
-            vault: f.vault, hosts: f.hosts, coordinator: f.coordinator,
-            approverKeys: ApproverKeyStore(keychain: f.macKeychain))
+        PhoneApprovals(vault: f.vault, hosts: f.hosts, coordinator: f.coordinator)
     }
 
     @Test func cardListsThePhoneAndRacesItOnTheSharedMailbox() async throws {
@@ -38,6 +36,23 @@ struct PhoneApprovalsTests {
         #expect(DeveloperSettings.load(from: UserDefaults(suiteName: f.suite)!).approveOnPhone == false)
         await card.setApproveOnPhone(true)
         #expect(f.hosts.remoteApproverSet)
+    }
+
+    /// Overlapping refreshes run one after the other and leave one approver on the shared mailbox.
+    @Test func concurrentRefreshesLeaveOneApprover() async throws {
+        let f = try await RemoteUnlockFixture.make()
+        defer { f.cleanUp() }
+        let card = card(f)
+        async let a: Void = card.refreshAndWire()
+        async let b: Void = card.sessionUnlocked()
+        async let c: Void = card.refreshAndWire()
+        _ = await (a, b, c)
+        #expect(card.phones.count == 1)
+        let approver = try #require(f.hosts.remoteApprover)
+        #expect(approver.mailbox === f.coordinator.mailbox(for: f.macId))
+        // Locking drops it.
+        f.hosts.sessionLocked()
+        #expect(!f.hosts.remoteApproverSet)
     }
 
     @Test func unlockSwitchAsksTouchIDFirst() async throws {
@@ -96,7 +111,7 @@ struct PhoneApprovalsTests {
         let hosts = DeveloperHosts(
             paths: DeveloperPaths(dataDirectory: URL(fileURLWithPath: "/tmp/op-none"), relay: URL(fileURLWithPath: "/x")),
             defaults: UserDefaults(suiteName: "onepass.tests.card.\(UUID().uuidString)")!, presence: FakePresence())
-        let card = PhoneApprovals(vault: vault, hosts: hosts, coordinator: nil, approverKeys: ApproverKeyStore(keychain: InMemoryKeychain()))
+        let card = PhoneApprovals(vault: vault, hosts: hosts, coordinator: nil)
         await card.start()
         await card.sessionUnlocked()
         #expect(!card.available)

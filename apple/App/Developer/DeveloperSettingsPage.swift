@@ -354,11 +354,18 @@ struct DeveloperSettingsPage: View {
             CardHeading(
                 symbol: "square.and.arrow.down.on.square", color: .purple,
                 title: String(localized: "Installer dans un agent"),
-                message: String(localized: "Ajoute OnePass à ton client MCP en un clic : seule son entrée « onepass » change, une sauvegarde est gardée."))
+                message: String(localized: "Cette commande ajoute seulement l'entrée « onepass » à la configuration de ton client et garde une copie de sauvegarde."))
             Picker("Client", selection: $installer.client) {
                 ForEach(AgentClient.allCases) { Text($0.title).tag($0) }
             }
             .accessibilityIdentifier("settings.developer.installClient")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Dans ton terminal :").font(.callout)
+                CodeBox(code: installer.terminalCommand, onCopy: copy)
+                    .accessibilityIdentifier("settings.developer.installCommand")
+            }
+            .padding(.vertical, 4)
+            // Secondary: the app's sandbox usually keeps the helper out of the client's file.
             HStack {
                 Button("Voir les changements") { Task { await installer.previewInstall() } }
                     .accessibilityIdentifier("settings.developer.installPreview")
@@ -368,7 +375,11 @@ struct DeveloperSettingsPage: View {
                 if installer.running { ProgressView().controlSize(.small) }
             }
             .disabled(installer.running)
-            if let result = installer.result {
+            if let shown = installer.result ?? installer.preview, shown.blockedBySandbox {
+                Label("Le bac à sable de l'app bloque l'accès : lance la commande dans ton terminal", systemImage: "lock.shield")
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("settings.developer.installSandbox")
+            } else if let result = installer.result {
                 if result.succeeded {
                     Label("Installé. Quitte \(installer.client.title) puis relance-le.", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -385,11 +396,6 @@ struct DeveloperSettingsPage: View {
                 }
                 CodeBox(code: preview.output.isEmpty ? String(localized: "Aucun changement.") : preview.output, onCopy: copy)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Ou dans ton terminal :").font(.callout)
-                CodeBox(code: installer.terminalCommand, onCopy: copy)
-            }
-            .padding(.vertical, 4)
         } footer: {
             Text("Quitte le client avant d'installer : il réécrit sa configuration en quittant. Le fichier d'origine est gardé à côté (.onepass-bak).")
         }
@@ -613,22 +619,37 @@ private struct ScopeMenu: View {
 
 #if DEBUG && os(macOS)
 /// Demo data and UI tests: stands for the bundled relay, never runs it (nothing is written to the
-/// real home). Fictional output.
+/// real home). Prints what the relay prints (Claude Code's format, a file that does not exist yet).
 struct DemoHelperRunner: HelperRunner {
     func run(_ executable: URL, arguments: [String]) async -> HelperResult {
-        let client = arguments.firstIndex(of: "--client").map { arguments[$0 + 1] } ?? "claude-code"
+        func value(_ flag: String) -> String? {
+            arguments.firstIndex(of: flag).flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
+        }
+        let home = value("--home") ?? "/Users/camille"
+        let socket = value("--socket") ?? home + "/Library/Containers/me.somalabs.onepass/Data/.onepass/mcp.sock"
+        let file = home + "/.claude.json"
         if arguments.contains("--dry-run") {
             return HelperResult(status: 0, output: """
-                --- ~/.claude.json
-                +++ ~/.claude.json
-                @@ mcpServers @@
+                --- \(file)
+                +++ \(file)
+                +{
+                +  "mcpServers": {
                 +    "onepass": {
-                +      "command": "/Applications/OnePass.app/Contents/Helpers/onepass-mcp",
-                +      "args": ["--socket", "~/Library/Containers/me.somalabs.onepass/Data/.onepass/mcp.sock"]
+                +      "type": "stdio",
+                +      "command": "\(executable.path)",
+                +      "args": [
+                +        "--socket",
+                +        "\(socket)"
+                +      ]
                 +    }
+                +  }
+                +}
                 """)
         }
-        return HelperResult(status: 0, output: "OnePass added to \(client). Quit the client first, then open it again.")
+        return HelperResult(status: 0, output: """
+            OnePass installed in \(file)
+            Quit Claude Code first if it is running, then start it again: it can rewrite its configuration file and undo this change.
+            """)
     }
 }
 #endif
