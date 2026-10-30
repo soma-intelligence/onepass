@@ -38,6 +38,7 @@ use crate::format::STORE_USER_VERSION;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::repo::{DeviceState, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
+use crate::trust::TrustState;
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -47,6 +48,8 @@ const DEVICE_STATE_KEY: &str = "device_state";
 const EPOCH_MARK_KEY: &str = "epoch_hash";
 /// The pinned chain state (`ChainState`), beside the device state.
 const CHAIN_STATE_KEY: &str = "chain";
+/// `meta` key of the local trust state.
+const TRUST_STATE_KEY: &str = "trust";
 /// Raised when a fetch dropped a local password change the server had
 /// overtaken (`SyncStore::take_password_change_superseded`).
 const SUPERSEDED_KEY: &str = "password_change_superseded";
@@ -2677,6 +2680,51 @@ impl RecordStore for SyncStore {
         tx.commit()
     }
 
+    fn trust_state(&self) -> Result<Option<TrustState>> {
+        self.meta(TRUST_STATE_KEY)?
+            .map(|b| TrustState::decode(&b))
+            .transpose()
+    }
+
+    /// The conditional writes, the deletions (as `delete`), the chain state
+    /// (merged as in `put_all_if_version_with_chain`, when given) and the
+    /// trust state in one transaction (or one savepoint of the open batch).
+    fn put_all_if_version_with_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        for (r, _) in &writes {
+            check_size(&r.data)?;
+        }
+        let tx = self.write_tx()?;
+        for (r, expected) in &writes {
+            if effective_version(&tx, r.kind, r.id)? != *expected {
+                return Err(Error::Conflict);
+            }
+            write_pending(&tx, r)?;
+        }
+        for (kind, id) in deletes {
+            delete_in(&tx, kind, id)?;
+        }
+        if let Some(chain) = chain {
+            let merged = merge_chain(&chain, &chain_state_in(&tx)?, false)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+                params![CHAIN_STATE_KEY, merged.encode()],
+            )
+            .map_err(store_err)?;
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+            params![TRUST_STATE_KEY, trust.encode()],
+        )
+        .map_err(store_err)?;
+        tx.commit()
+    }
+
     /// The conditional writes and the deletions (as `delete`) in one
     /// transaction (or one savepoint of the open batch).
     fn put_all_if_version_and_delete(
@@ -2927,6 +2975,53 @@ impl RecordStore for SyncStore {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn trust_is_written_with_records_and_chain() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), None);
+        let (a, gone) = (Id::new(), Id::new());
+        let rec = |id, version, n| Record {
+            id,
+            kind: RecordKind::Item,
+            version,
+            data: vec![n],
+        };
+        s.put(rec(gone, 1, 9)).unwrap();
+        let mut trust = crate::trust::tests::sample();
+        let chain = ChainState {
+            params_epoch: 4,
+            ..ChainState::default()
+        };
+        s.put_all_if_version_with_trust(
+            vec![(rec(a, 1, 1), None)],
+            vec![(RecordKind::Item, gone)],
+            Some(chain.clone()),
+            &trust,
+        )
+        .unwrap();
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(trust.clone()));
+        assert_eq!(s.chain_state().unwrap(), chain);
+        assert_eq!(s.get(RecordKind::Item, gone).unwrap(), None);
+
+        // A lost race leaves records, chain and trust untouched.
+        let before = trust.clone();
+        trust.add_revoked(&[Id([0xEE; 16])]);
+        let b = Id::new();
+        let r = s.put_all_if_version_with_trust(
+            vec![(rec(b, 1, 2), None), (rec(a, 2, 3), Some(7))],
+            vec![],
+            Some(ChainState {
+                params_epoch: 9,
+                ..ChainState::default()
+            }),
+            &trust,
+        );
+        assert_eq!(r, Err(Error::Conflict));
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(before));
+        assert_eq!(s.chain_state().unwrap(), chain);
+        assert_eq!(s.get(RecordKind::Item, b).unwrap(), None);
+    }
+
     use super::*;
 
     fn rec(id: Id, kind: RecordKind, version: u64, data: &[u8]) -> Record {

@@ -21,6 +21,7 @@ use crate::{Error, Id, Result};
 mod codec;
 pub mod verify;
 
+pub(crate) use codec::{check_entry, decode_strict_with};
 pub use codec::{check_genesis, check_intro, check_legacy_intro, check_rotation};
 pub use verify::{
     verify_genesis, verify_intro, verify_intro_identity, verify_legacy_intro, verify_rotation,

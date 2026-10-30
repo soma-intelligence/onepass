@@ -20,12 +20,20 @@ fn bad(what: &'static str) -> Error {
 
 /// Whole buffer, then canonical re-encoding.
 fn decode_strict<T: Serialize + DeserializeOwned>(b: &[u8]) -> Result<T> {
-    let (value, rest) = postcard::take_from_bytes::<T>(b).map_err(|_| BAD)?;
+    decode_strict_with(b, BAD)
+}
+
+/// `decode_strict` with the caller's error for every refusal.
+pub(crate) fn decode_strict_with<T: Serialize + DeserializeOwned>(
+    b: &[u8],
+    err: Error,
+) -> Result<T> {
+    let (value, rest) = postcard::take_from_bytes::<T>(b).map_err(|_| err.clone())?;
     if !rest.is_empty() {
-        return Err(BAD);
+        return Err(err);
     }
-    if postcard::to_allocvec(&value).map_err(|_| BAD)? != b {
-        return Err(BAD);
+    if postcard::to_allocvec(&value).map_err(|_| err.clone())? != b {
+        return Err(err);
     }
     Ok(value)
 }
@@ -52,7 +60,7 @@ fn check_identity_sig(s: &IdentitySignature) -> Result<()> {
 }
 
 /// Key lengths, a parsable ML-KEM key and a bounded name.
-fn check_entry(e: &RosterEntry) -> Result<()> {
+pub(crate) fn check_entry(e: &RosterEntry) -> Result<()> {
     if e.sign_pub.mldsa.len() != MLDSA_PUBLIC_LEN {
         return Err(bad("roster entry signing key"));
     }
