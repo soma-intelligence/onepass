@@ -82,6 +82,11 @@ impl Session {
             },
         }
     }
+
+    /// The client sent `initialize`: its calls are served.
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
 }
 
 const PARSE_ERROR: i64 = -32700;
@@ -300,10 +305,21 @@ fn write_line<W: Write>(output: &mut W, line: &str) -> std::io::Result<()> {
 /// Serve requests line by line until EOF.
 pub fn serve<R: BufRead, W: Write>(
     host: &mut dyn ToolHost,
+    input: R,
+    output: W,
+) -> std::io::Result<()> {
+    serve_with(Session::new(), host, input, output)
+}
+
+/// [`serve`], going on from `session`: a connection whose handshake was
+/// answered elsewhere (the app's gate while it was locked) keeps its
+/// negotiated state and client identity.
+pub fn serve_with<R: BufRead, W: Write>(
+    mut session: Session,
+    host: &mut dyn ToolHost,
     mut input: R,
     mut output: W,
 ) -> std::io::Result<()> {
-    let mut session = Session::new();
     let mut buf = Vec::new();
     while let Some(complete) = read_line(&mut input, &mut buf)? {
         let reply = if !complete {

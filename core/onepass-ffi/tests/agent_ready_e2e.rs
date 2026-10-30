@@ -528,9 +528,16 @@ fn locked_mac_phone_unlocks_and_approves_run_with_secrets() {
         asked: Mutex::new(Vec::new()),
         opened: Mutex::new(opened_tx),
     });
-    let gate = McpGate::start(socket.clone(), relay.display().to_string(), locked.clone()).unwrap();
+    let gate = McpGate::start(
+        socket.clone(),
+        relay.display().to_string(),
+        data.clone(),
+        locked.clone(),
+    )
+    .unwrap();
 
-    // The agent starts its MCP server (the relay) and says hello.
+    // The agent starts its MCP server (the relay) and says hello: the gate
+    // answers the handshake itself and asks nobody yet.
     let mut agent = Agent::launch(&relay, &socket);
     agent.send(
         1,
@@ -538,8 +545,22 @@ fn locked_mac_phone_unlocks_and_approves_run_with_secrets() {
         json!({"protocolVersion": "2025-11-25", "capabilities": {},
             "clientInfo": {"name": "agent-e2e", "version": "1"}}),
     );
+    let (_, init) = agent.until_reply(1);
+    assert_eq!(init["result"]["serverInfo"]["name"], "onepass", "{init}");
+    agent.send(2, "tools/list", json!({}));
+    let (_, tools) = agent.until_reply(2);
+    assert!(tools.to_string().contains("run_with_secrets"), "{tools}");
+    assert!(locked.asked.lock().unwrap().is_empty());
 
-    // Step 1: the gate asks the app, the phone unlocks the Mac for agents.
+    // Step 1: the agent runs a command with one reference. The gate asks
+    // the app, the phone unlocks the Mac for agents.
+    agent.send(
+        3,
+        "tools/call",
+        json!({"name": "run_with_secrets", "arguments": {
+            "command": ["sh", "-c", "printf 'token=%s' \"$TOKEN\""],
+            "env": {"TOKEN": reference}}}),
+    );
     let session = opened_rx.recv_timeout(STEP).expect("remote unlock");
     assert!(session.is_agent_only());
     assert!(session.agent_window_ends_at().unwrap() > now());
@@ -575,19 +596,10 @@ fn locked_mac_phone_unlocks_and_approves_run_with_secrets() {
         )
         .unwrap();
     drop(gate);
-    let (_, init) = agent.until_reply(1);
-    assert_eq!(init["result"]["serverInfo"]["name"], "onepass", "{init}");
 
-    // Step 2: the agent runs a command with one reference; the phone
-    // approves through the normal race.
-    agent.send(
-        2,
-        "tools/call",
-        json!({"name": "run_with_secrets", "arguments": {
-            "command": ["sh", "-c", "printf 'token=%s' \"$TOKEN\""],
-            "env": {"TOKEN": reference}}}),
-    );
-    let (notes, ran) = agent.until_reply(2);
+    // Step 2: the server gets the call the gate held; the phone approves
+    // it through the normal race.
+    let (notes, ran) = agent.until_reply(3);
 
     // The pending notice came first, with the code the phone showed.
     let code = {

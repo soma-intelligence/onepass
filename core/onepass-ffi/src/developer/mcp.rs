@@ -29,8 +29,9 @@ use onepass_guard::{
 };
 use onepass_mcp::runner::{RunOutput, RunRequest};
 use onepass_mcp::{
-    ClientContext, McpGuards, McpTools, Narrowing, PolicySource, PortError, RepoPort, VaultInfo,
-    VaultPort, Workspace, WorkspaceRefusal, file_registry, serve,
+    ClientContext, ClientInfo, McpGuards, McpTools, Narrowing, PolicySource, PortError, RepoPort,
+    ToolHost, ToolOutcome, ToolSpec, VaultInfo, VaultPort, Workspace, WorkspaceRefusal,
+    file_registry, handle_line, serve_with, tool_specs,
 };
 use onepass_mcp_relay::wire::{
     AppToRelay, ClientHello, Line, LineReader, MAX_WIRE_LINE, RelayToApp, Reply, decode, encode,
@@ -460,6 +461,11 @@ pub(crate) struct Opened {
     client: Option<ClientHello>,
     mcp_rx: Receiver<Zeroizing<Vec<u8>>>,
     pending: Pending,
+    /// The protocol state of a connection whose handshake the gate
+    /// answered (`None`: a fresh session).
+    proto: Option<onepass_mcp::Session>,
+    /// The line the gate held (the first `tools/call`), served first.
+    replay: Option<Zeroizing<Vec<u8>>>,
 }
 
 impl Opened {
@@ -506,6 +512,8 @@ fn open(stream: UnixStream, on_end: impl FnOnce() + Send + 'static) -> Option<Op
         client,
         mcp_rx,
         pending,
+        proto: None,
+        replay: None,
     })
 }
 
@@ -516,6 +524,8 @@ fn serve_opened(opened: Opened, ctx: &Ctx) {
         client,
         mcp_rx,
         pending,
+        proto,
+        replay,
     } = opened;
     let writer = Arc::new(Mutex::new(stream));
     // Pairing waits for the user: it runs beside the session, so the
@@ -541,7 +551,11 @@ fn serve_opened(opened: Opened, ctx: &Ctx) {
             hardened: None,
         },
     };
-    serve_session(ctx, context, mcp_rx, writer.clone(), pending);
+    let held = Held {
+        proto: proto.unwrap_or_default(),
+        replay: replay.unwrap_or_default(),
+    };
+    serve_session(ctx, context, mcp_rx, writer.clone(), pending, held);
     if let Ok(w) = writer.lock() {
         let _ = w.shutdown(std::net::Shutdown::Both);
     }
@@ -648,12 +662,21 @@ fn demux(mut lines: LineReader<UnixStream>, mcp: SyncSender<Zeroizing<Vec<u8>>>,
     *pending.lock().unwrap_or_else(PoisonError::into_inner) = None;
 }
 
+/// Where a session starts: the protocol state and the first input the
+/// gate kept for it (fresh and empty for a connection served from the
+/// start).
+struct Held {
+    proto: onepass_mcp::Session,
+    replay: Zeroizing<Vec<u8>>,
+}
+
 fn serve_session(
     ctx: &Ctx,
     client: ClientContext,
     mcp_rx: Receiver<Zeroizing<Vec<u8>>>,
     writer: Arc<Mutex<UnixStream>>,
     pending: Pending,
+    held: Held,
 ) {
     let Ok(policy) = app_policy(&ctx.session, &ctx.dir) else {
         return;
@@ -718,10 +741,11 @@ fn serve_session(
     .with_policy_source(policy_source);
     let input = ChannelReader {
         rx: mcp_rx,
-        buf: Zeroizing::new(Vec::new()),
+        buf: held.replay,
         pos: 0,
     };
-    let _ = serve(
+    let _ = serve_with(
+        held.proto,
         &mut tools,
         input,
         McpWriter {
@@ -986,6 +1010,10 @@ impl Workspace for RelayWorkspace {
 /// What an agent is told when the app stays locked. No secret, no name.
 pub const MCP_LOCKED_MESSAGE: &str =
     "OnePass is locked on this Mac. Approve on your iPhone or unlock the app.";
+/// What a client the registry does not list is told while the app is
+/// locked: pairing needs the owner at the Mac, the phone is not asked.
+pub const MCP_NOT_PAIRED_LOCKED_MESSAGE: &str =
+    "This client is not paired with OnePass. Unlock OnePass on this Mac to pair it.";
 /// JSON-RPC code of that error (implementation-defined server error).
 const LOCKED_CODE: i64 = -32000;
 /// How long a refused connection waits for the agent's first request, to
@@ -993,15 +1021,20 @@ const LOCKED_CODE: i64 = -32000;
 const LOCKED_REPLY_WAIT: Duration = Duration::from_secs(5);
 /// How long a connection the app said yes to waits for `hand_over`.
 const HAND_OVER_WAIT: Duration = Duration::from_secs(30);
+/// How long a connection beyond `MAX_CONNECTIONS` may take to receive its
+/// locked error.
+const OVERFLOW_WRITE_WAIT: Duration = Duration::from_secs(1);
 
 /// The app's side of the gate.
 #[uniffi::export(with_foreign)]
 pub trait FfiGateUi: Send + Sync {
-    /// An agent connected while the app is locked. Called on a gate
-    /// thread; blocks until the app knows. True once a session exists and
-    /// the app called (or is about to call) [`McpGate::hand_over`]: the
-    /// connection then goes to the server. False refuses: the agent gets
-    /// [`MCP_LOCKED_MESSAGE`].
+    /// A paired agent called its first tool while the app is locked (the
+    /// gate answered `initialize` and `tools/list` itself: a client that
+    /// never calls a tool asks nothing). Called on a gate thread; blocks
+    /// until the app knows. True once a session exists and the app called
+    /// (or is about to call) [`McpGate::hand_over`]: the connection then
+    /// goes to the server, which answers that call. False refuses: the
+    /// agent gets [`MCP_LOCKED_MESSAGE`] and the connection closes.
     ///
     /// The app answers within 60 s (spec 6.2: no answer from the phone or
     /// the Mac in 60 s is a refusal), and false at the latest then. The
@@ -1023,8 +1056,10 @@ enum GateState {
 struct GateShared {
     ui: Arc<dyn FfiGateUi>,
     relay: RelayCheck,
-    /// Client id to the number of the connection holding it: one held
-    /// connection per client.
+    /// The data folder: its client registry says who is paired.
+    dir: PathBuf,
+    /// Client id to the number of the connection asking for it: one
+    /// question per client.
     held: Mutex<HashMap<String, u64>>,
     /// Open connections, to end them on `stop`.
     conns: Conns,
@@ -1034,6 +1069,13 @@ struct GateShared {
     changed: Condvar,
 }
 
+/// Where the gate stands for a connection still in its handshake.
+enum Standing {
+    Holding,
+    Handed(Option<Arc<McpHost>>),
+    Stopped,
+}
+
 impl GateShared {
     /// Frees the hold of connection `number`, if it has one.
     fn release(&self, number: u64) {
@@ -1041,6 +1083,14 @@ impl GateShared {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .retain(|_, n| *n != number);
+    }
+
+    fn standing(&self) -> Standing {
+        match &*self.state.lock().unwrap_or_else(PoisonError::into_inner) {
+            GateState::Holding => Standing::Holding,
+            GateState::Handed(host) => Standing::Handed(host.upgrade()),
+            GateState::Stopped => Standing::Stopped,
+        }
     }
 
     /// The server the socket went to, waiting at most `HAND_OVER_WAIT`.
@@ -1064,12 +1114,29 @@ impl GateShared {
                 .0;
         }
     }
+
+    /// Stopped: held connections are refused, and those in their
+    /// handshake end.
+    fn set_stopped(&self) {
+        *self.state.lock().unwrap_or_else(PoisonError::into_inner) = GateState::Stopped;
+        self.changed.notify_all();
+        for (_, s) in self
+            .conns
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .drain()
+        {
+            let _ = s.shutdown(std::net::Shutdown::Both);
+        }
+    }
 }
 
 /// Listens on the MCP socket while the app is locked: verifies the peer
-/// like the server, reads the hello, asks the app ([`FfiGateUi`]), then
-/// hands the connection to the server started on the session, or answers
-/// [`MCP_LOCKED_MESSAGE`] and closes.
+/// like the server, reads the hello, answers the MCP handshake itself
+/// (`initialize`, `tools/list`, `ping`, as the server would), and on the
+/// first `tools/call` of a paired client asks the app ([`FfiGateUi`]). It
+/// then hands the connection to the server started on the session, which
+/// answers that call, or answers [`MCP_LOCKED_MESSAGE`] and closes.
 #[derive(uniffi::Object)]
 pub struct McpGate {
     socket: PathBuf,
@@ -1082,24 +1149,29 @@ pub struct McpGate {
 
 #[uniffi::export]
 impl McpGate {
-    /// Listens on `socket_path` for the relay of `relay_path`.
+    /// Listens on `socket_path` for the relay of `relay_path`; `data_dir`
+    /// is the data folder of the server (its client registry).
     #[uniffi::constructor]
     pub fn start(
         socket_path: String,
         relay_path: String,
+        data_dir: String,
         ui: Arc<dyn FfiGateUi>,
     ) -> Result<Arc<McpGate>, OnePassError> {
         let relay =
             identity_of_file(Path::new(&relay_path)).map_err(|_| invalid("program identity"))?;
-        McpGate::start_with(socket_path, ui, RelayCheck::Identity(relay))
+        McpGate::start_with(socket_path, data_dir, ui, RelayCheck::Identity(relay))
     }
 
     /// The app has a session (full or agents only): starts the MCP server
     /// on it, on the gate's own socket (no moment without a listener), and
-    /// gives it the held connections the app says yes to. On an error
-    /// (a policy that does not verify, a locked session) the gate keeps
-    /// listening. `config.socket_path` must be the gate's socket; the
-    /// relay check is the gate's (`config.relay_path` is not read again).
+    /// gives it the connections still in their handshake and those the app
+    /// says yes to. On an error before the listener moves (a policy that
+    /// does not verify, a locked session) the gate keeps listening; if the
+    /// server then fails to start, the gate stops (held connections are
+    /// refused) and the socket is removed. `config.socket_path` must be the
+    /// gate's socket; the relay check is the gate's (`config.relay_path` is
+    /// not read again).
     pub fn hand_over(
         &self,
         session: Arc<Session>,
@@ -1119,10 +1191,18 @@ impl McpGate {
             return Err(invalid("the gate is not running"));
         };
         self.stop.store(true, Ordering::SeqCst);
-        let listener = handle
+        let started = handle
             .join()
-            .map_err(|_| invalid("cannot start the MCP server"))?;
-        let host = McpHost::run(listener, self.socket.clone(), self.socket_id, ctx)?;
+            .map_err(|_| invalid("cannot start the MCP server"))
+            .and_then(|listener| McpHost::run(listener, self.socket.clone(), self.socket_id, ctx));
+        let host = match started {
+            Ok(host) => host,
+            Err(e) => {
+                remove_socket(&self.socket, self.socket_id);
+                self.shared.set_stopped();
+                return Err(e);
+            }
+        };
         *self
             .shared
             .state
@@ -1155,26 +1235,17 @@ impl McpGate {
             drop(h.join());
             remove_socket(&self.socket, self.socket_id);
         }
-        let mut state = self
-            .shared
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if matches!(*state, GateState::Handed(_)) {
+        if matches!(
+            *self
+                .shared
+                .state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+            GateState::Handed(_)
+        ) {
             return;
         }
-        *state = GateState::Stopped;
-        drop(state);
-        self.shared.changed.notify_all();
-        for (_, s) in self
-            .shared
-            .conns
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .drain()
-        {
-            let _ = s.shutdown(std::net::Shutdown::Both);
-        }
+        self.shared.set_stopped();
     }
 }
 
@@ -1190,19 +1261,22 @@ impl McpGate {
     /// user is the relay.
     pub fn start_any_relay_for_tests(
         socket_path: String,
+        data_dir: String,
         ui: Arc<dyn FfiGateUi>,
     ) -> Result<Arc<McpGate>, OnePassError> {
-        McpGate::start_with(socket_path, ui, RelayCheck::AnyPeer)
+        McpGate::start_with(socket_path, data_dir, ui, RelayCheck::AnyPeer)
     }
 }
 
 impl McpGate {
     fn start_with(
         socket_path_text: String,
+        data_dir: String,
         ui: Arc<dyn FfiGateUi>,
         relay: RelayCheck,
     ) -> Result<Arc<McpGate>, OnePassError> {
         let socket = socket_path(&socket_path_text)?;
+        let dir = self::data_dir(&data_dir)?;
         let listener = bind_socket(&socket).map_err(|e| match e.kind() {
             io::ErrorKind::AddrInUse => invalid("another agent is serving this socket"),
             _ => invalid("cannot listen on the MCP socket"),
@@ -1214,6 +1288,7 @@ impl McpGate {
         let shared = Arc::new(GateShared {
             ui,
             relay,
+            dir,
             held: Mutex::default(),
             conns: Arc::default(),
             active: AtomicUsize::new(0),
@@ -1252,14 +1327,18 @@ impl McpGate {
     }
 }
 
-/// One connection to the gate: closed at once beyond `MAX_CONNECTIONS` or
-/// when the peer is not the relay (no audit entry: there is no session to
-/// sign it with), else held on its own thread.
+/// One connection to the gate: beyond `MAX_CONNECTIONS` it gets the
+/// locked error (no request id yet) and closes; a peer that is not the
+/// relay is closed without a word (no audit entry: there is no session to
+/// sign it with); else it is held on its own thread.
 fn gate_accept(stream: UnixStream, shared: &Arc<GateShared>) {
     if stream.set_nonblocking(false).is_err() {
         return;
     }
     if shared.active.load(Ordering::SeqCst) >= MAX_CONNECTIONS {
+        if stream.set_write_timeout(Some(OVERFLOW_WRITE_WAIT)).is_ok() {
+            write_error(&stream, serde_json::Value::Null, MCP_LOCKED_MESSAGE);
+        }
         return;
     }
     if !peer_is_relay(&stream, &shared.relay) {
@@ -1296,7 +1375,60 @@ fn gate_accept(stream: UnixStream, shared: &Arc<GateShared>) {
     }
 }
 
-/// Holds one connection while the app decides.
+/// The tools as the server lists them; nothing is called through it (the
+/// gate keeps every `tools/call` for the server).
+struct GateTools;
+
+impl ToolHost for GateTools {
+    fn tools(&self) -> Vec<ToolSpec> {
+        tool_specs()
+    }
+
+    fn call(
+        &mut self,
+        _client: &ClientInfo,
+        _name: &str,
+        _args: &serde_json::Map<String, serde_json::Value>,
+    ) -> ToolOutcome {
+        ToolOutcome::Refused(MCP_LOCKED_MESSAGE.into())
+    }
+}
+
+/// One MCP line read by the gate.
+enum GateLine {
+    /// Answered here (`None`: a notification, or blank).
+    Answer(Option<String>),
+    /// The first tool call of an initialized client, with its id: kept for
+    /// the server.
+    Call(serde_json::Value),
+}
+
+fn gate_line(proto: &mut onepass_mcp::Session, line: &[u8]) -> GateLine {
+    let Ok(text) = std::str::from_utf8(line) else {
+        return GateLine::Answer(Some(
+            serde_json::json!({"jsonrpc": "2.0", "id": null,
+                "error": {"code": -32700, "message": "invalid UTF-8"}})
+            .to_string(),
+        ));
+    };
+    let text = text.trim_end_matches(['\n', '\r']);
+    if text.trim().is_empty() {
+        return GateLine::Answer(None);
+    }
+    if proto.is_initialized()
+        && let Ok(msg) = serde_json::from_str::<serde_json::Value>(text)
+        && msg.get("method").and_then(serde_json::Value::as_str) == Some("tools/call")
+        && let Some(id) = msg.get("id").filter(|i| i.is_string() || i.is_number())
+    {
+        return GateLine::Call(id.clone());
+    }
+    GateLine::Answer(handle_line(proto, &mut GateTools, text))
+}
+
+/// Holds one connection: answers its handshake, then asks the app on its
+/// first tool call. A hand-over (the owner unlocked, or an agents-only
+/// window opened for another client) takes the connection to the server
+/// as it stands.
 fn hold(stream: UnixStream, shared: &Arc<GateShared>, number: u64) {
     let gone = Arc::new(AtomicBool::new(false));
     let on_end = {
@@ -1306,24 +1438,80 @@ fn hold(stream: UnixStream, shared: &Arc<GateShared>, number: u64) {
             shared.release(number);
         }
     };
-    let Some(opened) = open(stream, on_end) else {
+    let Some(mut opened) = open(stream, on_end) else {
         return;
     };
     // An unidentified client could not be served anyway: nothing to ask.
-    let Some(hello) = opened.client.as_ref() else {
+    let Some(hello) = opened.client.clone() else {
         answer_locked(&opened);
         return;
     };
+    let mut proto = onepass_mcp::Session::new();
+    let (line, id) = loop {
+        match shared.standing() {
+            Standing::Holding => {}
+            Standing::Handed(Some(host)) => {
+                opened.proto = Some(proto);
+                host.adopt(opened);
+                return;
+            }
+            Standing::Handed(None) | Standing::Stopped => {
+                opened.close();
+                return;
+            }
+        }
+        let line = match opened.mcp_rx.recv_timeout(POLL) {
+            Ok(line) => line,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            // The relay left (or the gate stopped and closed it).
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                opened.close();
+                return;
+            }
+        };
+        match gate_line(&mut proto, &line) {
+            GateLine::Answer(None) => {}
+            GateLine::Answer(Some(reply)) => {
+                if !write_line(&opened.stream, reply) {
+                    opened.close();
+                    return;
+                }
+            }
+            GateLine::Call(id) => break (line, id),
+        }
+    };
+    // Handed over while the call came in: the server answers it.
+    match shared.standing() {
+        Standing::Holding => {}
+        Standing::Handed(Some(host)) => {
+            opened.proto = Some(proto);
+            opened.replay = Some(line);
+            host.adopt(opened);
+            return;
+        }
+        Standing::Handed(None) | Standing::Stopped => {
+            write_error(&opened.stream, id, MCP_LOCKED_MESSAGE);
+            opened.close();
+            return;
+        }
+    }
+    // Pairing needs the owner at the Mac: an unlisted client asks no phone.
+    if !onepass_guard::listed_unverified(&shared.dir.join(CLIENTS_FILE), Surface::Mcp, &hello.id) {
+        write_error(&opened.stream, id, MCP_NOT_PAIRED_LOCKED_MESSAGE);
+        opened.close();
+        return;
+    }
     {
         let mut held = shared.held.lock().unwrap_or_else(PoisonError::into_inner);
         if held.contains_key(&hello.id) {
             drop(held);
-            answer_locked(&opened);
+            write_error(&opened.stream, id, MCP_LOCKED_MESSAGE);
+            opened.close();
             return;
         }
         held.insert(hello.id.clone(), number);
     }
-    // Left between the hello and the hold: nobody to ask for.
+    // Left between the call and the hold: nobody to ask for.
     if gone.load(Ordering::SeqCst) {
         shared.release(number);
         opened.close();
@@ -1337,17 +1525,48 @@ fn hold(stream: UnixStream, shared: &Arc<GateShared>, number: u64) {
         chain: hello.chain.iter().take(8).map(|c| shown(c)).collect(),
     };
     let unlocked = shared.ui.locked_request(asked);
+    let host = if unlocked && !gone.load(Ordering::SeqCst) {
+        shared.handed_host()
+    } else {
+        None
+    };
+    // Released only now: a hand-over that comes late cannot let a second
+    // connection of this client ask again meanwhile.
     shared.release(number);
     if gone.load(Ordering::SeqCst) {
         // The client left while the app decided: the answer serves nobody.
         opened.close();
         return;
     }
-    if unlocked && let Some(host) = shared.handed_host() {
+    if let Some(host) = host {
+        opened.proto = Some(proto);
+        opened.replay = Some(line);
         host.adopt(opened);
         return;
     }
-    answer_locked(&opened);
+    write_error(&opened.stream, id, MCP_LOCKED_MESSAGE);
+    opened.close();
+}
+
+/// Writes one MCP line to the relay; false when it failed.
+fn write_line(stream: &UnixStream, line: String) -> bool {
+    let Ok(bytes) = encode(&AppToRelay::Mcp {
+        line: Zeroizing::new(line),
+    }) else {
+        return false;
+    };
+    let mut w = stream;
+    w.write_all(&bytes).and_then(|()| w.flush()).is_ok()
+}
+
+/// A JSON-RPC error with `message` for request `id`.
+fn write_error(stream: &UnixStream, id: serde_json::Value, message: &str) {
+    let reply = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": {"code": LOCKED_CODE, "message": message},
+    });
+    let _ = write_line(stream, reply.to_string());
 }
 
 /// Answers the agent's first request (or `null` if none comes in time)
@@ -1372,17 +1591,7 @@ fn answer_locked(opened: &Opened) {
             break;
         }
     }
-    let reply = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "error": {"code": LOCKED_CODE, "message": MCP_LOCKED_MESSAGE},
-    });
-    if let Ok(bytes) = encode(&AppToRelay::Mcp {
-        line: Zeroizing::new(reply.to_string()),
-    }) {
-        let mut w = &opened.stream;
-        let _ = w.write_all(&bytes).and_then(|()| w.flush());
-    }
+    write_error(&opened.stream, id, MCP_LOCKED_MESSAGE);
     opened.close();
 }
 

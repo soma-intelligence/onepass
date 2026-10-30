@@ -849,6 +849,8 @@ mod mcp {
     // ---- the gate, while the app is locked
 
     const LOCKED: &str = "OnePass is locked on this Mac. Approve on your iPhone or unlock the app.";
+    const NOT_PAIRED: &str =
+        "This client is not paired with OnePass. Unlock OnePass on this Mac to pair it.";
 
     /// The app's side of the gate: records who asked, answers what the test
     /// sends (false after a while, as the app does after 60 s).
@@ -906,7 +908,13 @@ mod mcp {
         let fx = fixture();
         let (ui, _answers) = gate_ui();
         // The relay the gate expects is /usr/bin/true: this test is not it.
-        let gate = McpGate::start(fx.mcp_socket(), "/usr/bin/true".into(), ui.clone()).unwrap();
+        let gate = McpGate::start(
+            fx.mcp_socket(),
+            "/usr/bin/true".into(),
+            fx.data(),
+            ui.clone(),
+        )
+        .unwrap();
         assert!(gate.is_running());
         let mut s = UnixStream::connect(fx.mcp_socket()).unwrap();
         s.set_read_timeout(Some(std::time::Duration::from_secs(10)))
@@ -923,39 +931,13 @@ mod mcp {
         assert!(!std::path::Path::new(&fx.mcp_socket()).exists());
     }
 
-    #[test]
-    fn gate_holds_then_hands_over_after_unlock() {
-        let fx = fixture();
-        exposed(&fx);
-        let (gate_ui, answers) = gate_ui();
-        let gate = McpGate::start_any_relay_for_tests(fx.mcp_socket(), gate_ui.clone()).unwrap();
+    /// Pairs the signed client through the real server (the owner did it
+    /// before locking), and returns what that server answers to
+    /// `initialize` and `tools/list`: the gate must answer the same.
+    fn paired_signed(fx: &Fixture) -> (serde_json::Value, serde_json::Value) {
+        let host = start(fx, ScriptedUi::new(FfiDecision::AllowOnce, true));
         let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
-        r.request(1, "initialize", init_params());
-        wait_asked(&gate_ui, 1);
-        {
-            let asked = gate_ui.asked.lock().unwrap();
-            assert_eq!(asked[0].id, "team:TEAMID0001:com.exemple.agent");
-            assert_eq!(asked[0].label, "Agent Exemple");
-            assert!(asked[0].signed);
-        }
-
-        // One held connection per client: a second one is answered at once.
-        let mut second = Relay::connect(&fx.mcp_socket(), signed_client());
-        second.request(1, "initialize", init_params());
-        let refused = second.reply();
-        assert_eq!(refused["error"]["message"], LOCKED, "{refused}");
-        assert!(second.closed());
-        assert_eq!(gate_ui.asked.lock().unwrap().len(), 1);
-
-        // The app unlocks: the server starts on the session and takes the
-        // held connection, its pending `initialize` included.
-        let ui = ScriptedUi::new(FfiDecision::AllowOnce, true);
-        let host = gate
-            .hand_over(fx.session.clone(), host_config(&fx), ui.clone())
-            .unwrap();
-        answers.send(true).unwrap();
-        let init = r.reply();
-        assert_eq!(init["result"]["serverInfo"]["name"], "onepass", "{init}");
+        let init = r.call(1, "initialize", init_params(), &no_exec);
         for _ in 0..200 {
             if !fx
                 .session
@@ -968,13 +950,86 @@ mod mcp {
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        let listed = r.call(
-            2,
-            "tools/call",
-            serde_json::json!({"name": "list_vaults", "arguments": {}}),
-            &no_exec,
+        assert_eq!(
+            fx.session.clone().paired_clients(fx.data()).unwrap().len(),
+            1
         );
+        let tools = r.call(2, "tools/list", serde_json::json!({}), &no_exec);
+        drop(r);
+        host.stop();
+        (init["result"].clone(), tools["result"].clone())
+    }
+
+    fn start_gate(fx: &Fixture, ui: Arc<GateUi>) -> Arc<McpGate> {
+        McpGate::start_any_relay_for_tests(fx.mcp_socket(), fx.data(), ui).unwrap()
+    }
+
+    fn list_vaults() -> serde_json::Value {
+        serde_json::json!({"name": "list_vaults", "arguments": {}})
+    }
+
+    #[test]
+    fn gate_answers_the_handshake_and_asks_on_the_first_tool_call() {
+        let fx = fixture();
+        exposed(&fx);
+        let (server_init, server_tools) = paired_signed(&fx);
+        let (gate_ui, answers) = gate_ui();
+        let gate = start_gate(&fx, gate_ui.clone());
+        let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
+
+        // The gate answers the handshake itself, as the server would, and
+        // asks nobody: a client that never calls a tool prompts no phone.
+        let init = r.call(1, "initialize", init_params(), &no_exec);
+        assert_eq!(init["result"], server_init, "{init}");
+        r.send(serde_json::json!({"t": "mcp", "line":
+            serde_json::json!({"jsonrpc": "2.0", "method": "notifications/initialized"}).to_string()}));
+        let tools = r.call(2, "tools/list", serde_json::json!({}), &no_exec);
+        assert_eq!(tools["result"], server_tools, "{tools}");
+        let ping = r.call(3, "ping", serde_json::json!({}), &no_exec);
+        assert!(ping.get("result").is_some(), "{ping}");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(gate_ui.asked.lock().unwrap().is_empty());
+
+        // The first tool call asks the app.
+        r.request(4, "tools/call", list_vaults());
+        wait_asked(&gate_ui, 1);
+        {
+            let asked = gate_ui.asked.lock().unwrap();
+            assert_eq!(asked[0].id, "team:TEAMID0001:com.exemple.agent");
+            assert_eq!(asked[0].label, "Agent Exemple");
+            assert!(asked[0].signed);
+        }
+
+        // One asking connection per client: a second one's call is
+        // answered at once.
+        let mut second = Relay::connect(&fx.mcp_socket(), signed_client());
+        let _ = second.call(1, "initialize", init_params(), &no_exec);
+        second.request(2, "tools/call", list_vaults());
+        let refused = second.reply();
+        assert_eq!(refused["id"], 2, "{refused}");
+        assert_eq!(refused["error"]["message"], LOCKED, "{refused}");
+        assert!(second.closed());
+        assert_eq!(gate_ui.asked.lock().unwrap().len(), 1);
+
+        // The app unlocks: the server starts on the session and gets the
+        // pending call, replayed on the handshake the gate answered.
+        let ui = ScriptedUi::new(FfiDecision::AllowOnce, true);
+        let host = gate
+            .hand_over(fx.session.clone(), host_config(&fx), ui.clone())
+            .unwrap();
+        answers.send(true).unwrap();
+        let listed = r.reply();
+        assert_eq!(listed["id"], 4, "{listed}");
         assert_eq!(listed["result"]["isError"], false, "{listed}");
+        assert_eq!(
+            listed["result"]["structuredContent"]["untrusted_vault_data"]
+                .as_array()
+                .map(Vec::len),
+            Some(1),
+            "{listed}"
+        );
+        let again = r.call(5, "tools/call", list_vaults(), &no_exec);
+        assert_eq!(again["result"]["isError"], false, "{again}");
 
         // Later connections go straight to the server.
         let mut third = Relay::connect(&fx.mcp_socket(), signed_client());
@@ -989,13 +1044,60 @@ mod mcp {
     }
 
     #[test]
+    fn gate_hands_over_a_connection_that_never_called_a_tool() {
+        let fx = fixture();
+        exposed(&fx);
+        paired_signed(&fx);
+        let (gate_ui, _answers) = gate_ui();
+        let gate = start_gate(&fx, gate_ui.clone());
+        let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
+        let _ = r.call(1, "initialize", init_params(), &no_exec);
+
+        // The owner unlocks the Mac: the connection still in its handshake
+        // goes to the server, which serves its calls without a question.
+        let host = gate
+            .hand_over(
+                fx.session.clone(),
+                host_config(&fx),
+                ScriptedUi::new(FfiDecision::AllowOnce, true),
+            )
+            .unwrap();
+        drop(gate);
+        let listed = r.call(2, "tools/call", list_vaults(), &no_exec);
+        assert_eq!(listed["result"]["isError"], false, "{listed}");
+        assert!(gate_ui.asked.lock().unwrap().is_empty());
+        drop(r);
+        host.stop();
+    }
+
+    #[test]
+    fn gate_never_asks_for_an_unpaired_client() {
+        let fx = fixture();
+        exposed(&fx);
+        let (gate_ui, _answers) = gate_ui();
+        let gate = start_gate(&fx, gate_ui.clone());
+        let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
+        let init = r.call(1, "initialize", init_params(), &no_exec);
+        assert_eq!(init["result"]["serverInfo"]["name"], "onepass", "{init}");
+        r.request(2, "tools/call", list_vaults());
+        let refused = r.reply();
+        assert_eq!(refused["id"], 2, "{refused}");
+        assert_eq!(refused["error"]["message"], NOT_PAIRED, "{refused}");
+        assert!(r.closed());
+        assert!(gate_ui.asked.lock().unwrap().is_empty());
+        gate.stop();
+    }
+
+    #[test]
     fn gate_answers_locked_error_on_refusal() {
         let fx = fixture();
         exposed(&fx);
+        paired_signed(&fx);
         let (gate_ui, answers) = gate_ui();
-        let gate = McpGate::start_any_relay_for_tests(fx.mcp_socket(), gate_ui.clone()).unwrap();
+        let gate = start_gate(&fx, gate_ui.clone());
         let mut r = Relay::connect(&fx.mcp_socket(), signed_client());
-        r.request(7, "initialize", init_params());
+        let _ = r.call(1, "initialize", init_params(), &no_exec);
+        r.request(7, "tools/call", list_vaults());
         wait_asked(&gate_ui, 1);
         answers.send(false).unwrap();
         let reply = r.reply();
@@ -1006,19 +1108,23 @@ mod mcp {
 
         // The hold is released: the same client is asked again.
         let mut again = Relay::connect(&fx.mcp_socket(), signed_client());
-        again.request(1, "initialize", init_params());
+        let _ = again.call(1, "initialize", init_params(), &no_exec);
+        again.request(2, "tools/call", list_vaults());
         wait_asked(&gate_ui, 2);
         answers.send(false).unwrap();
         assert_eq!(again.reply()["error"]["message"], LOCKED);
 
         // A client that leaves while held releases its hold at once, and the
         // app's late answer finds nobody to serve.
-        let gone = Relay::connect(&fx.mcp_socket(), signed_client());
+        let mut gone = Relay::connect(&fx.mcp_socket(), signed_client());
+        let _ = gone.call(1, "initialize", init_params(), &no_exec);
+        gone.request(2, "tools/call", list_vaults());
         wait_asked(&gate_ui, 3);
         drop(gone);
         std::thread::sleep(std::time::Duration::from_millis(500));
         let mut back = Relay::connect(&fx.mcp_socket(), signed_client());
-        back.request(1, "initialize", init_params());
+        let _ = back.call(1, "initialize", init_params(), &no_exec);
+        back.request(2, "tools/call", list_vaults());
         answers.send(true).unwrap();
         wait_asked(&gate_ui, 4);
         answers.send(false).unwrap();

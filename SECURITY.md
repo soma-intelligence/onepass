@@ -67,7 +67,7 @@ The Mac app's MCP server can ask the owner's iPhone to approve a request, and th
 | A5. Hostile CloudKit | Replays, delays, deletes, reorders or forges records | Every message is sealed to the recipient's key and signed by a device of the signed approver list; request id, 60 s expiry, 24 h replay memory on the phone, device list and approver list seqs that may not go back; an answer counts only for a request the Mac sent and still waits on. Worst case: denial of service, the Mac panel still works. |
 | A6. Stolen or lost iPhone | Holds the phone, not the owner's face | `K_r` sits behind `.biometryCurrentSet`; every answer needs Face ID through a `.biometryCurrentSet` check; `K_r` and the phone's approver keys stay on this device only, never synced. Revoking the phone in the device list makes the Mac erase `C` and refuse its answers. |
 | A7. Stolen Mac, or a session left open | The disk, or physical access during an agent window | `C` alone opens nothing. The agent window is agents only (the app, AutoFill, the extension and widgets see a locked vault), bounded, and ends on sleep, lock or "Lock now" on the phone. |
-| A8. An agent that spams unlock requests | Triggers requests in a loop | At most one unlock request per 10 minutes per Mac; 3 refusals (an unanswered request counts as one) block remote unlock for 1 hour; the existing per-client limits. |
+| A8. An agent that spams unlock requests | Triggers requests in a loop | Only the first tool call of a paired client asks the phone (the locked app answers the MCP handshake itself, and an unpaired client is told to pair at the Mac); at most one unlock request per 10 minutes per Mac; 3 refusals (an unanswered request counts as one) block remote unlock for 1 hour; the existing per-client limits. |
 | A9. A fake notification | Shows the owner a notification that looks like OnePass | Nothing can be answered from the notification itself; the app shows the decrypted, signature-checked request before Face ID; the same 4-letter code is shown to the agent and on the phone. |
 
 Residual risks, known and accepted for now:
@@ -80,6 +80,8 @@ Residual risks, known and accepted for now:
 - The Mac's approver accepts the origin string the app returns (`mac` or `phone:<device_id>`). Recording the ids of accepted responses in the core would close this.
 - Reading the approver list while the Mac is locked does not persist the chain state: a rollback seen there is caught only at the next full unlock.
 - Audit logs that contain the `approved_on` field cannot be verified by older builds (forward-only change).
+- While locked, the app reads its client registry without checking the signature (nothing can verify it then), only to decide whether to ask the phone at all. A process that can write the data folder can make the phone be asked for an unpaired client (the server still refuses its calls) or keep a paired one from asking.
+- An unlock request that a full unlock of the Mac cut short still counts as a refusal in the throttle.
 
 ## Supported versions
 

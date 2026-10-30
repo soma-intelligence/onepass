@@ -201,6 +201,9 @@ public final class DeveloperHosts {
     /// Answers the gate (set by `RemoteUnlockCoordinator` while remote unlock is enrolled; nil: no
     /// gate, a lock stops MCP as before).
     @ObservationIgnored private(set) var lockedRequestHandler: (@MainActor (FfiMcpClient) async -> Bool)?
+    /// Told first when the owner unlocks for real (set by `RemoteUnlockCoordinator`: a remote unlock
+    /// still waiting on the phone ends, its agent goes to the full session).
+    @ObservationIgnored var fullUnlockHandler: (@MainActor () -> Void)?
     /// Server stops and gate starts, in order: a socket is free before the next listener binds it.
     @ObservationIgnored private var work: Task<Void, Never>?
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "developer")
@@ -220,6 +223,7 @@ public final class DeveloperHosts {
     /// After an unlock: starts what the settings enable (MCP through the gate when one runs).
     public func sessionUnlocked(_ session: VaultSession) async {
         guard let core = session.coreSession else { return }
+        fullUnlockHandler?()
         let store = Self.storeFolder(session)
         if settings.sshEnabled { await startSSH(core) }
         if settings.mcpEnabled { await startMCP(core, store: store) }
@@ -300,9 +304,12 @@ public final class DeveloperHosts {
         guard gateWanted, gate == nil, mcp == nil, lockedRequestHandler != nil, settings.mcpEnabled else { return }
         let socket = paths.mcpSocket.path
         let relay = paths.relay.path
+        let data = dataDirectory
         let ui = gateBridge
         do {
-            gate = try await CoreThread.run { try McpGate.start(socketPath: socket, relayPath: relay, ui: ui) }
+            gate = try await CoreThread.run {
+                try McpGate.start(socketPath: socket, relayPath: relay, dataDir: data, ui: ui)
+            }
             gateRunning = true
         } catch {
             mcpError = VaultError(error).localizedMessage

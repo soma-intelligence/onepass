@@ -11,11 +11,13 @@ import AppKit
 /// the locked request the MCP gate asks, the agents-only window it opens and everything that ends
 /// it.
 ///
-/// Flow (spec 6.2, two steps): an agent connects to the locked Mac, the gate calls
-/// `handleLockedRequest`, the enrolled iPhone is asked to unlock (the agent's identity and the
-/// window only); its approval opens an agents-only session (`RemoteUnlocker.finish`) that the MCP and
-/// SSH servers serve while the app stays locked. The first tool request then goes through the usual
-/// approval race (panel and iPhone) with its code.
+/// Flow (spec 6.2, two steps): an agent connects to the locked Mac, the gate answers its handshake
+/// itself and, on its first tool call (a paired client only), calls `handleLockedRequest`; the
+/// enrolled iPhone is asked to unlock (the agent's identity and the window only); its approval opens
+/// an agents-only session (`RemoteUnlocker.finish`) that the MCP and SSH servers serve while the app
+/// stays locked. That tool request then goes through the usual approval race (panel and iPhone)
+/// with its code. A full unlock of the Mac while the phone is asked ends the wait: the agent goes
+/// to the full session.
 ///
 /// The window ends at its deadline (a timer: the core keeps the keys until the next use after the
 /// deadline), when the Mac goes to sleep, its screens sleep or the user session goes inactive, on a
@@ -107,6 +109,7 @@ public final class RemoteUnlockCoordinator {
         self.windowTimer = windowTimer
         self.now = now
         vault.agentWindowEnded = { [weak self] in self?.windowClosed() }
+        hosts.fullUnlockHandler = { [weak self] in self?.fullyUnlocked() }
         vault.passwordChangedHere = { [weak self] in self?.forgetAll() }
         vault.devicesRefreshed = { [weak self] in self?.devicesRefreshed($0) }
         for name in Self.endingNotifications {
@@ -331,12 +334,22 @@ public final class RemoteUnlockCoordinator {
             return first
         }
         if pending == task { pending = nil }
+        // The owner unlocked the Mac meanwhile: the full session serves the agent.
+        if vault.state == .unlocked { return true }
         guard let ok else {
             // Out of time: the request still running must not open a window any more.
             if generation == gen { abandon(task) }
             return refuse(.timedOut)
         }
         return ok
+    }
+
+    /// The owner unlocked the Mac for real (`DeveloperHosts.sessionUnlocked`): a request waiting on
+    /// the phone ends at once, opens no window, and its agent goes to the full session (the gate
+    /// hands over to the server started on it).
+    private func fullyUnlocked() {
+        guard let pending else { return }
+        abandon(pending)
     }
 
     /// A request ran out of time: whatever it still does opens no window (and closes one it is
@@ -406,6 +419,12 @@ public final class RemoteUnlockCoordinator {
         let outcome = await waitForAnswer(unlocker: unlocker, entry: entry, deadline: deadline)
         // Withdrawn off the critical path.
         Task { await channel.delete(record) }
+        if vault.state == .unlocked {
+            // A full unlock ended the wait: nothing failed, and a session the phone opened anyway
+            // is not used.
+            if case .opened(let session) = outcome { Self.lockOffMain(session) }
+            return true
+        }
 
         switch outcome {
         case .opened(let session):
