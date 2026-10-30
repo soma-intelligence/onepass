@@ -38,7 +38,8 @@ struct PhoneApprovalsTests {
         #expect(f.hosts.remoteApproverSet)
     }
 
-    /// Overlapping refreshes run one after the other and leave one approver on the shared mailbox.
+    /// Overlapping refreshes leave one approver, on the shared mailbox. (Whether they ran one after
+    /// the other is not observed here: an interleaving that ends the same way passes too.)
     @Test func concurrentRefreshesLeaveOneApprover() async throws {
         let f = try await RemoteUnlockFixture.make()
         defer { f.cleanUp() }

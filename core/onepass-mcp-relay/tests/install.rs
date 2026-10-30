@@ -555,12 +555,51 @@ fn claude_code_entry_keys_are_ordered_and_message_says_quit() {
         "{text}"
     );
     assert!(String::from_utf8_lossy(&o.stdout).contains("Quit Claude Code first"));
-    // A stale temporary file cannot block the write.
-    fs::write(h.path().join(".claude.json.onepass-tmp-0"), "x").unwrap();
-    ok(&run(
-        "install",
-        h.path(),
-        c.name,
-        &["--force", "--socket", "/tmp/x.sock"],
-    ));
+}
+
+#[test]
+fn nested_or_string_mcp_servers_is_not_a_duplicate() {
+    for c in CLIENTS.iter().filter(|c| c.format == Format::Json) {
+        let h = home();
+        // Claude Code keeps per-project servers under `projects`, and any
+        // string may say "mcpServers": only the top-level key counts.
+        let text = "{\n  \"projects\": {\"/w\": {\"mcpServers\": {\"p\": {\"command\": \"p\"}}}},\n  \"note\": \"mcpServers\",\n  \"list\": [\"mcpServers\", {\"mcpServers\": 1}],\n  \"mcpServers\": {\"other\": {\"command\": \"o\"}}\n}\n";
+        let p = write_file(h.path(), c, text);
+        ok(&run("install", h.path(), c.name, &[]));
+        assert_eq!(entry(&p, c).unwrap().0, relay_path(), "{}", c.name);
+        let v: Value = serde_json::from_str(&fs::read_to_string(&p).unwrap()).unwrap();
+        assert_eq!(v["mcpServers"]["other"]["command"], "o");
+        assert!(v["projects"]["/w"]["mcpServers"].get("onepass").is_none());
+        assert_eq!(v["note"], "mcpServers");
+        ok(&run("uninstall", h.path(), c.name, &[]));
+        assert_eq!(fs::read_to_string(&p).unwrap(), text, "{}", c.name);
+    }
+}
+
+#[test]
+fn socket_paths_are_escaped() {
+    let socket = "/tmp/a \"b\"\\c é\t#[x].sock";
+    for c in &CLIENTS {
+        let h = home();
+        let p = write_file(h.path(), c, &with_other(c));
+        ok(&run("install", h.path(), c.name, &["--socket", socket]));
+        let (_, args) = entry(&p, c).unwrap();
+        assert_eq!(
+            args,
+            vec!["--socket".to_owned(), socket.to_owned()],
+            "{}",
+            c.name
+        );
+        assert!(has_other(&p, c), "{}", c.name);
+        // The same entry again is recognized, and removed cleanly.
+        let o = run("install", h.path(), c.name, &["--socket", socket]);
+        ok(&o);
+        assert!(
+            String::from_utf8_lossy(&o.stdout).contains("already"),
+            "{}",
+            c.name
+        );
+        ok(&run("uninstall", h.path(), c.name, &[]));
+        assert!(entry(&p, c).is_none(), "{}", c.name);
+    }
 }

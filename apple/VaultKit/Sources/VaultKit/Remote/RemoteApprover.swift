@@ -252,16 +252,16 @@ public actor RemoteApprover {
 
     private func handle(_ response: FfiRemoteResponse) async {
         defer { scheduleStop() }
-        let entry = issued.removeValue(forKey: response.requestId)
-        if let entry {
-            // Answered: its request record goes too.
-            await channel.delete(entry.record)
-        }
-        guard let entry, entry.phone == response.from else {
+        // Checked before the entry goes: an answer from another phone must not use up the request
+        // the right phone may still answer.
+        guard let entry = issued[response.requestId], entry.phone == response.from else {
             // Signed by a phone of the list, but not for a request this Mac sent it.
             Self.log.notice("remote answer refused: no request sent to that phone")
             return
         }
+        issued.removeValue(forKey: response.requestId)
+        // Answered: its request record goes too.
+        await channel.delete(entry.record)
         guard let waiter = waiters[entry.waiter], waiter.result == nil else {
             lateAnswers.append(response.from)
             Self.log.notice("late remote answer from \(response.from, privacy: .private) ignored")

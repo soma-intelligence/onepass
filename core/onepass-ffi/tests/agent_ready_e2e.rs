@@ -65,7 +65,9 @@ static BUILD: Once = Once::new();
 
 /// `target/<profile>/onepass-mcp`, next to this test's `deps` folder,
 /// built once per run (Cargo only builds another package's binaries for
-/// that package's own tests).
+/// that package's own tests). `cargo test --target <triple>` is not
+/// supported: the test then lives under `target/<triple>/<profile>`, while
+/// the build below, without `--target`, writes `target/<profile>`.
 fn relay_binary() -> PathBuf {
     let exe = std::env::current_exe().unwrap();
     let profile = exe.parent().and_then(Path::parent).unwrap().to_path_buf();

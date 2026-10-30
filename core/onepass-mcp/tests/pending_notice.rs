@@ -160,7 +160,8 @@ fn a_terminal_approver_code_never_reaches_the_client() {
         assert_eq!(code.chars().count(), 4);
         let sent = sent.lock().unwrap().clone();
         assert_eq!(sent.len(), 1);
-        assert!(!sent[0].contains(&code), "{}", sent[0]);
+        // The exact text below proves the code is absent (a substring check
+        // on four random letters could match the JSON by chance).
         let n: Value = serde_json::from_str(&sent[0]).unwrap();
         let text = n["params"]["message"]
             .as_str()

@@ -81,6 +81,9 @@ public final class RemoteUnlockCoordinator {
     @ObservationIgnored private var noticeSubscription: (RemoteMailbox, UUID)?
     /// Bumped by `lockNow` and every end of a window: an answer that arrives after it never opens one.
     @ObservationIgnored private var generation = 0
+    /// Bumped by every enrollment and every forget: a keychain read started before one of them is
+    /// stale when it returns.
+    @ObservationIgnored private var enrollmentEpoch = 0
     /// The approver the window's first tool request races with (tests read it).
     @ObservationIgnored private(set) var windowApprover: RemoteApprover?
     /// Tests: runs after the phone's approval, right before the window opens.
@@ -154,9 +157,13 @@ public final class RemoteUnlockCoordinator {
     /// or a sleep (Review Focus 4), and a locked, enrolled Mac holds the MCP socket with the gate.
     public func start() async {
         let store = self.store
+        let epoch = enrollmentEpoch
         let entry = await Self.offMain { try? store.load() }
-        enrolledPhone = entry?.phone
-        if entry != nil { installGateHandler() }
+        // Forgotten (or enrolled again) during the read: that newer state stands.
+        if epoch == enrollmentEpoch {
+            enrolledPhone = entry?.phone
+            if entry != nil { installGateHandler() }
+        }
         await channel.purgeExpired(now: now())
         if enrolledPhone != nil, vault.state == .locked, vault.agentSession == nil { hosts.armGate() }
     }
@@ -202,6 +209,7 @@ public final class RemoteUnlockCoordinator {
             throw VaultError.other(Failure.unavailable.message)
         }
         try store.save(RemoteUnlockKeyStore.Entry(mac: mac, phone: phone, c: enrollment.c))
+        enrollmentEpoch &+= 1
         enrolledPhone = phone
         lastFailure = nil
         installGateHandler()
@@ -276,6 +284,7 @@ public final class RemoteUnlockCoordinator {
         } catch {
             Self.log.error("remote unlock envelope not erased")
         }
+        enrollmentEpoch &+= 1
         enrolledPhone = nil
         hosts.setLockedRequestHandler(nil)
     }
@@ -591,7 +600,8 @@ public final class RemoteUnlockCoordinator {
         retireWindowApprover()
         if vault.agentSession === session {
             vault.endAgentWindow()
-        } else {
+        } else if vault.agentSession == nil {
+            // Already closed: only the servers it started stop. A newer window keeps its own.
             hosts.agentWindowEnded(rearm: vault.state == .locked && enrolledPhone != nil)
         }
     }

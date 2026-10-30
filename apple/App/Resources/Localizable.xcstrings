@@ -5690,6 +5690,16 @@
         }
       }
     },
+    "Fenêtre agents demandée" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agents window requested"
+          }
+        }
+      }
+    },
     "Fenêtre agents : %@" : {
       "localizations" : {
         "en" : {

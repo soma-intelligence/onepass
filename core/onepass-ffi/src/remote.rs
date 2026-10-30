@@ -200,7 +200,7 @@ pub struct FfiRequestBody {
     pub targets: Vec<String>,
     pub remember_allowed: bool,
     pub strong_required: bool,
-    /// The two letters shown to the agent.
+    /// The four letters shown to the agent (empty for an unlock request).
     pub confirm_code: String,
     /// Agents-only window of an unlock request (set by `begin`).
     pub window_minutes: Option<u32>,

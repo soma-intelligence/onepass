@@ -381,7 +381,7 @@ impl<A: Approver> PromptGate<A> {
     /// `pending_notice` with `Some(code)` when the approver's code is public
     /// ([`Approver::code_is_public`]) and `None` otherwise, then asks the approver with a copy of `req`
     /// carrying that code. A request that joins another prompt or times out
-    /// waiting never calls `pending`.
+    /// waiting never calls `pending_notice`.
     pub fn approve_notifying(
         &self,
         client_id: &str,

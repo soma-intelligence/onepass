@@ -15,7 +15,9 @@ public final class PhoneAgents {
         public let name: String
         /// This phone holds `K_r` for it.
         public let unlockEnrolled: Bool
-        /// End of the agents-only window this phone opened, as far as it knows.
+        /// End of the agents-only window this phone asked for, as far as it knows: the Mac does not
+        /// confirm it opened (it may refuse, or the window may already have ended), so the settings
+        /// say "requested".
         public let windowEndsAt: Date?
     }
 
@@ -197,6 +199,7 @@ public final class PhoneAgents {
         guard let responder else { throw RemoteResponderError.unknownRequest }
         try await responder.answer(request.id, decision: decision)
         if request.isUnlock, decision != .denied {
+            // Requested, not confirmed: the Mac sends nothing back when the window opens.
             let minutes = Double(request.body.windowMinutes ?? 60)
             windows[request.mac] = Date().addingTimeInterval(minutes * 60)
         }
