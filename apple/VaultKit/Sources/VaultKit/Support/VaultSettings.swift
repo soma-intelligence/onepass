@@ -48,6 +48,7 @@ public final class VaultSettings: @unchecked Sendable {
         static let quickType = "onepass.quickTypeSuggestions"
         static let autofillTip = "onepass.autofillTipDismissed"
         static let revokedErase = "onepass.revokedErasePending"
+        static let revokedLocked = "onepass.revokedLocked"
     }
 
     /// This device was found revoked and its erase has not completed yet (L6): the app shows the
@@ -55,6 +56,14 @@ public final class VaultSettings: @unchecked Sendable {
     public var revokedErasePending: Bool {
         get { defaults.bool(forKey: Key.revokedErase) }
         set { defaults.set(newValue, forKey: Key.revokedErase) }
+    }
+
+    /// The signed device list marked this device revoked: the app shows the revoked screen, never the
+    /// lock screen, until the user erases the device. The list alone never erases anything (a revoked
+    /// device can sign one too).
+    public var revokedLocked: Bool {
+        get { defaults.bool(forKey: Key.revokedLocked) }
+        set { defaults.set(newValue, forKey: Key.revokedLocked) }
     }
 
     public var deviceMode: DeviceMode {
