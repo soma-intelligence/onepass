@@ -139,18 +139,17 @@ impl DeviceKeys {
     /// Fully software keys.
     pub fn generate_software() -> Result<DeviceKeys> {
         DeviceKeys::new(
-            &DeviceKeys::generate_classical(),
+            &DeviceKeys::generate_classical()?,
             Box::new(SoftwarePqHalf::generate()?),
         )
     }
 
     /// Fresh classical halves in the layout `classical_bytes` returns.
-    pub fn generate_classical() -> Zeroizing<Vec<u8>> {
+    pub fn generate_classical() -> Result<Zeroizing<Vec<u8>>> {
         let mut out = Zeroizing::new(vec![0u8; CLASSICAL_LEN]);
         out[0] = CLASSICAL_VERSION;
-        // The system RNG failing is not recoverable for key generation.
-        fill_random(&mut out[1..]).expect("system random");
-        out
+        fill_random(&mut out[1..]).map_err(|_| Error::Crypto)?;
+        Ok(out)
     }
 
     /// Classical halves from `classical_bytes` plus a post-quantum half.
@@ -308,7 +307,7 @@ mod tests {
     const LABEL: &[u8] = b"onepass/rotation/secret-key/v1";
 
     fn keys() -> (DeviceKeys, Zeroizing<Vec<u8>>) {
-        let classical = DeviceKeys::generate_classical();
+        let classical = DeviceKeys::generate_classical().unwrap();
         let pq = SoftwarePqHalf::generate().unwrap();
         let pq_bytes = pq.to_bytes();
         (DeviceKeys::new(&classical, Box::new(pq)).unwrap(), pq_bytes)
@@ -397,7 +396,11 @@ mod tests {
 
     #[test]
     fn foreign_signature_of_wrong_length_refused() {
-        let k = DeviceKeys::new(&DeviceKeys::generate_classical(), Box::new(BadLengths)).unwrap();
+        let k = DeviceKeys::new(
+            &DeviceKeys::generate_classical().unwrap(),
+            Box::new(BadLengths),
+        )
+        .unwrap();
         assert!(matches!(k.sign(b"d", b"m"), Err(Error::Crypto)));
         let (real, _) = keys();
         let public = real.public(Id::new()).unwrap();
@@ -416,7 +419,11 @@ mod tests {
 
     #[test]
     fn foreign_error_surfaces() {
-        let k = DeviceKeys::new(&DeviceKeys::generate_classical(), Box::new(Failing)).unwrap();
+        let k = DeviceKeys::new(
+            &DeviceKeys::generate_classical().unwrap(),
+            Box::new(Failing),
+        )
+        .unwrap();
         assert!(matches!(k.public(Id::new()), Err(Error::Crypto)));
         assert!(matches!(k.sign(b"d", b"m"), Err(Error::Crypto)));
         let (real, _) = keys();
