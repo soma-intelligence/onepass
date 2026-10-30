@@ -49,17 +49,18 @@ public actor RemoteApprover {
 
     private var waiters: [UUID: Waiter] = [:]
     private var issued: [Data: Issued] = [:]
-    private var mailbox: RemoteMailbox?
+    private let mailbox: RemoteMailbox
     private var subscription: UUID?
     private var stopTimer: Task<Void, Never>?
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "remote")
 
     /// `timeout` is the request lifetime of the spec (60 s); the tests pass less. `mailbox`: the
-    /// Mac's shared reader (nil: one of its own, made on first use).
+    /// Mac's one reader of its messages (`RemoteUnlockCoordinator.mailbox(for:)` in the app), shared
+    /// with the remote unlock.
     public init(
         channel: any RemoteChannel, session: any RemoteApprovalSession, keys: FfiApproverKeys,
         timeout: Duration = .seconds(60), now: @escaping @Sendable () -> Date = { Date() },
-        mailbox: RemoteMailbox? = nil
+        mailbox: RemoteMailbox
     ) {
         self.mailbox = mailbox
         self.channel = channel
@@ -67,6 +68,16 @@ public actor RemoteApprover {
         self.keys = keys
         self.timeout = timeout
         self.now = now
+    }
+
+    /// Dropped (window closed, approver replaced) with a request still unexpired: its consumer
+    /// goes, so the reader stops polling once nothing else listens.
+    deinit {
+        stopTimer?.cancel()
+        if let subscription {
+            let mailbox = self.mailbox
+            Task { await mailbox.unregister(subscription) }
+        }
     }
 
     /// Asks every enrolled phone. Nil when no phone got the request (none enrolled, or CloudKit
@@ -182,15 +193,14 @@ public actor RemoteApprover {
         stopTimer?.cancel()
         stopTimer = nil
         guard subscription == nil else { return }
-        let box = mailbox ?? RemoteMailbox(channel: channel, device: me, now: now)
-        mailbox = box
-        subscription = await box.register(.approval) { [weak self] message in
+        subscription = await mailbox.register(.approval) { [weak self] message in
             await self?.claim(message) ?? false
         }
     }
 
     private func stopListening() {
-        guard let subscription, let mailbox else { return }
+        guard let subscription else { return }
+        let mailbox = self.mailbox
         self.subscription = nil
         Task { await mailbox.unregister(subscription) }
     }

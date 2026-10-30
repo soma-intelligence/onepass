@@ -82,6 +82,8 @@ public final class RemoteUnlockCoordinator {
     @ObservationIgnored private(set) var windowApprover: RemoteApprover?
     /// Tests: runs after the phone's approval, right before the window opens.
     @ObservationIgnored var beforeOpenWindow: ((Session) async -> Void)?
+    /// Tests: runs once the servers started on the window, before the last check.
+    @ObservationIgnored var whileServersStart: (() async -> Void)?
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "remote")
 
     /// `notifications`: where sleep and session changes are posted (the workspace center on the
@@ -160,8 +162,9 @@ public final class RemoteUnlockCoordinator {
         await Task.detached(priority: .userInitiated) { work() }.value
     }
 
-    /// The one reader of `device`'s messages.
-    private func mailbox(for device: String) -> RemoteMailbox {
+    /// The one reader of `device`'s messages (this Mac's id). Every `RemoteApprover` of this Mac
+    /// must use it, the full-unlock one included, so one reader routes every message.
+    public func mailbox(for device: String) -> RemoteMailbox {
         if let mailbox, mailbox.device == device { return mailbox }
         let box = RemoteMailbox(channel: channel, device: device, now: now)
         mailbox = box
@@ -214,8 +217,15 @@ public final class RemoteUnlockCoordinator {
     /// Forgets the remote unlock with `phone` on this Mac: `C` is erased here and nothing is sent
     /// (the phone's `K_r` alone opens nothing).
     public func forget(phone: String) async {
-        guard enrolledPhone == phone else { return }
+        guard await currentPhone() == phone else { return }
         clearEnrollment()
+    }
+
+    /// The enrolled phone, read from the keychain (off the main actor) when `start()` has not yet.
+    private func currentPhone() async -> String? {
+        if let enrolledPhone { return enrolledPhone }
+        let store = self.store
+        return await Self.offMain { try? store.load() }?.phone
     }
 
     /// Erases every `C` of this Mac (master password changed here, spec 6.1).
@@ -239,13 +249,23 @@ public final class RemoteUnlockCoordinator {
         }
     }
 
-    /// A device list read while unlocked (the verified list): an enrolled phone now revoked loses
-    /// its pairing (spec 6.4).
+    /// A device list read while unlocked (the verified list): an enrolled phone now revoked, or
+    /// without an active approver entry (keys retired), loses its pairing (spec 6.4), reported like
+    /// a stale enrollment (enroll again).
     private func devicesRefreshed(_ devices: [FfiDevice]) {
-        guard let phone = enrolledPhone,
-            devices.contains(where: { $0.id == phone && $0.revokedAt != nil })
-        else { return }
+        Task { await checkPairing(devices) }
+    }
+
+    private func checkPairing(_ devices: [FfiDevice]) async {
+        guard let phone = await currentPhone() else { return }
+        let revoked = devices.contains { $0.id == phone && $0.revokedAt != nil }
+        var approver = true
+        if !revoked, let list = try? await vault.read({ try $0.approvers() }) {
+            approver = list.contains { $0.deviceId == phone && $0.role == .phone }
+        }
+        guard revoked || !approver else { return }
         clearEnrollment()
+        lastFailure = .staleEnrollment
     }
 
     // MARK: - Locked request
@@ -280,11 +300,22 @@ public final class RemoteUnlockCoordinator {
         if pending == task { pending = nil }
         guard let ok else {
             // Out of time: the request still running must not open a window any more.
-            if generation == gen { generation &+= 1 }
-            task.cancel()
+            if generation == gen { abandon(task) }
             return refuse(.timedOut)
         }
         return ok
+    }
+
+    /// A request ran out of time: whatever it still does opens no window (and closes one it is
+    /// opening).
+    private func abandon(_ task: Task<Bool, Never>?) {
+        generation &+= 1
+        task?.cancel()
+    }
+
+    /// Tests: what the 60 s limit does to the request in flight.
+    func abandonPendingRequestForTesting() {
+        abandon(pending)
     }
 
     private enum Outcome: Sendable {
@@ -482,16 +513,34 @@ public final class RemoteUnlockCoordinator {
         startDeadline(endsAt)
         let box = mailbox(for: entry.mac)
         await startNotices(box: box, phone: entry.phone, unlocker: unlocker)
+        // Ended while the notices started: nothing stays armed.
+        guard gen == generation else {
+            stopNotices()
+            closeAbandoned(session)
+            return false
+        }
         let store = vault.environment.databaseURL.deletingLastPathComponent().path
         let approver = RemoteApprover(channel: channel, session: session, keys: keys, now: now, mailbox: box)
         windowApprover = approver
         await hosts.agentWindowOpened(session, store: store, approver: approver)
-        // Ended while the servers started: they stop again.
+        if let whileServersStart { await whileServersStart() }
+        // Ended while the servers started (lock, sleep, time out): everything stops again.
         if gen != generation || vault.agentSession !== session {
-            hosts.agentWindowEnded(rearm: vault.state == .locked && enrolledPhone != nil)
+            closeAbandoned(session)
             return false
         }
         return true
+    }
+
+    /// A window given up while it opened: closed like any end (session locked, timer and
+    /// consumers gone, servers stopped), or only the servers stopped if it already closed.
+    private func closeAbandoned(_ session: Session) {
+        windowApprover = nil
+        if vault.agentSession === session {
+            vault.endAgentWindow()
+        } else {
+            hosts.agentWindowEnded(rearm: vault.state == .locked && enrolledPhone != nil)
+        }
     }
 
     private func startDeadline(_ endsAt: Date) {
@@ -550,6 +599,8 @@ public final class RemoteUnlockCoordinator {
         deadline = nil
         stopNotices()
         windowApprover = nil
+        // The window's approvers stop reading, even with a request still unexpired.
+        if let mailbox { Task { await mailbox.unregisterAll(.approval) } }
         hosts.agentWindowEnded(rearm: vault.state == .locked && enrolledPhone != nil)
     }
 }
