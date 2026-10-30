@@ -1078,5 +1078,12 @@ mod mcp {
             .find(|l| l.contains("run_with_secrets"))
             .expect("run_with_secrets audited");
         assert!(line.contains(r#""approved_on":"phone:7f3a9c""#), "{line}");
+        // The settings' audit view reads it too (its origin column).
+        let entry = report
+            .entries
+            .iter()
+            .find(|e| e.action == "run_with_secrets")
+            .expect("run_with_secrets in the report");
+        assert_eq!(entry.approved_on.as_deref(), Some("phone:7f3a9c"));
     }
 }

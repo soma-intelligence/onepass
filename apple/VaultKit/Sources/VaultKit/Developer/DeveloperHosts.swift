@@ -53,6 +53,9 @@ public struct DeveloperSettings: Sendable, Equatable {
     public var mcpEnabled = false
     /// Security-scoped bookmark of the `known_hosts` file the user chose.
     public var knownHostsBookmark: Data?
+    /// "Approuver aussi sur l'iPhone": the panel races the enrolled phones (spec 5.3). On by default:
+    /// the spec asks the phones whenever one is enrolled.
+    public var approveOnPhone = true
     /// Length of an agents-only window opened from the iPhone (spec 6.3): 1 h by default, 15 min
     /// to 8 h.
     public var agentWindowMinutes = DeveloperSettings.defaultAgentWindowMinutes {
@@ -75,6 +78,7 @@ public struct DeveloperSettings: Sendable, Equatable {
         static let mcp = "onepass.dev.mcpEnabled"
         static let knownHosts = "onepass.dev.knownHostsBookmark"
         static let agentWindow = "onepass.dev.agentWindowMinutes"
+        static let approveOnPhone = "onepass.dev.approveOnPhone"
     }
 
     public static func load(from defaults: UserDefaults) -> DeveloperSettings {
@@ -85,6 +89,7 @@ public struct DeveloperSettings: Sendable, Equatable {
         s.mcpEnabled = defaults.bool(forKey: Key.mcp)
         s.knownHostsBookmark = defaults.data(forKey: Key.knownHosts)
         s.agentWindowMinutes = defaults.object(forKey: Key.agentWindow) as? Int ?? defaultAgentWindowMinutes
+        s.approveOnPhone = defaults.object(forKey: Key.approveOnPhone) as? Bool ?? true
         return s
     }
 
@@ -94,6 +99,7 @@ public struct DeveloperSettings: Sendable, Equatable {
         defaults.set(sshAllowForwarded, forKey: Key.forwarded)
         defaults.set(mcpEnabled, forKey: Key.mcp)
         defaults.set(agentWindowMinutes, forKey: Key.agentWindow)
+        defaults.set(approveOnPhone, forKey: Key.approveOnPhone)
         if let knownHostsBookmark {
             defaults.set(knownHostsBookmark, forKey: Key.knownHosts)
         } else {
@@ -139,6 +145,20 @@ public struct DeveloperPrompt: Identifiable, Sendable {
     }
 }
 
+/// Where a settled approval was answered, shown by the panel a moment after it closes (spec 7):
+/// "Approuvé sur iPhone de Camille", "Refusé sur iPhone de Camille", "Approuvé sur ce Mac".
+public struct ApprovalOutcome: Equatable, Sendable {
+    public let promptID: UUID
+    public let text: String
+    public let approved: Bool
+
+    public init(promptID: UUID, text: String, approved: Bool) {
+        self.promptID = promptID
+        self.text = text
+        self.approved = approved
+    }
+}
+
 /// Runs the SSH agent and the MCP server of the Mac app on the unlocked session, and relays their
 /// questions to the UI (`prompts`). Every server stops on lock: no key or secret is served locked.
 ///
@@ -161,6 +181,10 @@ public final class DeveloperHosts {
     public private(set) var prompts: [DeveloperPrompt] = []
     /// Bumped when the files the settings list (clients, grants, audit log) may have changed.
     public private(set) var revision = 0
+    /// Where the last settled approval was answered (nil: refused by the lock or the timeout).
+    public private(set) var lastOutcome: ApprovalOutcome?
+    /// Device id to name of the approving phones, for the panel and the audit log.
+    @ObservationIgnored private var phoneNames: [String: String] = [:]
 
     public let paths: DeveloperPaths
     @ObservationIgnored private let defaults: UserDefaults
@@ -233,6 +257,8 @@ public final class DeveloperHosts {
 
     /// The iPhone approver of the next approvals is set (tests).
     var remoteApproverSet: Bool { bridge.remote != nil }
+    /// The iPhone approver of the next approvals (tests).
+    var remoteApprover: RemoteApprover? { bridge.remote }
 
     /// Waits for the pending server stops and gate starts (tests, and before a start).
     func settle() async {
@@ -425,7 +451,50 @@ public final class DeveloperHosts {
 
     /// The user's answer to a prompt. Unknown ids (already timed out) are ignored.
     public func answer(_ id: UUID, with decision: FfiDecision) {
-        settle(id, with: FfiAnswer(decision: decision, approvedOn: "mac"))
+        guard let prompt = prompts.first(where: { $0.id == id }) else { return }
+        let answer = FfiAnswer(decision: decision, approvedOn: "mac")
+        // This click counts only if the phone did not answer first. The outcome is set before the
+        // prompt goes: the panel shows it in place of the question.
+        if answers[id]?.resolve(answer) == true, case .approval = prompt.kind { recordOutcome(id, answer) }
+        settle(id, with: answer)
+    }
+
+    /// The names of the phones that approve (set from the signed approver list).
+    public func setPhoneNames(_ names: [String: String]) {
+        phoneNames = names
+    }
+
+    /// The audit log's origin column: "Ce Mac", the phone's name, "iPhone" for a phone no longer
+    /// listed, nothing for older lines (no `approved_on`).
+    public func originLabel(_ approvedOn: String?) -> String {
+        guard let approvedOn, !approvedOn.isEmpty else { return "" }
+        if approvedOn == "mac" { return String(localized: "Ce Mac", bundle: VaultKitStrings.bundle) }
+        if approvedOn.hasPrefix("phone:") { return phoneName(String(approvedOn.dropFirst("phone:".count))) }
+        return ""
+    }
+
+    private func phoneName(_ id: String) -> String {
+        phoneNames[id] ?? "iPhone"
+    }
+
+    /// Keeps where `answer` was given for the panel, once per prompt. Nothing for a timeout or a lock
+    /// (no origin), nor for a refusal clicked on this Mac.
+    fileprivate func recordOutcome(_ id: UUID, _ answer: FfiAnswer) {
+        guard lastOutcome?.promptID != id, let origin = answer.approvedOn else { return }
+        let approved = answer.decision != .deny
+        let text: String
+        if origin == "mac" {
+            guard approved else { return }
+            text = String(localized: "Approuvé sur ce Mac", bundle: VaultKitStrings.bundle)
+        } else if origin.hasPrefix("phone:") {
+            let name = phoneName(String(origin.dropFirst("phone:".count)))
+            text = approved
+                ? String(localized: "Approuvé sur \(name)", bundle: VaultKitStrings.bundle)
+                : String(localized: "Refusé sur \(name)", bundle: VaultKitStrings.bundle)
+        } else {
+            return
+        }
+        lastOutcome = ApprovalOutcome(promptID: id, text: text, approved: approved)
     }
 
     /// The iPhone approver the next approvals race against the panel (nil: the panel alone). Set
@@ -540,7 +609,7 @@ final class PromptBridge: FfiDeveloperUi, @unchecked Sendable {
         let answer = box.wait(timeout: .now() + timeout)
         // The Mac answered or time ran out: the iPhone requests are withdrawn.
         phone?.cancel()
-        close(prompt.id)
+        close(prompt.id, answer: answer)
         return answer ?? FfiAnswer(decision: .deny, approvedOn: nil)
     }
 
@@ -574,9 +643,10 @@ final class PromptBridge: FfiDeveloperUi, @unchecked Sendable {
         }
     }
 
-    /// The panel closes, however the question ended.
-    private func close(_ id: UUID) {
+    /// The panel closes, however the question ended; with an answer, it says where it was given.
+    private func close(_ id: UUID, answer: FfiAnswer? = nil) {
         Task { @MainActor [weak owner] in
+            if let answer { owner?.recordOutcome(id, answer) }
             owner?.expire(id)
             owner?.touched()
         }

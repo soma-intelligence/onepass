@@ -1200,6 +1200,16 @@
         }
       }
     },
+    "Ajoute OnePass à ton client MCP en un clic : seule son entrée « onepass » change, une sauvegarde est gardée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add OnePass to your MCP client in one click: only its “onepass” entry changes, and a backup is kept."
+          }
+        }
+      }
+    },
     "Ajoute ce tag à un élément pour le retrouver ici." : {
       "localizations" : {
         "en" : {
@@ -1420,6 +1430,16 @@
         }
       }
     },
+    "Aperçu impossible :" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preview failed:"
+          }
+        }
+      }
+    },
     "Aperçu indisponible : le contenu des pièces jointes n'est pas encore enregistré dans le coffre." : {
       "localizations" : {
         "en" : {
@@ -1610,6 +1630,36 @@
         }
       }
     },
+    "Approbations" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approvals"
+          }
+        }
+      }
+    },
+    "Approbations et déverrouillage" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approvals and unlock"
+          }
+        }
+      }
+    },
+    "Approuve les demandes des agents sur ton iPhone, et déverrouille OnePass pour eux quand tu n'es pas devant ce Mac." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approve your agents' requests on your iPhone, and unlock OnePass for them when you're away from this Mac."
+          }
+        }
+      }
+    },
     "Approuve seulement si l'extension affiche exactement ce code." : {
       "localizations" : {
         "en" : {
@@ -1626,6 +1676,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Approve"
+          }
+        }
+      }
+    },
+    "Approuver aussi sur l'iPhone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also Approve on iPhone"
           }
         }
       }
@@ -1830,6 +1890,16 @@
         }
       }
     },
+    "Aucun changement." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No changes."
+          }
+        }
+      }
+    },
     "Aucun client appairé. Un client signé demande l'appairage à sa première connexion." : {
       "localizations" : {
         "en" : {
@@ -1866,6 +1936,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No Favorites"
+          }
+        }
+      }
+    },
+    "Aucun iPhone enrôlé. Sur ton iPhone, ouvre OnePass > Réglages > Agents et active les demandes des agents." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No iPhone enrolled. On your iPhone, open OnePass > Settings > Agents and turn on agent requests."
           }
         }
       }
@@ -2890,6 +2970,16 @@
         }
       }
     },
+    "Cette version de OnePass n'utilise pas iCloud : les demandes s'approuvent sur ce Mac seulement." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This build of OnePass doesn't use iCloud: requests are approved on this Mac only."
+          }
+        }
+      }
+    },
     "Champ personnalisé" : {
       "localizations" : {
         "en" : {
@@ -2940,6 +3030,16 @@
         }
       }
     },
+    "Changements prévus :" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Planned changes:"
+          }
+        }
+      }
+    },
     "Changer" : {
       "localizations" : {
         "en" : {
@@ -2986,6 +3086,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Each vault carries a signed list of its items and a version number. OnePass checks these signatures on every read, so an item removed, added or changed, or an old version replayed by storage or iCloud, is refused."
+          }
+        }
+      }
+    },
+    "Chaque demande part aussi vers ton iPhone, et la première réponse compte. La fenêtre des agents se ferme à son terme, quand ce Mac se met en veille ou quand tu verrouilles." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each request also goes to your iPhone, and the first answer counts. The agent window closes when it ends, when this Mac goes to sleep or when you lock."
           }
         }
       }
@@ -4580,22 +4690,22 @@
         }
       }
     },
+    "Durée de la fenêtre des agents" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent Window Length"
+          }
+        }
+      }
+    },
     "Décision" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Decision"
-          }
-        }
-      }
-    },
-    "Déclare OnePass dans ton client MCP (OnePass ne l'inscrit jamais pour toi) :" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add OnePass to your MCP client (OnePass never does it for you):"
           }
         }
       }
@@ -4886,6 +4996,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unlock with %@"
+          }
+        }
+      }
+    },
+    "Déverrouiller depuis mon iPhone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock from My iPhone"
           }
         }
       }
@@ -6450,6 +6570,36 @@
         }
       }
     },
+    "Installer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install"
+          }
+        }
+      }
+    },
+    "Installer dans un agent" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install in an Agent"
+          }
+        }
+      }
+    },
+    "Installé. Quitte %@ puis relance-le." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installed. Quit %@, then open it again."
+          }
+        }
+      }
+    },
     "J'ai déjà OnePass sur un autre appareil" : {
       "localizations" : {
         "en" : {
@@ -6666,6 +6816,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The erase request couldn't be sent. The watch may still have its data."
+          }
+        }
+      }
+    },
+    "L'installation a échoué." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The installation failed."
           }
         }
       }
@@ -8655,7 +8815,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Source"
+            "value" : "Origin"
           }
         }
       }
@@ -9250,6 +9410,16 @@
         }
       }
     },
+    "Pour déclarer OnePass à la main dans ton client MCP (ou utilise « Installer dans un agent » plus bas) :" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To add OnePass to your MCP client by hand (or use “Install in an Agent” below):"
+          }
+        }
+      }
+    },
     "Pour en sortir sans rien perdre, exporte d'abord ce que cet appareil contient, puis choisis la version à garder. Chaque action demande ton mot de passe maître." : {
       "localizations" : {
         "en" : {
@@ -9506,6 +9676,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Leaves the device"
+          }
+        }
+      }
+    },
+    "Quitte le client avant d'installer : il réécrit sa configuration en quittant. Le fichier d'origine est gardé à côté (.onepass-bak)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quit the client before you install: it rewrites its configuration when it quits. The original file is kept next to it (.onepass-bak)."
           }
         }
       }
@@ -10737,6 +10917,16 @@
         }
       }
     },
+    "Service" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Service"
+          }
+        }
+      }
+    },
     "Ses données OnePass n'ont pas encore pu être effacées. OnePass réessaie à chaque ouverture ; tu peux aussi réessayer maintenant." : {
       "localizations" : {
         "en" : {
@@ -11183,6 +11373,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "On your iPhone or iPad: Settings > Devices > Add a Device"
+          }
+        }
+      }
+    },
+    "Sur ton iPhone, vérifie le code %@ et accepte avec Face ID." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On your iPhone, check the code %@ and accept with Face ID."
           }
         }
       }
@@ -11653,6 +11853,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your first name (shown only on your devices)"
+          }
+        }
+      }
+    },
+    "Touch ID confirme. Ouvert depuis l'iPhone, OnePass sert seulement les agents : l'app reste verrouillée." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touch ID confirms. Opened from the iPhone, OnePass serves your agents only: the app stays locked."
           }
         }
       }
@@ -12447,6 +12657,16 @@
         }
       }
     },
+    "Voir les changements" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Changes"
+          }
+        }
+      }
+    },
     "Voir les demandes en attente (%lld)" : {
       "localizations" : {
         "en" : {
@@ -12963,6 +13183,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud still serves an older version than this device's. OnePass carries on with its verified copy and sends it again; there's nothing to do."
+          }
+        }
+      }
+    },
+    "iPhone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone"
+          }
+        }
+      }
+    },
+    "iPhone qui déverrouille" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone That Unlocks"
           }
         }
       }

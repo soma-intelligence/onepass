@@ -49,8 +49,11 @@ public actor RemoteApprover {
 
     private var waiters: [UUID: Waiter] = [:]
     private var issued: [Data: Issued] = [:]
-    private let mailbox: RemoteMailbox
+    /// The Mac's one reader, shared with the remote unlock (tests check which).
+    nonisolated let mailbox: RemoteMailbox
     private var subscription: UUID?
+    /// Retired (`stop()`): it asks nothing and reads nothing any more.
+    private var stopped = false
     private var stopTimer: Task<Void, Never>?
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "remote")
 
@@ -89,6 +92,10 @@ public actor RemoteApprover {
 
     /// `ask`, telling `onSent` the names of the phones that got the request.
     public func ask(_ r: FfiApprovalRequest, onSent: @Sendable ([String]) -> Void) async -> FfiAnswer? {
+        guard !stopped else {
+            phonesAvailable = false
+            return nil
+        }
         let session = self.session
         let keys = self.keys
         guard let me = session.thisDeviceId(),
@@ -151,6 +158,17 @@ public actor RemoteApprover {
         return answer
     }
 
+    /// Retires this approver (its agents-only window ended): every wait ends without an answer, its
+    /// requests are withdrawn, and its own consumer leaves the shared mailbox. The other consumers
+    /// (the full-unlock approver, the notices) keep reading.
+    public func stop() {
+        stopped = true
+        for id in Array(waiters.keys) { resolve(id, with: nil) }
+        stopTimer?.cancel()
+        stopTimer = nil
+        stopListening()
+    }
+
     /// Erases the records that expired (at launch: nothing stays after a quit or a sleep, spec 5.2).
     public func purgeExpired() async {
         await channel.purgeExpired(now: now())
@@ -190,6 +208,7 @@ public actor RemoteApprover {
     // MARK: - Listening
 
     private func startListening(_ me: String) async {
+        guard !stopped else { return }
         stopTimer?.cancel()
         stopTimer = nil
         guard subscription == nil else { return }
@@ -239,6 +258,7 @@ public actor RemoteApprover {
 
     /// Stops the listener once nothing waits and every request sent has expired.
     private func scheduleStop() {
+        guard !stopped else { return }
         let current = now()
         issued = issued.filter { $0.value.expiresAt > current }
         guard waiters.values.allSatisfy({ $0.result != nil }) else { return }
