@@ -95,12 +95,12 @@ impl SshAgentHost {
             signer: SessionSigner(session.clone()),
         };
         let stop = Arc::new(AtomicBool::new(false));
+        // An agents-only window: the Mac may be unattended, its panel's
+        // answers need Touch ID whatever the setting.
+        let presence = config.require_presence || session.agent_window().is_some();
         let agent = Agent::new(
             SessionKeys(session, stop.clone()),
-            Arc::new(UiApprover {
-                ui,
-                presence: config.require_presence,
-            }),
+            Arc::new(UiApprover { ui, presence }),
             Box::new(sink),
             AgentConfig {
                 allow_forwarded: config.allow_forwarded,

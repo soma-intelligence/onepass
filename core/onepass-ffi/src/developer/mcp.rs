@@ -729,9 +729,12 @@ fn serve_session(
         SessionPort(ctx.session.clone()),
         policy,
         narrowing,
+        // During an agents-only window the Mac may be unattended: an
+        // answer from its panel counts only after Touch ID (a phone answer
+        // already carries Face ID).
         Arc::new(UiApprover {
             ui: ctx.ui.clone(),
-            presence: false,
+            presence: ctx.session.agent_window().is_some(),
         }),
         Box::new(sink),
         Some(ctx.dir.clone()),

@@ -20,9 +20,10 @@ import AppKit
 /// to the full session.
 ///
 /// The window ends at its deadline (a timer: the core keeps the keys until the next use after the
-/// deadline), when the Mac goes to sleep, its screens sleep or the user session goes inactive, on a
-/// `Lock` notice from a phone, on a lock of the app, or when the owner unlocks for real. A relaunch
-/// starts locked (nothing is persisted but `C`).
+/// deadline), when the Mac goes to sleep or the user session goes inactive, on a `Lock` notice from
+/// a phone, on a lock of the app, or when the owner unlocks for real. The screens going to sleep do
+/// not end it (a panel answer needs Touch ID during a window). A relaunch starts locked (nothing is
+/// persisted but `C`).
 @MainActor
 @Observable
 public final class RemoteUnlockCoordinator {
@@ -133,11 +134,11 @@ public final class RemoteUnlockCoordinator {
         #endif
     }
 
-    /// Mac asleep, screens asleep, user session switched out (spec 6.3).
+    /// Mac asleep, user session switched out (spec 6.3). The screens going to sleep end nothing: the
+    /// panel's answers need Touch ID while a window is open, so an unattended Mac approves nothing.
     static var endingNotifications: [Notification.Name] {
         #if os(macOS)
-        [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
-         NSWorkspace.sessionDidResignActiveNotification]
+        [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification]
         #else
         []
         #endif
