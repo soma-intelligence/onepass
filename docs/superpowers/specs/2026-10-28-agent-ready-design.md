@@ -1,7 +1,7 @@
 # OnePass prêt pour les agents : approbation sur iPhone, déverrouillage à distance, installation en une commande
 
 Date : 2026-10-28
-Statut : en revue (design validé section par section avec le fondateur le 2026-10-28)
+Statut : implémentée sur `feat/agent-ready` (2026-10-29, tâches 1 à 13), vérifications sur vrais appareils et vrai CloudKit en attente. Design validé section par section avec le fondateur le 2026-10-28. Cette spec reste la référence ; les écarts de l'implémentation sont listés à la section 13, les sections précédentes ne sont pas réécrites.
 Portée : au-dessus du jalon 7 dans les apps (`2026-10-27-m7-app-design.md`), rendre le serveur MCP de l'app Mac utilisable par tout agent IA du Mac, y compris quand le titulaire n'est pas devant l'écran. Branche `docs/agent-ready-spec`, implémentation sur `feat/agent-ready`, partie de `main` (qui porte le jalon 7 dans les apps).
 
 ## 1. Compréhension
@@ -253,3 +253,21 @@ Risques résiduels, documentés : CloudKit et Apple voient quand et combien de d
 8. Ce mode remplace le ruling 4 du jalon 7 dans les apps pour les sessions ouvertes à distance seulement.
 9. Installation par écriture des fichiers des clients, avec sauvegarde.
 10. Chemins des clients vérifiés au plan d'implémentation.
+
+## 13. Amendements après implémentation (2026-10-29)
+
+Rulings pris pendant l'implémentation (journal : `.superpowers/sdd/2026-10-28-agent-ready/progress.md`). Là où ils contredisent les sections 1 à 12, ce sont eux qui décrivent le code.
+
+1. **Code de confirmation de 4 lettres, pas 2 (5.1, 5.3).** Le garde tire 4 lettres de l'alphabet du défi. Avec un approbateur dont le code doit rester secret (le terminal de `onepass mcp`), l'agent reçoit un avis sans code : « Approve in the terminal running onepass mcp. ».
+2. **Déverrouillage à distance en deux temps, deux Face ID (6.2.2).** `locked_request` part au `hello` du relais, avant tout appel d'outil : la demande de déverrouillage montre l'identité de l'agent et la durée de la fenêtre, puis la première demande passe par la course d'approbation normale, avec son code. Couvrir le déverrouillage et la demande d'un seul Face ID demanderait de répondre à `initialize` dans la porte (réécriture du protocole). Coût : un Face ID de plus par déverrouillage à distance.
+3. **Oubli côté Mac local seulement, `ForgetUnlock` du téléphone vers le Mac seulement (6.4).** Sur le Mac, « Oublier » efface `C` et n'envoie rien ; le téléphone garde `K_r` jusqu'à ce qu'on l'oublie sur le téléphone. Sans effet sur la sécurité (6.4, dernier point : une moitié seule n'ouvre rien). Le Mac n'accepte `ForgetUnlock` que du téléphone enrôlé. `Lock` et `ForgetUnlock` ne demandent pas Face ID sur le téléphone (ils retirent des droits).
+4. **Alerte CloudKit visible et extension de notification (5.2).** Un `CKQuerySubscription` ne porte pas de niveau d'interruption : l'abonnement envoie une alerte visible au texte générique avec contenu modifiable, et l'extension `NotificationService` met le niveau « sensible au temps » et le nom du Mac. Les notifications silencieuses sont écartées (limitées par iOS, absentes pour une app quittée de force).
+5. **Face ID du téléphone vaut authentification forte sur le Mac (5.3).** Quand `approved_on` est `phone:<id>` et que `strong_required` était posé, le Mac ne redemande pas Touch ID. Le téléphone refuse de répondre à une demande forte sans `.biometryCurrentSet`, et une lecture du trousseau sous `.biometryCurrentSet` compte comme présence.
+6. **Un seul lecteur des messages côté Mac.** `RemoteMailbox` possède l'abonnement au canal et distribue aux consommateurs (avis, approbateur, coordinateur du déverrouillage) ; seuls les messages ouverts sont effacés. CloudKit donne à chaque lecteur son propre flux et les effacements de deux lecteurs se gênent.
+7. **`registry_seq` porte le `seq` de la liste des appareils (5.1, `registry_generation`).** Le téléphone ne peut pas vérifier une génération du registre des clients du Mac ; A5 tient par la signature, l'expiration de 60 s, la mémoire anti-rejeu et des `seq` qui ne reculent pas (le téléphone refuse une valeur plus basse que la dernière vue). `RequestHeader` désigne les champs de la demande sans le corps scellé.
+8. **Une demande de déverrouillage sans réponse compte comme un refus.** Sinon un téléphone ignoré reçoit une demande toutes les 10 min sans fin. Coût : qui manque 3 demandes attend 1 h.
+9. **Carte d'installation : la commande du Terminal d'abord (8).** L'app est dans un bac à sable et son relais ne peut pas lire ni écrire les fichiers des clients. La carte donne d'abord la commande à copier ; l'aperçu reste secondaire avec un message clair. Décision ouverte du fondateur : ajouter des exceptions de fichiers au bac à sable (chemins des clients relatifs au dossier personnel, en lecture et écriture, Developer ID seulement) pour installer depuis la carte, à vérifier sur un build signé.
+10. **Schéma CloudKit (5.2).** Le déploiement demande des index Queryable sur `to` et `expires_at` (Sortable aussi sur `expires_at`) et sur `recordName` du type `RemoteMessage`. Mise en place : `apple/README.md`, « Mise en place du schéma CloudKit ».
+11. **Session `AgentOnly` dans un emplacement séparé (6.3).** Le coffre du Mac reste dans l'état verrouillé ; la session agents vit à part et aucun accès de l'interface, de l'AutoFill, de l'extension ni des widgets n'y mène. Un téléphone par Mac. Changer le mot de passe sur le Mac efface tous les `C`.
+12. **Indice d'horloge du téléphone (5.1).** Une demande expirée est masquée ; l'indice « Vérifie l'heure de ton iPhone » se fonde sur la date de création donnée par le serveur CloudKit, pour les messages reçus en direct seulement.
+13. **Reste à faire, connu.** Le verrou du limiteur de déverrouillage est propre à un processus ; un recul d'horloge plus grand qu'une fenêtre lève une limite ; l'approbateur du Mac fait confiance à l'origine renvoyée par l'app ; une lecture de la liste des approbateurs Mac verrouillé n'enregistre pas `ChainState` ; un build plus ancien ne vérifie pas un journal qui contient `approved_on`. Détail dans `SECURITY.md`.

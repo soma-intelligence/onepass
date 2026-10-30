@@ -58,6 +58,29 @@ The threat model and the guarantees we aim for are described in [docs/security/R
 - Phishing and social engineering.
 - Limits already documented in `docs/security/README.md` and in the design specs under `docs/specs/`, such as the dev CLI keeping its Secret Key in clear.
 
+## Agents on the Mac: iPhone approval and remote unlock
+
+The Mac app's MCP server can ask the owner's iPhone to approve a request, and the iPhone can unlock a locked Mac for agents only. Design: [`docs/superpowers/specs/2026-10-28-agent-ready-design.md`](docs/superpowers/specs/2026-10-28-agent-ready-design.md), section 9. Attackers A1 to A4 of the MCP and SSH hardening spec still apply. These are added:
+
+| Attacker | Capability | Defense |
+|---|---|---|
+| A5. Hostile CloudKit | Replays, delays, deletes, reorders or forges records | Every message is sealed to the recipient's key and signed by a device of the signed approver list; request id, 60 s expiry, 24 h replay memory on the phone, device list and approver list seqs that may not go back; an answer counts only for a request the Mac sent and still waits on. Worst case: denial of service, the Mac panel still works. |
+| A6. Stolen or lost iPhone | Holds the phone, not the owner's face | `K_r` sits behind `.biometryCurrentSet`; every answer needs Face ID through a `.biometryCurrentSet` check; `K_r` and the phone's approver keys stay on this device only, never synced. Revoking the phone in the device list makes the Mac erase `C` and refuse its answers. |
+| A7. Stolen Mac, or a session left open | The disk, or physical access during an agent window | `C` alone opens nothing. The agent window is agents only (the app, AutoFill, the extension and widgets see a locked vault), bounded, and ends on sleep, lock or "Lock now" on the phone. |
+| A8. An agent that spams unlock requests | Triggers requests in a loop | At most one unlock request per 10 minutes per Mac; 3 refusals (an unanswered request counts as one) block remote unlock for 1 hour; the existing per-client limits. |
+| A9. A fake notification | Shows the owner a notification that looks like OnePass | Nothing can be answered from the notification itself; the app shows the decrypted, signature-checked request before Face ID; the same 4-letter code is shown to the agent and on the phone. |
+
+Residual risks, known and accepted for now:
+
+- CloudKit and Apple see when and how many requests are made, and which device receives them (the recipient's device id is in clear for the subscription).
+- A malicious process of the same user, signed by a paired team, during an agent window, is the "compromised system" case, out of scope.
+- The unlock throttle is stored on disk, but the lock around its check is held in one process: two processes racing on one Mac could each pass the check once.
+- The throttle trusts the wall clock. A clock stepped back by more than a whole throttle window lifts the limit (a monotonic clock would be needed).
+- For strong actions (`reveal_secret`, `totp_code`), the Mac trusts the phone's Face ID and does not ask for Touch ID again. The phone refuses to answer a strong request without a `.biometryCurrentSet` check.
+- The Mac's approver accepts the origin string the app returns (`mac` or `phone:<device_id>`). Recording the ids of accepted responses in the core would close this.
+- Reading the approver list while the Mac is locked does not persist the chain state: a rollback seen there is caught only at the next full unlock.
+- Audit logs that contain the `approved_on` field cannot be verified by older builds (forward-only change).
+
 ## Supported versions
 
 OnePass has no 1.0 release yet. Only `main` receives security fixes. After 1.0, this section will list the maintained versions.
