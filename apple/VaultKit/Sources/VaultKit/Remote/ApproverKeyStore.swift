@@ -1,16 +1,23 @@
 import Foundation
 import OnePassCore
 
-/// This device's private approval keys (agent-ready spec 4) in the keychain. The store the app passes
-/// is `SystemKeychain`: `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` items, never synchronizable
+/// This device's private approval keys (agent-ready spec 4) in the keychain. `init()` uses
+/// `SystemKeychain`: `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` items, never synchronizable
 /// (`kSecAttrSynchronizable` stays false, its default, and a ThisDeviceOnly item cannot sync), so the
 /// keys never leave this device. The tests pass an `InMemoryKeychain`.
 public struct ApproverKeyStore: Sendable {
     static let key = "onepass.remote.approver-keys"
+    /// Its own service, in the app's default access group: no extension reads these keys.
+    static let service = "me.somalabs.onepass.approver"
 
     private let keychain: any KeychainStore
 
-    public init(keychain: any KeychainStore) {
+    /// The system keychain of this device.
+    public init() {
+        self.init(keychain: SystemKeychain(service: Self.service, accessGroup: nil))
+    }
+
+    init(keychain: any KeychainStore) {
         self.keychain = keychain
     }
 

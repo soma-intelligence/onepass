@@ -56,13 +56,27 @@ public actor CloudKitRemoteChannel: RemoteChannel {
 
     public func purgeExpired(now: Date) async {
         let predicate = NSPredicate(format: "%K < %@", Field.expiresAt, now as NSDate)
-        guard let expired = try? await query(predicate), !expired.isEmpty else { return }
+        let expired: [RemoteMessage]
+        do {
+            expired = try await query(predicate)
+        } catch {
+            Self.log.error("expired remote messages not listed")
+            return
+        }
+        guard !expired.isEmpty else { return }
         _ = try? await database.modifyRecords(saving: [], deleting: expired.map { recordID($0.id) })
     }
 
-    /// The push that wakes `device` when a record for it is created. Silent: on the iPhone the app
-    /// opens the request and posts its own time-sensitive notification ("Demande d'un agent sur
-    /// <nom du Mac>", nothing else), since a CloudKit alert cannot set an interruption level.
+    /// Localization key of the iPhone alert, resolved in the app's strings: generic text only
+    /// ("Demande d'un agent" / "Request from an agent"), since Apple sees it. No item, vault, command,
+    /// secret or Mac name ever goes in the push.
+    public static let alertKey = "REMOTE_REQUEST_ALERT"
+
+    /// The visible push that tells `device` a record for it was created (spec 5.2). The alert is
+    /// generic and mutable: on the iPhone a Notification Service Extension (Task 9) sets
+    /// `interruptionLevel = .timeSensitive` and fills the Mac name locally ("Demande d'un agent sur
+    /// <nom du Mac>"), since a CloudKit alert cannot carry either. No silent push: the alert alone
+    /// wakes the extension.
     public func subscribe(device: String) async throws {
         do {
             try await ensureZone()
@@ -70,7 +84,10 @@ public actor CloudKitRemoteChannel: RemoteChannel {
                 recordType: Self.recordType, predicate: NSPredicate(format: "%K == %@", Field.to, device),
                 subscriptionID: "remote-\(device)", options: [.firesOnRecordCreation])
             let info = CKSubscription.NotificationInfo()
-            info.shouldSendContentAvailable = true
+            info.titleLocalizationKey = Self.alertKey
+            info.alertLocalizationKey = Self.alertKey
+            info.soundName = "default"
+            info.shouldSendMutableContent = true
             subscription.notificationInfo = info
             _ = try await database.modifySubscriptions(saving: [subscription], deleting: [])
         } catch {
@@ -82,11 +99,17 @@ public actor CloudKitRemoteChannel: RemoteChannel {
 
     private func poll(device: String, into continuation: AsyncStream<RemoteMessage>.Continuation) async {
         var seen: Set<String> = []
+        var logged = false
         while !Task.isCancelled {
-            if let found = try? await query(NSPredicate(format: "%K == %@", Field.to, device)) {
+            do {
+                let found = try await query(NSPredicate(format: "%K == %@", Field.to, device))
                 for m in found where seen.insert(m.id).inserted { continuation.yield(m) }
                 // Forget what is gone: the set stays the size of the zone.
                 seen.formIntersection(found.map(\.id))
+            } catch {
+                // Once per stream: a dead network would otherwise log every 2 s.
+                if !logged { Self.log.error("remote messages not read") }
+                logged = true
             }
             do { try await Task.sleep(for: pollInterval) } catch { break }
         }

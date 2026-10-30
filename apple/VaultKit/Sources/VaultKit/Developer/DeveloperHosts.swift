@@ -172,6 +172,8 @@ public final class DeveloperHosts {
     public func sessionLocked() {
         stopSSH()
         stopMCP()
+        // No iPhone request leaves a locked Mac; Task 10 sets the approver again after an unlock.
+        bridge.remote = nil
         // Refused by the lock, not by anyone: no origin.
         for prompt in prompts { settle(prompt.id, with: FfiAnswer(decision: .deny, approvedOn: nil)) }
     }
