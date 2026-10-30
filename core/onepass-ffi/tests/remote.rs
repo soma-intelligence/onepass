@@ -1029,7 +1029,8 @@ fn gate_hands_over_to_an_agent_only_session() {
     let data = mac.dir.path().join("dev").display().to_string();
     let socket = mac.dir.path().join("dev").join("mcp.sock");
     let socket = socket.display().to_string();
-    let gate = McpGate::start_any_relay_for_tests(socket.clone(), Arc::new(Unlocked)).unwrap();
+    let gate = McpGate::start_any_relay_for_tests(socket.clone(), data.clone(), Arc::new(Unlocked))
+        .unwrap();
     let mut r = Relay::connect(
         &socket,
         json!({

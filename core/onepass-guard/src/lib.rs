@@ -34,8 +34,8 @@ pub use audit::{
     head_path, verify_log,
 };
 pub use clients::{
-    CLIENTS_DOMAIN, ClientRecord, ClientRegistry, ClientRegistryLoader, Unpaired, load_clients,
-    save_clients,
+    CLIENTS_DOMAIN, ClientRecord, ClientRegistry, ClientRegistryLoader, Unpaired,
+    listed_unverified, load_clients, save_clients,
 };
 pub use clock::{Clock, SystemClock};
 pub use control::{

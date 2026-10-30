@@ -52,6 +52,14 @@ pub fn open_config(
     Ok(env.payload)
 }
 
+/// The payload of an envelope, its signature NOT checked: for a hint read
+/// while nothing can verify it (the app locked), never for a decision.
+pub(crate) fn unverified_payload(text: &str) -> Option<String> {
+    serde_json::from_str::<Envelope>(text)
+        .ok()
+        .map(|e| e.payload)
+}
+
 /// Writes `data` to `path` atomically with mode 0600: a fresh, randomly named
 /// file created with O_EXCL in the same directory (a planted file or symlink
 /// cannot redirect the write), synced, renamed over `path`, then the

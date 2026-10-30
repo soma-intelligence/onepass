@@ -27,8 +27,10 @@ Everything that comes from the vault (titles, notes, URLs, field names) is marke
 
 ## Approval
 
-Each sensitive call asks the user to approve it. When a call returns a confirmation code, show that code to the user so they can check it matches the one on their screen or iPhone. Do not guess, repeat or work around an approval that was refused.
+Each sensitive call asks the user to approve it. The confirmation code arrives as a progress or log notification before the call's result: show that code to the user so they can check it matches the one on their screen or iPhone. Do not guess, repeat or work around an approval that was refused.
 
 ## When OnePass is locked
 
-If you get "OnePass is locked on this Mac. Approve on your iPhone or unlock the app.", stop and tell the user. Do not retry in a loop. Try again once they say OnePass is unlocked.
+If you get "OnePass is locked on this Mac. Approve on your iPhone or unlock the app.", stop and tell the user. Do not retry in a loop. After that error the connection is closed: the MCP server must reconnect (restart it from your client) before you try again, once the user says OnePass is unlocked.
+
+If you get "This client is not paired with OnePass. Unlock OnePass on this Mac to pair it.", tell the user: pairing needs them at the Mac.

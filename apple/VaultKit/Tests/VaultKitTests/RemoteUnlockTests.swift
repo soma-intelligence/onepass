@@ -407,6 +407,29 @@ struct RemoteUnlockTests {
         try await waitUntil { (try? await CoreThread.run { try agent.vaults() }) == nil }
     }
 
+    /// The owner unlocks the Mac while the phone is asked: the wait ends at once and the agent goes
+    /// to the full session (no failure reported, no window opened).
+    @Test func fullUnlockDuringWaitHandsOver() async throws {
+        let f = try await RemoteUnlockFixture.make(timeout: .seconds(20))
+        defer { f.cleanUp() }
+        try await f.enroll()
+        await f.lockMac()
+        let started = ContinuousClock.now
+        async let ok = f.coordinator.handleLockedRequest(client: f.client)
+        let phoneID = f.phone.id
+        try await waitUntil { f.channel.stored().contains { $0.to == phoneID } }
+
+        try await f.vault.unlock(password: testPassword)
+        await f.hosts.sessionUnlocked(f.vault)
+        #expect(await ok)
+        #expect(ContinuousClock.now - started < .seconds(15))
+        #expect(f.coordinator.lastFailure == nil)
+        #expect(f.vault.agentSession == nil)
+        #expect(f.vault.state == .unlocked)
+        // The request to the phone is withdrawn.
+        try await waitUntil { f.channel.stored().allSatisfy { $0.to != phoneID } }
+    }
+
     @Test func lockMessageFromPhoneEndsWindow() async throws {
         let f = try await RemoteUnlockFixture.make()
         defer { f.cleanUp() }
