@@ -389,11 +389,8 @@ struct RemoteUnlockTests {
         try await waitUntil { (try? await CoreThread.run { try agent.vaults() }) == nil }
     }
 
-    /// Mac asleep, screens asleep, or another user's session in front: the window ends.
-    @Test(arguments: [
-        NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
-        NSWorkspace.sessionDidResignActiveNotification,
-    ])
+    /// Mac asleep, or another user's session in front: the window ends (spec 6.3).
+    @Test(arguments: [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification])
     func sleepEndsWindow(_ name: Notification.Name) async throws {
         let f = try await RemoteUnlockFixture.make()
         defer { f.cleanUp() }
@@ -405,6 +402,20 @@ struct RemoteUnlockTests {
         await f.hosts.settle()
         #expect(!f.hosts.mcpRunning)
         try await waitUntil { (try? await CoreThread.run { try agent.vaults() }) == nil }
+    }
+
+    /// Only the screens sleep: the window goes on (a panel answer needs Touch ID meanwhile).
+    @Test func displaySleepKeepsWindow() async throws {
+        let f = try await RemoteUnlockFixture.make()
+        defer { f.cleanUp() }
+        try await f.openWindow()
+        let agent = try #require(f.vault.agentSession)
+        f.center.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        try await Task.sleep(for: .milliseconds(300))
+        await f.hosts.settle()
+        #expect(f.vault.agentSession === agent)
+        #expect(f.vault.agentWindowEndsAt != nil)
+        #expect(try await CoreThread.run { try agent.vaults() }.count == 1)
     }
 
     /// The owner unlocks the Mac while the phone is asked: the wait ends at once and the agent goes

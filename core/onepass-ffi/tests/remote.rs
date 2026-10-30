@@ -7,8 +7,8 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::mpsc::{Sender, channel};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -927,11 +927,18 @@ impl Relay {
         serde_json::from_str(&line).unwrap()
     }
 
+    /// One request; a command the server runs meanwhile ends at once.
     fn call(&mut self, id: u64, method: &str, params: Value) -> Value {
         let rpc = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
         self.send(json!({"t": "mcp", "line": rpc.to_string()}));
         loop {
             let msg = self.recv();
+            if msg["t"] == "exec" {
+                self.send(json!({"t": "exec_result", "id": msg["id"], "ok": {
+                    "code": 0, "stdout": "", "stderr": "",
+                    "timed_out": false, "truncated": false}}));
+                continue;
+            }
             assert_eq!(msg["t"], "mcp", "{msg}");
             let line: Value = serde_json::from_str(msg["line"].as_str().unwrap()).unwrap();
             if line.get("method").is_some() && line.get("id").is_none() {
@@ -1011,6 +1018,129 @@ fn agent_only_session_serves_mcp() {
     );
     assert_eq!(listed["result"]["isError"], false, "{listed}");
     assert!(listed.to_string().contains(&vault.meta.name), "{listed}");
+    drop(r);
+    host.stop();
+}
+
+/// The Mac panel during an agents-only window: the Mac may be unattended
+/// (the owner left it locked), so a click on "Allow" counts only after
+/// Touch ID (the presence check). A phone answer is not concerned.
+struct PanelUi {
+    present: Mutex<Vec<bool>>,
+    checks: Mutex<usize>,
+}
+
+impl FfiDeveloperUi for PanelUi {
+    fn approve(&self, _request: FfiApprovalRequest) -> FfiAnswer {
+        FfiAnswer {
+            decision: FfiDecision::AllowOnce,
+            approved_on: Some("mac".into()),
+        }
+    }
+    fn verify_presence(&self, _reason: String) -> bool {
+        *self.checks.lock().unwrap() += 1;
+        self.present.lock().unwrap().remove(0)
+    }
+    fn pair_request(&self, _client: FfiMcpClient) -> bool {
+        true
+    }
+}
+
+#[test]
+fn panel_approval_in_agent_window_needs_presence() {
+    let (mac, phone) = mac_and_phone();
+    let data = mac.dir.path().join("dev").display().to_string();
+    let socket = mac.dir.path().join("dev").join("mcp.sock");
+    let vault = mac.session.vaults().unwrap().remove(0);
+    let mut meta = vault.meta.clone();
+    meta.mcp_access = true;
+    mac.session.update_vault(vault.id.clone(), meta).unwrap();
+    mac.session
+        .clone()
+        .set_mcp_policy(
+            data.clone(),
+            vec![FfiClientScopes {
+                vault_id: vault.id.clone(),
+                scopes: vec!["metadata".into(), "use".into()],
+            }],
+            true,
+        )
+        .unwrap();
+    let mut note = mac
+        .session
+        .new_item(
+            vault.id.clone(),
+            FfiItemType::SecureNote,
+            "Jeton Atlas".into(),
+        )
+        .unwrap();
+    for f in note.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if f.id == "content" {
+            f.value = FfiFieldValue::Text {
+                value: "jeton-secret-atlas-42".into(),
+            };
+        }
+    }
+    mac.session.save_item(note).unwrap();
+    let reference = format!("onepass://{}/Jeton Atlas/content", vault.meta.name);
+    let (c, k_r) = enroll(&mac, &phone);
+    mac.session.lock();
+    let s = remote_unlock(&mac, &phone, &c, &k_r, 60).unwrap();
+    assert!(s.is_agent_only());
+
+    let ui = Arc::new(PanelUi {
+        present: Mutex::new(vec![false, true]),
+        checks: Mutex::new(0),
+    });
+    let host = McpHost::start_any_relay_for_tests(
+        s.clone(),
+        FfiMcpHostConfig {
+            data_dir: data.clone(),
+            socket_path: socket.display().to_string(),
+            relay_path: "/unused".into(),
+            protected_dirs: vec![mac.dir.path().display().to_string()],
+        },
+        ui.clone(),
+    )
+    .unwrap();
+    let mut r = Relay::connect(
+        &socket.display().to_string(),
+        json!({
+            "id": "team:TEAMID0001:com.exemple.agent", "label": "Agent Exemple",
+            "signed": true, "hardened": null,
+            "code": {"kind": "team", "team_id": "TEAMID0001", "identifier": "com.exemple.agent"},
+            "chain": ["team:TEAMID0001:com.exemple.agent"],
+        }),
+    );
+    let init = r.call(
+        1,
+        "initialize",
+        json!({"protocolVersion": "2025-11-25", "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1"}}),
+    );
+    assert_eq!(init["result"]["serverInfo"]["name"], "onepass");
+    for _ in 0..200 {
+        if !s.clone().paired_clients(data.clone()).unwrap().is_empty() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let run = |r: &mut Relay, id| {
+        r.call(
+            id,
+            "tools/call",
+            json!({"name": "run_with_secrets", "arguments": {
+                "command": ["true"], "env": {"TOKEN": reference.clone()}}}),
+        )
+    };
+    // Allow clicked, Touch ID failed: refused.
+    let refused = run(&mut r, 2);
+    assert_eq!(refused["result"]["isError"], true, "{refused}");
+    assert_eq!(*ui.checks.lock().unwrap(), 1);
+    // Allow clicked, Touch ID passed: served.
+    let served = run(&mut r, 3);
+    assert_eq!(served["result"]["isError"], false, "{served}");
+    assert_eq!(*ui.checks.lock().unwrap(), 2);
     drop(r);
     host.stop();
 }
