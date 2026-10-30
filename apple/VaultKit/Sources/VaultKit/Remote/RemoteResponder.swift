@@ -233,6 +233,20 @@ public actor RemoteResponder {
             return false
         }
         guard [.approve, .unlock, .approveAndUnlock, .pair].contains(opened.kind) else { return true }
+        if opened.kind == .unlock || opened.kind == .approveAndUnlock,
+            let enrolled = try? keyring.macs(), !enrolled.contains(opened.from)
+        {
+            // No `K_r` for that Mac: it holds a `C` this phone forgot (its `ForgetUnlock` was lost
+            // while the Mac read nothing). Hidden, and the Mac is told again; like every notice
+            // that takes rights away, without Face ID.
+            Self.log.notice("unlock request from a Mac this phone forgot")
+            do {
+                try await send(.forgetUnlock, to: opened.from)
+            } catch {
+                Self.log.error("forget notice not sent again")
+            }
+            return true
+        }
         // The expired ones held so far go (an answer to them would be refused anyway).
         requests = requests.filter { $0.value.deadline > current }
         let expiresAt = Date(timeIntervalSince1970: TimeInterval(opened.expiresAt))
