@@ -63,6 +63,15 @@ struct DevicesSettings: View {
                     Label("Ajouter un appareil", systemImage: "plus.viewfinder")
                 }
                 .accessibilityIdentifier("settings.devices.add")
+                #elseif os(macOS)
+                // The Mac never scans (ruling A2): it shows an invite the new device scans.
+                Button {
+                    errorMessage = nil
+                    approving = true
+                } label: {
+                    Label("Configurer un appareil", systemImage: "qrcode")
+                }
+                .accessibilityIdentifier("settings.devices.invite")
                 #else
                 Label("Utilise ton iPhone ou ton iPad pour approuver un nouvel appareil.", systemImage: "iphone")
                     .foregroundStyle(.secondary)
@@ -71,8 +80,9 @@ struct DevicesSettings: View {
             } footer: {
                 #if os(iOS)
                 Text("Sur le nouvel appareil, choisis « J'ai déjà OnePass sur un autre appareil » : il affiche un QR code à scanner d'ici.")
+                #elseif os(macOS)
+                Text("Le Mac affiche un code à scanner avec le nouvel iPhone ou iPad, puis vous comparez un code à 6 chiffres.")
                 #else
-                // The Mac never scans (ruling A2): the QR code is scanned from the iPhone or the iPad.
                 Text("Sur le nouvel appareil, choisis « J'ai déjà OnePass sur un autre appareil » : il affiche un QR code à scanner avec ton iPhone ou ton iPad.")
                 #endif
             }
@@ -99,6 +109,8 @@ struct DevicesSettings: View {
         .task { await reload() }
         #if os(iOS)
         .refreshable { await reload() }
+        #endif
+        #if os(iOS) || os(macOS)
         .sheet(isPresented: $approving, onDismiss: { Task { await reload() } }) {
             ApproveDeviceSheet()
         }

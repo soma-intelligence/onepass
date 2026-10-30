@@ -14,6 +14,10 @@ use std::sync::OnceLock;
 use assert_cmd::Command;
 use serde_json::Value;
 
+/// The development secret store of every test run (`secret_store.rs`):
+/// a directory standing in for the keychain or the Secret Service.
+const SECRET_STORE: &str = concat!("dir:", env!("CARGO_TARGET_TMPDIR"), "/secret-store");
+
 const PASSWORD: &str = "correct horse battery";
 const ARCHIVE_PASSPHRASE: &str = "invented-lantern-orbit-quartz-meadow";
 
@@ -34,6 +38,7 @@ fn onepass(dir: &Path) -> Command {
     c.env("ONEPASS_DEV_ALLOW_ENV_PASSWORD", "1")
         .env("ONEPASS_PASSWORD", PASSWORD)
         .env("ONEPASS_DEV_FAST_KDF", "1")
+        .env("ONEPASS_DEV_SECRET_STORE", SECRET_STORE)
         .env("ONEPASS_ARCHIVE_PASSPHRASE", ARCHIVE_PASSPHRASE)
         .env_remove("ONEPASS_DEV_FAKE_EXEC_DIR")
         .arg("--data-dir")

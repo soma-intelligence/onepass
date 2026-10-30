@@ -924,6 +924,114 @@ struct AutoFillModelTests {
         }
     }
 
+    // MARK: - Site memory
+
+    /// A QuickType fill is remembered and published before the extension locks: the identity of the
+    /// Login used last on the site gets the core's rank 100, a favorite 50, and the system identity
+    /// carries the core's rank as is.
+    @Test func identitiesUseRankFromCore() async throws {
+        let store = InMemoryIdentityStore()
+        let f = try Fixture(identityStore: store)
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        let favorite = try await addLogin(seed, title: "Favori", url: "https://example.com", user: "favori")
+        try await seed.setFavorite(true, itemID: favorite.id, vaultID: favorite.vaultId)
+        let plain = try await addLogin(seed, title: "Simple", url: "https://example.com", user: "simple")
+        seed.lock()
+
+        let (model, session, done) = f.model(
+            .credential(recordID: "\(login.vaultId):\(login.id)", kind: .password, passkey: nil, service: "example.com"))
+        await model.start()
+        await model.unlock(password: testPassword)
+        #expect(done.results == [.password(user: loginUser, password: loginPassword)])
+        #expect(session.state == .locked)
+
+        let passwords = store.identities.filter { $0.kind == .password }
+        let rank = { (item: FfiItem) in passwords.first { $0.recordId == "\(item.vaultId):\(item.id)" }?.rank }
+        #expect(rank(login) == 100)
+        #expect(rank(favorite) == 50)
+        #expect(rank(plain) == 0)
+
+        let built = AutoFillIdentityBuilder.credentialIdentities(store.identities)
+        #expect(built.count == store.identities.count)
+        for (identity, system) in zip(store.identities, built) {
+            #expect(system.rank == Int(identity.rank))
+        }
+    }
+
+    /// A fill the core does not write (same Login again within the hour) neither posts
+    /// `store-changed`, nor tells the sync layer, nor republishes the identities.
+    @Test func throttledUseNeitherPostsNorRepublishes() async throws {
+        let store = InMemoryIdentityStore()
+        let f = try Fixture(identityStore: store)
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+        await seed.waitForAutofillIdentities()
+        let posts = f.watchPosts()
+
+        func fill() async -> VaultSession {
+            let (model, session, done) = f.model(
+                .credential(recordID: "\(login.vaultId):\(login.id)", kind: .password, passkey: nil, service: "example.com"))
+            await model.start()
+            await model.unlock(password: testPassword)
+            #expect(done.results == [.password(user: loginUser, password: loginPassword)])
+            await session.waitForSyncNotifications()
+            return session
+        }
+
+        _ = await fill()
+        #expect(await eventually { posts.count >= 1 })
+        // The other sessions' answers to that post (they tell the sync layer) settle first.
+        try await Task.sleep(for: .milliseconds(300))
+        let (replaced, writes, seen) = (store.replaceCount, f.written(), posts.count)
+        #expect(replaced >= 1)
+
+        _ = await fill()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(store.replaceCount == replaced)
+        #expect(f.written() == writes)
+        #expect(posts.count == seen)
+    }
+
+    /// The list follows the core's plan: a Login chosen on a site comes first there next time, ahead
+    /// of a more recently edited one.
+    @Test func providerListFollowsPlanOrder() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, older) = try await f.seed()
+        let newer = try await addLogin(seed, title: "Récent", url: "https://example.com", user: "recent")
+        seed.lock()
+
+        let (first, _, firstDone) = f.model(.credentialList(services: ["example.com"], passkey: nil))
+        await first.start()
+        await first.unlock(password: testPassword)
+        guard case .list(let before, _) = first.screen else {
+            Issue.record("expected the list, got \(first.screen)")
+            return
+        }
+        #expect(before.map(\.itemId) == [newer.id, older.id])
+        await first.choose(try #require(before.last))
+        #expect(firstDone.results == [.password(user: loginUser, password: loginPassword)])
+
+        let (second, session, _) = f.model(.credentialList(services: ["www.example.com"], passkey: nil))
+        await second.start()
+        await second.unlock(password: testPassword)
+        guard case .list(let after, _) = second.screen else {
+            Issue.record("expected the list, got \(second.screen)")
+            return
+        }
+        #expect(after.map(\.itemId) == [older.id, newer.id])
+        let plan = try await session.autofillPlan(service: "example.com", request: .password)
+        #expect(plan.itemIds == [older.id, newer.id])
+        #expect(plan.confidence == .high)
+
+        // A one-time code list only plans Logins with a code.
+        let codes = try await session.autofillPlan(service: "example.com", request: .oneTimeCode)
+        #expect(codes.itemIds == [older.id])
+        second.cancel()
+    }
+
     /// "Mettre à jour" finds the Login whatever the case and surrounding spaces of the username.
     @Test func saveFindsTheAccountCaseInsensitively() async throws {
         let f = try Fixture()

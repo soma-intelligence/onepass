@@ -36,6 +36,12 @@ struct BrowseRoot: View {
             .sheet(isPresented: $model.showImport) {
                 ImportSheet()
             }
+            #if os(macOS)
+            // Account menu > Configurer un appareil…: the Mac shows the code, the new device scans it.
+            .sheet(isPresented: $model.showDeviceSetup) {
+                ApproveDeviceSheet()
+            }
+            #endif
             // Fichier > Restaurer une sauvegarde…: a OnePass archive (.onepass).
             .sheet(isPresented: $model.showRestore) {
                 RestoreSheet()

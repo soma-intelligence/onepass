@@ -131,6 +131,8 @@ struct ArchiveTests {
 
 @Suite("Plaintext export file")
 struct PlaintextExportFileTests {
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     @Test func fileNameSaysUnencrypted() {
         let date = Date(timeIntervalSince1970: 1_793_000_000)  // 2026-10-26 in UTC
         let utc = TimeZone(identifier: "UTC")!

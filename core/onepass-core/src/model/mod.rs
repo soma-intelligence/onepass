@@ -6,6 +6,7 @@ pub mod field;
 pub mod item;
 pub mod menus;
 pub mod templates;
+pub mod usage;
 pub mod validate;
 
 pub use events::{EventKind, ItemEvent, ItemTrailer};
@@ -16,6 +17,7 @@ pub use field::{
 pub use item::{Item, ItemUrl, Location, LoginMethod, MatchRule, Provider};
 pub use menus::menu_options;
 pub use templates::{ItemType, new_item, template};
+pub use usage::{Forgotten, SiteUsage, StepKind, UsageTrailer};
 pub use validate::validate;
 
 /// Golden encodings: postcard writes an enum variant as its index (a
@@ -113,6 +115,20 @@ mod wire_tests {
             FieldValue::ItemLink(Id([0; 16])),
             FieldValue::Empty,
         ]);
+    }
+
+    #[test]
+    fn usage_indexes() {
+        use crate::fill_plan::intent::Intent;
+        check(&[
+            StepKind::Fill,
+            StepKind::Otp,
+            StepKind::ProviderClick,
+            StepKind::Account,
+        ]);
+        // Sealed inside `SiteUsage` since the usage trailer.
+        use Intent::*;
+        check(&[Login, Signup, Reset, Otp, Checkout, Address, Ignore]);
     }
 
     #[test]

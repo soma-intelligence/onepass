@@ -15,7 +15,7 @@ struct VaultSettingsTests {
     @Test func settingsDefaults() {
         withSettings { s in
             #expect(s.deviceMode == .personal)
-            #expect(s.autoLockDelay == .fifteenMinutes)
+            #expect(s.autoLockDelay == .platformDefault)
             #expect(s.hiddenVaultIDs.isEmpty)
             #expect(s.siteIconsEnabled)
             #expect(!s.biometricsWanted)

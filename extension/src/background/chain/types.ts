@@ -1,7 +1,7 @@
 // The surface of the sign-in chain (spec 8.6) used by the menu and the
 // overlay. `ChainRunner` (driver.ts) implements it; `idleChainDriver` starts
 // nothing (tests of the pages that do not need a chain).
-import type { ProviderId } from "../../shared/messages";
+import type { FieldRole, FillIntent, ProviderId } from "../../shared/messages";
 import type { ChainView } from "../../shared/ui";
 
 export type { ChainView };
@@ -11,6 +11,8 @@ export interface StartOptions {
   accountId?: string;
   /** Field of the top frame the user clicked from: the progress shows there. */
   anchorRef?: string;
+  /** Started by a fill plan: the roles of its main form and its intent, for `note_fill` at `done`. */
+  planned?: { roles: FieldRole[]; intent: FillIntent };
 }
 
 export interface ChainDriver {

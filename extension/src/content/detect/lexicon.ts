@@ -397,3 +397,53 @@ export function normalizeText(s: string): string {
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
+
+// ---- Page intent words (smart fill, value-free PageContext) ----
+// Matched on `normalizeText` output (lowercase, no accents, letters and digits
+// only), so each pattern is written that way. They read the page's wording,
+// never a value the user typed.
+
+/**
+ * Score at which text evidence alone is fully trusted (a name or label match
+ * is worth 3 or more): `confidenceOf` divides by it. 3 gives 0.67, above the
+ * planner's 0.6 floor, so a field named "username" or "password" is planned.
+ */
+export const SCORE_CEILING = 4.5;
+/** Most confidence the control type alone (a bare `type=password`) can give: below the planner's 0.6 floor. */
+export const TYPE_ONLY_CONFIDENCE = 0.5;
+
+/** Buttons that pay: "Pay", "Payer", "Place order". */
+export const PAY_WORDS =
+  /\b(pay|pay now|payer|place (your |my )?order|complete (your |my )?(order|purchase)|buy|buy now|purchase|acheter|commander|bezahlen|kaufen|jetzt kaufen|pagar|comprar|paga|acquista|betalen|bestellen)\b/;
+
+/** Buttons that create an account. */
+export const CREATE_WORDS =
+  /\b(create|creer|create (an |your |my )?(free )?(account|profile)|get started|start (a |your )?(free )?trial|sign ?up|register|registration|join|join now|creer (un |mon |votre )?compte|s inscrire|inscription|inscrivez vous|registrieren|konto erstellen|registrarse|crear (una |mi )?cuenta|registrati|crea (un )?account|criar (uma |a minha )?conta|registreren|account aanmaken)\b/;
+
+/** Wording of a "continue" step, without the sign-in verbs. */
+export const NEXT_WORDS =
+  /\b(next|continue|continuer|suivant|suivante|etape suivante|weiter|fortfahren|siguiente|continuar|avanti|continua|prosegui|proximo|seguinte|volgende|doorgaan|verder)\b/;
+
+/** Sign-in verbs on a button. */
+export const SIGN_IN_WORDS =
+  /\b(sign ?in|log ?in|login|se connecter|connexion|anmelden|einloggen|iniciar sesion|acceder|accedi|entrar|iniciar sessao|inloggen|aanmelden)\b/;
+
+/** Sign-up wording of a form, its headings or its page. */
+export const SIGNUP_WORDS =
+  /\b(sign ?up|register|registration|create (an |your |my )?(free )?(account|profile)|already have an account|new (customer|user|here)|creer (un |mon |votre )?compte|s inscrire|inscription|deja un compte|registrieren|konto erstellen|registrarse|crear (una |mi )?cuenta|registrati|crea (un )?account|criar (uma )?conta|registreren|account aanmaken)\b/;
+
+/** Reset wording: forgotten or lost password. */
+export const RESET_WORDS =
+  /\b(reset|forgot|forgotten|recover|recovery|mot de passe oublie|reinitialiser|reinitialisation|passwort vergessen|zurucksetzen|restablecer|recuperar|olvidaste|reimposta|dimenticata|wachtwoord vergeten|herstellen|redefinir|esqueceu)\b/;
+
+/** Checkout wording. */
+export const CHECKOUT_WORDS =
+  /\b(checkout|check out|payment|billing|order summary|paiement|facturation|commande|panier|zahlung|kasse|rechnungsadresse|pago|facturacion|pagamento|pedido|betaling|afrekenen)\b/;
+
+/** Search wording, read on a form's role, action, id, name and button. */
+export const SEARCH_WORDS =
+  /\b(search|rechercher|recherche|chercher|suche|suchen|buscar|busqueda|cerca|ricerca|zoeken|pesquisar|pesquisa)\b/;
+
+/** Newsletter wording. */
+export const NEWSLETTER_WORDS =
+  /\b(newsletter|subscribe|subscription|mailing list|stay (in the loop|updated)|get updates|s abonner|abonnez vous|abonnement|abonnieren|suscribirse|suscripcion|iscriviti|inschrijven|subscrever)\b/;

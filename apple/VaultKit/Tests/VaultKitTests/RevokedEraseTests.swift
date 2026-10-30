@@ -23,8 +23,8 @@ final class FailingResetSync: SyncTrigger {
 struct RevokedEraseTests {
     init() { VaultKitStrings.pinSourceLanguage() }
 
-    /// The erase of a revoked device failed: the session says so (never "effacées"), keeps the
-    /// revoked state across a relaunch, and erases at the next refresh (L6).
+    /// The user's erase of a revoked device failed: the session says so (never "effacées"), keeps
+    /// the revoked state across a relaunch, and erases at the next refresh (L6).
     @Test func failedEraseIsReportedAndRetried() async throws {
         let f = try await PairingFixture(server: true)
         defer { f.cleanUp() }
@@ -40,6 +40,9 @@ struct RevokedEraseTests {
         environment.sync = sync
         let revoked = VaultSession(environment: environment)
         await #expect(throws: VaultError.deviceRevoked) { try await revoked.unlock(password: testPassword) }
+        #expect(revoked.state == .failed(.deviceRevoked))
+        #expect(!revoked.revokedEraseFailed, "locked, nothing erased yet")
+        await revoked.eraseRevokedDevice()
         #expect(revoked.state == .failed(.deviceRevoked))
         #expect(revoked.revokedEraseFailed)
         #expect(try storeState(dbPath: f.newcomerPath) == .account)

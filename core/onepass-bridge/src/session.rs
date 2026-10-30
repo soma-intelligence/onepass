@@ -78,6 +78,26 @@ fn random<const N: usize>() -> Result<[u8; N]> {
     Ok(b)
 }
 
+/// Salt of the username hashes of one bridge session (spec 9): a hash
+/// made in one session says nothing in the next. Wiped on drop.
+pub struct UsernameSalt(Zeroizing<[u8; 32]>);
+
+impl UsernameSalt {
+    /// 32 fresh random bytes.
+    pub fn generate() -> Result<Self> {
+        Ok(Self(Zeroizing::new(random()?)))
+    }
+
+    pub fn bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    /// Lower-case hex, as `fill_salt` gives it.
+    pub fn hex(&self) -> String {
+        data_encoding::HEXLOWER.encode(&*self.0)
+    }
+}
+
 /// Host side after `welcome`, waiting for `finish`.
 pub struct PendingSession {
     session_id: [u8; 16],

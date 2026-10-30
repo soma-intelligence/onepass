@@ -131,7 +131,7 @@ struct FieldValueView: View {
     @ViewBuilder private func sshRows(_ key: FfiSshKey) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if !key.privatePem.isEmpty {
-                row(key.privatePem, secret: true, monospaced: true, label: "\(label) (clé privée)", allowsLarge: false)
+                row(key.privatePem, secret: true, monospaced: true, label: String(localized: "\(label) (clé privée)"), allowsLarge: false)
             }
             if !key.publicOpenssh.isEmpty {
                 if !key.privatePem.isEmpty { CardDivider() }
@@ -320,7 +320,7 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
                 .buttonStyle(.borderless)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .accessibilityLabel(Text(verbatim: "Actions pour \(label)"))
+                .accessibilityLabel(Text("Actions pour \(label)"))
             }
         }
         .opacity(hovered ? 1 : 0)
@@ -343,7 +343,7 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
                     .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
                     .frame(width: 44, height: 44)
                     .contentShape(.rect)
-                    .accessibilityLabel(Text(verbatim: "Actions pour \(label)"))
+                    .accessibilityLabel(Text("Actions pour \(label)"))
             }
             .menuStyle(.button)
             .buttonStyle(.borderless)
@@ -361,7 +361,7 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
                 if showsMenu { menu }
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .accessibilityLabel(Text(verbatim: "Actions pour \(label)"))
+                    .accessibilityLabel(Text("Actions pour \(label)"))
             }
             .menuStyle(.button)
             .buttonStyle(.borderless)
@@ -495,7 +495,7 @@ struct ValueRow<Accessory: View>: View {
                 #endif
                 .textSelection(.disabled)
                 .accessibilityLabel(Text(label))
-                .accessibilityValue(Text(hidden ? "masqué" : value))
+                .accessibilityValue(hidden ? Text("masqué") : Text(verbatim: value))
         } accessory: {
             accessory
         } menu: {

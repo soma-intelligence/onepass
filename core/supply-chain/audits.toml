@@ -2,3 +2,577 @@
 # cargo-vet audits file
 
 [audits]
+
+[[trusted.aho-corasick]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-03-28"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: BurntSushi is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.anstream]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2023-03-16"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.anstyle]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2022-05-18"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.anstyle-parse]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2023-03-08"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.anstyle-query]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2023-04-13"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.anstyle-wincon]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2023-03-08"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.anyhow]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-10-05"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.assert_cmd]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2019-03-23"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.autocfg]]
+criteria = "safe-to-deploy"
+user-id = 539 # Josh Stone (cuviper)
+start = "2019-05-22"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: cuviper is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.bstr]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-04-02"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: BurntSushi is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.bytes]]
+criteria = "safe-to-deploy"
+user-id = 6741 # Alice Ryhl (Darksonn)
+start = "2021-01-11"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: Darksonn is trusted by mozilla and bytecode-alliance (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.cargo-platform]]
+criteria = "safe-to-deploy"
+user-id = 55123 # rust-lang-owner
+start = "2023-07-13"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: rust-lang-owner is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.cfg-if]]
+criteria = "safe-to-deploy"
+user-id = 55123 # rust-lang-owner
+start = "2025-06-09"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: rust-lang-owner is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.clap]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2021-12-08"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.clap_builder]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2023-03-28"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.clap_derive]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2021-12-08"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.clap_lex]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2022-04-15"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.cmake]]
+criteria = "safe-to-deploy"
+user-id = 55123 # rust-lang-owner
+start = "2022-10-29"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: rust-lang-owner is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.colorchoice]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2023-04-13"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.csv]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-04-05"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: BurntSushi is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.csv-core]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-06-26"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: BurntSushi is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.either]]
+criteria = "safe-to-deploy"
+user-id = 539 # Josh Stone (cuviper)
+start = "2019-04-02"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: cuviper is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.equivalent]]
+criteria = "safe-to-deploy"
+user-id = 539 # Josh Stone (cuviper)
+start = "2023-02-05"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: cuviper is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.find-msvc-tools]]
+criteria = "safe-to-deploy"
+user-id = 539 # Josh Stone (cuviper)
+start = "2025-08-29"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: cuviper is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.glob]]
+criteria = "safe-to-deploy"
+user-id = 55123 # rust-lang-owner
+start = "2023-01-06"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: rust-lang-owner is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.hashbrown]]
+criteria = "safe-to-deploy"
+user-id = 2915 # Amanieu d'Antras (Amanieu)
+start = "2019-04-02"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: Amanieu is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.icu_collections]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2023-01-26"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.icu_locale_core]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2025-05-07"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.icu_normalizer]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2023-01-26"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.icu_normalizer_data]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2023-11-16"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.icu_properties]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2023-01-26"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.icu_properties_data]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2023-11-16"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.icu_provider]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2022-10-08"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.indexmap]]
+criteria = "safe-to-deploy"
+user-id = 539 # Josh Stone (cuviper)
+start = "2020-01-15"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: cuviper is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.is_terminal_polyfill]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2024-05-02"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.itoa]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-05-02"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.jobserver]]
+criteria = "safe-to-deploy"
+user-id = 55123 # rust-lang-owner
+start = "2024-07-23"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: rust-lang-owner is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.lazy_static]]
+criteria = "safe-to-deploy"
+user-id = 55123 # rust-lang-owner
+start = "2026-10-01"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: rust-lang-owner is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.linux-raw-sys]]
+criteria = "safe-to-deploy"
+user-id = 6825 # Dan Gohman (sunfishcode)
+start = "2021-06-12"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: sunfishcode is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.memchr]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-07-07"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: BurntSushi is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.num-bigint]]
+criteria = "safe-to-deploy"
+user-id = 539 # Josh Stone (cuviper)
+start = "2019-09-04"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: cuviper is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.num-integer]]
+criteria = "safe-to-deploy"
+user-id = 539 # Josh Stone (cuviper)
+start = "2019-05-20"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: cuviper is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.once_cell_polyfill]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2025-05-22"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.prettyplease]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2022-01-04"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.proc-macro2]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-04-23"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.regex]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-02-27"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: BurntSushi is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.regex-automata]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-02-25"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: BurntSushi is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.regex-syntax]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-03-30"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: BurntSushi is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.rustix]]
+criteria = "safe-to-deploy"
+user-id = 6825 # Dan Gohman (sunfishcode)
+start = "2021-10-29"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: sunfishcode is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.rustversion]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-07-08"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.ryu]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-05-02"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.serde]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-01"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.serde_bytes]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-02-25"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.serde_core]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2025-09-13"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.serde_derive]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-01"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.serde_json]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-02-28"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.serde_spanned]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2023-01-20"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.slab]]
+criteria = "safe-to-deploy"
+user-id = 6741 # Alice Ryhl (Darksonn)
+start = "2021-10-13"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: Darksonn is trusted by mozilla and bytecode-alliance (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.syn]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-01"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.thiserror]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-10-09"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.thiserror-impl]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-10-09"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.tinystr]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2023-01-26"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.toml]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2022-12-14"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.toml_datetime]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2022-10-21"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.toml_edit]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2021-09-13"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.toml_parser]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2025-07-08"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.toml_writer]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2025-07-08"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.unicode-ident]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2021-10-02"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.wasm-bindgen-macro]]
+criteria = "safe-to-deploy"
+user-id = 1 # Alex Crichton (alexcrichton)
+start = "2019-03-04"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: alexcrichton is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.wasm-bindgen-shared]]
+criteria = "safe-to-deploy"
+user-id = 1 # Alex Crichton (alexcrichton)
+start = "2019-03-04"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: alexcrichton is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.windows-core]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-11-15"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is trusted by isrg, zcash, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.windows-implement]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-01-27"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is trusted by isrg, zcash, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.windows-interface]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-02-18"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is trusted by isrg, zcash, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.windows-result]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2024-02-02"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is trusted by isrg, zcash, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.windows-strings]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2024-02-02"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is trusted by isrg, zcash, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.windows-sys]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-11-15"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is trusted by isrg, zcash, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.winnow]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2023-02-22"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: epage is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.yoke]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2023-01-26"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.yoke-derive]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2023-01-26"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.zerovec]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2023-01-26"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.zerovec-derive]]
+criteria = "safe-to-deploy"
+user-id = 166196 # Robert Bastian (robertbastian)
+start = "2023-01-26"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: robertbastian is trusted by mozilla and ariel-os (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.zmij]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2025-12-18"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."

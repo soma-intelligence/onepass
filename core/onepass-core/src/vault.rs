@@ -11,6 +11,7 @@ use zeroize::Zeroizing;
 use crate::account::Account;
 use crate::crypto::{Aad, BlobKind, SymmetricKey, open, seal, unwrap_key, wrap_key};
 use crate::model::events::{EventKind, ItemTrailer};
+use crate::model::usage::UsageTrailer;
 use crate::model::{Item, validate};
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -88,43 +89,66 @@ fn item_aad(item_id: Id, vault_id: Id) -> Aad {
 
 /// Postcard of `(version, item)` in a buffer wiped on drop, sized up front so
 /// no reallocation leaves copies of the plaintext behind. An item with
-/// events gets them after, as an `ItemTrailer` (see `model::events`): an
-/// item without any is written exactly as before events existed.
+/// events gets them after, as an `ItemTrailer` (see `model::events`), and
+/// an item with usage gets an `ItemTrailer` (even empty) then a
+/// `UsageTrailer` (see `model::usage`): an item without either is written
+/// exactly as before events existed.
 fn encode_item(version: u64, item: &Item) -> Result<Zeroizing<Vec<u8>>> {
     const BAD: Error = Error::InvalidFormat("item");
     let value = (version, item);
-    let trailer = (!item.events.is_empty()).then(|| ItemTrailer {
+    let has_usage = !item.usage.is_empty() || !item.usage_forgotten.is_empty();
+    let trailer = (!item.events.is_empty() || has_usage).then(|| ItemTrailer {
         events: item.events.clone(),
     });
+    let usage = has_usage.then(|| item.usage_trailer());
     let head = postcard::experimental::serialized_size(&value).map_err(|_| BAD)?;
-    let tail = match &trailer {
+    let mid = match &trailer {
         Some(t) => postcard::experimental::serialized_size(t).map_err(|_| BAD)?,
         None => 0,
     };
-    let mut buf = Zeroizing::new(vec![0u8; head + tail]);
+    let tail = match &usage {
+        Some(u) => postcard::experimental::serialized_size(u).map_err(|_| BAD)?,
+        None => 0,
+    };
+    let mut buf = Zeroizing::new(vec![0u8; head + mid + tail]);
     let (first, rest) = buf.split_at_mut(head);
+    let (second, third) = rest.split_at_mut(mid);
     postcard::to_slice(&value, first).map_err(|_| BAD)?;
     if let Some(t) = &trailer {
-        postcard::to_slice(t, rest).map_err(|_| BAD)?;
+        postcard::to_slice(t, second).map_err(|_| BAD)?;
+    }
+    if let Some(u) = &usage {
+        postcard::to_slice(u, third).map_err(|_| BAD)?;
     }
     Ok(buf)
 }
 
-/// `(version, item)` then, when bytes remain, an `ItemTrailer`. The item
-/// itself is strict. The trailer is history only: one this build cannot read
-/// (an `EventKind` added later, a second trailer after it, damage) leaves the
-/// item with no events instead of locking it, and with it the whole vault
-/// listing, out. The bytes stay inside the sealed blob, so nobody without the
-/// item key can put anything there.
+/// `(version, item)` then, when bytes remain, an `ItemTrailer` and a
+/// `UsageTrailer`. The item itself is strict. The trailers are history and
+/// fill memory only: one this build cannot read (a variant added later, a
+/// further trailer, damage, more than `MAX_EVENTS` events or `MAX_SITES`
+/// sites or tombstones)
+/// leaves the item without it instead of locking it, and with it the whole
+/// vault listing, out. An unreadable `ItemTrailer` hides the usage too: its
+/// end is unknown. The bytes stay inside the sealed blob, so nobody without
+/// the item key can put anything there.
 fn decode_item(plain: &[u8]) -> Result<(u64, Item)> {
     const BAD: Error = Error::InvalidFormat("item");
     let ((version, mut item), rest): ((u64, Item), &[u8]) =
         postcard::take_from_bytes(plain).map_err(|_| BAD)?;
     if !rest.is_empty()
-        && let Ok((trailer, _later)) = postcard::take_from_bytes::<ItemTrailer>(rest)
-        && (1..=crate::model::events::MAX_EVENTS).contains(&trailer.events.len())
+        && let Ok((trailer, later)) = postcard::take_from_bytes::<ItemTrailer>(rest)
     {
-        item.events = trailer.events;
+        if (1..=crate::model::events::MAX_EVENTS).contains(&trailer.events.len()) {
+            item.events = trailer.events;
+        }
+        if !later.is_empty()
+            && let Ok((usage, _beyond)) = postcard::take_from_bytes::<UsageTrailer>(later)
+            && usage.sites.len() <= crate::model::usage::MAX_SITES
+            && usage.forgotten.len() <= crate::model::usage::MAX_SITES
+        {
+            item.set_usage_trailer(usage);
+        }
     }
     Ok((version, item))
 }
@@ -343,6 +367,114 @@ mod tests {
         // A damaged item itself is still refused.
         let whole = postcard::to_allocvec(&(1u64, &item)).unwrap();
         assert!(decode_item(&whole[..whole.len() / 2]).is_err());
+    }
+
+    fn with_usage(mut item: Item) -> Item {
+        use crate::fill_plan::context::FieldRole;
+        use crate::model::usage::{SiteUsage, StepKind, form_shape_hash};
+        item.usage = vec![SiteUsage {
+            site: "example.com".into(),
+            form_shape_hash: form_shape_hash(&[FieldRole::Username, FieldRole::CurrentPassword]),
+            intent: crate::fill_plan::intent::Intent::Login,
+            step_seq: vec![StepKind::Fill, StepKind::Otp],
+            count: 2,
+            last_at: item.created_at,
+        }];
+        item
+    }
+
+    #[test]
+    fn item_without_usage_encodes_as_before() {
+        let (v, _, _) = vault("A");
+        let mut item = login(&v);
+        assert_eq!(
+            &encode_item(3, &item).unwrap()[..],
+            &postcard::to_allocvec(&(3u64, &item)).unwrap()[..]
+        );
+        item.record(item.created_at, EventKind::Created);
+        let mut expected = postcard::to_allocvec(&(3u64, &item)).unwrap();
+        expected.extend(
+            postcard::to_allocvec(&ItemTrailer {
+                events: item.events.clone(),
+            })
+            .unwrap(),
+        );
+        assert_eq!(&encode_item(3, &item).unwrap()[..], &expected[..]);
+    }
+
+    #[test]
+    fn usage_roundtrips_without_events() {
+        let (v, _, _) = vault("A");
+        let item = with_usage(login(&v));
+        let plain = encode_item(1, &item).unwrap();
+        // An empty `ItemTrailer` holds the first place.
+        let (_, rest): ((u64, Item), &[u8]) = postcard::take_from_bytes(&plain).unwrap();
+        let (events, rest): (ItemTrailer, &[u8]) = postcard::take_from_bytes(rest).unwrap();
+        assert!(events.events.is_empty());
+        let (usage, rest): (UsageTrailer, &[u8]) = postcard::take_from_bytes(rest).unwrap();
+        assert_eq!((usage.sites, rest), (item.usage.clone(), &[][..]));
+        let opened = v.open_item(&v.seal_item(&item, 1).unwrap()).unwrap();
+        assert_eq!(opened, item);
+        assert!(opened.events.is_empty());
+    }
+
+    #[test]
+    fn usage_tombstones_roundtrip_alone() {
+        let (v, _, _) = vault("A");
+        let mut item = login(&v);
+        item.usage_forgotten = vec![("example.com".into(), item.created_at)];
+        let opened = v.open_item(&v.seal_item(&item, 1).unwrap()).unwrap();
+        assert_eq!(opened.usage_forgotten, item.usage_forgotten);
+        assert_eq!(opened, item);
+    }
+
+    #[test]
+    fn usage_roundtrips_with_events() {
+        let (v, _, _) = vault("A");
+        let mut item = with_usage(login(&v));
+        item.usage_forgotten = vec![("old.example".into(), item.created_at)];
+        item.record(item.created_at, EventKind::Created);
+        let opened = v.open_item(&v.seal_item(&item, 1).unwrap()).unwrap();
+        assert_eq!(opened.events, item.events);
+        assert_eq!(opened.usage, item.usage);
+        assert_eq!(opened, item);
+    }
+
+    #[test]
+    fn unreadable_usage_trailer_opens_item_without_usage() {
+        let (v, _, _) = vault("A");
+        let mut item = login(&v);
+        item.record(item.created_at, EventKind::Created);
+        let mut head = encode_item(1, &item).unwrap().to_vec();
+        // Damaged: one site whose name length runs past the end.
+        let mut bad = head.clone();
+        bad.extend([1, 0xff]);
+        assert_eq!(decode_item(&bad).unwrap(), (1, item.clone()));
+        // Too many sites for this build.
+        let site = with_usage(item.clone()).usage.remove(0);
+        let many = UsageTrailer {
+            sites: vec![site; crate::model::usage::MAX_SITES + 1],
+            forgotten: vec![],
+        };
+        let mut over = head.clone();
+        over.extend(postcard::to_allocvec(&many).unwrap());
+        assert_eq!(decode_item(&over).unwrap(), (1, item.clone()));
+        // Too many tombstones too.
+        let gone = UsageTrailer {
+            sites: vec![],
+            forgotten: vec![("a.com".into(), item.created_at); crate::model::usage::MAX_SITES + 1],
+        };
+        head.extend(postcard::to_allocvec(&gone).unwrap());
+        assert_eq!(decode_item(&head).unwrap(), (1, item));
+    }
+
+    #[test]
+    fn usage_not_in_item_serde_json() {
+        let (v, _, _) = vault("A");
+        let item = with_usage(login(&v));
+        let json = serde_json::to_string(&item).unwrap();
+        assert!(!json.contains("form_shape_hash"));
+        assert!(!json.contains("example.com"));
     }
 
     #[test]

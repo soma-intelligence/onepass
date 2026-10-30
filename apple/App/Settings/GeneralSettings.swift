@@ -24,7 +24,8 @@ struct GeneralSettings: View {
 
     /// Shared devices lock after 5 minutes at most: longer delays are not offered.
     private var delays: [AutoLockDelay] {
-        shared ? [settings.autoLockDelay == .oneMinute ? .oneMinute : .fiveMinutes] : AutoLockDelay.allCases
+        guard shared else { return AutoLockDelay.allCases }
+        return [[.immediately, .oneMinute].contains(settings.autoLockDelay) ? settings.autoLockDelay : .fiveMinutes]
     }
 
     var body: some View {
@@ -46,6 +47,8 @@ struct GeneralSettings: View {
             } footer: {
                 if shared {
                     Text("Appareil partagé : le délai est imposé (5 minutes au plus). Repasse en mode personnel pour le régler.")
+                } else if settings.autoLockDelay.locksInBackground {
+                    Text("Dès que OnePass quitte l'écran. Face ID ou ton mot de passe le rouvrent.")
                 } else {
                     Text("Aussi après ce temps en arrière-plan.")
                 }

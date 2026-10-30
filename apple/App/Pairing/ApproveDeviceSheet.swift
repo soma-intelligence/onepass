@@ -1,12 +1,13 @@
-#if os(iOS)
 import DesignKit
 import SwiftUI
 import VaultKit
 
-/// "Ajouter un appareil" (spec 2b 5.1, approver side): the warning, OnePass's own scanner (only an
-/// `OPPAIR1:` QR is accepted), then the new device's kind, name and requested mode, the 6-digit code,
-/// "Les codes sont identiques", a fresh presence check (Face ID, else the master password) and the
-/// grant. A public request first picks the lent items and the duration, then shows the monitor.
+/// "Ajouter un appareil" (spec 2b 5.1, approver side). On iPhone and iPad: the warning, OnePass's own
+/// scanner (only an `OPPAIR1:` QR is accepted). On the Mac, which never scans (ruling A2): the invite
+/// code the new device scans, renewed before it expires. Then the new device's kind, name and
+/// requested mode, the 6-digit code, "Les codes sont identiques", a fresh presence check (Face ID or
+/// Touch ID, else the master password) and the grant. A public request first picks the lent items and
+/// the duration, then shows the monitor (iPhone and iPad only).
 struct ApproveDeviceSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -25,8 +26,10 @@ struct ApproveDeviceSheet: View {
                     ProgressView()
                 }
             }
-            .navigationTitle("Ajouter un appareil")
+            .navigationTitle(Platform.isMac ? "Configurer un appareil" : "Ajouter un appareil")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     // Not while the grant is sent: it may already be out (M1).
@@ -37,9 +40,16 @@ struct ApproveDeviceSheet: View {
             }
         }
         .interactiveDismissDisabled(!finished)
+        #if os(macOS)
+        .frame(width: 460, height: 620)
+        #endif
         .onAppear {
             if flow == nil {
-                flow = PairingApproverFlow(vault: model.session, connector: LocalNetworkPairingConnector())
+                let flow = PairingApproverFlow(vault: model.session, connector: LocalNetworkPairingConnector())
+                self.flow = flow
+                #if os(macOS)
+                Task { await flow.invite(listener: LocalNetworkPairingListener()) }
+                #endif
             }
         }
         .onDisappear {
@@ -67,21 +77,35 @@ struct ApproveDeviceSheet: View {
     @ViewBuilder private func content(_ flow: PairingApproverFlow) -> some View {
         switch flow.state {
         case .idle:
+            #if os(iOS)
             ScanStep { text in Task { await flow.begin(qrText: text) } }
+            #else
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            #endif
+        case .inviting(let text, let expiresAt):
+            InviteStep(text: text, expiresAt: expiresAt)
         case .connecting:
             status("Connexion au nouvel appareil...", detail: "Les deux appareils doivent être proches, sur le même Wi-Fi.")
         case .comparing(let sas, let peer, let requestedMode):
+            #if os(iOS)
             if requestedMode == .public, picking {
                 PublicSessionPicker(flow: flow)
             } else {
                 compare(flow, sas: sas, peer: peer, mode: requestedMode)
             }
+            #else
+            compare(flow, sas: sas, peer: peer, mode: requestedMode)
+            #endif
         case .waitingForPeer:
             status("En attente du nouvel appareil...", detail: "Confirme que les codes sont identiques sur le nouvel appareil.")
         case .granting:
             status("Envoi...", detail: nil)
         case .publicRunning:
+            #if os(iOS)
             PublicSessionMonitor(flow: flow)
+            #else
+            EmptyView()
+            #endif
         case .done:
             outcome(
                 symbol: "checkmark.circle.fill", tint: .green,
@@ -147,6 +171,16 @@ struct ApproveDeviceSheet: View {
                     }
                 }
             }
+            #if os(macOS)
+            if mode == .public {
+                Section {
+                    Label(
+                        "Une session invitée s'approuve depuis ton iPhone ou ton iPad.",
+                        systemImage: "iphone")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            #endif
             Section {
                 Button {
                     Task { await approve(flow, mode: mode) }
@@ -157,7 +191,7 @@ struct ApproveDeviceSheet: View {
                         if approving { ProgressView() }
                     }
                 }
-                .disabled(approving || (flow.approvalError != nil && password.isEmpty))
+                .disabled(approving || (flow.approvalError != nil && password.isEmpty) || (Platform.isMac && mode == .public))
                 .accessibilityIdentifier("approve.codesMatch")
                 Button("Ils sont différents", role: .destructive) { flow.cancel() }
                     .disabled(approving)
@@ -227,6 +261,38 @@ struct ApproveDeviceSheet: View {
     }
 }
 
+/// The invite code on the Mac: the new device scans it from "J'ai déjà OnePass sur un autre
+/// appareil". It carries a one-time secret: kept out of screen recordings and the logs.
+private struct InviteStep: View {
+    let text: String
+    let expiresAt: Date
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Scanne ce code avec ton nouvel appareil")
+                        .font(.title3.bold())
+                    Text("Sur l'iPhone ou l'iPad : « J'ai déjà OnePass sur un autre appareil », puis « Scanner le code de mon autre appareil ».")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                PairingQRView(text: text, expiresAt: expiresAt, renewal: .beforeExpiry)
+                    .accessibilityIdentifier("approve.invite")
+                Label("Ne montre ce code qu'à ton propre appareil, devant toi.", systemImage: "exclamationmark.shield.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                Label("Les deux appareils doivent être proches, sur le même Wi-Fi.", systemImage: "wifi")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(20)
+        }
+    }
+}
+
+#if os(iOS)
 /// The warning, then the camera; only an `OPPAIR1:` text goes through. Debug builds take the text of
 /// `-OnePassPairingQRText` instead of the camera (ruling A3: the Simulator has none).
 private struct ScanStep: View {

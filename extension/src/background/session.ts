@@ -126,6 +126,8 @@ export class Session {
   /** Bumped by `adopt` and `close`: an opening started before it is discarded. */
   private generation = 0;
   private readonly lockedListeners = new Set<() => void>();
+  /** `fill_salt` of `client`'s session. */
+  private salt: { client: BridgeLike; value: string } | undefined;
   private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(private readonly deps: SessionDeps) {
@@ -160,6 +162,25 @@ export class Session {
     }
   }
 
+  /**
+   * The username salt of the bridge session (`fill_salt`). The host draws
+   * it once per session, so it is kept with the client it came from and
+   * fetched again from the next client after a reconnect.
+   */
+  async fillSalt(): Promise<string> {
+    const client = await this.getClient();
+    if (this.salt?.client === client) return this.salt.value;
+    let salt: string;
+    try {
+      ({ salt } = await client.request({ op: "fill_salt", ctx: "menu" }));
+    } catch (e) {
+      throw toBgError(e);
+    }
+    if (!/^[0-9a-f]{64}$/.test(salt)) throw new BgError("internal");
+    this.salt = { client, value: salt };
+    return salt;
+  }
+
   /** Called whenever the host answers `locked` (e.g. to clear UI caches). */
   onLocked(cb: () => void): void {
     this.lockedListeners.add(cb);
@@ -181,6 +202,7 @@ export class Session {
 
   private supersede(): void {
     this.generation++;
+    this.salt = undefined;
     const o = this.opening;
     this.opening = undefined;
     o?.cancel();

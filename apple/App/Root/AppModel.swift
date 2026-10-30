@@ -81,6 +81,8 @@ final class AppModel {
     var showNewItemPicker = false
     /// ⌘⇧I (Fichier > Importer…): the import sheet.
     var showImport = false
+    /// Mac account menu > Configurer un appareil…: the invite the new device scans.
+    var showDeviceSetup = false
     #if DEBUG
     /// `-OnePassDebugImport <path>`: the file the import sheet reads once it opens.
     var debugImportURL: URL?
@@ -174,7 +176,7 @@ final class AppModel {
         var storeSplit = false
         #if ONEPASS_CLOUDKIT
         let remote: (any RemoteRecordStore)? = demo == nil
-            ? CloudKitRemote(containerIdentifier: "iCloud.me.somalabs.onepass") : nil
+            ? CloudKitRemote(containerIdentifier: Self.cloudKitContainer) : nil
         cloudKitEnabled = demo == nil
         #else
         let remote: (any RemoteRecordStore)? = nil
@@ -254,6 +256,15 @@ final class AppModel {
     }
 
     var settings: VaultSettings { session.environment.settings }
+
+    /// The CloudKit container of this build: the `OnePassCloudKitContainer` Info.plist key
+    /// (`ONEPASS_CLOUDKIT_CONTAINER`, `iCloud.me.somalabs.onepass` by default; a fork or a personal
+    /// team signs with its own).
+    nonisolated static var cloudKitContainer: String {
+        let value = (Bundle.main.object(forInfoDictionaryKey: "OnePassCloudKitContainer") as? String)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        return value.isEmpty || value.contains("$(") ? "iCloud.me.somalabs.onepass" : value
+    }
 
     /// The milestone 2 store location (`Application Support/OnePass/vault.sqlite` of the app's own
     /// container) and settings (`UserDefaults.standard`).
@@ -468,12 +479,14 @@ final class AppModel {
         return (try? await context.evaluatePolicy(policy, localizedReason: reason)) ?? false
     }
 
-    /// The first-unlock offer applies: personal device, biometrics possible here but not on, and
-    /// the offer never answered for this account on this device.
+    /// The first-unlock offer applies: personal device, biometrics possible here but not enrolled, and
+    /// either the offer never answered for this account on this device, or biometric unlock was on
+    /// and its enrollment is gone (keychain group change, new Face ID set): it is offered again.
     var biometricOfferDue: Bool {
         guard let accountID = settings.accountID, settings.deviceMode.biometricsAllowed,
-            session.environment.biometrics.isAvailable, !settings.biometricsWanted, !session.canUseBiometrics
+            session.environment.biometrics.isAvailable, !session.canUseBiometrics
         else { return false }
+        if settings.biometricsWanted { return true }
         return !Self.browseDefaults.bool(forKey: Self.biometricOfferKey(accountID))
     }
 
@@ -839,6 +852,7 @@ final class AppModel {
         pendingDiscard = nil
         showNewItemPicker = false
         showImport = false
+        showDeviceSetup = false
         showRestore = false
         // The offer holds the typed password: never kept past a lock.
         biometricOffer = nil
