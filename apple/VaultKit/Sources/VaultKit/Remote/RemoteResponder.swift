@@ -97,16 +97,25 @@ public enum RemoteResponderError: Error, Equatable, Sendable {
 /// server's (the record's creation time). A request dated beyond the request lifetime plus the
 /// clock tolerance in the phone's future means the phone is late; a request the phone calls
 /// expired by more than the tolerance although the server stored it when the Mac says it was made
-/// means the phone is ahead (or the record was left behind, which the launch purge and the Mac's
-/// withdrawal clear). Either way `clockLooksWrong` turns on and the record goes.
+/// means the phone is ahead. That second rule only counts for a message delivered live (stored
+/// after the reader started) and verified by the core: a record a sleeping Mac left behind reads
+/// the same from the backlog, and must not blame a correct clock. Either way `clockLooksWrong`
+/// turns on and the record goes; the hint fades after `clockHintLifetime` without new evidence.
 public actor RemoteResponder {
     /// A request lives 60 s on the Mac (spec 5.1).
     public static let requestLifetime: TimeInterval = 60
     /// The phone's clock may be 120 s off (spec 5.1).
     public static let clockTolerance: TimeInterval = 120
 
-    /// The last request the phone could not open disagreed with its clock by more than the tolerance.
-    public private(set) var clockLooksWrong = false
+    /// A hint lasts this long (phone clock) unless new evidence renews it.
+    public static let clockHintLifetime: TimeInterval = 600
+
+    /// A recent request disagreed with this phone's clock by more than the tolerance.
+    public var clockLooksWrong: Bool {
+        guard let clockHintAt else { return false }
+        return abs(now().timeIntervalSince(clockHintAt)) < Self.clockHintLifetime
+    }
+    private var clockHintAt: Date?
     /// The Face ID gate was invalidated by a change of the biometric set: `reArmFaceID()`.
     public private(set) var faceIDNeedsReset = false
 
@@ -153,6 +162,11 @@ public actor RemoteResponder {
     /// Starts reading this phone's messages (the vault is open). Idempotent.
     public func start() async {
         guard subscription == nil, let me = session.thisDeviceId() else { return }
+        // A Face ID change while the app was closed or locked: the settings offer the reset at once.
+        if let gate = presence as? any FaceIDGate, gate.isArmed() == false {
+            faceIDNeedsReset = true
+            changed()
+        }
         let box = mailbox ?? RemoteMailbox(channel: channel, device: me, now: now)
         mailbox = box
         subscription = await box.register(.approval) { [weak self] message in
@@ -183,23 +197,25 @@ public actor RemoteResponder {
         let current = now()
         if current.timeIntervalSince(message.expiresAt) > Self.clockTolerance {
             let made = message.expiresAt.addingTimeInterval(-Self.requestLifetime)
-            if let stored = message.sentAt, abs(stored.timeIntervalSince(made)) <= Self.clockTolerance {
-                // The server stored it when the Mac says it was made: only this phone's clock calls
-                // it expired, so it runs ahead.
-                Self.log.notice("remote request expired on this phone's clock only")
-                clockLooksWrong = true
-                changed()
-                return true
+            guard message.isLive, let stored = message.sentAt,
+                abs(stored.timeIntervalSince(made)) <= Self.clockTolerance,
+                await verified(message)
+            else {
+                // Expired on every clock, a leftover from the backlog, or not a Mac's request: left
+                // to the mailbox, which erases it.
+                return false
             }
-            // Expired on every clock: left to the mailbox, which erases it.
-            return false
+            // Just stored, when the Mac says it was made, and signed by it: only this phone's clock
+            // calls it expired, so it runs ahead.
+            Self.log.notice("remote request expired on this phone's clock only")
+            hintClock()
+            return true
         }
         if message.expiresAt.timeIntervalSince(current) > Self.requestLifetime + Self.clockTolerance {
             // No valid request is dated that far ahead: this phone's clock is late. Nothing here
             // will ever open it.
             Self.log.notice("remote request dated in the future of this phone")
-            clockLooksWrong = true
-            changed()
+            hintClock()
             return true
         }
         let session = self.session
@@ -225,9 +241,31 @@ public actor RemoteResponder {
         requests[message.id] = OpenedRequest(
             id: message.id, requestId: opened.requestId, mac: opened.from, macName: opened.fromName,
             kind: opened.kind, body: opened.body, expiresAt: expiresAt, deadline: deadline, blob: message.blob)
-        clockLooksWrong = false
+        clockHintAt = nil
         changed()
         return true
+    }
+
+    private func hintClock() {
+        clockHintAt = now()
+        changed()
+    }
+
+    /// The core checks recipient, sender and signature before the expiry, and remembers nothing
+    /// for a refused request: `remote_expired` (or an open, when the core's clock still accepts it)
+    /// proves a Mac of the list signed it. An opened request is dropped here, never shown.
+    private func verified(_ message: RemoteMessage) async -> Bool {
+        let session = self.session
+        let keys = self.keys
+        let blob = message.blob
+        do {
+            _ = try await CoreThread.run { try session.openRemoteRequest(keys: keys, blob: blob) }
+            return true
+        } catch OnePassError.Integrity(let kind) where kind == "remote_expired" {
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: - Answers

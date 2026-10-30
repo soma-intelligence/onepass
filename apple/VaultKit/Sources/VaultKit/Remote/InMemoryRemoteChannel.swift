@@ -31,13 +31,17 @@ public final class InMemoryRemoteChannel: RemoteChannel {
     public func post(_ m: RemoteMessage) async throws {
         var m = m
         m.sentAt = now()
+        m.isLive = false
         let targets = try state.withLock { s -> [AsyncStream<RemoteMessage>.Continuation] in
             guard s.reachable else { throw RemoteChannelError.unreachable }
             s.records.removeAll { $0.id == m.id }
             s.records.append(m)
             return s.subscribers.values.filter { $0.device == m.to }.map(\.continuation)
         }
-        for continuation in targets { continuation.yield(m) }
+        // Delivered as it arrives: live (the stored copy, replayed later, is backlog).
+        var live = m
+        live.isLive = true
+        for continuation in targets { continuation.yield(live) }
     }
 
     public func messages(for device: String) -> AsyncStream<RemoteMessage> {

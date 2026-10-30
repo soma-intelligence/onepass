@@ -37,6 +37,8 @@ public enum FaceIDCheck: Sendable, Equatable {
 /// Face ID with `.biometryCurrentSet`).
 public protocol FaceIDGate: PresenceChecker {
     func check(prompt: String) async -> FaceIDCheck
+    /// Whether the gate exists, without any Face ID (nil: the keychain cannot tell).
+    func isArmed() -> Bool?
     /// Writes the gate again for the current biometric set.
     func arm() throws
     func disarm() throws
@@ -136,6 +138,21 @@ public struct SystemRemoteUnlockKeyring: RemoteUnlockKeyring {
         try Self.write(Data((0..<16).map { _ in UInt8.random(in: 0...255) }), account: Self.gateAccount)
     }
 
+    /// Attributes only, never a prompt: an item that needs Face ID still counts as present.
+    public func presenceArmed() -> Bool? {
+        var query = Self.baseQuery(account: Self.gateAccount)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        query[kSecUseAuthenticationContext as String] = context
+        switch SecItemCopyMatching(query as CFDictionary, nil) {
+        case errSecSuccess, errSecInteractionNotAllowed: return true
+        case errSecItemNotFound: return false
+        default: return nil
+        }
+    }
+
     public func disarmPresence() throws {
         try Self.delete(account: Self.gateAccount)
     }
@@ -217,6 +234,10 @@ public struct CurrentBiometryPresence: FaceIDGate {
 
     public func check(prompt: String) async -> FaceIDCheck {
         await keyring.checkPresence(prompt: prompt)
+    }
+
+    public func isArmed() -> Bool? {
+        keyring.presenceArmed()
     }
 
     public func arm() throws {

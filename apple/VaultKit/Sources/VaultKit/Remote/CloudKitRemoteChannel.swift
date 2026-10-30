@@ -100,10 +100,16 @@ public actor CloudKitRemoteChannel: RemoteChannel {
     private func poll(device: String, into continuation: AsyncStream<RemoteMessage>.Continuation) async {
         var seen: Set<String> = []
         var logged = false
+        // The first read is the backlog; what a later read finds was stored since: live.
+        var backlog = true
         while !Task.isCancelled {
             do {
                 let found = try await query(NSPredicate(format: "%K == %@", Field.to, device))
-                for m in found where seen.insert(m.id).inserted { continuation.yield(m) }
+                for var m in found where seen.insert(m.id).inserted {
+                    m.isLive = !backlog
+                    continuation.yield(m)
+                }
+                backlog = false
                 // Forget what is gone: the set stays the size of the zone.
                 seen.formIntersection(found.map(\.id))
             } catch {
