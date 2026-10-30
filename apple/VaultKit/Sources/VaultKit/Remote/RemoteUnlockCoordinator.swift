@@ -182,17 +182,7 @@ public final class RemoteUnlockCoordinator {
         guard vault.state == .unlocked, vault.coreSession != nil else { throw VaultError.passwordRequired }
         let auk = try await vault.accountKeyWithTouchID(prompt: Self.enrollPrompt)
         defer { auk.wipe() }
-        let approverKeys = self.approverKeys
-        let (hadKeys, keys) = try await Task.detached { () throws -> (Bool, FfiApproverKeys) in
-            let had = try approverKeys.load() != nil
-            return (had, try approverKeys.loadOrCreate())
-        }.value
-        // This Mac's approval keys must be in the signed list for the phone to trust its requests.
-        try await vault.write { core in
-            guard let me = core.thisDeviceId() else { throw VaultError.integrity(kind: "unregistered") }
-            let listed = try core.approvers().contains { $0.deviceId == me && $0.role == .mac }
-            if !hadKeys || !listed { try core.registerApprover(keys: keys, role: .mac) }
-        }
+        let keys = try await macApproverKeys(register: true)
         guard let core = vault.coreSession else { throw VaultError.passwordRequired }
         let (enrollment, mac) = try await CoreThread.run { () -> (FfiEnrollment, String) in
             guard let me = core.thisDeviceId() else { throw VaultError.integrity(kind: "unregistered") }
@@ -212,6 +202,35 @@ public final class RemoteUnlockCoordinator {
         lastFailure = nil
         installGateHandler()
         return enrollment.confirmCode
+    }
+
+    /// This Mac's approval keys (created when missing); `register`: they join the signed approver
+    /// list when they are not in it yet, so a phone trusts this Mac's requests.
+    private func macApproverKeys(register: Bool) async throws -> FfiApproverKeys {
+        let approverKeys = self.approverKeys
+        let (hadKeys, keys) = try await Task.detached { () throws -> (Bool, FfiApproverKeys) in
+            let had = try approverKeys.load() != nil
+            return (had, try approverKeys.loadOrCreate())
+        }.value
+        guard register else { return keys }
+        try await vault.write { core in
+            guard let me = core.thisDeviceId() else { throw VaultError.integrity(kind: "unregistered") }
+            let listed = try core.approvers().contains { $0.deviceId == me && $0.role == .mac }
+            if !hadKeys || !listed { try core.registerApprover(keys: keys, role: .mac) }
+        }
+        return keys
+    }
+
+    /// The approver the panel races after a full unlock (spec 5.3), on this coordinator's mailbox:
+    /// one reader of this Mac's messages, shared with the remote unlock. `register`: this Mac's keys
+    /// join the signed list first (a phone is listed to trust them).
+    public func makeApprover(register: Bool) async throws -> RemoteApprover {
+        guard vault.state == .unlocked, let core = vault.coreSession else { throw VaultError.passwordRequired }
+        let keys = try await macApproverKeys(register: register)
+        guard let me = try await CoreThread.run({ core.thisDeviceId() }) else {
+            throw VaultError.integrity(kind: "unregistered")
+        }
+        return RemoteApprover(channel: channel, session: core, keys: keys, now: now, mailbox: mailbox(for: me))
     }
 
     /// Forgets the remote unlock with `phone` on this Mac: `C` is erased here and nothing is sent
@@ -535,7 +554,7 @@ public final class RemoteUnlockCoordinator {
     /// A window given up while it opened: closed like any end (session locked, timer and
     /// consumers gone, servers stopped), or only the servers stopped if it already closed.
     private func closeAbandoned(_ session: Session) {
-        windowApprover = nil
+        retireWindowApprover()
         if vault.agentSession === session {
             vault.endAgentWindow()
         } else {
@@ -598,9 +617,15 @@ public final class RemoteUnlockCoordinator {
         deadline?.cancel()
         deadline = nil
         stopNotices()
-        windowApprover = nil
-        // The window's approvers stop reading, even with a request still unexpired.
-        if let mailbox { Task { await mailbox.unregisterAll(.approval) } }
+        // The window's approver stops reading, even with a request still unexpired. Only its own
+        // consumer leaves the shared mailbox: a full-unlock approver on it keeps its answers.
+        retireWindowApprover()
         hosts.agentWindowEnded(rearm: vault.state == .locked && enrolledPhone != nil)
+    }
+
+    private func retireWindowApprover() {
+        guard let approver = windowApprover else { return }
+        windowApprover = nil
+        Task { await approver.stop() }
     }
 }

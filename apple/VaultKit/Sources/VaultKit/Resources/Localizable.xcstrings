@@ -239,6 +239,26 @@
         }
       }
     },
+    "Approuvé sur %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approved on %@"
+          }
+        }
+      }
+    },
+    "Approuvé sur ce Mac" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approved on this Mac"
+          }
+        }
+      }
+    },
     "Associer %@ à OnePass" : {
       "localizations" : {
         "en" : {
@@ -267,6 +287,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aucun compte iCloud n'est disponible."
+          }
+        }
+      }
+    },
+    "Aucun iPhone enrôlé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No iPhone enrolled."
           }
         }
       }
@@ -313,6 +343,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "C'est une archive OnePass chiffrée : elle ne s'importe pas ici."
+          }
+        }
+      }
+    },
+    "Ce Mac" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac"
           }
         }
       }
@@ -1823,6 +1863,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Denied"
+          }
+        }
+      }
+    },
+    "Refusé sur %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denied on %@"
           }
         }
       }

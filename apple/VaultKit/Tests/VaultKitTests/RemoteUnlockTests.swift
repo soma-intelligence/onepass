@@ -723,6 +723,34 @@ struct RemoteUnlockTests {
         #expect(await ask(GateBridge(owner: hosts, timeout: 0.3)) == false)
     }
 
+    /// The full-unlock approver shares the coordinator's mailbox: an agents-only window that ends
+    /// retires its own approver only, and the full-unlock one still gets its phone's answer.
+    @Test func windowEndLeavesTheFullUnlockApproverListening() async throws {
+        let channel = InMemoryRemoteChannel()
+        let f = try await RemoteUnlockFixture.make(channel: channel)
+        defer { f.cleanUp() }
+        try await f.openWindow()
+        let box = f.coordinator.mailbox(for: f.macId)
+        let full = RemoteApprover(
+            channel: channel, session: FakeRemoteSession(macId: f.macId, phones: ["phone-z"]), keys: testApproverKeys,
+            timeout: .seconds(30), mailbox: box)
+        let asked = Task { await full.ask(approvalRequest()) }
+        try await waitUntil { channel.stored().contains { $0.to == "phone-z" } }
+        // The window's notices and the full-unlock approver.
+        #expect(await box.consumerCount == 2)
+
+        f.coordinator.lockNow()
+        // The window's notice consumer goes; the full-unlock approver stays.
+        try await waitUntil { await box.consumerCount <= 1 }
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(await box.consumerCount == 1)
+
+        try await phoneAnswers(channel, phone: "phone-z", decision: "once", mac: f.macId)
+        let answer = await asked.value
+        #expect(answer?.decision == .allowOnce)
+        #expect(answer?.approvedOn == "phone:phone-z")
+    }
+
     @Test func storedEnrollmentStaysInTheInjectedKeychain() throws {
         let keychain = InMemoryKeychain()
         let store = RemoteUnlockKeyStore(keychain: keychain)

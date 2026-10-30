@@ -168,6 +168,45 @@ struct DeveloperHostsTests {
         try await waitUntil { channel.stored().isEmpty }
     }
 
+    /// The panel says where the answer was given (spec 7): the phone by its name, or this Mac.
+    @Test func panelTellsWhereTheAnswerCameFrom() async throws {
+        VaultKitStrings.pinSourceLanguage()
+        for (decision, expected) in [("once", "Approuvé sur iPhone de Camille"), ("denied", "Refusé sur iPhone de Camille")] {
+            let (hosts, bridge, channel) = try raceHosts(phones: ["phone-a"])
+            hosts.setPhoneNames(["phone-a": "iPhone de Camille"])
+            let request = approvalRequest()
+            let answer = onServerThread { bridge.approve(request: request) }
+            try await waitUntil { channel.stored().contains { $0.to == "phone-a" } }
+            try await phoneAnswers(channel, phone: "phone-a", decision: decision)
+            _ = await answer.value
+            try await waitUntil { @MainActor in hosts.lastOutcome != nil }
+            #expect(hosts.lastOutcome?.text == expected)
+        }
+
+        let (hosts, bridge, channel) = try raceHosts(phones: ["phone-a"])
+        let request = approvalRequest()
+        let answer = onServerThread { bridge.approve(request: request) }
+        try await waitUntil { channel.stored().contains { $0.to == "phone-a" } }
+        while hosts.prompts.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        let prompt = try #require(hosts.prompts.first)
+        hosts.answer(prompt.id, with: .allowOnce)
+        // Set with the click itself, before the panel's prompt goes.
+        #expect(hosts.lastOutcome == ApprovalOutcome(promptID: prompt.id, text: "Approuvé sur ce Mac", approved: true))
+        _ = await answer.value
+    }
+
+    /// The audit log's origin column: `mac`, `phone:<id>` by the phone's name, nothing for older lines.
+    @Test func auditOriginNamesThePhone() throws {
+        VaultKitStrings.pinSourceLanguage()
+        let (hosts, _, _) = try raceHosts(phones: [])
+        hosts.setPhoneNames(["7f3a": "iPhone de Camille"])
+        #expect(hosts.originLabel("mac") == "Ce Mac")
+        #expect(hosts.originLabel("phone:7f3a") == "iPhone de Camille")
+        #expect(hosts.originLabel("phone:0000") == "iPhone")
+        #expect(hosts.originLabel(nil) == "")
+        #expect(hosts.originLabel("") == "")
+    }
+
     @Test func pathsAndSnippets() {
         let paths = DeveloperPaths(
             dataDirectory: URL(fileURLWithPath: "/Users/camille/Library/Containers/me.somalabs.onepass/Data/.onepass"),

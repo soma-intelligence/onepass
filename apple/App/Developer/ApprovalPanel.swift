@@ -12,6 +12,9 @@ final class ApprovalPanelController {
     private let hosts: DeveloperHosts
     private var panel: NSPanel?
     private var shownID: UUID?
+    /// The outcome line stays this long once the question is settled ("Approuvé sur …").
+    private static let outcomeDelay: Duration = .milliseconds(1600)
+    private var hiding: Task<Void, Never>?
 
     init(hosts: DeveloperHosts) {
         self.hosts = hosts
@@ -21,6 +24,7 @@ final class ApprovalPanelController {
     private func observe() {
         withObservationTracking {
             _ = hosts.prompts
+            _ = hosts.lastOutcome
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.refresh()
@@ -32,22 +36,44 @@ final class ApprovalPanelController {
 
     private func refresh() {
         guard let prompt = hosts.prompts.first else {
+            // The question on screen was settled: where the answer came from, briefly.
+            if let id = shownID, let outcome = hosts.lastOutcome, outcome.promptID == id, let panel {
+                shownID = nil
+                show(ApprovalOutcomeView(outcome: outcome), in: panel)
+                hiding?.cancel()
+                hiding = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: Self.outcomeDelay)
+                    guard !Task.isCancelled, let self, self.shownID == nil else { return }
+                    self.panel?.orderOut(nil)
+                    self.hiding = nil
+                }
+                return
+            }
+            // An outcome is on screen: it hides by itself.
+            guard hiding == nil else { return }
             panel?.orderOut(nil)
             shownID = nil
             return
         }
         guard prompt.id != shownID else { return }
+        hiding?.cancel()
+        hiding = nil
         shownID = prompt.id
-        let view = ApprovalView(prompt: prompt) { [weak self] decision in
-            self?.hosts.answer(prompt.id, with: decision)
+        let id = prompt.id
+        let view = ApprovalPanelContent(hosts: hosts, prompt: prompt) { [weak self] decision in
+            self?.hosts.answer(id, with: decision)
         }
         let panel = self.panel ?? makePanel()
-        panel.contentView = NSHostingView(rootView: view)
-        panel.setContentSize(panel.contentView?.fittingSize ?? NSSize(width: 460, height: 320))
+        show(view, in: panel)
         panel.center()
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
         self.panel = panel
+    }
+
+    private func show(_ view: some View, in panel: NSPanel) {
+        panel.contentView = NSHostingView(rootView: view)
+        panel.setContentSize(panel.contentView?.fittingSize ?? NSSize(width: 460, height: 320))
     }
 
     private func makePanel() -> NSPanel {
@@ -65,9 +91,42 @@ final class ApprovalPanelController {
     }
 }
 
+/// The question on screen, with the iPhone line kept current (the race moves on while it shows).
+private struct ApprovalPanelContent: View {
+    let hosts: DeveloperHosts
+    let prompt: DeveloperPrompt
+    let answer: (FfiDecision) -> Void
+
+    var body: some View {
+        ApprovalView(
+            prompt: prompt, phoneNotice: hosts.prompts.first { $0.id == prompt.id }?.phoneNotice ?? prompt.phoneNotice,
+            answer: answer)
+    }
+}
+
+/// Where the answer was given, shown a moment after the question closes.
+struct ApprovalOutcomeView: View {
+    let outcome: ApprovalOutcome
+
+    var body: some View {
+        Label {
+            Text(outcome.text).font(.headline)
+        } icon: {
+            Image(systemName: outcome.approved ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(outcome.approved ? Color.green : Color.orange)
+                .font(.title2)
+        }
+        .padding(24)
+        .frame(width: 460, alignment: .leading)
+        .accessibilityIdentifier("approval.outcome")
+    }
+}
+
 /// One question: approve a request, or pair a client.
 struct ApprovalView: View {
     let prompt: DeveloperPrompt
+    /// "Envoyé à <iPhone>" or "iPhone indisponible : approuve ici", nil when the iPhone is not asked.
+    var phoneNotice: String?
     let answer: (FfiDecision) -> Void
 
     var body: some View {
@@ -121,6 +180,12 @@ struct ApprovalView: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+        }
+        if let phoneNotice {
+            Label(phoneNotice, systemImage: "iphone")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("approval.phone")
         }
         HStack {
             Button("Refuser", role: .cancel) { answer(.deny) }
