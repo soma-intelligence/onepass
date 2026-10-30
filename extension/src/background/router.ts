@@ -9,7 +9,27 @@
 // Anything else, malformed or without a handler, is dropped without a reply.
 // Messages are rebuilt from validated fields only: unknown keys (a forged
 // `origin`, say) never reach a handler.
-import type { CsToBg, FieldInfo, FieldRole, FormInfo, FormKind, PageAnalysis, ProviderId, SaveEdits, UiToBg } from "../shared/messages";
+import {
+  type ButtonClass,
+  type ButtonContext,
+  type CsToBg,
+  type FieldContext,
+  type FieldInfo,
+  type FieldRole,
+  type FormContext,
+  type FormInfo,
+  type FormKind,
+  type IntentHints,
+  PAGE_CONTEXT_MAX_BUTTONS,
+  PAGE_CONTEXT_MAX_FIELDS,
+  PAGE_CONTEXT_MAX_FORMS,
+  type PageAnalysis,
+  type PlanContextBody,
+  type Prefilled,
+  type ProviderId,
+  type SaveEdits,
+  type UiToBg,
+} from "../shared/messages";
 import type { BgExt, MessageListener } from "./ext";
 import { type CsContext, type UiContext, contentSender, extensionSender } from "./frames";
 import { toBgError } from "./session";
@@ -165,6 +185,79 @@ function analysis(v: unknown): PageAnalysis {
   };
 }
 
+// ---- plan_context (smart fill) ----
+// Bounds of the bridge's `PageContext` (it checks them again); the origins
+// and frame kind the content script may add are dropped, never read.
+
+const PREFILLED: ReadonlySet<string> = new Set<Prefilled>(["empty", "typed", "ours"]);
+const BUTTON_CLASSES: ReadonlySet<string> = new Set<ButtonClass>(["submit", "next", "pay", "create", "other"]);
+/** serde `[u8; 32]`. */
+const USERNAME_HASH_LEN = 32;
+
+function byte(v: unknown, max = 255): number {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > max) throw new Invalid();
+  return v;
+}
+
+function hints(v: unknown): IntentHints {
+  const o = obj(v);
+  return {
+    kind: o.kind === null ? null : member<FormKind>(o.kind, FORM_KINDS),
+    signup_words: bool(o.signup_words),
+    reset_words: bool(o.reset_words),
+    checkout_words: bool(o.checkout_words),
+    ignore: bool(o.ignore),
+  };
+}
+
+function fieldContext(v: unknown): FieldContext {
+  const o = obj(v);
+  const c = o.confidence;
+  if (typeof c !== "number" || !Number.isFinite(c) || c < 0 || c > 1) throw new Invalid();
+  return {
+    field_ref: ref(o.field_ref),
+    role: o.role === null ? null : member<FieldRole>(o.role, FIELD_ROLES),
+    confidence: c,
+    visible: bool(o.visible),
+    prefilled: member<Prefilled>(o.prefilled, PREFILLED),
+  };
+}
+
+function buttonContext(v: unknown): ButtonContext {
+  const o = obj(v);
+  return { button_ref: ref(o.button_ref), class: member<ButtonClass>(o.class, BUTTON_CLASSES) };
+}
+
+function formContext(v: unknown): FormContext {
+  const o = obj(v);
+  return {
+    form_ref: ref(o.form_ref),
+    intent_hints: hints(o.intent_hints),
+    step_index: o.step_index === null ? null : byte(o.step_index),
+    fields: list(o.fields, PAGE_CONTEXT_MAX_FIELDS, fieldContext),
+    buttons: list(o.buttons, PAGE_CONTEXT_MAX_BUTTONS, buttonContext),
+  };
+}
+
+/** A page context body a content script replied to `plan_request`, rebuilt and bounded; null when malformed. */
+export function parsePlanContextBody(v: unknown): PlanContextBody | null {
+  try {
+    return planContext(v);
+  } catch {
+    return null;
+  }
+}
+
+function planContext(v: unknown): PlanContextBody {
+  const o = obj(v);
+  let hash: number[] | null = null;
+  if (o.typed_username_hash !== null) {
+    hash = list(o.typed_username_hash, USERNAME_HASH_LEN, (b) => byte(b));
+    if (hash.length !== USERNAME_HASH_LEN) throw new Invalid();
+  }
+  return { forms: list(o.forms, PAGE_CONTEXT_MAX_FORMS, formContext), typed_username_hash: hash };
+}
+
 /** A fully validated, rebuilt content script message, or null. */
 export function parseCsToBg(m: unknown): CsToBg | null {
   try {
@@ -198,6 +291,14 @@ export function parseCsToBg(m: unknown): CsToBg | null {
         return { type: "account_click", email: str(o.email, MAX_EMAIL), ref: ref(o.ref) };
       case "menu_key":
         return { type: "menu_key", key: member(o.key, MENU_KEYS) };
+      case "fill_salt":
+        return { type: "fill_salt" };
+      case "plan_context": {
+        const r: CsToBg = { type: "plan_context", context: planContext(o.context) };
+        if (o.formRef !== undefined) r.formRef = ref(o.formRef);
+        if (o.fieldRef !== undefined) r.fieldRef = ref(o.fieldRef);
+        return r;
+      }
       default:
         return null;
     }
@@ -294,6 +395,8 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "popup_pair_approve":
       case "popup_pair_cancel":
       case "popup_forget":
+      case "popup_smart_fill":
+      case "popup_forget_site":
         return { type: o.type };
       case "popup_search":
         return { type: "popup_search", query: str(o.query, MAX_QUERY) };

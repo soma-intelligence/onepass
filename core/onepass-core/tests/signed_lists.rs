@@ -396,6 +396,32 @@ fn revoked_id_cannot_reregister() {
     assert_eq!(a.repo().revoke_device(Id::new()), Err(Error::NotFound));
 }
 
+/// The device list is signed with the account's keys, which every device
+/// holds, a revoked one included: a revoked device can mark the one that
+/// revoked it revoked too. Here with unmodified code, by revoking A while
+/// offline, before it learns its own revocation; the monotone merge keeps
+/// both. So a list that marks this device revoked proves nothing about who
+/// wrote it, and the app locks the device instead of erasing it (key
+/// rotation v2 spec, rule 8.4).
+#[test]
+fn revoked_device_can_revoke_its_revoker() {
+    let mut server = Server::default();
+    let (mut a, mut b) = two_devices(&mut server);
+    let a_id = a.repo().this_device_id().unwrap();
+    let b_id = b.repo().this_device_id().unwrap();
+
+    a.repo().revoke_device(b_id).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    // B, offline, has not seen its revocation yet.
+    b.repo().revoke_device(a_id).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    pull(&server, &mut a);
+
+    assert!(a.repo().is_this_device_revoked().unwrap());
+    assert!(b.repo().is_this_device_revoked().unwrap());
+    assert_eq!(a.repo().devices().unwrap(), b.repo().devices().unwrap());
+}
+
 #[test]
 fn hidden_never_opened_vault_detected() {
     let mut server = Server::default();

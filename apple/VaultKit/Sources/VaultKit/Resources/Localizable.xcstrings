@@ -97,6 +97,38 @@
         }
       }
     },
+    "1 heure" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 hour"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 heure"
+          }
+        }
+      }
+    },
+    "1 minute" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 minute"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 minute"
+          }
+        }
+      }
+    },
     "1 mot de passe apparaît dans une fuite." : {
       "localizations" : {
         "en" : {
@@ -157,6 +189,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 élément expire bientôt."
+          }
+        }
+      }
+    },
+    "15 minutes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minutes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minutes"
+          }
+        }
+      }
+    },
+    "5 minutes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 minutes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 minutes"
           }
         }
       }
@@ -495,6 +559,22 @@
         }
       }
     },
+    "Cette action n'est possible que lorsque le compte a disparu du stockage ou que sa Secret Key manque." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is only possible when the account is gone from storage or its Secret Key is missing."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette action n'est possible que lorsque le compte a disparu du stockage ou que sa Secret Key manque."
+          }
+        }
+      }
+    },
     "Cette clé est chiffrée : saisis sa phrase de passe." : {
       "localizations" : {
         "en" : {
@@ -749,6 +829,22 @@
         }
       }
     },
+    "Déverrouiller OnePass" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock OnePass"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déverrouiller OnePass"
+          }
+        }
+      }
+    },
     "Email" : {
       "localizations" : {
         "en" : {
@@ -973,6 +1069,22 @@
         }
       }
     },
+    "Immédiatement" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immediately"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immédiatement"
+          }
+        }
+      }
+    },
     "Impossible d'ouvrir le socket." : {
       "localizations" : {
         "en" : {
@@ -1057,6 +1169,22 @@
         }
       }
     },
+    "Jamais" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Never"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamais"
+          }
+        }
+      }
+    },
     "L'appairage a été refusé. Recommence depuis le début." : {
       "localizations" : {
         "en" : {
@@ -1101,6 +1229,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'élément a changé entre-temps. Réessaie."
+          }
+        }
+      }
+    },
+    "La Secret Key de ce compte n'est pas sur cet appareil : utilise ton Emergency Kit." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account's Secret Key isn't on this device. Use your Emergency Kit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La Secret Key de ce compte n'est pas sur cet appareil : utilise ton Emergency Kit."
           }
         }
       }
@@ -1573,6 +1717,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Numéro invalide"
+          }
+        }
+      }
+    },
+    "OnePass export non chiffré %@.csv" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass unencrypted export %@.csv"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass export non chiffré %@.csv"
+          }
+        }
+      }
+    },
+    "OnePass sauvegarde %@.%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass backup %1$@.%2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass sauvegarde %1$@.%2$@"
           }
         }
       }
@@ -2269,6 +2445,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Élément introuvable."
+          }
+        }
+      }
+    },
+    "à %@ km" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ km away"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "à %@ km"
+          }
+        }
+      }
+    },
+    "à %lld m" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld m away"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "à %lld m"
           }
         }
       }

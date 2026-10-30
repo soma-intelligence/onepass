@@ -2,10 +2,28 @@ import Foundation
 import Synchronization
 
 public enum AutoLockDelay: String, Codable, Sendable, CaseIterable {
+    /// Locks as soon as the app leaves the screen (background, screen off); 5 minutes of inactivity
+    /// while it is open.
+    case immediately
     case oneMinute, fiveMinutes, fifteenMinutes, oneHour, never
 
+    /// The default: immediately on iPhone and iPad (the app leaves the screen all the time), 15 minutes
+    /// on the Mac.
+    public static var platformDefault: AutoLockDelay {
+        #if os(iOS)
+        .immediately
+        #else
+        .fifteenMinutes
+        #endif
+    }
+
+    /// Locks when the app goes to the background, whatever the time spent there.
+    public var locksInBackground: Bool { self == .immediately }
+
+    /// Inactivity before locking while the app is open (and time in the background, for the others).
     public var seconds: TimeInterval? {
         switch self {
+        case .immediately: 300
         case .oneMinute: 60
         case .fiveMinutes: 300
         case .fifteenMinutes: 900
@@ -16,11 +34,12 @@ public enum AutoLockDelay: String, Codable, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .oneMinute: "1 minute"
-        case .fiveMinutes: "5 minutes"
-        case .fifteenMinutes: "15 minutes"
-        case .oneHour: "1 heure"
-        case .never: "Jamais"
+        case .immediately: String(localized: "Immédiatement", bundle: VaultKitStrings.bundle)
+        case .oneMinute: String(localized: "1 minute", bundle: VaultKitStrings.bundle)
+        case .fiveMinutes: String(localized: "5 minutes", bundle: VaultKitStrings.bundle)
+        case .fifteenMinutes: String(localized: "15 minutes", bundle: VaultKitStrings.bundle)
+        case .oneHour: String(localized: "1 heure", bundle: VaultKitStrings.bundle)
+        case .never: String(localized: "Jamais", bundle: VaultKitStrings.bundle)
         }
     }
 }
@@ -49,6 +68,7 @@ public final class VaultSettings: @unchecked Sendable {
         static let quickType = "onepass.quickTypeSuggestions"
         static let autofillTip = "onepass.autofillTipDismissed"
         static let revokedErase = "onepass.revokedErasePending"
+        static let revokedLocked = "onepass.revokedLocked"
     }
 
     /// This device was found revoked and its erase has not completed yet (L6): the app shows the
@@ -58,13 +78,21 @@ public final class VaultSettings: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.revokedErase) }
     }
 
+    /// The signed device list marked this device revoked: the app shows the revoked screen, never the
+    /// lock screen, until the user erases the device. The list alone never erases anything (a revoked
+    /// device can sign one too).
+    public var revokedLocked: Bool {
+        get { defaults.bool(forKey: Key.revokedLocked) }
+        set { defaults.set(newValue, forKey: Key.revokedLocked) }
+    }
+
     public var deviceMode: DeviceMode {
         get { defaults.string(forKey: Key.deviceMode).flatMap(DeviceMode.init(rawValue:)) ?? .personal }
         set { defaults.set(newValue.rawValue, forKey: Key.deviceMode) }
     }
 
     public var autoLockDelay: AutoLockDelay {
-        get { defaults.string(forKey: Key.autoLock).flatMap(AutoLockDelay.init(rawValue:)) ?? .fifteenMinutes }
+        get { defaults.string(forKey: Key.autoLock).flatMap(AutoLockDelay.init(rawValue:)) ?? .platformDefault }
         set { defaults.set(newValue.rawValue, forKey: Key.autoLock) }
     }
 

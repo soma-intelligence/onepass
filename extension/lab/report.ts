@@ -10,6 +10,11 @@ export interface Rate {
   rate: number;
 }
 
+/** One-click success of a driver group: goal met with one gesture, over the scenarios with a goal. */
+export interface OneClickRate { total: number; ok: number; rate: number }
+/** The current drivers (overlay for sign-ins, in-field menu for forms) against smart_fill. */
+export interface OneClickPair { current: OneClickRate; smart_fill: OneClickRate }
+
 export interface Summary {
   overall: Rate;
   byFlow: Record<string, Rate>;
@@ -27,6 +32,16 @@ export interface Summary {
   /** xfail and xpass verdicts. */
   expected: Result[];
   flaky: Result[];
+  /** wrong_item failures (a value of another item, or another account signed in). */
+  wrongItem: Result[];
+  /** auto_submit_outside_login failures (OnePass sent a form whose true intent is not a sign-in). */
+  autoSubmitOutsideLogin: Result[];
+  /** One-click success per flow, current drivers against smart_fill. */
+  oneClick: Record<string, OneClickPair>;
+  oneClickTotal: OneClickPair;
+  /** Goal met per flow, any number of gestures, over the same scenarios as the one-click rates. */
+  goalMet: Record<string, OneClickPair>;
+  goalMetTotal: OneClickPair;
 }
 
 function emptyRate(): Rate {
@@ -69,6 +84,37 @@ function bySiteDriver(results: Result[]): Result[] {
 /** The bench self-check driver: proves the lab's relying party, measures nothing of the extension. */
 export const CONTROL_DRIVER = "passkey_control";
 
+const emptyOneClick = (): OneClickPair => ({ current: { total: 0, ok: 0, rate: 0 }, smart_fill: { total: 0, ok: 0, rate: 0 } });
+
+const MET = new Set<Result["verdict"]>(["pass", "flaky", "xpass"]);
+
+/** Per flow and in total, current against smart_fill: `ok` counts the results `hit` accepts. */
+function pairRates(results: Result[], hit: (r: Result) => boolean): { byFlow: Record<string, OneClickPair>; total: OneClickPair } {
+  const byFlow: Record<string, OneClickPair> = {};
+  const total = emptyOneClick();
+  for (const r of results) {
+    if (r.oneClick === undefined) continue;
+    const side = r.driver === "smart_fill" ? "smart_fill" : "current";
+    for (const pair of [(byFlow[r.flow] ??= emptyOneClick()), total]) {
+      pair[side].total++;
+      if (hit(r)) pair[side].ok++;
+    }
+  }
+  for (const pair of [...Object.values(byFlow), total]) {
+    for (const x of [pair.current, pair.smart_fill]) x.rate = x.total > 0 ? x.ok / x.total : 0;
+  }
+  return { byFlow, total };
+}
+
+/**
+ * The run is red on any leak, any wrong item and any auto-submit outside a sign-in (spec 10),
+ * and when every scenario is a lab error, since such a run measured nothing.
+ */
+export function isRed(s: Summary): boolean {
+  const benchFailed = s.overall.total > 0 && s.overall.labError === s.overall.total;
+  return s.leaks.length > 0 || s.wrongItem.length > 0 || s.autoSubmitOutsideLogin.length > 0 || benchFailed;
+}
+
 export function summarize(all: Result[]): Summary {
   const results = all.filter((r) => r.driver !== CONTROL_DRIVER);
   const checks = all.filter((r) => r.driver === CONTROL_DRIVER);
@@ -78,6 +124,8 @@ export function summarize(all: Result[]): Summary {
   const control = emptyRate();
   for (const r of checks) add(control, r.verdict);
   finish(control);
+  const oneClick = pairRates(results, (r) => r.oneClick === true);
+  const goalMet = pairRates(results, (r) => MET.has(r.verdict));
   return {
     overall,
     byFlow: group(results, (r) => [r.flow]),
@@ -92,6 +140,12 @@ export function summarize(all: Result[]): Summary {
     leaks: bySiteDriver(all.filter((r) => r.verdict === "leak")),
     expected: bySiteDriver(results.filter((r) => r.verdict === "xfail" || r.verdict === "xpass")),
     flaky: bySiteDriver(results.filter((r) => r.verdict === "flaky")),
+    wrongItem: bySiteDriver(all.filter((r) => r.cause === "wrong_item")),
+    autoSubmitOutsideLogin: bySiteDriver(all.filter((r) => r.cause === "auto_submit_outside_login")),
+    oneClick: oneClick.byFlow,
+    oneClickTotal: oneClick.total,
+    goalMet: goalMet.byFlow,
+    goalMetTotal: goalMet.total,
   };
 }
 
@@ -104,6 +158,34 @@ function table(title: string, by: Record<string, Rate>): string[] {
     out.push(`| ${k} | ${r.total} | ${r.pass} | ${r.fail} | ${r.leak} | ${r.xfail} | ${r.xpass} | ${r.flaky} | ${r.labError} | ${pct(r.rate)} |`);
   }
   return [...out, ""];
+}
+
+const ratio = (x: OneClickRate): string => (x.total > 0 ? `${x.ok}/${x.total} (${pct(x.rate)})` : "sans scénario");
+
+function oneClickTable(s: Summary): string[] {
+  const rows = Object.entries(s.oneClick).sort(([a], [b]) => a.localeCompare(b));
+  if (rows.length === 0) return ["Aucun scénario avec un but dans ce passage.", ""];
+  const out = [
+    "But atteint avec un seul geste vers OnePass : le compte de l'overlay, ou l'icône du champ dont le plan fait le reste. Ouvrir le menu du champ puis choisir sa ligne fait deux gestes. La frappe de l'utilisateur et son propre appui sur le bouton du formulaire ne comptent pas. Hors scénarios sans but (rien à remplir, sosies, contrôle du banc) et erreurs du labo.",
+    "",
+    "| Flux | Actuel (overlay, menu) | smart_fill |",
+    "| --- | --- | --- |",
+  ];
+  for (const [flow, p] of rows) out.push(`| ${flow} | ${ratio(p.current)} | ${ratio(p.smart_fill)} |`);
+  out.push(`| Total | ${ratio(s.oneClickTotal.current)} | ${ratio(s.oneClickTotal.smart_fill)} |`, "");
+  out.push(
+    "### But atteint, quel que soit le nombre de gestes",
+    "",
+    "Mêmes scénarios, but atteint (réussis, instables, réussites inattendues) : le menu des formulaires compte ici comme le plan.",
+    "",
+    "| Flux | Actuel (overlay, menu) | smart_fill |",
+    "| --- | --- | --- |",
+  );
+  for (const [flow, p] of Object.entries(s.goalMet).sort(([a], [b]) => a.localeCompare(b))) {
+    out.push(`| ${flow} | ${ratio(p.current)} | ${ratio(p.smart_fill)} |`);
+  }
+  out.push(`| Total | ${ratio(s.goalMetTotal.current)} | ${ratio(s.goalMetTotal.smart_fill)} |`, "");
+  return out;
 }
 
 function scenarioLine(r: Result): string {
@@ -130,7 +212,12 @@ export function renderReport(world: { seed: string; sites: number }, s: Summary,
   l.push(`- Taux de réussite global (hors attendus, inattendus et erreurs du labo) : ${pct(o.rate)}`);
   l.push(`- Réussis : ${o.pass}, échecs : ${o.fail}, instables : ${o.flaky}, échecs attendus : ${o.xfail}, réussites inattendues : ${o.xpass}, erreurs du labo : ${o.labError}`);
   const leaks = s.leaks.length;
-  l.push(`- Fuites : ${leaks}${leaks > 0 ? " (le passage est rouge)" : ""}`, "");
+  l.push(`- Fuites : ${leaks}${leaks > 0 ? " (le passage est rouge)" : ""}`);
+  const wrong = s.wrongItem.length;
+  l.push(`- Mauvais élément (\`wrong_item\`) : ${wrong}${wrong > 0 ? " (le passage est rouge)" : ""}`);
+  const auto = s.autoSubmitOutsideLogin.length;
+  l.push(`- Envois automatiques hors connexion (\`auto_submit_outside_login\`) : ${auto}${auto > 0 ? " (le passage est rouge)" : ""}`, "");
+  l.push("## Réussite en un clic", "", ...oneClickTable(s));
   l.push("## Taux de réussite", "");
   l.push(...table("Par flux", s.byFlow), ...table("Par trait", s.byTrait), ...table("Par langue", s.byLang), ...table("Par pilote", s.byDriver));
 
@@ -175,6 +262,14 @@ export function renderReport(world: { seed: string; sites: number }, s: Summary,
   l.push("## Fuites", "");
   if (s.leaks.length === 0) l.push("Aucune.", "");
   else l.push(...s.leaks.map(scenarioLine), "");
+
+  l.push("## Mauvais élément rempli", "");
+  if (s.wrongItem.length === 0) l.push("Aucun.", "");
+  else l.push(...s.wrongItem.map(scenarioLine), "");
+
+  l.push("## Envois automatiques hors connexion", "");
+  if (s.autoSubmitOutsideLogin.length === 0) l.push("Aucun.", "");
+  else l.push(...s.autoSubmitOutsideLogin.map(scenarioLine), "");
 
   l.push("## Instables", "");
   if (s.flaky.length === 0) l.push("Aucun.", "");

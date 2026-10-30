@@ -14,6 +14,7 @@ import {
   type OverlayAccount,
   type OverlayInit,
   type PopupItem,
+  type PopupPlanLine,
   type PopupStatus,
   type PopupSuggestions,
   type ProviderChoice,
@@ -101,6 +102,7 @@ export const parseMenuInit = (v: unknown): MenuInit | null =>
       m.linked = { itemId: str(l.itemId, 128), site: str(l.site, 253) };
     }
     if (o.choices !== undefined) m.choices = list(o.choices, signInChoice, 64);
+    if (o.best !== undefined) m.best = str(o.best, 128);
     return m;
   });
 
@@ -228,10 +230,32 @@ export const parseSas = (v: unknown): { sas: string } | null =>
 
 export const parseItems = (v: unknown): { items: Summary[] } | null => guard(() => ({ items: list(obj(v).items, summary) }));
 
+const LINE_INTENTS = ["login", "signup", "reset", "otp", "checkout", "address"];
+
+function planLine(v: unknown): PopupPlanLine {
+  const o = obj(v);
+  const steps = num(o.steps);
+  if (!Number.isInteger(steps) || steps < 1 || steps > 9) throw new Bad();
+  return {
+    intent: oneOf<PopupPlanLine["intent"]>(o.intent, LINE_INTENTS),
+    label: str(o.label, 320),
+    steps,
+    mode: oneOf<PopupPlanLine["mode"]>(o.mode, ["chain", "fill"]),
+  };
+}
+
 export const parseSuggestions = (v: unknown): PopupSuggestions | null =>
   guard(() => {
     const o = obj(v);
-    return { domain: o.domain === null ? null : str(o.domain, 253), items: list(o.items, summary) };
+    const s: PopupSuggestions = { domain: o.domain === null ? null : str(o.domain, 253), items: list(o.items, summary) };
+    if (o.plan !== undefined) s.plan = planLine(o.plan);
+    return s;
+  });
+
+export const parseForgotSite = (v: unknown): { domain: string; items: number } | null =>
+  guard(() => {
+    const o = obj(v);
+    return { domain: str(o.domain, 253), items: num(o.items) };
   });
 
 export const parseItem = (v: unknown): PopupItem | null =>

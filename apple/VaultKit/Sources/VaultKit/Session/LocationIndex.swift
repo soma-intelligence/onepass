@@ -110,14 +110,16 @@ public struct LocationIndex: Sendable {
         return 2 * earthRadius * asin(min(1, sqrt(h)))
     }
 
-    /// "à 350 m", "à 1,2 km" (French, rounded: 10 m steps under 1 km).
+    /// "à 350 m", "à 1,2 km" in French, "350 m away", "1.2 km away" in English (rounded: 10 m
+    /// steps under 1 km). The decimal separator follows the language the strings are read in.
     public static func distanceLabel(_ meters: Double) -> String {
         if meters < 1_000 {
             let rounded = max(10, Int((meters / 10).rounded()) * 10)
-            return rounded >= 1_000 ? "à 1 km" : "à \(rounded) m"
+            if rounded < 1_000 { return String(localized: "à \(rounded) m", bundle: VaultKitStrings.bundle) }
         }
-        let km = (meters / 100).rounded() / 10
-        let text = km == km.rounded() ? String(Int(km)) : String(format: "%.1f", km).replacingOccurrences(of: ".", with: ",")
-        return "à \(text) km"
+        let km = max(1, (meters / 100).rounded() / 10)
+        let locale = Locale(identifier: VaultKitStrings.language)
+        let text = km.formatted(.number.precision(.fractionLength(0...1)).locale(locale))
+        return String(localized: "à \(text) km", bundle: VaultKitStrings.bundle)
     }
 }

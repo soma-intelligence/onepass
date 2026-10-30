@@ -286,6 +286,34 @@ struct VaultSessionTests {
         #expect(session.state == .unlocked)
     }
 
+    @Test func immediatelyLocksAsSoonAsTheAppLeavesTheScreen() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        h.settings.autoLockDelay = .immediately
+
+        // A pull of Control Center (inactive) keeps it open.
+        session.scenePhaseChanged(.inactive)
+        session.scenePhaseChanged(.active)
+        #expect(session.state == .unlocked)
+
+        // Background, even for an instant: locked.
+        session.scenePhaseChanged(.background)
+        #expect(session.state == .locked)
+        #expect(session.summaries.isEmpty)
+
+        // While open, 5 minutes without activity lock too.
+        try await session.unlock(password: testPassword)
+        session.scenePhaseChanged(.active)
+        h.clock.advance(299)
+        session.checkAutoLock()
+        #expect(session.state == .unlocked)
+        h.clock.advance(2)
+        session.checkAutoLock()
+        #expect(session.state == .locked)
+    }
+
     /// M5: still in the background (a background task tick or a remote notification wake), the
     /// expired delay locks without waiting for the return to the foreground.
     @Test func backgroundWakePastTheDelayLocks() async throws {

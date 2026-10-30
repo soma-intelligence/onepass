@@ -228,6 +228,8 @@ func twoSyncedDevices(remote: InMemoryRemote) async throws -> (SyncDevice, SyncD
 @MainActor
 @Suite("Sync coordinator", .timeLimit(.minutes(4)))
 struct SyncCoordinatorTests {
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     @Test func secondDeviceRestoresThroughRemote() async throws {
         let remote = InMemoryRemote(pageSize: 2)  // several pages per fetch
         let a = try SyncDevice(remote: remote, name: "A")

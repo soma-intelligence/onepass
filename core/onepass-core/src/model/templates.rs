@@ -226,6 +226,8 @@ pub fn new_item(t: ItemType, vault_id: Id, title: &str) -> Item {
         updated_at: now,
         password_history: Vec::new(),
         events: Vec::new(),
+        usage: Vec::new(),
+        usage_forgotten: Vec::new(),
     }
 }
 

@@ -419,6 +419,87 @@ fn import_refuses_non_empty_store() {
     assert_eq!(still.session.account_id(), other_id);
 }
 
+/// iCloud reached the new device before the pairing: its store holds the
+/// account, never opened here. The grant lands on top of it, a wrong
+/// password leaves it as the sync left it, and the right one opens it.
+#[test]
+fn import_onto_store_the_sync_filled() {
+    // The approver's rows reach the newcomer's store through the sync alone.
+    let dir = TempDir::new().unwrap();
+    let path = db_path(dir.path());
+    let created = create_account_with_kdf(path.clone(), PASSWORD.into(), FAST).unwrap();
+    let vault_id = created.session.vaults().unwrap()[0].id.clone();
+    created
+        .session
+        .register_this_device(
+            "Mac de Camille".into(),
+            FfiDeviceKind::Mac,
+            FfiDeviceMode::Personal,
+        )
+        .unwrap();
+    let a = Device {
+        _dir: dir,
+        path,
+        session: created.session,
+        secret_key: created.secret_key,
+        vault_id,
+    };
+    save_login(&a, &a.vault_id, "Messagerie exemple.fr", "pw-atlas-1");
+    let dev = empty_device();
+    sync(&a.path, &dev.path);
+    assert_eq!(
+        store_state(dev.path.clone()).unwrap(),
+        FfiStoreState::Account
+    );
+
+    let (n, ap) = confirmed(FfiDeviceMode::Personal);
+    let frame = ap
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false,
+        )
+        .unwrap();
+    n.open(frame).unwrap();
+
+    assert_eq!(
+        n.import_snapshot(dev.path.clone(), "mauvais-mot-de-passe".into())
+            .err(),
+        Some(OnePassError::WrongPassword)
+    );
+    assert_eq!(n.take_secret_key(), None);
+    assert_eq!(
+        store_state(dev.path.clone()).unwrap(),
+        FfiStoreState::Account
+    );
+
+    let unlocked = n
+        .import_snapshot(dev.path.clone(), PASSWORD.into())
+        .unwrap();
+    assert_eq!(unlocked.session.account_id(), a.session.account_id());
+    assert_eq!(unlocked.session.this_device_id(), Some(n.device_id()));
+    assert_eq!(unlocked.session.item_summaries().unwrap().len(), 1);
+    assert_eq!(n.take_secret_key(), Some(a.secret_key.clone()));
+    unlocked.session.lock();
+
+    // Opened once here: a later grant no longer takes this store.
+    let (n2, ap2) = confirmed(FfiDeviceMode::Personal);
+    let frame = ap2
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false,
+        )
+        .unwrap();
+    n2.open(frame).unwrap();
+    assert!(
+        n2.import_snapshot(dev.path.clone(), PASSWORD.into())
+            .is_err()
+    );
+}
+
 #[test]
 fn secret_key_withheld_after_failed_import() {
     let a = approver_device();
@@ -819,4 +900,88 @@ fn discarded_grant_cannot_be_imported() {
     );
     assert_eq!(n.take_secret_key(), None);
     assert_eq!(store_state(dev.path.clone()).unwrap(), FfiStoreState::Empty);
+}
+
+#[test]
+fn ffi_invite_pairing_grants_the_account() {
+    let a = approver_device();
+    let invite = PairingInvite::new(now()).unwrap();
+    let code = invite.qr_text();
+    assert!(code.starts_with("OPJOIN1:"));
+    assert_eq!(pairing_code_kind(code.clone()), FfiPairingCodeKind::Invite);
+    assert_eq!(invite.service_name().len(), 32);
+
+    let n = PairingNewcomer::join(
+        code,
+        "iPhone de Camille".into(),
+        FfiDeviceKind::Phone,
+        FfiDeviceMode::Personal,
+        now(),
+    )
+    .unwrap();
+    assert_eq!(n.qr_text(), "");
+    assert_eq!(n.service_name(), invite.service_name());
+    assert_eq!(
+        pairing_service_name(invite.qr_text()).unwrap(),
+        invite.service_name()
+    );
+
+    // A Hello without the invite's secret is refused, the invite stays open.
+    let stranger = PairingNewcomer::new(
+        "Mac inconnu".into(),
+        FfiDeviceKind::Mac,
+        FfiDeviceMode::Personal,
+        now(),
+    )
+    .unwrap();
+    assert!(invite.accept(stranger.hello(), now()).is_err());
+
+    let ap = invite.accept(n.hello(), now()).unwrap();
+    assert!(invite.accept(n.hello(), now()).is_err(), "spent");
+    assert_eq!(ap.peer().name, "iPhone de Camille");
+    assert_eq!(ap.peer().id, n.device_id());
+    let sas = n.on_key_exchange(ap.key_exchange(), now()).unwrap();
+    assert_eq!(sas, ap.sas());
+    assert_eq!(
+        ap.on_frame(n.confirm().unwrap()).unwrap(),
+        FfiPairingMessage::Confirmed
+    );
+    let profile = ap
+        .seal_profile("Camille Durand".into(), vec![1, 2, 3])
+        .unwrap();
+    assert_eq!(
+        n.open(profile).unwrap(),
+        FfiPairingMessage::Profile {
+            name: "Camille Durand".into(),
+            photo: vec![1, 2, 3]
+        }
+    );
+    let frame = ap
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false,
+        )
+        .unwrap();
+    let FfiPairingMessage::FullGrant { account_id, .. } = n.open(frame).unwrap() else {
+        panic!("expected a full grant");
+    };
+    assert_eq!(account_id, a.session.account_id());
+}
+
+#[test]
+fn pairing_code_kind_tells_the_codes_apart() {
+    let n = PairingNewcomer::new(
+        "iPad de Camille".into(),
+        FfiDeviceKind::Tablet,
+        FfiDeviceMode::Personal,
+        now(),
+    )
+    .unwrap();
+    assert_eq!(pairing_code_kind(n.qr_text()), FfiPairingCodeKind::Pairing);
+    assert_eq!(
+        pairing_code_kind("https://example.com".into()),
+        FfiPairingCodeKind::Unknown
+    );
 }

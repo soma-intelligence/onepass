@@ -33,6 +33,16 @@
         }
       }
     },
+    "Actions pour %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actions for %@"
+          }
+        }
+      }
+    },
     "Adhésion" : {
       "localizations" : {
         "en" : {
@@ -45,6 +55,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Adhésion"
+          }
+        }
+      }
+    },
+    "Afficher en grand" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Large"
+          }
+        }
+      }
+    },
+    "Alerte d'intégrité" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integrity Alert"
           }
         }
       }
@@ -241,6 +271,16 @@
         }
       }
     },
+    "Code à usage unique" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One-Time Code"
+          }
+        }
+      }
+    },
     "Compte bancaire" : {
       "localizations" : {
         "en" : {
@@ -337,6 +377,16 @@
         }
       }
     },
+    "Copier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy"
+          }
+        }
+      }
+    },
     "Des données chiffrées ont été modifiées." : {
       "localizations" : {
         "en" : {
@@ -401,6 +451,16 @@
         }
       }
     },
+    "Données refusées" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data Refused"
+          }
+        }
+      }
+    },
     "Dossier médical" : {
       "localizations" : {
         "en" : {
@@ -429,6 +489,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dossiers médicaux"
+          }
+        }
+      }
+    },
+    "Fermer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close"
+          }
+        }
+      }
+    },
+    "Force du mot de passe" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password Strength"
           }
         }
       }
@@ -573,6 +653,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Licences logicielles"
+          }
+        }
+      }
+    },
+    "Masquer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide"
           }
         }
       }
@@ -817,6 +907,16 @@
         }
       }
     },
+    "Révéler" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reveal"
+          }
+        }
+      }
+    },
     "Serveur" : {
       "localizations" : {
         "en" : {
@@ -1009,6 +1109,16 @@
         }
       }
     },
+    "encore %lld secondes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld seconds left"
+          }
+        }
+      }
+    },
     "excellent" : {
       "localizations" : {
         "en" : {
@@ -1037,6 +1147,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "faible"
+          }
+        }
+      }
+    },
+    "masqué" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hidden"
           }
         }
       }

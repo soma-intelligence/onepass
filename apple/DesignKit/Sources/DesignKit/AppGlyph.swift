@@ -32,7 +32,7 @@ public struct AppGlyph: View {
         }
         .frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("OnePass"))
+        .accessibilityLabel(Text(verbatim: "OnePass"))
         .accessibilityAddTraits(.isImage)
     }
 
