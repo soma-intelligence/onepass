@@ -210,7 +210,14 @@ impl Approver for UiApprover {
             decision,
             approved_on: origin_of(answer.approved_on),
         };
-        if decision == Decision::Deny || !self.presence {
+        // An approval from the phone already carries Face ID there (spec
+        // 5.3): Touch ID on the Mac is not asked on top of it. Only an
+        // origin the audit accepts counts.
+        let on_phone = answer
+            .approved_on
+            .as_deref()
+            .is_some_and(|o| o.starts_with("phone:"));
+        if decision == Decision::Deny || !self.presence || on_phone {
             return answer;
         }
         let reason = format!("{} : {}", shown.client, shown.action);

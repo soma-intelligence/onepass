@@ -797,6 +797,16 @@
         }
       }
     },
+    "Envoyé à %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sent to %@"
+          }
+        }
+      }
+    },
     "Erreur de chiffrement." : {
       "localizations" : {
         "en" : {
@@ -2237,6 +2247,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud does not hold a full copy of these vaults yet. Sync, then try again: nothing was removed."
+          }
+        }
+      }
+    },
+    "iPhone indisponible : approuve ici" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone unavailable: approve here"
           }
         }
       }
