@@ -52,6 +52,14 @@ struct AgentsSettings: View {
                 }
                 .accessibilityIdentifier("agents.enable")
             }
+            if agents.faceIDNeedsReset {
+                Label("Face ID a changé sur cet iPhone. Réactive-le pour répondre aux demandes.", systemImage: "faceid")
+                    .foregroundStyle(.orange)
+                Button("Réactiver Face ID") {
+                    run { try await agents.reArmFaceID() }
+                }
+                .accessibilityIdentifier("agents.rearmFaceID")
+            }
             if agents.clockLooksWrong {
                 Label(RemoteResponderError.clockSkew.message, systemImage: "clock.badge.exclamationmark")
                     .foregroundStyle(.orange)

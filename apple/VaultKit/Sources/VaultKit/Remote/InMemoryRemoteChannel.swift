@@ -11,8 +11,12 @@ public final class InMemoryRemoteChannel: RemoteChannel {
     }
 
     private let state = Mutex(State())
+    /// The fake server's clock: stamps `sentAt` on every post.
+    private let now: @Sendable () -> Date
 
-    public init() {}
+    public init(now: @escaping @Sendable () -> Date = { Date() }) {
+        self.now = now
+    }
 
     public var reachable: Bool {
         get { state.withLock { $0.reachable } }
@@ -25,6 +29,8 @@ public final class InMemoryRemoteChannel: RemoteChannel {
     }
 
     public func post(_ m: RemoteMessage) async throws {
+        var m = m
+        m.sentAt = now()
         let targets = try state.withLock { s -> [AsyncStream<RemoteMessage>.Continuation] in
             guard s.reachable else { throw RemoteChannelError.unreachable }
             s.records.removeAll { $0.id == m.id }

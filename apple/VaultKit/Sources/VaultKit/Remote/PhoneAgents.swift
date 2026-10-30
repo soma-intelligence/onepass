@@ -34,6 +34,8 @@ public final class PhoneAgents {
 
     public private(set) var requests: [OpenedRequest] = []
     public private(set) var clockLooksWrong = false
+    /// Face ID changed on this iPhone: answers fail until "Réactiver Face ID".
+    public private(set) var faceIDNeedsReset = false
     public private(set) var macs: [Mac] = []
     /// This phone is a phone approver of the account (its approval keys are in the signed list).
     public private(set) var isEnabled = false
@@ -99,6 +101,8 @@ public final class PhoneAgents {
             await refresh()
             return
         }
+        // The vault may have locked (or another call started a responder) during the read.
+        guard vault.state == .unlocked, vault.coreSession === core, responder == nil else { return }
         let responder = RemoteResponder(
             channel: channel, session: core, keys: keys, presence: presence, keyring: keyring)
         self.responder = responder
@@ -126,6 +130,7 @@ public final class PhoneAgents {
         let before = Set(requests.map(\.id))
         requests = await responder.pending()
         clockLooksWrong = await responder.clockLooksWrong
+        faceIDNeedsReset = await responder.faceIDNeedsReset
         if requests.contains(where: { !before.contains($0.id) }) { showRequests = true }
     }
 
@@ -205,6 +210,14 @@ public final class PhoneAgents {
         record(request, decision: String(localized: "Déverrouillage à distance activé", bundle: VaultKitStrings.bundle))
         await pull()
         await refresh()
+    }
+
+    /// "Réactiver Face ID": the gate written again for the current biometric set, after a Face ID
+    /// of that set, with the vault open.
+    public func reArmFaceID() async throws {
+        guard vault.state == .unlocked, let responder else { throw RemoteResponderError.unavailable }
+        try await responder.reArmFaceID()
+        await pull()
     }
 
     /// A pairing refused: nothing is sent.

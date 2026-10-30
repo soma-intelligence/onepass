@@ -5450,6 +5450,16 @@
         }
       }
     },
+    "Face ID a changé sur cet iPhone. Réactive-le pour répondre aux demandes." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face ID changed on this iPhone. Turn it back on to answer requests."
+          }
+        }
+      }
+    },
     "Face ID, Touch ID ou le mot de passe maître sera demandé avant d'afficher cet élément." : {
       "localizations" : {
         "en" : {
@@ -10173,6 +10183,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Red"
+          }
+        }
+      }
+    },
+    "Réactiver Face ID" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Face ID Back On"
           }
         }
       }

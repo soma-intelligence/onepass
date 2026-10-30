@@ -50,11 +50,16 @@ public enum RemoteResponderError: Error, Equatable, Sendable {
     case expired
     /// Not a request this phone holds.
     case unknownRequest
-    /// No `K_r` for that Mac: enroll from the Mac.
+    /// No usable `K_r` for that Mac (never enrolled, or invalidated by a Face ID change): enroll
+    /// again from the Mac.
     case notEnrolled
+    /// The biometric set changed (a face or appearance added, Face ID reset): the Face ID gate must
+    /// be armed again from Réglages > Agents.
+    case faceIDChanged
     /// That answer does not fit that request ("5 min" not allowed, a pairing answered as a request).
     case notAllowed
-    /// A request dated far in this phone's future: its clock is likely wrong.
+    /// A request the phone's clock alone calls expired, or dates in its future: its clock is likely
+    /// wrong.
     case clockSkew
     /// CloudKit unreachable, or the core refused to seal (this phone is not an approver).
     case unavailable
@@ -68,11 +73,13 @@ public enum RemoteResponderError: Error, Equatable, Sendable {
         case .unknownRequest:
             String(localized: "Cette demande n'est plus disponible.", bundle: VaultKitStrings.bundle)
         case .notEnrolled:
-            String(localized: "Le déverrouillage à distance n'est pas activé pour ce Mac : active-le depuis le Mac.", bundle: VaultKitStrings.bundle)
+            String(localized: "Le déverrouillage à distance de ce Mac n'est pas actif sur cet iPhone : réactive-le depuis le Mac.", bundle: VaultKitStrings.bundle)
+        case .faceIDChanged:
+            String(localized: "Face ID a changé : réactive Face ID dans Réglages > Agents.", bundle: VaultKitStrings.bundle)
         case .notAllowed:
             String(localized: "Cette réponse n'est pas permise pour cette demande.", bundle: VaultKitStrings.bundle)
         case .clockSkew:
-            String(localized: "Vérifie l'heure de ton iPhone : une demande semble venir du futur.", bundle: VaultKitStrings.bundle)
+            String(localized: "Vérifie l'heure de ton iPhone : elle ne correspond pas à celle de ton Mac.", bundle: VaultKitStrings.bundle)
         case .unavailable:
             String(localized: "Le Mac est injoignable pour l'instant. Réessaie.", bundle: VaultKitStrings.bundle)
         }
@@ -85,17 +92,23 @@ public enum RemoteResponderError: Error, Equatable, Sendable {
 /// current biometric set first; a Face ID refused sends nothing. An unlock approval reads `K_r` of
 /// that Mac behind that same Face ID and seals it to the request's ephemeral key.
 ///
-/// A request the phone cannot open stays for its expiry (the mailbox erases it then), except one
-/// dated beyond the request lifetime plus the clock tolerance in the phone's future: the phone's
-/// clock is then late, `clockLooksWrong` turns on and the record goes.
+/// A request the phone cannot open stays for its expiry (the mailbox erases it then). The phone's
+/// clock is judged against two others (spec Review Focus 1): the Mac's (the signed dates) and the
+/// server's (the record's creation time). A request dated beyond the request lifetime plus the
+/// clock tolerance in the phone's future means the phone is late; a request the phone calls
+/// expired by more than the tolerance although the server stored it when the Mac says it was made
+/// means the phone is ahead (or the record was left behind, which the launch purge and the Mac's
+/// withdrawal clear). Either way `clockLooksWrong` turns on and the record goes.
 public actor RemoteResponder {
     /// A request lives 60 s on the Mac (spec 5.1).
     public static let requestLifetime: TimeInterval = 60
     /// The phone's clock may be 120 s off (spec 5.1).
     public static let clockTolerance: TimeInterval = 120
 
-    /// The last request the phone could not open looked dated in its future (clock late).
+    /// The last request the phone could not open disagreed with its clock by more than the tolerance.
     public private(set) var clockLooksWrong = false
+    /// The Face ID gate was invalidated by a change of the biometric set: `reArmFaceID()`.
+    public private(set) var faceIDNeedsReset = false
 
     private let channel: any RemoteChannel
     private let session: any RemoteResponderSession
@@ -169,7 +182,16 @@ public actor RemoteResponder {
     private func receive(_ message: RemoteMessage) async -> Bool {
         let current = now()
         if current.timeIntervalSince(message.expiresAt) > Self.clockTolerance {
-            // Expired on this phone's clock too: left to the mailbox, which erases it.
+            let made = message.expiresAt.addingTimeInterval(-Self.requestLifetime)
+            if let stored = message.sentAt, abs(stored.timeIntervalSince(made)) <= Self.clockTolerance {
+                // The server stored it when the Mac says it was made: only this phone's clock calls
+                // it expired, so it runs ahead.
+                Self.log.notice("remote request expired on this phone's clock only")
+                clockLooksWrong = true
+                changed()
+                return true
+            }
+            // Expired on every clock: left to the mailbox, which erases it.
             return false
         }
         if message.expiresAt.timeIntervalSince(current) > Self.requestLifetime + Self.clockTolerance {
@@ -230,14 +252,19 @@ public actor RemoteResponder {
             if let enrolled = try? keyring.macs(), !enrolled.contains(request.mac) {
                 throw RemoteResponderError.notEnrolled
             }
-            guard let key = await keyring.read(for: request.mac, prompt: Self.answerPrompt) else {
+            switch await keyring.read(for: request.mac, prompt: Self.answerPrompt) {
+            case .found(let key):
+                unlockKey = key
+            case .refused:
                 throw RemoteResponderError.presenceRequired
+            case .missing:
+                // Invalidated by a Face ID change (or gone): only a new enrollment from the Mac
+                // brings it back. The dead entry goes, so the settings say so.
+                try? keyring.delete(for: request.mac)
+                throw RemoteResponderError.notEnrolled
             }
-            unlockKey = key
         } else {
-            guard await presence.confirmWithBiometrics(prompt: Self.answerPrompt) else {
-                throw RemoteResponderError.presenceRequired
-            }
+            try await confirmPresence(Self.answerPrompt)
         }
         defer {
             // Best effort: `Data` may hold other copies the core call released by now.
@@ -278,9 +305,7 @@ public actor RemoteResponder {
     public func acceptEnrollment(_ id: String) async throws {
         let request = try live(id)
         guard request.isPairing else { throw RemoteResponderError.notAllowed }
-        guard await presence.confirmWithBiometrics(prompt: Self.enrollPrompt) else {
-            throw RemoteResponderError.presenceRequired
-        }
+        try await confirmPresence(Self.enrollPrompt)
         _ = try live(id)
         let session = self.session
         let keys = self.keys
@@ -300,6 +325,49 @@ public actor RemoteResponder {
             throw RemoteResponderError.unavailable
         }
         drop(id)
+    }
+
+    /// Face ID of the current set. A gate that tells a changed biometric set apart reports it as
+    /// `faceIDChanged` (asking again cannot help), anything else as `presenceRequired`.
+    private func confirmPresence(_ prompt: String) async throws {
+        if let gate = presence as? any FaceIDGate {
+            switch await gate.check(prompt: prompt) {
+            case .confirmed:
+                return
+            case .refused:
+                throw RemoteResponderError.presenceRequired
+            case .invalidated:
+                faceIDNeedsReset = true
+                changed()
+                throw RemoteResponderError.faceIDChanged
+            }
+        }
+        guard await presence.confirmWithBiometrics(prompt: prompt) else {
+            throw RemoteResponderError.presenceRequired
+        }
+    }
+
+    static var rearmPrompt: String {
+        String(localized: "Réactiver Face ID pour les demandes des agents", bundle: VaultKitStrings.bundle)
+    }
+
+    /// After a Face ID change: the gate is written again for the current biometric set, then read
+    /// once (a Face ID of that set). The responder only exists while the vault is open. A refused
+    /// Face ID leaves no gate behind.
+    public func reArmFaceID() async throws {
+        guard let gate = presence as? any FaceIDGate else { return }
+        do {
+            try gate.arm()
+        } catch {
+            Self.log.error("face id gate not written")
+            throw RemoteResponderError.unavailable
+        }
+        guard await gate.check(prompt: Self.rearmPrompt) == .confirmed else {
+            try? gate.disarm()
+            throw RemoteResponderError.presenceRequired
+        }
+        faceIDNeedsReset = false
+        changed()
     }
 
     /// Drops a request without answering (a pairing the owner refuses: nothing is sent).
@@ -332,15 +400,11 @@ public actor RemoteResponder {
         ((try? keyring.macs()) ?? []).sorted()
     }
 
-    /// The Macs of the account that may send requests (signed list, revoked ones left out).
-    public func macApprovers() async -> [FfiApprover] {
-        let session = self.session
-        let list = (try? await CoreThread.run { try session.approvers() }) ?? []
-        return list.filter { $0.role == .mac }
-    }
-
     /// "Oublier le déverrouillage à distance" (spec 6.4): `K_r` is erased here, then the Mac is told
     /// to erase `C`. A lost notice reopens nothing (half alone opens nothing).
+    ///
+    /// Ruling: `Lock` and `ForgetUnlock` go without Face ID. They only take rights away (end a
+    /// window, drop the pairing) and need the vault open on this phone already.
     public func forget(mac: String) async throws {
         do {
             try keyring.delete(for: mac)

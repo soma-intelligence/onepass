@@ -977,6 +977,16 @@
         }
       }
     },
+    "Face ID a changé : réactive Face ID dans Réglages > Agents." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face ID changed: turn Face ID back on in Settings > Agents."
+          }
+        }
+      }
+    },
     "Face ID est nécessaire pour répondre." : {
       "localizations" : {
         "en" : {
@@ -1445,12 +1455,12 @@
         }
       }
     },
-    "Le déverrouillage à distance n'est pas activé pour ce Mac : active-le depuis le Mac." : {
+    "Le déverrouillage à distance de ce Mac n'est pas actif sur cet iPhone : réactive-le depuis le Mac." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remote unlock is not on for this Mac: turn it on from the Mac."
+            "value" : "Remote unlock for this Mac is not active on this iPhone: turn it on again from the Mac."
           }
         }
       }
@@ -1845,6 +1855,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Retirer cet appareil de ton compte"
+          }
+        }
+      }
+    },
+    "Réactiver Face ID pour les demandes des agents" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Face ID back on for agent requests"
           }
         }
       }
@@ -2421,12 +2441,12 @@
         }
       }
     },
-    "Vérifie l'heure de ton iPhone : une demande semble venir du futur." : {
+    "Vérifie l'heure de ton iPhone : elle ne correspond pas à celle de ton Mac." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check your iPhone's clock: a request seems to come from the future."
+            "value" : "Check your iPhone's time: it does not match your Mac's."
           }
         }
       }
