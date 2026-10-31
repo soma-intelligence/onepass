@@ -1440,3 +1440,97 @@ fn version_beyond_i64_never_wedges_a_fetch() {
         None
     );
 }
+
+/// Carried item 1 (Task 11 bound, R21 and 8.5 amended): the server
+/// withholds the winner's record from the losing rotator, which then
+/// pushes its phase 2 over the winner's single-slot vault records (it
+/// cannot know a better sibling exists). Bounded outcome, asserted here:
+/// no device adopts the loser's identity or locks; the winner's devices
+/// raise an integrity alert on the vault instead of reading the loser's
+/// content; each keeps its own copy of the vault key (retained rows); once
+/// the record reaches the loser it switches and collects its own item
+/// records. The vault records stay the loser's on the server: no device
+/// repairs them automatically (documented limit, spec 11).
+#[test]
+fn hidden_winner_lets_the_loser_overwrite_bounded() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture(&mut server);
+    let mut c = device(&mut server, &a, &f, C);
+    let mut d = device(&mut server, &a, &f, 2);
+    c.unlock(&f.sk);
+    let v = a.vault().id;
+    let (ra, _) = rotate_on(&mut a, &f, &f.a.keys, vec![]);
+    let (rc, _) = rotate_on(&mut c, &f, &f.c().keys, vec![]);
+    let a_wins = ra.head < rc.head;
+    let (wh, lh) = if a_wins {
+        (ra.head, rc.head)
+    } else {
+        (rc.head, ra.head)
+    };
+    let (mut w, mut l, l_keys) = if a_wins {
+        (a, c, &f.c().keys)
+    } else {
+        (c, a, &f.a.keys)
+    };
+    sync(&mut server, &mut w).unwrap();
+    let winner_key = server.get(RecordKind::VaultKey, v).unwrap().data;
+    pull(&server, &mut d);
+    let (repo, _, _) = follow_rotation(d.store(), wh, PASSWORD, &f.others[2].keys).unwrap();
+    d.repo = Some(repo);
+    assert_eq!(users(&d.items()), names(&["alice", "bob", "carol"]));
+
+    // The loser never sees the winner's record and pushes everything.
+    let mut pushed = false;
+    for _ in 0..4 {
+        match push(&mut server, &l) {
+            Ok(()) => {
+                pushed = true;
+                break;
+            }
+            Err(_) => {
+                pull_hiding(&server, &mut l, &[wh]);
+                l.repo().rebase().unwrap();
+            }
+        }
+    }
+    assert!(pushed);
+    assert_eq!(state(&l), DeviceLineageState::Current);
+    assert_ne!(
+        server.get(RecordKind::VaultKey, v).unwrap().data,
+        winner_key
+    );
+
+    for dev in [&mut w, &mut d] {
+        pull(&server, dev);
+        assert_eq!(dev.repo().refresh_pending_rotation().unwrap(), None);
+        assert_eq!(head_of(dev), wh, "never adopts the loser");
+        assert_never_locked(dev);
+        assert!(
+            matches!(dev.repo().vaults(), Err(Error::Integrity(_))),
+            "an alert, never the loser's content read as the winner's"
+        );
+        let kept = RecordStore::retained_rows(&dev.store(), v).unwrap();
+        assert!(
+            kept.iter()
+                .any(|r| r.kind == RecordKind::VaultKey && r.data == winner_key),
+            "the winner's key stays on the device"
+        );
+    }
+
+    // The winner's record reaches the loser: it switches, and its item
+    // records go from the server.
+    pull(&server, &mut l);
+    let p = l
+        .repo()
+        .refresh_pending_rotation()
+        .unwrap()
+        .expect("switch");
+    assert_eq!(p.kind, PromptKind::Reapply);
+    assert_eq!(choice_hashes(&p), vec![wh]);
+    let session = l.repo.take().unwrap();
+    let (repo, _, _) = follow_switch(session, wh, PASSWORD, l_keys).unwrap();
+    l.repo = Some(repo);
+    let _ = sync(&mut server, &mut l);
+    assert_eq!(head_of(&l), wh);
+    assert!(server.get(RecordKind::Lineage, lineage_id(&lh)).is_some());
+}
