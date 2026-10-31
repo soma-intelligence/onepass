@@ -76,6 +76,8 @@ pub struct Rendezvous {
     next_out: u32,
     next_in: u32,
     sent: u64,
+    /// Bytes of the incoming stream read so far (66 MiB at most).
+    received: u64,
     /// Bytes of the incoming stream not handed out yet.
     inbox: Vec<u8>,
     closed: bool,
@@ -114,6 +116,7 @@ impl Rendezvous {
             next_out: 0,
             next_in: 0,
             sent: 0,
+            received: 0,
             inbox: Vec::new(),
             closed: false,
         }
@@ -126,27 +129,38 @@ impl Rendezvous {
     /// Writes one frame. A frame that would take this direction past 4 096
     /// chunks or 66 MiB is `TooLarge` before anything is written. A chunk
     /// number someone else wrote first is `FrameTaken`, and the session is
-    /// closed. A busy or unreachable server is retried for 60 s.
+    /// closed. A busy or unreachable server is retried for 60 s, and at
+    /// least once past a `Retry { after }` of up to 60 s.
     pub fn send_frame(&mut self, frame: &[u8]) -> Result<(), MailboxError> {
         self.check_open()?;
         let len = u32::try_from(frame.len()).map_err(|_| MailboxError::TooLarge)?;
-        let mut stream = Vec::with_capacity(4 + frame.len());
-        stream.extend_from_slice(&len.to_be_bytes());
-        stream.extend_from_slice(frame);
-        let chunks = stream.len().div_ceil(RDV_CHUNK_MAX) as u32;
-        if self.next_out + chunks > RDV_FRAMES_MAX
-            || self.sent + stream.len() as u64 > RDV_SESSION_BYTES_MAX
+        let header = len.to_be_bytes();
+        let total = frame.len() as u64 + 4;
+        let chunks = total.div_ceil(RDV_CHUNK_MAX as u64);
+        if u64::from(self.next_out) + chunks > u64::from(RDV_FRAMES_MAX)
+            || self.sent + total > RDV_SESSION_BYTES_MAX
         {
             return Err(MailboxError::TooLarge);
         }
-        for chunk in stream.chunks(RDV_CHUNK_MAX) {
-            if let Err(e) = self.put_chunk(chunk) {
+        // The header, then the frame, one chunk at a time: the frame is
+        // never copied whole.
+        let mut chunk = Vec::with_capacity(RDV_CHUNK_MAX.min(frame.len() + 4));
+        chunk.extend_from_slice(&header);
+        let mut rest = frame;
+        loop {
+            let take = rest.len().min(RDV_CHUNK_MAX - chunk.len());
+            chunk.extend_from_slice(&rest[..take]);
+            rest = &rest[take..];
+            if let Err(e) = self.put_chunk(&chunk) {
                 return Err(self.fail(e));
             }
             self.next_out += 1;
             self.sent += chunk.len() as u64;
+            if rest.is_empty() {
+                return Ok(());
+            }
+            chunk.clear();
         }
-        Ok(())
     }
 
     /// Reads the next frame, waiting until `deadline`. A length above `max`
@@ -159,13 +173,17 @@ impl Rendezvous {
         loop {
             if self.inbox.len() >= 4 {
                 let len = u32::from_be_bytes(self.inbox[..4].try_into().expect("4 bytes")) as usize;
-                if len > max {
-                    self.close();
-                    return Err(MailboxError::TooLarge);
-                }
-                if self.inbox.len() >= 4 + len {
-                    let frame = self.inbox[4..4 + len].to_vec();
-                    self.inbox.drain(..4 + len);
+                // `len` is a u32: `4 + len` can only overflow a 32-bit usize.
+                let end = match len.checked_add(4) {
+                    Some(end) if len <= max => end,
+                    _ => {
+                        self.close();
+                        return Err(MailboxError::TooLarge);
+                    }
+                };
+                if self.inbox.len() >= end {
+                    let frame = self.inbox[4..end].to_vec();
+                    self.inbox.drain(..end);
                     return Ok(frame);
                 }
             }
@@ -183,6 +201,10 @@ impl Rendezvous {
                     if chunk.is_empty() || chunk.len() > RDV_CHUNK_MAX {
                         return Err(self.fail(MailboxError::Malformed("rendezvous chunk size")));
                     }
+                    self.received += chunk.len() as u64;
+                    if self.received > RDV_SESSION_BYTES_MAX {
+                        return Err(self.fail(MailboxError::Malformed("rendezvous stream size")));
+                    }
                     self.inbox.extend_from_slice(&chunk);
                     self.next_in += 1;
                 }
@@ -199,7 +221,8 @@ impl Rendezvous {
     }
 
     /// Ends the session for both sides (`DELETE`), once. Best effort: the
-    /// server closes it 600 s after its first frame anyway.
+    /// server closes it 600 s after its first frame anyway. Blocking, up to
+    /// the 30 s request timeout; dropping the `Rendezvous` does the same.
     pub fn close(&mut self) {
         if !self.closed {
             self.closed = true;
@@ -221,7 +244,8 @@ impl Rendezvous {
     }
 
     /// One chunk at `next_out`. A write whose answer was lost may have
-    /// landed: a `409` after such a retry is read back and compared.
+    /// landed: after such a try, a `409` (or the `413` the server checks
+    /// first, near the 66 MiB cap) is read back and compared.
     fn put_chunk(&mut self, chunk: &[u8]) -> Result<(), MailboxError> {
         let (dir, n) = (self.role.out_dir(), self.next_out);
         let start = Instant::now();
@@ -229,7 +253,7 @@ impl Rendezvous {
         loop {
             let pause = match self.transport.put(dir, n, chunk) {
                 Ok(()) => return Ok(()),
-                Err(MailboxError::FrameTaken) if uncertain => {
+                Err(MailboxError::FrameTaken | MailboxError::TooLarge) if uncertain => {
                     return match self.transport.get(dir, n, 0)? {
                         Some(there) if there == chunk => Ok(()),
                         _ => Err(MailboxError::FrameTaken),
@@ -240,12 +264,14 @@ impl Rendezvous {
                     (Duration::from_secs(1), MailboxError::Offline)
                 }
                 Err(MailboxError::Retry { after }) => (
-                    Duration::from_secs(after.unwrap_or(1).into()),
+                    Duration::from_secs(after.unwrap_or(1).into()).min(SEND_PATIENCE),
                     MailboxError::Retry { after },
                 ),
                 Err(e) => return Err(e),
             };
-            if start.elapsed() + pause.0 > SEND_PATIENCE {
+            // Gives up only once the patience is spent, so one full wait
+            // (capped at 60 s) is always tried.
+            if start.elapsed() >= SEND_PATIENCE {
                 return Err(pause.1);
             }
             std::thread::sleep(pause.0);
@@ -480,6 +506,21 @@ mod tests {
         let mut approver = fake.rendezvous(S, RdvRole::Approver);
         assert_eq!(approver.recv_frame(16, soon(5)).unwrap(), b"once");
         assert_eq!(fake.rdv_chunks(S, 0), 1);
+    }
+
+    #[test]
+    fn rendezvous_lost_answer_near_the_cap() {
+        // The server checks the 66 MiB cap before the written-once rule: a
+        // retry of a chunk that landed answers 413, read back as ours.
+        let fake = FakeMailbox::new();
+        let mut newcomer = fake.rendezvous(S, RdvRole::Newcomer);
+        let full = vec![1u8; RDV_CHUNK_MAX - 4];
+        for _ in 0..65 {
+            newcomer.send_frame(&full).unwrap();
+        }
+        fake.rdv_lose_next_answer();
+        newcomer.send_frame(&full).unwrap();
+        assert_eq!(fake.rdv_chunks(S, 0), 66);
     }
 
     #[test]
