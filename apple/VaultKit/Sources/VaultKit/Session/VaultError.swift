@@ -35,6 +35,19 @@ public enum VaultError: Error, Equatable, Sendable {
             case .PasskeyExcluded: self = .other(String(localized: "Ce compte a déjà une passkey OnePass pour ce site.", bundle: VaultKitStrings.bundle))
             // The remote unlock envelope no longer opens the account: unlock here.
             case .RemoteUnlockStale: self = .passwordRequired
+            // Key rotation v2 (core spec 8.1, 8.4): the app has no screens for these yet.
+            case .ReadOnly:
+                self = .other(String(localized: "Lecture seule jusqu'à ta réponse à la rotation des clés.", bundle: VaultKitStrings.bundle))
+            case .OutdatedKit:
+                self = .other(String(localized: "Ce kit de secours date d'avant un changement des clés du compte.", bundle: VaultKitStrings.bundle))
+            case .RotationPending:
+                self = .other(String(localized: "Une rotation des clés est en cours.", bundle: VaultKitStrings.bundle))
+            case .Quarantined:
+                self = .deviceRevoked
+            case .Orphaned:
+                self = .other(String(localized: "Cet appareil ne figure pas dans les clés du compte.", bundle: VaultKitStrings.bundle))
+            case .IdentityLeft:
+                self = .passwordRequired
             }
         case let error as BiometricError:
             switch error {

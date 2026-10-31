@@ -74,6 +74,9 @@ struct HostDeviceSheet: View {
         switch flow.state {
         case .idle, .connecting:
             ProgressView().controlSize(.large)
+        case .inviting:
+            // The invite direction has its own sheet (ApproveDeviceSheet); never started here.
+            ProgressView().controlSize(.large)
         case .hosting(let code):
             hosting(code)
         case .comparing(let sas, let peer, let requestedMode):
