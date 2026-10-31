@@ -39,7 +39,7 @@ use crate::format::STORE_USER_VERSION;
 use crate::lineage::identity_id;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::repo::{DeviceState, split_item_record};
-use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent};
+use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id};
 use crate::trust::{DeviceLineageState, TrustState};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
@@ -602,9 +602,14 @@ fn pending_rows(conn: &Connection) -> Result<Vec<PendingRow>> {
     .collect()
 }
 
-/// Whether a write of phase `phase` is still pending. Phase 2: a write of
-/// a re-sealed vault (key, meta, item, manifest; every vault write when the
-/// store kept no `RotationPush`). Phase 3: a deletion of a collected item.
+/// Whether a write of phase `phase` is still pending. Phase 1: a write the
+/// phase-1 outbox takes (`phase_one_rank`, writes only, as
+/// `pending_changes_in`). Invariant: every row counted here is one the
+/// outbox sends, or one held for a rebase (a list the server moved past,
+/// a params pair the server already holds) that the next `rebase` or fetch
+/// settles; none is withheld for good. Phase 2: a write of a re-sealed
+/// vault (key, meta, item, manifest; every vault write when the store kept
+/// no `RotationPush`). Phase 3: a deletion of a collected item.
 fn phase_left(
     rows: &[PendingRow],
     phase: u8,
@@ -614,7 +619,7 @@ fn phase_left(
     Ok(match phase {
         1 => rows
             .iter()
-            .any(|(kind, id, _, _)| phase_one_rank(*kind, *id, rid).is_some()),
+            .any(|(kind, id, write, _)| *write && phase_one_rank(*kind, *id, rid).is_some()),
         2 => rows.iter().any(|(kind, _, write, vault)| {
             *write
                 && matches!(
@@ -790,13 +795,6 @@ impl SyncStore {
         self.conn.execute_batch("ROLLBACK").map_err(store_err)
     }
 
-    /// Local writes to push, minus the held vaults, minus the writes (not
-    /// the deletions) into a vault the verified vault list in `base` marks
-    /// deleted (`deleted_vaults`, spec 4.5), and minus the account params
-    /// and keyset unless both are pending and the params epoch is above the
-    /// server's (`account_pair_pushable`). Order: account params, keysets,
-    /// vault keys, vault metas, items, manifests, then deletions, so a
-    /// manifest never reaches the server before its items.
     /// See `RecordStore::put_all_if_version_with_trust` and
     /// `RecordStore::put_rotation`.
     fn put_with_trust(
@@ -888,6 +886,19 @@ impl SyncStore {
         Ok(PhaseOutcome::Done)
     }
 
+    /// Local writes to push, minus the held vaults, minus the writes (not
+    /// the deletions) into a vault the verified vault list in `base` marks
+    /// deleted (`deleted_vaults`, spec 4.5), and minus the account params
+    /// and keyset unless both are pending and the params epoch is above the
+    /// server's (`account_pair_pushable`). Order: account params, keysets,
+    /// vault keys, vault metas, items, manifests, then deletions, so a
+    /// manifest never reaches the server before its items.
+    ///
+    /// A device pushing a rotation (`Rotating { phase }`, spec 7.1, 10.5):
+    /// in phase 1 only the rotation's new records go out (deliveries,
+    /// params, keyset, lists, the lineage record last) and every other
+    /// write waits; in phases 1 and 2 the re-sealed vaults are never held
+    /// (R21). See `push_rotation_phase`.
     pub fn pending_changes(&self) -> Result<Vec<Change>> {
         self.read(pending_changes_in)
     }
@@ -2682,18 +2693,26 @@ fn deleted_vaults(conn: &Connection, staged: &[StagedRow]) -> BTreeSet<Id> {
 
 fn proven_deleted(conn: &Connection, staged: &[StagedRow]) -> Result<BTreeSet<Id>> {
     let mut out = BTreeSet::new();
-    let Some(pin) = device_state_in(conn)?.pinned else {
+    let Some(mut pin) = device_state_in(conn)?.pinned else {
         return Ok(out);
     };
-    let account = pin.account_id;
-    // The records of the pinned identity (spec 6.6): under its identity id
-    // from generation 1 on.
+    // With a trust state, its account and identity are the ones that count
+    // (spec 6.6, ruling H3): a device state saved before a rotation committed
+    // still pins the identity this device left, whose key a revoked device
+    // may hold. Records under any other identity's id prove nothing.
     let rid = match trust_in(conn)? {
-        Some(t) if t.head.generation > 0 && t.identity_pub == pin.identity_pub => {
-            identity_id(&t.identity_pub)
+        Some(t) => {
+            pin.account_id = t.account_id;
+            let rid = account_record_id(
+                t.account_id,
+                (t.head.generation > 0).then_some(&t.identity_pub),
+            );
+            pin.identity_pub = t.identity_pub;
+            rid
         }
-        _ => account,
+        None => pin.account_id,
     };
+    let account = pin.account_id;
     let Some(params) = row_data(conn, "base", RecordKind::AccountParams, rid)? else {
         return Ok(out);
     };

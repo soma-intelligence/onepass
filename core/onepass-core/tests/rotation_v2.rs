@@ -20,6 +20,7 @@ use onepass_core::lineage::{
     GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, RotationReason, delivery_id,
     identity_id, rotation_code, sign_genesis, verify_rotation,
 };
+use onepass_core::lists::{ListBody, VAULT_LIST_DOMAIN, sign};
 use onepass_core::manifest::{SeenManifest, SignedManifest, verify_manifest};
 use onepass_core::repo::rotate::open_key_delivery;
 use onepass_core::repo::travel::TravelState;
@@ -27,6 +28,7 @@ use onepass_core::repo::{RotateRequest, RotationOutcome};
 use onepass_core::store::{RotationPush, VaultEvent, account_record_id};
 use onepass_core::sync::PhaseOutcome;
 use onepass_core::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
+use onepass_core::vaultlist::VaultListEntry;
 
 const NEW_PASSWORD: &str = "Projet Zénith, Camille Durand";
 
@@ -1090,6 +1092,12 @@ fn phase_two_overwrites_foreign_single_slot() {
         panic!("phase 2 over the sibling's records")
     };
     assert!(conflicts.contains(&(RecordKind::VaultKey, v)));
+    // No phase 3 before phase 2 lands, conflict or not.
+    assert_eq!(
+        a.store().push_rotation_phase(2).unwrap(),
+        PhaseOutcome::Retry
+    );
+    assert!(outbox(&a).iter().all(|(c, _)| c.data.is_some()));
     pull(&server, &mut a);
     // Not held: nothing to rebase.
     assert!(a.store().vaults_needing_rebase().unwrap().is_empty());
@@ -1193,6 +1201,21 @@ fn hostile_epoch_inflation_is_noop() {
     a.try_unlock(PASSWORD, &new_sk).unwrap();
     assert_eq!(a.repo().restore_epoch(), Some(1));
     assert_eq!(a.items().len(), expected.len() + 1);
+
+    // The left identity's epoch planted under the new identity's own id:
+    // refused (its signature), never accepted.
+    server.replay(Record {
+        id: rid,
+        kind: RecordKind::RestoreEpoch,
+        version: i64::MAX as u64,
+        data,
+    });
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(
+        a.repo().vaults().unwrap_err(),
+        Error::Integrity(IntegrityError::Signature)
+    );
+    assert_eq!(a.repo().restore_epoch(), Some(1));
 }
 
 /// Another identity: a peer's device key does not make one, so draw one.
@@ -1272,7 +1295,7 @@ fn crash_before_the_device_state_is_saved() {
     assert_eq!(stored.epoch, 1);
 
     // A session of the left identity cannot save over the new one.
-    assert!(stale.persist_device_state().is_err());
+    assert!(matches!(stale.persist_device_state(), Err(Error::Conflict)));
     let chain = RecordStore::chain_state(&a.store()).unwrap();
     assert_eq!(chain.params_epoch, 1);
     drop(stale);
@@ -1287,5 +1310,135 @@ fn crash_before_the_device_state_is_saved() {
     assert_eq!(stored.pinned.unwrap().identity_pub, new_identity);
     assert_eq!(stored.epoch, 0);
     a.try_unlock(NEW_PASSWORD, &new_sk).unwrap();
+    assert_eq!(a.items(), expected);
+}
+
+/// Review I1: in the window after the rotation commits and before the
+/// device state is saved (and after a crash there), the saved pin still
+/// names the identity this device left. A revoked device holding the old
+/// signing key signs an old-identity vault list (seq 5) marking a live
+/// vault deleted, and the server deletes the vault's records: the store
+/// proves nothing from it. Phase 2 still sends the vault, the deletions
+/// are refused and logged, `last_seen` keeps the vault.
+#[test]
+fn left_identity_vault_list_proves_no_deletion() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let v = a.vault().id;
+    let account_id = a.repo().account_id();
+    let entries = vec![VaultListEntry {
+        vault_id: v,
+        created_at: T0,
+        deleted_at: Some(T0 + 1),
+    }];
+    let mut body = ListBody::next(None, account_id, entries.clone()).unwrap();
+    for _ in 0..4 {
+        body = ListBody::next(Some(&body), account_id, entries.clone()).unwrap();
+    }
+    let forged = sign(a.repo().account(), VAULT_LIST_DOMAIN, body)
+        .unwrap()
+        .encode();
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[0].id()], RotationReason::Revoke);
+    a.repo.as_mut().unwrap().rotate(req).unwrap();
+    // Phase 1 lands; the session has not saved its device state.
+    push_outbox(&mut server, &a).unwrap();
+    assert_eq!(
+        a.store().push_rotation_phase(1).unwrap(),
+        PhaseOutcome::Done
+    );
+
+    let vault_rows = [
+        RecordKind::VaultKey,
+        RecordKind::VaultMeta,
+        RecordKind::Manifest,
+    ];
+    let check = |a: &Device, stage: &str| {
+        let store = a.store();
+        let old_pin = store.device_state().unwrap().pinned.unwrap();
+        assert_eq!(old_pin.identity_pub, f_old_identity(&store));
+        // A fetch from scratch forgets every server tag first: the base
+        // rows are checked after the incremental fetches only.
+        for kind in vault_rows.iter().copied().filter(|_| stage != "full fetch") {
+            assert!(
+                store.server_meta(kind, v).unwrap().is_some(),
+                "{stage}: {kind:?} base row"
+            );
+            assert!(
+                store
+                    .ignored_deletions()
+                    .unwrap()
+                    .iter()
+                    .any(|d| d.kind == kind && d.id == v),
+                "{stage}: {kind:?} deletion logged"
+            );
+        }
+        assert!(store.device_state().unwrap().last_seen.contains_key(&v));
+        let out = store.pending_changes().unwrap();
+        for kind in vault_rows {
+            assert!(
+                out.iter()
+                    .any(|c| c.kind == kind && c.id == v && c.data.is_some()),
+                "{stage}: {kind:?} withheld"
+            );
+        }
+    };
+
+    server.replay(Record {
+        id: account_id,
+        kind: RecordKind::VaultList,
+        version: 5,
+        data: forged,
+    });
+    for kind in vault_rows {
+        server.forge_deletion(kind, v);
+    }
+    // The window: the session is alive, its device state unsaved.
+    pull(&server, &mut a);
+    check(&a, "window");
+    // A crash: the server tries again, then the device fetches from
+    // scratch.
+    a.repo = None;
+    server.replay(server.get(RecordKind::VaultList, account_id).unwrap());
+    for kind in vault_rows {
+        server.forge_deletion(kind, v);
+    }
+    pull(&server, &mut a);
+    check(&a, "after a crash");
+    full_fetch(&server, &mut a);
+    check(&a, "full fetch");
+}
+
+/// The identity the saved pin names before the session saves again: the
+/// one the trust state retired last.
+fn f_old_identity(store: &SyncStore) -> onepass_core::crypto::IdentityVerifyingKey {
+    store
+        .trust_state()
+        .unwrap()
+        .unwrap()
+        .retired
+        .last()
+        .unwrap()
+        .identity_pub
+        .clone()
+}
+
+/// Review M3: the server took phase 1 but the acknowledgement was lost (no
+/// `mark_pushed`). The next fetch brings the rotator's own records back;
+/// a rebase and a sync finish the rotation.
+#[test]
+fn lost_acknowledgement_in_phase_one() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let expected = a.items();
+    let new_sk = SecretKey::generate().unwrap();
+    rotate(&mut a, &f, &new_sk);
+    send(&mut server, &a, outbox(&a), false).unwrap();
+    pull(&server, &mut a);
+    assert_eq!(state(&a), rotating(1));
+    a.repo().rebase().unwrap();
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    assert!(outbox(&a).is_empty());
     assert_eq!(a.items(), expected);
 }
