@@ -13,9 +13,9 @@ use onepass_core::crypto::SecretKey;
 use onepass_core::devices::{DeviceEntry, DeviceMode};
 use onepass_core::model::{FieldValue, Item};
 use onepass_core::pairing::{
-    Approver, AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Invite, InviteQr, Message,
-    Newcomer, PairingQr, ProfileCard, PublicGrant, SnapshotRecord, check_snapshot_size,
-    snapshot_from_store,
+    Approver, AuditAction, AuditEvent, DeviceInfo, FullGrant, FullGrantV2, Grant, Invite, InviteQr,
+    Message, Newcomer, PairingQr, ProfileCard, PublicGrant, SnapshotRecord, check_snapshot_size,
+    import_full_v2, snapshot_from_store,
 };
 use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::{AccountState, SyncStore};
@@ -26,6 +26,7 @@ use zeroize::Zeroizing;
 use crate::convert::{bytes_hex, id_hex, item_to_ffi, parse_id};
 use crate::devices::{FfiDeviceKind, FfiDeviceMode};
 use crate::error::{OnePassError, invalid};
+use crate::rotation::{FfiFollowed, FfiPqDeviceHalf, device_keys, followed, require_current};
 use crate::session::{Session, account_id_of, find_item, find_vault};
 use crate::types::{FfiItem, FfiUnlocked};
 
@@ -245,6 +246,7 @@ impl PairingInvite {
                 core,
                 peer_confirmed: false,
                 granted: false,
+                introduced: false,
             }),
         }))
     }
@@ -256,6 +258,10 @@ struct NewcomerState {
     core: Newcomer,
     /// The full grant received, until its snapshot is imported.
     grant: Option<FullGrant>,
+    /// Key rotation v2: the `FullV2` received after `confirm_with_key`,
+    /// until it is imported (`import_snapshot_v2`) or applied to a known
+    /// device (`repair_with_grant`).
+    grant_v2: Option<FullGrantV2>,
     /// The Secret Key, once the import succeeded, until Swift takes it.
     released: Option<Zeroizing<String>>,
     imported: bool,
@@ -301,6 +307,7 @@ impl PairingNewcomer {
             state: Mutex::new(NewcomerState {
                 core,
                 grant: None,
+                grant_v2: None,
                 released: None,
                 imported: false,
             }),
@@ -335,6 +342,45 @@ impl PairingNewcomer {
             state: Mutex::new(NewcomerState {
                 core,
                 grant: None,
+                grant_v2: None,
+                released: None,
+                imported: false,
+            }),
+        }))
+    }
+
+    /// Re-pair this device (spec 7.4): a pairing session under the id this
+    /// device already has in the account (`session`'s), so the approver
+    /// grants it again instead of listing a new device. Then
+    /// `confirm_with_key` and `repair_with_grant`.
+    #[uniffi::constructor]
+    pub fn repair(
+        session: Arc<Session>,
+        name: String,
+        kind: FfiDeviceKind,
+        mode: FfiDeviceMode,
+        now: i64,
+    ) -> Result<Arc<Self>, OnePassError> {
+        let device_id = session
+            .this_device_id()
+            .ok_or_else(|| refused("no device id"))
+            .and_then(|id| parse_id(&id))?;
+        let info = DeviceInfo {
+            device_id,
+            name,
+            kind: kind.into(),
+        };
+        let (core, qr, hello) = Newcomer::new(info, mode.into(), now)?;
+        Ok(Arc::new(PairingNewcomer {
+            device_id,
+            qr_text: qr.to_text(),
+            hello,
+            session_id: qr.session_id,
+            expires_at: qr.expires_at,
+            state: Mutex::new(NewcomerState {
+                core,
+                grant: None,
+                grant_v2: None,
                 released: None,
                 imported: false,
             }),
@@ -382,10 +428,129 @@ impl PairingNewcomer {
         let mut s = lock(&self.state);
         let msg = s.core.open(&frame)?;
         let out = message_to_ffi(&msg);
-        if let Message::Grant(Grant::Full(g)) = msg {
-            s.grant = Some(g);
+        match msg {
+            Message::Grant(Grant::Full(g)) => s.grant = Some(g),
+            Message::Grant(Grant::FullV2(g)) => s.grant_v2 = Some(g),
+            _ => {}
         }
         Ok(out)
+    }
+
+    /// Key rotation v2 (spec 5.2): the user saw the same code on both
+    /// screens, on a device with device keys: the frame to send, carrying
+    /// this device's public key and its proof of possession. The approver
+    /// then grants a `FullV2`. An approver from before key rotation v2
+    /// closes the session: the app retries on a new QR with `confirm`.
+    pub fn confirm_with_key(
+        &self,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
+    ) -> Result<Vec<u8>, OnePassError> {
+        let classical = Zeroizing::new(classical);
+        let keys = device_keys(&classical, pq)?;
+        Ok(lock(&self.state).core.confirm_with_key(&keys)?)
+    }
+
+    /// Key rotation v2: import the `FullV2` into the empty store at
+    /// `db_path` (its trust snapshot pinned, this device in the roster),
+    /// then unlock with `password` and the received Secret Key and read
+    /// every vault and item, as `import_snapshot`. Refused without a
+    /// `FullV2`, after a successful import, on a store that is not empty;
+    /// any later failure empties the store again. Then `seal_key_ack`.
+    pub fn import_snapshot_v2(
+        &self,
+        db_path: String,
+        password: String,
+    ) -> Result<FfiUnlocked, OnePassError> {
+        let password = Zeroizing::new(password);
+        let mut s = lock(&self.state);
+        if s.imported {
+            return Err(refused("already imported"));
+        }
+        let grant = s
+            .grant_v2
+            .as_ref()
+            .ok_or_else(|| refused("no full grant"))?;
+        if grant.full.device_id != self.device_id {
+            return Err(refused("device id"));
+        }
+        let me = s
+            .core
+            .device_key()
+            .cloned()
+            .ok_or_else(|| refused("no device key"))?;
+        let info = s.core.device_info().clone();
+        let path = Path::new(&db_path);
+        if SyncStore::open(path)?.account_state()? != AccountState::Empty {
+            return Err(invalid("store not empty"));
+        }
+        let done = (|| {
+            {
+                let mut store = SyncStore::open(path)?;
+                import_full_v2(&mut store, grant, &me, &info)?;
+            }
+            let unlocked = crate::unlock_password(&db_path, &password, &grant.full.secret_key)?;
+            if unlocked.session.account_id() != id_hex(grant.full.account_id) {
+                return Err(OnePassError::from(onepass_core::Error::Integrity(
+                    IntegrityError::WrongContext,
+                )));
+            }
+            unlocked.session.vaults()?;
+            unlocked.session.item_summaries()?;
+            Ok(unlocked)
+        })();
+        match done {
+            Ok(unlocked) => {
+                s.released = Some(grant.full.secret_key.clone());
+                s.grant_v2 = None;
+                s.imported = true;
+                Ok(unlocked)
+            }
+            Err(e) => {
+                if let Ok(mut store) = SyncStore::open(path) {
+                    let _ = store.reset();
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// Key rotation v2 (spec 5.2, 6.4): the acknowledgment of a `FullV2`,
+    /// in place of `seal_ack`, with the same device keys: its proof of
+    /// possession over the account id goes into the approver's intro.
+    pub fn seal_key_ack(
+        &self,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
+    ) -> Result<Vec<u8>, OnePassError> {
+        let classical = Zeroizing::new(classical);
+        let keys = device_keys(&classical, pq)?;
+        Ok(lock(&self.state).core.seal_key_ack(&keys)?)
+    }
+
+    /// Re-pair a device that already holds this account (spec 7.4, ruling
+    /// A9: an orphaned device, one whose keys did not arrive): the `FullV2`
+    /// applied as a follow from `session` (open on the identity the device
+    /// is on), the local data kept and its own writes replayed. The session
+    /// is consumed (locked afterwards, also on failure). This object must
+    /// come from `PairingNewcomer::repair`, under the device's own id.
+    pub fn repair_with_grant(
+        &self,
+        session: Arc<Session>,
+        password: String,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
+    ) -> Result<FfiFollowed, OnePassError> {
+        let password = Zeroizing::new(password);
+        let classical = Zeroizing::new(classical);
+        let keys = device_keys(&classical, pq)?;
+        let mut s = lock(&self.state);
+        let grant = s.grant_v2.take().ok_or_else(|| refused("no full grant"))?;
+        let repo = session.take()?;
+        let (repo, auk, sk) =
+            onepass_core::repo::pairing::repair_from_grant(repo, &grant, &password, &keys)?;
+        s.imported = true;
+        followed(repo, auk, sk)
     }
 
     /// The acknowledgement of a grant.
@@ -578,6 +743,8 @@ struct ApproverState {
     core: Approver,
     peer_confirmed: bool,
     granted: bool,
+    /// Key rotation v2: the newcomer's key is introduced (`introduce`).
+    introduced: bool,
 }
 
 /// The unlocked device's side: scans the QR, compares the code, grants.
@@ -610,6 +777,7 @@ impl PairingApprover {
                 core,
                 peer_confirmed: false,
                 granted: false,
+                introduced: false,
             }),
         }))
     }
@@ -647,8 +815,14 @@ impl PairingApprover {
     pub fn on_frame(&self, frame: Vec<u8>) -> Result<FfiPairingMessage, OnePassError> {
         let mut s = lock(&self.state);
         let msg = s.core.on_frame(&frame)?;
-        if msg == Message::Confirmed {
-            s.peer_confirmed = true;
+        match &msg {
+            Message::Confirmed => s.peer_confirmed = true,
+            // Key rotation v2: the first one is the confirmation; the
+            // second, after the `FullV2`, the acknowledgment (`Ack`): the
+            // app then calls `introduce`.
+            Message::ConfirmedWithKey { .. } if !s.peer_confirmed => s.peer_confirmed = true,
+            Message::ConfirmedWithKey { .. } => return Ok(FfiPairingMessage::Ack),
+            _ => {}
         }
         Ok(message_to_ffi(&msg))
     }
@@ -700,8 +874,12 @@ impl PairingApprover {
             return Err(refused("grant does not match the requested mode"));
         }
         let peer = self.peer.clone();
+        let v2 = s.core.newcomer_key().is_some();
         let core = &mut s.core;
         let frame = session.with(|repo| {
+            // Key rotation v2 (spec 5.2): a device waiting for the user,
+            // locked or orphaned pins nobody.
+            require_current(repo.store().trust_state()?.as_ref())?;
             let account_id = account_id_of(repo)?;
             // Without pending writes the snapshot is the `base` rows: the
             // device list written below is pending and reaches the newcomer
@@ -720,7 +898,34 @@ impl PairingApprover {
                 }
                 Some(snapshot)
             };
-            repo.devices()?;
+            // A device already listed (and not revoked) re-pairs (spec 7.4):
+            // granted again, not listed twice.
+            let listed = repo
+                .devices()?
+                .into_iter()
+                .find(|d| d.device_id == peer.device_id);
+            if let Some(d) = &listed {
+                if d.revoked_at.is_some() || !v2 {
+                    return Err(refused("device already listed"));
+                }
+                let snapshot = match base {
+                    Some(snapshot) => snapshot,
+                    None => local_snapshot(repo.store())?,
+                };
+                let grant = Grant::FullV2(FullGrantV2 {
+                    full: FullGrant {
+                        account_id,
+                        secret_key: secret_key.clone(),
+                        mode,
+                        device_id: peer.device_id,
+                        snapshot,
+                    },
+                    trust: repo.trust_snapshot()?,
+                    sync: None,
+                    enroll: None,
+                });
+                return Ok(core.seal_grant(grant, true)?);
+            }
             let added_by = repo.this_device_id();
             let entry = DeviceEntry {
                 device_id: peer.device_id,
@@ -737,18 +942,32 @@ impl PairingApprover {
             repo.add_device_then(entry, |repo| {
                 // Key rotation v2 (spec 15, Task 13): a newcomer paired
                 // without a device key is trusted on first use.
-                repo.mark_legacy_device(peer.device_id)?;
+                if !v2 {
+                    repo.mark_legacy_device(peer.device_id)?;
+                }
                 let snapshot = match base {
                     Some(snapshot) => snapshot,
                     None => local_snapshot(repo.store())?,
                 };
-                let grant = Grant::Full(FullGrant {
+                let full = FullGrant {
                     account_id,
                     secret_key,
                     mode,
                     device_id: peer.device_id,
                     snapshot,
-                });
+                };
+                // A newcomer that sent its device key gets its trust
+                // snapshot (spec 5.2); its intro follows its acknowledgment.
+                let grant = if v2 {
+                    Grant::FullV2(FullGrantV2 {
+                        full,
+                        trust: repo.trust_snapshot()?,
+                        sync: None,
+                        enroll: None,
+                    })
+                } else {
+                    Grant::Full(full)
+                };
                 Ok::<_, OnePassError>(core.seal_grant(grant, true)?)
             })
         })?;
@@ -793,6 +1012,8 @@ impl PairingApprover {
             return Err(refused("grant does not match the requested mode"));
         }
         let lent = session.with(|repo| {
+            // Spec 10.9: public sessions are refused outside `Current`.
+            require_current(repo.store().trust_state()?.as_ref())?;
             let mut out = Vec::with_capacity(refs.len());
             for (vault_id, item_id) in &refs {
                 let vault = find_vault(repo, *vault_id)?;
@@ -809,6 +1030,53 @@ impl PairingApprover {
         let frame = s.core.seal_grant(grant, true)?;
         s.granted = true;
         Ok(frame)
+    }
+
+    /// Key rotation v2 (spec 5.2, 6.4): after the newcomer's
+    /// acknowledgment of its `FullV2` (`on_frame` returns `Ack`), pin its
+    /// device key: the signed intro and this device's trust state, in one
+    /// transaction, with this device's keys. Once; a device already pinned
+    /// with these keys (a re-pair) changes nothing.
+    pub fn introduce(
+        &self,
+        session: Arc<Session>,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
+    ) -> Result<(), OnePassError> {
+        let classical = Zeroizing::new(classical);
+        let keys = device_keys(&classical, pq)?;
+        let mut s = lock(&self.state);
+        if s.introduced {
+            return Err(refused("already introduced"));
+        }
+        let key = s
+            .core
+            .newcomer_key()
+            .cloned()
+            .ok_or_else(|| refused("no device key"))?;
+        let pop = s
+            .core
+            .newcomer_account_pop()
+            .cloned()
+            .ok_or_else(|| refused("not acknowledged"))?;
+        let info = self.peer.clone();
+        let mode = self.requested;
+        session.with(|repo| Ok(repo.introduce(&key, &info, mode, &pop, &keys)?))?;
+        s.introduced = true;
+        Ok(())
+    }
+
+    /// Whether the device asking is already listed in the account (spec
+    /// 7.4): the screen says "Ajouter de nouveau <nom>" rather than a new
+    /// device, and `seal_full_grant` grants it again without listing it.
+    pub fn is_known_device(&self, session: Arc<Session>) -> Result<bool, OnePassError> {
+        let id = self.peer.device_id;
+        session.with(|repo| {
+            Ok(repo
+                .devices()?
+                .iter()
+                .any(|d| d.device_id == id && d.revoked_at.is_none()))
+        })
     }
 
     /// End the session (the user stops a public session, or cancels).
