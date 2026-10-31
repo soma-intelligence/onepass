@@ -116,8 +116,8 @@ spoofed values) before changing the setting.
   day) use the client IP from `MAILBOX_CLIENT_IP_HEADER`, HMAC'd with
   `MAILBOX_IP_HMAC_SECRET`. At the cap, creation answers `503 retry` (no
   retry-after) until the next UTC day or a higher cap. A refused creation is
-  not counted. A valid invite always keeps its own plan, and the cap counts
-  invite creations too. An `open_signup_plan` naming no plan makes creation
+  not counted. A valid invite always keeps its own plan and is exempt from the cap
+  (it neither checks nor counts). An `open_signup_plan` naming no plan makes creation
   fail with 503 until fixed. Closing again: `signup off`.
 
 ## Freezing a mailbox

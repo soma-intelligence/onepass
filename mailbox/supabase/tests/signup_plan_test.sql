@@ -21,7 +21,7 @@ grant execute on function onepass_test.sp_plan(text) to public;
 create function onepass_test.sp_count() returns bigint language sql stable as $$
     select count(*) from onepass_mailbox.credentials where public_key in (
         select decode(md5('sp-key/' || k) || md5('sp-key//' || k), 'hex')
-        from unnest(array['p1','p2','p3','c1','c2','c3','c4','f1','f2','i1']) k)
+        from unnest(array['p1','p2','p3','c1','c2','c3','c4','f1','f2','i1','i2','d1']) k)
 $$;
 grant execute on function onepass_test.sp_count() to public;
 
@@ -71,8 +71,30 @@ select onepass_test.ok(onepass_test.sp_count() = 5, 'daily_cap_total_created');
 select onepass_test.ok((select count from onepass_mailbox.rate
     where key = extensions.digest('onepass/global-create'::bytea, 'sha256')) = 2, 'daily_cap_counter_is_two');
 
--- Raising the cap lets creation resume.
+-- Invite creations are exempt: allowed with the cap full, counter unmoved.
+set local role onepass_mailbox_api;
+select onepass_test.ok(onepass_test.sp_create('i2', 'sp-inv') = 'ok', 'invite_creation_succeeds_when_cap_full');
+reset role;
+select onepass_test.ok((select count from onepass_mailbox.rate
+    where key = extensions.digest('onepass/global-create'::bytea, 'sha256')) = 2, 'invite_creation_does_not_move_counter');
+
+-- A creation failing on a duplicate key does not count, and an invite's use
+-- is given back (the decrement is rolled back with the block).
+select onepass_test.ok((select uses_left from onepass_mailbox.invites where token_hash = extensions.digest('sp-inv', 'sha256')) = 3,
+    'invite_uses_before_duplicate');
+set local role onepass_mailbox_api;
+select onepass_test.ok(onepass_test.sp_create('i2', 'sp-inv') = 'malformed', 'invite_duplicate_key_malformed');
+reset role;
+select onepass_test.ok((select uses_left from onepass_mailbox.invites where token_hash = extensions.digest('sp-inv', 'sha256')) = 3,
+    'duplicate_key_gives_invite_use_back');
 update onepass_mailbox.settings set value = '3' where name = 'daily_create_cap';
+set local role onepass_mailbox_api;
+select onepass_test.ok(onepass_test.sp_create('p1') = 'malformed', 'open_duplicate_key_malformed');
+reset role;
+select onepass_test.ok((select count from onepass_mailbox.rate
+    where key = extensions.digest('onepass/global-create'::bytea, 'sha256')) = 2, 'duplicate_key_does_not_increment_counter');
+
+-- Raising the cap lets creation resume (cap 3, two counted).
 set local role onepass_mailbox_api;
 select onepass_test.ok(onepass_test.sp_create('c3') = 'ok', 'daily_cap_raised_creates');
 reset role;

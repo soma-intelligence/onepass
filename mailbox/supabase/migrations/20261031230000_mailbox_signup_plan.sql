@@ -5,7 +5,8 @@
 --                     selfhost, the behaviour so far). An unknown name is a
 --                     bug and raises a plain error (503 retry at the edge).
 --   daily_create_cap  integer, mailboxes created per UTC day over the whole
---                     instance (absent: no cap). Counted in a rate row keyed
+--                     instance for OPEN signups (absent: no cap; invite
+--                     creations are exempt). Counted in a rate row keyed
 --                     SHA-256('onepass/global-create'), only for a creation
 --                     that succeeds; over the cap the answer is the in-band
 --                     status retry (503 retry, no retry_after).
@@ -112,7 +113,10 @@ begin
     -- one rate row, locked until the end of the transaction so concurrent
     -- creations cannot overshoot. Only a creation that succeeds is counted
     -- (below); at the cap the answer is an in-band retry without retry_after.
-    select s.value::integer into v_cap from onepass_mailbox.settings s where s.name = 'daily_create_cap';
+    -- Creations through a valid invite are exempt: they neither check nor count.
+    if not v_use_invite then
+        select s.value::integer into v_cap from onepass_mailbox.settings s where s.name = 'daily_create_cap';
+    end if;
     if v_cap is not null then
         v_day := date_trunc('day', now(), 'UTC');
         v_cap_key := extensions.digest('onepass/global-create'::bytea, 'sha256');
@@ -141,7 +145,8 @@ begin
     exception when unique_violation then
         -- The key is enrolled in some mailbox. Only the key's owner (who
         -- signed this request) learns it, and only that much. The block is
-        -- rolled back: no mailbox, the invite use is kept.
+        -- rolled back with the whole block: no mailbox, and the invite use
+        -- (decremented inside the block) is given back too.
         v_err := 'malformed';
     end;
     perform onepass_mailbox._enter(null);
