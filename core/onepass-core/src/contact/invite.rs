@@ -37,7 +37,7 @@ use zeroize::Zeroizing;
 use super::book::{ContactEntry, ContactLevel, ContactState};
 use super::{
     CONTACT_INVITE_INFO, CONTACT_LABEL, INVITE_RDV_PREFIX, MAX_CONTACT_MESSAGE_BYTES,
-    SignedContactCard, sha256,
+    SAFETY_GROUPS, SignedContactCard, fingerprint, safety_number, sha256,
 };
 use crate::crypto::aead::{OpenStage, open_detailed};
 use crate::crypto::kem::{unwrap_key_labeled, wrap_key_labeled};
@@ -45,7 +45,7 @@ use crate::crypto::key::hkdf32;
 use crate::crypto::{
     Aad, BlobKind, HybridKemPublic, HybridKemSecret, SymmetricKey, random_array, seal,
 };
-use crate::lineage::decode_strict_with;
+use crate::lineage::{decode_strict_with, identity_id};
 use crate::lists::AccountList;
 use crate::repo::Repository;
 use crate::store::RecordStore;
@@ -109,7 +109,8 @@ impl ContactInvite {
     }
 
     /// `onepass://contact#<base32(invite_id || invite_secret)>`: 77 upper
-    /// case characters after the `#`, no padding.
+    /// case characters after the `#`, no padding. The string holds the
+    /// secret: the caller owns its lifetime (it is not wiped).
     pub fn link(&self) -> String {
         let mut raw = Zeroizing::new([0u8; LINK_BYTES]);
         raw[..16].copy_from_slice(&self.invite_id);
@@ -382,6 +383,11 @@ struct InviteMeta {
     envelope: Vec<u8>,
 }
 
+/// The fingerprint of a contact as pinned in the book.
+fn entry_fingerprint(e: &ContactEntry) -> [u8; 32] {
+    fingerprint(e.account_id, &e.genesis, identity_id(&e.identity_pub))
+}
+
 fn meta_key(invite_id: &[u8; 16]) -> String {
     let mut k = String::from(CONTACT_INVITE_META_PREFIX);
     for b in invite_id {
@@ -395,11 +401,13 @@ fn expired(created_at: i64, now: i64) -> bool {
 }
 
 impl<S: RecordStore> Repository<S> {
-    /// A fresh invitation, kept in this device's local metadata until a
-    /// reply is accepted or it expires. Expired invitations of this device
-    /// are removed first. The store must keep local metadata (the sync
-    /// store does).
-    pub fn create_contact_invite(&mut self, now: i64) -> Result<ContactInvite> {
+    /// Remove this device's invitations that expired at `now` (or whose
+    /// record does not read), wrapped secret included; returns how many.
+    /// `create_contact_invite` and `accept_invite_reply` call it; the app
+    /// may also call it at unlock, so an unused invitation does not
+    /// outlive its window on disk.
+    pub fn prune_contact_invites(&mut self, now: i64) -> Result<usize> {
+        let mut removed = 0;
         for key in self.store.local_meta_keys(CONTACT_INVITE_META_PREFIX)? {
             let stale = match self.store.local_meta(&key)? {
                 Some(v) => postcard::from_bytes::<InviteMeta>(&v)
@@ -408,10 +416,21 @@ impl<S: RecordStore> Repository<S> {
             };
             if stale {
                 self.store.set_local_meta(&key, None)?;
+                removed += 1;
             }
         }
+        Ok(removed)
+    }
+
+    /// A fresh invitation, kept in this device's local metadata until a
+    /// reply is accepted or it expires. Expired invitations of this device
+    /// are removed first (`prune_contact_invites`). The store must keep
+    /// local metadata (the sync store does).
+    pub fn create_contact_invite(&mut self, now: i64) -> Result<ContactInvite> {
+        self.prune_contact_invites(now)?;
         let invite = ContactInvite::new(now)?;
-        let wrapped = SymmetricKey::from_bytes(*invite.invite_secret);
+        let mut wrapped = SymmetricKey::zeroed();
+        wrapped.bytes_mut().copy_from_slice(&*invite.invite_secret);
         let envelope = wrap_key_labeled(
             &self.account.params.kem_pub,
             &wrapped,
@@ -442,7 +461,13 @@ impl<S: RecordStore> Repository<S> {
     /// account, bad signatures or lineage, a removed contact, another
     /// genesis or head). The book write and the removal of the invitation
     /// are one store transaction: of two replies racing on one invitation,
-    /// one wins, the other is `Conflict` or `Validation`.
+    /// one wins, the other is `Conflict` or `Validation`. Other expired
+    /// invitations are pruned on the way (`prune_contact_invites`).
+    ///
+    /// Once this returns, the invitation is used: the app must keep the
+    /// answer and retry writing it at the rendezvous until it lands
+    /// (otherwise Bob never pins this account, and only a new invitation
+    /// helps).
     pub fn accept_invite_reply(
         &mut self,
         invite_id: [u8; 16],
@@ -463,6 +488,7 @@ impl<S: RecordStore> Repository<S> {
             self.store.set_local_meta(&key, None)?;
             return Err(refused("expired"));
         }
+        self.prune_contact_invites(now)?;
         let invite = self.held_invite(invite_id, &meta)?;
         let reply = open_reply(&invite, reply_bytes)?;
         let rdv = invite.rdv_id();
@@ -504,14 +530,63 @@ impl<S: RecordStore> Repository<S> {
         )
     }
 
-    /// The user confirmed the safety number shown for this contact is the
-    /// same on both phones (by voice): a contact `Active` at `Link` becomes
-    /// `Verified`, verified now on this device; its head, keys and
-    /// transcript stay. Any other contact is `Validation`: one already
-    /// `Verified`, one whose keys changed (the number shown no longer
-    /// matches the identity in use), a removed one (a re-add takes a
-    /// face-to-face verification, spec 5.4). An unknown one is `NotFound`.
-    pub fn confirm_safety_number(&mut self, account_id: Id, now: i64) -> Result<ContactEntry> {
+    /// This account's fingerprint (spec 5.2) at the head its trust state
+    /// pins: `fingerprint(account_id, genesis, identity_id(identity))`.
+    /// Refused like `own_contact_card`: no trust state
+    /// (`Validation("device")`), a trust state of another account or
+    /// identity than the session's (`WrongContext`), a lineage record
+    /// missing (`NotFound`).
+    pub fn own_fingerprint(&self) -> Result<[u8; 32]> {
+        let trust = self.store.trust_state()?.ok_or_else(|| {
+            Error::from(ValidationError {
+                field: "device".into(),
+                reason: "no trust state",
+            })
+        })?;
+        let params = &self.account.params;
+        if trust.account_id != params.account_id || trust.identity_pub != params.identity_pub {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        let lineage = self.own_lineage(&trust)?;
+        let genesis = lineage.first().ok_or(Error::NotFound)?.hash();
+        Ok(fingerprint(
+            trust.account_id,
+            &genesis,
+            identity_id(&trust.identity_pub),
+        ))
+    }
+
+    /// The safety number of this account and the contact `account_id`, as
+    /// pinned now: `safety_number(own_fingerprint, fingerprint(account_id,
+    /// genesis, identity_id(identity_pub)))` (plan ruling A-4), the same on
+    /// both phones. The app shows it (`format_safety_number`) and hands the
+    /// same groups back to `confirm_safety_number`. An unknown contact is
+    /// `NotFound`; `own_fingerprint`'s refusals apply.
+    pub fn contact_safety_number(&mut self, account_id: Id) -> Result<[u32; SAFETY_GROUPS]> {
+        let own = self.own_fingerprint()?;
+        let entry = self.contact(account_id)?.ok_or(Error::NotFound)?;
+        Ok(safety_number(&own, &entry_fingerprint(&entry)))
+    }
+
+    /// The user confirmed that `shown`, the safety number displayed for
+    /// this contact (`contact_safety_number`), is the same on both phones
+    /// (compared by voice). The number is recomputed inside the book edit
+    /// from the identity pinned at that moment and this account's own
+    /// fingerprint: if it differs from `shown` (the entry moved to another
+    /// identity since it was displayed, or this account rotated), nothing
+    /// is written and the result is `Validation`. Otherwise a contact
+    /// `Active` at `Link` becomes `Verified`, verified now on this device;
+    /// its head, keys and transcript stay. Any other contact is
+    /// `Validation`: one already `Verified`, one whose keys changed, a
+    /// removed one (a re-add takes a face-to-face verification, spec 5.4).
+    /// An unknown one is `NotFound`.
+    pub fn confirm_safety_number(
+        &mut self,
+        account_id: Id,
+        shown: &[u32; SAFETY_GROUPS],
+        now: i64,
+    ) -> Result<ContactEntry> {
+        let own = self.own_fingerprint()?;
         let entry = self.contact(account_id)?.ok_or(Error::NotFound)?;
         if entry.state != ContactState::Active || entry.level != ContactLevel::Link {
             return Err(refused("contact not active at link"));
@@ -520,6 +595,9 @@ impl<S: RecordStore> Repository<S> {
         self.edit_contact(account_id, |e| {
             if e.state != ContactState::Active || e.level != ContactLevel::Link {
                 return Err(refused("contact not active at link"));
+            }
+            if safety_number(&own, &entry_fingerprint(e)) != *shown {
+                return Err(refused("safety number differs"));
             }
             e.level = ContactLevel::Verified;
             e.verified_at = now;
@@ -539,9 +617,11 @@ impl<S: RecordStore> Repository<S> {
                 unwrap_key_labeled(k, &meta.envelope, CONTACT_INVITE_INFO, &invite_id).ok()
             })
             .ok_or_else(|| refused("unreadable"))?;
+        let mut invite_secret = Zeroizing::new([0u8; 32]);
+        invite_secret.copy_from_slice(secret.expose());
         Ok(ContactInvite {
             invite_id,
-            invite_secret: Zeroizing::new(*secret.expose()),
+            invite_secret,
             created_at: meta.created_at,
         })
     }

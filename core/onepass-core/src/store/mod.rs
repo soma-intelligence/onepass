@@ -188,6 +188,19 @@ pub fn check_local_meta_key(key: &str) -> Result<()> {
     }
 }
 
+/// A `local_meta_keys` prefix: one of `LOCAL_META_PREFIXES` or longer
+/// under it, else `Validation` (store-internal key names stay unlisted).
+pub fn check_local_meta_prefix(prefix: &str) -> Result<()> {
+    if LOCAL_META_PREFIXES.iter().any(|p| prefix.starts_with(p)) {
+        Ok(())
+    } else {
+        Err(Error::Validation(crate::ValidationError {
+            field: "meta".into(),
+            reason: "not a local meta prefix",
+        }))
+    }
+}
+
 fn local_meta_unsupported() -> Error {
     Error::Store("local meta unsupported".into())
 }
@@ -325,8 +338,9 @@ pub trait RecordStore {
         Err(local_meta_unsupported())
     }
 
-    /// The local metadata keys that start with `prefix`, sorted. A store
-    /// that keeps none refuses.
+    /// The local metadata keys that start with `prefix`, sorted. A prefix
+    /// outside `LOCAL_META_PREFIXES` is `Validation` (see
+    /// `check_local_meta_prefix`). A store that keeps none refuses.
     fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {
         let _ = prefix;
         Err(local_meta_unsupported())

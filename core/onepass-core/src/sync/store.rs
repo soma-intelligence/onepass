@@ -41,7 +41,7 @@ use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::repo::{DeviceState, split_item_record};
 use crate::store::{
     Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id,
-    check_local_meta_key,
+    check_local_meta_key, check_local_meta_prefix,
 };
 use crate::trust::{DeviceLineageState, TrustState};
 use crate::vaultlist::VaultListEntry;
@@ -3010,6 +3010,7 @@ impl RecordStore for SyncStore {
     }
 
     fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {
+        check_local_meta_prefix(prefix)?;
         self.read(|c| {
             let mut stmt = c
                 .prepare("SELECT key FROM meta ORDER BY key")
