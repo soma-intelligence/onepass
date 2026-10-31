@@ -152,14 +152,7 @@ impl MailboxClient {
         let r = self
             .signed(Method::Post, "/v1/mailboxes", &encode(&req))
             .and_then(|r| expect(r, &[200]));
-        let r = match r {
-            // `/v1/config` may advertise open signup while the database
-            // switch is off (spec 4.9): without an invite, say so plainly.
-            Err(MailboxError::Server(ErrorCode::Malformed)) if invite.is_none() => {
-                return Err(MailboxError::InviteRequired);
-            }
-            r => r?,
-        };
+        let r = create_refusal(r, invite.is_none())?;
         let created: MailboxCreated = read(r)?;
         self.mailbox = Some(created.mailbox_id);
         Ok(created)
@@ -173,17 +166,7 @@ impl MailboxClient {
         label: &[u8],
     ) -> Result<(), MailboxError> {
         let t = &ticket.ticket;
-        if t.new_credential_pub != self.credential.public_key().to_bytes() {
-            return Err(MailboxError::Malformed("ticket for another key"));
-        }
-        if t.mailbox_url != self.base {
-            return Err(MailboxError::Malformed("ticket for another server"));
-        }
-        let req = Enroll {
-            ticket: ticket.clone(),
-            label: label.to_vec(),
-        };
-        req.check().map_err(local)?;
+        let req = enroll_request(ticket, label, self.credential.public_key(), &self.base)?;
         let target = format!("/v1/mailboxes/{}/credentials", hex(&t.mailbox_id));
         let r = self.signed(Method::Post, &target, &encode(&req))?;
         expect_empty(r)?;
@@ -202,28 +185,12 @@ impl MailboxClient {
     /// Checked here: a full page has no tombstone, records come after
     /// `after`, and an empty page echoes `after` and says nothing is left.
     pub fn changes(&self, after: u64, limit: u32, full: bool) -> Result<ChangesPage, MailboxError> {
-        if limit == 0 || limit > PAGE_MAX_RECORDS || after > i64::MAX as u64 {
-            return Err(MailboxError::Malformed("changes query"));
-        }
+        check_changes_query(after, limit)?;
         let q = ChangesQuery { after, limit, full };
         let target = format!("{}/changes?{}", self.mailbox_path()?, q.to_query());
         let r = self.signed(Method::Get, &target, &[])?;
         let page: ChangesPage = read(expect(r, &[200])?)?;
-        if page.records.len() > limit as usize {
-            return Err(MailboxError::Malformed("page longer than asked"));
-        }
-        match page.records.first() {
-            Some(first) if first.seq <= after => {
-                return Err(MailboxError::Malformed("record before cursor"));
-            }
-            None if page.next_after != after || page.more => {
-                return Err(MailboxError::Malformed("empty page"));
-            }
-            _ => {}
-        }
-        if full && page.records.iter().any(|r| r.body.is_none()) {
-            return Err(MailboxError::Malformed("tombstone in a full fetch"));
-        }
+        check_page(after, limit, full, &page)?;
         Ok(page)
     }
 
@@ -235,52 +202,7 @@ impl MailboxClient {
         limit: u32,
     ) -> Result<FeedPage, MailboxError> {
         let page = self.changes(feed.after(), limit, feed.is_full())?;
-        let (next, more, full_done) = match feed.0 {
-            Mode::Full { first, .. } => {
-                let (head, incarnation) = match first {
-                    None => (page.head, page.incarnation),
-                    Some(f) => {
-                        if page.incarnation != f.1 {
-                            return Err(MailboxError::Malformed(
-                                "incarnation changed in a full fetch",
-                            ));
-                        }
-                        if page.head < f.0 {
-                            return Err(MailboxError::Malformed("head went back"));
-                        }
-                        f
-                    }
-                };
-                if page.more {
-                    let next = Mode::Full {
-                        after: page.next_after,
-                        first: Some((head, incarnation)),
-                    };
-                    (next, true, false)
-                } else {
-                    // Everything written since the first page has a seq above
-                    // its head: go on incrementally from there (spec 4.5).
-                    (Mode::Incremental { after: head }, page.head != head, true)
-                }
-            }
-            Mode::Incremental { .. } => (
-                Mode::Incremental {
-                    after: page.next_after,
-                },
-                page.more,
-                false,
-            ),
-        };
-        let full = feed.is_full();
-        feed.0 = next;
-        Ok(FeedPage {
-            incarnation: page.incarnation,
-            min_cursor: page.min_cursor,
-            records: page.records,
-            full,
-            full_done,
-            more,
-        })
+        feed.advance(page)
     }
 
     /// `POST /v1/mailboxes/{m}/commit`. A batch is all or nothing. A
@@ -291,26 +213,11 @@ impl MailboxClient {
     /// `commit_with_blobs`, which does.
     pub fn commit(&self, ops: Vec<CommitOp>) -> Result<CommitResponse, MailboxError> {
         let target = format!("{}/commit", self.mailbox_path()?);
-        if ops.is_empty() {
-            return Err(MailboxError::Malformed("empty commit"));
-        }
-        if ops.len() > COMMIT_OPS_MAX {
-            return Err(MailboxError::TooLarge);
-        }
-        let req = CommitRequest { ops };
-        req.check().map_err(local)?;
-        let body = encode(&req);
-        if body.len() > COMMIT_BODY_MAX {
-            return Err(MailboxError::TooLarge);
-        }
+        let (req, body) = commit_request(ops)?;
         let r = expect(self.signed(Method::Post, &target, &body)?, &[200, 409])?;
         let status = r.status;
         let answer: CommitResponse = read(r)?;
-        match (&answer, status) {
-            (CommitResponse::Applied { seqs }, 200) => check_applied(&req.ops, seqs)?,
-            (CommitResponse::Conflict { current }, 409) => check_conflicts(&req.ops, current)?,
-            _ => return Err(MailboxError::Malformed("commit status")),
-        }
+        check_commit(&req.ops, &answer, status)?;
         Ok(answer)
     }
 
@@ -330,9 +237,7 @@ impl MailboxClient {
             r => r?,
         };
         let rec: ServerRecord = read(r)?;
-        if rec.kind != kind || rec.id != id {
-            return Err(MailboxError::Malformed("record for another key"));
-        }
+        check_record(kind, id, &rec)?;
         Ok(Some(rec))
     }
 
@@ -345,14 +250,7 @@ impl MailboxClient {
     /// `PUT /v1/mailboxes/{m}/push`.
     pub fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
         let target = format!("{}/push", self.mailbox_path()?);
-        let req = SetPush {
-            kind,
-            token: token.to_vec(),
-        };
-        req.check().map_err(local)?;
-        if kind != PushKind::None && token.is_empty() {
-            return Err(MailboxError::Malformed("push kind without token"));
-        }
+        let req = push_request(kind, token)?;
         expect_empty(self.signed(Method::Put, &target, &encode(&req))?)
     }
 
@@ -363,26 +261,184 @@ impl MailboxClient {
         new_credential_pub: CredentialKey,
         now: i64,
     ) -> Result<SignedEnrollTicket, MailboxError> {
-        let mailbox_id = self
-            .mailbox
-            .ok_or(MailboxError::Malformed("no mailbox open"))?;
-        let ticket = EnrollTicket {
-            version: TICKET_VERSION,
-            mailbox_url: self.base.clone(),
-            mailbox_id,
-            new_credential_pub: new_credential_pub.to_bytes(),
-            expires_at: now
-                .checked_add(TICKET_SECS)
-                .ok_or(MailboxError::Malformed("ticket time"))?,
-            nonce: random16()?,
-        };
-        ticket.check().map_err(local)?;
-        let sig = self.credential.sign(&ticket_signed_bytes(&ticket));
-        Ok(SignedEnrollTicket {
-            ticket,
-            approver_credential: self.credential.id(),
-            sig,
-        })
+        issue_ticket(
+            &self.credential,
+            &self.base,
+            self.mailbox,
+            new_credential_pub,
+            now,
+        )
+    }
+}
+
+// ------------------------------------------------------- shared checks
+//
+// The request building and answer checks below are the client's whole
+// judgement of the server. `FakeMailboxClient` (feature `testing`) runs the
+// very same functions, so a test against the in-memory model checks what
+// the real client checks.
+
+/// `limit` 1 to 1000, `after` a Postgres bigint.
+pub(crate) fn check_changes_query(after: u64, limit: u32) -> Result<(), MailboxError> {
+    if limit == 0 || limit > PAGE_MAX_RECORDS || after > i64::MAX as u64 {
+        return Err(MailboxError::Malformed("changes query"));
+    }
+    Ok(())
+}
+
+/// A page answers the query it was read for: no more records than asked,
+/// records after `after`, an empty page echoes `after` and says nothing is
+/// left, and a full page has no tombstone.
+pub(crate) fn check_page(
+    after: u64,
+    limit: u32,
+    full: bool,
+    page: &ChangesPage,
+) -> Result<(), MailboxError> {
+    if page.records.len() > limit as usize {
+        return Err(MailboxError::Malformed("page longer than asked"));
+    }
+    match page.records.first() {
+        Some(first) if first.seq <= after => {
+            return Err(MailboxError::Malformed("record before cursor"));
+        }
+        None if page.next_after != after || page.more => {
+            return Err(MailboxError::Malformed("empty page"));
+        }
+        _ => {}
+    }
+    if full && page.records.iter().any(|r| r.body.is_none()) {
+        return Err(MailboxError::Malformed("tombstone in a full fetch"));
+    }
+    Ok(())
+}
+
+/// The batch as sent: not empty, at most `COMMIT_OPS_MAX` operations, each
+/// key once, and its encoding at most `COMMIT_BODY_MAX`.
+pub(crate) fn commit_request(ops: Vec<CommitOp>) -> Result<(CommitRequest, Vec<u8>), MailboxError> {
+    if ops.is_empty() {
+        return Err(MailboxError::Malformed("empty commit"));
+    }
+    if ops.len() > COMMIT_OPS_MAX {
+        return Err(MailboxError::TooLarge);
+    }
+    let req = CommitRequest { ops };
+    req.check().map_err(local)?;
+    let body = encode(&req);
+    if body.len() > COMMIT_BODY_MAX {
+        return Err(MailboxError::TooLarge);
+    }
+    Ok((req, body))
+}
+
+/// A commit answer, checked against the batch.
+pub(crate) fn check_commit(
+    ops: &[CommitOp],
+    answer: &CommitResponse,
+    status: u16,
+) -> Result<(), MailboxError> {
+    match (answer, status) {
+        (CommitResponse::Applied { seqs }, 200) => check_applied(ops, seqs),
+        (CommitResponse::Conflict { current }, 409) => check_conflicts(ops, current),
+        _ => Err(MailboxError::Malformed("commit status")),
+    }
+}
+
+/// `/v1/config` may advertise open signup while the database switch is off
+/// (spec 4.9): a create without invite answered malformed says so plainly.
+pub(crate) fn create_refusal<T>(
+    r: Result<T, MailboxError>,
+    without_invite: bool,
+) -> Result<T, MailboxError> {
+    match r {
+        Err(MailboxError::Server(ErrorCode::Malformed)) if without_invite => {
+            Err(MailboxError::InviteRequired)
+        }
+        r => r,
+    }
+}
+
+/// An enroll body for this key and this server only.
+pub(crate) fn enroll_request(
+    ticket: &SignedEnrollTicket,
+    label: &[u8],
+    own: CredentialKey,
+    base: &str,
+) -> Result<Enroll, MailboxError> {
+    let t = &ticket.ticket;
+    if t.new_credential_pub != own.to_bytes() {
+        return Err(MailboxError::Malformed("ticket for another key"));
+    }
+    if t.mailbox_url != base {
+        return Err(MailboxError::Malformed("ticket for another server"));
+    }
+    let req = Enroll {
+        ticket: ticket.clone(),
+        label: label.to_vec(),
+    };
+    req.check().map_err(local)?;
+    Ok(req)
+}
+
+pub(crate) fn push_request(kind: PushKind, token: &[u8]) -> Result<SetPush, MailboxError> {
+    let req = SetPush {
+        kind,
+        token: token.to_vec(),
+    };
+    req.check().map_err(local)?;
+    if kind != PushKind::None && token.is_empty() {
+        return Err(MailboxError::Malformed("push kind without token"));
+    }
+    Ok(req)
+}
+
+/// An enroll ticket for `new_credential_pub`, valid `TICKET_SECS` from
+/// `now`, signed by `credential` for the mailbox at `base`.
+pub(crate) fn issue_ticket(
+    credential: &Credential,
+    base: &str,
+    mailbox: Option<MailboxId>,
+    new_credential_pub: CredentialKey,
+    now: i64,
+) -> Result<SignedEnrollTicket, MailboxError> {
+    let mailbox_id = mailbox.ok_or(MailboxError::Malformed("no mailbox open"))?;
+    let ticket = EnrollTicket {
+        version: TICKET_VERSION,
+        mailbox_url: base.to_string(),
+        mailbox_id,
+        new_credential_pub: new_credential_pub.to_bytes(),
+        expires_at: now
+            .checked_add(TICKET_SECS)
+            .ok_or(MailboxError::Malformed("ticket time"))?,
+        nonce: random16()?,
+    };
+    ticket.check().map_err(local)?;
+    let sig = credential.sign(&ticket_signed_bytes(&ticket));
+    Ok(SignedEnrollTicket {
+        ticket,
+        approver_credential: credential.id(),
+        sig,
+    })
+}
+
+/// A record answer is for the key asked.
+pub(crate) fn check_record(kind: u8, id: [u8; 16], rec: &ServerRecord) -> Result<(), MailboxError> {
+    if rec.kind != kind || rec.id != id {
+        return Err(MailboxError::Malformed("record for another key"));
+    }
+    Ok(())
+}
+
+/// What an error code becomes for the caller (the status was checked).
+pub(crate) fn error_of(code: ErrorCode, retry_after: Option<u32>) -> MailboxError {
+    match code {
+        ErrorCode::StaleRequest => MailboxError::Stale,
+        ErrorCode::CursorExpired => MailboxError::CursorExpired,
+        ErrorCode::TooLarge => MailboxError::TooLarge,
+        ErrorCode::RateLimited | ErrorCode::Retry => MailboxError::Retry {
+            after: cap(retry_after),
+        },
+        code => MailboxError::Server(code),
     }
 }
 
@@ -470,15 +526,7 @@ pub(crate) fn expect(r: Response, ok: &[u16]) -> Result<Response, MailboxError> 
     if status_of(body.code) != r.status {
         return Err(MailboxError::Malformed("error status"));
     }
-    Err(match body.code {
-        ErrorCode::StaleRequest => MailboxError::Stale,
-        ErrorCode::CursorExpired => MailboxError::CursorExpired,
-        ErrorCode::TooLarge => MailboxError::TooLarge,
-        ErrorCode::RateLimited | ErrorCode::Retry => MailboxError::Retry {
-            after: cap(body.retry_after.or(r.retry_after)),
-        },
-        code => MailboxError::Server(code),
-    })
+    Err(error_of(body.code, body.retry_after.or(r.retry_after)))
 }
 
 fn cap(after: Option<u32>) -> Option<u32> {
@@ -569,6 +617,57 @@ impl ChangeFeed {
         match self.0 {
             Mode::Full { after, .. } | Mode::Incremental { after } => after,
         }
+    }
+
+    /// Moves the feed past a page read at `after()` (already checked by
+    /// `check_page`); the feed does not move when the page fails a check.
+    pub(crate) fn advance(&mut self, page: ChangesPage) -> Result<FeedPage, MailboxError> {
+        let (next, more, full_done) = match self.0 {
+            Mode::Full { first, .. } => {
+                let (head, incarnation) = match first {
+                    None => (page.head, page.incarnation),
+                    Some(f) => {
+                        if page.incarnation != f.1 {
+                            return Err(MailboxError::Malformed(
+                                "incarnation changed in a full fetch",
+                            ));
+                        }
+                        if page.head < f.0 {
+                            return Err(MailboxError::Malformed("head went back"));
+                        }
+                        f
+                    }
+                };
+                if page.more {
+                    let next = Mode::Full {
+                        after: page.next_after,
+                        first: Some((head, incarnation)),
+                    };
+                    (next, true, false)
+                } else {
+                    // Everything written since the first page has a seq above
+                    // its head: go on incrementally from there (spec 4.5).
+                    (Mode::Incremental { after: head }, page.head != head, true)
+                }
+            }
+            Mode::Incremental { .. } => (
+                Mode::Incremental {
+                    after: page.next_after,
+                },
+                page.more,
+                false,
+            ),
+        };
+        let full = self.is_full();
+        self.0 = next;
+        Ok(FeedPage {
+            incarnation: page.incarnation,
+            min_cursor: page.min_cursor,
+            records: page.records,
+            full,
+            full_done,
+            more,
+        })
     }
 }
 
