@@ -213,14 +213,21 @@ impl Session {
 }
 
 /// The epoch of the account params in the store at `db_path`, without
-/// unlocking (nothing verified). Above `pinned_params_epoch`: the master
-/// password changed on another device.
+/// unlocking. The signature is verified (G8) under the identity this device
+/// pinned, or under the record's own identity on a device that pinned
+/// nothing yet: params signed by any other identity are an integrity error,
+/// never an epoch. Above `pinned_params_epoch`: the master password changed
+/// on another device.
 #[uniffi::export]
 pub fn store_params_epoch(db_path: String) -> Result<u64, OnePassError> {
     let store = SyncStore::open(Path::new(&db_path))?;
     let params = store.list(RecordKind::AccountParams)?;
     let record = params.first().ok_or(OnePassError::NotFound)?;
-    Ok(AccountParams::decode(&record.data)?.epoch)
+    let identity = match store.device_state()?.pinned {
+        Some(pin) => pin.identity_pub,
+        None => AccountParams::decode(&record.data)?.identity_pub,
+    };
+    Ok(AccountParams::decode_verified(&record.data, &identity)?.epoch)
 }
 
 /// The highest params epoch an unlock accepted on this device (0 before

@@ -34,6 +34,7 @@ use super::{
 };
 use crate::account::{AccountParams, signed_params};
 use crate::chain::{ChainState, Seen};
+use crate::crypto::IdentityVerifyingKey;
 use crate::format::STORE_USER_VERSION;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::repo::{DeviceState, split_item_record};
@@ -80,6 +81,10 @@ const HEALTH_MEMORY_ENTRY_BYTES: usize = 16 + 1 + 8 + 4 + 1;
 /// because the signed vault list marks them deleted (same encoding as the
 /// ignored deletions, kind `Manifest`, id the vault).
 const DROPPED_WRITES_KEY: &str = "dropped_vault_writes";
+/// The capped log of server params the store ignored because the identity of
+/// the device's own pending change did not sign them (same encoding, kind
+/// `AccountParams`, id the params record).
+const IGNORED_PARAMS_KEY: &str = "ignored_params";
 const FETCH_MODE_KEY: &str = "zone.full_fetch";
 const FETCH_PLAIN: u8 = 1;
 const FETCH_RESET: u8 = 2;
@@ -343,9 +348,14 @@ fn held_lists(conn: &Connection) -> Result<BTreeSet<(RecordKind, Id)>> {
     .collect()
 }
 
-/// The epoch of an account params record, `None` if it does not decode.
-fn params_epoch(data: &[u8]) -> Option<u64> {
-    AccountParams::decode(data).ok().map(|p| p.epoch)
+/// The epoch of the server's account params `base`, counted only when
+/// `identity` signed them (G8): a record that does not decode, or that
+/// another identity signed, is `None`. The identity is the one of the
+/// device's own pending change, never one the record names.
+fn server_params_epoch(base: &[u8], identity: &IdentityVerifyingKey) -> Option<u64> {
+    AccountParams::decode_verified(base, identity)
+        .ok()
+        .map(|p| p.epoch)
 }
 
 /// The data of one row of `table` (`pending` or `base`), `None` if there is
@@ -386,21 +396,28 @@ fn account_pair_pushable(conn: &Connection, id: Id) -> Result<bool> {
     let (Some(params), Some(_)) = (params, keyset) else {
         return Ok(false);
     };
-    let Some(epoch) = params_epoch(&params) else {
+    let Ok(pending) = AccountParams::decode(&params) else {
         return Ok(false);
     };
     let base = server_params(conn, id)?;
-    Ok(match base.as_deref().map(params_epoch) {
-        Some(Some(base_epoch)) => epoch > base_epoch,
-        // No server params (a new account, or a zone reset that requeued
-        // the pair), or ones that do not even decode: the pair goes out.
-        _ => true,
-    })
+    Ok(
+        match base
+            .as_deref()
+            .map(|b| server_params_epoch(b, &pending.identity_pub))
+        {
+            Some(Some(base_epoch)) => pending.epoch > base_epoch,
+            // No server params (a new account, or a zone reset that requeued
+            // the pair), or ones that do not decode or that another identity
+            // signed (ignored): the pair goes out.
+            _ => true,
+        },
+    )
 }
 
 /// After a fetch: a local password change (pending account params and
 /// keyset) that the server params caught up with (epoch at least the
-/// pending one) is dropped, both rows together, so it can never be pushed
+/// pending one, the params signed by the pending change's identity) is
+/// dropped, both rows together, so it can never be pushed
 /// over the server's pair. If the server pair is not this very change (a
 /// push confirmed before `mark_pushed`), the change lost a race: the
 /// `password_change_superseded` flag is raised for the app. A pending keyset
@@ -423,9 +440,16 @@ fn settle_account_changes(tx: &Connection) -> Result<()> {
         ) else {
             continue;
         };
-        let (Some(local), Some(remote)) = (params_epoch(&pending), params_epoch(&base)) else {
+        let Ok(local) = AccountParams::decode(&pending) else {
             continue;
         };
+        // Server params the pending change's identity did not sign cannot
+        // overtake it: ignored, and logged (G8, hold-out 4).
+        let Some(remote) = server_params_epoch(&base, &local.identity_pub) else {
+            append_log(tx, IGNORED_PARAMS_KEY, &[(RecordKind::AccountParams, id)])?;
+            continue;
+        };
+        let local = local.epoch;
         if remote < local {
             continue;
         }
@@ -1329,6 +1353,21 @@ impl SyncStore {
         Ok(())
     }
 
+    /// Server params the store ignored since the log was written, oldest
+    /// first, at most `MAX_IGNORED_DELETIONS`: records for the account that
+    /// the device's own identity did not sign, which therefore never count
+    /// as a password change that overtook a pending one.
+    pub fn ignored_params(&self) -> Result<Vec<IgnoredParams>> {
+        Ok(self
+            .read(|c| log_in(c, IGNORED_PARAMS_KEY))?
+            .into_iter()
+            .map(|e| IgnoredParams {
+                record_id: e.id,
+                at: e.at,
+            })
+            .collect())
+    }
+
     /// Vaults whose pending local writes a rebase dropped because the
     /// signed vault list marks them deleted (`Repository::rebase`), oldest
     /// first, at most `MAX_IGNORED_DELETIONS`.
@@ -1752,6 +1791,14 @@ pub enum AccountState {
 pub struct IgnoredDeletion {
     pub kind: RecordKind,
     pub id: Id,
+    pub at: i64,
+}
+
+/// Server params the store ignored (`SyncStore::ignored_params`): the
+/// params record id, and when (Unix seconds, device clock).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IgnoredParams {
+    pub record_id: Id,
     pub at: i64,
 }
 

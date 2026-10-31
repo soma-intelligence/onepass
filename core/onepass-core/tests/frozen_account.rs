@@ -142,6 +142,53 @@ fn frozen_account_refuses_a_wrong_password() {
     assert_eq!(err, Error::WrongPassword);
 }
 
+/// A second frozen account, written when `OPK2` was the newest keyset
+/// format (`tests/fixtures/frozen-account-opk2`): v2 params at epoch 1 and
+/// an `OPK2` keyset. It must keep opening after `OPK3`, with no retired KEM
+/// secret.
+#[test]
+fn opk2_still_opens() {
+    let d = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/frozen-account-opk2");
+    let read = |name: &str| fs::read(d.join(name)).unwrap();
+    let text = |name: &str| String::from_utf8(read(name)).unwrap().trim().to_owned();
+    let keyset = read("keyset.bin");
+    assert!(keyset.starts_with(b"OPK2"));
+    let params = read("params.bin");
+    let secret_key = SecretKey::parse(&text("secret_key.txt")).unwrap();
+    let account =
+        Account::unlock(&text("password.txt"), &secret_key, &params, &keyset, None).unwrap();
+    assert_eq!(
+        HEXLOWER.encode(&account.params.account_id.0),
+        "01a18f67a50a70b4ab37e53436a48cbd"
+    );
+    assert_eq!(account.params.epoch, 1);
+    assert!(account.keyset().retired_kem.is_empty());
+    assert_eq!(
+        account.keyset().kem.public().unwrap(),
+        account.params.kem_pub
+    );
+    // Rotated, it moves to OPK3 and keeps the OPK2 KEM secret as retired.
+    let fresh = SecretKey::generate().unwrap();
+    let kdf = account.params.kdf.clone();
+    let rotated = account
+        .rotate_keys(&text("password.txt"), &fresh, &kdf)
+        .unwrap();
+    assert!(rotated.keyset_record.starts_with(b"OPK3"));
+    let reopened = Account::unlock(
+        &text("password.txt"),
+        &fresh,
+        &rotated.params_record,
+        &rotated.keyset_record,
+        None,
+    )
+    .unwrap();
+    assert_eq!(reopened.keyset().retired_kem.len(), 1);
+    assert_eq!(
+        reopened.keyset().retired_kem[0].public().unwrap(),
+        account.params.kem_pub
+    );
+}
+
 /// Writes a new fixture. Run once, by hand, and never again: the point of
 /// the fixture is that it does not change. Does nothing unless
 /// `ONEPASS_REGEN_FIXTURE=1` (so `cargo test -- --ignored` leaves it
