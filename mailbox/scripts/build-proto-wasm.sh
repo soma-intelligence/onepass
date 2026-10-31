@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Builds core/onepass-mailbox-proto for the mailbox edge function: release
+# wasm32 build with the `wasm` feature, then wasm-bindgen for Deno. The output
+# in mailbox/supabase/functions/_shared/proto/ is committed, so the edge
+# function decodes and canonicalizes with exactly the client's code.
+#
+# Needs: the wasm32-unknown-unknown target of the toolchain pinned in
+# core/rust-toolchain.toml, and wasm-bindgen-cli at the version of the
+# wasm-bindgen crate in core/Cargo.lock:
+#   rustup target add wasm32-unknown-unknown
+#   cargo install wasm-bindgen-cli --version '=<that version>' --locked
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+core="$root/core"
+out="$root/mailbox/supabase/functions/_shared/proto"
+
+want="$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/"/, "", $3); print $3; exit }' "$core/Cargo.lock")"
+if [ -z "$want" ]; then
+    echo "wasm-bindgen not found in core/Cargo.lock" >&2
+    exit 1
+fi
+have="$(wasm-bindgen --version 2>/dev/null | awk '{ print $2 }')" || true
+if [ "$have" != "$want" ]; then
+    echo "wasm-bindgen-cli ${have:-missing}, Cargo.lock has $want:" >&2
+    echo "  cargo install wasm-bindgen-cli --version '=$want' --locked" >&2
+    exit 1
+fi
+
+# Panic locations embed source paths: remap them so the committed module is
+# the same on every machine and carries no home directory.
+cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+export RUSTFLAGS="--remap-path-prefix=$cargo_home=/cargo --remap-path-prefix=$core=/onepass/core"
+
+(
+    cd "$core"
+    cargo build --locked -p onepass-mailbox-proto --release \
+        --target wasm32-unknown-unknown --features wasm
+)
+
+rm -rf "$out"
+mkdir -p "$out"
+wasm-bindgen --target deno --out-dir "$out" \
+    "$core/target/wasm32-unknown-unknown/release/onepass_mailbox_proto.wasm"
+ls -l "$out"

@@ -1,0 +1,32 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const checkSkew: (a: bigint, b: bigint) => [number, number];
+export const checkTicketTimes: (a: any, b: bigint) => [number, number];
+export const contentDigest: (a: number, b: number) => [number, number];
+export const credentialId: (a: number, b: number) => [number, number, number, number];
+export const decodeBlobAnnounce: (a: number, b: number) => [number, number, number];
+export const decodeBlobLookup: (a: number, b: number) => [number, number, number];
+export const decodeCommit: (a: number, b: number) => [number, number, number];
+export const decodeCreate: (a: number, b: number) => [number, number, number];
+export const decodeEnroll: (a: number, b: number) => [number, number, number];
+export const decodeSetPush: (a: number, b: number) => [number, number, number];
+export const encodeBlobUrls: (a: any) => [number, number, number, number];
+export const encodeChanges: (a: any) => [number, number, number, number];
+export const encodeCommitResponse: (a: any) => [number, number, number, number];
+export const encodeConfig: (a: any) => [number, number, number, number];
+export const encodeCreated: (a: any) => [number, number, number, number];
+export const encodeError: (a: any) => [number, number, number, number];
+export const encodeInfo: (a: any) => [number, number, number, number];
+export const parseSignatureHeaders: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const signatureBase: (a: number, b: number, c: number, d: number, e: number, f: number, g: any) => [number, number, number, number];
+export const ticketHash: (a: any) => [number, number, number, number];
+export const ticketSignedBytes: (a: any) => [number, number, number, number];
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_exn_store: (a: number) => void;
+export const __externref_table_alloc: () => number;
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_start: () => void;

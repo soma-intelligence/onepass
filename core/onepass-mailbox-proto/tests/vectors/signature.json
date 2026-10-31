@@ -1,0 +1,69 @@
+{
+  "comment": "Mailbox request signature vectors (spec 4.7). Fixed seeds, no real data. Frozen: never regenerate, a change here is a wire break.",
+  "vectors": [
+    {
+      "name": "get_empty_body",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "public_key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "method": "GET",
+      "target": "/v1/mailboxes/00112233445566778899aabbccddeeff",
+      "body": "",
+      "created": 1793404800,
+      "nonce": "000102030405060708090a0b0c0d0e0f",
+      "keyid": "c222e2f9d033a23fd7d6868d74699700",
+      "content_digest": "sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:",
+      "signature_input": "sig1=(\"@method\" \"@onepass-target\" \"content-digest\");created=1793404800;nonce=\"AAECAwQFBgcICQoLDA0ODw\";keyid=\"c222e2f9d033a23fd7d6868d74699700\";alg=\"ed25519\";tag=\"onepass-mailbox/v1\"",
+      "signature_base": "\"@method\": GET\n\"@onepass-target\": /v1/mailboxes/00112233445566778899aabbccddeeff\n\"content-digest\": sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:\n\"@signature-params\": (\"@method\" \"@onepass-target\" \"content-digest\");created=1793404800;nonce=\"AAECAwQFBgcICQoLDA0ODw\";keyid=\"c222e2f9d033a23fd7d6868d74699700\";alg=\"ed25519\";tag=\"onepass-mailbox/v1\"",
+      "signature_bytes": "be6898ecef323579cf4fe85e8676b08f849deea90f66bae342c3be2c9263cead62d0fef96983675e72f06e3da7f00925f96f82bc53ae68503c93c616ff24a60f",
+      "signature": "sig1=:vmiY7O8yNXnPT+hehnawj4Sd7qkPZrrjQsO+LJJjzq1i0P75aYNnXnLwbj2n8Akl+W+CvFOuaFA8k8YW/ySmDw==:"
+    },
+    {
+      "name": "post_commit",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "public_key": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "method": "POST",
+      "target": "/v1/mailboxes/00112233445566778899aabbccddeeff/commit",
+      "body": "0100",
+      "created": 1793404801,
+      "nonce": "101112131415161718191a1b1c1d1e1f",
+      "keyid": "bd17361e004dc6eba4a4fb1326b6ab6f",
+      "content_digest": "sha-256=:R9xUDJTOtwSiOHXBEnPha7C4qHrthN6RHyEzVoEV8lQ=:",
+      "signature_input": "sig1=(\"@method\" \"@onepass-target\" \"content-digest\");created=1793404801;nonce=\"EBESExQVFhcYGRobHB0eHw\";keyid=\"bd17361e004dc6eba4a4fb1326b6ab6f\";alg=\"ed25519\";tag=\"onepass-mailbox/v1\"",
+      "signature_base": "\"@method\": POST\n\"@onepass-target\": /v1/mailboxes/00112233445566778899aabbccddeeff/commit\n\"content-digest\": sha-256=:R9xUDJTOtwSiOHXBEnPha7C4qHrthN6RHyEzVoEV8lQ=:\n\"@signature-params\": (\"@method\" \"@onepass-target\" \"content-digest\");created=1793404801;nonce=\"EBESExQVFhcYGRobHB0eHw\";keyid=\"bd17361e004dc6eba4a4fb1326b6ab6f\";alg=\"ed25519\";tag=\"onepass-mailbox/v1\"",
+      "signature_bytes": "c5b72963fc0ff3a306b40c857ce81576c6bbb39aa87818a3746117f7158b3219543f3565ade69cd57dfddade60868b078df24ae5e4b585e97ed650ee3ef1b80c",
+      "signature": "sig1=:xbcpY/wP86MGtAyFfOgVdsa7s5qoeBijdGEX9xWLMhlUPzVlreac1X392t5ghosHjfJK5eS1hel+1lDuPvG4DA==:"
+    },
+    {
+      "name": "put_with_query",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "public_key": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "method": "PUT",
+      "target": "/v1/mailboxes/00112233445566778899aabbccddeeff/push?x=1",
+      "body": "010103616263",
+      "created": 1793404802,
+      "nonce": "ffffffffffffffffffffffffffffffff",
+      "keyid": "a2fd4a3980b32dd8d189de5d188c6f5b",
+      "content_digest": "sha-256=:hpdHLNrNynVeIP6whUFguqERD77nU+I3MeR4cAeT2jI=:",
+      "signature_input": "sig1=(\"@method\" \"@onepass-target\" \"content-digest\");created=1793404802;nonce=\"_____________________w\";keyid=\"a2fd4a3980b32dd8d189de5d188c6f5b\";alg=\"ed25519\";tag=\"onepass-mailbox/v1\"",
+      "signature_base": "\"@method\": PUT\n\"@onepass-target\": /v1/mailboxes/00112233445566778899aabbccddeeff/push?x=1\n\"content-digest\": sha-256=:hpdHLNrNynVeIP6whUFguqERD77nU+I3MeR4cAeT2jI=:\n\"@signature-params\": (\"@method\" \"@onepass-target\" \"content-digest\");created=1793404802;nonce=\"_____________________w\";keyid=\"a2fd4a3980b32dd8d189de5d188c6f5b\";alg=\"ed25519\";tag=\"onepass-mailbox/v1\"",
+      "signature_bytes": "dc6f0fdab013325cfda3012b880a6cf8efbeebe049bb2a92c7f0af05810e94ae72c03dd7478ace0594d3e773869df386c7427ed9dfed79bde947577531e44f06",
+      "signature": "sig1=:3G8P2rATMlz9owEriAps+O++6+BJuyqSx/CvBYEOlK5ywD3XR4rOBZTT53OGnfOGx0J+2d/teb3pR1d1MeRPBg==:"
+    },
+    {
+      "name": "delete_credential",
+      "seed": "0404040404040404040404040404040404040404040404040404040404040404",
+      "public_key": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+      "method": "DELETE",
+      "target": "/v1/mailboxes/00112233445566778899aabbccddeeff/credentials/0f0e0d0c0b0a09080706050403020100",
+      "body": "",
+      "created": 1793404803,
+      "nonce": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+      "keyid": "1518c7c7cef155f7e62e1821f7e5593c",
+      "content_digest": "sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:",
+      "signature_input": "sig1=(\"@method\" \"@onepass-target\" \"content-digest\");created=1793404803;nonce=\"paWlpaWlpaWlpaWlpaWlpQ\";keyid=\"1518c7c7cef155f7e62e1821f7e5593c\";alg=\"ed25519\";tag=\"onepass-mailbox/v1\"",
+      "signature_base": "\"@method\": DELETE\n\"@onepass-target\": /v1/mailboxes/00112233445566778899aabbccddeeff/credentials/0f0e0d0c0b0a09080706050403020100\n\"content-digest\": sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:\n\"@signature-params\": (\"@method\" \"@onepass-target\" \"content-digest\");created=1793404803;nonce=\"paWlpaWlpaWlpaWlpaWlpQ\";keyid=\"1518c7c7cef155f7e62e1821f7e5593c\";alg=\"ed25519\";tag=\"onepass-mailbox/v1\"",
+      "signature_bytes": "493d320c2c707ef73e39e58480902cffa02f354eab4106790179bb85172f6f1f7ebfa689bf7e67d0f717646e4775b4476279bf39f68093f58dbc69941f85040a",
+      "signature": "sig1=:ST0yDCxwfvc+OeWEgJAs/6AvNU6rQQZ5AXm7hRcvbx9+v6aJv35n0PcXZG5HdbRHYnm/OfaAk/WNvGmUH4UECg==:"
+    }
+  ]
+}

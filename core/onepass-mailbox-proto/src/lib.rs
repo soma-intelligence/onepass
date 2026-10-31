@@ -7,9 +7,18 @@
 //! The server is hostile, so a decode error is a typed value, never a panic.
 #![deny(unsafe_code)]
 
+mod bytes;
 pub mod messages;
+pub mod sig;
+pub mod ticket;
+// The wasm-bindgen glue is generated unsafe code.
+#[cfg(feature = "wasm")]
+#[allow(unsafe_code)]
+mod wasm;
 
 pub use messages::*;
+pub use sig::*;
+pub use ticket::*;
 
 use sha2::{Digest, Sha256 as Sha256Hasher};
 
