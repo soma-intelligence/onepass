@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256 as Sha256Hasher};
 
 use crate::messages::{CredentialId, LABEL_MAX, MailboxId, Message, ProtoError, Sha256, URL_MAX};
-use crate::sig::{CredentialPublicKey, CredentialSignature};
+use crate::sig::{CredentialPublicKey, CredentialSignature, SKEW_SECS};
 
 pub const ENROLL_DOMAIN: &[u8] = b"onepass/mailbox-enroll/v1";
 pub const TICKET_TTL_MAX_SECS: i64 = 600;
@@ -78,13 +78,17 @@ pub fn ticket_hash(t: &SignedEnrollTicket) -> Sha256 {
     Sha256Hasher::digest(postcard::to_allocvec(t).expect("postcard to a Vec cannot fail")).into()
 }
 
-/// `now <= expires_at <= now + TICKET_TTL_MAX_SECS`. When the ticket was made
-/// is the approver's call; the server only checks the deadline.
+/// `now <= expires_at <= now + TICKET_TTL_MAX_SECS + SKEW_SECS` (spec 4.12:
+/// 600 s of life on the approver's clock, which may run 300 s ahead; the
+/// server refuses more than 900 s). When the ticket was made is the
+/// approver's call; only the deadline is checked.
 pub fn check_ticket_times(t: &EnrollTicket, now: i64) -> Result<(), ProtoError> {
     if t.expires_at < now {
         return Err(ProtoError::Ticket("expired"));
     }
-    if i128::from(t.expires_at) > i128::from(now) + i128::from(TICKET_TTL_MAX_SECS) {
+    if i128::from(t.expires_at)
+        > i128::from(now) + i128::from(TICKET_TTL_MAX_SECS) + i128::from(SKEW_SECS)
+    {
         return Err(ProtoError::Ticket("lifetime"));
     }
     Ok(())
@@ -157,8 +161,10 @@ mod tests {
             check_ticket_times(&t, NOW + 601),
             Err(ProtoError::Ticket("expired"))
         );
+        // 600 s of life plus 300 s of approver skew, never more.
+        assert_eq!(check_ticket_times(&t, NOW - 300), Ok(()));
         assert_eq!(
-            check_ticket_times(&t, NOW - 1),
+            check_ticket_times(&t, NOW - 301),
             Err(ProtoError::Ticket("lifetime"))
         );
         let far = EnrollTicket {

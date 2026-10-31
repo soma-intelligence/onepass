@@ -3,7 +3,20 @@ import * as proto from "./proto.ts";
 import { type Code, CODES } from "./errors.ts";
 import type { Arg, Db, Fn, Row, Tx } from "./db.ts";
 import type { Signer } from "./storage.ts";
-import { type Deps, handler, ipKey } from "./routes.ts";
+import { type Deps, handler as makeHandler } from "./routes.ts";
+import { DEFAULT_IP_SOURCE, FALLBACK_ADDRESS, ipKey } from "./ip.ts";
+
+/**
+ * The handler as the gateway reaches it: the client wrote a fake leftmost
+ * X-Forwarded-For entry, the trusted proxy appended the real address.
+ */
+function handler(d: Deps): (req: Request, ip: string) => Promise<Response> {
+  const h = makeHandler(d);
+  return (req, ip) => {
+    req.headers.set("x-forwarded-for", `198.51.100.99, ${ip}`);
+    return h(req);
+  };
+}
 import { edSign, newKey, signedHeaders, type TestKey, toHex } from "./testutil.ts";
 
 const NOW = 1_793_404_800_000; // ms, 2026-11-01T00:00:00Z
@@ -59,6 +72,7 @@ function deps(db: FakeDb, over: Partial<Deps> = {}): Deps & { clock: { t: number
     db,
     signer: new FakeSigner(),
     ipSecret: SECRET,
+    ipSource: DEFAULT_IP_SOURCE,
     openSignup: false,
     publishableKey: "pk-test",
     realtimeUrl: "wss://example.test/realtime/v1",
@@ -722,4 +736,126 @@ Deno.test("enroll: request signed by the ticket's new key, ticket signed by the 
     "malformed",
   );
   assertEquals(db4.calls.length, 0);
+});
+
+// ------------------------------------------------------------ client address
+
+Deno.test("spoofed left X-Forwarded-For entries never change the key; IPv6 counts as its /64", async () => {
+  const seen: Uint8Array[] = [];
+  const db = new FakeDb((fn, args) => {
+    if (fn === "rdv_close") seen.push(args[1].value as Uint8Array);
+    return [ok()];
+  });
+  const h = makeHandler(deps(db));
+  const close = (xff: string | null) => {
+    const req = new Request(url(`/v1/rendezvous/${MHEX}`), { method: "DELETE" });
+    if (xff !== null) req.headers.set("x-forwarded-for", xff);
+    return h(req);
+  };
+  for (
+    const xff of [
+      IP,
+      `1.2.3.4, ${IP}`,
+      `10.0.0.1, 10.0.0.2,${IP}`,
+      `::ffff:${IP}`,
+      `garbage, ${IP}`,
+    ]
+  ) {
+    assertEquals((await close(xff)).status, 204, xff);
+  }
+  for (const k of seen) assertEquals(k, await ipKey(SECRET, NOW, IP));
+
+  seen.length = 0;
+  for (const v6 of ["2001:db8:1:2::1", "2001:db8:1:2:ffff:ffff:ffff:ffff", "2001:0db8:0001:0002:0:0:0:9"]) {
+    assertEquals((await close(`8.8.8.8, ${v6}`)).status, 204);
+  }
+  assertEquals(seen[0], await ipKey(SECRET, NOW, "2001:db8:1:2::/64"));
+  assertEquals(seen[1], seen[0]);
+  assertEquals(seen[2], seen[0]);
+  assertEquals((await close("2001:db8:1:3::1")).status, 204);
+  assert(toHex(seen[3]) !== toHex(seen[0]), "another /64, another key");
+
+  // Missing or malformed: one shared fallback bucket, never a left entry.
+  seen.length = 0;
+  for (
+    const xff of [null, "", "not an address", "1.2.3.4, 300.1.1.1", "01.2.3.4", "fe80::1%eth0", "1:2:3:4:5:6:7:8:9"]
+  ) {
+    assertEquals((await close(xff)).status, 204, String(xff));
+  }
+  const fallback = await ipKey(SECRET, NOW, FALLBACK_ADDRESS);
+  for (const k of seen) assertEquals(k, fallback);
+});
+
+Deno.test("trusted hops count from the right; other headers are read whole", async () => {
+  const { clientAddress, ipSourceFromEnv } = await import("./ip.ts");
+  const h = (v: string) => ({
+    get: (n: string) => (n === "x-forwarded-for" ? v : n === "cf-connecting-ip" ? v : null),
+  });
+  const two = ipSourceFromEnv(undefined, "2");
+  assertEquals(clientAddress(h("6.6.6.6, 1.1.1.1, 10.0.0.9"), two), "1.1.1.1");
+  assertEquals(clientAddress(h("10.0.0.9"), two), FALLBACK_ADDRESS);
+  const cf = ipSourceFromEnv("CF-Connecting-IP", undefined);
+  assertEquals(clientAddress(h("2001:db8::7"), cf), "2001:db8:0:0::/64");
+  assertEquals(clientAddress(h("1.1.1.1, 2.2.2.2"), cf), FALLBACK_ADDRESS);
+  for (const bad of ["0", "-1", "x", "17"]) {
+    let threw = false;
+    try {
+      ipSourceFromEnv(undefined, bad);
+    } catch {
+      threw = true;
+    }
+    assert(threw, bad);
+  }
+});
+
+Deno.test("a row above the page head (a commit between the two reads) is left out, not a 503", async () => {
+  const k = await newKey();
+  const row = (seq: bigint) =>
+    ok({
+      incarnation: 3n,
+      min_cursor: 0n,
+      head: 5n,
+      seq,
+      kind: 5,
+      id: new Uint8Array(16).fill(Number(seq)),
+      version: 1n,
+      deleted: false,
+      data: new Uint8Array([1]),
+      blob_sha256: null,
+      size: 1,
+    });
+  const db = new FakeDb(withKey(k, () => [row(4n), row(5n), row(6n)]));
+  const r = await handler(deps(db))(
+    await signed(k, "GET", `/v1/mailboxes/${MHEX}/changes?after=3&limit=10&full=0`),
+    IP,
+  );
+  assertEquals(r.status, 200);
+  assertEquals(
+    await bytes(r),
+    proto.encodeChanges({
+      incarnation: 3n,
+      min_cursor: 0n,
+      head: 5n,
+      records: [4n, 5n].map((seq) => ({
+        seq,
+        kind: 5,
+        id: new Uint8Array(16).fill(Number(seq)),
+        version: 1n,
+        body: { Inline: new Uint8Array([1]) },
+      })),
+      next_after: 5n,
+      more: false,
+    }),
+  );
+});
+
+Deno.test("an after above i64 is malformed before SQL", async () => {
+  const k = await newKey();
+  const db = new FakeDb(withKey(k));
+  const r = await handler(deps(db))(
+    await signed(k, "GET", `/v1/mailboxes/${MHEX}/changes?after=9223372036854775808&limit=1&full=0`),
+    IP,
+  );
+  await assertError(r, "malformed");
+  assert(!db.fns().includes("api_changes"));
 });

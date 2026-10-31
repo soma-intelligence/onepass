@@ -7,6 +7,7 @@ import * as proto from "./proto.ts";
 import { CODES, isCode, Refusal } from "./errors.ts";
 import { a, type Arg, type Db, type Fn, refusalFromSqlError, type Row } from "./db.ts";
 import type { Signer } from "./storage.ts";
+import { clientAddress, ipKeyer, type IpSource } from "./ip.ts";
 import { BadKey, type Checked, checkRequest, edVerify, importCredentialKey, verifySignature } from "./verify.ts";
 
 /** The function's own prefix in the path the gateway hands over. */
@@ -19,6 +20,8 @@ export interface Deps {
   signer: Signer;
   /** MAILBOX_IP_HMAC_SECRET. */
   ipSecret: Uint8Array;
+  /** Where the client address is read (ip.ts). */
+  ipSource: IpSource;
   /** MAILBOX_OPEN_SIGNUP=true: self-host, no invite. */
   openSignup: boolean;
   publishableKey: string | undefined;
@@ -49,27 +52,6 @@ function same(x: Uint8Array, y: Uint8Array): boolean {
 function compare(x: Uint8Array, y: Uint8Array): number {
   for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i] - y[i];
   return x.length - y.length;
-}
-
-/**
- * Rate key of an address (spec 4.9): HMAC-SHA-256(secret, UTC date || ip),
- * the date as YYYY-MM-DD. The address itself is never stored or sent to SQL.
- */
-export async function ipKey(secret: Uint8Array, nowMs: number, ip: string): Promise<Uint8Array> {
-  const date = new Date(nowMs).toISOString().slice(0, 10);
-  const k = await crypto.subtle.importKey("raw", secret as BufferSource, { name: "HMAC", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
-  return new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(date + ip)));
-}
-
-/**
- * The client address: the first entry of X-Forwarded-For set by the
- * Supabase gateway, else the peer address.
- */
-export function clientIp(headers: Headers, peer: string): string {
-  const first = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return first || peer;
 }
 
 const NO_STORE = { "cache-control": "no-store" };
@@ -157,7 +139,8 @@ interface Ctx {
   query: string;
   groups: string[];
   body: Uint8Array;
-  ip: string;
+  /** The request's IP key, computed once (ip.ts). */
+  ipKey: () => Promise<Uint8Array>;
   nowSecs: number;
   checked?: Checked;
 }
@@ -189,7 +172,7 @@ function requireEmpty(c: Ctx) {
  * Returns the public key the request verified against.
  */
 async function lookupKey(c: Ctx, mailbox: Uint8Array, credential: Uint8Array): Promise<Uint8Array> {
-  const ipk = await ipKey(c.deps.ipSecret, c.deps.now(), c.ip);
+  const ipk = await c.ipKey();
   let out: { refusal: Refusal | null; key: Uint8Array | null };
   try {
     out = await c.deps.db.transaction(async (tx) => {
@@ -249,15 +232,23 @@ async function changes(c: Ctx): Promise<Response> {
   const refused = inBand(rows[0]);
   if (refused) throw refused;
   const first = rows[0];
+  const head = first.head as bigint;
   const records = [];
   let size = 64;
+  let read = 0;
   for (const r of rows) {
     if (r.seq === null || r.seq === undefined) continue;
+    // Never above the head of this page (SQL bounds it too: a commit between
+    // its two reads must not reach the page, which the proto would refuse).
+    if ((r.seq as bigint) > head) break;
+    read++;
     size += RECORD_OVERHEAD + (r.data instanceof Uint8Array ? r.data.length : 0);
     if (size > proto.PAGE_MAX_BYTES) break;
     records.push(record(r));
   }
-  const head = first.head as bigint;
+  // A record holds 16 KiB inline at most, so the first one always fits; an
+  // empty page here would end the client's fetch early, never send it.
+  if (read > 0 && records.length === 0) throw new Refusal("retry");
   const last = records.length ? records[records.length - 1].seq : null;
   return postcard(proto.encodeChanges({
     incarnation: first.incarnation,
@@ -398,7 +389,11 @@ async function commit(c: Ctx): Promise<Response> {
   }
   const refused = inBand(rows[0]);
   if (refused) throw refused;
-  if (rows.length !== req.ops.length) throw new Refusal("retry");
+  if (rows.length !== req.ops.length) {
+    // Only a SQL bug gets here, after the batch committed: say so in the log.
+    console.error("mailbox: commit applied but answered", rows.length, "rows for", req.ops.length, "operations");
+    throw new Refusal("retry");
+  }
   return postcard(proto.encodeCommitResponse({ Applied: { seqs: rows.map((r) => (r.seq ?? null) as bigint | null) } }));
 }
 
@@ -475,7 +470,7 @@ async function create(c: Ctx): Promise<Response> {
     a.timestamptz(new Date(Number(p.created) * 1000)),
     a.bytea(body.invite),
     a.bytea(body.label),
-    a.bytea(await ipKey(c.deps.ipSecret, c.deps.now(), c.ip)),
+    a.bytea(await c.ipKey()),
     a.boolean(c.deps.openSignup),
   ]);
   const refused = inBand(rows[0]);
@@ -530,7 +525,7 @@ async function enroll(c: Ctx): Promise<Response> {
     a.bytea(proto.ticketHash(e.ticket)),
     a.timestamptz(new Date(Number(expires) * 1000)),
     a.bytea(e.label),
-    a.bytea(await ipKey(c.deps.ipSecret, c.deps.now(), c.ip)),
+    a.bytea(await c.ipKey()),
   ]);
   const refused = inBand(rows[0]);
   if (refused) throw refused;
@@ -552,7 +547,7 @@ function rdvArgs(c: Ctx): Arg[] {
 }
 
 async function rdvPut(c: Ctx): Promise<Response> {
-  const ipk = await ipKey(c.deps.ipSecret, c.deps.now(), c.ip);
+  const ipk = await c.ipKey();
   const rows = await call(c.deps.db, "rdv_put", [...rdvArgs(c), a.bytea(c.body), a.bytea(ipk)]);
   if (rows[0]?.status === "conflict") return empty(409);
   const refused = inBand(rows[0]);
@@ -573,7 +568,7 @@ async function rdvGet(c: Ctx): Promise<Response> {
     wait = Number(w[1]);
   }
   const deadline = c.deps.now() + wait * 1000;
-  let ipk: Uint8Array | null = await ipKey(c.deps.ipSecret, c.deps.now(), c.ip);
+  let ipk: Uint8Array | null = await c.ipKey();
   for (;;) {
     const rows = await call(c.deps.db, "rdv_get", [...rdvArgs(c), a.bytea(ipk)]);
     ipk = null;
@@ -593,7 +588,7 @@ async function rdvGet(c: Ctx): Promise<Response> {
 
 async function rdvClose(c: Ctx): Promise<Response> {
   requireEmpty(c);
-  const ipk = await ipKey(c.deps.ipSecret, c.deps.now(), c.ip);
+  const ipk = await c.ipKey();
   const rows = await call(c.deps.db, "rdv_close", [a.bytea(unhex(c.groups[0])), a.bytea(ipk)]);
   const refused = inBand(rows[0]);
   if (refused) throw refused;
@@ -685,9 +680,10 @@ function match(method: string, path: string): { route: Route; groups: string[] }
   return null;
 }
 
-/** The request handler. `ip` is the client address (see clientIp). */
-export function handler(deps: Deps): (req: Request, ip: string) => Promise<Response> {
-  return async (req, ip) => {
+/** The request handler. */
+export function handler(deps: Deps): (req: Request) => Promise<Response> {
+  const keyer = ipKeyer(deps.ipSecret);
+  return async (req) => {
     try {
       const url = new URL(req.url);
       if (!url.pathname.startsWith(PREFIX + "/")) throw new Refusal("not_found");
@@ -702,7 +698,10 @@ export function handler(deps: Deps): (req: Request, ip: string) => Promise<Respo
       // @onepass-target: the path after the function's prefix, then `?` and
       // the query when there is one (spec 4.7).
       const target = path + url.search;
-      const ctx: Ctx = { deps, req, target, query, groups, body, ip, nowSecs };
+      const address = clientAddress(req.headers, deps.ipSource);
+      let key: Promise<Uint8Array> | null = null;
+      const ipKey = () => (key ??= keyer(deps.now(), address));
+      const ctx: Ctx = { deps, req, target, query, groups, body, ipKey, nowSecs };
       if (route.auth !== "none") {
         ctx.checked = checkRequest(req.method, target, req.headers, body, nowSecs);
       }
