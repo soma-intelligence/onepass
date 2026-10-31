@@ -1808,16 +1808,28 @@ fn forged_intro_never_blocks_an_honest_one() {
 }
 
 /// Copies of `r` (same body) whose device signature verifies nowhere,
-/// split by where their encoding's SHA-256 falls against `r`'s.
+/// split by where their encoding's SHA-256 falls against `r`'s: at least
+/// `MAX_FOREIGN_COPIES` on each side. Copies are made until both sides
+/// are full: `r`'s hash is random, so a fixed count could leave one side
+/// short. First one bit flipped (37016 copies), then, only when `r`'s hash
+/// sorts among the extreme few, two bits (about 6.8e8 more).
 fn bad_copies(r: &LineageRecord) -> (Vec<LineageRecord>, Vec<LineageRecord>) {
     let key = |r: &LineageRecord| sha256(&[&r.encode()]);
     let good = key(r);
     let (mut below, mut above) = (Vec::new(), Vec::new());
-    for k in 0..256 {
+    let LineageRecord::Rotation(first) = r else {
+        unreachable!()
+    };
+    let bits = first.device_sig.mldsa.len() * 8;
+    let singles = (0..bits).map(|a| (a, None));
+    let pairs = (0..bits).flat_map(|a| (a + 1..bits).map(move |b| (a, Some(b))));
+    for (a, b) in singles.chain(pairs) {
         let LineageRecord::Rotation(mut s) = r.clone() else {
             unreachable!()
         };
-        s.device_sig.mldsa[k] ^= 1;
+        for bit in std::iter::once(a).chain(b) {
+            s.device_sig.mldsa[bit / 8] ^= 1 << (bit % 8);
+        }
         let bad = LineageRecord::Rotation(s);
         if key(&bad) < good {
             below.push(bad);
@@ -1828,6 +1840,7 @@ fn bad_copies(r: &LineageRecord) -> (Vec<LineageRecord>, Vec<LineageRecord>) {
             break;
         }
     }
+    assert!(below.len() >= MAX_FOREIGN_COPIES && above.len() >= MAX_FOREIGN_COPIES);
     (below, above)
 }
 

@@ -20,13 +20,24 @@
 //!    under "a2n", the responder under "n2a"), whose plaintext is
 //!    `postcard(ContactMessage)`. Once its user confirmed the SAS, each side
 //!    sends `Card {card, device, pop}`, `pop = sign_pop(device keys,
-//!    transcript, device)` (domain `onepass/device-pop/v1`). Each side
+//!    "onepass/contact/v1" || transcript, device)` (domain
+//!    `onepass/device-pop/v1`; the label prefix keeps it apart from the
+//!    rotation v2 pairing proof, whose context is the bare transcript).
+//!    The encoded message is at most `MAX_CONTACT_MESSAGE_BYTES`. Each side
 //!    checks the peer's card (signatures, lineage), the proof over its own
 //!    transcript, and that `device` is in the roster of the card's head and
 //!    revoked by none of its records. A card of one's own account is
 //!    refused. A card is handed to the caller only once the local user
-//!    confirmed; the caller pins it (`Repository::finish_contact_session`),
-//!    then may send `Confirmed` (pinned), and `End` closes both sides.
+//!    confirmed, as a `VerifiedPeer` only a session makes; the caller pins
+//!    it (`Repository::finish_contact_session`), then may send `Confirmed`
+//!    (pinned), and `End` closes both sides.
+//! 5. The channel closes `CONTACT_SESSION_SECS` after the SAS is shown.
+//!
+//! The SAS (`onepass/pairing/sas/v1`) and the channel subkeys (`a2n`,
+//! `n2a`) are the pairing ones, on purpose: K is separated by the KEM label
+//! (`onepass/contact/v1` against `onepass/pairing/v1`), so a pairing key
+//! never opens a contact session. Change both protocols together or
+//! neither (the Task 7 model relies on it).
 //!
 //! Any failed check closes the session; nothing is pinned without a card
 //! handed over. No Secret Key and no snapshot ever pass here.
@@ -58,6 +69,21 @@ use crate::{Error, Id, IntegrityError, Result, ValidationError};
 const HELLO_MAGIC: &[u8; 4] = b"OPC1";
 /// A contact Hello is about 1.6 KB: anything larger is refused unread.
 pub const MAX_CONTACT_HELLO_BYTES: usize = 4096;
+/// Largest encoded `ContactMessage`, so largest card a session takes: 8 MiB.
+/// A card is its lineage records (each at most the sync cap,
+/// `sync::MAX_RECORD_BYTES`, 900 KiB) and their intros; a generation of a
+/// few devices is about 40 KB, so this holds well over a hundred of them,
+/// or nine records at the sync cap. It bounds what a peer, or a relay
+/// holding another key, makes this side check before the user confirms
+/// (a channel frame alone may be 64 MiB).
+pub const MAX_CONTACT_MESSAGE_BYTES: usize = 8 * 1024 * 1024;
+/// The channel closes this long after the SAS is shown: ten minutes.
+pub const CONTACT_SESSION_SECS: i64 = 600;
+
+/// The proof of possession context: `"onepass/contact/v1" || transcript`.
+fn pop_context(transcript: &[u8; 32]) -> Vec<u8> {
+    [CONTACT_LABEL, transcript.as_slice()].concat()
+}
 
 fn refused(reason: &'static str) -> Error {
     ValidationError {
@@ -130,12 +156,16 @@ impl ContactMessage {
             .map_err(|_| Error::InvalidFormat("contact message"))
     }
 
-    /// Strict: the whole buffer, a canonical re-encoding, and in a `Card`
+    /// Strict: at most `MAX_CONTACT_MESSAGE_BYTES`, the whole buffer, a
+    /// canonical re-encoding, and in a `Card`
     /// a card that passes `SignedContactCard::decode`, a device that passes
     /// `DevicePublic::decode` and a proof of the hybrid signature layout.
     /// Anything else is `InvalidFormat`. No signature is verified.
     pub fn decode(b: &[u8]) -> Result<ContactMessage> {
         const BAD: Error = Error::InvalidFormat("contact message");
+        if b.len() > MAX_CONTACT_MESSAGE_BYTES {
+            return Err(BAD);
+        }
         let msg: ContactMessage = decode_strict_with(b, BAD)?;
         if let ContactMessage::Card { card, device, pop } = &msg {
             SignedContactCard::decode(&card.encode())?;
@@ -154,14 +184,46 @@ impl ContactMessage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContactOutcome {
     /// Nothing for the caller yet (a card that waits for the local user's
-    /// confirmation, see `peer_card`).
+    /// confirmation, see `verified_peer`).
     Waiting,
     /// The peer's checked card, to pin with
     /// `Repository::finish_contact_session`.
-    PeerCard(SignedContactCard),
+    PeerCard(VerifiedPeer),
     /// The peer pinned this side's card (`Confirmed`), or ended the
     /// session (`End`).
     Done,
+}
+
+/// A peer card from a completed face-to-face session: checked (signatures,
+/// lineage, proof of possession over the transcript, device in the roster),
+/// not this account's, and handed over only after the local user confirmed
+/// the SAS. Only a session makes one; `Repository::finish_contact_session`
+/// pins it at `Verified`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedPeer {
+    card: SignedContactCard,
+    transcript_hash: [u8; 32],
+}
+
+impl VerifiedPeer {
+    /// The card, to show before pinning (its name is only a suggestion).
+    pub fn card(&self) -> &SignedContactCard {
+        &self.card
+    }
+
+    pub fn transcript_hash(&self) -> [u8; 32] {
+        self.transcript_hash
+    }
+
+    /// Any card as if verified, for the tests.
+    #[cfg(all(feature = "dev-fast-kdf", debug_assertions))]
+    #[doc(hidden)]
+    pub fn test_new(card: SignedContactCard, transcript_hash: [u8; 32]) -> VerifiedPeer {
+        VerifiedPeer {
+            card,
+            transcript_hash,
+        }
+    }
 }
 
 /// Both ends once the key is known.
@@ -222,7 +284,7 @@ impl Session {
             return Err(refused("already confirmed"));
         }
         let device = keys.public(me)?;
-        let pop = sign_pop(keys, &self.transcript, &device)?;
+        let pop = sign_pop(keys, &pop_context(&self.transcript), &device)?;
         // What the peer will check, checked before it leaves.
         check_card(card, &device, &pop, &self.transcript)?;
         let account = card.card.account_id;
@@ -238,8 +300,12 @@ impl Session {
             card: card.clone(),
             device,
             pop,
-        };
-        let frame = self.channel.seal_bytes_at(&msg.encode()?, false, now)?;
+        }
+        .encode()?;
+        if msg.len() > MAX_CONTACT_MESSAGE_BYTES {
+            return Err(Error::InvalidFormat("contact card too large"));
+        }
+        let frame = self.channel.seal_bytes_at(&msg, false, now)?;
         self.confirmed = true;
         self.own_account = Some(account);
         self.released = self.peer.is_some();
@@ -265,7 +331,10 @@ impl Session {
                 }
                 let out = if self.confirmed {
                     self.released = true;
-                    ContactOutcome::PeerCard(card.clone())
+                    ContactOutcome::PeerCard(VerifiedPeer {
+                        card: card.clone(),
+                        transcript_hash: self.transcript,
+                    })
                 } else {
                     ContactOutcome::Waiting
                 };
@@ -286,12 +355,14 @@ impl Session {
         }
     }
 
-    fn peer_card(&self) -> Option<&SignedContactCard> {
-        if self.released && !self.failed {
-            self.peer.as_ref()
-        } else {
-            None
+    fn verified_peer(&self) -> Option<VerifiedPeer> {
+        if !self.released || self.failed {
+            return None;
         }
+        self.peer.as_ref().map(|card| VerifiedPeer {
+            card: card.clone(),
+            transcript_hash: self.transcript,
+        })
     }
 
     fn confirm_pinned(&mut self, now: i64) -> Result<Vec<u8>> {
@@ -321,7 +392,8 @@ impl Session {
 
 /// A card a device speaks for: its signatures and params (`keys`), its
 /// lineage from its own genesis (`Integrity(Signature)`), the proof of
-/// possession of `device` over `transcript` (`Integrity(Signature)`), and
+/// possession of `device` over `pop_context(transcript)`
+/// (`Integrity(Signature)`), and
 /// `device`, with the same keys, in the roster of the card's head and
 /// revoked by none of its records (`Integrity(WrongContext)`): a card
 /// replayed by a device the account does not list is refused.
@@ -333,7 +405,7 @@ fn check_card(
 ) -> Result<()> {
     card.keys()?;
     check_card_lineage(card)?;
-    verify_pop(transcript, device, pop)?;
+    verify_pop(&pop_context(transcript), device, pop)?;
     let c = &card.card;
     let revoked: BTreeSet<Id> = c
         .lineage
@@ -410,10 +482,12 @@ impl ContactResponder {
         let k = unwrap_key_labeled(&secret, &kx.envelope, CONTACT_LABEL, &self.transcript)?;
         drop(secret);
         let code = sas(&k, &self.transcript)?;
-        self.session = Some(Session::new(
-            Channel::newcomer(&k, self.session_id)?,
-            self.transcript,
-        ));
+        let mut channel = Channel::newcomer(&k, self.session_id)?;
+        channel.set_expiry(
+            now.checked_add(CONTACT_SESSION_SECS)
+                .ok_or(refused("time"))?,
+        );
+        self.session = Some(Session::new(channel, self.transcript));
         Ok(code)
     }
 
@@ -427,7 +501,7 @@ impl ContactResponder {
     /// a second time, for a card this device does not speak for (the
     /// checks the peer runs), or when the peer's waiting card is of the
     /// same account (`Validation`, the session closes). Once sent, a peer
-    /// card that came earlier is in `peer_card`.
+    /// card that came earlier is in `verified_peer`.
     pub fn confirm_and_send_card(
         &mut self,
         card: &SignedContactCard,
@@ -438,16 +512,20 @@ impl ContactResponder {
         self.session()?.confirm_and_send_card(card, keys, me, now)
     }
 
-    /// Open a frame from the initiator. A card that fails a check, a card
-    /// of this side's own account (`Validation`), a second card, a
-    /// `Confirmed` before both cards, or any bad frame closes the session.
+    /// Open a frame from the initiator. Any refusal closes the session: a
+    /// card whose signatures, lineage or proof fail (`Integrity(Signature)`),
+    /// whose device is not in the roster of the card's head or was revoked
+    /// (`Integrity(WrongContext)`), a card of this side's own account
+    /// (`Validation`), a second card, a `Confirmed` before both cards, a
+    /// frame after `End` or after `CONTACT_SESSION_SECS`, or any bad frame.
     pub fn on_frame(&mut self, frame: &[u8], now: i64) -> Result<ContactOutcome> {
         self.session()?.on_frame(frame, now)
     }
 
-    /// The peer's checked card, once the local user confirmed.
-    pub fn peer_card(&self) -> Option<&SignedContactCard> {
-        self.session.as_ref().and_then(Session::peer_card)
+    /// The peer's checked card, once the local user confirmed: what
+    /// `Repository::finish_contact_session` pins.
+    pub fn verified_peer(&self) -> Option<VerifiedPeer> {
+        self.session.as_ref().and_then(Session::verified_peer)
     }
 
     /// The `Confirmed` frame, once the peer's card was handed over.
@@ -515,8 +593,13 @@ impl ContactInitiator {
         let k = SymmetricKey::generate()?;
         let envelope = wrap_key_labeled(&h.ephemeral_public, &k, CONTACT_LABEL, &t)?;
         let code = sas(&k, &t)?;
+        let mut channel = Channel::approver(&k, h.session_id)?;
+        channel.set_expiry(
+            now.checked_add(CONTACT_SESSION_SECS)
+                .ok_or(refused("time"))?,
+        );
         let initiator = ContactInitiator {
-            session: Session::new(Channel::approver(&k, h.session_id)?, t),
+            session: Session::new(channel, t),
         };
         Ok((initiator, KeyExchange { envelope }.to_bytes(), code))
     }
@@ -537,9 +620,10 @@ impl ContactInitiator {
         self.session.on_frame(frame, now)
     }
 
-    /// The peer's checked card, once the local user confirmed.
-    pub fn peer_card(&self) -> Option<&SignedContactCard> {
-        self.session.peer_card()
+    /// The peer's checked card, once the local user confirmed: what
+    /// `Repository::finish_contact_session` pins.
+    pub fn verified_peer(&self) -> Option<VerifiedPeer> {
+        self.session.verified_peer()
     }
 
     /// The `Confirmed` frame, once the peer's card was handed over.
@@ -595,15 +679,14 @@ impl fmt::Debug for ContactInitiator {
 }
 
 impl<S: RecordStore> Repository<S> {
-    /// Pin the peer's card from a face-to-face session at `Verified`, with
-    /// the session's transcript hash (`pin_contact`, whose refusals apply:
-    /// this account's own card is `Validation`, nothing written).
-    pub fn finish_contact_session(
-        &mut self,
-        peer: &SignedContactCard,
-        transcript_hash: [u8; 32],
-        now: i64,
-    ) -> Result<ContactEntry> {
-        self.pin_contact(peer, ContactLevel::Verified, transcript_hash, now)
+    /// Pin the peer of a completed face-to-face session at `Verified`, with
+    /// the session's transcript hash (`pin_contact`, whose refusals apply).
+    pub fn finish_contact_session(&mut self, peer: VerifiedPeer, now: i64) -> Result<ContactEntry> {
+        self.pin_contact(
+            &peer.card,
+            ContactLevel::Verified,
+            peer.transcript_hash,
+            now,
+        )
     }
 }

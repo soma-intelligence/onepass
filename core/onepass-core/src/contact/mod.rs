@@ -23,8 +23,8 @@ pub use lineage::{
     accept_legacy_intros, follow_foreign, roster_at,
 };
 pub use session::{
-    ContactHello, ContactInitiator, ContactMessage, ContactOutcome, ContactResponder,
-    MAX_CONTACT_HELLO_BYTES,
+    CONTACT_SESSION_SECS, ContactHello, ContactInitiator, ContactMessage, ContactOutcome,
+    ContactResponder, MAX_CONTACT_HELLO_BYTES, MAX_CONTACT_MESSAGE_BYTES, VerifiedPeer,
 };
 
 /// Signature domain of a `ContactCard`, by the identity key (spec 19.1).
