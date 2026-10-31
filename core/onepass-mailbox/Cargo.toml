@@ -1,0 +1,24 @@
+[package]
+name = "onepass-mailbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
+aws-lc-rs.workspace = true
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
+webpki-root-certs = "1"
+zeroize.workspace = true
+data-encoding.workspace = true
+
+[features]
+# Lets an endpoint be plain http on 127.0.0.1 or localhost (tests only).
+testing = []
+
+[dev-dependencies]
+# The tests talk plain http to a fake server on 127.0.0.1.
+onepass-mailbox = { path = ".", features = ["testing"] }

@@ -67,6 +67,11 @@ criteria = "safe-to-deploy"
 version = "1.0.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.base64]]
+version = "0.23.1"
+criteria = "safe-to-deploy"
+notes = "Base64 inside ureq and ureq-proto (HTTP client of the mailbox client, onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.base64ct]]
 version = "1.8.3"
 criteria = "safe-to-deploy"
@@ -229,6 +234,11 @@ version = "0.14.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.getrandom]]
+version = "0.2.17"
+criteria = "safe-to-deploy"
+notes = "Dependency of ring in the lockfile only: ring is an optional feature of rustls-webpki that the mailbox client does not turn on, so neither is compiled. Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.getrandom]]
 version = "0.4.3"
 criteria = "safe-to-deploy"
 
@@ -267,6 +277,16 @@ criteria = "safe-to-deploy"
 [[exemptions.hmac]]
 version = "0.13.0"
 criteria = "safe-to-run"
+
+[[exemptions.http]]
+version = "1.5.0"
+criteria = "safe-to-deploy"
+notes = "HTTP types under ureq-proto (HTTP client of the mailbox client, onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.httparse]]
+version = "1.10.1"
+criteria = "safe-to-deploy"
+notes = "HTTP/1.1 response parser under ureq-proto (HTTP client of the mailbox client, onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.hybrid-array]]
 version = "0.2.3"
@@ -445,6 +465,11 @@ criteria = "safe-to-deploy"
 version = "0.5.0"
 criteria = "safe-to-run"
 
+[[exemptions.ring]]
+version = "0.17.14"
+criteria = "safe-to-deploy"
+notes = "Optional backend of rustls-webpki, in the lockfile only: the mailbox client uses aws-lc-rs and does not compile ring. Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.rpassword]]
 version = "7.5.4"
 criteria = "safe-to-deploy"
@@ -464,6 +489,21 @@ criteria = "safe-to-deploy"
 [[exemptions.rustc-hash]]
 version = "2.1.3"
 criteria = "safe-to-deploy"
+
+[[exemptions.rustls]]
+version = "0.23.46"
+criteria = "safe-to-deploy"
+notes = "TLS 1.3 of the mailbox client (onepass-mailbox, spec 2026-10-30-cross-platform-clients-design 4.4), aws-lc-rs provider. Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.rustls-pki-types]]
+version = "1.15.1"
+criteria = "safe-to-deploy"
+notes = "Certificate types and PEM parsing for rustls in the mailbox client (onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.rustls-webpki]]
+version = "0.103.16"
+criteria = "safe-to-deploy"
+notes = "Certificate path validation of rustls in the mailbox client (onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.rusty-fork]]
 version = "0.3.1"
@@ -586,9 +626,24 @@ criteria = "safe-to-deploy"
 version = "1.20.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.ureq]]
+version = "3.5.0"
+criteria = "safe-to-deploy"
+notes = "Blocking HTTP client of the mailbox client (onepass-mailbox, spec 2026-10-30-cross-platform-clients-design 4.4, 4.14). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.ureq-proto]]
+version = "0.6.5"
+criteria = "safe-to-deploy"
+notes = "HTTP/1.1 state machine of ureq (mailbox client, onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.url]]
 version = "2.5.8"
 criteria = "safe-to-deploy"
+
+[[exemptions.utf8-zero]]
+version = "0.8.1"
+criteria = "safe-to-deploy"
+notes = "UTF-8 decoding inside ureq (mailbox client, onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.uuid]]
 version = "1.29.0"
