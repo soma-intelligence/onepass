@@ -1,0 +1,10 @@
+{
+  "imports": {
+    "postgres": "npm:postgres@3.4.9",
+    "@std/assert": "jsr:@std/assert@1.0.19"
+  },
+  "lock": false,
+  "fmt": {
+    "lineWidth": 120
+  }
+}

@@ -3,12 +3,15 @@
 #
 #   cd mailbox && npx --yes supabase@2.122.0 start
 #   mailbox/scripts/local-env.sh
-#   npx --yes supabase@2.122.0 functions serve mailbox --env-file supabase/.env.local
+#   npx --yes supabase@2.122.0 functions serve --env-file supabase/.env.local
 #
 # Gives the LOGIN roles onepass_mailbox_api and onepass_mailbox_janitor
 # (created by the schema migration without a password) fresh random
-# passwords, and writes mailbox/supabase/.env.local (ignored by git,
-# mode 600). Run it again after every `supabase start` on a new volume or
+# passwords, makes a cron key for mailbox-push and mailbox-gc (also stored
+# in Vault as mailbox_cron_key, so the pg_cron jobs send the same key), turns
+# open signup on in the database (onepass_mailbox.settings, the switch
+# api_create_mailbox checks next to the edge's MAILBOX_OPEN_SIGNUP), and
+# writes mailbox/supabase/.env.local (ignored by git, mode 600). Run it again after every `supabase start` on a new volume or
 # `db reset`: it rotates both passwords. Local stack only: nothing here
 # talks to a hosted project.
 set -euo pipefail
@@ -44,11 +47,32 @@ fi
 api_pw="$(openssl rand -hex 24)"
 janitor_pw="$(openssl rand -hex 24)"
 ip_secret="$(openssl rand -hex 32)"
+cron_key="$(openssl rand -hex 32)"
+
+# The service key of the local stack, for the live tests of mailbox-gc
+# (Storage only).
+service_key="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "supabase_storage_${project}" 2>/dev/null \
+    | awk -F= '$1 == "SERVICE_KEY" { sub(/^[^=]*=/, ""); print; exit }')" || true
 
 # Passwords go through stdin, never through the command line.
 docker exec -i "$db_container" psql -q -X -v ON_ERROR_STOP=1 -U supabase_admin -d postgres >/dev/null <<SQL
 alter role onepass_mailbox_api login password '${api_pw}';
 alter role onepass_mailbox_janitor login password '${janitor_pw}';
+-- Open signup is a database switch as well as an edge variable (supabase_admin
+-- is a superuser: it writes the table through the row level security).
+insert into onepass_mailbox.settings (name, value) values ('open_signup', 'on')
+on conflict (name) do update set value = excluded.value;
+-- The key the pg_cron jobs send. mailbox_functions_url is left unset: the
+-- jobs send nothing until it is (point it at the functions of this stack
+-- to let them run).
+do \$\$
+begin
+    if to_regclass('vault.secrets') is not null then
+        delete from vault.secrets where name = 'mailbox_cron_key';
+        perform vault.create_secret('${cron_key}', 'mailbox_cron_key');
+    end if;
+end
+\$\$;
 SQL
 
 umask 077
@@ -65,11 +89,19 @@ umask 077
     echo "MAILBOX_CLIENT_IP_HEADER=x-forwarded-for"
     echo "MAILBOX_TRUSTED_HOPS=1"
     echo "MAILBOX_OPEN_SIGNUP=true"
+    # mailbox-push and mailbox-gc: Authorization: Bearer <this key>.
+    echo "MAILBOX_CRON_KEY=${cron_key}"
+    echo "MAILBOX_PUSH_PROVIDERS=log"
     echo "MAILBOX_PUBLISHABLE_KEY=${publishable}"
     echo "MAILBOX_REALTIME_URL=ws://127.0.0.1:${api_port}/realtime/v1"
     echo "MAILBOX_STORAGE_PUBLIC_URL=http://127.0.0.1:${api_port}"
     echo "# Seen from the host (deno test of the edge function against the stack):"
     echo "MAILBOX_TEST_DB_URL=postgresql://onepass_mailbox_api:${api_pw}@127.0.0.1:${db_port}/postgres"
+    echo "MAILBOX_TEST_JANITOR_DB_URL=postgresql://onepass_mailbox_janitor:${janitor_pw}@127.0.0.1:${db_port}/postgres"
+    # Fixtures for the live tests of mailbox-push and mailbox-gc (the stack's own superuser).
+    echo "MAILBOX_TEST_ADMIN_DB_URL=postgresql://postgres:postgres@127.0.0.1:${db_port}/postgres"
+    echo "MAILBOX_TEST_STORAGE_URL=http://127.0.0.1:${api_port}"
+    echo "MAILBOX_TEST_SERVICE_KEY=${service_key}"
 } >"$out"
 chmod 600 "$out"
 echo "wrote $out"
