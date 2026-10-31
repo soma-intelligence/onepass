@@ -453,6 +453,17 @@ pub trait RecordStore {
         Ok(())
     }
 
+    /// Queue the server deletion of these item records, which this device
+    /// holds as server rows and no device needs any more (R21: the content
+    /// of a rotation that lost, Task 19 carried item 5). A store with a
+    /// push queue sends each as a deletion until it is confirmed or the
+    /// row is gone; nothing is deleted locally before. The default keeps
+    /// no queue.
+    fn collect_foreign_items(&mut self, ids: Vec<Id>) -> Result<()> {
+        let _ = ids;
+        Ok(())
+    }
+
     /// Open a batch: every write until `batch_commit` or `batch_rollback`
     /// lands in one transaction where the store can. The default writes as
     /// it goes (no undo).

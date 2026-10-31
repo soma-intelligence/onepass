@@ -69,6 +69,9 @@ const TRUST_STATE_KEY: &str = "trust";
 /// `meta` key of what the push phases of a rotation need
 /// (`RotationPush`), from the rotation's commit until phase 3 is confirmed.
 const ROTATION_PUSH_KEY: &str = "rotation_push";
+/// Item records to delete on the server (`collect_foreign_items`), in a
+/// `RotationPush` encoding with `collect` only.
+const FOREIGN_COLLECT_KEY: &str = "foreign_collect";
 /// Raised when a fetch dropped a local password change the server had
 /// overtaken (`SyncStore::take_password_change_superseded`).
 const SUPERSEDED_KEY: &str = "password_change_superseded";
@@ -609,6 +612,44 @@ fn rotating_in(conn: &Connection) -> Result<Option<(u8, Id)>> {
     }))
 }
 
+/// The item records queued for collection on the server.
+fn foreign_collect_in(conn: &Connection) -> Result<Vec<Id>> {
+    Ok(meta_in(conn, FOREIGN_COLLECT_KEY)?
+        .map(|b| RotationPush::decode(&b))
+        .transpose()?
+        .map(|p| p.collect)
+        .unwrap_or_default())
+}
+
+fn set_foreign_collect_in(conn: &Connection, ids: &[Id]) -> Result<()> {
+    if ids.is_empty() {
+        conn.execute(
+            "DELETE FROM meta WHERE key = ?1",
+            params![FOREIGN_COLLECT_KEY],
+        )
+        .map_err(store_err)?;
+        return Ok(());
+    }
+    let push = RotationPush {
+        vaults: Vec::new(),
+        collect: ids.to_vec(),
+    };
+    set_meta_in(conn, FOREIGN_COLLECT_KEY, &push.encode())
+}
+
+/// The version of a `base` row, if any.
+fn base_version_in(conn: &Connection, kind: RecordKind, id: Id) -> Result<Option<u64>> {
+    conn.query_row(
+        "SELECT version FROM base WHERE kind = ?1 AND id = ?2",
+        params![kind.code(), &id.0[..]],
+        |r| r.get::<_, i64>(0),
+    )
+    .optional()
+    .map_err(store_err)?
+    .map(|v| u64::try_from(v).map_err(|_| Error::InvalidFormat("record version")))
+    .transpose()
+}
+
 /// What the rotation being pushed needs (`RotationPush`), if any.
 fn rotation_push_in(conn: &Connection) -> Result<Option<RotationPush>> {
     meta_in(conn, ROTATION_PUSH_KEY)?
@@ -845,6 +886,31 @@ fn pending_changes_in(tx: &Connection, hold: &Hold) -> Result<Vec<Change>> {
             writes.push(change);
         } else {
             deletions.push(change);
+        }
+    }
+    // Task 19 carried item 5: the foreign item records queued for
+    // collection, while the server row is still there and no local write
+    // replaced it.
+    if !hold.all && !hold.candidate {
+        for id in foreign_collect_in(tx)? {
+            let pending: bool = tx
+                .query_row(
+                    "SELECT EXISTS (SELECT 1 FROM pending WHERE kind = ?1 AND id = ?2)",
+                    params![RecordKind::Item.code(), &id.0[..]],
+                    |r| r.get(0),
+                )
+                .map_err(store_err)?;
+            if pending {
+                continue;
+            }
+            if let Some(version) = base_version_in(tx, RecordKind::Item, id)? {
+                deletions.push(Change {
+                    kind: RecordKind::Item,
+                    id,
+                    version,
+                    data: None,
+                });
+            }
         }
     }
     // Deletions go last, highest kind first: a fetching device never
@@ -1155,6 +1221,18 @@ impl SyncStore {
             .optional()
             .map_err(store_err)?;
         let Some(data) = pending else {
+            // A queued collection (`collect_foreign_items`) the server took.
+            let mut queue = foreign_collect_in(&tx)?;
+            if kind == RecordKind::Item && server_meta.is_none() && queue.contains(&id) {
+                tx.execute(
+                    "DELETE FROM base WHERE kind = ?1 AND id = ?2",
+                    params![kind.code(), &id.0[..]],
+                )
+                .map_err(store_err)?;
+                queue.retain(|q| *q != id);
+                set_foreign_collect_in(&tx, &queue)?;
+                return tx.commit();
+            }
             return Ok(());
         };
         match data {
@@ -3513,6 +3591,22 @@ impl RecordStore for SyncStore {
                 Err(e)
             }
         }
+    }
+
+    fn collect_foreign_items(&mut self, ids: Vec<Id>) -> Result<()> {
+        let tx = self.write_tx()?;
+        let mut queue = foreign_collect_in(&tx)?;
+        queue.extend(ids);
+        let mut kept = Vec::new();
+        for id in queue {
+            if base_version_in(&tx, RecordKind::Item, id)?.is_some() {
+                kept.push(id);
+            }
+        }
+        kept.sort();
+        kept.dedup();
+        set_foreign_collect_in(&tx, &kept)?;
+        tx.commit()
     }
 
     fn put_retained(&mut self, rows: Vec<Record>) -> Result<()> {

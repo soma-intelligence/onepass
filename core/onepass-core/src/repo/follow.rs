@@ -808,6 +808,12 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         Some(left_kem) => own_copies(&store, &own, left_kem, &account)?,
         None => Vec::new(),
     };
+    // Task 19 carried item 5 (R21): the item records this device's own
+    // rotation sealed, which lost, are collected once it switched away.
+    let collect: Vec<Id> = match left_kem {
+        Some(left_kem) => lost_rotation_items(&store, trust, left_kem)?,
+        None => Vec::new(),
+    };
     // Fix round 2: a password change made under the identity left is
     // dropped (never pushed: review I3), not held forever. The prompt
     // reported it (`pending_password_change`) before this call.
@@ -818,6 +824,8 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         }
     }
     store.put_follow(chain.clone(), trust, &next, retained, drop_pending)?;
+    // Best effort: a leftover not collected is what R21 tolerates anyway.
+    let _ = store.collect_foreign_items(collect);
     // Spec 6.4, 8.5: the devices this one introduced that the new roster
     // misses, introduced again under the new head (best effort).
     let _ = super::pairing::reintroduce(&mut store, &next, trust, device_keys);
@@ -854,6 +862,64 @@ pub(crate) fn commit_adoption<S: RecordStore>(
     let _ = repo.replay_own_writes();
     let _ = repo.refresh_pending_rotation();
     Ok(repo)
+}
+
+/// Task 19 carried item 5 (R21, M2 of an earlier review): when the head
+/// this device leaves for a switch is its own rotation, the item records
+/// of the vaults it re-sealed that open under the vault key of that
+/// rotation (`left_kem[0]` is its identity's KEM secret), and that the
+/// server holds (not a pending write). They are the losing sibling's
+/// content: no device stays on it once it sees the winner, and every
+/// device replays its own writes from its own copy (spec 10.4), so the
+/// server copy goes instead of staying for good.
+fn lost_rotation_items<S: RecordStore>(
+    store: &S,
+    trust: &TrustState,
+    left_kem: &[HybridKemSecret],
+) -> Result<Vec<Id>> {
+    let Some(own_kem) = left_kem.first() else {
+        return Ok(Vec::new());
+    };
+    let records = lineage_records(store)?;
+    let bodies = rotations(&records);
+    let Some(own) = bodies.get(&trust.head.hash) else {
+        return Ok(Vec::new());
+    };
+    if own.rotator != trust.me.device_id {
+        return Ok(Vec::new());
+    }
+    let items = store.list(RecordKind::Item)?;
+    let mut out = Vec::new();
+    for &v in own.from_heads.keys() {
+        let mut rows = store.retained_rows(v)?;
+        for kind in [RecordKind::VaultKey, RecordKind::VaultMeta] {
+            rows.extend(store.get(kind, v)?);
+        }
+        let of = |kind| rows.iter().filter(move |r: &&Record| r.kind == kind);
+        let vault = of(RecordKind::VaultKey).find_map(|k| {
+            of(RecordKind::VaultMeta)
+                .find_map(|m| Vault::open_with_kem(own_kem, v, &k.data, &m.data).ok())
+        });
+        let Some(vault) = vault else {
+            continue;
+        };
+        for r in &items {
+            let Ok((prefix, body)) = super::split_item_record(&r.data) else {
+                continue;
+            };
+            if prefix != v || store.is_pending_write(RecordKind::Item, r.id)? {
+                continue;
+            }
+            let opens = crate::vault::ItemRecord::decode(body)
+                .is_ok_and(|rec| vault.open_item(&rec).is_ok());
+            if opens {
+                out.push(r.id);
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
 }
 
 /// After a switch: for each vault of `vaults`, the device's own copy sealed

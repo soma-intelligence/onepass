@@ -1187,6 +1187,67 @@ fn phase_three_deletes_only_from_heads_items() {
     assert!(theirs.is_subset(&on_server), "the sibling's records stay");
 }
 
+/// Task 19 carried item 5 (R21): the loser of two sibling rotations pushed
+/// its phase 2 before it knew the winner. Its re-sealed item records,
+/// which the winner tolerates as a foreign generation, are collected on
+/// the server once the loser switched; the winner's stay.
+#[test]
+fn losers_items_collected_after_its_switch() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let v = a.vault().id;
+    let old = server_item_blobs(&server, v);
+    let ra = rotate(&mut a, &f, &SecretKey::generate().unwrap());
+    let c_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &c_sk, vec![], RotationReason::Rotate);
+    req.device_keys = &f.others[C].keys;
+    let rc = c.repo.as_mut().unwrap().rotate(req).unwrap();
+    let a_wins = ra.head < rc.head;
+    let wh = if a_wins { ra.head } else { rc.head };
+    let (mut w, mut l, l_keys) = if a_wins {
+        (a, c, &f.others[C].keys)
+    } else {
+        (c, a, &f.me.keys)
+    };
+    // The loser goes first, phases 1 and 2.
+    for phase in [1, 2] {
+        push_outbox(&mut server, &l).unwrap();
+        assert_eq!(
+            l.store().push_rotation_phase(phase).unwrap(),
+            PhaseOutcome::Done
+        );
+    }
+    let theirs: BTreeSet<Id> = &server_item_blobs(&server, v) - &old;
+    assert_eq!(theirs.len(), 3);
+    sync(&mut server, &mut w).unwrap();
+    assert_eq!(state(&w), DeviceLineageState::Current);
+    let mine: BTreeSet<Id> = &server_item_blobs(&server, v) - &(&old | &theirs);
+    assert_eq!(mine.len(), 3);
+
+    pull(&server, &mut l);
+    l.repo().refresh_pending_rotation().unwrap();
+    let session = l.repo.take().unwrap();
+    let (repo, _, _) = follow_switch(session, wh, PASSWORD, l_keys).unwrap();
+    l.repo = Some(repo);
+    sync(&mut server, &mut l).unwrap();
+    let on_server = server_item_blobs(&server, v);
+    assert!(
+        on_server.is_disjoint(&theirs),
+        "the loser's records collected"
+    );
+    assert_eq!(on_server, mine);
+    for d in [&mut w, &mut l] {
+        pull(&server, d);
+        assert_eq!(head_of(d), wh);
+        assert_eq!(
+            users(&d.items()),
+            ["alice", "bob", "carol"].map(String::from)
+        );
+    }
+}
+
 /// `zz2_hostile_epoch_inflation` (first design): epochs are per identity.
 /// A restore epoch at `u64::MAX`, validly signed by the identity this
 /// device left, or under another identity's id, changes nothing.
