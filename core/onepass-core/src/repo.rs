@@ -67,6 +67,7 @@ use crate::{Error, Id, IntegrityError, Result};
 
 pub mod follow;
 mod local;
+pub mod pairing;
 pub mod replay;
 pub mod rotate;
 pub mod travel;

@@ -5,11 +5,16 @@
 
 use std::collections::BTreeSet;
 
-use crate::store::{Record, RecordKind};
+use crate::chain::ChainState;
+use crate::device_keys::DevicePublic;
+use crate::lineage::{MAX_ROSTER, RosterEntry};
+use crate::store::{Record, RecordKind, RecordStore};
 use crate::sync::{MAX_RECORD_BYTES, RemoteChange, SyncStore};
+use crate::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
 use crate::{Error, Result};
 
-use super::messages::SnapshotRecord;
+use super::messages::{DeviceInfo, FullGrantV2, SnapshotRecord, TrustSnapshot};
+use super::refused;
 
 /// Largest snapshot, postcard serialized.
 pub const MAX_SNAPSHOT_BYTES: usize = 50 * 1024 * 1024;
@@ -70,6 +75,106 @@ pub(crate) fn check_snapshot(snapshot: &[SnapshotRecord]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// A trust snapshot `me` can pin (spec 5.2): well formed
+/// (`TrustSnapshot::check`), the approver is another device, `me` is not
+/// revoked along the chain, and a roster that already lists `me` (a
+/// re-pair, ruling A9) pins its own keys.
+pub fn check_trust_for(trust: &TrustSnapshot, me: &DevicePublic) -> Result<()> {
+    trust.check()?;
+    if trust.approver.device_id == me.device_id || trust.revoked().contains(&me.device_id) {
+        return Err(refused("trust snapshot"));
+    }
+    if let Some(e) = trust.roster.iter().find(|e| e.device_id == me.device_id)
+        && (e.sign_pub != me.sign_pub || e.kem_pub != me.kem_pub)
+    {
+        return Err(refused("trust snapshot"));
+    }
+    Ok(())
+}
+
+/// This device's roster entry as its approver writes it (spec 6.4): the
+/// Hello's name and kind, the granted mode, introduced by the approver.
+pub fn newcomer_entry(me: &DevicePublic, info: &DeviceInfo, grant: &FullGrantV2) -> RosterEntry {
+    RosterEntry {
+        device_id: me.device_id,
+        sign_pub: me.sign_pub.clone(),
+        kem_pub: me.kem_pub.clone(),
+        name: info.name.clone(),
+        kind: info.kind,
+        mode: grant.full.mode,
+        introduced_by: Some(grant.trust.approver.device_id),
+    }
+}
+
+/// The trust state a newcomer pins from a `FullV2` (spec 5.2, 7.4): the
+/// approver's head and identity, its roster plus this device (as the
+/// approver's intro lists it), every device trusted `Verified` (the SAS
+/// authenticates the approver, and the approver vouches for the rest),
+/// every revocation along the chain, state `Current`.
+pub fn trust_from_grant(
+    grant: &FullGrantV2,
+    me: &DevicePublic,
+    info: &DeviceInfo,
+) -> Result<TrustState> {
+    check_trust_for(&grant.trust, me)?;
+    let head = grant.trust.head().ok_or(refused("trust snapshot"))?;
+    let mut roster = grant.trust.roster.clone();
+    if !roster.iter().any(|e| e.device_id == me.device_id) {
+        roster.push(newcomer_entry(me, info, grant));
+        roster.sort_by_key(|e| e.device_id);
+    }
+    if roster.len() > MAX_ROSTER {
+        return Err(refused("roster full"));
+    }
+    let mut trust = TrustState::new(
+        grant.full.account_id,
+        me.clone(),
+        LineageHead {
+            generation: head.generation(),
+            hash: head.hash(),
+        },
+        head.identity_pub().clone(),
+        roster,
+        DeviceLineageState::Current,
+    );
+    trust.levels = trust
+        .roster
+        .iter()
+        .map(|e| (e.device_id, TrustLevel::Verified))
+        .collect();
+    trust.add_revoked(&grant.trust.revoked());
+    Ok(trust)
+}
+
+/// Import a `FullV2` into an empty store (spec 5.2, 7.4): the snapshot
+/// staged and committed as a remote fetch (every check of a hostile store
+/// applies), this device's id recorded, then the trust state pinned
+/// (`trust_from_grant`). Refused on a store that holds a trust state
+/// already: a device that holds the account re-pairs as a follow
+/// (`crate::repo::pairing::repair_from_grant`, ruling A9). The caller then
+/// unlocks with the password and the granted Secret Key.
+pub fn import_full_v2(
+    store: &mut SyncStore,
+    grant: &FullGrantV2,
+    me: &DevicePublic,
+    info: &DeviceInfo,
+) -> Result<TrustState> {
+    if RecordStore::trust_state(store)?.is_some() {
+        return Err(refused("store holds a trust state"));
+    }
+    let trust = trust_from_grant(grant, me, info)?;
+    for r in &grant.full.snapshot {
+        store.stage_remote(r.to_remote_change()?)?;
+    }
+    store.commit_remote()?;
+    store.set_chain_state(&ChainState {
+        device_id: Some(me.device_id),
+        ..store.chain_state()?
+    })?;
+    store.put_all_if_version_with_trust(Vec::new(), Vec::new(), None, &trust)?;
+    Ok(trust)
 }
 
 #[cfg(test)]
