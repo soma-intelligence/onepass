@@ -15,6 +15,9 @@
 //!   D. `Bs`: B rotates, below `D_hi`. `DB_lo`: B rotates under `D_lo`,
 //!   below `D2_lo`. `J`: B, generation 3, parent
 //!   unknown to everyone.
+//! - Shield cases (unit tests only): `Bo` (B drops C), `Dq` (D, below `Bq`
+//!   and `Bo`), `Dz` (D, above both), `BqU` (B revokes C under `D_lo`,
+//!   above `D2_lo`).
 //! - `F`: claims rotator A with an embedded key for A that is not A's;
 //!   signed by that impostor key. `BadId`: signed by A's real device key,
 //!   identity signature garbage. `AnoE`: A rotates without E in the roster.
@@ -263,7 +266,49 @@ fn build() -> World {
     );
     let bad_id = body(g, 1, id(A), Rotate, &[], &all, &hv, T0 + 8);
 
+    // Shield cases (unit tests only, not in the proptest pool).
+    // Bo: B drops C without revoking it. Dq below Bq and Bo, Dz above both.
+    // BqU: B revokes C under D_lo, above D2_lo.
+    let bo = body(
+        g,
+        1,
+        id(B),
+        Rotate,
+        &[],
+        &[p(A), p(B), p(D), p(E)],
+        &av,
+        T0 + 30,
+    );
+    let (hbq, hbo) = (hash_of(&rbq), hash_of(&bo));
+    let dq = (T0 + 40..)
+        .map(|t| body(g, 1, id(D), Rotate, &[], &all, &hv, t))
+        .find(|b| hash_of(b) < hbq.min(hbo))
+        .unwrap();
+    let dz = (T0 + 40..)
+        .map(|t| body(g, 1, id(D), Rotate, &[], &all, &hv, t))
+        .find(|b| hash_of(b) > hbq.max(hbo))
+        .unwrap();
+    let bq_u = (T0 + 60..)
+        .map(|t| {
+            body(
+                hash_of(&d_lo),
+                2,
+                id(B),
+                Revoke,
+                &[id(C)],
+                &[p(A), p(B), p(D), p(E)],
+                &av,
+                t,
+            )
+        })
+        .find(|b| hash_of(b) > hd2)
+        .unwrap();
+
     let jobs: Vec<(&'static str, RotationBody, &DeviceKeys, &IdentityKey)> = vec![
+        ("Bo", bo, &devs[B].keys, &attacker),
+        ("Dq", dq, &devs[D].keys, &honest),
+        ("Dz", dz, &devs[D].keys, &honest),
+        ("BqU", bq_u, &devs[B].keys, &attacker),
         ("A", ra, &devs[A].keys, &honest),
         ("D_lo", d_lo, &devs[D].keys, &honest),
         ("D_hi", d_hi, &devs[D].keys, &honest),
@@ -754,6 +799,103 @@ fn withheld_smaller_b_sibling_does_not_block() {
         Decision::Wait {
             unknown_parent: vec![]
         }
+    );
+}
+
+/// Shield rule at the children of the head: a smaller honest record that
+/// is withheld keeps B's revocation (or drop) of C from acting.
+#[test]
+fn shield_children_of_head() {
+    assert!(h("Dq") < h("Bq") && h("Dq") < h("Bo"));
+    let wait = Decision::Wait {
+        unknown_parent: vec![],
+    };
+    for b in ["Bq", "Bo"] {
+        let names = ["Dq", b];
+        assert_eq!(
+            resolve(&at_genesis(C), &recs(&names), &complete(&[])),
+            wait,
+            "{b}"
+        );
+        assert_eq!(
+            resolve(&at_genesis(C), &recs(&names), &complete(&["Dq"])),
+            prompt(PromptKind::Single, &["Dq"]),
+            "{b}"
+        );
+    }
+    // Alone, B's records still act.
+    assert_eq!(
+        resolve(&at_genesis(C), &recs(&["Bo"]), &complete(&[])),
+        Decision::Orphaned { child: h("Bo") }
+    );
+    assert_eq!(
+        resolve(&at_genesis(C), &recs(&["Bq"]), &complete(&[])),
+        Decision::Quarantine { by: h("Bq") }
+    );
+}
+
+/// Shield rule at a divergence: C on Dz, the larger sibling; Dq withheld
+/// ahead of B's record.
+#[test]
+fn shield_divergence() {
+    assert!(h("Bq") < h("Dz") && h("Bo") < h("Dz"));
+    let t = after(C, &["Dz"]);
+    for b in ["Bq", "Bo"] {
+        let names = ["Dz", "Dq", b];
+        assert_eq!(
+            resolve(&t, &recs(&names), &complete(&[])),
+            Decision::Wait {
+                unknown_parent: vec![]
+            },
+            "{b}"
+        );
+        assert_eq!(
+            resolve(&t, &recs(&names), &complete(&["Dq"])),
+            prompt(PromptKind::Switch, &["Dq"]),
+            "{b}"
+        );
+    }
+    // Without Dq, B's record is first and acts.
+    assert_eq!(
+        resolve(&t, &recs(&["Dz", "Bq"]), &complete(&[])),
+        Decision::Quarantine { by: h("Bq") }
+    );
+}
+
+/// Shield rule inside the winning branch: under D_lo, D2_lo withheld
+/// ahead of BqU (B revokes C). The switch never ends in quarantine.
+#[test]
+fn shield_branch() {
+    assert!(h("D2_lo") < h("BqU"));
+    let t = after(C, &["D_hi"]);
+    let names = ["D_hi", "D_lo", "D2_lo", "BqU"];
+    assert_eq!(
+        resolve(&t, &recs(&names), &complete(&["D_lo"])),
+        prompt(PromptKind::Switch, &["D_lo"])
+    );
+    assert_eq!(
+        resolve(&t, &recs(&names), &complete(&[])),
+        Decision::Wait {
+            unknown_parent: vec![]
+        }
+    );
+    assert_eq!(
+        resolve(&t, &recs(&names), &complete(&["D_lo", "D2_lo"])),
+        prompt(PromptKind::Switch, &["D2_lo"])
+    );
+    // On D_lo, the same pair as children of the head: wait, then D2_lo.
+    let t = after(C, &["D_lo"]);
+    let names = ["D_lo", "D2_lo", "BqU"];
+    assert_eq!(
+        resolve(&t, &recs(&names), &complete(&[])),
+        Decision::Wait {
+            unknown_parent: vec![]
+        }
+    );
+    // Without D2_lo, BqU is first and acts.
+    assert_eq!(
+        resolve(&t, &recs(&["D_lo", "BqU"]), &complete(&[])),
+        Decision::Quarantine { by: h("BqU") }
     );
 }
 

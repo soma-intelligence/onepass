@@ -28,11 +28,13 @@
 //!    one is out, and an excluded record's own exclusions stop counting.
 //!    What is left (a cycle, such as A revokes B and B revokes A) needs the
 //!    user: a `Mutual` prompt (8.3).
-//! 4. **Order** (8.5 step 2): among accepted records, the smallest lineage
-//!    hash that can be acted on now wins. A record is ready when it is
-//!    complete for this device, or when it revokes or drops this device
-//!    (no delivery exists for it then). A smaller record that is withheld
-//!    never blocks a ready one; with none ready, `Wait`.
+//! 4. **Order** (8.5 step 2): among accepted records, in hash order, the
+//!    first one that can be acted on now wins, under the shield rule: a
+//!    record that lists this device and is complete may act at any rank,
+//!    so a smaller withheld record never blocks it; a record that revokes
+//!    or drops this device acts only when it is first in the order, so a
+//!    server withholding a smaller honest record cannot hand the decision
+//!    to a forged revocation. With nothing able to act, `Wait`.
 //!
 //! Then "for me" (7.2): a winner that revokes this device gives
 //! `Quarantine`, one that does not list it gives `Orphaned`, otherwise a
@@ -142,7 +144,8 @@ pub fn winner(siblings: &[&Signed<RotationBody>]) -> Option<[u8; 32]> {
 
 enum Settled {
     /// The accepted records, in hash order: the first is the winner (8.5
-    /// step 2); the next ones stand in while the first is withheld.
+    /// step 2). A later one stands in for withheld smaller ones only if it
+    /// lists this device and is complete (the shield rule, see `may_act`).
     Accepted(Vec<[u8; 32]>),
     /// Sorted, at least two.
     Mutual(Vec<[u8; 32]>),
@@ -156,6 +159,13 @@ enum Outcome {
 }
 
 impl Outcome {
+    /// The shield rule: at rank `rank` in the accepted order, a complete
+    /// record for this device may act; a revocation or drop of this device
+    /// acts only at rank 0, never by skipping a smaller withheld record.
+    fn may_act(&self, rank: usize) -> bool {
+        matches!(self, Outcome::Target(_)) || rank == 0
+    }
+
     fn decide(self, kind: PromptKind) -> Decision {
         match self {
             Outcome::Target(h) => Decision::Prompt(Prompt {
@@ -451,8 +461,9 @@ impl<'a, 'c> View<'a, 'c> {
     /// The branch under `h` (valid, on the winning side): a descendant
     /// that revokes or drops this device, else the newest complete record
     /// along winners, else `None` (nothing on it can be acted on yet).
-    /// At each level the accepted children are tried in hash order, so a
-    /// withheld smaller sibling never blocks a complete one (8.5 step 2).
+    /// At each level the accepted children are tried in hash order under
+    /// the shield rule: a withheld smaller sibling never blocks a complete
+    /// one, and never lets a later revocation or drop of this device act.
     fn branch(
         &mut self,
         h: [u8; 32],
@@ -473,8 +484,10 @@ impl<'a, 'c> View<'a, 'c> {
         };
         let kids = self.valid_children(&parent);
         if let Some(Settled::Accepted(order)) = settle(&kids) {
-            for k in order {
-                if let Some(o) = self.branch(k, &path_revoked, complete) {
+            for (rank, k) in order.into_iter().enumerate() {
+                if let Some(o) = self.branch(k, &path_revoked, complete)
+                    && o.may_act(rank)
+                {
                     return Some(o);
                 }
             }
@@ -516,12 +529,14 @@ impl<'a, 'c> View<'a, 'c> {
                         PromptKind::Switch
                     };
                     let mut own_wins = false;
-                    for w in order {
+                    for (rank, w) in order.into_iter().enumerate() {
                         if w == *own_hash {
                             own_wins = true;
                             break;
                         }
-                        if let Some(o) = self.branch(w, &BTreeSet::new(), complete) {
+                        if let Some(o) = self.branch(w, &BTreeSet::new(), complete)
+                            && o.may_act(rank)
+                        {
                             return Some(o.decide(kind));
                         }
                         // A better sibling that cannot be acted on yet.
@@ -540,7 +555,8 @@ impl<'a, 'c> View<'a, 'c> {
     }
 
     /// Spec 7.2 and 8.3: the children of the head. The winner is the
-    /// smallest accepted child that can be acted on now; with none, wait.
+    /// first accepted child, in hash order, that may act under the shield
+    /// rule; with none, wait.
     fn children_of_head(&mut self, complete: &Completeness) -> Decision {
         let parent = Parent {
             hash: self.trust.head.hash,
@@ -554,7 +570,8 @@ impl<'a, 'c> View<'a, 'c> {
             Some(Settled::Mutual(set)) => self.mutual(set, complete),
             Some(Settled::Accepted(order)) => order
                 .into_iter()
-                .find_map(|w| self.outcome_of(w, complete))
+                .enumerate()
+                .find_map(|(rank, w)| self.outcome_of(w, complete).filter(|o| o.may_act(rank)))
                 .map(|o| o.decide(PromptKind::Single))
                 .unwrap_or(Decision::Wait {
                     unknown_parent: vec![],
