@@ -32,7 +32,8 @@
 //!   archives and travel states made before). `"OPK2"` still opens, with
 //!   `retired_kem` empty. Retired signing and identity keys are never kept.
 //!
-//! Accounts created now write v2 params at epoch 1 and an `OPK3` keyset. The epoch is the counter of
+//! Accounts created now write v2 params at epoch 1 and an `OPK2` keyset (generation 0 moves nothing, so
+//! the previous build still opens it); `OPK3` is written only once `retired_kem` is non-empty (after a key rotation). The epoch is the counter of
 //! the signed params, bumped by every change of them (a master password
 //! change today); a device pins the highest one it accepted
 //! (`chain::ChainState::params_epoch`) and refuses older ones.
@@ -458,14 +459,25 @@ impl Account {
         kdf_floor: &KdfParams,
     ) -> Result<RotatedAccount> {
         let account_id = self.params.account_id;
-        if let Some(current) = &self.secret_key_tag
-            && current.matches(&KeyTag::of(&account_id, new_secret_key))
-        {
-            return Err(ValidationError {
-                field: "secret key".into(),
-                reason: "unchanged",
+        // K11: the new Secret Key must differ from the current one. An
+        // account opened without it (`unlock_with_auk`) cannot tell, so it
+        // refuses; the caller establishes the tag by unlocking with the key.
+        match &self.secret_key_tag {
+            None => {
+                return Err(ValidationError {
+                    field: "secret key".into(),
+                    reason: "current key unknown",
+                }
+                .into());
             }
-            .into());
+            Some(current) if current.matches(&KeyTag::of(&account_id, new_secret_key)) => {
+                return Err(ValidationError {
+                    field: "secret key".into(),
+                    reason: "unchanged",
+                }
+                .into());
+            }
+            Some(_) => {}
         }
         let (m_kib, t, p) = enforced_floor();
         let current = &self.params.kdf;
@@ -911,7 +923,16 @@ fn seal_keyset(auk: &SymmetricKey, params: &AccountParams, keyset: &Keyset) -> R
                 .map(|r| r.len() + MAX_VARINT)
                 .sum::<usize>()
     ]);
-    let used = if params.epoch == 0 {
+    // Generation 0 moves nothing (spec 6.6): without retired keys the record
+    // stays byte-compatible with the previous build (v1 at epoch 0, `OPK2`).
+    let version = if params.epoch == 0 {
+        KeysetVersion::V1
+    } else if keyset.retired_kem.is_empty() {
+        KeysetVersion::V2
+    } else {
+        KeysetVersion::V3
+    };
+    let used = if version != KeysetVersion::V3 {
         postcard::to_slice(
             &(
                 Bytes::new(&kem),
@@ -933,11 +954,6 @@ fn seal_keyset(auk: &SymmetricKey, params: &AccountParams, keyset: &Keyset) -> R
     }
     .map_err(|_| bad())?
     .len();
-    let version = if params.epoch == 0 {
-        KeysetVersion::V1
-    } else {
-        KeysetVersion::V3
-    };
     let blob = seal(
         auk,
         BlobKind::Keyset,
@@ -948,7 +964,11 @@ fn seal_keyset(auk: &SymmetricKey, params: &AccountParams, keyset: &Keyset) -> R
         return Ok(blob);
     }
     let mut out = Vec::with_capacity(KEYSET_V2_HEADER + blob.len());
-    out.extend_from_slice(KEYSET_V3_PREFIX);
+    out.extend_from_slice(if version == KeysetVersion::V3 {
+        KEYSET_V3_PREFIX
+    } else {
+        KEYSET_V2_PREFIX
+    });
     out.extend_from_slice(&params.epoch.to_be_bytes());
     out.extend_from_slice(&params_hash(params)?);
     out.extend_from_slice(&blob);
@@ -1446,7 +1466,7 @@ mod tests {
         let decoded = AccountParams::decode(&n.params_record).unwrap();
         assert_eq!(decoded, n.account.params);
         assert_eq!(decoded.encode().unwrap(), n.params_record);
-        assert!(n.keyset_record.starts_with(b"OPK3"));
+        assert!(n.keyset_record.starts_with(b"OPK2"));
 
         // The epoch is signed: changing it without re-signing is refused.
         let mut bumped = n.account.params.clone();
@@ -1688,7 +1708,7 @@ mod tests {
         let r = account.rekey(&n.secret_key, "nouveau").unwrap();
         assert_eq!(r.account.params.epoch, 1);
         assert!(r.params_record.starts_with(b"OPP2"));
-        assert!(r.keyset_record.starts_with(b"OPK3"));
+        assert!(r.keyset_record.starts_with(b"OPK2"));
         let a = Account::unlock(
             "nouveau",
             &n.secret_key,
@@ -1742,7 +1762,7 @@ mod tests {
     #[test]
     fn opk3_round_trip() {
         let n = shared();
-        assert!(n.keyset_record.starts_with(b"OPK3"));
+        assert!(n.keyset_record.starts_with(b"OPK2"));
         let before = unlocked(n);
         assert!(before.keyset().retired_kem.is_empty());
 
@@ -1921,6 +1941,65 @@ mod tests {
     }
 
     #[test]
+    fn generation_0_password_change_writes_opk2() {
+        // The previous build reads any record that is not `OPK2` as a bare
+        // v1 blob: a password change on a generation 0 account must stay
+        // `OPK2` at schema 2, or its other devices could not unlock.
+        let n = shared();
+        let r = unlocked(n).rekey(&n.secret_key, "nouveau").unwrap();
+        assert!(r.keyset_record.starts_with(b"OPK2"));
+        let (version, bound, blob) = split_keyset(&r.keyset_record).unwrap();
+        assert_eq!(version, KeysetVersion::V2);
+        assert!(bound.is_some());
+        // The frozen OPK2 path (schema 2, three-field plaintext) opens it.
+        let aad = keyset_aad(&r.account.params, KeysetVersion::V2).unwrap();
+        assert_eq!(aad.schema, KEYSET_SCHEMA_V2);
+        let auk = SymmetricKey::from_bytes(*r.auk.as_bytes());
+        let plaintext = open_detailed(&auk, BlobKind::Keyset, &aad, blob).unwrap();
+        assert!(
+            postcard::take_from_bytes::<(&[u8], &[u8], &[u8])>(&plaintext)
+                .is_ok_and(|(_, rest)| rest.is_empty())
+        );
+        let a = Account::unlock(
+            "nouveau",
+            &n.secret_key,
+            &r.params_record,
+            &r.keyset_record,
+            None,
+        )
+        .unwrap();
+        assert!(a.keyset().retired_kem.is_empty());
+    }
+
+    #[test]
+    fn rotate_keys_needs_a_known_current_secret_key() {
+        let n = shared();
+        let account = unlocked(n);
+        let auk = derive_auk("pw", &n.secret_key, &n.account.params.kdf).unwrap();
+        let by_auk = Account::unlock_with_auk(
+            &Auk::from_bytes(*auk.expose()),
+            &n.params_record,
+            &n.keyset_record,
+            None,
+        )
+        .unwrap();
+        let fresh = SecretKey::generate().unwrap();
+        // Current key unknown (Face ID path): refused, whatever the key.
+        for k in [&fresh, &n.secret_key] {
+            assert!(matches!(
+                by_auk.rotate_keys("pw", k, &fast()),
+                Err(Error::Validation(_))
+            ));
+        }
+        // Known and equal: refused (K11). Known and different: accepted.
+        assert!(matches!(
+            account.rotate_keys("pw", &n.secret_key, &fast()),
+            Err(Error::Validation(_))
+        ));
+        assert!(account.rotate_keys("pw", &fresh, &fast()).is_ok());
+    }
+
+    #[test]
     fn rotate_keys_refuses_kdf_above_the_ceiling() {
         let n = shared();
         let mut floor = fast();
@@ -1985,8 +2064,15 @@ mod tests {
         // The prefix and the sealed schema both move: relabelling an OPK3
         // record as OPK2 (or the reverse) does not open.
         let n = shared();
-        let mut as_v2 = n.keyset_record.clone();
+        let key = SecretKey::generate().unwrap();
+        let r = unlocked(n).rotate_keys("pw", &key, &fast()).unwrap();
+        assert!(r.keyset_record.starts_with(b"OPK3"));
+        let mut as_v2 = r.keyset_record.clone();
         as_v2[..4].copy_from_slice(b"OPK2");
-        assert!(Account::unlock("pw", &n.secret_key, &n.params_record, &as_v2, None).is_err());
+        assert!(Account::unlock("pw", &key, &r.params_record, &as_v2, None).is_err());
+        // And an OPK2 record relabelled OPK3 does not open either.
+        let mut as_v3 = n.keyset_record.clone();
+        as_v3[..4].copy_from_slice(b"OPK3");
+        assert!(Account::unlock("pw", &n.secret_key, &n.params_record, &as_v3, None).is_err());
     }
 }
