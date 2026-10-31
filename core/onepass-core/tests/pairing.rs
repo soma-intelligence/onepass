@@ -6,9 +6,9 @@ use onepass_core::crypto::SymmetricKey;
 use onepass_core::devices::{DeviceKind, DeviceMode};
 use onepass_core::model::{ItemType, new_item};
 use onepass_core::pairing::{
-    Approver, AuditAction, AuditEvent, Channel, DeviceInfo, FullGrant, Grant, Hello,
-    MAX_SNAPSHOT_BYTES, Message, Newcomer, PairingQr, PublicGrant, QR_LIFETIME_SECS,
-    SnapshotRecord, check_snapshot_size, sas,
+    Approver, AuditAction, AuditEvent, Channel, DeviceInfo, FullGrant, Grant, Hello, Host,
+    JoinHello, MAX_SNAPSHOT_BYTES, Message, Newcomer, PairingQr, PublicGrant, QR_LIFETIME_SECS,
+    RV_MAX_FAILURES, RV_RENEW_SECS, RendezvousCode, SnapshotRecord, check_snapshot_size, sas,
 };
 use onepass_core::{Error, Id};
 use zeroize::Zeroizing;
@@ -1332,4 +1332,205 @@ fn assert_self_pinned(t: &onepass_core::trust::TrustState) {
             && e.kem_pub == t.me.kem_pub),
         "the device is pinned in its own roster"
     );
+}
+
+
+// ---- rendezvous direction (version 2): the approver shows the code ---------
+
+/// A host with one code on screen, and a newcomer that joined it: the
+/// approver, the newcomer, and both SAS.
+fn joined(mode: DeviceMode) -> (Newcomer, Approver, String, String) {
+    let mut host = Host::new();
+    let shown = host.issue(NOW).unwrap();
+    let code = RendezvousCode::parse(&shown.qr_text).unwrap();
+    let (mut n, join) = Newcomer::join_code(ipad(), mode, &code, NOW + 3).unwrap();
+    let (a, kx, sas_a, info, requested) = host.accept(&join, NOW + 5).unwrap();
+    assert_eq!(info.name, "iPad de Camille");
+    assert_eq!(requested, mode);
+    let sas_n = n.on_key_exchange(&kx, NOW + 6).unwrap();
+    (n, a, sas_n, sas_a)
+}
+
+#[test]
+fn rendezvous_full_pairing_in_memory() {
+    let (mut n, mut a, sas_n, sas_a) = joined(DeviceMode::Personal);
+    assert_eq!(sas_n, sas_a);
+    assert_eq!(sas_n.len(), 6);
+
+    let f = n.confirm().unwrap();
+    assert_eq!(a.on_frame_at(&f, NOW + 7).unwrap(), Message::Confirmed);
+    let grant = full_grant();
+    let f = a
+        .seal_grant_at(Grant::Full(grant.clone()), true, NOW + 8)
+        .unwrap();
+    let Message::Grant(Grant::Full(got)) = n.open_at(&f, NOW + 9).unwrap() else {
+        panic!("expected a full grant");
+    };
+    assert_eq!(got.account_id, grant.account_id);
+    assert_eq!(got.snapshot, grant.snapshot);
+    let ack = n.seal_at(&Message::Ack, NOW + 10).unwrap();
+    assert_eq!(a.on_frame_at(&ack, NOW + 10).unwrap(), Message::Ack);
+}
+
+#[test]
+fn rendezvous_public_session_in_memory() {
+    let (mut n, mut a, sas_n, sas_a) = joined(DeviceMode::Public);
+    assert_eq!(sas_n, sas_a);
+    let f = n.confirm().unwrap();
+    a.on_frame_at(&f, NOW + 7).unwrap();
+    // The grant carries this session's id: the one the newcomer drew.
+    let grant = PublicGrant {
+        session_id: n.session_id(),
+        expires_at: NOW + 900,
+        read_only: true,
+        items: vec![new_item(ItemType::Login, Id::new(), "Wi-Fi")],
+    };
+    let f = a
+        .seal_grant_at(Grant::Public(grant), true, NOW + 8)
+        .unwrap();
+    assert!(matches!(
+        n.open_at(&f, NOW + 9).unwrap(),
+        Message::Grant(Grant::Public(_))
+    ));
+}
+
+#[test]
+fn rendezvous_qr_and_typed_code_are_the_same_secret() {
+    let mut host = Host::new();
+    let shown = host.issue(NOW).unwrap();
+    assert!(shown.qr_text.starts_with("OPPAIR2:"));
+    assert_eq!(shown.qr_text.len(), "OPPAIR2:".len() + 8);
+    assert_eq!(shown.short_text.len(), 9);
+    assert_eq!(shown.short_text.as_bytes()[4], b'-');
+    assert_eq!(shown.expires_at, NOW + QR_LIFETIME_SECS);
+    let from_qr = RendezvousCode::parse(&shown.qr_text).unwrap();
+    let typed = RendezvousCode::parse(&shown.short_text.to_lowercase()).unwrap();
+    assert_eq!(from_qr, typed);
+    // The typed form joins just like the scanned one.
+    let (_, join) = Newcomer::join_code(ipad(), DeviceMode::Personal, &typed, NOW + 1).unwrap();
+    assert!(host.accept(&join, NOW + 2).is_ok());
+}
+
+#[test]
+fn rendezvous_codes_renew_and_old_ones_live_until_expiry() {
+    let mut host = Host::new();
+    let first = host.issue(NOW).unwrap();
+    let second = host.issue(NOW + RV_RENEW_SECS).unwrap();
+    assert_ne!(first.qr_text, second.qr_text);
+    // The first code is still good 90 s after its issue, past the renewal.
+    let code = RendezvousCode::parse(&first.qr_text).unwrap();
+    let (_, join) = Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW + 90).unwrap();
+    assert!(host.accept(&join, NOW + 90).is_ok());
+}
+
+#[test]
+fn rendezvous_expired_code_refused() {
+    let mut host = Host::new();
+    let shown = host.issue(NOW).unwrap();
+    let code = RendezvousCode::parse(&shown.qr_text).unwrap();
+    let (_, join) = Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap();
+    assert!(host.accept(&join, shown.expires_at + 1).is_err());
+    // Exactly at expiry is still accepted.
+    let (_, join) = Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap();
+    assert!(host.accept(&join, shown.expires_at).is_ok());
+}
+
+#[test]
+fn rendezvous_a_code_serves_one_hello() {
+    let mut host = Host::new();
+    let shown = host.issue(NOW).unwrap();
+    let code = RendezvousCode::parse(&shown.qr_text).unwrap();
+    let (_, first) = Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap();
+    let (_, second) = Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap();
+    assert!(host.accept(&first, NOW + 1).is_ok());
+    // Spent: neither the same Hello (replay) nor a fresh one passes.
+    assert!(host.accept(&first, NOW + 2).is_err());
+    assert!(host.accept(&second, NOW + 2).is_err());
+    assert!(host.issue(NOW + 3).is_err());
+    assert!(!host.is_open());
+}
+
+#[test]
+fn rendezvous_wrong_code_and_tampered_hello_refused() {
+    let mut host = Host::new();
+    host.issue(NOW).unwrap();
+    let other = RendezvousCode::generate().unwrap();
+    let (_, join) = Newcomer::join_code(ipad(), DeviceMode::Personal, &other, NOW).unwrap();
+    assert!(matches!(
+        host.accept(&join, NOW + 1),
+        Err(Error::Integrity(_))
+    ));
+
+    // Right code, but the Hello was altered in flight (mode swapped).
+    let mut host = Host::new();
+    let shown = host.issue(NOW).unwrap();
+    let code = RendezvousCode::parse(&shown.qr_text).unwrap();
+    let (_, join) = Newcomer::join_code(ipad(), DeviceMode::Public, &code, NOW).unwrap();
+    let mut parsed = JoinHello::from_bytes(&join).unwrap();
+    parsed.hello.requested_mode = DeviceMode::Personal;
+    assert!(host.accept(&parsed.to_bytes().unwrap(), NOW + 1).is_err());
+
+    // Right code, but another key swapped in: the proof covers the key.
+    let (_, other_join) = Newcomer::join_code(ipad(), DeviceMode::Public, &code, NOW).unwrap();
+    let mut mitm = JoinHello::from_bytes(&join).unwrap();
+    mitm.hello.ephemeral_public = JoinHello::from_bytes(&other_join)
+        .unwrap()
+        .hello
+        .ephemeral_public;
+    assert!(host.accept(&mitm.to_bytes().unwrap(), NOW + 1).is_err());
+
+    // Junk.
+    assert!(host.accept(b"OPH2", NOW + 1).is_err());
+    assert!(host.accept(&join[..join.len() - 1], NOW + 1).is_err());
+    assert!(host.accept(&[], NOW + 1).is_err());
+}
+
+#[test]
+fn rendezvous_host_closes_after_too_many_failures() {
+    let mut host = Host::new();
+    let shown = host.issue(NOW).unwrap();
+    let wrong = RendezvousCode::generate().unwrap();
+    for _ in 0..RV_MAX_FAILURES {
+        let (_, join) = Newcomer::join_code(ipad(), DeviceMode::Personal, &wrong, NOW).unwrap();
+        assert!(host.accept(&join, NOW + 1).is_err());
+    }
+    assert!(!host.is_open());
+    // Even the right code is refused now.
+    let code = RendezvousCode::parse(&shown.qr_text).unwrap();
+    let (_, join) = Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap();
+    assert!(host.accept(&join, NOW + 2).is_err());
+}
+
+#[test]
+fn rendezvous_man_in_the_middle_gets_different_codes() {
+    // The attacker knows the code (it was shown, or guessed) and relays
+    // between a real newcomer and a real host with a Hello of its own: the
+    // two screens show different codes.
+    let mut host = Host::new();
+    let shown = host.issue(NOW).unwrap();
+    let code = RendezvousCode::parse(&shown.qr_text).unwrap();
+    let (mut victim, _join) = Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap();
+    let (mut attacker, forged) = Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap();
+    let (_a, kx, sas_a, _, _) = host.accept(&forged, NOW + 1).unwrap();
+    // The attacker cannot hand the victim a key exchange for the victim's
+    // own key: the envelope was wrapped to the attacker's ephemeral key.
+    assert!(victim.on_key_exchange(&kx, NOW + 2).is_err());
+    let sas_attacker = attacker.on_key_exchange(&kx, NOW + 2).unwrap();
+    assert_eq!(sas_attacker, sas_a);
+}
+
+#[test]
+fn rendezvous_session_does_not_mix_with_version_one() {
+    // A v1 key exchange (wrapped for a QR transcript) does not open under
+    // the v2 label, and the other way round.
+    let (mut n_rv, join) = {
+        let mut host = Host::new();
+        let shown = host.issue(NOW).unwrap();
+        let code = RendezvousCode::parse(&shown.qr_text).unwrap();
+        Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap()
+    };
+    let _ = join;
+    let (_, qr, hello) = Newcomer::new(ipad(), DeviceMode::Personal, NOW).unwrap();
+    let (_, kx_v1, _, _, _) = Approver::begin(&qr.to_text(), &hello, NOW + 1).unwrap();
+    assert!(n_rv.on_key_exchange(&kx_v1, NOW + 2).is_err());
 }

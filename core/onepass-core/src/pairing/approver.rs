@@ -85,9 +85,34 @@ impl Approver {
         h: Hello,
         invite: bool,
     ) -> Result<(Approver, Vec<u8>, String, DeviceInfo, DeviceMode)> {
+        Self::start_labeled(qr_text, hello, h, invite, KEM_LABEL)
+    }
+
+    /// Wrap a fresh session key to the Hello's ephemeral key, bound to the
+    /// transcript of `qr_text` and `hello` (the bytes as received), and
+    /// start the session. The caller has already authenticated the Hello
+    /// against the QR (commitment) or the rendezvous code (proof).
+    pub(crate) fn establish(
+        qr_text: &str,
+        hello: &[u8],
+        h: Hello,
+        label: &[u8],
+    ) -> Result<(Approver, Vec<u8>, String, DeviceInfo, DeviceMode)> {
+        Self::start_labeled(qr_text, hello, h, false, label)
+    }
+
+    /// `start` with the KEM label of the flow (`KEM_LABEL`, or
+    /// `KEM_LABEL_RV` for a rendezvous code).
+    fn start_labeled(
+        qr_text: &str,
+        hello: &[u8],
+        h: Hello,
+        invite: bool,
+        label: &[u8],
+    ) -> Result<(Approver, Vec<u8>, String, DeviceInfo, DeviceMode)> {
         let t = transcript(qr_text, hello);
         let k = SymmetricKey::generate()?;
-        let envelope = wrap_key_labeled(&h.ephemeral_public, &k, KEM_LABEL, &t)?;
+        let envelope = wrap_key_labeled(&h.ephemeral_public, &k, label, &t)?;
         let code = sas(&k, &t)?;
         let approver = Approver {
             channel: Channel::approver(&k, h.session_id)?,

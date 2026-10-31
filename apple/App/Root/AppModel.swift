@@ -99,6 +99,8 @@ final class AppModel {
     #endif
     /// Fichier > Restaurer une sauvegarde… (and Réglages > Général).
     var showRestore = false
+    /// Fichier > Configurer un appareil… (Mac): the window that shows the pairing code.
+    var showHostDevice = false
     // Menu commands handled by the views on screen (bumped, observed with `onChange`).
     var editRequest = 0
     var saveRequest = 0
@@ -906,6 +908,7 @@ final class AppModel {
         showImport = false
         showDeviceSetup = false
         showRestore = false
+        showHostDevice = false
         // The offer holds the typed password: never kept past a lock.
         biometricOffer = nil
         showSettings = false

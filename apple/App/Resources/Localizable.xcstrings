@@ -14404,6 +14404,276 @@
           }
         }
       }
+    },
+    "Afficher un QR code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show a QR code"
+          }
+        }
+      }
+    },
+    "Appairage" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pairing"
+          }
+        }
+      }
+    },
+    "Cet appareil affiche un QR code, que ton iPhone ou ton iPad scanne (Réglages > Appareils)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device shows a QR code, which your iPhone or iPad scans (Settings > Devices)."
+          }
+        }
+      }
+    },
+    "Choisis « J'ai déjà OnePass sur un autre appareil », puis scanne ce QR code avec la caméra de OnePass, ou saisis le code." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose “I already have OnePass on another device”, then scan this QR code with OnePass's camera, or type the code."
+          }
+        }
+      }
+    },
+    "Code d'appairage" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pairing code"
+          }
+        }
+      }
+    },
+    "Comment relier cet appareil ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How do you want to link this device?"
+          }
+        }
+      }
+    },
+    "Connexion à ton autre appareil..." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting to your other device..."
+          }
+        }
+      }
+    },
+    "Le Mac affiche un QR code et un code à saisir sur le nouvel appareil, après « J'ai déjà OnePass sur un autre appareil ». Un nouvel appareil peut aussi afficher son QR code, à scanner avec ton iPhone ou ton iPad." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Mac shows a QR code and a code to type on the new device, after “I already have OnePass on another device”. A new device can also show its own QR code, to scan with your iPhone or iPad."
+          }
+        }
+      }
+    },
+    "Le même code doit s'afficher sur le nouvel appareil. S'il est différent, quelqu'un d'autre essaie de se connecter." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The same code must appear on the new device. If it differs, someone else is trying to connect."
+          }
+        }
+      }
+    },
+    "Ou saisis ce code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Or type this code"
+          }
+        }
+      }
+    },
+    "Rejoindre" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Join"
+          }
+        }
+      }
+    },
+    "Saisir le code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type the code"
+          }
+        }
+      }
+    },
+    "Saisir le code à la place" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type the code instead"
+          }
+        }
+      }
+    },
+    "Saisir un code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type a code"
+          }
+        }
+      }
+    },
+    "Saisis le code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type the code"
+          }
+        }
+      }
+    },
+    "Saisis le code affiché sur ton autre appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the code shown on your other device."
+          }
+        }
+      }
+    },
+    "Scanne le QR code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan the QR code"
+          }
+        }
+      }
+    },
+    "Scanner le QR code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan the QR code"
+          }
+        }
+      }
+    },
+    "Scanner un QR code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan a QR code"
+          }
+        }
+      }
+    },
+    "Sur le nouvel appareil" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the new device"
+          }
+        }
+      }
+    },
+    "Sur ton Mac : Fichier > Configurer un appareil… Cet appareil scanne le QR code qui s'affiche." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On your Mac: File > Set Up a Device… This device scans the QR code that appears."
+          }
+        }
+      }
+    },
+    "Sur ton Mac : Fichier > Configurer un appareil… Le code à 8 caractères s'affiche sous le QR code." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On your Mac: File > Set Up a Device… The 8-character code appears under the QR code."
+          }
+        }
+      }
+    },
+    "Sur ton Mac : Fichier > Configurer un appareil… Place le QR code dans le cadre." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On your Mac: File > Set Up a Device… Put the QR code in the frame."
+          }
+        }
+      }
+    },
+    "Sur ton Mac : Fichier > Configurer un appareil… Tape le code à 8 caractères qui s'affiche." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On your Mac: File > Set Up a Device… Type the 8-character code that appears."
+          }
+        }
+      }
+    },
+    "Ton autre appareil le valide : tu compares un code sur les deux écrans. Rien ne passe par un serveur." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your other device approves it: you compare a code on both screens. Nothing goes through a server."
+          }
+        }
+      }
+    },
+    "Une session invitée se prête depuis un iPhone ou un iPad. Ce Mac ne prête pas d'éléments." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A guest session is lent from an iPhone or an iPad. This Mac does not lend items."
+          }
+        }
+      }
+    },
+    "Utilise ton iPhone ou ton iPad" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use your iPhone or iPad"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

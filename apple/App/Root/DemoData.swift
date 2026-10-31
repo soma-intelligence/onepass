@@ -26,6 +26,7 @@ import UIKit
 ///   the lock screen shows its button even in an unsigned build. `-OnePassDemoBiometrics NO` leaves
 ///   it off; `-OnePassDemoNoAutoBiometrics YES` skips the automatic attempt of the lock screen
 ///   (captures); `-OnePassDemoBiometricOffer YES` stays unlocked and shows the first-unlock offer.
+/// - `-OnePassDemoHostDevice YES` (Mac): opens "Configurer un appareil…" once the data is there.
 /// - `-OnePassSnapshot <folder>` (Mac): implies the demo data, renders the window into PNGs, quits.
 enum DemoData {
     static let password = "demo-onepass-2026"
@@ -225,6 +226,7 @@ extension AppModel {
                 }
                 #endif
                 #if os(macOS)
+                if defaults.bool(forKey: "OnePassDemoHostDevice") { showHostDevice = true }
                 if let folder = DemoData.snapshotOutput { await Snapshot.run(model: self, directory: folder) }
                 #endif
             } catch {

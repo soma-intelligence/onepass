@@ -2,13 +2,16 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Appareils (spec 2b 4.3): the signed device list, "Ajouter un appareil" on iPhone and iPad (the Mac
-/// and Vision Pro are added, they do not approve, ruling A2), "Retirer cet appareil" for any other
-/// device (ruling A6) after a confirmation and a fresh presence check (ruling A8), then the advice to
-/// change the master password.
+/// Appareils (spec 2b 4.3): the signed device list, "Ajouter un appareil" on iPhone and iPad (scan the
+/// new device's QR), "Configurer un appareil…" on the Mac (it shows the code, the new device joins it),
+/// "Retirer cet appareil" for any other device (ruling A6) after a confirmation and a fresh presence
+/// check (ruling A8), then the advice to change the master password.
 struct DevicesSettings: View {
     @Environment(AppModel.self) private var model
     @State private var approving = false
+    #if os(macOS)
+    @State private var hosting = false
+    #endif
     @State private var confirmRevoke: FfiDevice?
     @State private var passwordForRevoke: DeviceTarget?
     @State private var revokedName: String?
@@ -73,9 +76,13 @@ struct DevicesSettings: View {
                 }
                 .accessibilityIdentifier("settings.devices.invite")
                 #else
-                Label("Utilise ton iPhone ou ton iPad pour approuver un nouvel appareil.", systemImage: "iphone")
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("settings.devices.useIPhone")
+                Button {
+                    errorMessage = nil
+                    hosting = true
+                } label: {
+                    Label("Configurer un appareil…", systemImage: "qrcode")
+                }
+                .accessibilityIdentifier("settings.devices.host")
                 #endif
             } footer: {
                 #if os(iOS)
@@ -113,6 +120,10 @@ struct DevicesSettings: View {
         #if os(iOS) || os(macOS)
         .sheet(isPresented: $approving, onDismiss: { Task { await reload() } }) {
             ApproveDeviceSheet()
+        }
+        #elseif os(macOS)
+        .sheet(isPresented: $hosting, onDismiss: { Task { await reload() } }) {
+            HostDeviceSheet()
         }
         #endif
         .confirmationDialog(

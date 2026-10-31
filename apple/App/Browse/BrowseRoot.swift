@@ -46,6 +46,12 @@ struct BrowseRoot: View {
             .sheet(isPresented: $model.showRestore) {
                 RestoreSheet()
             }
+            #if os(macOS)
+            // Fichier > Configurer un appareil… : the pairing code for a new device.
+            .sheet(isPresented: $model.showHostDevice) {
+                HostDeviceSheet()
+            }
+            #endif
             // "Copier le code à usage unique" when the device cannot confirm the user itself.
             .sheet(item: $model.totpPasswordRequest) { ref in
                 PasswordPromptSheet(

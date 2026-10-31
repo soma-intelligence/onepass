@@ -84,7 +84,8 @@ struct ApproveDeviceSheet: View {
             #endif
         case .inviting(let text, let expiresAt):
             InviteStep(text: text, expiresAt: expiresAt)
-        case .connecting:
+        case .connecting, .hosting:
+            // `hosting` is the Mac's way in (the code is shown there); this sheet scans.
             status("Connexion au nouvel appareil...", detail: "Les deux appareils doivent être proches, sur le même Wi-Fi.")
         case .comparing(let sas, let peer, let requestedMode):
             #if os(iOS)

@@ -78,6 +78,7 @@
 		6A373D25175955A17E5FA4D5 /* CredentialProviderViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD00F838E547B9C5D469BC6D /* CredentialProviderViewController.swift */; };
 		6D1E31391256D47556236B57 /* GlanceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADC8BC0D910001EC096242B /* GlanceProvider.swift */; };
 		727572DCA29C624F6444CEEA /* SecretKeyScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F862061FDCD55EF5FD6C95 /* SecretKeyScanner.swift */; };
+		7A2B262E6969EE52D3FC0950 /* HostDeviceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C58541193889A75520499FE /* HostDeviceSheet.swift */; };
 		7D0DDE3FABB48308DBAC99CD /* OnePassApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D64EBFE57E2DE8181340998 /* OnePassApp.swift */; };
 		7DF62A388EF15365E18729D9 /* FieldValueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7347C36F3EBEC57C4780E87 /* FieldValueView.swift */; };
 		7ED93210A934374EA1850A74 /* FavoritesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68FAA9A80B992B1D8AA9DA62 /* FavoritesWidget.swift */; };
@@ -85,6 +86,7 @@
 		8056504EB5156484E181E826 /* PairingModeStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = E51EA5D5ECD9582330AC16CA /* PairingModeStep.swift */; };
 		80FA3B25AF70952D5B793680 /* CompanionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D93279993588E6596ACA28A1 /* CompanionCoordinator.swift */; };
 		81B5B3F5574765BBFB58EB77 /* ItemEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF78448AAEC42C44F2E16FB /* ItemEntity.swift */; };
+		853CD7C3CDC04BE25D53319B /* JoinCodeSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50C7FBA0DC3ED271077D28C /* JoinCodeSteps.swift */; };
 		88252B461F361E3E77E3BC1A /* SyncSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E7C87AC5BA6F2B579609522 /* SyncSettings.swift */; };
 		88855E27AFF53DF2C4EA1589 /* AgentsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37A148525A5253544CE1AB8D /* AgentsSettings.swift */; };
 		8DA415577E16E2A2EC1F29F0 /* VaultEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 530DC4BC2A94EFF67DD9F0EF /* VaultEditorView.swift */; };
@@ -270,6 +272,7 @@
 		07F862061FDCD55EF5FD6C95 /* SecretKeyScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretKeyScanner.swift; sourceTree = "<group>"; };
 		088FED1C489272E05F9E76CC /* RevokedDeviceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevokedDeviceView.swift; sourceTree = "<group>"; };
 		0BD7A17DB13CA04B2F0C4933 /* AddressEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddressEditor.swift; sourceTree = "<group>"; };
+		0C58541193889A75520499FE /* HostDeviceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostDeviceSheet.swift; sourceTree = "<group>"; };
 		0CBA904F1F157D072B427852 /* ReadOnlyFieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadOnlyFieldView.swift; sourceTree = "<group>"; };
 		0D2CBC8A40BF965B7FA9A227 /* WatchtowerTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTab.swift; sourceTree = "<group>"; };
 		0D64EBFE57E2DE8181340998 /* OnePassApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassApp.swift; sourceTree = "<group>"; };
@@ -375,6 +378,7 @@
 		C12E0E8286297CA68D0517E2 /* DeveloperSettingsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingsPage.swift; sourceTree = "<group>"; };
 		C1B99E34B1CA7214163402DD /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		C4A344652AA716F92A12D10F /* OnePassWatchWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWatchWidgets.swift; sourceTree = "<group>"; };
+		C50C7FBA0DC3ED271077D28C /* JoinCodeSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinCodeSteps.swift; sourceTree = "<group>"; };
 		C83485D924585FA30495DE07 /* SplitBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitBrowseView.swift; sourceTree = "<group>"; };
 		C89189A5B59E73F9B657D77B /* EntryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryListView.swift; sourceTree = "<group>"; };
 		CFF11DA958080038BA1B310F /* IntegrityFailureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrityFailureView.swift; sourceTree = "<group>"; };
@@ -847,6 +851,8 @@
 			isa = PBXGroup;
 			children = (
 				7E2696615474BD4D50D1B25C /* ApproveDeviceSheet.swift */,
+				0C58541193889A75520499FE /* HostDeviceSheet.swift */,
+				C50C7FBA0DC3ED271077D28C /* JoinCodeSteps.swift */,
 				7A6857D334917C685876DF29 /* PairingCodeView.swift */,
 				E51EA5D5ECD9582330AC16CA /* PairingModeStep.swift */,
 				4B7F408977317BA9B16FDD68 /* PairingPasswordStep.swift */,
@@ -1403,6 +1409,7 @@
 				0283FD5F51CA58AA05D74578 /* GeneratorSheet.swift in Sources */,
 				2753A5E46E6521FB36D5AC02 /* GlanceMapping.swift in Sources */,
 				3DA9195F5E3C77FBE22E96EE /* HomeTab.swift in Sources */,
+				7A2B262E6969EE52D3FC0950 /* HostDeviceSheet.swift in Sources */,
 				AFBE12EE3D68AE79110EA0D1 /* ImportSheet.swift in Sources */,
 				BEE689BB8A0E7E69B6AF46DB /* IntegrityFailureView.swift in Sources */,
 				0C1F0AF7291B0BE18AD31812 /* IntentBridge.swift in Sources */,
@@ -1415,6 +1422,7 @@
 				6836074F1CF5DEF5FFD74991 /* ItemListColumn.swift in Sources */,
 				F40BBE052065BF7A31B7C236 /* ItemListRow.swift in Sources */,
 				29FC439915D5B752F395D5E2 /* ItemsTab.swift in Sources */,
+				853CD7C3CDC04BE25D53319B /* JoinCodeSteps.swift in Sources */,
 				BED4FFF5015AA471247306D8 /* KitPrinter.swift in Sources */,
 				2E2A86CDE42259837AD6756F /* KitShareController.swift in Sources */,
 				1920E0C0A4999B60233A7594 /* LocationEditor.swift in Sources */,
