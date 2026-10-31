@@ -4,7 +4,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use super::{Record, RecordKind, RecordStore, check_local_meta_key};
+use super::{Record, RecordKind, RecordStore, check_local_meta_key, check_local_meta_prefix};
 use crate::chain::ChainState;
 use crate::trust::TrustState;
 use crate::{Error, Id, Result};
@@ -154,6 +154,7 @@ impl RecordStore for SqliteStore {
     }
 
     fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {
+        check_local_meta_prefix(prefix)?;
         meta_keys_on(&self.conn, prefix)
     }
 

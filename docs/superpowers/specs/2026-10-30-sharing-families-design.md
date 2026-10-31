@@ -129,7 +129,7 @@ ContactEntry {
 
 Fusion : deux genèses pour un même compte, l'entrée la plus ancienne reste entière et le carnet lève une alerte (la genèse est comparée avant tout : une genèse forgée ne gagne jamais en montant son compteur, et son retrait ne touche pas l'entrée gardée) ; à genèse égale, l'incarnation la plus haute gagne entière ; dans une incarnation, `Removed` gagne ; `Verified` gagne sur `Link` à identité égale ; une identité plus récente (lignée plus longue validée et confirmée) remplace l'ancienne.
 
-Réajout (arbitrage du plan, 2026-10-31) : un contact retiré ne revient que par une nouvelle vérification au niveau `Verified` (en face à face ou numéro de sécurité comparé), qui écrit l'incarnation suivante ; un réajout au niveau `Link` est refusé. Un retrait vaut pour son incarnation et n'atteint jamais une incarnation plus haute. Un appareil retiré du compte (T1) pourrait, avant son retrait, signer une entrée forgée : c'est un appareil légitime jusque-là (hors périmètre de la rotation v2 aussi) ; après la rotation, ses signatures sous l'ancienne identité ne sont plus acceptées.
+Réajout (arbitrage du plan, 2026-10-31) : un contact retiré ne revient que par une nouvelle vérification en face à face (QR et SAS), au niveau `Verified`, qui écrit l'incarnation suivante ; un réajout au niveau `Link` est refusé, donc une invitation à distance ne le ramène pas, et le numéro de sécurité ne s'applique pas à un contact retiré (il ne fait passer à `Verified` qu'un contact actif au niveau `Link`, après comparaison du numéro affiché, recalculé au moment de confirmer). Un retrait vaut pour son incarnation et n'atteint jamais une incarnation plus haute. Un appareil retiré du compte (T1) pourrait, avant son retrait, signer une entrée forgée : c'est un appareil légitime jusque-là (hors périmètre de la rotation v2 aussi) ; après la rotation, ses signatures sous l'ancienne identité ne sont plus acceptées.
 
 Les noms affichés viennent toujours du carnet local, jamais d'une carte ou du serveur (même règle que la rotation v2, section 9).
 
@@ -605,10 +605,10 @@ Ce que l'offre Équipe reprend sans changement : carnet et vérification, liste 
 
 | Label | Sorte | Clé | Porte sur |
 | --- | --- | --- | --- |
-| `onepass/contact/v1` | `wrap_key_labeled` | éphémère | clé de canal de la vérification en face à face |
+| `onepass/contact/v1` | `wrap_key_labeled` | éphémère | clé de canal de la vérification en face à face ; clé de la réponse d'Alice à l'invitation à distance (contexte `SHA-256(rdv_id \|\| reply_bytes)`, arbitrage A-5) |
 | `onepass/contact-card/v1` | domaine de signature | identité (SLH-DSA) | `ContactCard` |
 | `onepass/contact-fpr/v1` | préfixe de hash | | empreinte d'un compte |
-| `onepass/contact-invite/v1` | info HKDF | | `K_inv` |
+| `onepass/contact-invite/v1` | info HKDF ; label `wrap_key_labeled` | `invite_secret` ; KEM du compte | `K_inv` ; copie locale du secret d'invitation sur l'appareil émetteur (contexte `invite_id`, jamais synchronisée) |
 | `onepass/invite-rdv/v1` | préfixe de hash | | id du rendez-vous public |
 | `onepass/share/vault-key/v1` | `wrap_key_labeled` | KEM du membre | clé de coffre de génération `g` |
 | `onepass/member-key-id/v1` | préfixe de hash | | id d'enveloppe |

@@ -18,7 +18,7 @@ use crate::lineage::{
 };
 use crate::repo::Repository;
 use crate::store::{RecordKind, RecordStore};
-use crate::trust::LineageHead;
+use crate::trust::{LineageHead, TrustState};
 use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
 const BAD: Error = Error::InvalidFormat("contact card");
@@ -262,6 +262,36 @@ impl SignedContactCard {
 }
 
 impl<S: RecordStore> Repository<S> {
+    /// This account's lineage from its genesis to the head pinned by
+    /// `trust`, read from the store. Records that do not decode or belong
+    /// to another account are ignored; a missing one is `NotFound`.
+    pub(super) fn own_lineage(&self, trust: &TrustState) -> Result<Vec<LineageRecord>> {
+        let account_id = trust.account_id;
+
+        // Lineage records by hash; the ones that do not decode or belong
+        // to another account are ignored (the server may plant them).
+        let mut by_hash = BTreeMap::new();
+        for r in self.store.list(RecordKind::Lineage)? {
+            if let Ok(record) = LineageRecord::decode(&r.data)
+                && record.account_id() == account_id
+            {
+                by_hash.insert(record.hash(), record);
+            }
+        }
+        let mut lineage = Vec::new();
+        let mut at = Some(trust.head.hash);
+        while let Some(hash) = at {
+            let record = by_hash.remove(&hash).ok_or(Error::NotFound)?;
+            at = record.parent();
+            lineage.push(record);
+            if lineage.len() as u64 > trust.head.generation.saturating_add(1) {
+                return Err(bad("contact card lineage"));
+            }
+        }
+        lineage.reverse();
+        Ok(lineage)
+    }
+
     /// This account's card at the head pinned by the local trust state:
     /// the whole lineage from the genesis, the intros accepted under each
     /// of its records (`accepted_intros`), the params record of the
@@ -286,28 +316,7 @@ impl<S: RecordStore> Repository<S> {
             return Err(IntegrityError::WrongContext.into());
         }
         let account_id = trust.account_id;
-
-        // Lineage records by hash; the ones that do not decode or belong
-        // to another account are ignored (the server may plant them).
-        let mut by_hash = BTreeMap::new();
-        for r in self.store.list(RecordKind::Lineage)? {
-            if let Ok(record) = LineageRecord::decode(&r.data)
-                && record.account_id() == account_id
-            {
-                by_hash.insert(record.hash(), record);
-            }
-        }
-        let mut lineage = Vec::new();
-        let mut at = Some(trust.head.hash);
-        while let Some(hash) = at {
-            let record = by_hash.remove(&hash).ok_or(Error::NotFound)?;
-            at = record.parent();
-            lineage.push(record);
-            if lineage.len() as u64 > trust.head.generation.saturating_add(1) {
-                return Err(bad("contact card lineage"));
-            }
-        }
-        lineage.reverse();
+        let lineage = self.own_lineage(&trust)?;
         let genesis = lineage[0].hash();
 
         // Intros and legacy intros share the `DeviceIntro` kind; each

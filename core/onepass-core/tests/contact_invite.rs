@@ -7,16 +7,21 @@ mod common;
 
 use aws_lc_rs::digest::{SHA256, digest};
 use common::*;
+use onepass_core::account::Account;
+use onepass_core::contact::ContactCard;
 use onepass_core::contact::{
     CONTACT_INVITE_META_PREFIX, CONTACT_INVITE_TTL_SECS, CONTACT_LINK_PREFIX, ContactEntry,
     ContactInvite, ContactLevel, ContactState, InviteAnswer, InviteReply, SignedContactCard,
-    invite_transcript, open_answer, open_reply, seal_answer, seal_reply,
+    format_safety_number, invite_transcript, open_answer, open_reply, safety_number, seal_answer,
+    seal_reply,
 };
+use onepass_core::crypto::IdentityKey;
 use onepass_core::crypto::{Aad, BlobKind, SymmetricKey, seal};
 use onepass_core::device_keys::{DeviceKeys, DevicePublic};
 use onepass_core::devices::{DeviceKind, DeviceMode};
 use onepass_core::lineage::{
-    GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, sign_genesis,
+    GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, RotationBody, RotationReason,
+    sign_genesis, sign_rotation,
 };
 use onepass_core::trust::{LineageHead, TrustLevel, TrustState};
 
@@ -449,13 +454,44 @@ fn link_round_trip() {
 fn safety_number_upgrades_to_verified() {
     let mut alice = person("Alice");
     let mut bob = person("Bob");
-    let (on_alice, _) = link_pair(&mut alice, &mut bob);
+    let (on_alice, on_bob) = link_pair(&mut alice, &mut bob);
     let bob_id = on_alice.account_id;
+
+    // The same number on both phones.
+    let shown = alice.dev.repo().contact_safety_number(bob_id).unwrap();
+    assert_eq!(
+        bob.dev
+            .repo()
+            .contact_safety_number(on_bob.account_id)
+            .unwrap(),
+        shown
+    );
+    assert_eq!(
+        shown,
+        safety_number(
+            &alice.dev.repo().own_fingerprint().unwrap(),
+            &bob.dev.repo().own_fingerprint().unwrap()
+        )
+    );
+    assert_eq!(format_safety_number(&shown).len(), 12 * 5 + 11);
+
+    // Another number (a typo, another pair): refused, nothing written.
+    let mut other = shown;
+    other[11] = (other[11] + 1) % 100_000;
+    assert!(is_validation(&alice.dev.repo().confirm_safety_number(
+        bob_id,
+        &other,
+        NOW + 9
+    )));
+    assert_eq!(
+        alice.dev.repo().contact(bob_id).unwrap().unwrap().level,
+        ContactLevel::Link
+    );
 
     let e = alice
         .dev
         .repo()
-        .confirm_safety_number(bob_id, NOW + 10)
+        .confirm_safety_number(bob_id, &shown, NOW + 10)
         .unwrap();
     assert_eq!(e.level, ContactLevel::Verified);
     assert_eq!(e.verified_at, NOW + 10);
@@ -466,15 +502,17 @@ fn safety_number_upgrades_to_verified() {
     assert_eq!(alice.dev.repo().contact(bob_id).unwrap(), Some(e.clone()));
 
     // Once Verified, nothing more to confirm.
-    assert!(is_validation(
-        &alice.dev.repo().confirm_safety_number(bob_id, NOW + 11)
-    ));
+    assert!(is_validation(&alice.dev.repo().confirm_safety_number(
+        bob_id,
+        &shown,
+        NOW + 11
+    )));
     // Unknown.
     assert_eq!(
         alice
             .dev
             .repo()
-            .confirm_safety_number(Id([3; 16]), NOW + 11)
+            .confirm_safety_number(Id([3; 16]), &shown, NOW + 11)
             .unwrap_err(),
         Error::NotFound
     );
@@ -495,10 +533,13 @@ fn safety_number_refuses_removed_contact() {
     let mut bob = person("Bob");
     let (on_alice, _) = link_pair(&mut alice, &mut bob);
     let bob_id = on_alice.account_id;
+    let shown = alice.dev.repo().contact_safety_number(bob_id).unwrap();
     alice.dev.repo().remove_contact(bob_id, NOW + 5).unwrap();
-    assert!(is_validation(
-        &alice.dev.repo().confirm_safety_number(bob_id, NOW + 6)
-    ));
+    assert!(is_validation(&alice.dev.repo().confirm_safety_number(
+        bob_id,
+        &shown,
+        NOW + 6
+    )));
     let e = alice.dev.repo().contact(bob_id).unwrap().unwrap();
     assert_eq!(e.level, ContactLevel::Link);
     assert!(matches!(e.state, ContactState::Removed { .. }));
@@ -623,5 +664,174 @@ fn local_meta_taking_is_all_or_nothing() {
                 .unwrap_err(),
             Error::Conflict
         );
+    }
+}
+
+/// A synthetic contact: its card at its genesis, and at a valid rotation
+/// of it to a new identity.
+fn rotating_contact() -> (SignedContactCard, SignedContactCard) {
+    let n = Account::create_with_params(PASSWORD, kdf()).unwrap();
+    let account_id = n.account.params.account_id;
+    let identity = IdentityKey::from_bytes(&n.account.keyset().identity.to_bytes()).unwrap();
+    let keys = DeviceKeys::generate_software().unwrap();
+    let public = keys.public(Id::new()).unwrap();
+    let genesis = LineageRecord::Genesis(
+        sign_genesis(
+            GenesisBody {
+                format: LINEAGE_FORMAT,
+                account_id,
+                identity_pub: identity.verifying_key(),
+                creator: entry_of(&public, "iPhone"),
+                created_at: T0,
+            },
+            &keys,
+            &identity,
+        )
+        .unwrap(),
+    );
+    let r = n
+        .account
+        .rotate_keys(
+            PASSWORD,
+            &SecretKey::generate().unwrap(),
+            &n.account.params.kdf,
+        )
+        .unwrap();
+    let next = IdentityKey::from_bytes(&r.account.keyset().identity.to_bytes()).unwrap();
+    let mut params_hash = [0u8; 32];
+    params_hash.copy_from_slice(digest(&SHA256, &r.params_record).as_ref());
+    let rotation = LineageRecord::Rotation(
+        sign_rotation(
+            RotationBody {
+                format: LINEAGE_FORMAT,
+                account_id,
+                generation: 1,
+                parent: genesis.hash(),
+                rotator: public.device_id,
+                reason: RotationReason::Rotate,
+                revoked: vec![],
+                roster: vec![entry_of(&public, "iPhone")],
+                identity_pub: next.verifying_key(),
+                params_hash,
+                keyset_hash: [0x4B; 32],
+                deliveries: vec![],
+                from_heads: BTreeMap::new(),
+                issued_at: T0 + 30,
+            },
+            &keys,
+            &next,
+        )
+        .unwrap(),
+    );
+    let card = |identity: &IdentityKey, params: &[u8], lineage: Vec<LineageRecord>| {
+        let last = lineage.last().unwrap();
+        SignedContactCard::sign(
+            ContactCard {
+                format: 1,
+                account_id,
+                genesis: lineage[0].hash(),
+                head: LineageHead {
+                    generation: last.generation(),
+                    hash: last.hash(),
+                },
+                identity_pub: identity.verifying_key(),
+                params: params.to_vec(),
+                lineage,
+                intros: vec![],
+                legacy_intros: vec![],
+                genesis_params: None,
+                name: "Dan".into(),
+                issued_at: T0 + 60,
+            },
+            identity,
+        )
+        .unwrap()
+    };
+    (
+        card(&identity, &n.params_record, vec![genesis.clone()]),
+        card(&next, &r.params_record, vec![genesis, rotation]),
+    )
+}
+
+#[test]
+fn safety_number_refused_after_repin() {
+    let (at_genesis, rotated) = rotating_contact();
+    let dan = at_genesis.card.account_id;
+    let mut alice = person("Alice");
+    let mut second = Device::empty();
+    pull(&alice.server, &mut second);
+    second.unlock(&alice.sk);
+
+    // This device pins Dan at his genesis and shows the number.
+    alice
+        .dev
+        .repo()
+        .test_pin_contact(&at_genesis, ContactLevel::Link, [1; 32], NOW)
+        .unwrap();
+    let shown = alice.dev.repo().contact_safety_number(dan).unwrap();
+
+    // Meanwhile the account's other device pinned his rotated card; the
+    // books merge and the newer head wins here.
+    second
+        .repo()
+        .test_pin_contact(&rotated, ContactLevel::Link, [2; 32], NOW + 1)
+        .unwrap();
+    sync(&mut alice.server, &mut second).unwrap();
+    let _ = sync(&mut alice.server, &mut alice.dev);
+    alice.dev.repo().rebase().unwrap();
+    sync(&mut alice.server, &mut alice.dev).unwrap();
+    let moved = alice.dev.repo().contact(dan).unwrap().unwrap();
+    assert_eq!(moved.pinned_head, rotated.card.head);
+    assert_eq!(moved.level, ContactLevel::Link);
+
+    // The number shown was for the old identity: refused, still Link.
+    assert!(is_validation(&alice.dev.repo().confirm_safety_number(
+        dan,
+        &shown,
+        NOW + 5
+    )));
+    assert_eq!(
+        alice.dev.repo().contact(dan).unwrap().unwrap().level,
+        ContactLevel::Link
+    );
+    // The number of the identity now pinned is a new comparison.
+    let now_shown = alice.dev.repo().contact_safety_number(dan).unwrap();
+    assert_ne!(now_shown, shown);
+    let e = alice
+        .dev
+        .repo()
+        .confirm_safety_number(dan, &now_shown, NOW + 6)
+        .unwrap();
+    assert_eq!(e.level, ContactLevel::Verified);
+    assert_eq!(e.pinned_head, rotated.card.head);
+}
+
+#[test]
+fn invites_pruned_and_prefix_checked() {
+    let mut alice = person("Alice");
+    let old = alice.dev.repo().create_contact_invite(NOW).unwrap();
+    assert_eq!(
+        alice
+            .dev
+            .repo()
+            .prune_contact_invites(NOW + CONTACT_INVITE_TTL_SECS)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        alice
+            .dev
+            .repo()
+            .prune_contact_invites(NOW + CONTACT_INVITE_TTL_SECS + 1)
+            .unwrap(),
+        1
+    );
+    assert!(meta_of(&mut alice, &old).is_none());
+    // Store-internal key names are never listed.
+    for bad in ["", "t", "contact_invite"] {
+        assert!(matches!(
+            alice.dev.repo().store_mut().local_meta_keys(bad),
+            Err(Error::Validation(_))
+        ));
     }
 }
