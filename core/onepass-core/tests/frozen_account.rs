@@ -31,8 +31,15 @@ const IDENTITY_PUB: &str = concat!(
     "ec24226c09e048fdf7c3c592eb77d76965cd61c7716bfe0558705db18085c58a",
 );
 
+/// The fixture directory. `ONEPASS_CORE_FIXTURES` points at a copy of
+/// `tests/fixtures` when the test runs away from the source tree (the Android
+/// emulator, see android/scripts/test-core-emulator.sh).
 fn dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/frozen-account")
+    let root = std::env::var_os("ONEPASS_CORE_FIXTURES").map_or_else(
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures"),
+        PathBuf::from,
+    );
+    root.join("frozen-account")
 }
 
 struct Fixture {

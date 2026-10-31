@@ -16,3 +16,6 @@ extension/lab/out/
 
 # ProVerif (formal/run.sh logs and intermediate files)
 formal/out/
+
+# Android: libraries built by android/scripts/build-core.sh
+android/vaultkit-android/src/main/jniLibs/

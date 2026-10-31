@@ -1,0 +1,72 @@
+name: android
+
+on:
+  push:
+    paths:
+      - "core/**"
+      - "android/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "core/**"
+      - "android/**"
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The Rust core and the FFI on Android (plan X4, Task 1): both ABIs built
+  # with the pinned NDK and checked for 16 KiB pages, then every test of
+  # onepass-core and onepass-ffi run inside an API 29 x86_64 emulator.
+  core:
+    name: core (Android API 29 emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # Hardware acceleration for the x86_64 emulator.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Pinned versions
+        run: |
+          . android/scripts/versions.env
+          {
+            echo "ANDROID_NDK_VERSION=$ANDROID_NDK_VERSION"
+            echo "CARGO_NDK_VERSION=$CARGO_NDK_VERSION"
+            echo "ANDROID_MIN_API=$ANDROID_MIN_API"
+          } >> "$GITHUB_ENV"
+      # rustup reads core/rust-toolchain.toml (toolchain and Android targets).
+      - name: Install the pinned toolchain
+        working-directory: core
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Install the pinned NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ANDROID_NDK_VERSION" > /dev/null
+          ls "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version "$CARGO_NDK_VERSION" --locked
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: core
+          key: android
+      - name: Build libonepass_ffi.so (arm64-v8a, x86_64) and check 16 KiB pages
+        run: android/scripts/build-core.sh release
+      - name: Core and FFI tests in the emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          ONEPASS_TEST_ABI: x86_64
+        with:
+          api-level: ${{ env.ANDROID_MIN_API }}
+          target: default
+          arch: x86_64
+          ram-size: 4096M
+          disk-size: 6144M
+          avd-name: onepass-api29
+          script: android/scripts/test-core-emulator.sh
