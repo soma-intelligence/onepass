@@ -82,3 +82,13 @@ deno_version = 2
 # base64, see mailbox/scripts/build-proto-wasm.sh): no static file to ship.
 [functions.mailbox]
 verify_jwt = false
+
+# The two janitor functions are called by pg_cron through pg_net with
+# Authorization: Bearer <mailbox_cron_key> (a Vault secret), not a Supabase
+# JWT: they check the key themselves, in constant time, before any database
+# or Storage call.
+[functions.mailbox-push]
+verify_jwt = false
+
+[functions.mailbox-gc]
+verify_jwt = false

@@ -102,7 +102,10 @@ fi
 
 for t in "${tests[@]}"; do
     echo "# $(basename "$t")"
-    if ! { printf 'begin;\n\\i '\''%s'\''\nrollback;\n' "$t" | run_psql 2>&1 | filter; }; then
+    # Every test starts with open signup switched on in the database (the
+    # fixtures create mailboxes without invites); open_signup_test.sql turns
+    # it off itself to test the switch.
+    if ! { printf 'begin;\ninsert into onepass_mailbox.settings (name, value) values ('\''open_signup'\'', '\''on'\'');\n\\i '\''%s'\''\nrollback;\n' "$t" | run_psql 2>&1 | filter; }; then
         echo "FAILED $(basename "$t")" >&2
         exit 1
     fi
