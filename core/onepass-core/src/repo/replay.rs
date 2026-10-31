@@ -95,9 +95,11 @@ pub struct ReplayReport {
 /// and meta row of the vault it still holds (visible, pending, kept,
 /// retained), and whether it holds a pending manifest of that identity.
 struct OldView {
-    key: Record,
-    kem: usize,
-    vault: Vault,
+    /// Every copy that opens: its vault key row, the index of the KEM
+    /// secret that opens it, the vault. Since the retained rows keep one
+    /// copy per identity (Task 19 carried item 3) there may be several,
+    /// and each intent's record opens under the one it was sealed with.
+    opened: Vec<(Record, usize, Vault)>,
     items: Vec<ItemRecord>,
     metas: Vec<Record>,
     pending: bool,
@@ -361,20 +363,23 @@ impl<S: RecordStore> Repository<S> {
             .iter()
             .chain(std::iter::once(&keyset.kem))
             .collect();
-        let mut found = None;
-        'open: for key in of(RecordKind::VaultKey) {
-            for meta in of(RecordKind::VaultMeta) {
+        let mut opened: Vec<(Record, usize, Vault)> = Vec::new();
+        for key in of(RecordKind::VaultKey) {
+            if opened.iter().any(|(k, _, _)| k.data == key.data) {
+                continue;
+            }
+            'key: for meta in of(RecordKind::VaultMeta) {
                 for (kem, secret) in secrets.iter().enumerate() {
                     if let Ok(v) = Vault::open_with_kem(secret, vault, &key.data, &meta.data) {
-                        found = Some((key.clone(), kem, v));
-                        break 'open;
+                        opened.push((key.clone(), kem, v));
+                        break 'key;
                     }
                 }
             }
         }
-        let Some((key, kem, old)) = found else {
+        if opened.is_empty() {
             return Ok(None);
-        };
+        }
         let metas = of(RecordKind::VaultMeta).cloned().collect();
         let mut items: Vec<ItemRecord> = self
             .store
@@ -391,9 +396,7 @@ impl<S: RecordStore> Repository<S> {
         }
         let pending = self.left_signed_vaults()?.contains(&vault);
         Ok(Some(OldView {
-            key,
-            kem,
-            vault: old,
+            opened,
             items,
             metas,
             pending,
@@ -410,7 +413,7 @@ impl<S: RecordStore> Repository<S> {
         old.items
             .iter()
             .find(|i| i.item_id == w.item && record_hash(i) == h)
-            .and_then(|i| old.vault.open_item(i).ok())
+            .and_then(|i| old.opened.iter().find_map(|(_, _, v)| v.open_item(i).ok()))
             .map(Some)
             .ok_or(())
     }
@@ -421,13 +424,15 @@ impl<S: RecordStore> Repository<S> {
         let h = w.wrote?;
         let row = old.metas.iter().find(|m| meta_hash(&m.data) == h)?;
         let keyset = self.account.keyset();
-        let kem = keyset
-            .retired_kem
-            .get(old.kem)
-            .or_else(|| (old.kem == keyset.retired_kem.len()).then_some(&keyset.kem))?;
-        Vault::open_with_kem(kem, w.vault, &old.key.data, &row.data)
-            .ok()
-            .map(|v| v.meta)
+        old.opened.iter().find_map(|(key, kem, _)| {
+            let kem = keyset
+                .retired_kem
+                .get(*kem)
+                .or_else(|| (*kem == keyset.retired_kem.len()).then_some(&keyset.kem))?;
+            Vault::open_with_kem(kem, w.vault, &key.data, &row.data)
+                .ok()
+                .map(|v| v.meta)
+        })
     }
 
     /// Whether the visible vault key of `vault` opens under the session's
