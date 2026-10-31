@@ -299,6 +299,11 @@ pub fn sign_manifest(
 /// an older seq is refused; the same seq must be the very same manifest
 /// (else a fork); the next seq must chain to it through `prev_hash`; a
 /// larger gap must find it in `ext.history` (see `gap_consistent`).
+/// Whether `verifier` signed `sm` (the signature only: nothing is opened).
+pub(crate) fn signed_by(sm: &SignedManifest, verifier: &HybridVerifyingKey) -> bool {
+    verifier.verify(DOMAIN, &sm.blob, &sm.sig).is_ok()
+}
+
 pub fn verify_manifest(
     vault: &Vault,
     verifier: &HybridVerifyingKey,

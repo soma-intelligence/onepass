@@ -213,6 +213,11 @@ impl<S: RecordStore> Repository<S> {
         if trust.state != DeviceLineageState::Current {
             return Err(refused("device", "not current"));
         }
+        // Spec 10.4: own writes of an identity left are replayed before
+        // this device makes keys of its own.
+        if !trust.own_writes.replay.is_empty() {
+            return Err(refused("device", "own writes to replay"));
+        }
         let me = trust.me.device_id;
         if req.device_keys.public(me)? != trust.me {
             return Err(refused("device", "other device keys"));
@@ -517,6 +522,10 @@ impl<S: RecordStore> Repository<S> {
             generation: trust.head.generation,
         });
         next.state = DeviceLineageState::Rotating { phase: 1 };
+        // The new head is this device's own: every write it made so far is
+        // in the content it re-sealed (spec 10.4, since the last head it
+        // adopted).
+        next.own_writes.entries.clear();
 
         // The chain state of the new identity: its params epoch and its
         // lists start again (spec 6.6, 10.2); it replaces the stored one in

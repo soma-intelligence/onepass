@@ -13,6 +13,13 @@
 //!   key), so the device still holds its own verified copy when the server
 //!   goes back to an older state or serves an incomplete one. See
 //!   `RecordStore::kept_rows` and `crate::sync::VaultSyncHealth`.
+//! - `retained`: for a device with a trust state, the `base` vault key
+//!   and vault meta rows a fetch replaced with other bytes (the first such
+//!   row per key): the vault as the identity this device is on sealed it,
+//!   kept while a rotation re-sealed it under keys this device has not
+//!   followed yet (spec 9, read-only reads) and until its own writes are
+//!   replayed under the new keys (spec 10.4). See
+//!   `RecordStore::retained_rows` and `RecordStore::settle_replayed`.
 //! - `meta`: device state, change token, sync health and other small
 //!   values.
 
@@ -38,6 +45,7 @@ use crate::crypto::IdentityVerifyingKey;
 use crate::format::STORE_USER_VERSION;
 use crate::lineage::identity_id;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
+use crate::manifest::{SignedManifest, signed_by};
 use crate::repo::{DeviceState, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id};
 use crate::trust::{DeviceLineageState, TrustState};
@@ -127,6 +135,13 @@ CREATE TABLE IF NOT EXISTS ancestor (
     PRIMARY KEY (kind, id)
 );
 CREATE TABLE IF NOT EXISTS kept (
+    kind INTEGER NOT NULL,
+    id BLOB NOT NULL,
+    version INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (kind, id)
+);
+CREATE TABLE IF NOT EXISTS retained (
     kind INTEGER NOT NULL,
     id BLOB NOT NULL,
     version INTEGER NOT NULL,
@@ -638,8 +653,54 @@ fn phase_left(
     })
 }
 
+/// What `pending_changes` holds back for a key rotation v2 on a remaining
+/// device (spec 7.2, 10.4, R10): while a rotation waits for the user
+/// (`candidate`), every pending write but the lineage kinds (the old keys
+/// may be the revoked device's); once a rotation is followed, every pending
+/// row of the vaults written under the identity left (`left`): those whose
+/// own writes wait for their replay, and those whose pending manifest the
+/// identity the device is on did not sign. They stay on the device (G4)
+/// until the replay settles them.
+#[derive(Debug, Default)]
+struct Hold {
+    candidate: bool,
+    left: BTreeSet<Id>,
+}
+
+/// The vaults whose pending manifest the identity of `trust` did not sign
+/// (written before this device followed a rotation). Every pending
+/// manifest when that identity's params cannot be read.
+fn left_signed_vaults(conn: &Connection, trust: &TrustState) -> Result<BTreeSet<Id>> {
+    let rid = account_record_id(
+        trust.account_id,
+        (trust.head.generation > 0).then_some(&trust.identity_pub),
+    );
+    let signer = effective_get(conn, RecordKind::AccountParams, rid)?
+        .and_then(|r| AccountParams::decode_verified(&r.data, &trust.identity_pub).ok())
+        .map(|p| p.signing_pub);
+    let mut stmt = conn
+        .prepare("SELECT id, data FROM pending WHERE kind = ?1 AND data IS NOT NULL")
+        .map_err(store_err)?;
+    let rows = stmt
+        .query_map(params![RecordKind::Manifest.code()], |r| {
+            Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, Vec<u8>>(1)?))
+        })
+        .map_err(store_err)?;
+    let mut out = BTreeSet::new();
+    for row in rows {
+        let (id, data) = row.map_err(store_err)?;
+        let ours = signer
+            .as_ref()
+            .is_some_and(|s| SignedManifest::decode(&data).is_ok_and(|sm| signed_by(&sm, s)));
+        if !ours {
+            out.insert(decode_id(id)?);
+        }
+    }
+    Ok(out)
+}
+
 /// `SyncStore::pending_changes` on a consistent view.
-fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
+fn pending_changes_in(tx: &Connection, hold: &Hold) -> Result<Vec<Change>> {
     let held = held_vaults(tx)?;
     let held_lists = held_lists(tx)?;
     let deleted = deleted_vaults(tx, &[]);
@@ -689,6 +750,10 @@ fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
             _ => vault,
         };
         if data.is_some() && owner.is_some_and(|v| deleted.contains(&v)) {
+            continue;
+        }
+        if (hold.candidate && !kind.is_immutable()) || owner.is_some_and(|v| hold.left.contains(&v))
+        {
             continue;
         }
         if data.is_some()
@@ -908,8 +973,32 @@ impl SyncStore {
     /// params, keyset, lists, the lineage record last) and every other
     /// write waits; in phases 1 and 2 the re-sealed vaults are never held
     /// (R21). See `push_rotation_phase`.
+    ///
+    /// Key rotation v2 (spec 7.2, 10.4, R10): while a rotation waits for
+    /// the user (the stored state is `Candidate`, or a prompt is found
+    /// now), only the lineage kinds go out; after a follow, the pending
+    /// rows of a vault whose own writes still wait for their replay stay
+    /// (they were written under the identity left).
     pub fn pending_changes(&self) -> Result<Vec<Change>> {
-        self.read(pending_changes_in)
+        let hold = self.rotation_hold()?;
+        self.read(|tx| pending_changes_in(tx, &hold))
+    }
+
+    /// See `Hold`.
+    fn rotation_hold(&self) -> Result<Hold> {
+        let Some(trust) = self.read(trust_in)? else {
+            return Ok(Hold::default());
+        };
+        let candidate = match trust.state {
+            DeviceLineageState::Candidate { .. } => true,
+            DeviceLineageState::Current => crate::repo::follow::pending_rotation(self)?.is_some(),
+            _ => false,
+        };
+        let mut left = trust.own_writes.replay_vaults();
+        if !trust.retired.is_empty() {
+            left.extend(self.read(|c| left_signed_vaults(c, &trust))?);
+        }
+        Ok(Hold { candidate, left })
     }
 
     /// Every `base` row, ordered by kind then id: the store as the server
@@ -1243,6 +1332,9 @@ impl SyncStore {
             rows.collect::<rusqlite::Result<_>>().map_err(store_err)?
         };
         let deleted = deleted_vaults(&tx, &staged);
+        // Key rotation v2: a device with a trust state keeps its own copy
+        // of a vault key and meta the server replaced (`retained`).
+        let retain = trust_in(&tx)?.is_some();
         let mut vaults = BTreeSet::new();
         let mut ignored = Vec::new();
         let mut manifests = Vec::new();
@@ -1281,6 +1373,18 @@ impl SyncStore {
                     "INSERT OR IGNORE INTO kept (kind, id, version, data)
                      SELECT kind, id, version, data FROM base
                      WHERE kind = ?1 AND id = ?2 AND (?3 IS NULL OR data != ?3)",
+                    params![kind_code, &id, &data],
+                )
+                .map_err(store_err)?;
+            }
+            if retain
+                && data.is_some()
+                && matches!(kind, RecordKind::VaultKey | RecordKind::VaultMeta)
+            {
+                tx.execute(
+                    "INSERT OR IGNORE INTO retained (kind, id, version, data)
+                     SELECT kind, id, version, data FROM base
+                     WHERE kind = ?1 AND id = ?2 AND data != ?3",
                     params![kind_code, &id, &data],
                 )
                 .map_err(store_err)?;
@@ -1583,7 +1687,9 @@ impl SyncStore {
     /// stays in place, so other open connections keep working on it.
     pub fn reset(&mut self) -> Result<()> {
         let tx = self.write_tx()?;
-        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
+        for table in [
+            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+        ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
         }
@@ -1609,7 +1715,9 @@ impl SyncStore {
         if visible {
             return Err(Error::InvalidFormat("store holds an account"));
         }
-        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
+        for table in [
+            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+        ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
         }
@@ -1863,7 +1971,7 @@ impl SyncStore {
             ],
         )
         .map_err(store_err)?;
-        for table in ["ancestor", "kept"] {
+        for table in ["ancestor", "kept", "retained"] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
         }
@@ -2535,6 +2643,16 @@ fn save_health(
 /// records by vault prefix (kind `?2`).
 const KEPT_ROWS: &str = "(kind = ?1 AND id = ?3) OR (kind = ?2 AND substr(data, 1, 16) = ?3)";
 
+/// Whether `vault` has retained rows (see the module doc).
+fn has_retained(conn: &Connection, vault: Id) -> Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM retained WHERE id = ?1)",
+        params![&vault.0[..]],
+        |r| r.get(0),
+    )
+    .map_err(store_err)
+}
+
 fn delete_kept(tx: &Connection, vault: Id) -> Result<()> {
     tx.execute(
         &format!("DELETE FROM kept WHERE {KEPT_ROWS}"),
@@ -2896,7 +3014,7 @@ fn evict_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
     if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
-    for table in ["base", "pending", "staging", "ancestor", "kept"] {
+    for table in ["base", "pending", "staging", "ancestor", "kept", "retained"] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE kind = ?1 AND id = ?2"),
             params![kind.code(), &id.0[..]],
@@ -3116,6 +3234,64 @@ impl RecordStore for SyncStore {
         )
     }
 
+    fn retained_rows(&self, vault: Id) -> Result<Vec<Record>> {
+        self.read(|c| {
+            let mut stmt = c
+                .prepare(
+                    "SELECT kind, id, version, data FROM retained WHERE id = ?1
+                     ORDER BY kind",
+                )
+                .map_err(store_err)?;
+            let rows = stmt
+                .query_map(params![&vault.0[..]], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                })
+                .map_err(store_err)?;
+            rows.map(|row| {
+                let (k, id, v, d) = row.map_err(store_err)?;
+                decode_row(k, id, v, d)
+            })
+            .collect()
+        })
+    }
+
+    fn settle_replayed(&mut self, vault: Id) -> Result<()> {
+        let tx = self.write_tx()?;
+        delete_vault_rows(&tx, vault)?;
+        tx.execute(
+            "DELETE FROM pending WHERE kind IN (?1, ?2) AND id = ?3",
+            params![
+                RecordKind::VaultKey.code(),
+                RecordKind::VaultMeta.code(),
+                &vault.0[..]
+            ],
+        )
+        .map_err(store_err)?;
+        tx.execute("DELETE FROM retained WHERE id = ?1", params![&vault.0[..]])
+            .map_err(store_err)?;
+        delete_kept(&tx, vault)?;
+        tx.commit()
+    }
+
+    fn drop_retained(&mut self, vault: Id) -> Result<()> {
+        let tx = self.write_tx()?;
+        tx.execute("DELETE FROM retained WHERE id = ?1", params![&vault.0[..]])
+            .map_err(store_err)?;
+        tx.commit()
+    }
+
+    fn batch_begin(&mut self) -> Result<()> {
+        self.begin_batch()
+    }
+
+    fn batch_commit(&mut self) -> Result<()> {
+        self.commit_batch()
+    }
+
+    fn batch_rollback(&mut self) -> Result<()> {
+        self.rollback_batch()
+    }
+
     /// A pending row of `(kind, id)` that writes data (not a deletion).
     fn is_pending_write(&self, kind: RecordKind, id: Id) -> Result<bool> {
         self.read(|conn| {
@@ -3292,7 +3468,11 @@ impl RecordStore for SyncStore {
         let tx = self.write_tx()?;
         match event {
             VaultEvent::Clean => {
-                delete_kept(&tx, vault)?;
+                // The replay of own writes still reads the kept rows of a
+                // vault re-sealed by a rotation (`retained`).
+                if !has_retained(&tx, vault)? {
+                    delete_kept(&tx, vault)?;
+                }
                 // Clean once the server serves the copy back by itself;
                 // settled after `STALE_CLEAR_ROUNDS` such rounds
                 // (`count_round`).
@@ -3339,7 +3519,9 @@ impl RecordStore for SyncStore {
                 // built on that state, so it is what the server must keep
                 // serving: an older copy's seq (or the head of an epoch
                 // that was withdrawn) no longer applies.
-                delete_kept(&tx, vault)?;
+                if !has_retained(&tx, vault)? {
+                    delete_kept(&tx, vault)?;
+                }
                 let base = base_manifest(&tx, vault)?.map(|(version, _)| version);
                 update_health_lenient(&tx, |map| match map.get_mut(&vault) {
                     Some(e) => {
