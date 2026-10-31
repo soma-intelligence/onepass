@@ -21,8 +21,10 @@ mod blobs;
 mod client;
 mod credential;
 mod http;
+mod rendezvous;
 #[cfg(feature = "testing")]
 pub mod testing;
+mod wake;
 
 use std::fmt;
 
@@ -34,6 +36,8 @@ pub use client::{ChangeFeed, FeedPage, MailboxClient};
 pub use credential::{Credential, CredentialKey};
 pub use http::{Endpoint, tls_client_config};
 pub use onepass_mailbox_proto::ErrorCode;
+pub use rendezvous::{RDV_FRAMES_MAX, RDV_SESSION_BYTES_MAX, RdvRole, Rendezvous};
+pub use wake::WakeListener;
 
 /// What a mailbox call can end with, besides its answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +72,13 @@ pub enum MailboxError {
     InviteRequired,
     /// The system random source failed.
     Rng,
+    /// The mailbox answers for another incarnation than the one this feed
+    /// holds (spec 4.5): the server lost data or was restored from a
+    /// backup. Reset the local zone, then start `ChangeFeed::full()`.
+    IncarnationChanged { expected: u64, found: u64 },
+    /// A rendezvous frame number this side was about to write was already
+    /// written by someone else (`409`): the session is spoiled and closed.
+    FrameTaken,
 }
 
 impl fmt::Display for MailboxError {
@@ -85,6 +96,11 @@ impl fmt::Display for MailboxError {
             Self::TooLarge => f.write_str("too large for the mailbox"),
             Self::InviteRequired => f.write_str("this mailbox server needs an invite"),
             Self::Rng => f.write_str("system random source failed"),
+            Self::IncarnationChanged { expected, found } => write!(
+                f,
+                "mailbox incarnation changed from {expected} to {found}: local reset needed"
+            ),
+            Self::FrameTaken => f.write_str("rendezvous frame already written by another party"),
         }
     }
 }

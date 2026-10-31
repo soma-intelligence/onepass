@@ -579,34 +579,55 @@ pub(crate) fn read<M: Message>(r: Response) -> Result<M, MailboxError> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
     /// `first`: head and incarnation of the first page, once read.
+    /// `stored`: the incarnation the local zone holds, if any.
     Full {
         after: u64,
         first: Option<(u64, u64)>,
+        stored: Option<u64>,
     },
     Incremental {
         after: u64,
+        incarnation: u64,
     },
 }
 
 /// Where a change feed stands (spec 4.5). A full fetch keeps `full=1` on
 /// every page, remembers the head of its first page, and once done goes
-/// on incrementally from that head. Store `after()` of an incremental feed
-/// to resume it later.
+/// on incrementally from that head. Store `after()` and `incarnation()` of
+/// an incremental feed to resume it later.
+///
+/// Every page is checked against the incarnation the feed holds: a page
+/// of another one, between pages or against the stored value, is
+/// `MailboxError::IncarnationChanged` and the feed does not move. The
+/// feed never restarts on its own: the caller resets its zone first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChangeFeed(Mode);
 
 impl ChangeFeed {
-    /// A full fetch from the start: after a first sync, a
-    /// `CursorExpired`, or a changed incarnation.
+    /// A full fetch for a zone that holds nothing yet: a first sync, or
+    /// after a reset for a changed incarnation. Its first page fixes the
+    /// incarnation.
     pub fn full() -> ChangeFeed {
         ChangeFeed(Mode::Full {
             after: 0,
             first: None,
+            stored: None,
         })
     }
 
-    pub fn incremental(after: u64) -> ChangeFeed {
-        ChangeFeed(Mode::Incremental { after })
+    /// A full fetch for a zone that holds `incarnation` (after a
+    /// `CursorExpired`): a page of another incarnation is refused.
+    pub fn full_for(incarnation: u64) -> ChangeFeed {
+        ChangeFeed(Mode::Full {
+            after: 0,
+            first: None,
+            stored: Some(incarnation),
+        })
+    }
+
+    /// Resumes an incremental feed at `after` of `incarnation`.
+    pub fn incremental(after: u64, incarnation: u64) -> ChangeFeed {
+        ChangeFeed(Mode::Incremental { after, incarnation })
     }
 
     pub fn is_full(&self) -> bool {
@@ -615,23 +636,35 @@ impl ChangeFeed {
 
     pub fn after(&self) -> u64 {
         match self.0 {
-            Mode::Full { after, .. } | Mode::Incremental { after } => after,
+            Mode::Full { after, .. } | Mode::Incremental { after, .. } => after,
+        }
+    }
+
+    /// The incarnation every page must carry; `None` only for `full()`
+    /// before its first page.
+    pub fn incarnation(&self) -> Option<u64> {
+        match self.0 {
+            Mode::Full { first, stored, .. } => first.map(|f| f.1).or(stored),
+            Mode::Incremental { incarnation, .. } => Some(incarnation),
         }
     }
 
     /// Moves the feed past a page read at `after()` (already checked by
     /// `check_page`); the feed does not move when the page fails a check.
     pub(crate) fn advance(&mut self, page: ChangesPage) -> Result<FeedPage, MailboxError> {
+        if let Some(expected) = self.incarnation()
+            && page.incarnation != expected
+        {
+            return Err(MailboxError::IncarnationChanged {
+                expected,
+                found: page.incarnation,
+            });
+        }
         let (next, more, full_done) = match self.0 {
-            Mode::Full { first, .. } => {
+            Mode::Full { first, stored, .. } => {
                 let (head, incarnation) = match first {
                     None => (page.head, page.incarnation),
                     Some(f) => {
-                        if page.incarnation != f.1 {
-                            return Err(MailboxError::Malformed(
-                                "incarnation changed in a full fetch",
-                            ));
-                        }
                         if page.head < f.0 {
                             return Err(MailboxError::Malformed("head went back"));
                         }
@@ -642,17 +675,23 @@ impl ChangeFeed {
                     let next = Mode::Full {
                         after: page.next_after,
                         first: Some((head, incarnation)),
+                        stored,
                     };
                     (next, true, false)
                 } else {
                     // Everything written since the first page has a seq above
                     // its head: go on incrementally from there (spec 4.5).
-                    (Mode::Incremental { after: head }, page.head != head, true)
+                    let next = Mode::Incremental {
+                        after: head,
+                        incarnation,
+                    };
+                    (next, page.head != head, true)
                 }
             }
-            Mode::Incremental { .. } => (
+            Mode::Incremental { incarnation, .. } => (
                 Mode::Incremental {
                     after: page.next_after,
+                    incarnation,
                 },
                 page.more,
                 false,
@@ -674,8 +713,7 @@ impl ChangeFeed {
 /// A page read through a `ChangeFeed`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeedPage {
-    /// Compare with the stored incarnation before applying anything: a
-    /// different one means the server lost data (spec 4.5).
+    /// The incarnation of the page, already checked against the feed's.
     pub incarnation: u64,
     pub min_cursor: u64,
     pub records: Vec<ServerRecord>,

@@ -18,12 +18,22 @@
 //! client checks. The conformance suite runs the same cases here and
 //! against a local Supabase stack.
 //!
+//! The rendezvous routes follow `rdv_put`, `rdv_get` and `rdv_close`:
+//! chunks of at most 1 MiB written once (`409` again), `n` 0 to 4095 and
+//! direction 0 or 1 (`no_route` otherwise, as the router answers), 66 MiB
+//! per direction, a chunk readable 120 s after its write and rewritable
+//! once purged, a session closed 600 s after its first chunk or by
+//! `DELETE` (`not_found` from then on, its id never usable again), and a
+//! read that waits up to `wait` seconds for its chunk.
+//!
 //! Not modelled: signatures, nonces and clock skew of requests (the fake
 //! knows who calls), rate limits (`req_per_min` is reported, never
-//! enforced), per-IP limits, frozen mailboxes, wake-ups and push.
+//! enforced), per-IP limits (the minute bucket of the rendezvous and its
+//! 200 MiB an hour included), frozen mailboxes, wake-ups and push.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use onepass_mailbox_proto::{
@@ -37,6 +47,9 @@ use crate::blobs::{BodyRef, blob_of, blob_set, check_answers, check_blob};
 use crate::client::{
     check_changes_query, check_commit, check_page, check_record, commit_request, create_refusal,
     enroll_request, error_of, issue_ticket, local, push_request,
+};
+use crate::rendezvous::{
+    RDV_CHUNK_MAX, RDV_FRAMES_MAX, RDV_SESSION_BYTES_MAX, RdvRole, RdvTransport, Rendezvous,
 };
 use crate::{Credential, CredentialKey, MailboxApi, MailboxError};
 
@@ -591,10 +604,198 @@ impl State {
     }
 }
 
+/// A chunk is readable this long after its write, then purged.
+const RDV_CHUNK_LIFE: Duration = Duration::from_secs(120);
+/// A session is closed this long after its first chunk.
+const RDV_SESSION_LIFE: Duration = Duration::from_secs(600);
+
+type SessionId = [u8; 16];
+
+#[derive(Debug)]
+struct RdvSession {
+    created: Duration,
+    closed: bool,
+    bytes: [u64; 2],
+    /// (dir, n) to the chunk and when it was written.
+    chunks: HashMap<(u8, u32), (Vec<u8>, Duration)>,
+}
+
+impl RdvSession {
+    fn gone(&self, now: Duration) -> bool {
+        self.closed || now.saturating_sub(self.created) > RDV_SESSION_LIFE
+    }
+}
+
+#[derive(Debug, Default)]
+struct RdvInner {
+    sessions: HashMap<SessionId, RdvSession>,
+    /// Time the tests made pass, on top of the real time.
+    skipped: Duration,
+    lose_next_answer: bool,
+    /// The `n` of every read, per session and direction.
+    reads: HashMap<(SessionId, u8), Vec<u32>>,
+}
+
+/// The rendezvous tables, apart from the mailbox state: a waiting read
+/// holds no lock of the mailbox.
+#[derive(Debug)]
+struct Rdv {
+    epoch: Instant,
+    inner: Mutex<RdvInner>,
+    written: Condvar,
+}
+
+impl Rdv {
+    fn lock(&self) -> MutexGuard<'_, RdvInner> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn now(&self, inner: &RdvInner) -> Duration {
+        self.epoch.elapsed() + inner.skipped
+    }
+
+    /// The router: direction 0 or 1, `n` below 4096.
+    fn route(dir: u8, n: u32) -> Result<(), MailboxError> {
+        if dir > 1 || n >= RDV_FRAMES_MAX {
+            return refused(ErrorCode::NoRoute);
+        }
+        Ok(())
+    }
+
+    fn put(&self, s: SessionId, dir: u8, n: u32, data: &[u8]) -> Result<(), MailboxError> {
+        Rdv::route(dir, n)?;
+        if data.len() > RDV_CHUNK_MAX {
+            return refused(ErrorCode::TooLarge);
+        }
+        let mut inner = self.lock();
+        let now = self.now(&inner);
+        // A refused first chunk starts nothing (the SQL rolls it back).
+        if let Some(session) = inner.sessions.get_mut(&s) {
+            if session.gone(now) {
+                return refused(ErrorCode::NotFound);
+            }
+            if session.bytes[usize::from(dir)] + data.len() as u64 > RDV_SESSION_BYTES_MAX {
+                return refused(ErrorCode::TooLarge);
+            }
+            match session.chunks.get(&(dir, n)) {
+                Some((_, at)) if now.saturating_sub(*at) > RDV_CHUNK_LIFE => {
+                    // Purged by the maintenance: the number is free again.
+                    session.chunks.remove(&(dir, n));
+                }
+                Some(_) => return Err(MailboxError::FrameTaken),
+                None => {}
+            }
+        }
+        let session = inner.sessions.entry(s).or_insert_with(|| RdvSession {
+            created: now,
+            closed: false,
+            bytes: [0; 2],
+            chunks: HashMap::new(),
+        });
+        session.chunks.insert((dir, n), (data.to_vec(), now));
+        session.bytes[usize::from(dir)] += data.len() as u64;
+        let lost = std::mem::take(&mut inner.lose_next_answer);
+        drop(inner);
+        self.written.notify_all();
+        if lost {
+            return Err(MailboxError::Offline);
+        }
+        Ok(())
+    }
+
+    fn get(
+        &self,
+        s: SessionId,
+        dir: u8,
+        n: u32,
+        wait: u8,
+    ) -> Result<Option<Vec<u8>>, MailboxError> {
+        Rdv::route(dir, n)?;
+        if u64::from(wait) > 25 {
+            return refused(ErrorCode::Malformed);
+        }
+        let until = Instant::now() + Duration::from_secs(wait.into());
+        let mut inner = self.lock();
+        inner.reads.entry((s, dir)).or_default().push(n);
+        loop {
+            let now = self.now(&inner);
+            if let Some(session) = inner.sessions.get(&s) {
+                if session.gone(now) {
+                    return refused(ErrorCode::NotFound);
+                }
+                if let Some((data, at)) = session.chunks.get(&(dir, n))
+                    && now.saturating_sub(*at) <= RDV_CHUNK_LIFE
+                {
+                    return Ok(Some(data.clone()));
+                }
+            }
+            let left = until.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Ok(None);
+            }
+            inner = self
+                .written
+                .wait_timeout(inner, left)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+    }
+
+    fn close(&self, s: SessionId) {
+        let mut inner = self.lock();
+        let now = self.now(&inner);
+        let session = inner.sessions.entry(s).or_insert_with(|| RdvSession {
+            created: now,
+            closed: true,
+            bytes: [0; 2],
+            chunks: HashMap::new(),
+        });
+        session.closed = true;
+        session.chunks.clear();
+        drop(inner);
+        self.written.notify_all();
+    }
+}
+
+/// One side of a rendezvous session on a `FakeMailbox`.
+struct FakeRdv {
+    fake: FakeMailbox,
+    session: SessionId,
+}
+
+impl FakeRdv {
+    /// The failure a test queued, if any.
+    fn fault(&self) -> Result<(), MailboxError> {
+        match self.fake.lock().fail_next.pop_front() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+}
+
+impl RdvTransport for FakeRdv {
+    fn put(&mut self, dir: u8, n: u32, chunk: &[u8]) -> Result<(), MailboxError> {
+        self.fault()?;
+        self.fake.rdv.put(self.session, dir, n, chunk)
+    }
+
+    fn get(&mut self, dir: u8, n: u32, wait: u8) -> Result<Option<Vec<u8>>, MailboxError> {
+        self.fault()?;
+        self.fake.rdv.get(self.session, dir, n, wait)
+    }
+
+    fn close(&mut self) -> Result<(), MailboxError> {
+        self.fault()?;
+        self.fake.rdv.close(self.session);
+        Ok(())
+    }
+}
+
 /// The mailbox server in memory. Clones share the same state.
 #[derive(Clone)]
 pub struct FakeMailbox {
     state: Arc<Mutex<State>>,
+    rdv: Arc<Rdv>,
 }
 
 impl Default for FakeMailbox {
@@ -622,6 +823,11 @@ impl FakeMailbox {
                 fail_next: VecDeque::new(),
                 collect_before_commit: false,
             })),
+            rdv: Arc::new(Rdv {
+                epoch: Instant::now(),
+                inner: Mutex::new(RdvInner::default()),
+                written: Condvar::new(),
+            }),
         }
     }
 
@@ -669,6 +875,73 @@ impl FakeMailbox {
         }
         s.objects.clear();
         s.used_tickets.clear();
+    }
+
+    /// One side of rendezvous session `session` on this server.
+    pub fn rendezvous(&self, session: [u8; 16], role: RdvRole) -> Rendezvous {
+        let transport = FakeRdv {
+            fake: self.clone(),
+            session,
+        };
+        Rendezvous::with_transport(Box::new(transport), role)
+    }
+
+    /// A raw `PUT /v1/rendezvous/{s}/{dir}/{n}`, as any party may send.
+    pub fn rdv_put_raw(
+        &self,
+        session: [u8; 16],
+        dir: u8,
+        n: u32,
+        data: &[u8],
+    ) -> Result<(), MailboxError> {
+        self.rdv.put(session, dir, n, data)
+    }
+
+    /// A raw `GET` without waiting.
+    pub fn rdv_get_raw(
+        &self,
+        session: [u8; 16],
+        dir: u8,
+        n: u32,
+    ) -> Result<Option<Vec<u8>>, MailboxError> {
+        self.rdv.get(session, dir, n, 0)
+    }
+
+    /// Chunks of one direction the session holds now.
+    pub fn rdv_chunks(&self, session: [u8; 16], dir: u8) -> usize {
+        self.rdv
+            .lock()
+            .sessions
+            .get(&session)
+            .map_or(0, |s| s.chunks.keys().filter(|(d, _)| *d == dir).count())
+    }
+
+    /// The `n` of every read of one direction, in order.
+    pub fn rdv_reads(&self, session: [u8; 16], dir: u8) -> Vec<u32> {
+        self.rdv
+            .lock()
+            .reads
+            .get(&(session, dir))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// The session was closed (`DELETE`) or expired.
+    pub fn rdv_closed(&self, session: [u8; 16]) -> bool {
+        let inner = self.rdv.lock();
+        let now = self.rdv.now(&inner);
+        inner.sessions.get(&session).is_some_and(|s| s.gone(now))
+    }
+
+    /// Makes `d` pass for the rendezvous (chunk and session lifetimes).
+    pub fn rdv_time_passes(&self, d: Duration) {
+        self.rdv.lock().skipped += d;
+        self.rdv.written.notify_all();
+    }
+
+    /// The next rendezvous write lands, but its answer is lost (`Offline`).
+    pub fn rdv_lose_next_answer(&self) {
+        self.rdv.lock().lose_next_answer = true;
     }
 
     pub fn faults(&self) -> FaultHandle {

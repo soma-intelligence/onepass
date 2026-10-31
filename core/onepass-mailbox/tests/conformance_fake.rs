@@ -2,7 +2,11 @@
 //! only the model can stage (lost data, a collected blob).
 
 use onepass_mailbox::testing::{ConformanceTarget, FakeMailbox, run_conformance};
-use onepass_mailbox::{ChangeFeed, Credential, MailboxApi, MailboxError};
+use std::time::Duration;
+
+use onepass_mailbox::{
+    ChangeFeed, Credential, ErrorCode, MailboxApi, MailboxError, RdvRole, Rendezvous,
+};
 use onepass_mailbox_proto::{Body, CommitOp, CommitResponse, Limits, MailboxId, Op, blob_sha256};
 
 /// The plan the end-to-end run uses too (see mailbox/scripts/e2e-admin.sh).
@@ -29,6 +33,10 @@ impl ConformanceTarget for Fake {
 
     fn purge_tombstones(&mut self, mailbox: MailboxId) {
         self.0.purge_tombstones_of(mailbox, u64::MAX);
+    }
+
+    fn rendezvous(&mut self, session: [u8; 16], role: RdvRole) -> Rendezvous {
+        self.0.rendezvous(session, role)
     }
 }
 
@@ -82,7 +90,7 @@ fn lose_everything_changes_the_incarnation() {
     c.commit(vec![put(1, b"a"), put(2, b"b")]).unwrap();
     assert!(matches!(
         c.next_changes(&mut feed, 1),
-        Err(MailboxError::Malformed(_))
+        Err(MailboxError::IncarnationChanged { .. })
     ));
 }
 
@@ -151,4 +159,86 @@ fn injected_failure_comes_back_once() {
     fake.faults().fail_next(MailboxError::Offline);
     assert_eq!(c.info().unwrap_err(), MailboxError::Offline);
     c.info().unwrap();
+}
+
+fn code<T>(r: Result<T, MailboxError>) -> Option<ErrorCode> {
+    match r {
+        Err(MailboxError::Server(c)) => Some(c),
+        _ => None,
+    }
+}
+
+/// The rendezvous rules of `rdv_put`, `rdv_get` and `rdv_close`.
+#[test]
+fn rendezvous_rules_follow_the_sql() {
+    let fake = FakeMailbox::new();
+    let s = [3; 16];
+    // The router: direction 0 or 1, n below 4096; 1 MiB a chunk.
+    assert_eq!(
+        code(fake.rdv_put_raw(s, 2, 0, b"x")),
+        Some(ErrorCode::NoRoute)
+    );
+    assert_eq!(
+        code(fake.rdv_put_raw(s, 0, 4096, b"x")),
+        Some(ErrorCode::NoRoute)
+    );
+    assert_eq!(
+        fake.rdv_put_raw(s, 0, 0, &vec![0; (1 << 20) + 1]),
+        Err(MailboxError::TooLarge)
+    );
+    // Not started yet: absent, not closed.
+    assert_eq!(fake.rdv_get_raw(s, 0, 0), Ok(None));
+    fake.rdv_put_raw(s, 0, 4095, b"").unwrap();
+    assert_eq!(fake.rdv_get_raw(s, 0, 4095), Ok(Some(vec![])));
+    // Written once, then readable for 120 s, then rewritable.
+    fake.rdv_put_raw(s, 0, 0, b"a").unwrap();
+    assert_eq!(
+        fake.rdv_put_raw(s, 0, 0, b"b"),
+        Err(MailboxError::FrameTaken)
+    );
+    assert_eq!(fake.rdv_get_raw(s, 0, 0), Ok(Some(b"a".to_vec())));
+    fake.rdv_time_passes(Duration::from_secs(121));
+    assert_eq!(fake.rdv_get_raw(s, 0, 0), Ok(None));
+    fake.rdv_put_raw(s, 0, 0, b"b").unwrap();
+    // 66 MiB per direction (exactly 66 MiB passes), counted on every write.
+    let mib = vec![0; 1 << 20];
+    for n in 1..66 {
+        fake.rdv_put_raw(s, 1, n, &mib).unwrap();
+    }
+    fake.rdv_put_raw(s, 1, 66, &mib[..(1 << 20) - 1]).unwrap();
+    fake.rdv_put_raw(s, 1, 67, b"x").unwrap();
+    assert_eq!(
+        fake.rdv_put_raw(s, 1, 68, b"x"),
+        Err(MailboxError::TooLarge)
+    );
+    fake.rdv_put_raw(s, 0, 1, b"x").unwrap();
+    // Closed 600 s after its first chunk.
+    fake.rdv_time_passes(Duration::from_secs(480));
+    assert!(fake.rdv_closed(s));
+    assert_eq!(code(fake.rdv_get_raw(s, 0, 0)), Some(ErrorCode::NotFound));
+    assert_eq!(
+        code(fake.rdv_put_raw(s, 0, 2, b"x")),
+        Some(ErrorCode::NotFound)
+    );
+    // A close before any chunk spends the id too.
+    let t = [4; 16];
+    fake.rendezvous(t, RdvRole::Approver).close();
+    assert_eq!(
+        code(fake.rdv_put_raw(t, 0, 0, b"x")),
+        Some(ErrorCode::NotFound)
+    );
+}
+
+#[test]
+fn rendezvous_retries_a_busy_server() {
+    let fake = FakeMailbox::new();
+    let s = [5; 16];
+    let mut n = fake.rendezvous(s, RdvRole::Newcomer);
+    fake.faults()
+        .fail_next(MailboxError::Retry { after: Some(1) });
+    n.send_frame(b"hi").unwrap();
+    let mut a = fake.rendezvous(s, RdvRole::Approver);
+    fake.faults().fail_next(MailboxError::Offline);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    assert_eq!(a.recv_frame(8, deadline).unwrap(), b"hi");
 }

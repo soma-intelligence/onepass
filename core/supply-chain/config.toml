@@ -126,7 +126,8 @@ criteria = "safe-to-deploy"
 
 [[exemptions.const-oid]]
 version = "0.10.2"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
+notes = "OID constants, now shipped through digest 0.11 (feature oid) under sha1 0.11, the WebSocket handshake hash of tungstenite (mailbox wake listener, onepass-mailbox). Was safe-to-run for dev-dependencies only. Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.core-foundation]]
 version = "0.10.1"
@@ -534,6 +535,11 @@ notes = "serde adapter of the WebAssembly build of onepass-mailbox-proto (featur
 version = "0.4.3"
 criteria = "safe-to-deploy"
 
+[[exemptions.sha1]]
+version = "0.11.0"
+criteria = "safe-to-deploy"
+notes = "SHA-1 of the WebSocket handshake (Sec-WebSocket-Accept, RFC 6455) inside tungstenite, mailbox wake listener (onepass-mailbox, spec 2026-10-30-cross-platform-clients-design 4.10). Not used for any security decision of OnePass. Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.sha2]]
 version = "0.11.1"
 criteria = "safe-to-deploy"
@@ -617,6 +623,11 @@ criteria = "safe-to-deploy"
 [[exemptions.tls_codec_derive]]
 version = "0.5.0"
 criteria = "safe-to-deploy"
+
+[[exemptions.tungstenite]]
+version = "0.30.0"
+criteria = "safe-to-deploy"
+notes = "Blocking WebSocket client of the mailbox wake listener (onepass-mailbox, spec 2026-10-30-cross-platform-clients-design 4.10), default features off, feature handshake only: TLS is the crate's own rustls stream (aws-lc-rs, TLS 1.3), no ring, no TLS feature of tungstenite. Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.typed-path]]
 version = "0.13.0"

@@ -14,6 +14,11 @@ rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", 
 webpki-root-certs = "1"
 zeroize.workspace = true
 data-encoding.workspace = true
+# Realtime wake channel (spec 4.10): the WebSocket only. TLS is the client's
+# own rustls stream (aws-lc-rs, TLS 1.3), so no TLS feature of tungstenite.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+serde.workspace = true
+serde_json.workspace = true
 
 [features]
 # Lets an endpoint be plain http on 127.0.0.1 or localhost (tests only).

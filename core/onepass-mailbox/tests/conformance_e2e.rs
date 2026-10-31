@@ -2,7 +2,8 @@
 //! (`supabase start`, the functions served, `mailbox/scripts/local-env.sh`
 //! and `mailbox/scripts/e2e-admin.sh setup` run), plus what only a real
 //! stack can show: Storage's answer to a second upload of the same object,
-//! and `no_route` against `not_found`.
+//! `no_route` against `not_found`, and a commit waking a `WakeListener`
+//! through the stack's own Realtime.
 //!
 //!   ONEPASS_MAILBOX_E2E_URL     base URL of the function, for example
 //!                               http://127.0.0.1:57421/functions/v1/mailbox
@@ -17,7 +18,15 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use onepass_mailbox::testing::{ConformanceTarget, run_conformance};
-use onepass_mailbox::{Credential, Endpoint, ErrorCode, MailboxApi, MailboxClient, MailboxError};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
+
+use onepass_mailbox::{
+    Credential, Endpoint, ErrorCode, MailboxApi, MailboxClient, MailboxError, RdvRole, Rendezvous,
+    WakeListener,
+};
+use onepass_mailbox_proto::{Body, CommitOp, Op};
 use onepass_mailbox_proto::{MailboxId, blob_sha256, hex};
 
 struct E2e {
@@ -57,6 +66,10 @@ impl ConformanceTarget for E2e {
         self.admin(&["purge", &hex(&mailbox)]);
     }
 
+    fn rendezvous(&mut self, session: [u8; 16], role: RdvRole) -> Rendezvous {
+        Rendezvous::new(self.endpoint.clone(), session, role).expect("rendezvous")
+    }
+
     fn before_case(&mut self) {
         self.admin(&["reset-rate"]);
     }
@@ -87,6 +100,49 @@ fn conformance_e2e() {
     run_conformance(&mut target);
     storage_duplicate_upload_is_success(&mut target);
     wrong_base_url_is_no_route(&mut target);
+    commit_wakes_the_listener(&mut target);
+}
+
+/// A commit on the real stack reaches a `WakeListener` on the mailbox's
+/// wake topic through Realtime (`onepass_mailbox_wake.send`, spec 4.10),
+/// whatever payload `realtime.send` puts in the message.
+fn commit_wakes_the_listener(t: &mut E2e) {
+    t.before_case();
+    let mut c = t.mailbox_client();
+    let invite = t.invite.clone();
+    let created = c.create(invite.as_deref(), b"wake").expect("create");
+    let config = c.server_config().expect("config");
+    let wakes = Arc::new(AtomicUsize::new(0));
+    let w = Arc::clone(&wakes);
+    let listener = WakeListener::start(
+        &config.realtime_url,
+        &config.publishable_key,
+        created.wake_topic,
+        Box::new(move || {
+            w.fetch_add(1, Ordering::SeqCst);
+        }),
+    )
+    .expect("start the listener");
+    let op = |n: u8| CommitOp {
+        kind: 5,
+        id: [n; 16],
+        version: 1,
+        op: Op::Put {
+            expected: None,
+            body: Body::Inline(vec![n]),
+        },
+    };
+    // The join takes a moment: commit until a wake comes back.
+    let until = Instant::now() + Duration::from_secs(30);
+    let mut n = 1u8;
+    while wakes.load(Ordering::SeqCst) == 0 {
+        assert!(Instant::now() < until, "no wake within 30 s");
+        c.commit(vec![op(n)]).expect("commit");
+        n += 1;
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    listener.stop();
+    eprintln!("commit wakes the listener: ok ({n} commits)");
 }
 
 /// Storage answers a second upload to the same signed URL (x-upsert false)

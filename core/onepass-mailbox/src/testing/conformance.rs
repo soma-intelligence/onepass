@@ -7,13 +7,14 @@
 //! from 1), and panics with its own name in the message.
 
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+use std::time::{Duration, Instant};
 
 use onepass_mailbox_proto::{
     Body, COMMIT_OPS_MAX, ChangesPage, CommitOp, CommitResponse, ErrorCode, MailboxId, Op,
     PAGE_MAX_RECORDS, ServerRecord, blob_sha256,
 };
 
-use crate::{ChangeFeed, MailboxApi, MailboxError};
+use crate::{ChangeFeed, ErrorCode as Code, MailboxApi, MailboxError, RdvRole, Rendezvous};
 
 /// Where the suite runs. Clients all talk to the same server.
 pub trait ConformanceTarget {
@@ -28,6 +29,9 @@ pub trait ConformanceTarget {
     /// does (each frees 1 record and 128 bytes, `min_cursor` rises to the
     /// highest seq purged).
     fn purge_tombstones(&mut self, mailbox: MailboxId);
+
+    /// One side of rendezvous session `session` on the same server.
+    fn rendezvous(&mut self, session: [u8; 16], role: RdvRole) -> Rendezvous;
 
     /// Runs before each case (the end-to-end target clears the per-IP
     /// creation day window there: every case creates mailboxes).
@@ -58,6 +62,8 @@ pub const CASES: &[(&str, Case)] = &[
     ("revoked_credential_refused", revoked_credential_refused),
     ("blob_round_trip", blob_round_trip),
     ("record_quota", record_quota),
+    ("rendezvous_round_trip", rendezvous_round_trip),
+    ("rendezvous_written_once", rendezvous_written_once),
 ];
 
 /// Runs every case of `CASES` against `target`. A failing case panics with
@@ -440,7 +446,7 @@ fn pages_of_changes(t: &mut dyn ConformanceTarget) {
     assert_eq!(got.len(), 2500, "the full fetch reads every record once");
     assert_eq!(
         feed,
-        ChangeFeed::incremental(2500),
+        ChangeFeed::incremental(2500, p.incarnation),
         "incremental from the first head"
     );
 }
@@ -483,7 +489,7 @@ fn full_fetch_skips_tombstones(t: &mut dyn ConformanceTarget) {
     assert!(first.more && !first.full_done);
     let last = c.next_changes(&mut feed, 1000).expect("feed");
     assert!(last.full_done && !last.more && last.records.is_empty());
-    assert_eq!(feed, ChangeFeed::incremental(4));
+    assert_eq!(feed, ChangeFeed::incremental(4, full.incarnation));
 }
 
 /// After the purge, `after` below `min_cursor` is `CursorExpired`; a full
@@ -711,5 +717,79 @@ fn record_quota(t: &mut dyn ConformanceTarget) {
     assert_eq!(
         applied(c.commit(vec![put(1, 2, Some(2), b"qq")]), "update"),
         [Some(u64::from(max) + 3)]
+    );
+}
+
+// ------------------------------------------------------------ rendezvous
+
+fn session_id() -> [u8; 16] {
+    let mut s = [0u8; 16];
+    aws_lc_rs::rand::fill(&mut s).expect("system random source");
+    s
+}
+
+fn within(secs: u64) -> Instant {
+    Instant::now() + Duration::from_secs(secs)
+}
+
+/// A frame of 5 MiB of stream (5 chunks) and an empty one one way, a
+/// frame back the other way, then a close the other side sees at once.
+fn rendezvous_round_trip(t: &mut dyn ConformanceTarget) {
+    let s = session_id();
+    let mut newcomer = t.rendezvous(s, RdvRole::Newcomer);
+    let mut approver = t.rendezvous(s, RdvRole::Approver);
+    let big: Vec<u8> = (0..(5 << 20) - 4).map(|i: u32| (i % 251) as u8).collect();
+    newcomer.send_frame(&big).expect("send 5 MiB");
+    newcomer.send_frame(b"").expect("send empty");
+    let got = approver
+        .recv_frame(big.len(), within(30))
+        .expect("recv 5 MiB");
+    assert!(got == big, "5 MiB frame came back different");
+    assert_eq!(
+        approver.recv_frame(0, within(30)).expect("recv empty"),
+        b"",
+        "empty frame"
+    );
+    approver.send_frame(b"back").expect("send back");
+    assert_eq!(
+        newcomer.recv_frame(16, within(30)).expect("recv back"),
+        b"back"
+    );
+    newcomer.close();
+    let start = Instant::now();
+    assert_eq!(
+        approver.recv_frame(16, within(30)).unwrap_err(),
+        MailboxError::Server(Code::NotFound),
+        "a closed session"
+    );
+    assert!(
+        start.elapsed() < Duration::from_secs(10),
+        "closed is answered, not waited out"
+    );
+}
+
+/// A chunk number written twice is `FrameTaken`; the session is closed for
+/// both sides and its id cannot start again.
+fn rendezvous_written_once(t: &mut dyn ConformanceTarget) {
+    let s = session_id();
+    let mut first = t.rendezvous(s, RdvRole::Newcomer);
+    let mut second = t.rendezvous(s, RdvRole::Newcomer);
+    let mut approver = t.rendezvous(s, RdvRole::Approver);
+    first.send_frame(b"first").expect("first write");
+    assert_eq!(
+        second.send_frame(b"intruder").unwrap_err(),
+        MailboxError::FrameTaken,
+        "the same chunk number again"
+    );
+    assert_eq!(
+        approver.recv_frame(64, within(30)).unwrap_err(),
+        MailboxError::Server(Code::NotFound),
+        "closed by the refused writer"
+    );
+    let mut again = t.rendezvous(s, RdvRole::Newcomer);
+    assert_eq!(
+        again.send_frame(b"x").unwrap_err(),
+        MailboxError::Server(Code::NotFound),
+        "a closed id never starts again"
     );
 }
