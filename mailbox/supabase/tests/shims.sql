@@ -23,6 +23,9 @@ create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
 
 -- Realtime Broadcast from the database: record what would have been sent.
+-- Shaped like the real one: realtime.send is not SECURITY DEFINER, the
+-- table has row level security with no policy, and a failed insert is only
+-- a warning. A caller without the rights sends nothing and gets no error.
 create schema if not exists realtime;
 create table realtime.sent (
     n bigint generated always as identity primary key,
@@ -32,11 +35,18 @@ create table realtime.sent (
     private boolean not null,
     sent_at timestamptz not null default now()
 );
+alter table realtime.sent enable row level security;
 create function realtime.send(payload jsonb, event text, topic text, private boolean default true)
 returns void
-language sql
+language plpgsql
 as $$
-    insert into realtime.sent (payload, event, topic, private) values (payload, event, topic, private);
+begin
+    begin
+        insert into realtime.sent (payload, event, topic, private) values (payload, event, topic, private);
+    exception when others then
+        raise warning 'WarnSendingBroadcastMessage: %', sqlerrm;
+    end;
+end
 $$;
 
 -- Storage: buckets and objects, with row level security on like the real one.

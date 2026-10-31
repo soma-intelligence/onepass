@@ -14,7 +14,8 @@ insert into t_allow (role, signature) values
     ('onepass_mailbox_api', 'onepass_mailbox.api_record(bytea,bytea,timestamp with time zone,bytea,smallint,bytea)'),
     ('onepass_mailbox_api', 'onepass_mailbox.api_enroll(bytea,bytea,timestamp with time zone,bytea,bytea,bytea,timestamp with time zone,bytea,bytea)'),
     ('onepass_mailbox_api', 'onepass_mailbox.api_revoke_credential(bytea,bytea,timestamp with time zone,bytea,bytea)'),
-    ('onepass_mailbox_api', 'onepass_mailbox.api_set_push(bytea,bytea,timestamp with time zone,bytea,smallint,bytea)');
+    ('onepass_mailbox_api', 'onepass_mailbox.api_set_push(bytea,bytea,timestamp with time zone,bytea,smallint,bytea)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_commit(bytea,bytea,timestamp with time zone,bytea,smallint[],bytea[],bigint[],smallint[],bigint[],bytea[],bytea[],integer[])');
 
 -- The allowlist names real functions (a typo would allow nothing and hide it).
 select onepass_test.ok(
@@ -92,3 +93,24 @@ select onepass_test.ok(
             and (p.proacl is null or exists (select 1 from unnest(p.proacl) a where a::text like '=%'))
      from pg_proc p where p.oid = 'onepass_mailbox.t_stray()'::regprocedure),
     'stray_postgres_function_would_be_caught');
+
+-- The wake bridge (Task 5): runs as the migration role, so it is held to
+-- the same shape and reachable from the mailbox owner only.
+select onepass_test.ok(
+    (select count(*) = 1 from pg_proc p where p.pronamespace = 'onepass_mailbox_wake'::regnamespace)
+    and (select bool_and(p.prosecdef and 'search_path=""' = any (coalesce(p.proconfig, '{}'))
+                         and p.proacl is not null
+                         and not exists (select 1 from unnest(p.proacl) a where a::text like '=%')
+                         and has_function_privilege('onepass_mailbox_owner', p.oid, 'execute'))
+         from pg_proc p where p.pronamespace = 'onepass_mailbox_wake'::regnamespace),
+    'wake_bridge_is_security_definer_without_public_execute');
+select onepass_test.ok(
+    not exists (
+        select 1
+        from pg_proc p,
+             unnest(array['anon', 'authenticated', 'service_role', 'onepass_mailbox_api', 'onepass_mailbox_janitor']) r
+        where p.pronamespace = 'onepass_mailbox_wake'::regnamespace
+          and has_function_privilege(r, p.oid, 'execute'))
+    and not has_schema_privilege('onepass_mailbox_api', 'onepass_mailbox_wake', 'usage')
+    and not has_schema_privilege('anon', 'onepass_mailbox_wake', 'usage'),
+    'wake_bridge_reachable_from_the_owner_only');
