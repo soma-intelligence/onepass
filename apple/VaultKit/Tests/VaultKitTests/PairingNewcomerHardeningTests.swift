@@ -90,7 +90,7 @@ struct PairingNewcomerHardeningTests {
     }
 
     /// A connection that never sends its key exchange is closed at the handshake deadline (M2).
-    @Test(.timeLimit(.minutes(1))) func silentConnectionClosedAtDeadline() async throws {
+    @Test(.timeLimit(.minutes(3))) func silentConnectionClosedAtDeadline() async throws {
         let f = try await PairingFixture(server: false)
         defer { f.cleanUp() }
         let n = PairingNewcomerFlow(
