@@ -1,7 +1,7 @@
 # Partage, familles et base des équipes
 
 Date : 2026-10-30
-Statut : brouillon pour la revue du fondateur. Rien n'est implémenté. Décisions proposées S1 à S30 (section 18), questions ouvertes en section 21.
+Statut : brouillon pour la revue du fondateur. Plan 1 (contacts) construit sur `feat/sharing-families`, le reste non. Décisions proposées S1 à S30 (section 18), questions ouvertes en section 21. Amendé le 2026-10-31 : transport par la boîte aux lettres Supabase pour tout le monde (section 13 réécrite, 11.7, décisions 15 à 18).
 Branche : `docs/sharing-families`, depuis `origin/main` (`88468668`).
 Dépend de : la rotation v2 (`docs/superpowers/specs/2026-10-28-key-rotation-v2-design.md`, branche `feat/key-rotation-v2`, en cours de construction). Ce document en reprend le vocabulaire (clés d'appareil, lignée, `identity_id`, serveur = boîte aux lettres hostile, retrait = vraie rotation) et ne se livre qu'après elle (S1).
 Portée : coffres partagés entre comptes, partage d'un item, offre Famille (organisateur, membres, aide à la récupération), et les briques qu'une offre Équipe reprendra. Hors portée : facturation, serveur self-host, web app, SSO et SCIM.
@@ -22,7 +22,7 @@ Le travail de ce document est donc surtout de protocole : qui reçoit quelle cl�
 
 Repris de la rotation v2 (section 2), élargi à plusieurs comptes.
 
-**T2, le serveur seul** (CloudKit aujourd'hui, un relais aveugle plus tard) : lit, retient, retarde, rejoue, réordonne, forge n'importe quel enregistrement et accepte toute écriture. Il voit les Apple ID des participants d'un partage. Il peut proposer n'importe quelle clé publique pour n'importe quel compte. C'est l'attaquant de l'étude ETH Zurich / USI de 2026 (section 15).
+**T2, le serveur seul** (la boîte aux lettres Supabase pour toutes les zones partagées, section 13 ; CloudKit encore pour la zone privée d'un compte resté sur iCloud) : lit, retient, retarde, rejoue, réordonne, forge n'importe quel enregistrement et accepte toute écriture. Il voit quels comptes partagent une zone (13.11). Il peut proposer n'importe quelle clé publique pour n'importe quel compte. C'est l'attaquant de l'étude ETH Zurich / USI de 2026 (section 15).
 
 **T1, un appareil retiré d'un membre plus le serveur** : ce qu'il garde est décrit par la rotation v2, plus les clés des coffres partagés que ce membre lisait.
 
@@ -44,7 +44,7 @@ Repris de la rotation v2 (section 2), élargi à plusieurs comptes.
 - **P4 Organisateur sans connaissance.** L'organisateur ne lit aucun coffre privé ; l'aide à la récupération demande l'inscription volontaire du membre, la part stockée chez le membre, un délai annulable et une rencontre (section 11).
 - **P5 Suivi de la rotation v2.** Le changement d'identité d'un membre retire aussitôt l'ancienne identité chez les autres ; la nouvelle n'est adoptée qu'après une confirmation humaine (section 12).
 - **P6 Jamais de perte silencieuse**, comme G4 de la rotation v2 : un retrait, une rotation de clé de coffre ou une course entre gestionnaires ne fait perdre aucune écriture locale.
-- **P7 Transport interchangeable** : CloudKit (CKShare) aujourd'hui, relais aveugle demain, mêmes enregistrements, même vérification.
+- **P7 Transport interchangeable** : la boîte aux lettres aujourd'hui (13), un autre transport demain derrière les mêmes zones, mêmes enregistrements, même vérification.
 
 Non-objectifs : effacer à distance ce qu'un ancien membre a gardé ; cacher à Apple le graphe des partages ; partage public d'un coffre entier par lien.
 
@@ -55,9 +55,9 @@ Non-objectifs : effacer à distance ce qu'un ancien membre a gardé ; cacher à 
 3. **La clé du coffre** de génération `g` est enveloppée pour la clé KEM du compte de chaque membre, sous le label `onepass/share/vault-key/v1` (section 6).
 4. **Les manifestes** d'un coffre partagé nomment leur signataire et pointent la liste des membres sous laquelle ils sont écrits : les deux chaînes se tiennent (section 8).
 5. **Retirer un membre** fait tourner la clé du coffre (génération `g+1`) et rescelle chaque item, comme le passage par coffre de la rotation v2 (section 9).
-6. **Les rôles** : lire est cryptographique (avoir la clé) ; modifier et gérer sont des vérifications de signature faites par chaque client, doublées des permissions CKShare (section 10).
+6. **Les rôles** : lire est cryptographique (avoir la clé) ; modifier et gérer sont des vérifications de signature faites par chaque client, doublées des rôles d'identifiant de la boîte aux lettres (section 10).
 7. **La famille** est un groupe signé avec des organisateurs et un coffre Famille ; l'aide à la récupération partage une clé de secours en deux moitiés, l'une chez l'organisateur, l'autre dans le stockage privé du membre (section 11).
-8. **Transport** : une zone CloudKit par coffre partagé, partagée par CKShare ; une petite zone par paire de contacts sert de boîte aux lettres (section 13).
+8. **Transport** : la boîte aux lettres Supabase pour tout le monde (décision du fondateur du 2026-10-31) : une boîte par coffre partagé, par famille et par paire de contacts, fille de la boîte du compte qui la crée ; un identifiant par membre, attribué par un gestionnaire et enveloppé pour la clé épinglée du membre (section 13).
 
 ## 5. Annuaire des clés publiques et vérification des contacts
 
@@ -107,7 +107,7 @@ Réutilise le canal du jalon 2b sans changer sa cryptographie : QR de l'un, scan
 #### 5.3.2 À distance
 
 1. Alice crée une invitation : `invite_id` (16 octets) et `invite_secret` (32 octets), envoyés dans un lien `onepass://contact#<base32(invite_id || invite_secret)>` par le canal de son choix (iMessage, Signal). Le fragment ne part jamais vers un serveur. Valable 72 h, usage unique.
-2. Bob ouvre le lien, écrit sa carte scellée sous `K_inv = HKDF(invite_secret, "onepass/contact-invite/v1" || invite_id)` dans la zone publique de rendez-vous (13.4), avec une clé KEM éphémère.
+2. Bob ouvre le lien, écrit sa carte scellée sous `K_inv = HKDF(invite_secret, "onepass/contact-invite/v1" || invite_id)` dans un dépôt de la boîte aux lettres (13.9), avec une clé KEM éphémère.
 3. Alice ouvre la réponse, vérifie la carte de Bob, renvoie la sienne scellée pour la clé éphémère de Bob, liée à la transcription.
 4. Les deux sont au niveau **Lien**. L'écran propose aussitôt "Comparer le numéro de sécurité" (appel ou FaceTime) pour passer à **Vérifié**.
 
@@ -185,6 +185,7 @@ Member {
   role: Read | Write | Manage, owner: bool,
   level: Verified | Link, added_by: MemberRef, added_at: i64,
   key_pending: bool,            // pas d'enveloppe à cette génération (12.3)
+  credential_id: [u8; 16],      // son identifiant dans la boîte de la zone (13.4), ajouté le 2026-10-31
 }
 SignedMembership { body, sig }  // signature hybride du compte signataire, domaine onepass/membership/v1
 ```
@@ -206,7 +207,7 @@ Le même `seq` avec un autre hash est une bifurcation (`MembershipFork`), comme 
 
 ### 7.3 Ajouter un membre
 
-Seul un gestionnaire ajoute, et seulement un contact de son carnet (jamais une adresse email résolue par le serveur). Il recopie dans `Member` les clés de son carnet, écrit l'enveloppe de la génération courante, signe le corps `n+1`, ajoute le participant CKShare (13.2) et dépose dans la zone du contact (13.3) une **invitation** : `ShareInvite { vault_id, membership: SignedMembership (le corps n+1), share_url }`, signée par le gestionnaire. Le nouveau membre vérifie que le signataire est un contact de son carnet avec le rôle Gérer dans ce corps, épingle ce corps comme tête de départ (il ne peut pas vérifier l'historique d'avant, il fait confiance au gestionnaire qu'il a vérifié, comme un appareil appairé fait confiance à son approbateur), puis accepte le partage CKShare.
+Seul un gestionnaire ajoute, et seulement un contact de son carnet (jamais une adresse email résolue par le serveur). Il recopie dans `Member` les clés de son carnet, écrit l'enveloppe de la génération courante, signe le corps `n+1`, tire et attribue l'identifiant du membre dans la boîte de la zone (13.4) et dépose dans la zone du contact (13.5) une **invitation** : `ShareInvite { vault_id, membership: SignedMembership (le corps n+1), home: ZoneHome, credential: enveloppe de la graine de l'identifiant }`, signée par le gestionnaire. Le nouveau membre vérifie que le signataire est un contact de son carnet avec le rôle Gérer dans ce corps, épingle ce corps comme tête de départ (il ne peut pas vérifier l'historique d'avant, il fait confiance au gestionnaire qu'il a vérifié, comme un appareil appairé fait confiance à son approbateur), puis écrit son `ZoneAccess` (13.4) et synchronise la zone.
 
 ### 7.4 Courses entre gestionnaires
 
@@ -235,7 +236,7 @@ La règle 1 est le lien entre les deux chaînes : un manifeste dit sous quelle l
 
 ### 8.3 Ce que la signature révèle
 
-Le serveur peut vérifier les signatures avec les clés publiques des membres, qui sont dans la liste en clair : il apprend qui écrit quand. CloudKit l'apprend déjà par l'Apple ID de l'auteur de chaque écriture. Limite documentée (section 16).
+Le serveur peut vérifier les signatures avec les clés publiques des membres, qui sont dans la liste en clair : il apprend qui écrit quand. La boîte l'apprend déjà par l'identifiant qui signe chaque requête (13.11). Limite documentée (section 16).
 
 ## 9. Retrait d'un membre
 
@@ -257,7 +258,7 @@ Préconditions, sinon rien n'est écrit : session déverrouillée, présence fra
 2. Une enveloppe `MemberKey` par membre restant dont l'identité est confirmée ; les membres en `KeysChanged` (12.3) passent à `key_pending: true`, sans enveloppe.
 3. Chaque item listé (vivant, archivé, corbeille) rescellé sous une clé d'item neuve à version + 1 ; meta rescellé ; manifeste suivant signé par M, `ext.generation = g+1`, `ext.membership` = le corps `n+1`.
 4. Corps `n+1` : `reason = Remove`, retiré dans `removed`, `generation = g+1`.
-5. **Une transaction locale** (`put_all_if_version_and_delete`), puis envoi en trois phases comme la rotation v2 (7.1 là-bas) : (a) retrait du participant CKShare, enveloppes, items neufs ; (b) corps de membres puis manifeste, conditionnels ; (c) suppression des anciens items et des enveloppes de la génération `g`, après confirmation de (b).
+5. **Une transaction locale** (`put_all_if_version_and_delete`), puis envoi en trois phases comme la rotation v2 (7.1 là-bas) : (a) enveloppes, items neufs ; (b) corps de membres puis manifeste, conditionnels ; (c) copie du corps signé dans la zone de contact du retiré, suppression des anciens items et des enveloppes de la génération `g`, puis retrait de l'identifiant du retiré dans la boîte de la zone, après confirmation de (b) (13.8).
 
 Les écritures concurrentes d'un autre membre perdent sur le manifeste (`Conflict`), relisent, reçoivent leur enveloppe `g+1` et se rejouent par le rebase normal : rien n'est perdu (P6).
 
@@ -271,8 +272,8 @@ Tout membre peut se retirer : corps `reason = Leave` signé par lui. Il ne déti
 
 ### 9.5 Partager un coffre existant, transférer, arrêter
 
-- **Partager un coffre personnel** : le coffre passe dans une zone partagée neuve (13.2) à la génération 1, rescellé (C), premier corps de membres signé par le propriétaire. Le coffre garde son id.
-- **Le propriétaire part** : la zone CloudKit est la sienne et ne change pas de main. Un autre gestionnaire crée une zone neuve, y recopie le coffre à la génération suivante, puis le corps `Rekey` final dans l'ancienne zone pointe la nouvelle. Question 7.
+- **Partager un coffre personnel** : le coffre passe dans une zone partagée neuve (une boîte fille, 13.3) à la génération 1, rescellé (C), premier corps de membres signé par le propriétaire. Le coffre garde son id.
+- **Le propriétaire part** : la boîte de la zone dépend de son compte et ne change pas de main. Un autre gestionnaire crée une zone neuve sous sa propre boîte, y recopie le coffre à la génération suivante, puis le corps `Rekey` final dans l'ancienne zone pointe la nouvelle. Question 7.
 - **Arrêter le partage** : rotation vers un coffre à un seul membre, puis retour au format personnel au choix.
 
 ## 10. Rôles
@@ -283,11 +284,11 @@ Tout membre peut se retirer : corps `reason = Leave` signé par lui. Il ne déti
 | --- | --- | --- | --- |
 | A. Signatures vérifiées par chaque client | avoir la clé (crypto) | manifeste signé par un membre Modifier, vérifié | liste signée par un membre Gérer, vérifiée |
 | B. Clés séparées par rôle | clé de contenu | une clé de signature de coffre donnée aux seuls rédacteurs | une clé de signature de liste donnée aux seuls gestionnaires |
-| C. Contrôle d'accès du serveur seul | permissions CKShare | permissions CKShare | propriétaire de la zone |
+| C. Contrôle d'accès du serveur seul | rôle de l'identifiant dans la boîte | rôle de l'identifiant | propriétaire de la boîte |
 
 Ce qu'aucune approche ne peut changer : celui qui a la clé de contenu peut produire des chiffrés valides. L'écriture n'est donc jamais "cryptographiquement impossible" pour un lecteur ; elle est **refusée par tous les clients honnêtes**, parce que seuls les manifestes comptent (`check_records` refuse tout enregistrement non listé). B ne fait que déplacer la vérification (on vérifie la signature d'une clé de rôle au lieu de celle d'un membre) et ajoute des clés à faire tourner à chaque rétrogradation. C seul est ce que font les produits du marché, et c'est ce que l'étude ETH attaque.
 
-**Recommandation : A, doublé de C comme défense en profondeur** (S13) : la permission CKShare suit le rôle (Lire = `readOnly`, Modifier et Gérer = `readWrite`), ce qui empêche Apple de servir les écritures d'un lecteur, mais aucun client ne s'y fie.
+**Recommandation : A, doublé de C comme défense en profondeur** (S13) : le rôle de l'identifiant d'un membre dans la boîte de la zone suit son rôle (tableau de 13.4 : Lire = écriture limitée à ses propres enregistrements de départ, d'enveloppe, de lignée et de demande de rotation ; Modifier = écriture ; Gérer = gestion), ce qui empêche un serveur honnête de servir les écritures d'un lecteur, mais aucun client ne s'y fie.
 
 ### 10.2 Tableau des droits
 
@@ -317,7 +318,7 @@ FamilyBody {
 SignedFamily { body, sig }      // domaine onepass/family/v1
 ```
 
-Même règles que 7.2 (Organizer tient le rôle de Gérer, au moins un organisateur, organisateurs au niveau Vérifié). La famille vit dans une zone CloudKit de l'organisateur créateur, partagée avec tous les membres. Six comptes au plus (question 2).
+Même règles que 7.2 (Organizer tient le rôle de Gérer, au moins un organisateur, organisateurs au niveau Vérifié). La famille vit dans une boîte de zone fille de la boîte de l'organisateur créateur, où chaque membre a son identifiant (13.3, 13.4). Six comptes au plus (question 2).
 
 ### 11.2 Ce que peut l'organisateur
 
@@ -334,7 +335,7 @@ Ce qu'il ne peut pas : lire un coffre privé d'un membre, changer son mot de pas
 | --- | --- | --- |
 | A. Aucune | Emergency Kit seulement, comme aujourd'hui | une personne qui oublie son mot de passe et perd son kit perd tout ; fréquent en famille |
 | B. Dépôt chez l'organisateur | le keyset du membre (ou une clé qui l'ouvre) est enveloppé pour l'organisateur (Bitwarden "account recovery", groupe de récupération de 1Password) | l'organisateur seul prend le compte en silence ; un serveur qui substitue la clé de l'organisateur ou inscrit d'office le membre récupère tout (attaques de l'étude ETH) |
-| C. Aide à la récupération en deux moitiés, avec délai et rencontre | une clé de secours RK ouvre le keyset ; RK = HKDF(moitié organisateur, moitié stockée dans la base privée du membre) ; la moitié de l'organisateur n'est remise qu'après un délai annulable, en face à face, à un appareil connecté au compte iCloud du membre | organisateur et serveur alliés (ou organisateur plus celui qui a pris l'Apple ID du membre) récupèrent ; voir 11.6 |
+| C. Aide à la récupération en deux moitiés, avec délai et rencontre | une clé de secours RK ouvre le keyset ; RK = HKDF(moitié organisateur, moitié stockée dans la base privée du membre) ; la moitié de l'organisateur n'est remise qu'après un délai annulable, en face à face, à un appareil qui a accès à la base privée du membre (son iCloud, ou son Emergency Kit sur la boîte, 11.7) | organisateur et serveur alliés (ou organisateur plus celui qui a pris l'Apple ID du membre) récupèrent ; voir 11.6 |
 
 **Recommandation : C** (S17 à S21), désactivée par défaut, choisie par le membre.
 
@@ -343,14 +344,14 @@ Ce qu'il ne peut pas : lire un coffre privé d'un membre, changer son mot de pas
 1. RK aléatoire de 32 octets ; `S_org` et `S_store` aléatoires ; `RK = HKDF-SHA256(ikm = S_org || S_store, info = "onepass/recovery/rk/v1" || postcard((account_id, identity_id, enrollment_id)))`.
 2. Le keyset est scellé une seconde fois sous une clé dérivée de RK : enregistrement `RecoverySlot` (clé = `identity_id`, comme les autres enregistrements par identité de la rotation v2), dans la base privée du membre.
 3. `S_store` est écrit en clair dans un enregistrement `RecoveryHalf` de la base privée du membre. Il ne protège que face à quelqu'un qui n'a pas accès à cette base.
-4. `S_org` est enveloppé pour la clé KEM de l'organisateur **telle qu'épinglée dans le carnet du membre, au niveau Vérifié** : `wrap_key_labeled(org.kem_pub, S_org, "onepass/recovery/share/v1", ctx(member account, member identity_id, organizer account, organizer identity_id, enrollment_id))`, déposé dans la zone de contact membre-organisateur (13.3) avec un `RecoveryEnrollment` signé par le membre (organisateur, date, délai choisi).
+4. `S_org` est enveloppé pour la clé KEM de l'organisateur **telle qu'épinglée dans le carnet du membre, au niveau Vérifié** : `wrap_key_labeled(org.kem_pub, S_org, "onepass/recovery/share/v1", ctx(member account, member identity_id, organizer account, organizer identity_id, enrollment_id))`, déposé dans la zone de contact membre-organisateur (13.5) avec un `RecoveryEnrollment` signé par le membre (organisateur, date, délai choisi).
 5. L'organisateur reçoit "Léa t'a choisi pour l'aider à récupérer son compte."
 
 Aucune inscription ne vient du serveur, d'une politique de la famille ou de l'organisateur : seul l'écran du membre, après son mot de passe, l'écrit (attaque A9). Une nouvelle identité du membre (rotation v2) ou de l'organisateur annule l'inscription ; le membre est invité à la refaire.
 
 ### 11.5 Récupération
 
-1. Le membre, sur un nouvel appareil connecté à son iCloud, choisit "J'ai perdu mon mot de passe ou ma Secret Key", puis "Demander l'aide de Quentin".
+1. Le membre, sur un nouvel appareil qui a accès à sa base privée (connecté à son iCloud, ou, pour un compte sur la boîte, avec son Emergency Kit : 11.7), choisit "J'ai perdu mon mot de passe ou ma Secret Key", puis "Demander l'aide de Quentin".
 2. L'organisateur lance la récupération sur son appareil (présence, mot de passe). Il écrit un `RecoveryRequest` signé dans la zone de contact.
 3. Les appareils encore en vie du membre affichent "Quentin a demandé à récupérer ton compte. Ce sera possible le 2 nov. à 14:02. Si ce n'est pas toi, annule." ; "Annuler" écrit un `RecoveryCancel` signé par une clé d'appareil du membre (roster de sa lignée, que l'organisateur vérifie depuis la carte du membre).
 4. Après le délai (72 h par défaut, question 3) et sans annulation lue, l'organisateur et le membre se retrouvent : canal du jalon 2b (QR du nouvel appareil du membre, scan par l'organisateur, SAS). L'organisateur ouvre `S_org` et l'envoie dans le canal, scellé pour la clé éphémère du nouvel appareil.
@@ -359,12 +360,21 @@ Aucune inscription ne vient du serveur, d'une politique de la famille ou de l'or
 
 ### 11.6 Risques de l'aide à la récupération
 
-- **Organisateur et stockage alliés** : l'organisateur a `S_org`, Apple (ou un relais hostile, ou quiconque a pris l'Apple ID du membre) a `S_store` et le `RecoverySlot`. Ensemble, ils ouvrent le keyset. Le délai et la notification n'aident que si le serveur ne les retient pas. C'est le prix de C, écrit tel quel à l'inscription : "Quentin et quelqu'un qui aurait accès à ton compte iCloud pourraient ensemble ouvrir ton coffre."
+- **Organisateur et stockage alliés** : l'organisateur a `S_org`, Apple (ou un relais hostile, ou quiconque a pris l'Apple ID du membre) a `S_store` et le `RecoverySlot`. Ensemble, ils ouvrent le keyset. Le délai et la notification n'aident que si le serveur ne les retient pas. C'est le prix de C, écrit tel quel à l'inscription : "Quentin et quelqu'un qui aurait accès à ton compte iCloud pourraient ensemble ouvrir ton coffre." Pour un compte sur la boîte, voir 11.7.
 - **Organisateur seul** : ne peut rien, il lui manque `S_store`. Le formel le prouve (14.2).
 - **Serveur seul** : ne peut rien, il lui manque `S_org`.
 - **Clé de l'organisateur substituée** : impossible, l'enveloppe vise la clé épinglée Vérifiée (A10).
 - **Organisateur qui récupère puis garde l'accès** : la rotation obligatoire de l'étape 5 coupe l'ancienne identité ; l'organisateur n'a jamais vu RK ni le keyset, il n'a vu que `S_org`.
 - **Ingénierie sociale de l'organisateur** ("je suis Léa, j'ai perdu mon téléphone") : le délai, la notification sur les appareils de Léa et la rencontre en personne ; à distance, question 4.
+
+### 11.7 Sur la boîte aux lettres
+
+Ajouté le 2026-10-31. La "base privée du membre" est sa zone privée : CloudKit pour un compte resté sur iCloud, sa boîte de compte sinon. Sur iCloud, un nouvel appareil y accède par l'Apple ID. Sur la boîte, il y accède par la Secret Key (localisateur et identifiant de secours, spec multi-plateforme D.4) ou par un identifiant qu'un appareil encore inscrit lui attribue. Il n'y a pas d'équivalent de l'Apple ID.
+
+- **Sceller `S_store`.** L'opérateur de la boîte lit `RecoveryHalf` comme il lit tout enregistrement ; l'écrire en clair donnerait la récupération à l'organisateur allié au seul opérateur (sur iCloud avec Advanced Data Protection, Apple ne le lit pas). Pour un compte sur la boîte, `RecoveryHalf` porte donc `seal(K_store, S_store)` avec `K_store = HKDF-SHA256(ikm = Secret Key, info = "onepass/recovery/store-seal/v1" || enrollment_id)`. Une rotation change la Secret Key et annule déjà l'inscription (11.4) : rien à resceller.
+- **Ce qui marche** : "j'ai oublié mon mot de passe mais j'ai mon Emergency Kit", le cas courant en famille. Le nouvel appareil localise la boîte par le kit, lit `RecoverySlot` et `RecoveryHalf`, ouvre `S_store` avec la Secret Key, reçoit `S_org` en personne, dérive RK, puis fait la rotation `Recover` (11.5).
+- **Ce qui ne marche pas en v1** : "j'ai perdu mon mot de passe, mon kit et tous mes appareils" sur un compte sur la boîte. Il manque le second facteur que jouait l'Apple ID. La variante qui le rendrait possible (un identifiant d'aide gardé par le serveur derrière un délai qu'il ferait respecter) fait du serveur une ligne de défense, contraire au modèle de menace ; écartée en v1 (question 16).
+- **Risque, réécrit pour la boîte** : l'organisateur allié à quiconque détient l'Emergency Kit du membre récupère. Texte à l'inscription : "<organisateur> et quelqu'un qui aurait ton Emergency Kit pourraient ensemble ouvrir ton coffre."
 
 ## 12. Interaction avec la rotation v2 quand l'identité d'un membre change
 
@@ -412,34 +422,123 @@ Une entrée de carnet en `KeysChanged` sans coffre partagé ne demande rien tout
 
 ## 13. Transport
 
-### 13.1 Approches
+Réécrit le 2026-10-31 après la décision du fondateur ("use Supabase also for password storage in the cloud and family sharing" : le partage en famille et entre contacts passe par la boîte aux lettres Supabase pour tout le monde, spec multi-plateforme, section "Décision du fondateur 2026-10-31"). Remplace la version CKShare. La boîte aux lettres est celle de la spec multi-plateforme, section 4 (citée "boîte 4.n"), telle que construite par le plan X1 (Tasks 1 à 12) et complétée par ses Tasks 22, 24, 25 et 26.
 
-| Approche | Pour | Contre |
+### 13.1 Ce qui ne change pas
+
+Le transport reste hors de la confiance (P3, P7) : mêmes enregistrements, mêmes ids, mêmes vérifications, zones du core (`Zone::{Private, Vault, Contact, Family}`, plan 2 Task 1). Un serveur hostile (T2) lit, retient, rejoue, forge et accepte tout ; la boîte ne lui donne aucune clé et ses contrôles d'accès ne sont qu'une défense en profondeur, comme l'étaient les permissions CKShare.
+
+### 13.2 Approches
+
+| | A. Une boîte par zone partagée | B. Des zones dans la boîte du propriétaire | C. Livraison croisée dans la boîte de chaque membre |
+| --- | --- | --- | --- |
+| Principe | Chaque coffre partagé, chaque famille et chaque paire de contacts a sa boîte, fille de la boîte du compte qui la crée ; chaque membre y a un identifiant | La boîte du compte propriétaire gagne une colonne `zone` ; les membres y ont des identifiants limités à une zone | Chaque rédacteur écrit sa modification dans la boîte de chaque membre |
+| Serveur hostile | Rien de neuf : mêmes routes, même tour de sync, un `SyncDriver` par boîte ; un bogue de contrôle d'accès n'expose que des chiffrés de la zone | Un oubli de filtre de zone dans une fonction SQL expose aux invités les chiffrés et le rythme de la zone privée du propriétaire ; le `seq` d'une boîte trahit aux invités l'activité privée du propriétaire | Aucun point d'écriture conditionnelle commun : la course entre gestionnaires (7.4) et la chaîne des manifestes divergent d'une boîte à l'autre ; un serveur peut servir des histoires différentes sans qu'un manifeste les relie |
+| Quotas | Par boîte, plan `shared` ou `contact`, plafond de filles par compte | Mêlés au quota privé du propriétaire | Chaque coffre copié autant de fois qu'il y a de membres |
+| Débit | Par identifiant et par boîte ; un tour de plus par zone | Un seul compteur pour le propriétaire et ses invités | N écritures par modification |
+| Retrait | Retrait de l'identifiant du membre, puis génération `g+1` (13.8) | Idem, dans la boîte du propriétaire | Cesser d'écrire chez lui, puis `g+1` |
+| Réveil | Un sujet Realtime par boîte | Un sujet pour tout, donc chaque invité est réveillé par l'activité privée du propriétaire | Natif |
+| Code serveur | Boîtes filles, rôles, attributions (X1 Tasks 22, 24) | Toutes les fonctions `api_*` déjà construites (X1 Tasks 4 à 7) à reprendre | Droit d'écriture croisé et fusion à inventer |
+
+**Recommandation : A.** C'est la seule qui ne touche à aucune fonction déjà construite et testée de la boîte, garde un point d'écriture conditionnelle unique par zone (ce que 7.4, 8.2 et 9.2 supposent), et sépare les quotas et le réveil par zone. B mélange l'activité privée d'un compte avec ce que voient ses invités ; C casse les écritures conditionnelles.
+
+### 13.3 Une boîte par zone
+
+| Zone du core | Boîte | Créée par | Plan |
+| --- | --- | --- | --- |
+| `Private` | la boîte du compte (ou CloudKit pour un compte resté sur iCloud) | inchangé | `free` ou `selfhost` |
+| `Vault(v)` | fille de genre `shared` | le propriétaire, sous sa boîte de compte ou sa boîte d'ancrage | `shared` |
+| `Family(f)` | fille de genre `shared` | l'organisateur créateur | `shared` |
+| `Contact(pair_id)` | fille de genre `contact` | en face à face, le compte au plus petit `account_id` ; à distance, l'invitant | `contact` |
+
+`ZoneHome { url: String (256 octets au plus, https), mailbox_id: [u8; 16], extra_ca_pem: Option<String> (8 Kio au plus) }` dit où vit une zone. Il voyage seulement dans des objets signés (`ShareInvite`, `FamilyInvite`, `ContactZoneOffer`, `ZoneAccess`, corps `Rekey` avec `moved_to`) : un serveur ne peut pas rediriger un membre vers une autre boîte. La boîte d'une zone vit sur le serveur de son créateur ; un membre dont le compte est ailleurs (autre self-host, instance Soma, iCloud) s'y connecte quand même, avec l'URL et l'autorité du `ZoneHome`.
+
+**Boîte d'ancrage.** Un compte resté sur iCloud n'a pas de boîte de compte. À son premier partage, son appareil crée sur l'instance Soma (ou son self-host) une boîte de genre compte sans aucun enregistrement, qui ne sert que de parent ; sa graine d'identifiant est commune aux appareils du compte et voyage dans un `ZoneAccess` (13.4) de cible `Anchor`.
+
+### 13.4 Accès d'un membre à une boîte de zone
+
+**Un identifiant par membre, pas par appareil.** Le gestionnaire qui ajoute Bob tire une graine Ed25519 `S_bob` pour la boîte de la zone, l'attribue (`POST /v1/mailboxes/{m}/grants`, boîte 4.6 et X1 Task 22) avec le rôle qui suit celui de Bob (tableau ci-dessous), et l'enveloppe pour la clé KEM de Bob **épinglée dans son carnet** : `wrap_key_labeled(bob.kem_pub, S_bob, "onepass/share/zone-credential/v1", postcard((zone, mailbox_id, bob.account_id, bob.identity_id)))`. L'enveloppe voyage dans la `ShareInvite` signée (7.3). L'id de l'identifiant (`credential_id`, boîte 4.5) entre dans `Member` (7.1, champ ajouté en fin de structure), pour que tout gestionnaire puisse le retirer.
+
+Pourquoi par membre : un nouvel appareil de Bob n'a besoin d'aucun échange avec le gestionnaire (il ouvre l'enveloppe avec la clé KEM du compte) ; le roster des appareils d'un autre compte n'est jamais exposé au gestionnaire ni au serveur ; 64 membres font 64 identifiants. Ce que coûte ce choix : le gestionnaire qui a tiré `S_bob` peut se présenter au serveur comme Bob. Il n'en tire rien qu'il n'ait déjà : lire des chiffrés qu'il sait ouvrir, écrire des enregistrements que les clients refusent sans la signature de Bob (8.2). Les appareils de Bob partagent un compteur de débit (plan `shared` : 600 requêtes par minute) et passent par des cibles de notification par appareil (13.7).
+
+**`ZoneAccess`, l'accès rangé chez le membre.** À l'acceptation, l'appareil de Bob écrit dans sa zone privée un enregistrement `RecordKind::ZoneAccess` (26, premier code libre après `SyncHome` 24 et `MailboxEnrollRequest` 25 de la spec multi-plateforme ; id = `SHA-256("onepass/zone-access-id/v1" || clé de zone)[..16]`) : `ZoneAccess { target: Zone | Anchor, home: ZoneHome, credential_id, envelope: wrap_key_labeled(own.kem_pub, seed, "onepass/zone-access-seed/v1", postcard((target, mailbox_id))) }`, signé par la clé de signature du compte sous `onepass/zone-access/v1`. Chaque appareil du compte l'ouvre déverrouillé, vérifie la signature, et range la graine dans son stockage sûr (trousseau `AfterFirstUnlockThisDeviceOnly` sur Apple, section 6 de la spec multi-plateforme ailleurs) pour synchroniser la zone écran verrouillé. Une rotation v2 de Bob le signe à nouveau et réenveloppe la graine pour sa nouvelle clé KEM (étape 3 bis, 12.2). Il remplace la question de A-14 (plan 2) : le second appareil de Bob rejoint la zone par son `ZoneAccess`.
+
+**Rôles côté serveur** (défense en profondeur, jamais lus par un client pour décider d'un droit) :
+
+| Rôle du membre (10) | Rôle de l'identifiant | Écriture permise |
 | --- | --- | --- |
-| A. CKShare d'une zone par coffre partagé | natif, permissions Apple, notifications, pas de serveur à nous | Apple seulement ; Apple voit les Apple ID et qui partage avec qui ; la zone reste celle de son propriétaire ; quota du propriétaire |
-| B. Base publique CloudKit comme boîte aux lettres pour tout | une seule zone, simple | n'importe qui écrit, pas de permissions, pas de suppression contrôlée |
-| C. Relais aveugle à nous | multiplateforme, contrôle des métadonnées, transparence des clés possible | à construire et exploiter |
+| Lire | `write` avec `put_kinds` = {`Membership`, `MemberKey`, `MemberLineage`, `RekeyRequest`} (14 à 17), aucune suppression | son départ (`Leave`), son enveloppe et sa lignée après une rotation, sa demande de rotation (9.4, 12.2) |
+| Modifier | `write` | tout |
+| Gérer | `manage` | tout, plus attribuer, changer un rôle, retirer |
+| Propriétaire | `manage` + `owner` | idem ; ne se retire que lui-même (S9) |
+| Contact (les deux côtés) | `write` ; le créateur est `owner` | tout |
 
-**Recommandation : A pour les coffres, la famille et les contacts ; B seulement pour le rendez-vous d'invitation (5.3.2) ; C plus tard derrière le même `RecordStore`** (S26 à S28).
+### 13.5 Zone de contact
 
-### 13.2 Coffre partagé sur CloudKit
+Créée au moment de la vérification (5.3), parce que c'est le seul moment où les deux comptes ont un canal authentifié. Le créateur (13.3) crée la boîte fille, s'attribue son identifiant (propriétaire), tire et attribue celui de l'autre, et lui envoie `ContactZoneOffer { pair_id, home: ZoneHome, creator: MemberRef, credential: enveloppe de la graine pour la clé KEM de l'autre }`, signé par le compte du créateur sous `onepass/contact-zone/v1` :
 
-- Une zone par coffre partagé (`share.<vault_id>`) dans la base privée du propriétaire, partagée par un `CKShare` de zone (iOS et macOS 15 et plus), participants ajoutés par leur Apple ID ou leur numéro, avec `readOnly` ou `readWrite` selon le rôle (10.1).
-- Côté participant, `CKSyncEngine` sur la base partagée ; le `RecordStore` du noyau expose une zone par coffre partagé, avec les mêmes vérifications de magasin hostile (`stage_remote`, `commit_remote`).
-- Seul le propriétaire de la zone gère les participants Apple, sauf si le rôle administrateur de CKShare est disponible et fiable sur les versions visées (à vérifier sur appareil, plan Swift) ; sinon un gestionnaire non propriétaire publie le corps signé et le client du propriétaire, à sa prochaine ouverture, applique le changement de participants. La coupure cryptographique ne dépend pas de ce délai (9.2).
-- Un participant `readWrite` peut supprimer des enregistrements de la zone : c'est un déni de service, vu par le manifeste (`ManifestMissingItem`) ; tout rédacteur peut réécrire depuis sa copie locale ("Réparer le coffre partagé", outil à prévoir, A19).
+- en face à face, dans le canal, après les deux `ContactCard` (nouveau message en fin d'enum) ;
+- à distance, dans la réponse d'Alice à l'invitation (5.3.2 étape 3), qui gagne un octet de version et l'offre en fin de corps.
 
-### 13.3 Zone de contact
+L'appareil créateur doit avoir Internet. Sans réseau, l'écran dit "Connecte-toi à Internet pour terminer l'ajout de <nom>" et rien n'est épinglé : un contact épinglé sans zone ne pourrait recevoir ni invitation ni envoi, et une offre différée demanderait un second canal authentifié. Les deux côtés écrivent ensuite leur `ZoneAccess`.
 
-À la vérification d'un contact, l'un des deux crée une petite zone `contact.<pair_id>` partagée avec l'autre. Elle porte les invitations de partage, les lignées publiées, les envois d'items (13.5), l'inscription et les demandes de récupération. Elle ne porte jamais de clé de coffre.
+### 13.6 Quotas et débit
 
-### 13.4 Rendez-vous d'invitation
+| Limite | Valeur | Où |
+| --- | --- | --- |
+| Boîte de coffre partagé ou de famille (`shared`) | 128 Mio, 100 000 enregistrements, 80 identifiants (64 membres et la marge d'un renouvellement), 600 requêtes par minute et par identifiant, 20 000 opérations par lot | X1 Task 24 |
+| Boîte de contact (`contact`) | 16 Mio (une dizaine d'envois d'items de 900 Kio), 2 000 enregistrements, 4 identifiants, 120 requêtes par minute, 2 000 opérations par lot | X1 Task 24 |
+| Filles par compte (`free`) | 16 boîtes `shared` (coffres partagés et familles), 256 boîtes `contact` ; `selfhost` : 1 024 et 4 096 | X1 Task 24 |
+| Créations de filles | 20 par jour et par compte | X1 Task 24 |
+| Par adresse IP | inchangé (boîte 4.9) : 1 200 requêtes signées par minute, ce qui couvre une famille de six comptes de trois appareils derrière une même box, chacun avec une dizaine de zones | X1 Task 7 |
 
-Base publique CloudKit, enregistrement d'id `SHA-256("onepass/invite-rdv/v1" || invite_id)`, contenu scellé sous `K_inv`, supprimé après usage ou 72 h. Le serveur voit qu'une invitation a eu lieu, pas entre qui (sinon par l'Apple ID de l'écrivain).
+Coût d'un tour : une page de changements par boîte, donc `1 + nombre de zones` requêtes au repos. Un appareil ne lance pas de tour sur une zone que rien n'a réveillée depuis son dernier tour, sauf à l'ouverture de l'app et toutes les 15 minutes au premier plan. Le quota d'une boîte partagée est celui de sa boîte, pas celui du propriétaire ; le plafond de filles borne ce qu'un compte gratuit peut faire héberger (question 15).
 
-### 13.5 Relais futur
+Un retrait (9.2) tient dans un lot : un coffre de famille de quelques milliers d'items plus ses enveloppes reste sous 20 000 opérations ; le découpage en phases du plan 2 (Task 9) reste, parce qu'il protège aussi d'un lot refusé pour taille.
 
-Mêmes enregistrements, mêmes ids, mêmes vérifications. Le relais tient pour chaque zone une liste de capacités (jetons par participant) comme défense en profondeur, et peut publier les cartes de contact dans un journal transparent (5.1, B). Aucun client ne lui demande une clé publique pour l'utiliser.
+### 13.7 Réveil
+
+- Chaque boîte a son sujet Realtime (boîte 4.10), donné par `GET /v1/mailboxes/{m}` à tout identifiant inscrit. Un appareil ouvre une connexion Realtime par serveur et y rejoint un sujet par boîte.
+- App fermée : les appareils d'un membre partagent un identifiant, donc un seul `push_token` ne suffit pas. Chacun enregistre sa cible (`PUT /v1/mailboxes/{m}/push-targets/{tag}`, `tag` tiré au hasard par appareil et par boîte, 8 cibles au plus par identifiant, X1 Task 26). L'auteur d'une écriture n'est pas exclu du réveil (le serveur ne distingue pas ses appareils) : un réveil de trop, sans contenu.
+
+### 13.8 Retrait, départ, rotation, transfert
+
+- **Retrait** (9.2) : les phases restent (a) enveloppes et items neufs, (b) corps de membres puis manifeste, (c) suppression des anciens items et enveloppes ; s'y ajoutent, en (c), le retrait de l'identifiant du membre retiré (`DELETE /v1/mailboxes/{m}/credentials/{c}`), et, avant (c), le dépôt dans sa zone de contact d'une copie du corps signé qui le retire (`InviteRecord::Removed(SignedMembership)`). L'identifiant n'est retiré qu'après (b) pour que le retiré puisse lire le corps signé qui le retire (S11). Un client qui reçoit `403 revoked_credential` sur une zone partagée cherche ce corps dans sa zone de contact : vérifié, il efface sa copie (S11) ; absent, il garde sa copie en lecture seule et affiche "Le serveur refuse l'accès à <coffre>" sans rien effacer (un refus du serveur n'est pas signé).
+- **Départ** (9.4) : `Leave` et `RekeyRequest` écrits, puis le membre retire son propre identifiant.
+- **Rotation d'un membre** (12) : la rotation `Rekey` de la génération faite sur `RekeyRequest` garde l'identifiant de Bob (ce qu'un appareil retiré de Bob en tire, ce sont des chiffrés de `g+1` qu'il ne peut pas ouvrir). À l'adoption de la nouvelle identité (corps `IdentityUpdate`), le gestionnaire tire une graine neuve pour Bob, l'enveloppe pour sa nouvelle clé KEM, l'attribue, puis retire l'ancien identifiant : l'appareil retiré, qui connaissait l'ancienne graine, perd aussi l'accès réseau.
+- **Transfert par recopie** (9.5) : la nouvelle zone est une fille sous la boîte du nouveau propriétaire ; `moved_to` (plan 2, arbitrage A-10) porte `(MemberRef, ZoneHome)` ; l'ancien propriétaire supprime l'ancienne boîte (X1 Task 24) quand il lit le corps `Rekey` final. S'il ne revient jamais, l'ancienne boîte reste dans son quota.
+- **Arrêter le partage** : la boîte est supprimée par son propriétaire.
+
+### 13.9 Invitations et rendez-vous
+
+- **Invitation de contact à distance** (5.3.2) : asynchrone sur 72 h (Bob ouvre le lien plus tard, Alice répond plus tard), ce que les routes de rendez-vous ne tiennent pas (trame lisible 120 s, session close après 600 s, boîte 4.9). Elle passe par un **dépôt** : `PUT/GET /v1/drops/{rdv_id}/{case}` (X1 Task 25), case 0 la réponse de Bob, case 1 la réponse d'Alice, 64 Kio par case, 72 h. `rdv_id` est celui du plan 1 (Task 6), donc le core ne change pas. Le lien porte le serveur quand ce n'est pas l'instance Soma : `onepass://contact/<hôte>#<base32(invite_id || invite_secret)>` ; le fragment ne part toujours vers aucun serveur.
+- **Routes de rendez-vous existantes** (boîte 4.6) : elles servent les échanges synchrones, comme pour l'appairage : vérification de contact en face à face entre appareils qui ne sont pas sur le même réseau local (T-RDV de la spec multi-plateforme, 5.3) et remise en personne de `S_org` (11.5 étape 4) dans le même cas.
+- **Invitations de coffre et de famille** (7.3, 11.1) : dans la zone de contact, comme avant.
+
+### 13.10 CKShare : écarté
+
+Garder CKShare comme chemin "option iCloud" n'est pas bon marché, et la décision du fondateur dit "pour tout le monde" :
+
+1. Un coffre partagé entre un compte iCloud et un compte sur boîte ne peut avoir qu'un transport (une seule chaîne de manifestes, un seul point d'écriture conditionnelle) ; la boîte sert tout le monde, CKShare seulement les groupes tout Apple et tout iCloud. Le garder, c'est deux chemins à tester contre un serveur hostile pour un même format, pour une fraction des groupes.
+2. C'est la partie la plus chère du plan 4 (Tasks 5, 6 et 10) : base partagée, recherche de participants par Apple ID, participants gérés par le seul propriétaire (arbitrage C-3), changement de compte iCloud, quota iCloud du propriétaire, rendez-vous en base publique.
+3. Apple verrait le graphe des partages par les Apple ID ; la boîte ne voit aucun Apple ID.
+
+Le partage reste derrière `Zone` et les actions de transport du plan 2 : un transport CKShare pourrait revenir plus tard sans toucher au core (P7).
+
+### 13.11 Ce que voit le serveur
+
+En plus de la boîte 4.15 : quelles boîtes de zone dépendent de quel compte (`parent_id`) ; le nombre de membres d'une zone (identifiants actifs) et le rythme de chacun ; l'heure d'une invitation à distance (le dépôt) ; les listes de membres, en clair comme avant (8.3). En moins par rapport à CloudKit : aucun Apple ID, aucun numéro de téléphone ni email de participant. La limite "Apple voit qui partage avec qui" (20) devient "l'opérateur de la boîte voit quels comptes partagent une zone et leurs clés publiques".
+
+### 13.12 Ce que la boîte du plan X1 doit ajouter
+
+| Ajout | Tâche du plan X1 (branche `feat/xplat-mailbox`) |
+| --- | --- |
+| Rôles d'identifiant (`read`, `write`, `manage`), `owner`, genres permis (`put_kinds`), `POST grants`, changement de rôle, retrait réservé aux gestionnaires, `403 forbidden` | Task 22 |
+| Boîtes filles (`parent_id`, genre), plans `shared` et `contact`, plafonds par parent, suppression d'une fille par son propriétaire | Task 24 |
+| Dépôts d'invitation de 72 h | Task 25 |
+| Cibles de notification par appareil | Task 26 |
+
+Côté client, dans les plans du partage : `ZoneHome`, `ZoneAccess`, `ContactZoneOffer`, `Member.credential_id`, actions de transport (plan 2) ; FFI et `SyncDriver` par zone, transport par la boîte dans les apps (plan 4).
 
 ## 14. Partage d'un item
 
@@ -459,7 +558,7 @@ Mêmes enregistrements, mêmes ids, mêmes vérifications. Le relais tient pour 
 
 ### 14.3 Lien (A), plus tard
 
-Copie scellée sous `K_link` (32 octets), lien `https://<domaine du projet>/s#<base32(link_id || K_link)>` ; option phrase de passe (Argon2id mêlé à `K_link`) ; une seule vue ou expiration (1 h à 7 jours) ; hébergement en base publique CloudKit, effacement à l'expiration par le client et par le serveur. L'écran dit : "Le lien peut être lu par quiconque l'obtient avant son expiration. L'expiration dépend du serveur." La page de lecture est statique, versionnée, avec son hash publié (question 5).
+Copie scellée sous `K_link` (32 octets), lien `https://<domaine du projet>/s#<base32(link_id || K_link)>` ; option phrase de passe (Argon2id mêlé à `K_link`) ; une seule vue ou expiration (1 h à 7 jours) ; hébergement en dépôt de la boîte aux lettres (13.9) ou sur une page statique, effacement à l'expiration par le client et par le serveur. L'écran dit : "Le lien peut être lu par quiconque l'obtient avant son expiration. L'expiration dépend du serveur." La page de lecture est statique, versionnée, avec son hash publié (question 5).
 
 ## 15. Comparaison avec 1Password, Bitwarden et Proton Pass
 
@@ -469,7 +568,7 @@ Sources consultées le 2026-10-30 (liens en fin de section). Ce qui suit résume
 | --- | --- | --- | --- | --- |
 | Origine de la clé publique d'un membre | serveur ; le livre blanc a une annexe "No Public Key Verification" et reconnaît qu'un serveur qui ment peut substituer une clé [1][2] | serveur ; phrase d'empreinte à comparer par l'admin à l'ajout d'un membre, optionnelle dans les faits [3] | serveur, adresses publiées dans Key Transparency [7][8] | jamais le serveur : contact vérifié (QR et SAS, numéro de sécurité) ou corps signé par un gestionnaire vérifié |
 | Retrait d'un membre | pas de rotation de clé de coffre décrite à notre connaissance [1] | la clé d'organisation n'est pas changée au retrait ; les copies hors ligne restent lisibles un temps [4][5] | révocation d'accès décrite, pas de rotation décrite dans le billet de modèle de sécurité [7] | nouvelle génération de clé et rescellement de chaque item, à chaque retrait (P2) |
-| Rôles | Lire, Modifier, Gérer, appliqués par le serveur et le client | collections et rôles appliqués par le serveur | Lecture, Modification, Admin | Lire par la clé ; Modifier et Gérer vérifiés par chaque client sur des signatures, CKShare en plus |
+| Rôles | Lire, Modifier, Gérer, appliqués par le serveur et le client | collections et rôles appliqués par le serveur | Lecture, Modification, Admin | Lire par la clé ; Modifier et Gérer vérifiés par chaque client sur des signatures, rôles de la boîte en plus |
 | Récupération | organisateur de famille, groupe de récupération qui détient des clés de coffre ; codes de récupération ajoutés ensuite [9][10] | "Account recovery" : l'admin réinitialise ; inscription automatique possible par politique [6] ; l'étude ETH montre l'injection d'une clé d'organisation et l'inscription forcée [11][12] | pas de récupération par un tiers décrite | inscription volontaire du membre seulement, deux moitiés (organisateur, stockage du membre), délai annulable, rencontre, rotation obligatoire après |
 | Partage d'un item | lien avec secret côté client, email vérifié optionnel [13] | Send : clé dans le fragment, expiration, nombre d'accès, mot de passe optionnel [14] | partage par clé d'item [7] | envoi signé à un contact vérifié ; lien plus tard, limites écrites |
 | Algorithmes d'enveloppe | RSA-OAEP 2048 selon le livre blanc [1] | RSA-2048 OAEP pour la clé d'organisation | OpenPGP (Curve25519) | hybride ML-KEM-1024 + X25519, signatures ML-DSA-87 + Ed25519, identité SLH-DSA |
@@ -523,7 +622,7 @@ La référence exacte de [11] et le détail des algorithmes de Bitwarden et Prot
 | A14 | l'hébergeur garde un lien expiré | T2 | limite écrite ; clé dans le fragment | documenté |
 | A15 | enveloppe d'une autre clé de coffre | T2 | `key_commit` signé (6.2) | `a15_substituted_envelope` |
 | A16 | enveloppe d'un coffre rejouée pour un autre, ou pour une autre génération | T2 | label et contexte (vault, génération, compte, identité) | `a16_envelope_context` |
-| A17 | URL CKShare transférée à un inconnu | tiers | il n'a que des chiffrés, aucune enveloppe | `a17_participant_without_envelope` |
+| A17 | `ZoneHome` et identifiant d'un membre obtenus par un inconnu | tiers | il n'a que des chiffrés, aucune enveloppe | `a17_participant_without_envelope` |
 | A18 | organisateur seul tente une récupération | T5 | il lui manque `S_store` (11.6) | `a18_organizer_alone` |
 | A19 | rédacteur malveillant supprime des enregistrements de la zone | T4 | détecté par le manifeste ; réparation depuis une copie locale | `a19_record_deletion_detected` |
 | A20 | course entre deux gestionnaires, l'un retire, l'autre ajoute | honnête | écriture conditionnelle, fusion où le retrait gagne (7.4) | `a20_concurrent_managers` |
@@ -546,7 +645,7 @@ Nouveaux fichiers dans `formal/proverif/`, lancés par `make formal`, attendus d
 - `recovery.pv` : inscription, demande, annulation, remise en face à face ; requêtes : l'organisateur seul n'obtient pas le keyset (vrai) ; le serveur seul non plus (vrai) ; `Recovered(m) ==> Enrolled(m) && Released(org, m)` (vrai) ; organisateur et serveur alliés obtiennent le keyset (faux, limite documentée F-03).
 - **Contrôles négatifs**, attendus faux : `sharing_server_directory.pv` (la clé du membre vient du serveur : le secret du coffre tombe), `sharing_no_rekey.pv` (retrait sans nouvelle génération : Carol lit l'item écrit après), `sharing_member_autofollow.pv` (adoption sans confirmation : Bob enveloppe pour X), `recovery_autoenroll.pv` (inscription décidée par le serveur vers une clé non épinglée : le keyset tombe).
 
-Non modélisé : fusion monotone et courses (test de propriété), délais et horloges, CKShare, liens de partage (construction classique, la limite est l'hébergeur).
+Non modélisé : fusion monotone et courses (test de propriété), délais et horloges, rôles d'identifiant de la boîte, liens de partage (construction classique, la limite est l'hébergeur).
 
 Budget : moins de 300 s par fichier comme les autres ; `sharing.pv` sera le plus lourd (trois comptes, deux générations).
 
@@ -562,11 +661,11 @@ Format : décision - pourquoi - coût si c'est faux.
 - **S6** Carnet de contacts = liste signée monotone, synchronisée, noms locaux seulement - les autres appareils du compte partagent sans revérifier - un appareil retiré avant sa rotation a pu écrire une entrée (hors périmètre, comme dans la rotation v2).
 - **S7** Liste des membres chaînée, signée par un gestionnaire, acceptée seulement contre une tête épinglée ; un nouveau membre épingle le corps reçu d'un gestionnaire vérifié - même modèle que les manifestes et les listes - il ne vérifie pas l'histoire d'avant son arrivée.
 - **S8** Manifestes partagés : signataire nommé, domaine distinct, pointeur vers la liste des membres et la génération - les deux chaînes se tiennent et une bifurcation de liste devient visible - format v2 de `ManifestExt`, refusé par les anciens clients.
-- **S9** Propriétaire impossible à retirer par un autre gestionnaire ; au moins un gestionnaire toujours - la zone CloudKit lui appartient - un propriétaire absent bloque son propre retrait (question 7).
+- **S9** Propriétaire impossible à retirer par un autre gestionnaire ; au moins un gestionnaire toujours - la boîte de la zone dépend de son compte - un propriétaire absent bloque son propre retrait (question 7).
 - **S10** Retrait = nouvelle génération de clé et rescellement de chaque item, code de la rotation v2 réutilisé - invariant simple, prouvable - une réécriture du coffre à chaque retrait.
 - **S11** Le client du retiré efface la copie locale du coffre à la lecture de son retrait, sans quarantaine - rien de son compte n'est en jeu - un faux retrait par le serveur est impossible (signature d'un gestionnaire), un vrai efface tout de suite.
 - **S12** Une `RekeyRequest` (départ, rotation d'un membre) est exécutée automatiquement par le premier gestionnaire qui la lit - faire tourner une clé n'accorde rien - un serveur peut provoquer des rotations inutiles (coût, pas fuite).
-- **S13** Lire = posséder la clé ; Modifier et Gérer = signatures vérifiées par chaque client ; permissions CKShare en défense en profondeur - c'est ce qui est vraiment possible ; une clé par rôle ne change rien au fond - un client modifié d'un lecteur peut écrire des chiffrés que personne n'accepte.
+- **S13** Lire = posséder la clé ; Modifier et Gérer = signatures vérifiées par chaque client ; rôles d'identifiant de la boîte en défense en profondeur - c'est ce qui est vraiment possible ; une clé par rôle ne change rien au fond - un client modifié d'un lecteur peut écrire des chiffrés que personne n'accepte.
 - **S14** Un changement de meta exige Gérer - les options voyage et MCP valent pour tous - un rédacteur ne peut pas renommer.
 - **S15** Famille = groupe signé, organisateurs Vérifiés, six comptes, coffre Famille créé au départ - même moule que la liste des membres - plafond à revoir (question 2).
 - **S16** L'organisateur ne lit aucun coffre privé et n'inscrit personne à la récupération - zéro connaissance (P4) - pas de "reprise de compte" à la demande.
@@ -579,9 +678,9 @@ Format : décision - pourquoi - coût si c'est faux.
 - **S23** La nouvelle identité d'un membre n'est adoptée qu'après la confirmation d'un gestionnaire, par le code de rotation dit par le membre ou par QR - sans elle, une rotation forgée fait envelopper la clé à l'attaquant (`sharing_member_autofollow.pv`) - un geste par coffre et par rotation.
 - **S24** En attente, le membre lit mais ses écritures restent chez lui et il ne reçoit pas les nouvelles générations - rien de neuf ne part vers une identité non confirmée - il peut perdre l'accès aux nouveautés jusqu'à la confirmation.
 - **S25** La rotation d'un gestionnaire seul est confirmée par chaque membre ; avec deux gestionnaires, par l'autre - pas d'auto-confirmation - d'où la recommandation de deux organisateurs.
-- **S26** Une zone CloudKit par coffre partagé, CKShare de zone, permissions selon le rôle - natif, notifications, quotas d'Apple - Apple voit le graphe des partages.
-- **S27** Une zone par paire de contacts comme boîte aux lettres, la base publique seulement pour le rendez-vous d'invitation - aucune écriture anonyme dans les zones utiles - une zone de plus par contact.
-- **S28** Le relais futur garde les mêmes enregistrements et ne fournit jamais de clé publique utilisée telle quelle - P7 - aucun.
+- **S26** Une boîte aux lettres par coffre partagé et par famille, fille de la boîte du compte créateur ; un identifiant par membre, attribué par un gestionnaire, enveloppé pour la clé épinglée du membre, rôle selon son rôle (13.3, 13.4) ; CKShare écarté (13.10) - une seule implémentation pour tout le monde, aucune fonction de la boîte à reprendre, un point d'écriture conditionnelle par zone - l'opérateur voit quels comptes partagent une zone (13.11).
+- **S27** Une boîte par paire de contacts, créée pendant la vérification (Internet requis sur l'appareil créateur) ; les dépôts de 72 h seulement pour l'invitation à distance (13.5, 13.9) - aucune écriture anonyme dans les zones utiles - une boîte de plus par contact, une vérification hors ligne impossible.
+- **S28** Retrait = retrait de l'identifiant du membre après la phase (b), en plus de la génération `g+1` ; le refus non signé d'un serveur n'efface jamais rien (13.8) ; la boîte ne fournit jamais de clé publique utilisée telle quelle - le retiré lit encore le corps signé qui le retire - un retiré garde l'accès réseau aux chiffrés de `g+1` jusqu'à la phase (c).
 - **S29** Partage d'un item d'abord par envoi signé à un contact vérifié ; pas de partage vivant d'un item seul - P1 tenu, un seul modèle de droits (le coffre) - un item vivant demande un coffre à deux.
 - **S30** Liens de partage pour des personnes sans OnePass plus tard, avec leurs limites écrites (hébergeur, page web) - utile mais en dehors de P1 - jalon S5.
 
@@ -593,7 +692,7 @@ Chaque jalon a sa spec de plan TDD, comme la rotation v2. Tâches indicatives.
 | --- | --- | --- |
 | S0 Formats et modèle | `contact.rs` (carte, empreinte, numéro de sécurité), `membership.rs` (corps, signature, règles 7.2, fusion), `ManifestExt` v2, `SharedSignedManifest`, enveloppes `MemberKey`, labels de 19.1 ; modèles ProVerif de la section 17 avant tout code d'app | vecteurs dorés, domaines séparés (une signature d'un domaine échoue dans tous les autres), décodage strict, fuzz de chaque décodeur, `make formal` |
 | S1 Contacts | vérification en face à face (canal 2b, `purpose: Contact`), invitation à distance et rendez-vous, carnet signé, vérification de lignée d'un autre compte (5.5), numéro de sécurité | MITM sur le transport refusé, carte d'une autre identité refusée, lien rejoué refusé, carnet fusionné dans les deux ordres |
-| S2 Coffres partagés | `Repository::share_vault`, `add_member`, `set_role`, `remove_member`, `leave`; magasin multi-zones dans `RecordStore` (mémoire, SQLite, CloudKit) ; vérification 8.2 ; rotation de retrait (port du passage par coffre) ; Swift : CKShare de zone, `CKSyncEngine` sur la base partagée, écrans | suite `tests/sharing_attacks.rs` A1 à A8, A15 à A17, A19 à A21 ; test de propriété des courses entre gestionnaires (convergence, retrait qui gagne) ; deux comptes et trois appareils contre `InMemoryRemote` multi-zones ; CKShare vérifié sur vrais appareils (deux Apple ID) |
+| S2 Coffres partagés | `Repository::share_vault`, `add_member`, `set_role`, `remove_member`, `leave`; magasin multi-zones dans `RecordStore` (mémoire, SQLite) ; vérification 8.2 ; rotation de retrait (port du passage par coffre) ; boîtes de zone, `ZoneAccess`, `SyncDriver` par zone ; Swift : écrans | suite `tests/sharing_attacks.rs` A1 à A8, A15 à A17, A19 à A21 ; test de propriété des courses entre gestionnaires (convergence, retrait qui gagne) ; deux comptes et trois appareils contre `FakeMailbox` (une boîte par zone) ; partage vérifié sur vrais appareils, un compte iCloud et un compte sur la boîte |
 | S3 Lien avec la rotation v2 | étape 3 bis de la rotation, `MemberLineage`, `RekeyRequest`, retrait automatique et adoption par code, `key_pending`, écritures en attente | A11, A12 ; Alice tourne pendant qu'un gestionnaire retire Carol ; gestionnaire seul qui tourne ; bifurcation de lignée d'un membre |
 | S4 Famille | `FamilyBody`, invitation, coffre Famille, retrait de la famille, abonnement par le champ `plan` ; aide à la récupération (inscription, demande, annulation, remise, rotation `Recover`) | A9, A10, A18, A22 ; récupération qui va au bout ; annulation vue ; organisateur qui tourne pendant une inscription |
 | S5 Items | envoi signé à un contact ; puis liens de partage | expiration, signature de l'expéditeur, refus d'un expéditeur hors carnet |
@@ -620,17 +719,24 @@ Ce que l'offre Équipe reprend sans changement : carnet et vérification, liste 
 | `onepass/recovery/share/v1` | `wrap_key_labeled` | KEM de l'organisateur | `S_org` |
 | `onepass/recovery/request/v1`, `.../cancel/v1`, `.../enroll/v1` | domaines de signature | organisateur, appareil du membre, membre | demandes et inscription |
 | `onepass/share/item-send/v1` | `wrap_key_labeled` | KEM du destinataire | `K_send` |
+| `onepass/share/zone-credential/v1` | `wrap_key_labeled` | KEM épinglée du membre | graine de son identifiant dans la boîte d'une zone (13.4) |
+| `onepass/zone-access/v1` | domaine de signature | signature hybride du compte | `ZoneAccess` (13.4) |
+| `onepass/zone-access-seed/v1` | `wrap_key_labeled` | KEM du compte lui-même | graine rangée dans `ZoneAccess` |
+| `onepass/zone-access-id/v1` | préfixe de hash | | id d'un `ZoneAccess` |
+| `onepass/contact-zone/v1` | domaine de signature | signature hybride du créateur | `ContactZoneOffer` (13.5) |
+| `onepass/recovery/store-seal/v1` | info HKDF | Secret Key du membre | `K_store`, compte sur la boîte (11.7) |
 
-Nouveaux types d'enregistrement, ajoutés à la fin de `RecordKind` après ceux de la rotation v2 (10 à 12) : `ContactBook` 13, `Membership` 14, `MemberKey` 15, `MemberLineage` 16, `RekeyRequest` 17, `Family` 18, `RecoverySlot` 19, `RecoveryHalf` 20, `RecoveryMessage` 21, `ItemSend` 22, `ShareInvite` 23. Tous décodés strictement et fuzzés ; `commit_remote` refuse la suppression par le serveur de `Membership`, `Family` et `MemberLineage`.
+Nouveaux types d'enregistrement, ajoutés à la fin de `RecordKind` après ceux de la rotation v2 (10 à 12) : `ContactBook` 13, `Membership` 14, `MemberKey` 15, `MemberLineage` 16, `RekeyRequest` 17, `Family` 18, `RecoverySlot` 19, `RecoveryHalf` 20, `RecoveryMessage` 21, `ItemSend` 22, `ShareInvite` 23 ; puis, le 2026-10-31, `ZoneAccess` 26 (24 et 25 sont pris par `SyncHome` et `MailboxEnrollRequest` de la spec multi-plateforme). Tous décodés strictement et fuzzés ; `commit_remote` refuse la suppression par le serveur de `Membership`, `Family` et `MemberLineage`.
 
 ### 19.2 Taille
 
-S0 et S1 : environ 6 jours avec revues. S2 : le plus gros (magasin multi-zones et CKShare), 8 à 10 jours dont la partie Swift sur vrais appareils. S3 : 4 jours. S4 : 6 jours. S5 : 3 jours pour l'envoi, liens à part. Environ un mois et demi de travail après la rotation v2.
+S0 et S1 : environ 6 jours avec revues. S2 : le plus gros (magasin multi-zones et boîtes de zone), 8 à 10 jours dont la partie Swift sur vrais appareils. S3 : 4 jours. S4 : 6 jours. S5 : 3 jours pour l'envoi, liens à part. Environ un mois et demi de travail après la rotation v2.
 
 ## 20. Limites
 
 - Ce qu'un membre a lu avant son retrait reste à lui ; OnePass propose de changer les mots de passe concernés.
-- Apple voit qui partage avec qui (Apple ID des participants), combien d'items et quand chacun écrit ; un relais futur verra moins, jamais rien de déchiffré.
+- L'opérateur de la boîte voit quels comptes partagent une zone, leurs clés publiques, combien d'items et quand chacun écrit (13.11) ; jamais rien de déchiffré.
+- Sur la boîte, l'aide à la récupération demande l'Emergency Kit ou un appareil encore inscrit (11.7).
 - Le niveau Lien fait confiance au canal qui a porté le lien.
 - Après la rotation d'un membre, il faut un geste humain par coffre (ou par membre si le gestionnaire est seul).
 - Aide à la récupération : organisateur et stockage alliés récupèrent ; une annulation retenue par le serveur n'est pas vue.
@@ -654,6 +760,8 @@ S0 et S1 : environ 6 jours avec revues. S2 : le plus gros (magasin multi-zones e
 12. **Membres par coffre partagé** : 64 (proposé) ou moins pour borner le coût d'une rotation ? Je choisirais 64 maintenant, l'offre Équipe passera par les groupes.
 13. **Deux organisateurs** : simple recommandation à la création de la famille, ou obligatoire au-delà de deux membres ? Je choisirais une forte recommandation, avec un rappel tant qu'il n'y en a qu'un.
 14. **Ordre de livraison** : attendre la fin de la rotation v2 avant de commencer S0 (proposé), ou commencer les formats et le modèle ProVerif en parallèle ? Je choisirais de faire S0 (formats et modèle) en parallèle, et de ne rien brancher dans l'app avant la fusion de la rotation v2.
+15. **Quotas gratuits du partage sur l'instance Soma** : 16 boîtes de coffre partagé ou de famille par compte, 128 Mio chacune, 256 contacts (13.6), ou une offre payante ? Je choisirais ces quotas sans offre payante en v1, à revoir sur l'usage réel.
+16. **Récupération sans Emergency Kit ni appareil pour un compte sur la boîte** : impossible en v1 (11.7), ou un identifiant d'aide gardé par le serveur derrière un délai ? Je choisirais impossible en v1 : le serveur ne doit pas devenir une ligne de défense ; l'écran d'inscription le dit.
 
 ## Décisions du fondateur (2026-10-30)
 
@@ -673,4 +781,7 @@ Réponses du fondateur marquées **(fondateur)**. Les autres sont une première 
 12. **64 membres par coffre partagé (première passe).**
 13. **Deux organisateurs fortement recommandés, rappel tant qu'il n'y en a qu'un (première passe).**
 14. **S0 (formats, modèle ProVerif) en parallèle de la rotation v2 ; rien dans l'app avant sa fusion (première passe).**
-15. **Transport (première passe, conséquence de la décision Supabase de la spec multi-plateforme).** CloudKit `CKShare` reste le transport tant qu'un compte vit sur CloudKit ; un compte passé sur la boîte aux lettres Supabase partage par elle. Un coffre partagé entre un compte CloudKit et un compte boîte aux lettres passe par la boîte aux lettres.
+15. **Transport : la boîte aux lettres Supabase pour tout le monde (fondateur, 2026-10-31).** "use Supabase also for password storage in the cloud and family sharing" : le partage en famille et entre contacts passe par la boîte, quel que soit le backend du compte. Section 13 réécrite (une boîte par zone, un identifiant par membre) ; CKShare écarté (13.10).
+16. **Vérification d'un contact : Internet requis sur l'appareil qui crée la boîte du contact (première passe).** Sans réseau, rien n'est épinglé (13.5).
+17. **Retrait de l'identifiant après la phase (b), corps signé copié dans la zone de contact du retiré (première passe).** Un refus non signé du serveur n'efface jamais la copie locale (13.8).
+18. **`S_store` scellé sous la Secret Key pour un compte sur la boîte (première passe).** La récupération sans Emergency Kit ni appareil n'existe pas sur la boîte en v1 (11.7, question 16).
