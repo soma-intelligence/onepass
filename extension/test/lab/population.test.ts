@@ -237,7 +237,7 @@ describe("oracle under a behaviour", () => {
   const sc = (site: Site, behaviour: Scenario["behaviour"], expectation: Scenario["expect"] = "pass"): Scenario =>
     ({ id: "0:menu_fill", site: 0, driver: "menu_fill", expect: expectation, ...(behaviour ? { behaviour } : {}) });
   const obs = (over: Partial<Observation>): Observation =>
-    ({ driver: "menu_fill", overlayShown: true, itemOffered: true, events: [], filled: {}, durationMs: 1, ...over });
+    ({ driver: "menu_fill", overlayShown: true, itemOffered: true, events: [], filled: {}, durationMs: 1, userSubmitAt: 0, ...over });
 
   it("corrects_field_judges_the_fill_not_the_later_edit", () => {
     // The user's edit makes the post wrong; the fill itself was complete: pass.
