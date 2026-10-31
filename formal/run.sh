@@ -100,6 +100,8 @@ for f in "${FILES[@]}"; do
   # Extra libraries: a model may name, one per line, a library of
   # formal/proverif loaded after common.pvl, with the exact line
   # "(* formal-lib: name.pvl *)" (account_core.pvl for the account models).
+  # The whole file is searched, not only its first lines; libraries load in
+  # the order of the lines.
   extra=()
   missing=""
   while IFS= read -r l; do

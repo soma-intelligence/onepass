@@ -2,7 +2,8 @@
 
    Shared by account.pv, account_kem_mlkem_broken.pv and
    account_kem_x25519_broken.pv. formal/run.sh loads it as a second library
-   (after common.pvl) for every model whose first lines carry the directive
+   (after common.pvl) for every model that carries, on a line of its own
+   anywhere in the file, the exact directive
    `(* formal-lib: account_core.pvl *)`.
 
    Everything stored or exchanged goes out on the public channel c and is
@@ -209,11 +210,14 @@ let Device(tag: bitstring, pw: password, sk_acct: key, pin_acct: bitstring,
          terms (next_seq(next_seq(...)), h(h(...))). History is
          manifest.pv's job; here only the vault id and the vault key
          matter.
-       - the fresh names of this branch depend on the vault id only
-         (new n[vid]), not on every earlier input: otherwise a signed
-         manifest written here, read back as `mb`, nests names inside
-         names without bound. Fewer name arguments merge sessions, a
-         sound over-approximation for secrecy and non-injective
+       - the fresh names of this branch take the vault id as their only
+         explicit argument (new n[vid]): they depend on vid and on the
+         replication indices of the enclosing sessions (CreateAccount,
+         Device), not on the other earlier inputs (params, keyset,
+         envelope, manifest). Otherwise a signed manifest written here,
+         read back as `mb`, nests names inside names without bound.
+         Fewer name arguments merge sessions, a sound
+         over-approximation for secrecy and non-injective
          correspondence. *)
     new iid_n[vid]: nonce; new ik[vid]: key; new wcontent[vid]: bitstring;
     new seq_w[vid]: nonce; new prev_w[vid]: nonce;

@@ -176,12 +176,13 @@ emergency_kit.pv | Weak secret pw_no_keyset | true
 emergency_kit.pv | event(Pinned(restore_kit_pw,a,i)) ==> event(AccountOwned(acct_kit_pw,a,i)) | false
 emergency_kit.pv | event(ItemRead(restore_kit_pw,v_42,i,m_14)) ==> event(ItemSealed(acct_kit_pw,m_14)) || event(ItemSealed(restore_kit_pw,m_14)) | false
 # Sanité : la restauration épingle, liste un coffre, lit et écrit un item ; la restauration kit perdu
-# épingle ; l'appareil sans vrai keyset dérive une AUK.
+# épingle et écrit un item ; l'appareil sans vrai keyset dérive une AUK.
 emergency_kit.pv | not event(Pinned(restore_main,a,i)) | false
 emergency_kit.pv | not event(VaultAccepted(restore_main,s,v_42,k_10)) | false
 emergency_kit.pv | not event(ItemRead(restore_main,v_42,i,m_14)) | false
 emergency_kit.pv | not event(ItemWritten(restore_main,v_42,m_14)) | false
 emergency_kit.pv | not event(Pinned(restore_kit_lost,a,i)) | false
+emergency_kit.pv | not event(ItemWritten(restore_kit_lost,v_42,m_14)) | false
 emergency_kit.pv | not event(AukDerived(restore_no_keyset)) | false
 
 # rotation.pv : rotation des clés du compte ancrée dans les clés d'appareil (spec

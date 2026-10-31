@@ -78,7 +78,7 @@ Le fichier JSON est lu par `onepass-native-host` (`--config <fichier>`, sinon `O
 | `data_dir` | dossier de données de l'hôte (`~` accepté) |
 | `allowed_extensions` | identifiants d'extension autorisés : identifiant Chrome nu (sans `chrome-extension://`) et `onepass@somalabs.me` pour Firefox |
 | `source` | `{"kind":"fixture","path":...}` ou `{"kind":"dev"}` (voir ci-dessous) |
-| `approval` | `auto` ou `file` |
+| `approval` | `auto` (build debug uniquement, refusé par un binaire release) ou `file` |
 | `unlocked` | coffre déverrouillé au démarrage, `true` par défaut |
 | `reprompt` | `deny` (défaut) ou `allow` : réponse aux items qui demandent une nouvelle authentification |
 
@@ -121,7 +121,7 @@ Sans `--profile`, les manifestes vont dans les dossiers utilisateur du navigateu
 
 1. Cliquer l'icône de l'extension : "Appairer avec OnePass". L'extension affiche un code à 6 chiffres (`123 456`).
 2. Côté hôte :
-   - `approval: "auto"` : approbation immédiate (tests), le code est écrit dans `<data_dir>/native-host.log` ;
+   - `approval: "auto"` : approbation immédiate sans comparaison (tests, build debug uniquement : un binaire release refuse de démarrer avec ce réglage), le code est écrit dans `<data_dir>/native-host.log` ;
    - `approval: "file"` : l'hôte écrit `<data_dir>/pending-pairing.json` (code, nom, navigateur). Comparer le code avec celui de l'extension, puis le valider avec `core/target/debug/onepass-native-host approve 123456 --config <fichier>` (écrit `<data_dir>/pairing-approved`).
 3. Si les deux codes sont identiques, cliquer "Les codes sont identiques" dans l'extension. Si les codes diffèrent, refuser : quelqu'un s'est glissé sur le canal.
 
