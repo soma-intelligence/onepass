@@ -15,15 +15,27 @@
 //! starts as the card's name the user accepted when pinning, and only
 //! `rename_contact` changes it; no card or server ever does (spec 5.4).
 //!
+//! A removed contact can be added again, by a fresh `Verified` pin only:
+//! the entry's `incarnation` goes up by one. A removal belongs to its
+//! incarnation and never reaches a later one.
+//!
 //! Merge (`MonotoneEntry::merge`), in this order:
-//! - two geneses for one account id: the older entry stays (earliest
-//!   `verified_at`, then the smaller encoding), never a silent replacement,
-//!   and the book raises `ContactAlert::ContactBookConflict`;
-//! - `Removed` wins, the earliest date kept;
+//! - two geneses for one account id: the older entry stays whole (earliest
+//!   `verified_at`, then the smaller encoding), with its own state; the
+//!   other side's incarnation and removal do not count (a forged genesis
+//!   never wins by raising its counter, and never removes the kept
+//!   entry). Never a silent replacement: the book raises
+//!   `ContactAlert::ContactBookConflict`;
+//! - the higher incarnation wins whole (head, keys, verification, state);
+//! - within one incarnation `Removed` wins, the earliest date kept;
 //! - the pinned head of the higher generation brings its identity and
 //!   keys, and its verification (level, date, device, transcript); at equal
 //!   head `Verified` wins over `Link`, the earliest `verified_at` of the
-//!   winning level;
+//!   winning level. Two heads of one generation (a fork the book should
+//!   never hold: `pin_contact` refuses another head, `refresh_contact`
+//!   never moves it) go to the smaller hash, deterministically; the
+//!   confirmation path (spec 12.3 points 3 and 4, a later task) must alert
+//!   instead of writing such a pair;
 //! - at equal head `KeysChanged` wins over `Active` (the earliest sighting);
 //!   an entry at an older head brings no state;
 //! - `name_local`: the larger, or `self`'s in `merge_preferring`.
@@ -68,15 +80,17 @@ pub enum ContactLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContactState {
     Active,
-    /// The contact's account rotated past the pinned head (`child` is the
-    /// valid child of the pinned head, first seen at `seen_at`). The old
-    /// identity is no longer used; the new one only after the explicit
-    /// confirmation (sharing spec 12.3, a later task).
+    /// A valid rotation of the contact's account was seen past the pinned
+    /// head, first at `seen_at`: `child` is the valid child of the pinned
+    /// head, or with a fork (two valid children of the pinned head or of a
+    /// valid descendant) the smallest sibling. The old identity is no
+    /// longer used (spec 12.3 point 1); the new one only after the explicit
+    /// confirmation (spec 12.3, a later task).
     KeysChanged {
         child: [u8; 32],
         seen_at: i64,
     },
-    /// Removed by the owner: for good, never active again.
+    /// Removed by the owner: this incarnation is never active again.
     Removed {
         at: i64,
     },
@@ -102,6 +116,8 @@ pub struct ContactEntry {
     /// The name the owner chose: never the card's, never the server's.
     pub name_local: String,
     pub state: ContactState,
+    /// 0 at the first pin, one more at each re-add after a removal.
+    pub incarnation: u64,
 }
 
 /// What the book could not merge on its own.
@@ -142,7 +158,8 @@ impl ContactEntry {
     }
 
     /// The order of the head and its verification: the larger wins. A
-    /// higher generation first, then (a fork) the smaller hash; at equal
+    /// higher incarnation first, then a higher generation, then (a fork)
+    /// the smaller hash; at equal
     /// head the higher level, then the earliest date, device and
     /// transcript, then the smaller encoding of the keys, so that the order
     /// is total.
@@ -150,6 +167,7 @@ impl ContactEntry {
     fn rank(
         &self,
     ) -> (
+        u64,
         u64,
         Reverse<[u8; 32]>,
         ContactLevel,
@@ -161,6 +179,7 @@ impl ContactEntry {
         let keys = postcard::to_allocvec(&(&self.identity_pub, &self.sign_pub, &self.kem_pub))
             .expect("contact keys encode");
         (
+            self.incarnation,
             self.pinned_head.generation,
             Reverse(self.pinned_head.hash),
             self.level,
@@ -172,10 +191,11 @@ impl ContactEntry {
     }
 }
 
-/// The earliest removal of either side.
-fn removal(a: &ContactEntry, b: &ContactEntry) -> Option<ContactState> {
+/// The earliest removal among the sides of `incarnation`.
+fn removal(a: &ContactEntry, b: &ContactEntry, incarnation: u64) -> Option<ContactState> {
     [a, b]
         .iter()
+        .filter(|e| e.incarnation == incarnation)
         .filter_map(|e| match e.state {
             ContactState::Removed { at } => Some(at),
             _ => None,
@@ -184,16 +204,17 @@ fn removal(a: &ContactEntry, b: &ContactEntry) -> Option<ContactState> {
         .map(|at| ContactState::Removed { at })
 }
 
-/// The state of a merge at `head`: the earliest removal of either side,
-/// otherwise the states of the sides at `head`, `KeysChanged` (the
-/// earliest sighting, then the smaller child) over `Active`.
-fn merged_state(a: &ContactEntry, b: &ContactEntry, head: &LineageHead) -> ContactState {
-    if let Some(removed) = removal(a, b) {
+/// The state of a merge won by `win`: among the sides of its incarnation,
+/// the earliest removal, otherwise the states of the sides at its head,
+/// `KeysChanged` (the earliest sighting, then the smaller child) over
+/// `Active`.
+fn merged_state(a: &ContactEntry, b: &ContactEntry, win: &ContactEntry) -> ContactState {
+    if let Some(removed) = removal(a, b, win.incarnation) {
         return removed;
     }
     [a, b]
         .iter()
-        .filter(|e| e.pinned_head == *head)
+        .filter(|e| e.incarnation == win.incarnation && e.pinned_head == win.pinned_head)
         .filter_map(|e| match e.state {
             ContactState::KeysChanged { child, seen_at } => Some((seen_at, child)),
             _ => None,
@@ -213,10 +234,7 @@ impl MonotoneEntry for ContactEntry {
     fn merge(&self, other: &Self) -> Self {
         if self.genesis != other.genesis {
             let (kept, _) = older(self, other);
-            return ContactEntry {
-                state: removal(self, other).unwrap_or(kept.state),
-                ..kept.clone()
-            };
+            return kept.clone();
         }
         let win = if self.rank() >= other.rank() {
             self
@@ -235,7 +253,8 @@ impl MonotoneEntry for ContactEntry {
             verified_on: win.verified_on,
             transcript_hash: win.transcript_hash,
             name_local: self.name_local.clone().max(other.name_local.clone()),
-            state: merged_state(self, other, &win.pinned_head),
+            state: merged_state(self, other, win),
+            incarnation: win.incarnation,
         }
     }
 
@@ -345,19 +364,25 @@ impl<S: RecordStore> Repository<S> {
 
     /// Pin `card` in the book at `level`, after a verification whose
     /// transcript hashes to `transcript_hash` (the verification flows, later
-    /// tasks). The card's name becomes the local name, as the suggestion the
-    /// user accepted.
+    /// tasks). The card's name becomes the local name of a new contact, as
+    /// the suggestion the user accepted.
     ///
     /// Refused, with nothing written: a card of this account
     /// (`Validation`); a card that breaks the card rules (`InvalidFormat`);
     /// a card whose signatures or lineage do not hold (`Integrity`, see
-    /// `SignedContactCard::keys` and `check_card_lineage`); no device id for
-    /// this device (`Validation("device")`); a contact already in the book
-    /// that was removed, or pinned at another head (moving the pin is the
-    /// confirmation path's job, spec 12.3), or under another genesis (also
-    /// raises `ContactBookConflict`): `Validation`. A contact pinned at the
-    /// same head is merged (a higher level wins, the local name and a
-    /// `KeysChanged` state stay). A lost race is `Conflict`.
+    /// `SignedContactCard::keys` and `check_card_lineage`); a contact
+    /// already in the book under another genesis (`Validation`, and
+    /// `ContactBookConflict` raised), or removed and pinned again at `Link`,
+    /// or pinned at another head (moving the pin is the confirmation path's
+    /// job, spec 12.3): `Validation`. Then this device needs an id: when it
+    /// has none it is registered in the device list first (as `devices`
+    /// does), and a device without one even so is `Validation("device")`.
+    ///
+    /// A removed contact pinned again at `Verified` comes back `Active` at
+    /// the next incarnation, at the card's head, its local name kept. A
+    /// contact pinned at the same head is merged (a higher level wins, the
+    /// local name and a `KeysChanged` state stay). A lost race is
+    /// `Conflict`.
     pub(crate) fn pin_contact(
         &mut self,
         card: &SignedContactCard,
@@ -365,14 +390,41 @@ impl<S: RecordStore> Repository<S> {
         transcript_hash: [u8; 32],
         now: i64,
     ) -> Result<ContactEntry> {
-        let c = &card.card;
-        if c.account_id == self.account.params.account_id {
+        if card.card.account_id == self.account.params.account_id {
             return Err(refused("contact", "own account"));
         }
         let card = SignedContactCard::decode(&card.encode())?;
         let keys = card.keys()?;
         check_card_lineage(&card)?;
         let c = &card.card;
+        let current = self.read_book()?;
+        let mut entries = current
+            .as_ref()
+            .map(|b| b.body.entries.clone())
+            .unwrap_or_default();
+        let at = entries.iter().position(|e| e.account_id == c.account_id);
+        let mut incarnation = 0;
+        let mut name_local = c.name.clone();
+        if let Some(i) = at {
+            let old = &entries[i];
+            if old.genesis != c.genesis {
+                self.contact_alerts.push(ContactAlert::ContactBookConflict {
+                    account_id: old.account_id,
+                    kept: old.genesis,
+                    refused: c.genesis,
+                });
+                return Err(refused("contact", "another genesis"));
+            }
+            if matches!(old.state, ContactState::Removed { .. }) {
+                if level != ContactLevel::Verified {
+                    return Err(refused("contact", "removed"));
+                }
+                incarnation = old.incarnation.checked_add(1).ok_or(Error::Conflict)?;
+                name_local = old.name_local.clone();
+            } else if old.pinned_head != c.head {
+                return Err(refused("contact", "another head"));
+            }
+        }
         let verified_on = self.this_device()?;
         let fresh = ContactEntry {
             account_id: c.account_id,
@@ -385,40 +437,18 @@ impl<S: RecordStore> Repository<S> {
             verified_at: now,
             verified_on,
             transcript_hash,
-            name_local: c.name.clone(),
+            name_local,
             state: ContactState::Active,
+            incarnation,
         };
-        let current = self.read_book()?;
-        let mut entries = current
-            .as_ref()
-            .map(|b| b.body.entries.clone())
-            .unwrap_or_default();
-        let entry = match entries
-            .iter()
-            .position(|e| e.account_id == fresh.account_id)
-        {
+        let entry = match at {
             None => {
                 entries.push(fresh.clone());
                 fresh
             }
             Some(i) => {
-                let old = &entries[i];
-                if matches!(old.state, ContactState::Removed { .. }) {
-                    return Err(refused("contact", "removed"));
-                }
-                if old.genesis != fresh.genesis {
-                    self.contact_alerts.push(ContactAlert::ContactBookConflict {
-                        account_id: old.account_id,
-                        kept: old.genesis,
-                        refused: fresh.genesis,
-                    });
-                    return Err(refused("contact", "another genesis"));
-                }
-                if old.pinned_head != fresh.pinned_head {
-                    return Err(refused("contact", "another head"));
-                }
-                let merged = old.merge_preferring(&fresh);
-                if merged == *old {
+                let merged = entries[i].merge_preferring(&fresh);
+                if merged == entries[i] {
                     return Ok(merged);
                 }
                 entries[i] = merged.clone();
@@ -431,7 +461,7 @@ impl<S: RecordStore> Repository<S> {
 
     /// `pin_contact` for the integration tests: the verification flows are
     /// later tasks.
-    #[cfg(feature = "dev-fast-kdf")]
+    #[cfg(all(feature = "dev-fast-kdf", debug_assertions))]
     #[doc(hidden)]
     pub fn test_pin_contact(
         &mut self,
@@ -457,7 +487,8 @@ impl<S: RecordStore> Repository<S> {
         })
     }
 
-    /// Remove a contact for good (the first removal date stays). An
+    /// Remove a contact: its current incarnation for good (the first
+    /// removal date stays); only a `Verified` pin brings it back. An
     /// unknown one is `NotFound`.
     pub fn remove_contact(&mut self, account_id: Id, now: i64) -> Result<()> {
         self.edit_contact(account_id, |e| {
@@ -470,11 +501,14 @@ impl<S: RecordStore> Repository<S> {
 
     /// Follow the contact's lineage from its pinned head (`follow_foreign`,
     /// with no legacy intros: a rotation only a legacy device could sign
-    /// reads `Same`, failing safe). `Advanced` turns an `Active` contact to
+    /// reads `Same`, failing safe). A valid rotation retires the old
+    /// identity (spec 12.3 point 1): `Advanced` turns an `Active` contact to
     /// `KeysChanged { child, seen_at: now }`, `child` being the valid child
-    /// of the pinned head; head and keys stay (S22: adopting is the owner's
-    /// decision). `Forked` and `Unknown` change nothing: the caller alerts.
-    /// An unknown contact is `NotFound`, a removed one `Validation`.
+    /// of the pinned head, and so does `Forked`, `child` being the smallest
+    /// sibling (the fork itself is the caller's to report, spec 12.3 point
+    /// 4). Head and keys stay (S22: adopting is the owner's decision).
+    /// `Same` and `Unknown` change nothing. An unknown contact is
+    /// `NotFound`, a removed one `Validation`.
     pub fn refresh_contact(
         &mut self,
         account_id: Id,
@@ -491,10 +525,14 @@ impl<S: RecordStore> Repository<S> {
             genesis_params: None,
         };
         let result = follow_foreign(&entry.pin(), records, intros, &legacy);
-        if let ForeignLineage::Advanced { chain, .. } = &result
+        let child = match &result {
+            ForeignLineage::Advanced { chain, .. } => chain.first().copied(),
+            ForeignLineage::Forked { siblings } => siblings.iter().min().copied(),
+            _ => None,
+        };
+        if let Some(child) = child
             && entry.state == ContactState::Active
         {
-            let child = chain[0];
             self.edit_contact(account_id, |e| {
                 if e.state == ContactState::Active {
                     e.state = ContactState::KeysChanged {
