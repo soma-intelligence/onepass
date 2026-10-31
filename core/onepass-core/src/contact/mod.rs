@@ -4,15 +4,18 @@
 //! A contact card carries no new key: the signing and KEM keys of the
 //! account come from its params record, signed by the identity of the
 //! card's head (`SignedContactCard::keys`). The lineage in the card is only
-//! shape-checked here; verifying it cryptographically is a separate step.
+//! shape-checked by the card; `follow_foreign` verifies it from a pinned
+//! head (spec 5.5).
 
 use aws_lc_rs::digest::{self, SHA256, SHA512};
 
 use crate::Id;
 
 mod card;
+mod lineage;
 
 pub use card::{CardKeys, ContactCard, SignedContactCard};
+pub use lineage::{ForeignLineage, ForeignPin, follow_foreign, roster_at};
 
 /// Signature domain of a `ContactCard`, by the identity key (spec 19.1).
 pub const CONTACT_CARD_DOMAIN: &[u8] = b"onepass/contact-card/v1";
