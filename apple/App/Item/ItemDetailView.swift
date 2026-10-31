@@ -376,12 +376,12 @@ struct ItemDetailView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                 if askPassword {
-                    SecureField("Mot de passe maître", text: $password)
-                        .textFieldStyle(.roundedBorder)
+                    // No `.password` content type, emptied as it leaves the screen: iOS must never
+                    // offer to save the master password.
+                    SecretInputField(
+                        title: String(localized: "Mot de passe maître"), text: $password,
+                        onSubmit: { verifyPassword() }, bordered: true, identifier: "item.reprompt.password")
                         .privacySensitive()
-                        // No `.password` content type: iOS must never offer to save the master password.
-                        .onSubmit { verifyPassword() }
-                        .accessibilityIdentifier("item.reprompt.password")
                     Button("Confirmer") { verifyPassword() }
                         .buttonStyle(.borderedProminent)
                         .disabled(password.isEmpty || checking)

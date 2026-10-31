@@ -18,7 +18,8 @@ struct LockView: View {
     @State private var lockoutRefresh = 0
     /// Bumped on each refused password: the field shakes.
     @State private var refusals = 0
-    @FocusState private var fieldFocused: Bool
+    /// The keyboard focus of the password field (`SecretInputField` reaches its UIKit field both ways).
+    @State private var fieldFocused = false
 
     private var session: VaultSession { model.session }
     private var unlocking: Bool { session.state == .unlocking }
@@ -163,27 +164,17 @@ struct LockView: View {
         let shape = RoundedRectangle(cornerRadius: Platform.isMac ? 10 : 14, style: .continuous)
         let ring: Color = message != nil ? .red : (fieldFocused ? Theme.accent : .clear)
         return HStack(spacing: 4) {
-            Group {
-                if revealed {
-                    TextField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
-                        .autocorrectionDisabled()
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        #endif
-                } else {
-                    SecureField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
-                }
-            }
+            // Emptied as it leaves the screen: iOS never offers to save the master password (ruling X24).
+            SecretInputField(
+                title: String(localized: "Mot de passe maître"), text: $password, revealed: revealed,
+                focused: $fieldFocused, submitGo: true, onSubmit: { Task { await unlockWithPassword() } },
+                fontSize: Platform.isMac ? 15 : 17, identifier: "lock.password")
             .labelsHidden()
             .textFieldStyle(.plain)
-            .font(.system(size: Platform.isMac ? 15 : 17))
-            .focused($fieldFocused)
             #if os(macOS)
             // The accent ring below replaces the system focus ring.
             .focusEffectDisabled()
             #endif
-            .submitLabel(.go)
-            .onSubmit { Task { await unlockWithPassword() } }
             .disabled(unlocking || lockedOut)
             .privacySensitive()
             .accessibilityIdentifier("lock.password")
