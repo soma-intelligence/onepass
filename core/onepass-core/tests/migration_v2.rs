@@ -138,6 +138,8 @@ fn migrated_pair() -> (Server, Device, Device, SecretKey, Keys, Keys, [u8; 32]) 
     sync(&mut server, &mut b).unwrap();
     sync(&mut server, &mut a).unwrap();
     refresh(&mut a);
+    assert_self_pinned(&trust(&a));
+    assert_self_pinned(&trust(&b));
     (server, a, b, sk, ka, kb, g)
 }
 
@@ -160,6 +162,7 @@ fn new_account_writes_genesis() {
     .unwrap();
     dev.repo = Some(repo);
     let me = keys.public(&mut dev);
+    assert_self_pinned(&trust(&dev));
 
     let lineage = dev.store().list(RecordKind::Lineage).unwrap();
     assert_eq!(lineage.len(), 1);
@@ -439,6 +442,8 @@ fn second_genesis_alerts_and_converges() {
     let both = BTreeSet::from([ka.public(&mut a).device_id, kb.public(&mut b).device_id]);
     assert_eq!(roster_ids(&ta), both);
     assert_eq!(roster_ids(&tb), both);
+    assert_self_pinned(&ta);
+    assert_self_pinned(&tb);
     assert!(ta.genesis_alert && tb.genesis_alert);
     assert_eq!(migrate(&mut a, &ka), Migration::Already);
     assert_eq!(migrate(&mut b, &kb), Migration::Already);
@@ -514,6 +519,7 @@ fn diverged_after_a_rotation_alerts_then_repairs() {
     let (repo, _auk, got) = repair_from_grant(session, &grant, PASSWORD, &kb.0).unwrap();
     assert_eq!(got.to_display(), new_sk.to_display());
     b.repo = Some(repo);
+    assert_self_pinned(&trust(&b));
     assert_eq!(trust(&b).head.hash, head);
     assert!(b.items().iter().any(|i| i.id == offline.id));
     sync(&mut server, &mut b).unwrap();
@@ -821,4 +827,16 @@ fn migrated_legacy_device_follows_a_rotation() {
     b.repo = Some(repo);
     assert_eq!(trust(&b).head.hash, head);
     assert_eq!(users(&b.items()), users(&a.items()));
+}
+
+/// Task 15 review concern 1: every trust-state constructor except a kit
+/// restore leaves the device in its own roster with its own keys (the
+/// pin every capability check reads, `repo::kit::check_pinned`).
+fn assert_self_pinned(t: &onepass_core::trust::TrustState) {
+    assert!(
+        t.roster.iter().any(|e| e.device_id == t.me.device_id
+            && e.sign_pub == t.me.sign_pub
+            && e.kem_pub == t.me.kem_pub),
+        "the device is pinned in its own roster"
+    );
 }

@@ -1583,6 +1583,8 @@ fn honest_follow() {
         }
     );
     assert_eq!(trust.state, DeviceLineageState::Current);
+    assert_self_pinned(&trust);
+    assert_self_pinned(&a.store().trust_state().unwrap().unwrap());
     assert_eq!(trust.identity_pub, body.identity_pub);
     assert_eq!(trust.roster, body.roster);
     assert!(trust.revoked.contains(&f.others[B].id()));
@@ -2943,6 +2945,7 @@ fn two_concurrent_rotations_converge() {
     l.repo = Some(repo);
     assert_eq!(head_of(&l), wh);
     let t = l.store().trust_state().unwrap().unwrap();
+    assert_self_pinned(&t);
     assert!(t.own_writes.replay.is_empty(), "{:?}", t.own_writes.replay);
     assert!(!t.own_writes.alert);
     assert!(
@@ -4544,4 +4547,194 @@ fn kit_restore_cancels_quarantine_only_with_latest_kit() {
     assert_eq!(tick(&b, T + Q + 1), QuarantineTick::NotQuarantined);
     b.try_unlock(PASSWORD, &new_sk).unwrap();
     assert_eq!(b.items(), a.items());
+}
+
+/// Task 15 review concern 1: every trust-state constructor except a kit
+/// restore leaves the device in its own roster with its own keys (the
+/// pin every capability check reads, `repo::kit::check_pinned`).
+fn assert_self_pinned(t: &onepass_core::trust::TrustState) {
+    assert!(
+        t.roster.iter().any(|e| e.device_id == t.me.device_id
+            && e.sign_pub == t.me.sign_pub
+            && e.kem_pub == t.me.kem_pub),
+        "the device is pinned in its own roster"
+    );
+}
+
+/// Review I1 and concern 2: a kit device that claims to be the only one
+/// and rotates (here removing A) is never trusted by A through a late
+/// yes: the accept is refused, A is not quarantined, and A raises the
+/// alert until the user rejects the device.
+#[test]
+fn accept_refused_after_kit_device_rotated() {
+    let (mut server, mut a, _c, f, _out, new_sk) = rotated();
+    let mut n = Device::empty();
+    pull(&server, &mut n);
+    let keys = kit_keys();
+    restore_kit(&mut n, &new_sk, &keys).unwrap();
+    sync(&mut server, &mut n).unwrap();
+    let nid = n.repo().this_device_id().unwrap();
+    n.repo().claim_only_device().unwrap();
+    let sk2 = SecretKey::generate().unwrap();
+    n.repo()
+        .rotate(RotateRequest {
+            revoke: vec![f.me.id()],
+            new_password: None,
+            password: PASSWORD,
+            secret_key: &new_sk,
+            new_secret_key: &sk2,
+            device_keys: &keys,
+            reason: RotationReason::Revoke,
+            keep_tofu: &[],
+        })
+        .unwrap();
+    sync(&mut server, &mut n).unwrap();
+
+    pull(&server, &mut a);
+    a.repo().refresh_pending_rotation().unwrap();
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    assert_eq!(a.repo().pending_lock(), None);
+    let asked = a.repo().kit_restored_devices().unwrap();
+    assert_eq!(asked.len(), 1);
+    assert!(asked[0].rotated);
+    assert!(!asked[0].name_in_use);
+    assert_eq!(a.repo().kit_rotation_alerts().unwrap(), asked);
+
+    let r = a.repo().accept_kit_restored(nid, &f.me.keys);
+    assert!(matches!(&r, Err(Error::Validation(v)) if v.reason == "already rotated"));
+    a.repo().refresh_pending_rotation().unwrap();
+    assert!(!in_roster(&trust_of_dev(&a).unwrap(), nid));
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    assert_eq!(a.repo().pending_lock(), None);
+    assert_eq!(tick(&a, T), QuarantineTick::NotQuarantined);
+
+    // "Rejeter" ends the alert.
+    a.repo().reject_kit_restored(nid).unwrap();
+    assert!(a.repo().kit_rotation_alerts().unwrap().is_empty());
+}
+
+/// Review m3: a kit device that takes the name of a known device is shown
+/// with that collision flagged.
+#[test]
+fn kit_device_name_collision_flagged() {
+    let (mut server, mut a, _c, _f, _out, new_sk) = rotated();
+    let mut n = Device::empty();
+    pull(&server, &mut n);
+    let store = n.store();
+    let device = store.device_state().unwrap();
+    let repo = Repository::restore_from_kit(
+        store,
+        KitRestore {
+            password: PASSWORD,
+            secret_key: &new_sk,
+            device_keys: &kit_keys(),
+            name: "Mac",
+            kind: DeviceKind::Mac,
+            mode: DeviceMode::Personal,
+            device,
+        },
+    )
+    .unwrap();
+    n.repo = Some(repo);
+    sync(&mut server, &mut n).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let asked = a.repo().kit_restored_devices().unwrap();
+    assert!(asked[0].name_in_use);
+    assert!(!asked[0].rotated);
+}
+
+/// Review I2 (spec 8.2): a kit device still waiting for a yes that a new
+/// rotation leaves `Orphaned` re-pairs from a roster device; it then is
+/// in its own roster.
+#[test]
+fn waiting_kit_device_orphaned_repairs() {
+    use onepass_core::pairing::{FullGrant, FullGrantV2, snapshot_from_store};
+    use onepass_core::repo::pairing::repair_from_grant;
+
+    let (mut server, mut a, _c, f, _out, new_sk) = rotated();
+    let mut n = Device::empty();
+    pull(&server, &mut n);
+    let keys = kit_keys();
+    restore_kit(&mut n, &new_sk, &keys).unwrap();
+    sync(&mut server, &mut n).unwrap();
+    let nid = n.repo().this_device_id().unwrap();
+
+    // A rotates before answering: N is not in the new roster.
+    let sk3 = SecretKey::generate().unwrap();
+    let out3 = a
+        .repo()
+        .rotate(RotateRequest {
+            revoke: vec![],
+            new_password: None,
+            password: PASSWORD,
+            secret_key: &new_sk,
+            new_secret_key: &sk3,
+            device_keys: &f.me.keys,
+            reason: RotationReason::Rotate,
+            keep_tofu: &[],
+        })
+        .unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut n);
+    n.repo().refresh_pending_rotation().unwrap();
+    assert!(matches!(state(&n), DeviceLineageState::Orphaned { .. }));
+
+    let grant = {
+        let repo = a.repo();
+        FullGrantV2 {
+            full: FullGrant {
+                account_id: repo.account().params.account_id,
+                secret_key: zeroize::Zeroizing::new(sk3.to_display()),
+                mode: DeviceMode::Personal,
+                device_id: nid,
+                snapshot: snapshot_from_store(repo.store()).unwrap(),
+            },
+            trust: repo.trust_snapshot().unwrap(),
+            sync: None,
+            enroll: None,
+        }
+    };
+    let session = n.repo.take().unwrap();
+    let (repo, _, _) = repair_from_grant(session, &grant, PASSWORD, &keys).unwrap();
+    n.repo = Some(repo);
+    let t = trust_of_dev(&n).unwrap();
+    assert_eq!(t.state, DeviceLineageState::Current);
+    assert_eq!(t.head.hash, out3.head);
+    assert_self_pinned(&t);
+    assert_eq!(n.items(), a.items());
+}
+
+/// Review m2: a kit restore over a quarantined device that had a write
+/// waiting (made before its revocation, never pushed) keeps it in the
+/// own-write log and replays it under the kit's identity (a write that
+/// could not be reopened would be counted in `ReplayReport::lost` with
+/// the log's alert).
+#[test]
+fn kit_restore_over_quarantine_keeps_own_writes_accounted() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let v = c.vault();
+    let dave = login(v.id, "dave", T0 + 50);
+    c.save(&dave);
+    c.lock();
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[C].id()], RotationReason::Revoke);
+    a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    assert_eq!(tick(&c, T), QuarantineTick::Waiting { erase_at: T + Q });
+
+    restore_kit(&mut c, &new_sk, &kit_keys()).unwrap();
+    // The restore replayed it under the kit's identity (the new keyset's
+    // retired KEM secret opens the old copy): nothing waits, nothing lost.
+    let t = trust_of_dev(&c).unwrap();
+    assert!(t.own_writes.replay.is_empty());
+    assert!(!t.own_writes.alert);
+    assert_eq!(c.repo().replay_own_writes().unwrap().lost, 0);
+    assert!(c.items().iter().any(|i| i.id == dave.id));
+    sync(&mut server, &mut c).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    assert!(a.items().iter().any(|i| i.id == dave.id), "A receives it");
 }

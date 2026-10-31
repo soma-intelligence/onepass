@@ -735,6 +735,7 @@ fn granted(v: &mut V2, n: &Keys) -> (Newcomer, Approver, DeviceInfo, Device) {
     }
     dev.unlock(&SecretKey::parse(&got.full.secret_key).unwrap());
     dev.lock();
+    assert_self_pinned(&dev.store().trust_state().unwrap().unwrap());
     (nc, ap, info, dev)
 }
 
@@ -991,6 +992,7 @@ fn repair_of_known_account_is_a_follow() {
     assert_eq!(sk.to_display(), new_sk.to_display());
     c.repo = Some(repo);
     let t = trust(&c);
+    assert_self_pinned(&t);
     assert_eq!(t.head.hash, out.head);
     assert_eq!(t.identity_pub, trust(&v.a).identity_pub);
     assert!(t.revoked.contains(&b));
@@ -1318,4 +1320,16 @@ fn repair_from_rotating_drops_the_abandoned_rotation() {
     // A, after its own sync, is on its head with no prompt.
     sync(&mut v.server, &mut v.a).unwrap();
     assert_eq!(pending_rotation(&v.a.store()).unwrap(), None);
+}
+
+/// Task 15 review concern 1: every trust-state constructor except a kit
+/// restore leaves the device in its own roster with its own keys (the
+/// pin every capability check reads, `repo::kit::check_pinned`).
+fn assert_self_pinned(t: &onepass_core::trust::TrustState) {
+    assert!(
+        t.roster.iter().any(|e| e.device_id == t.me.device_id
+            && e.sign_pub == t.me.sign_pub
+            && e.kem_pub == t.me.kem_pub),
+        "the device is pinned in its own roster"
+    );
 }

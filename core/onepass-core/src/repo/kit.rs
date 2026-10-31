@@ -100,13 +100,26 @@ pub struct KitRestore<'a> {
 /// A device restored with the Emergency Kit that asks to be trusted (spec
 /// 7.5 step 5): "Nouvel appareil restauré avec l'Emergency Kit : <nom>.
 /// Faire confiance ?". The name is the one its identity-signed self-intro
-/// carries.
+/// carries, chosen by whoever holds the kit: the app always shows it with
+/// the "restauré par Kit" marker, never as a known device (review m3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KitRestored {
     pub device_id: Id,
     pub name: String,
     pub kind: DeviceKind,
     pub mode: DeviceMode,
+    /// The name is the name of a device already in this device's roster:
+    /// the app says so ("porte le même nom qu'un de tes appareils").
+    pub name_in_use: bool,
+    /// The device already signed a rotation (review I1, concern 2): it
+    /// claimed to be the only device (`claim_only_device`), or runs a
+    /// modified client. It can no longer be accepted (re-pair it from that
+    /// device instead), and the app raises the alert "Quelqu'un a restauré
+    /// avec ton Emergency Kit et changé les clés" with three actions:
+    /// change the master password, make a new kit, reject the device
+    /// (`reject_kit_restored`, which ends the alert). See
+    /// `Repository::kit_rotation_alerts`.
+    pub rotated: bool,
 }
 
 fn refused(field: &str, reason: &'static str) -> Error {
@@ -122,7 +135,9 @@ fn refused(field: &str, reason: &'static str) -> Error {
 /// other device is in its own roster from its genesis, migration, pairing
 /// or adoption on.
 pub(crate) fn kit_unpinned(t: &TrustState) -> bool {
-    !t.roster.iter().any(|e| e.device_id == t.me.device_id)
+    !t.roster
+        .iter()
+        .any(|e| same_keys(e, &t.me) && e.device_id == t.me.device_id)
 }
 
 /// `Validation("device", "not pinned")` on a device `kit_unpinned`.
@@ -133,6 +148,11 @@ pub(crate) fn check_pinned(t: &TrustState) -> Result<()> {
     Ok(())
 }
 
+/// Each rotation's rotator is checked against the record's own roster,
+/// not its parent's (review m5): the identity-signed head fixes every
+/// ancestor by hash, so the parent's roster adds nothing an attacker
+/// could change; the resolver applies the parent rule on followers.
+///
 /// The chain from a genesis to `head`, oldest first: each record found by
 /// the parent hash its child signs (so the head fixes every ancestor),
 /// generations stepping down by one, one account, and both signatures of
@@ -261,6 +281,30 @@ fn self_intros<'a>(t: &TrustState, intros: &'a [SignedIntro]) -> BTreeMap<Id, &'
         .collect()
 }
 
+/// What `kit_restored_devices` shows for a valid self-intro: whether its
+/// name is one of the roster's, and whether the device signed any
+/// rotation of this account (its own key from the self-intro, both
+/// signatures verified).
+fn kit_restored(t: &TrustState, records: &[LineageRecord], i: &SignedIntro) -> KitRestored {
+    let e = &i.body.entry;
+    let rotated = records.iter().any(|r| match r {
+        LineageRecord::Rotation(s) => {
+            s.body.account_id == t.account_id
+                && s.body.rotator == e.device_id
+                && verify_rotation(s, &e.sign_pub).is_ok()
+        }
+        LineageRecord::Genesis(_) => false,
+    });
+    KitRestored {
+        device_id: e.device_id,
+        name: e.name.clone(),
+        kind: e.kind,
+        mode: e.mode,
+        name_in_use: t.roster.iter().any(|r| r.name == e.name),
+        rotated,
+    }
+}
+
 /// The generation 0 account id of the store: the one params record whose
 /// id is the account id it names (`NotFound` with none,
 /// `InvalidFormat("account params")` with several).
@@ -282,9 +326,19 @@ fn store_account_id<S: RecordStore>(store: &S) -> Result<Id> {
     }
 }
 
+/// Most key derivations (Argon2id) one restore runs (review m1): the
+/// identities named by records whose chain verifies come first, newest
+/// generation first, then the others (to tell a tampered head from a wrong
+/// password). A hostile server can name any number of identities with
+/// self-consistent forged chains; it cannot make a restore derive more
+/// than this. The cost is that a kit more than 16 identities older than
+/// the newest one tried is `WrongPassword`, not `OutdatedKit`.
+pub const MAX_KIT_DERIVATIONS: usize = 16;
+
 /// The account the kit opens: among the identities the lineage records
-/// name, newest generation first, the first whose params verify under it
-/// and whose keyset opens under the password and the kit's Secret Key.
+/// name (verified chains first, then newest generation first, at most
+/// `MAX_KIT_DERIVATIONS` derivations), the first whose params verify under
+/// it and whose keyset opens under the password and the kit's Secret Key.
 /// `WrongPassword` when none opens.
 fn open_with_kit<S: RecordStore>(
     store: &S,
@@ -293,13 +347,19 @@ fn open_with_kit<S: RecordStore>(
     password: &str,
     secret_key: &SecretKey,
 ) -> Result<(Account, Record)> {
-    let mut named: Vec<(u64, &crate::crypto::IdentityVerifyingKey)> = records
+    let by_hash: BTreeMap<[u8; 32], &LineageRecord> =
+        records.iter().map(|r| (r.hash(), r)).collect();
+    let mut named: Vec<(bool, u64, &crate::crypto::IdentityVerifyingKey)> = by_hash
         .iter()
-        .map(|r| (r.generation(), r.identity_pub()))
+        .map(|(h, r)| {
+            let verified = verified_chain(&by_hash, *h, account_id).is_some();
+            (verified, r.generation(), r.identity_pub())
+        })
         .collect();
-    named.sort_by_key(|a| std::cmp::Reverse(a.0));
+    named.sort_by_key(|a| (std::cmp::Reverse(a.0), std::cmp::Reverse(a.1)));
     let mut tried: Vec<Id> = Vec::new();
-    for (generation, identity) in named {
+    let mut derivations = 0usize;
+    for (_, generation, identity) in named {
         let id = account_record_id(account_id, (generation > 0).then_some(identity));
         if tried.contains(&id) {
             continue;
@@ -315,6 +375,10 @@ fn open_with_kit<S: RecordStore>(
         if AccountParams::decode_verified(&params.data, identity).is_err() {
             continue;
         }
+        if derivations >= MAX_KIT_DERIVATIONS {
+            break;
+        }
+        derivations += 1;
         let expected = PinnedAccount {
             account_id,
             identity_pub: identity.clone(),
@@ -703,14 +767,25 @@ impl<S: RecordStore> Repository<S> {
             return Ok(Vec::new());
         }
         let intros = stored_intros(&self.store)?;
+        let records = lineage_records(&self.store)?;
         Ok(self_intros(&t, &intros)
             .into_values()
-            .map(|i| KitRestored {
-                device_id: i.body.entry.device_id,
-                name: i.body.entry.name.clone(),
-                kind: i.body.entry.kind,
-                mode: i.body.entry.mode,
-            })
+            .map(|i| kit_restored(&t, &records, i))
+            .collect())
+    }
+
+    /// Review concern 2: the kit-restored devices this device never pinned
+    /// that signed a rotation (`KitRestored::rotated`). Non-empty means
+    /// someone holding the latest kit and the master password changed the
+    /// keys without this device: the app shows the alert and its actions
+    /// (change the password, new kit, reject). Nothing here trusts that
+    /// rotation (its rotator is not in the roster). Read from the stored
+    /// records each time; rejecting the device ends it.
+    pub fn kit_rotation_alerts(&self) -> Result<Vec<KitRestored>> {
+        Ok(self
+            .kit_restored_devices()?
+            .into_iter()
+            .filter(|k| k.rotated)
             .collect())
     }
 
@@ -745,6 +820,12 @@ impl<S: RecordStore> Repository<S> {
         let asked = found
             .get(&id)
             .ok_or_else(|| refused("device", "no kit intro"))?;
+        // Review I1: accepting a device that already rotated would make
+        // its rotation valid here (a prompt, or a quarantine if it revoked
+        // this device). Refused: re-pair from it instead.
+        if kit_restored(&trust, &lineage_records(&self.store)?, asked).rotated {
+            return Err(refused("device", "already rotated"));
+        }
         let asked_entry = &asked.body.entry;
         check_name(&asked_entry.name)?;
         check_mode(asked_entry.mode)?;
@@ -793,11 +874,20 @@ impl<S: RecordStore> Repository<S> {
     /// The user's no to `kit_restored_devices`: the device is excluded on
     /// this device (its intros are no longer accepted here, its rotations
     /// not valid). Conditional on the trust state read (`Conflict`).
-    /// Refused as `accept_kit_restored` (no device keys needed).
+    /// Refused as `accept_kit_restored` (no device keys needed): read-only
+    /// or locked, no trust state, not pinned, not `Current` or `Rotating`,
+    /// no valid self-intro for `id`. A device that already rotated can be
+    /// rejected (it ends `kit_rotation_alerts`).
     pub fn reject_kit_restored(&mut self, id: Id) -> Result<()> {
         self.writable()?;
         let trust = trust_of(&self.store)?.ok_or_else(|| refused("device", "no device keys"))?;
         check_pinned(&trust)?;
+        if !matches!(
+            trust.state,
+            DeviceLineageState::Current | DeviceLineageState::Rotating { .. }
+        ) {
+            return Err(refused("device", "state"));
+        }
         let intros = stored_intros(&self.store)?;
         if !self_intros(&trust, &intros).contains_key(&id) {
             return Err(refused("device", "no kit intro"));
