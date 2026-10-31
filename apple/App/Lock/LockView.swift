@@ -14,7 +14,7 @@ struct LockView: View {
     @State private var revealed = false
     @State private var message: String?
     @State private var lockoutRefresh = 0
-    @FocusState private var fieldFocused: Bool
+    @State private var fieldFocused = false
 
     private var session: VaultSession { model.session }
     private var unlocking: Bool { session.state == .unlocking }
@@ -154,23 +154,13 @@ struct LockView: View {
     private var passwordField: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                Group {
-                    if revealed {
-                        TextField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
-                            .autocorrectionDisabled()
-                            #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            #endif
-                    } else {
-                        SecureField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
-                    }
-                }
+                // Emptied as it leaves the screen: iOS never offers to save the master password.
+                SecretInputField(
+                    title: String(localized: "Mot de passe maître"), text: $password, revealed: revealed,
+                    focused: $fieldFocused, submitGo: true, onSubmit: { Task { await unlockWithPassword() } },
+                    fontSize: 17, identifier: "lock.password")
                 .labelsHidden()
                 .textFieldStyle(.plain)
-                .font(.system(size: 17))
-                .focused($fieldFocused)
-                .submitLabel(.go)
-                .onSubmit { Task { await unlockWithPassword() } }
                 .disabled(unlocking || lockedOut)
                 .privacySensitive()
                 .accessibilityIdentifier("lock.password")

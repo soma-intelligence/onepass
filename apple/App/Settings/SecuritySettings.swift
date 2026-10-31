@@ -247,18 +247,18 @@ struct PasswordPromptSheet: View {
     @State private var password = ""
     @State private var busy = false
     @State private var errorMessage: String?
-    @FocusState private var focused: Bool
+    @State private var focused = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    SecureField("Mot de passe maître", text: $password)
-                        .focused($focused)
-                        .onSubmit(run)
-                        // No `.password` content type: iOS must never offer to save the master password.
+                    // No `.password` content type, emptied as it leaves the screen: iOS must never
+                    // offer to save the master password.
+                    SecretInputField(
+                        title: String(localized: "Mot de passe maître"), text: $password, focused: $focused,
+                        onSubmit: run, identifier: "settings.prompt.password")
                         .privacySensitive()
-                        .accessibilityIdentifier("settings.prompt.password")
                 } footer: {
                     Text(footer)
                 }
