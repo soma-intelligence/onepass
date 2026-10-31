@@ -182,6 +182,23 @@ begin
 end
 $$;
 
+-- Runs `stmt` (a mailbox entry point call returning rows) and passes only
+-- if it does not raise and its first row has status `expected`.
+create function onepass_test.answers(stmt text, expected text, name text)
+returns void
+language plpgsql
+as $$
+declare
+    got text;
+begin
+    execute format('select status from (%s) s limit 1', stmt) into got;
+    if got is distinct from expected then
+        raise exception 'not ok % (got %)', name, coalesce(got, 'no row') using errcode = 'P0001';
+    end if;
+    raise notice 'ok %', name;
+end
+$$;
+
 -- A 16 byte nonce from a counter, so tests need no extension.
 create function onepass_test.nonce(i bigint)
 returns bytea
