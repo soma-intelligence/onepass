@@ -28,6 +28,14 @@ export interface GraveStore {
 }
 
 export interface ObjectStore {
+  /**
+   * Resolves when the bucket exists; rejects when it is missing or Storage
+   * cannot say. Checked before every run: Storage answers a bulk delete in a
+   * missing bucket the way it answers one of a missing object (an empty
+   * list), so without this check a wrong bucket or project would drop every
+   * grave while the real objects stay.
+   */
+  ready(): Promise<void>;
   /** Deletes one object; "missing" when it was not there. Rejects on any Storage error. */
   remove(objectName: string): Promise<"deleted" | "missing">;
 }
@@ -94,6 +102,13 @@ export function handler(deps: GcDeps): (req: Request) => Promise<Response> {
 
   async function run(): Promise<Summary> {
     const s: Summary = { taken: 0, deleted: 0, missing: 0, failed: 0, dropped: 0 };
+    // No take before the bucket is known to exist: graves stay untouched.
+    try {
+      await deps.objects.ready();
+    } catch (e) {
+      deps.log("mailbox-gc: the Storage bucket is missing or unreachable, no grave taken");
+      throw e;
+    }
     const deadline = deps.now() + BUDGET_MS;
     for (let n = 0; n < MAX_TAKES && deps.now() < deadline; n++) {
       const graves = await deps.graves.take(TAKE_LIMIT);

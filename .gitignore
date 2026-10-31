@@ -16,3 +16,4 @@ extension/lab/out/
 
 # ProVerif (formal/run.sh logs and intermediate files)
 formal/out/
+mailbox/supabase/.env.hosted

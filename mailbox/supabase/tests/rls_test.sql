@@ -55,7 +55,7 @@ select onepass_test.ok(
      from pg_policies where schemaname = 'onepass_mailbox'),
     'policy_helpers_wrapped_in_select');
 select onepass_test.ok(
-    (select count(*) from pg_policies where schemaname = 'onepass_mailbox' and qual ~ 'SELECT onepass_mailbox\.') = 13,
+    (select count(*) from pg_policies where schemaname = 'onepass_mailbox' and qual ~ 'SELECT onepass_mailbox\.') = 15,
     'policies_using_helpers_counted');
 
 -- Two mailboxes A and B, written in maintenance by the owner.

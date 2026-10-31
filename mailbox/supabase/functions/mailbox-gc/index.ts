@@ -10,7 +10,7 @@ import { createClient } from "@supabase/supabase-js";
 import { cronKeyFromEnv } from "../_shared/cron.ts";
 import { connectJanitor } from "../_shared/janitor.ts";
 import { handler } from "./gc.ts";
-import { BUCKET, graveStore, objectStore } from "./store.ts";
+import { graveStore, objectStore } from "./store.ts";
 
 function required(name: string): string {
   const v = Deno.env.get(name);
@@ -24,7 +24,7 @@ const storage = createClient(
   Deno.env.get("MAILBOX_STORAGE_INTERNAL_URL") || required("SUPABASE_URL"),
   required("SUPABASE_SERVICE_ROLE_KEY"),
   { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } },
-).storage.from(BUCKET);
+).storage;
 
 const handle = handler({
   cronKey: cronKeyFromEnv(Deno.env.get("MAILBOX_CRON_KEY")),

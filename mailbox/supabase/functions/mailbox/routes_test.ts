@@ -804,7 +804,7 @@ Deno.test("trusted hops count from the right; other headers are read whole", asy
   const h = (v: string) => ({
     get: (n: string) => (n === "x-forwarded-for" ? v : n === "cf-connecting-ip" ? v : null),
   });
-  const two = ipSourceFromEnv(undefined, "2");
+  const two = ipSourceFromEnv("X-Forwarded-For", "2");
   assertEquals(clientAddress(h("6.6.6.6, 1.1.1.1, 10.0.0.9"), two), "1.1.1.1");
   assertEquals(clientAddress(h("10.0.0.9"), two), FALLBACK_ADDRESS);
   const cf = ipSourceFromEnv("CF-Connecting-IP", undefined);
@@ -813,12 +813,26 @@ Deno.test("trusted hops count from the right; other headers are read whole", asy
   for (const bad of ["0", "-1", "x", "17"]) {
     let threw = false;
     try {
-      ipSourceFromEnv(undefined, bad);
+      ipSourceFromEnv("x-forwarded-for", bad);
     } catch {
       threw = true;
     }
     assert(threw, bad);
   }
+});
+
+Deno.test("no client address header configured: the function refuses to boot", async () => {
+  const { ipSourceFromEnv } = await import("./ip.ts");
+  for (const header of [undefined, ""]) {
+    let threw = false;
+    try {
+      ipSourceFromEnv(header, "1");
+    } catch {
+      threw = true;
+    }
+    assert(threw, String(header));
+  }
+  assertEquals(ipSourceFromEnv("sb-forwarded-for", undefined), { header: "sb-forwarded-for", trustedHops: 1 });
 });
 
 Deno.test("a row above the page head (a commit between the two reads) is left out, not a 503", async () => {
