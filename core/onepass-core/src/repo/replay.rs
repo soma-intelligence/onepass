@@ -289,20 +289,27 @@ impl<S: RecordStore> Repository<S> {
             return Ok(None);
         }
         let rows = self.store.retained_rows(vault)?;
-        let row = |kind| rows.iter().find(|r| r.kind == kind);
-        let (Some(key), Some(meta)) = (row(RecordKind::VaultKey), row(RecordKind::VaultMeta))
-        else {
-            return Ok(None);
-        };
-        let Ok(v) = Vault::open(&self.account, vault, &key.data, &meta.data) else {
-            return Ok(None);
-        };
+        let manifests = self.manifest_rows(vault)?;
         let signer = &self.account.params.signing_pub;
-        let verifies = self.manifest_rows(vault)?.iter().any(|r| {
-            SignedManifest::decode(&r.data)
-                .is_ok_and(|sm| verify_manifest(&v, signer, &sm, None).is_ok())
-        });
-        Ok(verifies.then_some(v))
+        // One copy per identity this device was on (Task 19 carried item
+        // 3): the one that opens under the session's keys and that a
+        // manifest it holds authenticates.
+        let of = |kind| rows.iter().filter(move |r: &&Record| r.kind == kind);
+        for key in of(RecordKind::VaultKey) {
+            for meta in of(RecordKind::VaultMeta) {
+                let Ok(v) = Vault::open(&self.account, vault, &key.data, &meta.data) else {
+                    continue;
+                };
+                let verifies = manifests.iter().any(|r| {
+                    SignedManifest::decode(&r.data)
+                        .is_ok_and(|sm| verify_manifest(&v, signer, &sm, None).is_ok())
+                });
+                if verifies {
+                    return Ok(Some(v));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// The session reads `vault` from its own copy: a rotation is known
@@ -665,12 +672,14 @@ impl<S: RecordStore> Repository<S> {
                 continue;
             }
             let rows = self.store.retained_rows(key.id)?;
-            let row = |kind| rows.iter().find(|r| r.kind == kind);
-            let opens = match (row(RecordKind::VaultKey), row(RecordKind::VaultMeta)) {
-                (None, None) => continue,
-                (Some(k), Some(m)) => Vault::open(&self.account, key.id, &k.data, &m.data).is_ok(),
-                _ => false,
-            };
+            if rows.is_empty() {
+                continue;
+            }
+            let of = |kind| rows.iter().filter(move |r: &&Record| r.kind == kind);
+            let opens = of(RecordKind::VaultKey).any(|k| {
+                of(RecordKind::VaultMeta)
+                    .any(|m| Vault::open(&self.account, key.id, &k.data, &m.data).is_ok())
+            });
             if !opens {
                 self.store.drop_retained(key.id)?;
             }

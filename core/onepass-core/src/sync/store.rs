@@ -15,7 +15,10 @@
 //!   `RecordStore::kept_rows` and `crate::sync::VaultSyncHealth`.
 //! - `retained`: the `base` vault key
 //!   and vault meta rows a fetch replaced with other bytes (the first such
-//!   row per key): the vault as the identity this device is on sealed it,
+//!   row per key and per identity this device was on, column `copy`: the
+//!   records id of that identity, Task 19 carried item 3, so a stale copy
+//!   of an identity left never takes the place of the current one): the
+//!   vault as the identity this device is on sealed it,
 //!   kept while a rotation re-sealed it under keys this device has not
 //!   followed yet (spec 9, read-only reads) and until its own writes are
 //!   replayed under the new keys (spec 10.4). See
@@ -147,9 +150,10 @@ CREATE TABLE IF NOT EXISTS kept (
 CREATE TABLE IF NOT EXISTS retained (
     kind INTEGER NOT NULL,
     id BLOB NOT NULL,
+    copy BLOB NOT NULL,
     version INTEGER NOT NULL,
     data BLOB NOT NULL,
-    PRIMARY KEY (kind, id)
+    PRIMARY KEY (kind, id, copy)
 );
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT NOT NULL PRIMARY KEY,
@@ -168,10 +172,55 @@ fn init_schema(conn: &Connection) -> Result<()> {
     if version > STORE_USER_VERSION {
         return Err(Error::InvalidFormat("store from a newer version"));
     }
+    migrate_retained(conn)?;
     conn.execute_batch(SCHEMA).map_err(store_err)?;
     conn.execute_batch(&format!("PRAGMA user_version = {STORE_USER_VERSION};"))
         .map_err(store_err)?;
     Ok(())
+}
+
+/// A `retained` table from before its `copy` column (one copy per vault
+/// key and meta, Task 10) becomes the current one, its rows kept under an
+/// empty copy tag, in one transaction. Nothing to do on a new file or a
+/// current table.
+fn migrate_retained(conn: &Connection) -> Result<()> {
+    let columns: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT name FROM pragma_table_info('retained')")
+            .map_err(store_err)?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(store_err)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(store_err)?
+    };
+    if columns.is_empty() || columns.iter().any(|c| c == "copy") {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "BEGIN IMMEDIATE;
+         ALTER TABLE retained RENAME TO retained_before_copy;
+         CREATE TABLE retained (
+             kind INTEGER NOT NULL,
+             id BLOB NOT NULL,
+             copy BLOB NOT NULL,
+             version INTEGER NOT NULL,
+             data BLOB NOT NULL,
+             PRIMARY KEY (kind, id, copy)
+         );
+         INSERT INTO retained (kind, id, copy, version, data)
+             SELECT kind, id, x'', version, data FROM retained_before_copy;
+         DROP TABLE retained_before_copy;
+         COMMIT;",
+    )
+    .map_err(store_err)
+}
+
+/// The `retained` copy tag of what this device holds now: the records id
+/// of the identity its trust state is on, empty without a trust state.
+fn copy_tag(conn: &Connection) -> Result<Vec<u8>> {
+    Ok(trust_in(conn)?
+        .map(|t| crate::repo::follow::current_records_id(&t).0.to_vec())
+        .unwrap_or_default())
 }
 
 /// A `staging` row: `(kind, id, version, data, server_meta)`.
@@ -1392,6 +1441,7 @@ impl SyncStore {
     pub fn commit_remote(&mut self) -> Result<Vec<Id>> {
         let tx = self.write_tx()?;
         let seen: BTreeSet<Id> = device_state_in(&tx)?.last_seen.into_keys().collect();
+        let copy = copy_tag(&tx)?;
         let staged: Vec<StagedRow> = {
             let mut stmt = tx
                 .prepare(
@@ -1461,10 +1511,10 @@ impl SyncStore {
                 // key, review M1 of Task 10), so the retained meta pairs with
                 // the kept manifest.
                 tx.execute(
-                    "INSERT OR IGNORE INTO retained (kind, id, version, data)
-                     SELECT kind, id, version, data FROM base
+                    "INSERT OR IGNORE INTO retained (kind, id, copy, version, data)
+                     SELECT kind, id, ?4, version, data FROM base
                      WHERE kind = ?1 AND id = ?2 AND data != ?3",
-                    params![kind_code, &id, &data],
+                    params![kind_code, &id, &data, &copy],
                 )
                 .map_err(store_err)?;
             }
@@ -3379,7 +3429,7 @@ impl RecordStore for SyncStore {
             let mut stmt = c
                 .prepare(
                     "SELECT kind, id, version, data FROM retained WHERE id = ?1
-                     ORDER BY kind",
+                     ORDER BY copy, kind",
                 )
                 .map_err(store_err)?;
             let rows = stmt
@@ -3467,14 +3517,23 @@ impl RecordStore for SyncStore {
 
     fn put_retained(&mut self, rows: Vec<Record>) -> Result<()> {
         let tx = self.write_tx()?;
+        // Tagged with the identity the trust state is on now (after a
+        // switch, the one followed: the rows are wrapped for it).
+        let copy = copy_tag(&tx)?;
         for r in rows {
             if !matches!(r.kind, RecordKind::VaultKey | RecordKind::VaultMeta) {
                 return Err(Error::InvalidFormat("retained row"));
             }
             tx.execute(
-                "INSERT OR REPLACE INTO retained (kind, id, version, data)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![r.kind.code(), &r.id.0[..], to_i64(r.version)?, &r.data],
+                "INSERT OR REPLACE INTO retained (kind, id, copy, version, data)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    r.kind.code(),
+                    &r.id.0[..],
+                    &copy,
+                    to_i64(r.version)?,
+                    &r.data
+                ],
             )
             .map_err(store_err)?;
             tx.execute(
@@ -3680,7 +3739,8 @@ impl RecordStore for SyncStore {
                 // follows retains the meta of this load.
                 tx.execute(
                     "DELETE FROM retained WHERE id = ?1 AND kind = ?2
-                     AND NOT EXISTS (SELECT 1 FROM retained WHERE id = ?1 AND kind = ?3)",
+                     AND NOT EXISTS (SELECT 1 FROM retained AS k
+                         WHERE k.id = ?1 AND k.kind = ?3 AND k.copy = retained.copy)",
                     params![
                         &vault.0[..],
                         RecordKind::VaultMeta.code(),
@@ -4050,6 +4110,85 @@ mod tests {
         s.stage_remote(remote(kind, id, version, Some(data)))
             .unwrap();
         s.commit_remote().unwrap();
+    }
+
+    /// Task 19 carried item 3: the retained copy is kept per identity the
+    /// device was on. A copy of an identity left (kept for a replay that
+    /// still waits) never takes the place of the copy of the identity the
+    /// device is on now, which the next rotation re-seals.
+    #[test]
+    fn retained_copy_per_identity() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let v = Id::new();
+        let mut trust = crate::trust::tests::sample();
+        trust.head.generation = 0;
+        s.put_all_if_version_with_trust(vec![], vec![], None, &trust)
+            .unwrap();
+        seed_base(&mut s, RecordKind::VaultKey, v, 1, vec![1]);
+        seed_base(&mut s, RecordKind::VaultKey, v, 2, vec![2]);
+        // Another identity (generation 3: its own records id).
+        let mut next = trust.clone();
+        next.head.generation = 3;
+        s.put_all_if_version_with_trust(vec![], vec![], None, &next)
+            .unwrap();
+        seed_base(&mut s, RecordKind::VaultKey, v, 3, vec![3]);
+        // The first replaced row per identity: [1] then [2], never [3].
+        seed_base(&mut s, RecordKind::VaultKey, v, 4, vec![4]);
+        let mut kept: Vec<Vec<u8>> = s
+            .retained_rows(v)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.data)
+            .collect();
+        kept.sort();
+        assert_eq!(kept, vec![vec![1], vec![2]]);
+        // A switch's own copy, under the identity the trust state is on,
+        // replaces only that identity's copy.
+        s.put_retained(vec![rec(v, RecordKind::VaultKey, 9, &[9])])
+            .unwrap();
+        let mut kept: Vec<Vec<u8>> = s
+            .retained_rows(v)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.data)
+            .collect();
+        kept.sort();
+        assert_eq!(kept, vec![vec![1], vec![9]]);
+    }
+
+    /// A `retained` table from before the copy tag keeps its rows.
+    #[test]
+    fn retained_table_from_before_the_copy_tag_migrates() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("old.sqlite");
+        let v = Id::new();
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(
+                "CREATE TABLE retained (
+                    kind INTEGER NOT NULL,
+                    id BLOB NOT NULL,
+                    version INTEGER NOT NULL,
+                    data BLOB NOT NULL,
+                    PRIMARY KEY (kind, id)
+                );",
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO retained (kind, id, version, data) VALUES (?1, ?2, 1, x'07')",
+                params![RecordKind::VaultKey.code(), &v.0[..]],
+            )
+            .unwrap();
+        }
+        let s = SyncStore::open(&path).unwrap();
+        assert_eq!(
+            s.retained_rows(v).unwrap(),
+            vec![rec(v, RecordKind::VaultKey, 1, &[7])]
+        );
+        drop(s);
+        // Opens again as a current file.
+        let s = SyncStore::open(&path).unwrap();
+        assert_eq!(s.retained_rows(v).unwrap().len(), 1);
     }
 
     fn count(s: &SyncStore, table: &str) -> i64 {
