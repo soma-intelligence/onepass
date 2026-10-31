@@ -202,6 +202,9 @@ pub struct Repository<S: RecordStore> {
     /// session reads, every write is `Error::ReadOnly`. Found at unlock or
     /// by `refresh_pending_rotation`.
     pub(crate) pending: Option<RotationPrompt>,
+    /// What `pending` was computed from (`follow::lineage_mark`); `None`
+    /// before the first look.
+    pub(crate) lineage_mark: Option<[u8; 32]>,
 }
 
 /// A restore epoch record, verified, and the SHA-256 of its data.
@@ -487,6 +490,7 @@ impl<S: RecordStore> Repository<S> {
             lists_forced: false,
             records_id: id,
             pending: None,
+            lineage_mark: None,
         };
         let (manifest, seen) = repo.manifest_record(&vault, None, vec![])?;
         let me = device_id.map(|d| self_entry(d, None, at));
@@ -617,6 +621,7 @@ impl<S: RecordStore> Repository<S> {
             lists_forced: false,
             records_id: params.id,
             pending: None,
+            lineage_mark: None,
         };
         // K9: an unlock never follows a rotation; it reports a pending one,
         // and the session is read-only until the user answers.
