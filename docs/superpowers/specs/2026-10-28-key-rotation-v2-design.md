@@ -410,6 +410,7 @@ The extension never follows a rotation and never holds device keys; in `Candidat
 - Legacy devices are trusted on first use at migration (section 15) until verified.
 - Server denial of service delays following; the exit is re-pairing.
 - Each rotation rewrites every vault (as the first design).
+- A server that withholds an honest sibling from one device can split followers: if B's honest rotation S1 (made before B was lost) is hidden from A, A follows the other sibling and then revokes B there; devices that already followed S1 keep it, because a record signed by a device the user revoked is never adopted. Those devices stay on an identity B knows until the cross-branch alert (a valid record on another branch revokes a device of their own branch, task 11) makes the user re-pair or switch. This is T2 denial of integrity, detected, not silent.
 - Writes by other devices under the old identity after the rotator's snapshot reach the new identity only when their author follows and replays them.
 - A revoked device that writes "B revokes A" before the user removes it quarantines A; if nobody answers A's screen within 7 days, A erases itself and its unsynced writes are lost (O1). The user's other devices still see the record as a prompt naming B, so the exit is "Ce n'était pas moi" on any of them, then removing B.
 
