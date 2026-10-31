@@ -1429,15 +1429,18 @@ impl Session {
             Stored::Store(account) => fetch_key(ctx, *account)?,
             Stored::File(k) | Stored::Legacy(k) => k.clone(),
         };
-        let pending_text = pending_text(ctx, &at_rest, pending.as_ref())?;
         harden(ctx)?;
         guard_lock(ctx, &at_rest)?;
         let (mut repo, used, from_pending) =
             match unlock_with(ctx, password, &key_text, state.clone()) {
                 Ok(repo) => (repo, key_text.clone(), false),
                 // The rotation committed and the key was not promoted yet.
-                Err(e) if e.code == 2 && pending_text.is_some() => {
-                    let pending_text = pending_text.clone().unwrap_or_default();
+                Err(e) if e.code == 2 && pending.is_some() => {
+                    // Only now is the pending key needed (a missing entry
+                    // must not stop a device whose current key opens).
+                    let Some(pending_text) = pending_text(ctx, &at_rest, pending.as_ref())? else {
+                        return Err(e);
+                    };
                     match unlock_with(ctx, password, &pending_text, state) {
                         Ok(repo) => (repo, pending_text, true),
                         Err(e2) if e2.code == 2 => return Err(e),

@@ -1027,11 +1027,23 @@ fn rotate_keys_json_and_explicit_kit_path() {
     assert_eq!(v["emergency_kit"], kit_arg);
     assert_eq!(v["rotation_code"].as_str().unwrap().len(), 6);
     assert!(kit.is_file());
-    // Never over an existing file: the refusal changes nothing.
-    let before = rot.trust().head;
-    let again = rot.run(&["account", "rotate-keys", "--kit-path", kit_arg]);
-    assert_ne!(again.code, 0);
-    assert_eq!(rot.trust().head.generation, before.generation + 1);
+    // Never over an existing file, nor into a missing folder: the refusal
+    // happens before anything changes (generation, Secret Key, kit file).
+    let generation = rot.trust().head.generation;
+    let entries = rot.store_entries();
+    let missing = format!("{}/missing/kit.txt", rot.tmp.path().display());
+    for bad in [kit_arg, missing.as_str()] {
+        let again = rot.run(&["account", "rotate-keys", "--kit-path", bad]);
+        assert_eq!(again.code, 1, "{}", again.stderr);
+        assert!(
+            again.stderr.contains("nothing was changed"),
+            "{}",
+            again.stderr
+        );
+        assert_eq!(rot.trust().head.generation, generation);
+        assert_eq!(rot.store_entries(), entries);
+    }
+    assert!(fs::read_to_string(&kit).unwrap().contains("Secret Key: "));
 }
 
 #[test]

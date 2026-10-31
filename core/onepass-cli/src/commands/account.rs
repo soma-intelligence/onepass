@@ -273,13 +273,14 @@ fn kit_text(account: Id, key: &SecretKey) -> Zeroizing<String> {
     ))
 }
 
-/// Write the kit, created with 0600 and never over an existing file.
-fn write_kit(
+/// The kit file, created (0600, never over an existing file) before the
+/// rotation: a path that cannot be used refuses with nothing changed, and
+/// once the keys rotate only the writing is left to do.
+fn open_kit(
     ctx: &Ctx,
     account: Id,
-    key: &SecretKey,
     path: Option<PathBuf>,
-) -> Result<PathBuf, CliError> {
+) -> Result<(PathBuf, fs::File), CliError> {
     let path = path.unwrap_or_else(|| {
         ctx.data_dir.join(format!(
             "emergency-kit-{account}-{}.txt",
@@ -287,15 +288,40 @@ fn write_kit(
         ))
     });
     let path = std::path::absolute(&path)?;
-    let text = kit_text(account, key);
-    let mut f = fs::OpenOptions::new()
+    let file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
-        .open(&path)?;
-    f.write_all(text.as_bytes())?;
-    f.sync_all()?;
-    Ok(path)
+        .open(&path)
+        .map_err(|e| {
+            CliError::usage(format!(
+                "cannot create the Emergency Kit {} ({}); nothing was changed",
+                path.display(),
+                e.kind()
+            ))
+        })?;
+    Ok((path, file))
+}
+
+/// Write the kit through the handle opened before the rotation, and sync.
+fn write_kit(mut file: fs::File, account: Id, key: &SecretKey) -> std::io::Result<()> {
+    let text = kit_text(account, key);
+    file.write_all(text.as_bytes())?;
+    file.sync_all()
+}
+
+/// What stderr says when the kit could not be written after the rotation
+/// committed: the new Secret Key, shown once, so it is not lost. Never
+/// logged, never on stdout.
+fn kit_failure_notice(key: &SecretKey, path: &std::path::Path, e: &std::io::Error) -> String {
+    format!(
+        "WARNING: the keys were rotated but the Emergency Kit {} could not be written ({}). \
+         The new Secret Key is shown here once: write it down now, it is the only copy \
+         outside this device's secret store.\nSecret Key: {}",
+        path.display(),
+        e.kind(),
+        key.to_display()
+    )
 }
 
 /// `onepass account rotate-keys`.
@@ -351,7 +377,12 @@ fn rotate(
     let keys = session.device_keys()?;
     let current = session.secret_key()?;
     let new_key = SecretKey::generate()?;
-    session.stage_pending(ctx, &new_key)?;
+    // The kit file first: a bad path refuses before anything changes.
+    let (kit_at, kit_file) = open_kit(ctx, session.repo.account_id(), args.kit_path)?;
+    if let Err(e) = session.stage_pending(ctx, &new_key) {
+        let _ = fs::remove_file(&kit_at);
+        return Err(e);
+    }
     let committed = session.repo.rotate(RotateRequest {
         revoke,
         new_password: None,
@@ -366,6 +397,7 @@ fn rotate(
         Ok(o) => o,
         Err(e) => {
             // Nothing was written: the key drawn for it is void.
+            let _ = fs::remove_file(&kit_at);
             let _ = session.discard_pending(ctx);
             let _ = session.persist();
             return Err(refusal(e));
@@ -375,12 +407,14 @@ fn rotate(
     // the new Secret Key stays pending in the secret store (or the file)
     // and the next command finishes the move.
     let account = session.repo.account_id();
-    let kit = write_kit(ctx, account, &new_key, args.kit_path);
+    let kit = write_kit(kit_file, account, &new_key);
+    if let Err(e) = &kit {
+        eprintln!("{}", kit_failure_notice(&new_key, &kit_at, e));
+    }
     let promoted = session.promote_pending(ctx);
     let saved = session::harden(ctx).and_then(|()| session.persist());
     let code = format!("{:06}", outcome.code);
     drop(outcome.auk);
-    let kit = kit?;
     promoted?;
     saved?;
     if ctx.json {
@@ -388,15 +422,17 @@ fn rotate(
             "{}",
             serde_json::json!({
                 "rotation_code": code,
-                "emergency_kit": kit.display().to_string(),
+                "emergency_kit": kit_at.display().to_string(),
+                "emergency_kit_written": kit.is_ok(),
             })
         ))
         .map_err(session::stdout_error)?;
     } else {
         crate::out!("Rotation code: {code}");
-        crate::out!("Emergency Kit: {}", kit.display());
+        crate::out!("Emergency Kit: {}", kit_at.display());
         eprintln!(
-            "Save the Emergency Kit now: it holds the new Secret Key, and every earlier kit \
+            "Move the Emergency Kit offline and delete it from this machine once saved: it \
+             holds the Secret Key in clear. Save the Emergency Kit now: it holds the new Secret Key, and every earlier kit \
              stopped opening the account. Your other devices ask you to confirm this rotation \
              with the master password; the code above is the one they show."
         );
@@ -439,4 +475,41 @@ pub fn not_me(ctx: &Ctx) -> Result<(), CliError> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_kit_write_shows_the_new_secret_key_once() {
+        let key = SecretKey::generate().unwrap();
+        let e = std::io::Error::from(std::io::ErrorKind::StorageFull);
+        let notice = kit_failure_notice(&key, std::path::Path::new("/kit.txt"), &e);
+        assert!(notice.contains(&key.to_display()));
+        assert!(notice.contains("could not be written"));
+        assert!(notice.contains("/kit.txt"));
+    }
+
+    #[test]
+    fn an_existing_or_unreachable_kit_path_is_refused_up_front() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx {
+            data_dir: tmp.path().to_owned(),
+            json: false,
+            secrets: std::sync::Arc::new(crate::secret_store::NoStore::new("none")),
+            insecure_file_key: false,
+        };
+        let id = Id::new();
+        let taken = tmp.path().join("kit.txt");
+        fs::write(&taken, b"keep").unwrap();
+        let e = open_kit(&ctx, id, Some(taken.clone())).unwrap_err();
+        assert!(e.msg.contains("nothing was changed"), "{}", e.msg);
+        assert_eq!(fs::read(&taken).unwrap(), b"keep");
+        let e = open_kit(&ctx, id, Some(tmp.path().join("missing/kit.txt"))).unwrap_err();
+        assert!(e.msg.contains("nothing was changed"), "{}", e.msg);
+        let (path, file) = open_kit(&ctx, id, Some(tmp.path().join("new.txt"))).unwrap();
+        write_kit(file, id, &SecretKey::generate().unwrap()).unwrap();
+        assert!(fs::read_to_string(path).unwrap().contains("Secret Key: "));
+    }
 }

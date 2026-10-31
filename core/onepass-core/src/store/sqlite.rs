@@ -311,7 +311,9 @@ impl RecordStore for SqliteStore {
     /// the writes and the chain state of the new identity, the old item
     /// records the rotation re-sealed are collected (`rotation.collect`,
     /// R23: the new content is the only copy there is) and the device goes
-    /// straight to `Current`, not `Rotating { phase: 1 }`.
+    /// straight to `Current`, not `Rotating { phase: 1 }`. This store must
+    /// never be the local layer of a synced store: settling at commit skips
+    /// the push phases.
     fn put_rotation(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
