@@ -64,6 +64,15 @@ pub struct ApprovalRequest {
     pub targets: Vec<Target>,
     /// Whether "allow for a few minutes" (a grant) may be offered.
     pub remember_allowed: bool,
+    /// True when only a strong gesture counts (Touch ID or the session
+    /// password on the Mac, Face ID on the iPhone): `reveal_secret`,
+    /// `totp_code`, pairing.
+    pub strong_required: bool,
+    /// The confirmation code the user must see on the approving screen and
+    /// in the agent's notice. Drawn by the guard (see
+    /// [`challenge_code`]) right before the approver is asked; callers build
+    /// requests with an empty one. An approver that finds it empty denies.
+    pub confirm_code: String,
 }
 
 /// The user's answer.
@@ -76,6 +85,40 @@ pub enum Decision {
     /// Allow this exact request again for the given duration (one of
     /// [`GRANT_CHOICES`], at most 60 minutes).
     AllowFor(Duration),
+}
+
+/// An approver's answer: the decision and where it was given.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Answer {
+    /// What the user decided.
+    pub decision: Decision,
+    /// Where the approval was given: `mac` or `phone:<device_id>`. `None`
+    /// when the approver does not tell (or for a refusal nobody gave).
+    pub approved_on: Option<String>,
+}
+
+impl Answer {
+    /// An answer that does not say where it was given.
+    pub fn new(decision: Decision) -> Self {
+        Answer {
+            decision,
+            approved_on: None,
+        }
+    }
+
+    /// An answer given on `place` (`mac` or `phone:<device_id>`).
+    pub fn on(decision: Decision, place: impl Into<String>) -> Self {
+        Answer {
+            decision,
+            approved_on: Some(place.into()),
+        }
+    }
+}
+
+impl From<Decision> for Answer {
+    fn from(decision: Decision) -> Self {
+        Answer::new(decision)
+    }
 }
 
 /// Durations offered at the prompt: answer suffix and duration. `s` is the
@@ -103,8 +146,17 @@ pub fn decision_label(decision: &Decision) -> &'static str {
 
 /// Asks the user (or a stand-in) to approve a request.
 pub trait Approver: Send + Sync {
-    /// Returns the decision for `req`. Anything but an explicit yes is `Deny`.
-    fn approve(&self, req: &ApprovalRequest) -> Decision;
+    /// Returns the answer for `req`. Anything but an explicit yes is `Deny`.
+    fn approve(&self, req: &ApprovalRequest) -> Answer;
+
+    /// Whether the confirmation code may be shown to the requesting client.
+    /// True for an approver on another device or panel (the user reads the
+    /// code there and compares). False when the user types the code on a
+    /// terminal the client may share: the code is then the defence against
+    /// keystrokes injected by that client, and must never reach it.
+    fn code_is_public(&self) -> bool {
+        true
+    }
 }
 
 /// Characters of the approval challenge: lowercase letters without `i`, `l`
@@ -280,7 +332,7 @@ fn read_line_with_timeout(f: &File, timeout: Duration) -> Option<String> {
 /// Approver that talks to the user on `/dev/tty`.
 ///
 /// The terminal is opened only for the duration of one prompt: pending input
-/// is flushed, the prompt (with a fresh 4-character challenge) is written, one
+/// is flushed, the prompt (with the guard's confirmation code) is written, one
 /// line is read with a timeout, and the terminal is closed. No reader is left
 /// behind, so between prompts every keystroke goes to the program that shares
 /// the terminal (for example the MCP client). Any error denies.
@@ -307,17 +359,26 @@ impl Default for TtyApprover {
 }
 
 impl Approver for TtyApprover {
-    fn approve(&self, req: &ApprovalRequest) -> Decision {
+    fn code_is_public(&self) -> bool {
+        false
+    }
+
+    fn approve(&self, req: &ApprovalRequest) -> Answer {
         // Holding the lock serializes concurrent prompts.
         let _guard = self.serial.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(code) = challenge_code() else {
-            return Decision::Deny;
-        };
+        // The code comes from the guard; without one there is nothing to type.
+        if req.confirm_code.is_empty() {
+            return Answer::new(Decision::Deny);
+        }
         let Ok(mut tty) = OpenOptions::new().read(true).write(true).open("/dev/tty") else {
-            return Decision::Deny;
+            return Answer::new(Decision::Deny);
         };
-        prompt_on(&mut tty, req, &code, self.timeout)
-        // The terminal is closed when `tty` is dropped.
+        let decision = prompt_on(&mut tty, req, &req.confirm_code, self.timeout);
+        // The terminal is closed when `tty` is dropped. It is the Mac's.
+        match decision {
+            Decision::Deny => Answer::new(decision),
+            _ => Answer::on(decision, "mac"),
+        }
     }
 }
 
@@ -344,8 +405,13 @@ fn prompt_on(tty: &mut File, req: &ApprovalRequest, code: &str, timeout: Duratio
 pub struct DevAutoApprover(pub Decision);
 
 impl Approver for DevAutoApprover {
-    fn approve(&self, _req: &ApprovalRequest) -> Decision {
-        self.0
+    // It stands in for the terminal approver: same notice.
+    fn code_is_public(&self) -> bool {
+        false
+    }
+
+    fn approve(&self, _req: &ApprovalRequest) -> Answer {
+        Answer::new(self.0)
     }
 }
 
@@ -385,12 +451,18 @@ pub mod testing {
     /// Approver that replays scripted answers in order, then denies, and
     /// records every request it receives.
     pub struct ScriptedApprover {
-        state: Mutex<(VecDeque<Decision>, Vec<ApprovalRequest>)>,
+        state: Mutex<(VecDeque<Answer>, Vec<ApprovalRequest>)>,
     }
 
     impl ScriptedApprover {
-        /// Creates an approver answering with `answers` in order.
+        /// Creates an approver answering with `answers` in order (none of
+        /// them says where it was given).
         pub fn new(answers: Vec<Decision>) -> Self {
+            Self::with_answers(answers.into_iter().map(Answer::new).collect())
+        }
+
+        /// Creates an approver replaying full `answers` in order.
+        pub fn with_answers(answers: Vec<Answer>) -> Self {
             ScriptedApprover {
                 state: Mutex::new((answers.into(), Vec::new())),
             }
@@ -407,10 +479,10 @@ pub mod testing {
     }
 
     impl Approver for ScriptedApprover {
-        fn approve(&self, req: &ApprovalRequest) -> Decision {
+        fn approve(&self, req: &ApprovalRequest) -> Answer {
             let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
             st.1.push(req.clone());
-            st.0.pop_front().unwrap_or(Decision::Deny)
+            st.0.pop_front().unwrap_or(Answer::new(Decision::Deny))
         }
     }
 }
@@ -434,6 +506,8 @@ mod tests {
                 field: Some("password".into()),
             }],
             remember_allowed,
+            strong_required: false,
+            confirm_code: "kq".into(),
         }
     }
 
@@ -613,6 +687,9 @@ mod tests {
 
     /// Env var that turns [`tty_child_helper`] into the child side.
     const CHILD_ENV: &str = "ONEPASS_GUARD_TTY_CHILD_TIMEOUT_MS";
+    /// Env var that makes the child go through [`TtyApprover`] with this
+    /// confirmation code (`-` for an empty one).
+    const APPROVER_ENV: &str = "ONEPASS_GUARD_TTY_CHILD_APPROVER_CODE";
 
     /// Child side of the pty tests (a no-op in a normal run): opens
     /// `/dev/tty`, whose controlling terminal the parent set to a pty, runs
@@ -628,6 +705,22 @@ mod tests {
             .write(true)
             .open("/dev/tty")
             .unwrap();
+        if let Ok(code) = std::env::var(APPROVER_ENV) {
+            // Through the real approver, with the code the guard drew.
+            let mut r = req(true);
+            r.confirm_code = if code == "-" { String::new() } else { code };
+            let a = TtyApprover {
+                timeout,
+                serial: Mutex::new(()),
+            }
+            .approve(&r);
+            println!(
+                "\ndecision={:?} on={}",
+                a.decision,
+                a.approved_on.as_deref().unwrap_or("none")
+            );
+            return;
+        }
         let d = prompt_on(&mut tty, &req(true), "kq", timeout);
         // On its own line: libtest may have printed `test ... ` already.
         println!("\ndecision={d:?}");
@@ -643,6 +736,17 @@ mod tests {
         answer: Option<&'static [u8]>,
         limit: Duration,
     ) -> (Option<String>, Duration) {
+        prompt_child_with(timeout, answer, limit, None)
+    }
+
+    /// [`prompt_in_child`], through [`TtyApprover`] when `approver_code` is
+    /// given. The result is the whole `decision=... on=...` text.
+    fn prompt_child_with(
+        timeout: Duration,
+        answer: Option<&'static [u8]>,
+        limit: Duration,
+        approver_code: Option<&str>,
+    ) -> (Option<String>, Duration) {
         use std::os::unix::process::CommandExt;
         let (master, slave) = pty();
         drain(&master);
@@ -654,6 +758,7 @@ mod tests {
             "--test-threads=1",
         ])
         .env(CHILD_ENV, timeout.as_millis().to_string())
+        .envs(approver_code.map(|c| (APPROVER_ENV, c.to_owned())))
         .stdin(std::process::Stdio::from(slave))
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null());
@@ -701,7 +806,13 @@ mod tests {
         let decision = out
             .lines()
             .find_map(|l| l.split_once("decision=").map(|(_, d)| d))
-            .map(|d| d.split_whitespace().next().unwrap_or("").to_owned());
+            .map(|d| {
+                if approver_code.is_some() {
+                    d.trim().to_owned()
+                } else {
+                    d.split_whitespace().next().unwrap_or("").to_owned()
+                }
+            });
         (decision, elapsed)
     }
 
@@ -735,6 +846,22 @@ mod tests {
         assert_eq!(d.as_deref(), Some("AllowOnce"));
     }
 
+    #[test]
+    fn tty_approver_shows_guard_code() {
+        // The approver types against the code the guard put in the request
+        // (here `zq`), not one of its own: that code allows, and says it was
+        // given on the Mac.
+        let limit = Duration::from_secs(10) + STARTUP;
+        let (d, _) = prompt_child_with(Duration::from_secs(10), Some(b"zq\r"), limit, Some("zq"));
+        assert_eq!(d.as_deref(), Some("AllowOnce on=mac"));
+        // Another code denies, and a request without a code is never asked.
+        let (d, _) = prompt_child_with(Duration::from_secs(10), Some(b"kq\r"), limit, Some("zq"));
+        assert_eq!(d.as_deref(), Some("Deny on=none"));
+        let (d, elapsed) = prompt_child_with(Duration::from_secs(10), None, limit, Some("-"));
+        assert_eq!(d.as_deref(), Some("Deny on=none"));
+        assert!(elapsed < Duration::from_secs(8), "waited on an empty code");
+    }
+
     /// Allowance for starting the child test process.
     const STARTUP: Duration = Duration::from_secs(2);
 
@@ -754,9 +881,9 @@ mod tests {
         let five = Decision::AllowFor(Duration::from_secs(300));
         let a = ScriptedApprover::new(vec![Decision::AllowOnce, five]);
         let r = req(true);
-        assert_eq!(a.approve(&r), Decision::AllowOnce);
-        assert_eq!(a.approve(&r), five);
-        assert_eq!(a.approve(&r), Decision::Deny);
+        assert_eq!(a.approve(&r), Answer::new(Decision::AllowOnce));
+        assert_eq!(a.approve(&r), Answer::new(five));
+        assert_eq!(a.approve(&r), Answer::new(Decision::Deny));
         let calls = a.calls();
         assert_eq!(calls.len(), 3);
         assert_eq!(calls[0], r);
@@ -775,6 +902,9 @@ mod tests {
         assert!(d("always", true).is_err());
         assert!(d("once", false).is_err());
         let approver = DevAutoApprover(Decision::AllowOnce);
-        assert_eq!(approver.approve(&req(true)), Decision::AllowOnce);
+        assert_eq!(
+            approver.approve(&req(true)),
+            Answer::new(Decision::AllowOnce)
+        );
     }
 }

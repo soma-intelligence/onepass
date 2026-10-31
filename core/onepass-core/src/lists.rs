@@ -1,5 +1,6 @@
 //! Signed, chained, monotone lists (milestone 2b, spec 4.1 and 4.2): the
-//! device list (`devices`) and the vault list (`vaultlist`).
+//! device list (`devices`), the vault list (`vaultlist`) and the approver
+//! list (`approvers`).
 //!
 //! A list is one record per account (id = account id, version = `seq`)
 //! holding `postcard(Wire{body, sig})`, where `body` is the postcard of a
@@ -25,6 +26,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::account::Account;
+use crate::approvers::ApproverEntry;
 use crate::chain::{ChainState, Seen};
 use crate::crypto::{HybridSignature, HybridVerifyingKey};
 use crate::devices::DeviceEntry;
@@ -37,6 +39,8 @@ use crate::{Error, Id, IntegrityError, Result};
 pub const DEVICE_LIST_DOMAIN: &[u8] = b"device-list";
 /// Signature domain of the vault list.
 pub const VAULT_LIST_DOMAIN: &[u8] = b"vault-list";
+/// Signature domain of the approver list.
+pub const APPROVER_LIST_DOMAIN: &[u8] = b"approver-list";
 
 const BAD: Error = Error::InvalidFormat("signed list");
 
@@ -156,7 +160,9 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 
 /// The rollback error of the list signed under `domain`.
 fn rollback(domain: &[u8]) -> Error {
-    if domain == DEVICE_LIST_DOMAIN {
+    // The approver list is a device-side list: it shares the device list's
+    // error.
+    if domain == DEVICE_LIST_DOMAIN || domain == APPROVER_LIST_DOMAIN {
         IntegrityError::DeviceListRollback.into()
     } else {
         IntegrityError::VaultListRollback.into()
@@ -358,8 +364,13 @@ impl<S: RecordStore> Repository<S> {
             Some(rec) => Some(open_record::<VaultListEntry>(&self.account, id, &rec, None)?.seen()),
             None => None,
         };
+        let approver_list = match self.store.get(RecordKind::ApproverList, id)? {
+            Some(rec) => Some(open_record::<ApproverEntry>(&self.account, &rec, None)?.seen()),
+            None => None,
+        };
         self.chain.device_list = device_list;
         self.chain.vault_list = vault_list;
+        self.chain.approver_list = approver_list;
         self.lists_forced = true;
         Ok(())
     }

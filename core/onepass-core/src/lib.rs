@@ -4,6 +4,7 @@
 #![deny(unsafe_code)]
 
 pub mod account;
+pub mod approvers;
 pub mod archive;
 pub mod chain;
 pub mod companion;
@@ -25,6 +26,8 @@ pub mod manifest;
 pub mod model;
 pub mod pairing;
 pub mod reference;
+pub mod remote;
+pub mod remote_unlock;
 pub mod repo;
 pub mod store;
 pub mod sync;

@@ -54,6 +54,9 @@ pub enum OnePassError {
     /// rotation in another session or process): lock and unlock again,
     /// never retry the call (Task 8).
     IdentityLeft,
+    /// The remote unlock envelope `C` no longer opens the account (master
+    /// password changed elsewhere): erase it and enroll again.
+    RemoteUnlockStale,
 }
 
 impl fmt::Display for OnePassError {
@@ -79,6 +82,7 @@ impl fmt::Display for OnePassError {
             Self::Quarantined => f.write_str("this device was removed from the account"),
             Self::Orphaned => f.write_str("this device is not in the account's keys"),
             Self::IdentityLeft => f.write_str("the account keys changed: lock and unlock"),
+            Self::RemoteUnlockStale => f.write_str("remote unlock must be enrolled again"),
         }
     }
 }
@@ -103,6 +107,12 @@ pub(crate) fn integrity_kind(e: IntegrityError) -> &'static str {
         IntegrityError::ParamsRollback => "params_rollback",
         IntegrityError::DeviceListRollback => "device_list_rollback",
         IntegrityError::VaultListRollback => "vault_list_rollback",
+        IntegrityError::RemoteSignature => "remote_signature",
+        IntegrityError::RemoteExpired => "remote_expired",
+        IntegrityError::RemoteReplay => "remote_replay",
+        IntegrityError::RemoteUnknownDevice => "remote_unknown_device",
+        IntegrityError::RemoteWrongRecipient => "remote_wrong_recipient",
+        IntegrityError::RemoteUnknownRequest => "remote_unknown_request",
     }
 }
 

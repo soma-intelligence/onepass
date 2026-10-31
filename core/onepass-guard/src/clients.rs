@@ -122,6 +122,19 @@ pub fn load_clients(
     Ok(reg)
 }
 
+/// Whether the registry at `path` lists `id` for `surface`, read WITHOUT
+/// checking its signature (nothing can while the app is locked). A hint
+/// only: it decides whether the locked app asks the phone at all, never
+/// what a client may do (the server reads the verified registry at every
+/// call). A missing or unreadable file lists nobody.
+pub fn listed_unverified(path: &Path, surface: Surface, id: &str) -> bool {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| crate::signed::unverified_payload(&text))
+        .and_then(|payload| serde_json::from_str::<ClientRegistry>(&payload).ok())
+        .is_some_and(|reg| reg.find(surface, id).is_some())
+}
+
 /// Writes `reg` signed, atomically, with mode 0600, under an exclusive lock
 /// on `<path>.lock`. Inside the lock the file on disk is read again and the
 /// new generation is one above the highest of the disk, `reg` and `floor`,
@@ -291,6 +304,42 @@ mod tests {
         );
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
+    }
+
+    #[test]
+    fn listed_unverified_reads_a_locked_registry() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clients.json");
+        assert!(!listed_unverified(
+            &path,
+            Surface::Mcp,
+            "platform:com.example.tool"
+        ));
+        let mut reg = ClientRegistry::empty("acc");
+        reg.clients
+            .push(record("platform:com.example.tool", Surface::Mcp));
+        save_clients(&path, &TestSigner::new(), &mut reg).unwrap();
+        assert!(listed_unverified(
+            &path,
+            Surface::Mcp,
+            "platform:com.example.tool"
+        ));
+        assert!(!listed_unverified(
+            &path,
+            Surface::Ssh,
+            "platform:com.example.tool"
+        ));
+        assert!(!listed_unverified(
+            &path,
+            Surface::Mcp,
+            "platform:com.example.other"
+        ));
+        fs::write(&path, "not a registry").unwrap();
+        assert!(!listed_unverified(
+            &path,
+            Surface::Mcp,
+            "platform:com.example.tool"
+        ));
     }
 
     #[test]

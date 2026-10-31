@@ -115,6 +115,7 @@ struct SettingsView: View {
                     row(.travel)
                     #if os(iOS)
                     watchRow
+                    agentsRow
                     #endif
                 }
                 Section {
@@ -226,6 +227,21 @@ struct SettingsView: View {
             }
         }
         .accessibilityIdentifier("settings.watch")
+    }
+
+    /// "Agents": the requests of the Mac's agents answered on this iPhone (agent-ready spec 7).
+    /// iOS only, like the watch.
+    private var agentsRow: some View {
+        NavigationLink {
+            AgentsSettings()
+        } label: {
+            Label {
+                Text("Agents")
+            } icon: {
+                tile("point.3.connected.trianglepath.dotted", .purple)
+            }
+        }
+        .accessibilityIdentifier("settings.agents")
     }
     #endif
 

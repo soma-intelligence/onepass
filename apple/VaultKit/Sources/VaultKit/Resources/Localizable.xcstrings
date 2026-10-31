@@ -2480,6 +2480,296 @@
           }
         }
       }
+    },
+    "Activer le déverrouillage depuis ton iPhone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on unlocking from your iPhone"
+          }
+        }
+      }
+    },
+    "Activer le déverrouillage à distance de ce Mac" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on remote unlock for this Mac"
+          }
+        }
+      }
+    },
+    "Approuvé sur %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approved on %@"
+          }
+        }
+      }
+    },
+    "Approuvé sur ce Mac" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approved on this Mac"
+          }
+        }
+      }
+    },
+    "Aucun iPhone enrôlé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No iPhone enrolled."
+          }
+        }
+      }
+    },
+    "Autorisé 5 min" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allowed for 5 min"
+          }
+        }
+      }
+    },
+    "Autorisé une fois" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allowed once"
+          }
+        }
+      }
+    },
+    "Ce Mac" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac"
+          }
+        }
+      }
+    },
+    "Cette demande a expiré." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This request expired."
+          }
+        }
+      }
+    },
+    "Cette demande n'est plus disponible." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This request is no longer available."
+          }
+        }
+      }
+    },
+    "Cette réponse n'est pas permise pour cette demande." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That answer is not allowed for this request."
+          }
+        }
+      }
+    },
+    "Déverrouillage refusé sur l'iPhone." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock refused on the iPhone."
+          }
+        }
+      }
+    },
+    "Déverrouillage à distance activé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote unlock turned on"
+          }
+        }
+      }
+    },
+    "Envoyé à %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sent to %@"
+          }
+        }
+      }
+    },
+    "Face ID a changé : réactive Face ID dans Réglages > Agents." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face ID changed: turn Face ID back on in Settings > Agents."
+          }
+        }
+      }
+    },
+    "Face ID est nécessaire pour répondre." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face ID is required to answer."
+          }
+        }
+      }
+    },
+    "Identifiant" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identifier"
+          }
+        }
+      }
+    },
+    "L'iPhone n'a pas répondu à temps." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The iPhone did not answer in time."
+          }
+        }
+      }
+    },
+    "Le Mac est injoignable pour l'instant. Réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Mac can't be reached right now. Try again."
+          }
+        }
+      }
+    },
+    "Le déverrouillage à distance de ce Mac n'est pas actif sur cet iPhone : réactive-le depuis le Mac." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote unlock for this Mac is not active on this iPhone: turn it on again from the Mac."
+          }
+        }
+      }
+    },
+    "Refusé" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denied"
+          }
+        }
+      }
+    },
+    "Refusé sur %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denied on %@"
+          }
+        }
+      }
+    },
+    "Réactiver Face ID pour les demandes des agents" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Face ID back on for agent requests"
+          }
+        }
+      }
+    },
+    "Répondre à la demande de l'agent" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Answer the agent's request"
+          }
+        }
+      }
+    },
+    "Ton mot de passe maître a changé : réactive le déverrouillage depuis ton iPhone." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your master password changed: turn on unlocking from your iPhone again."
+          }
+        }
+      }
+    },
+    "Trop de demandes de déverrouillage : réessaie plus tard." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many unlock requests: try again later."
+          }
+        }
+      }
+    },
+    "Vérifie l'heure de ton iPhone : elle ne correspond pas à celle de ton Mac." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check your iPhone's time: it does not match your Mac's."
+          }
+        }
+      }
+    },
+    "iPhone indisponible : approuve ici" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone unavailable: approve here"
+          }
+        }
+      }
+    },
+    "iPhone injoignable : déverrouille l'app sur ce Mac." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone unreachable: unlock the app on this Mac."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

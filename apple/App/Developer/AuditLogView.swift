@@ -28,8 +28,8 @@ struct AuditLogView: View {
                 Table(report.entries) {
                     TableColumn("Date") { e in Text(Self.date(e.time)) }
                         .width(min: 120, ideal: 140)
-                    TableColumn("Origine") { e in Text(e.surface.uppercased()) }
-                        .width(48)
+                    TableColumn("Service") { e in Text(e.surface.uppercased()) }
+                        .width(52)
                     TableColumn("Client", value: \.client)
                     TableColumn("Action", value: \.action)
                     TableColumn("Cible") { e in Text([e.vault, e.item, e.field].compactMap { $0 }.joined(separator: " › ")) }
@@ -37,7 +37,11 @@ struct AuditLogView: View {
                         Text(e.outcome == "ok" ? e.decision : "\(e.decision) · \(e.outcome)")
                             .foregroundStyle(e.decision == "denied" || e.outcome != "ok" ? Color.orange : Color.primary)
                     }
+                    // Where the answer was given: this Mac or an iPhone, empty for older lines.
+                    TableColumn("Origine") { e in Text(model.developer.originLabel(e.approvedOn)) }
+                        .width(min: 80, ideal: 130)
                 }
+                .accessibilityIdentifier("audit.table")
             } else {
                 ProgressView()
             }

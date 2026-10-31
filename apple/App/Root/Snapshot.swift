@@ -20,6 +20,18 @@ enum Snapshot {
         try? await Task.sleep(for: .milliseconds(800))
         logMenus()
 
+        // `-OnePassSnapshotOnly developer`: Réglages > Développeur only, light then dark.
+        if UserDefaults.standard.string(forKey: "OnePassSnapshotOnly") == "developer" {
+            await prepareDeveloper(model)
+            for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                NSApp.appearance = NSAppearance(named: appearance)
+                model.settingsPageRequest = .developer
+                await captureSettings(directory, "mac-settings-developer-\(suffix)", height: 1500)
+            }
+            NSApp.terminate(nil)
+            return
+        }
+
         for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
             model.editing = false
@@ -77,8 +89,18 @@ enum Snapshot {
         NSApp.terminate(nil)
     }
 
-    /// Opens the `Settings` window through its menu item (⌘,), renders it, then closes it.
-    private static func captureSettings(_ directory: URL, _ name: String) async {
+    /// Réglages > Développeur with fictional content: one iPhone, its approvals on, and the install
+    /// preview of the demo runner (the real relay never runs here).
+    private static func prepareDeveloper(_ model: AppModel) async {
+        model.phoneApprovals.showDemo(
+            phones: [PhoneApprovals.Phone(id: "demo-iphone", name: "iPhone de Camille")], unlockPhone: "demo-iphone")
+        model.agentInstaller.client = .claudeCode
+        await model.agentInstaller.previewInstall()
+    }
+
+    /// Opens the `Settings` window through its menu item (⌘,), renders it, then closes it. `height`:
+    /// the window is made that tall first (a long page shown whole).
+    private static func captureSettings(_ directory: URL, _ name: String, height: CGFloat? = nil) async {
         func find(_ menu: NSMenu) -> NSMenuItem? {
             for item in menu.items {
                 if item.keyEquivalent == ",", item.keyEquivalentModifierMask.contains(.command) { return item }
@@ -99,6 +121,10 @@ enum Snapshot {
         else {
             DemoTrace.log("snapshot: settings window not found")
             return
+        }
+        if let height {
+            window.setFrame(NSRect(x: -4000, y: 40, width: max(window.frame.width, 900), height: height), display: true)
+            try? await Task.sleep(for: .milliseconds(1200))
         }
         render(window, directory, name)
         window.close()

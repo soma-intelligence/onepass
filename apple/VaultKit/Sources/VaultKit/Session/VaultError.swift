@@ -33,6 +33,8 @@ public enum VaultError: Error, Equatable, Sendable {
             case .Store: self = .other(String(localized: "Le stockage local est illisible.", bundle: VaultKitStrings.bundle))
             case .Crypto: self = .other(String(localized: "Erreur de chiffrement.", bundle: VaultKitStrings.bundle))
             case .PasskeyExcluded: self = .other(String(localized: "Ce compte a déjà une passkey OnePass pour ce site.", bundle: VaultKitStrings.bundle))
+            // The remote unlock envelope no longer opens the account: unlock here.
+            case .RemoteUnlockStale: self = .passwordRequired
             }
         case let error as BiometricError:
             switch error {

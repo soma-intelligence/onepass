@@ -26,8 +26,8 @@ use std::time::Duration;
 
 use onepass_core::crypto::HybridSignature;
 use onepass_guard::{
-    ApprovalRequest, Approver, Decision, GuardError, LocalSigner, MAX_GRANT_TTL, StrongAuth,
-    StrongOutcome, Surface, sanitize_for_display,
+    Answer, ApprovalRequest, Approver, Decision, GuardError, LocalSigner, MAX_GRANT_TTL,
+    StrongAuth, StrongOutcome, Surface, sanitize_for_display,
 };
 
 use crate::error::{OnePassError, invalid};
@@ -49,8 +49,10 @@ const MAX_SOCKET_PATH: usize = 104;
 /// The app's side of the servers: approvals, presence and pairing.
 #[uniffi::export(with_foreign)]
 pub trait FfiDeveloperUi: Send + Sync {
-    /// Ask the user about one request. Blocks until answered.
-    fn approve(&self, request: FfiApprovalRequest) -> FfiDecision;
+    /// Ask the user about one request. Blocks until answered. The answer
+    /// says where it was given (`mac` or `phone:<device_id>`), for the
+    /// audit log.
+    fn approve(&self, request: FfiApprovalRequest) -> FfiAnswer;
     /// Ask the device owner to authenticate (Touch ID, Apple Watch or the
     /// session password). `reason` names the client and the target.
     fn verify_presence(&self, reason: String) -> bool;
@@ -76,6 +78,12 @@ pub struct FfiApprovalRequest {
     pub targets: Vec<FfiTarget>,
     /// The user may allow it for a few minutes (otherwise once only).
     pub remember_allowed: bool,
+    /// Only a strong gesture counts (Touch ID or the session password on
+    /// the Mac, Face ID on the iPhone): `reveal_secret`, `totp_code`.
+    pub strong_required: bool,
+    /// The confirmation code drawn by the guard: shown on the approving
+    /// screen, and sent to the agent in its pending notice.
+    pub confirm_code: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -91,7 +99,15 @@ pub struct FfiTarget {
     pub field: Option<String>,
 }
 
-/// The user's answer.
+/// The user's answer and where it was given.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiAnswer {
+    pub decision: FfiDecision,
+    /// `mac` or `phone:<device_id>`; `None` when unknown (a timeout).
+    pub approved_on: Option<String>,
+}
+
+/// The user's decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FfiDecision {
     Deny,
@@ -134,7 +150,29 @@ fn to_ffi(req: &ApprovalRequest) -> FfiApprovalRequest {
             })
             .collect(),
         remember_allowed: req.remember_allowed,
+        strong_required: req.strong_required,
+        confirm_code: safe(&req.confirm_code),
     }
+}
+
+/// Longest device id `approved_on` may name.
+const MAX_DEVICE_ID: usize = 64;
+
+/// The place an answer names, if it is one the audit log takes: `mac`, or
+/// `phone:` and a device id (ASCII letters, digits and `-`). Anything else
+/// is dropped, so the app cannot write free text into the signed log.
+pub(crate) fn origin_of(approved_on: Option<String>) -> Option<String> {
+    let place = approved_on?;
+    if place == "mac" {
+        return Some(place);
+    }
+    let device = place.strip_prefix("phone:")?;
+    let valid = !device.is_empty()
+        && device.len() <= MAX_DEVICE_ID
+        && device
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-');
+    valid.then_some(place)
 }
 
 /// The decision a guard sees. A grant is only given where the request
@@ -159,17 +197,34 @@ pub(crate) struct UiApprover {
 }
 
 impl Approver for UiApprover {
-    fn approve(&self, req: &ApprovalRequest) -> Decision {
+    fn approve(&self, req: &ApprovalRequest) -> Answer {
+        // The guard draws the code right before asking: without one, there
+        // is nothing for the user to compare, so nothing is asked.
+        if req.confirm_code.is_empty() {
+            return Answer::new(Decision::Deny);
+        }
         let shown = to_ffi(req);
-        let decision = decision_of(self.ui.approve(shown.clone()), req.remember_allowed);
-        if decision == Decision::Deny || !self.presence {
-            return decision;
+        let answer = self.ui.approve(shown.clone());
+        let decision = decision_of(answer.decision, req.remember_allowed);
+        let answer = Answer {
+            decision,
+            approved_on: origin_of(answer.approved_on),
+        };
+        // An approval from the phone already carries Face ID there (spec
+        // 5.3): Touch ID on the Mac is not asked on top of it. Only an
+        // origin the audit accepts counts.
+        let on_phone = answer
+            .approved_on
+            .as_deref()
+            .is_some_and(|o| o.starts_with("phone:"));
+        if decision == Decision::Deny || !self.presence || on_phone {
+            return answer;
         }
         let reason = format!("{} : {}", shown.client, shown.action);
         if self.ui.verify_presence(reason) {
-            decision
+            answer
         } else {
-            Decision::Deny
+            Answer::new(Decision::Deny)
         }
     }
 }
@@ -302,6 +357,18 @@ mod tests {
             Decision::AllowOnce
         );
         assert_eq!(decision_of(FfiDecision::Deny, true), Decision::Deny);
+    }
+
+    #[test]
+    fn only_known_places_reach_the_audit_log() {
+        let some = |s: &str| Some(s.to_owned());
+        assert_eq!(origin_of(some("mac")), some("mac"));
+        assert_eq!(origin_of(some("phone:7f3a-9c")), some("phone:7f3a-9c"));
+        assert_eq!(origin_of(None), None);
+        assert_eq!(origin_of(some("phone:")), None);
+        assert_eq!(origin_of(some("phone:a b")), None);
+        assert_eq!(origin_of(some("watch")), None);
+        assert_eq!(origin_of(Some(format!("phone:{}", "a".repeat(65)))), None);
     }
 
     #[test]

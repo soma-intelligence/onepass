@@ -25,6 +25,18 @@ struct CloudKitMappingTests {
         #expect(back.serverMeta != nil)
     }
 
+    /// The signed lists (8 device list, 9 vault list, 10 approver list) map like any record kind.
+    @Test func signedListKindsRoundtrip() throws {
+        for kind: UInt8 in [8, 9, 10] {
+            let name = RecordName(kind: kind, id: "00112233445566778899aabbccddeeff")
+            let remote = RemoteRecord(name: name, version: 3, data: Data([7, 8]), serverMeta: nil)
+            let record = try CloudKitMapping.record(from: remote, zoneID: Self.zone)
+            #expect(record["kind"] as? Int64 == Int64(kind))
+            let back = try CloudKitMapping.remote(from: record)
+            #expect(back.name == name && back.version == 3 && back.data == remote.data)
+        }
+    }
+
     @Test func systemFieldsRoundtrip() throws {
         let id = CKRecord.ID(recordName: Self.name.string, zoneID: Self.zone)
         let record = CKRecord(recordType: CloudKitMapping.recordType, recordID: id)
