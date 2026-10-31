@@ -290,6 +290,10 @@ async function menuFillSteps(env: ScenarioEnv, page: Page, scope: Frame, site: S
     if (!menu.offered) return;
     if (behaviour === "abandons_step") return;
     if (k === steps.length - 1) await userEdits(page, scope, step, behaviour);
+    // The user sends the step: stamped at the first one (anything the site
+    // got before is OnePass's). Later steps follow the user's own post, so
+    // one stamp cannot tell an extension post of a later step from hers.
+    o.userSubmitAt ??= Date.now();
     await submitForm(scope).catch(() => undefined);
   }
   await waitEvents(env.server, signedIn(site), 10_000);
