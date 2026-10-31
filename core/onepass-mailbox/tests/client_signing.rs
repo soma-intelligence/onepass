@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use onepass_mailbox::{
-    ChangeFeed, Credential, CredentialKey, Endpoint, MailboxClient, MailboxError, tls_client_config,
+    ChangeFeed, Credential, CredentialKey, Endpoint, MailboxClient, MailboxError, RdvRole,
+    Rendezvous, tls_client_config,
 };
 use onepass_mailbox_proto::{
     BlobAnnounce, BlobLookup, BlobUrls, Body, COMMIT_BODY_MAX, ChangesPage, ChangesQuery, CommitOp,
@@ -1196,10 +1197,10 @@ fn full_fetch_goes_on_incrementally_from_the_first_head() {
     }
     assert_eq!(pages, 3);
     assert_eq!(seqs, [2, 4, 6, 8, 8, 9]);
-    assert_eq!(feed, ChangeFeed::incremental(9));
+    assert_eq!(feed, ChangeFeed::incremental(9, 5));
     let page = c.next_changes(&mut feed, 2).unwrap();
     assert!(page.records.is_empty() && !page.more);
-    assert_eq!(feed, ChangeFeed::incremental(9));
+    assert_eq!(feed, ChangeFeed::incremental(9, 5));
 }
 
 #[test]
@@ -1248,7 +1249,7 @@ fn change_pages_are_checked() {
         },
     ] {
         set(bad.clone());
-        let mut feed = ChangeFeed::incremental(10);
+        let mut feed = ChangeFeed::incremental(10, 5);
         assert!(
             matches!(
                 c.next_changes(&mut feed, 10).unwrap_err(),
@@ -1256,7 +1257,7 @@ fn change_pages_are_checked() {
             ),
             "{bad:?}"
         );
-        assert_eq!(feed, ChangeFeed::incremental(10));
+        assert_eq!(feed, ChangeFeed::incremental(10, 5));
     }
     // A full fetch carries live rows only.
     set(ChangesPage {
@@ -1285,9 +1286,9 @@ fn change_pages_are_checked() {
         more: true,
         ..base.clone()
     });
-    let mut feed = ChangeFeed::incremental(10);
+    let mut feed = ChangeFeed::incremental(10, 5);
     c.next_changes(&mut feed, 10).unwrap();
-    assert_eq!(feed, ChangeFeed::incremental(12));
+    assert_eq!(feed, ChangeFeed::incremental(12, 5));
     // In a full fetch, a later page's head below the first one is a lie.
     set(ChangesPage {
         head: 20,
@@ -1312,6 +1313,76 @@ fn change_pages_are_checked() {
     // limit is 1..=1000.
     assert!(c.changes(0, 0, false).is_err());
     assert!(c.changes(0, 1001, false).is_err());
+}
+
+#[test]
+fn feed_refuses_another_incarnation() {
+    let answer: Arc<Mutex<ChangesPage>> = Arc::new(Mutex::new(ChangesPage {
+        incarnation: 5,
+        min_cursor: 0,
+        head: 20,
+        records: vec![record(12, 1, [1; 16], Some(Body::Inline(vec![1])))],
+        next_after: 12,
+        more: true,
+    }));
+    let a = answer.clone();
+    let server = Server::start(move |_, _| Resp::postcard(200, encode(&*a.lock().unwrap())));
+    let (c, _) = client(&server);
+    let changed = |r: Result<_, MailboxError>, expected, found| {
+        assert_eq!(
+            r.unwrap_err(),
+            MailboxError::IncarnationChanged { expected, found }
+        );
+    };
+
+    // Against the stored one: incremental, and a full fetch after a
+    // CursorExpired.
+    let mut feed = ChangeFeed::incremental(10, 4);
+    changed(c.next_changes(&mut feed, 10), 4, 5);
+    assert_eq!(
+        feed,
+        ChangeFeed::incremental(10, 4),
+        "the feed did not move"
+    );
+    let mut feed = ChangeFeed::full_for(4);
+    changed(c.next_changes(&mut feed, 10), 4, 5);
+    assert_eq!(feed, ChangeFeed::full_for(4));
+
+    // Between pages of a full fetch.
+    let mut feed = ChangeFeed::full();
+    assert_eq!(feed.incarnation(), None);
+    c.next_changes(&mut feed, 10).unwrap();
+    assert_eq!(feed.incarnation(), Some(5));
+    {
+        let mut p = answer.lock().unwrap();
+        p.records = vec![record(13, 1, [1; 16], Some(Body::Inline(vec![1])))];
+        p.next_after = 13;
+        p.incarnation = 6;
+    }
+    let before = feed;
+    changed(c.next_changes(&mut feed, 10), 5, 6);
+    assert_eq!(feed, before);
+
+    // The incarnation of a finished full fetch carries on incrementally.
+    {
+        let mut p = answer.lock().unwrap();
+        p.records = vec![record(12, 1, [1; 16], Some(Body::Inline(vec![1])))];
+        p.next_after = 12;
+        p.incarnation = 5;
+        p.more = false;
+    }
+    let mut feed = ChangeFeed::full();
+    c.next_changes(&mut feed, 10).unwrap();
+    assert_eq!(feed, ChangeFeed::incremental(20, 5));
+    {
+        let mut p = answer.lock().unwrap();
+        p.incarnation = 7;
+        p.records = vec![record(21, 1, [1; 16], Some(Body::Inline(vec![1])))];
+        p.next_after = 21;
+        p.head = 21;
+    }
+    changed(c.next_changes(&mut feed, 10), 5, 7);
+    assert_eq!(feed, ChangeFeed::incremental(20, 5));
 }
 
 #[test]
@@ -1483,4 +1554,108 @@ fn garbage_instead_of_a_server_hello_is_tls() {
     });
     let err = tls_client(port, None).server_config().unwrap_err();
     assert!(matches!(err, MailboxError::Tls(_)), "{err:?}");
+}
+
+// ------------------------------------------------------------ rendezvous
+
+/// The rendezvous routes in memory: chunks written once, `wait` ignored.
+fn rdv_server(bad_content_type: bool) -> Server {
+    let chunks: Arc<Mutex<HashMap<String, Vec<u8>>>> = Arc::default();
+    Server::start(move |req, _| {
+        let target = req.target().unwrap();
+        let path = target.split('?').next().unwrap().to_string();
+        let mut chunks = chunks.lock().unwrap();
+        match req.method.as_str() {
+            "PUT" => {
+                if chunks.contains_key(&path) {
+                    return Resp::empty(409);
+                }
+                chunks.insert(path, req.body.clone());
+                Resp::empty(204)
+            }
+            "GET" => match chunks.get(&path) {
+                Some(c) => Resp {
+                    status: 200,
+                    headers: vec![(
+                        "content-type".into(),
+                        if bad_content_type {
+                            onepass_mailbox_proto::CONTENT_TYPE.into()
+                        } else {
+                            "application/octet-stream".into()
+                        },
+                    )],
+                    body: c.clone(),
+                },
+                None => Resp::empty(204),
+            },
+            "DELETE" => Resp::empty(204),
+            _ => Resp::error(ErrorCode::NoRoute, 404, None),
+        }
+    })
+}
+
+#[test]
+fn rendezvous_over_http() {
+    let server = rdv_server(false);
+    let session = [0x5a; 16];
+    let mut n = Rendezvous::new(server.endpoint(), session, RdvRole::Newcomer).unwrap();
+    let mut a = Rendezvous::new(server.endpoint(), session, RdvRole::Approver).unwrap();
+    let frame: Vec<u8> = (0..(1 << 20) + 100).map(|i: u32| i as u8).collect();
+    n.send_frame(&frame).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    assert_eq!(a.recv_frame(frame.len(), deadline).unwrap(), frame);
+    // A second newcomer on the same session collides on chunk 0.
+    let mut other = Rendezvous::new(server.endpoint(), session, RdvRole::Newcomer).unwrap();
+    assert_eq!(
+        other.send_frame(b"x").unwrap_err(),
+        MailboxError::FrameTaken
+    );
+
+    let hex_s = hex(&session);
+    let reqs = server.requests();
+    let line = |r: &Req| format!("{} {}", r.method, r.target().unwrap());
+    let lines: Vec<String> = reqs.iter().map(line).collect();
+    let base = format!("/v1/rendezvous/{hex_s}");
+    assert_eq!(
+        lines[..5],
+        [
+            format!("PUT {base}/0/0"),
+            format!("PUT {base}/0/1"),
+            format!("GET {base}/0/0?wait=4"),
+            format!("GET {base}/0/1?wait=4"),
+            format!("PUT {base}/0/0"),
+        ]
+    );
+    assert!(lines.contains(&format!("DELETE {base}")), "{lines:?}");
+    let first = &reqs[0];
+    assert_eq!(first.body.len(), 1 << 20);
+    assert_eq!(first.body[..4], ((frame.len()) as u32).to_be_bytes());
+    assert_eq!(
+        first.header("content-type"),
+        Some("application/octet-stream")
+    );
+    assert!(
+        reqs.iter().all(|r| r.header("signature").is_none()),
+        "nobody signs the rendezvous"
+    );
+}
+
+#[test]
+fn rendezvous_answers_are_checked() {
+    let server = rdv_server(true);
+    let session = [0x5b; 16];
+    let mut n = Rendezvous::new(server.endpoint(), session, RdvRole::Newcomer).unwrap();
+    n.send_frame(b"hi").unwrap();
+    let mut a = Rendezvous::new(server.endpoint(), session, RdvRole::Approver).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    assert_eq!(
+        a.recv_frame(8, deadline).unwrap_err(),
+        MailboxError::Malformed("content type")
+    );
+    let deletes = server
+        .requests()
+        .iter()
+        .filter(|r| r.method == "DELETE")
+        .count();
+    assert_eq!(deletes, 1, "a bad answer closes the session");
 }
