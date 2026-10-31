@@ -2461,6 +2461,23 @@ fn replay_never_imports_an_overwrite_by_another_device() {
     }
 }
 
+/// Task 17 (carried from Task 10, G4): an intent the replay could not
+/// bring back stays named, (vault, item), until the user saw the alert.
+#[test]
+fn lost_own_writes_are_named_until_seen() {
+    let (_server, _a, mut c, x) = overtaken_by_revoked(false);
+    let alert = c.repo().own_write_alert().unwrap();
+    if alert.alert {
+        assert!(alert.lost.iter().any(|(_, item)| *item == x), "{alert:?}");
+        c.repo().clear_own_write_alert().unwrap();
+        let after = c.repo().own_write_alert().unwrap();
+        assert!(!after.alert && after.lost.is_empty());
+    } else {
+        // Replayed from its own copy: nothing to name.
+        assert!(alert.lost.is_empty());
+    }
+}
+
 /// Review C1, deletion variant: a deletion by the revoked device never
 /// removes this device's write.
 #[test]
