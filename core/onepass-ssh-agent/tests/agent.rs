@@ -24,22 +24,26 @@ struct Fixture {
     source: FakeSource,
     approver: Arc<ScriptedApprover>,
     audit: SharedAudit,
+    env: GuardEnv,
 }
 
 fn fixture_with(source: FakeSource, answers: Vec<Decision>, config: AgentConfig) -> Fixture {
     let approver = Arc::new(ScriptedApprover::new(answers));
     let audit = SharedAudit::default();
+    let (guards, env) = guards(loose_limits());
     let agent = Agent::new(
         source.clone(),
         approver.clone(),
         Box::new(audit.clone()),
         config,
+        guards,
     );
     Fixture {
         agent,
         source,
         approver,
         audit,
+        env,
     }
 }
 
@@ -180,7 +184,12 @@ fn signs_each_algorithm_after_approval() {
         let call = f.last_call();
         assert_eq!(call.surface, Surface::Ssh);
         assert_eq!(call.action, "ssh_sign");
-        assert_eq!(call.client, "/usr/bin/ssh");
+        assert_eq!(call.client, "Test platform:com.apple.ssh");
+        assert!(call.client_verified);
+        assert_eq!(
+            detail(&call, "client id"),
+            Some("platform:com.apple.ssh")
+        );
         assert_eq!(
             call.targets,
             vec![Target {
@@ -223,6 +232,11 @@ fn signs_each_algorithm_after_approval() {
         assert_eq!(e.surface, Surface::Ssh);
         assert_eq!(e.action, "ssh_sign");
         assert_eq!(e.client, "/usr/bin/ssh");
+        assert_eq!(e.client_id.as_deref(), Some("platform:com.apple.ssh"));
+        assert_eq!(
+            e.client_label.as_deref(),
+            Some("Test platform:com.apple.ssh")
+        );
         assert_eq!(e.vault_id.as_deref(), Some(VAULT_ID));
         assert_eq!(e.item_id, Some(item_id_of(t)));
         assert_eq!(e.decision, "once");
@@ -280,20 +294,20 @@ fn confirm_each_use_never_remembered() {
 }
 
 #[test]
-fn session_grant_is_per_key_and_exe() {
+fn grant_is_per_key_and_client() {
     let mut f = fixture(vec![
         Decision::AllowFor(std::time::Duration::from_secs(300));
         4
     ]);
     assert!(is_signature(&f.sign(KeyType::Ed25519, "/usr/bin/ssh")));
     assert_eq!(f.asked(), 1);
-    // Same key, same executable: remembered.
+    // Same key, same client: remembered.
     assert!(is_signature(&f.sign(KeyType::Ed25519, "/usr/bin/ssh")));
     assert_eq!(f.asked(), 1);
-    // Same key, another executable: asked again.
+    // Same key, another client: asked again.
     assert!(is_signature(&f.sign(KeyType::Ed25519, "/usr/bin/git")));
     assert_eq!(f.asked(), 2);
-    // Another key, same executable: asked again.
+    // Another key, same client: asked again.
     assert!(is_signature(&f.sign(KeyType::EcdsaP256, "/usr/bin/ssh")));
     assert_eq!(f.asked(), 3);
     let decisions: Vec<String> = f.audit.entries().into_iter().map(|e| e.decision).collect();
@@ -302,23 +316,36 @@ fn session_grant_is_per_key_and_exe() {
         ["grant_5m", "remembered", "grant_5m", "grant_5m"]
     );
 
-    // An unidentified executable is never remembered.
+    // The same executable path under another identity (another binary
+    // copied there) is another client: not paired, refused unasked.
     let mut conn = ConnState::default();
-    let anonymous = PeerInfo {
-        exe: None,
-        ..peer("x")
-    };
+    let impostor = peer_with(
+        "/usr/bin/ssh",
+        Some(onepass_peer::ClientIdentity {
+            code: onepass_peer::CodeIdentity::AdHoc {
+                path: "/usr/bin/ssh".into(),
+                cdhash: "ab".repeat(20),
+                hardened: false,
+            },
+            pid: 4242,
+            exe: Some("/usr/bin/ssh".into()),
+            chain: Vec::new(),
+        }),
+    );
+    let r = f.handle(&mut conn, &impostor, sign_req(KeyType::Ed25519, b"d"));
+    assert_eq!(r.response, Response::Failure);
+    assert_eq!(f.asked(), 3);
+    // An unidentified client is refused too.
+    let anonymous = peer_with("/usr/bin/ssh", None);
     let r = f.handle(&mut conn, &anonymous, sign_req(KeyType::Ed25519, b"d"));
-    assert!(is_signature(&r.response));
-    let call = f.last_call();
-    assert!(!call.remember_allowed);
-    assert_eq!(call.client, "unknown process");
+    assert_eq!(r.response, Response::Failure);
+    assert_eq!(f.asked(), 3);
 }
 
 #[test]
-fn session_grant_expires() {
+fn grant_capped_by_remember_for() {
     let config = AgentConfig {
-        remember_for: Duration::from_millis(50),
+        remember_for: Duration::from_secs(60),
         ..AgentConfig::default()
     };
     let mut f = fixture_with(
@@ -327,9 +354,14 @@ fn session_grant_expires() {
         config,
     );
     assert!(is_signature(&f.sign(KeyType::Ed25519, "/usr/bin/ssh")));
-    std::thread::sleep(Duration::from_millis(100));
+    f.env.advance(59);
+    assert!(is_signature(&f.sign(KeyType::Ed25519, "/usr/bin/ssh")));
+    assert_eq!(f.asked(), 1);
+    f.env.advance(2);
     assert!(is_signature(&f.sign(KeyType::Ed25519, "/usr/bin/ssh")));
     assert_eq!(f.asked(), 2);
+    let decisions: Vec<String> = f.audit.entries().into_iter().map(|e| e.decision).collect();
+    assert_eq!(decisions[..2], ["grant", "remembered"]);
 }
 
 #[test]
@@ -477,7 +509,7 @@ fn session_bind_ok_then_destination_in_prompt() {
 }
 
 #[test]
-fn unbookmarked_destination_warns() {
+fn unbookmarked_destination_refused() {
     let dir = TempDir::new().unwrap();
     let host = AgentKey::generate(KeyType::Ed25519).unwrap();
     let file = dir.path().join("known_hosts");
@@ -493,20 +525,22 @@ fn unbookmarked_destination_warns() {
     let mut f = fixture_with(source, vec![Decision::AllowOnce; 2], config);
     let mut conn = ConnState::default();
     bind(&mut f, &mut conn, &host, false);
-    assert!(is_signature(
-        &f.handle(
+    assert_eq!(
+        f.handle(
             &mut conn,
             &peer("/usr/bin/ssh"),
             sign_req(KeyType::Ed25519, b"d")
         )
-        .response
-    ));
-    let call = f.last_call();
+        .response,
+        Response::Failure
+    );
+    assert_eq!(f.asked(), 0);
+    let e = f.audit.entries().pop().unwrap();
+    assert_eq!(e.outcome, "host_not_bound");
     assert_eq!(
-        detail(&call, "destination"),
+        e.destination.as_deref(),
         Some(fingerprint_of_blob(&host.public_blob()).as_str())
     );
-    assert!(detail(&call, "warning").is_some());
 
     // A key without bookmarks gets no warning.
     assert!(is_signature(
@@ -647,11 +681,13 @@ fn sign_fails_closed_when_the_audit_log_is_unusable() {
         );
         4
     ]));
-    let mut agent = Agent::new(
+    let (guards, _env) = guards(loose_limits());
+    let agent = Agent::new(
         FakeSource::all(),
         approver.clone(),
         Box::new(BrokenAudit),
         AgentConfig::default(),
+        guards,
     );
     let r = agent.handle(
         &mut ConnState::default(),

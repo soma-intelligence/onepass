@@ -8,7 +8,7 @@ use std::io;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 
 use common::*;
@@ -100,13 +100,18 @@ fn serve_answers_over_socket() {
     let path = dir.path().join("a").join("s.sock");
     let listener = bind_socket(&path).unwrap();
     let audit = SharedAudit::default();
+    let (guards, env) = guards(loose_limits());
+    // This test binary is the client: pair its code identity.
+    let me = onepass_peer::identify_pid(std::process::id() as i32).unwrap();
+    env.pair(&me.code, None);
     let agent = Agent::new(
         FakeSource::with(&[KeyType::Ed25519, KeyType::EcdsaP256]),
         Arc::new(DevAutoApprover(Decision::AllowOnce)),
         Box::new(audit.clone()),
         AgentConfig::default(),
+        guards,
     );
-    let agent = Arc::new(Mutex::new(agent));
+    let agent = Arc::new(agent);
     let stop = Arc::new(AtomicBool::new(false));
     let server = {
         let (agent, stop) = (agent.clone(), stop.clone());
@@ -140,6 +145,11 @@ fn serve_answers_over_socket() {
     let entries = audit.entries();
     assert_eq!(entries.len(), 2);
     assert!(entries.iter().all(|e| e.outcome == "ok"));
+    assert!(
+        entries
+            .iter()
+            .all(|e| e.client_id.as_deref() == Some(me.code.client_id().as_str()))
+    );
     assert_eq!(
         std::path::Path::new(&entries[0].client)
             .canonicalize()
@@ -160,6 +170,61 @@ fn serve_answers_over_socket() {
 }
 
 #[test]
+fn unpaired_socket_client_gets_nothing() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("a").join("s.sock");
+    let listener = bind_socket(&path).unwrap();
+    let audit = SharedAudit::default();
+    let (guards, _env) = guards(loose_limits());
+    let agent = Arc::new(Agent::new(
+        FakeSource::with(&[KeyType::Ed25519]),
+        Arc::new(DevAutoApprover(Decision::AllowOnce)),
+        Box::new(audit.clone()),
+        AgentConfig::default(),
+        guards,
+    ));
+    let stop = Arc::new(AtomicBool::new(false));
+    let server = {
+        let (agent, stop) = (agent.clone(), stop.clone());
+        thread::spawn(move || serve(listener, agent, stop))
+    };
+    let mut client = UnixStream::connect(&path).unwrap();
+    send(&mut client, &identities_request());
+    assert!(parse_identities(&recv(&mut client)).is_empty());
+    let blob = key(KeyType::Ed25519).public_blob();
+    send(&mut client, &sign_request(&blob, b"x", 0));
+    assert_eq!(recv(&mut client), vec![5]);
+    let entries = audit.entries();
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().all(|e| e.outcome == "not_paired"));
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap().unwrap();
+}
+
+#[test]
+fn serve_stops_when_the_control_channel_is_lost() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("a").join("s.sock");
+    let listener = bind_socket(&path).unwrap();
+    let (mut guards, _env) = guards(loose_limits());
+    let alive = Arc::new(AtomicBool::new(true));
+    let flag = alive.clone();
+    guards.liveness = Some(Arc::new(move || flag.load(Ordering::SeqCst)));
+    let agent = Arc::new(Agent::new(
+        FakeSource::with(&[KeyType::Ed25519]),
+        Arc::new(DevAutoApprover(Decision::AllowOnce)),
+        Box::new(SharedAudit::default()),
+        AgentConfig::default(),
+        guards,
+    ));
+    let stop = Arc::new(AtomicBool::new(false));
+    let server = thread::spawn(move || serve(listener, agent, stop));
+    alive.store(false, Ordering::SeqCst);
+    let err = server.join().unwrap().unwrap_err();
+    assert_eq!(err.to_string(), "control channel lost");
+}
+
+#[test]
 fn peer_info_reports_own_uid_and_pid() {
     let (a, _b) = UnixStream::pair().unwrap();
     let info = peer_info(&a);
@@ -168,6 +233,8 @@ fn peer_info_reports_own_uid_and_pid() {
     fs::write(&probe, b"").unwrap();
     assert_eq!(info.uid, Some(fs::metadata(&probe).unwrap().uid()));
     assert_eq!(info.pid, Some(std::process::id() as i32));
+    let identity = info.identity.expect("code identity of this process");
+    assert_eq!(identity.pid, std::process::id() as i32);
     let exe = info.exe.expect("executable path");
     assert_eq!(
         std::path::Path::new(&exe).canonicalize().unwrap(),

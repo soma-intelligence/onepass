@@ -17,10 +17,16 @@ use std::time::Duration;
 use clap::Args;
 use onepass_core::repo::Repository;
 use onepass_core::store::SqliteStore;
-use onepass_guard::{Approver, AuditLog, SignedAuditSink, TtyApprover, dev_auto_approver_from_env};
+use onepass_guard::{
+    Approver, AuditLog, ChainStrong, ClientRegistry, GrantStore, Limits, LocalAuthStrong,
+    SignedAuditSink, StrongAuth, SystemClock, Throttle, TtyApprover, dev_auto_approver_from_env,
+    dev_strong_from_env,
+};
+use onepass_peer::{CodeIdentity, identify_pid, identity_of_file, parent_pid};
 use onepass_ssh_agent::keys::AgentKey;
 use onepass_ssh_agent::{
-    Agent, AgentConfig, KeyInfo, KeySource, bind_socket, load_key_of, serve, ssh_keys_of,
+    Agent, AgentConfig, AgentGuards, KeyInfo, KeySource, bind_socket, load_key_of, serve,
+    ssh_client_record, ssh_keys_of,
 };
 
 use super::ssh_key::AGENT_SOCKET;
@@ -28,6 +34,9 @@ use crate::session::{CliError, Ctx, LongSession, TRAVEL_CHANGED, stored};
 use crate::signer::SyncSigner;
 
 const AUDIT_FILE: &str = "audit.log";
+const GRANTS_FILE: &str = "grants.json";
+/// OpenSSH clients paired by the transitional registry.
+const OPENSSH_CLIENTS: [&str; 3] = ["ssh", "ssh-add", "ssh-keygen"];
 /// How often the signal flag is looked at.
 const SIGNAL_POLL: Duration = Duration::from_millis(50);
 
@@ -122,12 +131,40 @@ fn default_known_hosts() -> Vec<PathBuf> {
         .collect()
 }
 
+/// Transitional, until `onepass clients` pairs SSH clients: the code
+/// identities of the OpenSSH clients (on `PATH` and in `/usr/bin`) and of
+/// the process that started the agent, each allowed every key. Any other
+/// client is refused.
+fn transitional_clients() -> Vec<CodeIdentity> {
+    let mut paths: Vec<PathBuf> = Vec::new();
+    for program in OPENSSH_CLIENTS {
+        let on_path = std::env::var_os("PATH").and_then(|p| {
+            std::env::split_paths(&p)
+                .map(|d| d.join(program))
+                .find(|f| f.is_file())
+        });
+        paths.extend(on_path);
+        paths.push(PathBuf::from("/usr/bin").join(program));
+    }
+    let mut out: Vec<CodeIdentity> = paths
+        .iter()
+        .filter_map(|p| identity_of_file(p).ok())
+        .collect();
+    out.extend(identify_pid(parent_pid()).ok().map(|i| i.code));
+    out
+}
+
 pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
     // Checked before prompting: a bad dev switch must not cost a password.
     let approver: Arc<dyn Approver> = match dev_auto_approver_from_env().map_err(CliError::usage)? {
         Some(a) => Arc::new(a),
         None => Arc::new(TtyApprover::new()),
     };
+    let strong: Arc<dyn StrongAuth> = match dev_strong_from_env().map_err(CliError::usage)? {
+        Some(s) => Arc::new(s),
+        None => Arc::new(ChainStrong(vec![Box::new(LocalAuthStrong::new())])),
+    };
+    let limits = Limits::from_env(Limits::ssh()).map_err(CliError::usage)?;
     let socket = std::path::absolute(
         args.socket
             .unwrap_or_else(|| ctx.data_dir.join(AGENT_SOCKET)),
@@ -145,6 +182,30 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
         log,
         signer: SyncSigner(session.clone()),
     };
+    let account_id = session
+        .lock()
+        .map_err(|_| CliError::usage("session unavailable"))?
+        .repo()
+        .account_id()
+        .to_string();
+    let mut registry = ClientRegistry::empty(&account_id);
+    for code in transitional_clients() {
+        if registry.find(onepass_guard::Surface::Ssh, &code.client_id()).is_none() {
+            let label = code.client_id();
+            registry
+                .clients
+                .push(ssh_client_record(&code, &label, None, 0));
+        }
+    }
+    let grants = GrantStore::open(ctx.data_dir.join(GRANTS_FILE), &account_id);
+    let mut guards = AgentGuards::new(
+        Box::new(move || Ok(registry.clone())),
+        Arc::new(Mutex::new(grants)),
+        Box::new(SyncSigner(session.clone())),
+        strong,
+        Arc::new(SystemClock),
+    );
+    guards.throttle = Throttle::new(limits);
     let agent = Agent::new(
         SessionKeys(session, travel_changed.clone()),
         approver,
@@ -154,6 +215,7 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
             known_hosts,
             ..AgentConfig::default()
         },
+        guards,
     );
     install_signal_handlers()?;
     let listener = bind_socket(&socket)
@@ -176,7 +238,7 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
             }
         })
     };
-    let served = serve(listener, Arc::new(Mutex::new(agent)), stop.clone());
+    let served = serve(listener, Arc::new(agent), stop.clone());
     stop.store(true, Ordering::SeqCst);
     let _ = watcher.join();
     let removed = match std::fs::remove_file(&socket) {

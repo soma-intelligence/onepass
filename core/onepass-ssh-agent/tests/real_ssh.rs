@@ -5,6 +5,9 @@
 //! Nothing touches the user's `~/.ssh`: every child gets `HOME` set to a
 //! temporary directory, `ssh` runs with `-F /dev/null` and explicit
 //! identity, known_hosts and authorized_keys files under that directory.
+//!
+//! The agent serves paired clients only: the code identities of the `ssh`,
+//! `ssh-add` and `ssh-keygen` found on `PATH` are paired before each test.
 
 mod common;
 
@@ -16,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::env;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -48,6 +52,17 @@ struct Running {
     approver: Arc<Recording>,
     stop: Arc<AtomicBool>,
     server: Option<JoinHandle<std::io::Result<()>>>,
+    _guards: GuardEnv,
+}
+
+/// The OpenSSH clients the tests run.
+const CLIENTS: [&str; 3] = ["ssh", "ssh-add", "ssh-keygen"];
+
+/// The first `program` on `PATH`, as `Command::new` would run it.
+fn on_path(program: &str) -> Option<PathBuf> {
+    env::split_paths(&env::var_os("PATH")?)
+        .map(|d| d.join(program))
+        .find(|p| p.is_file())
 }
 
 impl Running {
@@ -59,6 +74,16 @@ impl Running {
             inner: DevAutoApprover(Decision::AllowOnce),
             seen: Mutex::new(Vec::new()),
         });
+        let (guards, env) = guards(loose_limits());
+        // Pair the OpenSSH clients by the identity of their file, as
+        // `onepass clients pair --exe` does.
+        for program in CLIENTS {
+            if let Some(path) = on_path(program) {
+                let code = onepass_peer::identity_of_file(&path)
+                    .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+                env.pair(&code, None);
+            }
+        }
         let agent = Agent::new(
             source,
             approver.clone(),
@@ -67,11 +92,12 @@ impl Running {
                 known_hosts,
                 ..AgentConfig::default()
             },
+            guards,
         );
         let stop = Arc::new(AtomicBool::new(false));
         let server = {
             let stop = stop.clone();
-            let agent = Arc::new(Mutex::new(agent));
+            let agent = Arc::new(agent);
             thread::spawn(move || serve(listener, agent, stop))
         };
         Running {
@@ -81,6 +107,7 @@ impl Running {
             approver,
             stop,
             server: Some(server),
+            _guards: env,
         }
     }
 

@@ -77,6 +77,13 @@ pub struct AuditEntry {
     pub decision: String,
     /// Result of the action (free-form label).
     pub outcome: String,
+    /// SSH: the destination a signature was bound to (host key fingerprint
+    /// and the bookmarks it matched), when the connection was bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination: Option<String>,
+    /// SSH: the SSHSIG namespace of a signature request, if it is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
 }
 
 /// An entry as stored, with its position and time.
@@ -120,6 +127,10 @@ struct Line {
     field: Option<String>,
     decision: String,
     outcome: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    destination: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    namespace: Option<String>,
     prev: String,
 }
 
@@ -284,6 +295,8 @@ impl AuditLog {
             field: e.field.clone(),
             decision: e.decision.clone(),
             outcome: e.outcome.clone(),
+            destination: e.destination.clone(),
+            namespace: e.namespace.clone(),
             prev: state.hash.clone(),
         };
         let json = serde_json::to_string(&line).map_err(|_| GuardError::Format("audit line"))?;
@@ -426,6 +439,8 @@ pub fn verify_log(path: &Path, signer: &dyn LocalSigner) -> Result<AuditVerifica
                 field: l.field.clone(),
                 decision: l.decision.clone(),
                 outcome: l.outcome.clone(),
+                destination: l.destination.clone(),
+                namespace: l.namespace.clone(),
             },
         });
         last = Some(l);
@@ -505,6 +520,8 @@ mod tests {
             field: None,
             decision: "allow_once".into(),
             outcome: "ok".into(),
+            destination: None,
+            namespace: None,
         }
     }
 
