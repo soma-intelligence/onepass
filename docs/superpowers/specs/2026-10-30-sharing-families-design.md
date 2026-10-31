@@ -123,10 +123,13 @@ ContactEntry {
   level: Verified | Link, verified_at: i64, verified_on: Id (appareil), transcript_hash,
   name_local: String,     // nom choisi par moi, jamais celui de la carte
   state: Active | KeysChanged { child: [u8; 32], seen_at } | Removed { at },
+  incarnation: u64,       // 0 au premier ajout, +1 à chaque réajout (en fin d'encodage)
 }
 ```
 
-Fusion : `Removed` gagne ; `Verified` gagne sur `Link` à identité égale ; une identité plus récente (lignée plus longue validée et confirmée) remplace l'ancienne. Un appareil retiré du compte (T1) pourrait, avant son retrait, signer une entrée forgée : c'est un appareil légitime jusque-là (hors périmètre de la rotation v2 aussi) ; après la rotation, ses signatures sous l'ancienne identité ne sont plus acceptées.
+Fusion : deux genèses pour un même compte, l'entrée la plus ancienne reste entière et le carnet lève une alerte (la genèse est comparée avant tout : une genèse forgée ne gagne jamais en montant son compteur, et son retrait ne touche pas l'entrée gardée) ; à genèse égale, l'incarnation la plus haute gagne entière ; dans une incarnation, `Removed` gagne ; `Verified` gagne sur `Link` à identité égale ; une identité plus récente (lignée plus longue validée et confirmée) remplace l'ancienne.
+
+Réajout (arbitrage du plan, 2026-10-31) : un contact retiré ne revient que par une nouvelle vérification au niveau `Verified` (en face à face ou numéro de sécurité comparé), qui écrit l'incarnation suivante ; un réajout au niveau `Link` est refusé. Un retrait vaut pour son incarnation et n'atteint jamais une incarnation plus haute. Un appareil retiré du compte (T1) pourrait, avant son retrait, signer une entrée forgée : c'est un appareil légitime jusque-là (hors périmètre de la rotation v2 aussi) ; après la rotation, ses signatures sous l'ancienne identité ne sont plus acceptées.
 
 Les noms affichés viennent toujours du carnet local, jamais d'une carte ou du serveur (même règle que la rotation v2, section 9).
 

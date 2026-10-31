@@ -157,6 +157,8 @@ struct Carol {
     rotation: LineageRecord,
     /// Her card at that rotation.
     rotated: SignedContactCard,
+    /// Another valid rotation of the genesis (a fork with `rotation`).
+    sibling: LineageRecord,
     /// Same account id, params and identity, another genesis.
     other_genesis: SignedContactCard,
 }
@@ -191,6 +193,8 @@ fn carol() -> &'static Carol {
             vec![genesis.clone(), rotation.clone()],
             "Carol",
         );
+        let third = IdentityKey::generate().unwrap();
+        let sibling = rotation_by(account_id, &genesis, &keys, &public, &third, &[1, 2]);
         let other = genesis_by(account_id, &identity, &keys, &public, T0 + 5);
         Carol {
             account_id,
@@ -211,6 +215,7 @@ fn carol() -> &'static Carol {
             ),
             rotation,
             rotated,
+            sibling,
             other_genesis: card(
                 account_id,
                 &identity,
@@ -425,8 +430,8 @@ fn removed_wins() {
     // Removing again keeps the first date.
     a.repo().remove_contact(c.account_id, T0 + 300).unwrap();
     assert_eq!(a.repo().contact(c.account_id).unwrap().unwrap(), removed);
-    // A pin never brings it back.
-    assert!(is_validation(&pin(&mut a, &c.card, ContactLevel::Verified)));
+    // A Link pin never brings it back.
+    assert!(is_validation(&pin(&mut a, &c.card, ContactLevel::Link)));
     assert_eq!(a.repo().contact(c.account_id).unwrap().unwrap(), removed);
     // Unknown contact.
     assert_eq!(
@@ -446,6 +451,64 @@ fn removed_wins() {
         assert_eq!(removed.merge(other).state, removed.state);
         assert_eq!(other.merge(&removed).state, removed.state);
     }
+}
+
+#[test]
+fn verified_re_add_after_removal() {
+    let mut server = Server::default();
+    let (mut a, sk) = Device::create();
+    sync(&mut server, &mut a).unwrap();
+    let mut b = Device::empty();
+    pull(&server, &mut b);
+    b.unlock(&sk);
+    let c = carol();
+    pin(&mut a, &c.card, ContactLevel::Link).unwrap();
+    a.repo().rename_contact(c.account_id, "Caro").unwrap();
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    // A removes; B, not synced since, removes too and re-adds in person.
+    a.repo().remove_contact(c.account_id, T0 + 200).unwrap();
+    let removed_a = a.repo().contact(c.account_id).unwrap().unwrap();
+    b.repo().remove_contact(c.account_id, T0 + 210).unwrap();
+    let back = b
+        .repo()
+        .test_pin_contact(&c.card, ContactLevel::Verified, [9; 32], T0 + 220)
+        .unwrap();
+    assert_eq!(back.incarnation, 1);
+    assert_eq!(back.state, ContactState::Active);
+    assert_eq!(back.level, ContactLevel::Verified);
+    assert_eq!(back.name_local, "Caro");
+    // The merge, both ways: the re-added entry; the older removal does not
+    // reach it.
+    assert_eq!(removed_a.merge(&back), back);
+    assert_eq!(back.merge(&removed_a), back);
+    sync(&mut server, &mut a).unwrap();
+    let _ = sync(&mut server, &mut b);
+    b.repo().rebase().unwrap();
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    for dev in [&mut a, &mut b] {
+        let e = dev.repo().contact(c.account_id).unwrap().unwrap();
+        assert_eq!((e.incarnation, e.state), (1, ContactState::Active));
+    }
+    // Removed again after it won: removed at incarnation 1.
+    a.repo().remove_contact(c.account_id, T0 + 300).unwrap();
+    let again = a.repo().contact(c.account_id).unwrap().unwrap();
+    assert_eq!(again.state, ContactState::Removed { at: T0 + 300 });
+    assert_eq!(again.incarnation, 1);
+    assert_eq!(again.merge(&back), again);
+    assert_eq!(back.merge(&again), again);
+
+    // A forged genesis never wins by raising its counter.
+    let mut forged = back.clone();
+    forged.genesis = c.other_genesis.card.genesis;
+    forged.incarnation = 9;
+    forged.verified_at = back.verified_at + 1;
+    assert_eq!(back.merge(&forged), back);
+    assert_eq!(forged.merge(&back), back);
+    // Nor removes the kept entry.
+    forged.state = ContactState::Removed { at: T0 };
+    assert_eq!(back.merge(&forged), back);
 }
 
 #[test]
@@ -623,6 +686,18 @@ fn book_keyed_by_identity() {
     };
     a.repo().rotate(req).unwrap();
     let rid = identity_id(&a.repo().account().params.identity_pub);
+    // Phase 1 pushes the book under the new id, before the lineage record.
+    let order: Vec<(RecordKind, Id)> = outbox(&a).iter().map(|(c, _)| (c.kind, c.id)).collect();
+    let book_at = order
+        .iter()
+        .position(|k| *k == (RecordKind::ContactBook, rid))
+        .expect("book in phase 1");
+    let lineage_at = order
+        .iter()
+        .position(|(k, _)| *k == RecordKind::Lineage)
+        .unwrap();
+    assert!(book_at < lineage_at);
+    assert_eq!(lineage_at, order.len() - 1);
     let rec = a
         .repo()
         .store_mut()
@@ -763,6 +838,36 @@ fn refresh_marks_keys_changed() {
 }
 
 #[test]
+fn refresh_fork_marks_keys_changed() {
+    // Two valid rotations of the pinned genesis: the old identity is
+    // retired all the same (spec 12.3 point 1).
+    let (mut a, _) = Device::create();
+    let c = carol();
+    let before = pin(&mut a, &c.card, ContactLevel::Verified).unwrap();
+    let records = [c.genesis.clone(), c.rotation.clone(), c.sibling.clone()];
+    let r = a
+        .repo()
+        .refresh_contact(c.account_id, &records, &[], T0 + 400)
+        .unwrap();
+    let ForeignLineage::Forked { siblings } = r else {
+        panic!("not a fork: {r:?}");
+    };
+    let smallest = c.rotation.hash().min(c.sibling.hash());
+    assert_eq!(siblings.len(), 2);
+    let after = a.repo().contact(c.account_id).unwrap().unwrap();
+    assert_eq!(
+        after.state,
+        ContactState::KeysChanged {
+            child: smallest,
+            seen_at: T0 + 400
+        }
+    );
+    assert_eq!(after.pinned_head, before.pinned_head);
+    assert_eq!(after.sign_pub, before.sign_pub);
+    assert!(!after.usable_for(ContactLevel::Link));
+}
+
+#[test]
 fn names_never_from_card() {
     let (mut a, _) = Device::create();
     let c = carol();
@@ -863,6 +968,12 @@ enum Op {
         child: u8,
         at: i64,
     },
+    /// A Verified pin of a removed contact.
+    ReAdd {
+        account: usize,
+        head: usize,
+        at: i64,
+    },
 }
 
 fn op() -> impl Strategy<Value = Op> {
@@ -892,6 +1003,11 @@ fn op() -> impl Strategy<Value = Op> {
         (0..3usize, 0..3u8, 0..50i64).prop_map(|(account, child, at)| Op::KeysChanged {
             account,
             child,
+            at
+        }),
+        (0..3usize, 0..4usize, 0..50i64).prop_map(|(account, head, at)| Op::ReAdd {
+            account,
+            head,
             at
         }),
     ]
@@ -935,6 +1051,7 @@ fn apply(mut book: Vec<ContactEntry>, ops: &[Op]) -> Vec<ContactEntry> {
                     transcript_hash: [*transcript; 32],
                     name_local: "n".into(),
                     state: ContactState::Active,
+                    incarnation: find(&book, *account).map_or(0, |i| book[i].incarnation),
                 })
             }
             Op::Remove { account, at } => find(&book, *account).map(|i| ContactEntry {
@@ -945,6 +1062,22 @@ fn apply(mut book: Vec<ContactEntry>, ops: &[Op]) -> Vec<ContactEntry> {
                 name_local: name.clone(),
                 ..book[i].clone()
             }),
+            Op::ReAdd { account, head, at } => find(&book, *account)
+                .filter(|i| matches!(book[*i].state, ContactState::Removed { .. }))
+                .map(|i| {
+                    let (h, identity, sign, kem) = p.heads[*head].clone();
+                    ContactEntry {
+                        pinned_head: h,
+                        identity_pub: identity,
+                        sign_pub: sign,
+                        kem_pub: kem,
+                        level: ContactLevel::Verified,
+                        verified_at: *at,
+                        state: ContactState::Active,
+                        incarnation: book[i].incarnation + 1,
+                        ..book[i].clone()
+                    }
+                }),
             Op::KeysChanged { account, child, at } => find(&book, *account).map(|i| ContactEntry {
                 state: ContactState::KeysChanged {
                     child: [*child; 32],
@@ -966,11 +1099,43 @@ fn apply(mut book: Vec<ContactEntry>, ops: &[Op]) -> Vec<ContactEntry> {
     book
 }
 
-fn removed(book: &[ContactEntry]) -> Vec<Id> {
-    book.iter()
-        .filter(|e| matches!(e.state, ContactState::Removed { .. }))
-        .map(|e| e.account_id)
-        .collect()
+/// Every version a merge must not lose: for each entry of `side`, the
+/// merged entry of the same genesis is at its incarnation or a later one;
+/// at its incarnation a removal stays a removal, and a `KeysChanged` at a
+/// head is never `Active` at that head.
+fn monotone(side: &[ContactEntry], merged: &[ContactEntry]) -> std::result::Result<(), String> {
+    for e in side {
+        let m = merged
+            .iter()
+            .find(|m| m.account_id == e.account_id)
+            .unwrap();
+        if m.genesis != e.genesis {
+            continue;
+        }
+        if m.incarnation < e.incarnation {
+            return Err(format!("incarnation went back: {e:?} -> {m:?}"));
+        }
+        if m.incarnation > e.incarnation {
+            continue;
+        }
+        let removed = |x: &ContactEntry| matches!(x.state, ContactState::Removed { .. });
+        if removed(e) && !removed(m) {
+            return Err(format!("removed entry came back: {e:?} -> {m:?}"));
+        }
+        if matches!(e.state, ContactState::KeysChanged { .. })
+            && m.pinned_head == e.pinned_head
+            && m.state == ContactState::Active
+        {
+            return Err(format!("keys changed back to active: {e:?} -> {m:?}"));
+        }
+    }
+    Ok(())
+}
+
+/// The entries under the first genesis of the pool.
+fn one_genesis(book: &[ContactEntry]) -> Vec<ContactEntry> {
+    let g = pool().geneses[0];
+    book.iter().filter(|e| e.genesis == g).cloned().collect()
 }
 
 proptest! {
@@ -981,20 +1146,28 @@ proptest! {
         base in prop::collection::vec(op(), 0..6),
         left in prop::collection::vec(op(), 0..8),
         right in prop::collection::vec(op(), 0..8),
+        third in prop::collection::vec(op(), 0..8),
     ) {
         let start = apply(Vec::new(), &base);
         let a = apply(start.clone(), &left);
-        let b = apply(start, &right);
+        let b = apply(start.clone(), &right);
+        let c = apply(start, &third);
         let ab = merge(&a, &b);
         prop_assert_eq!(&ab, &merge(&b, &a));
         prop_assert_eq!(&merge(&ab, &a), &ab);
         prop_assert_eq!(&merge(&ab, &b), &ab);
         prop_assert_eq!(&merge(&ab, &ab), &ab);
-        for id in removed(&a).into_iter().chain(removed(&b)) {
-            let e = ab.iter().find(|e| e.account_id == id).unwrap();
-            let gone = matches!(e.state, ContactState::Removed { .. });
-            prop_assert!(gone, "removed entry came back: {:?}", e);
+        for side in [&a, &b] {
+            if let Err(e) = monotone(side, &ab) {
+                prop_assert!(false, "{}", e);
+            }
         }
+        // Associative within one genesis.
+        let (a1, b1, c1) = (one_genesis(&a), one_genesis(&b), one_genesis(&c));
+        prop_assert_eq!(
+            merge(&merge(&a1, &b1), &c1),
+            merge(&a1, &merge(&b1, &c1))
+        );
         // A book is a valid list body.
         ListBody::next(None, Id::new(), ab).unwrap();
     }
