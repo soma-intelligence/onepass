@@ -67,6 +67,11 @@ impl Origin {
         &self.host
     }
 
+    /// Whether the host is an IP address.
+    pub fn is_ip(&self) -> bool {
+        self.ip
+    }
+
     /// Explicit non default port, if any.
     pub fn port(&self) -> Option<u16> {
         self.port

@@ -58,6 +58,8 @@ pub enum Ctx {
     Overlay,
     SavePrompt,
     Chain,
+    /// The extension's passkey choice window.
+    Passkey,
 }
 
 impl Ctx {
@@ -68,6 +70,7 @@ impl Ctx {
             Self::Overlay => "overlay",
             Self::SavePrompt => "save_prompt",
             Self::Chain => "chain",
+            Self::Passkey => "passkey",
         }
     }
 }
@@ -294,6 +297,41 @@ pub enum Request {
         ctx: Ctx,
         site: String,
     },
+    /// Passkeys of `rp_id` for a page, without a secret. `origin` is the
+    /// browser's origin of the frame.
+    PasskeyList {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        rp_id: String,
+    },
+    /// An assertion by a stored passkey. `credential_id` and `challenge`
+    /// are base64url; the host builds `clientDataJSON` from `origin`.
+    PasskeyGet {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        rp_id: String,
+        item_id: String,
+        credential_id: String,
+        challenge: String,
+    },
+    /// A new passkey. `user_handle`, `challenge` and each `exclude` id are
+    /// base64url. `vault_id`: where a new Login goes when the site has
+    /// none of `user_name` (the first vault when left out).
+    PasskeyCreate {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        rp_id: String,
+        user_name: String,
+        user_handle: String,
+        challenge: String,
+        #[serde(default)]
+        exclude: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        vault_id: Option<String>,
+    },
 }
 
 impl Request {
@@ -321,7 +359,10 @@ impl Request {
             | Self::FillSalt { id, .. }
             | Self::PlanFill { id, .. }
             | Self::NoteFill { id, .. }
-            | Self::ForgetSite { id, .. } => *id,
+            | Self::ForgetSite { id, .. }
+            | Self::PasskeyList { id, .. }
+            | Self::PasskeyGet { id, .. }
+            | Self::PasskeyCreate { id, .. } => *id,
         }
     }
 
@@ -350,6 +391,9 @@ impl Request {
             Self::PlanFill { .. } => "plan_fill",
             Self::NoteFill { .. } => "note_fill",
             Self::ForgetSite { .. } => "forget_site",
+            Self::PasskeyList { .. } => "passkey_list",
+            Self::PasskeyGet { .. } => "passkey_get",
+            Self::PasskeyCreate { .. } => "passkey_create",
         }
     }
 }
@@ -474,6 +518,18 @@ impl From<FillPlan> for PlanOut {
     }
 }
 
+/// A passkey as `passkey_list` shows it: never a key, never a user handle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PasskeySummary {
+    pub item_id: String,
+    pub vault_id: String,
+    pub vault_name: String,
+    pub title: String,
+    pub user_name: String,
+    /// Base64url.
+    pub credential_id: String,
+}
+
 /// The `ok` payload of a reply, one shape per operation.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
@@ -562,6 +618,28 @@ pub enum Response {
     /// `forget_site`: how many items forgot the site.
     Forgotten {
         items: usize,
+    },
+    Passkeys {
+        passkeys: Vec<PasskeySummary>,
+    },
+    /// `passkey_get`, every value base64url.
+    PasskeyAssertion {
+        credential_id: String,
+        client_data_json: String,
+        authenticator_data: String,
+        signature: String,
+        user_handle: String,
+    },
+    /// `passkey_create`, every value but the ids and the algorithm
+    /// base64url. `public_key`: DER `SubjectPublicKeyInfo`.
+    PasskeyRegistration {
+        item_id: String,
+        credential_id: String,
+        client_data_json: String,
+        attestation_object: String,
+        authenticator_data: String,
+        public_key: String,
+        public_key_algorithm: i64,
     },
     /// `{}`.
     Empty {},
@@ -849,6 +927,76 @@ mod tests {
     }
 
     #[test]
+    fn request_json_round_trip_passkey_list() {
+        let r = round_trip(
+            r#"{"id":25,"op":"passkey_list","ctx":"passkey","origin":"https://atlas-cloud.test","rp_id":"atlas-cloud.test"}"#,
+            25,
+            "passkey_list",
+        );
+        assert!(matches!(
+            r,
+            Request::PasskeyList {
+                ctx: Ctx::Passkey,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn request_json_round_trip_passkey_get() {
+        round_trip(
+            r#"{"id":26,"op":"passkey_get","ctx":"chain","origin":"https://atlas-cloud.test","rp_id":"atlas-cloud.test","item_id":"x","credential_id":"AQID","challenge":"BAUG"}"#,
+            26,
+            "passkey_get",
+        );
+    }
+
+    #[test]
+    fn request_json_round_trip_passkey_create() {
+        round_trip(
+            r#"{"id":27,"op":"passkey_create","ctx":"passkey","origin":"https://atlas-cloud.test","rp_id":"atlas-cloud.test","user_name":"alex","user_handle":"AQ","challenge":"BAUG","exclude":["AQID"]}"#,
+            27,
+            "passkey_create",
+        );
+        round_trip(
+            r#"{"id":28,"op":"passkey_create","ctx":"passkey","origin":"https://atlas-cloud.test","rp_id":"atlas-cloud.test","user_name":"alex","user_handle":"AQ","challenge":"BAUG","exclude":[],"vault_id":"v"}"#,
+            28,
+            "passkey_create",
+        );
+    }
+
+    #[test]
+    fn passkey_replies_have_the_wire_shape() {
+        let a = Response::PasskeyAssertion {
+            credential_id: "c".into(),
+            client_data_json: "j".into(),
+            authenticator_data: "a".into(),
+            signature: "s".into(),
+            user_handle: "u".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&a).unwrap(),
+            json!({"credential_id":"c","client_data_json":"j","authenticator_data":"a",
+                   "signature":"s","user_handle":"u"})
+        );
+        let l = Response::Passkeys {
+            passkeys: vec![PasskeySummary {
+                item_id: "i".into(),
+                vault_id: "v".into(),
+                vault_name: "Perso".into(),
+                title: "Atlas".into(),
+                user_name: "alex".into(),
+                credential_id: "c".into(),
+            }],
+        };
+        assert_eq!(
+            serde_json::to_value(&l).unwrap(),
+            json!({"passkeys":[{"item_id":"i","vault_id":"v","vault_name":"Perso",
+                   "title":"Atlas","user_name":"alex","credential_id":"c"}]})
+        );
+    }
+
+    #[test]
     fn plan_has_the_wire_shape() {
         let item = onepass_core::Id([7u8; 16]);
         let plan = FillPlan {
@@ -898,6 +1046,9 @@ mod tests {
             r#"{"id":1,"op":"fill_salt","ctx":"menu","x":1}"#,
             r#"{"id":1,"op":"note_fill","ctx":"chain","item_id":"x","origin":"https://a.test","roles":[],"intent":"login","steps":["Fill"]}"#,
             r#"{"id":1,"op":"forget_site","ctx":"popup"}"#,
+            r#"{"id":1,"op":"passkey_get","ctx":"passkey","origin":"https://a.test","rp_id":"a.test","item_id":"x","credential_id":"AQ","challenge":"AQ","client_data_json":"e30"}"#,
+            r#"{"id":1,"op":"passkey_list","ctx":"page","origin":"https://a.test","rp_id":"a.test"}"#,
+            r#"{"id":1,"op":"passkey_create","ctx":"passkey","origin":"https://a.test","rp_id":"a.test","user_name":"a","challenge":"AQ"}"#,
         ] {
             assert!(serde_json::from_str::<Request>(wire).is_err(), "{wire}");
         }

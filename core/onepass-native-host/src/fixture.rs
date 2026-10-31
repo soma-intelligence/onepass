@@ -6,10 +6,11 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use onepass_bridge::policy::add_passkey;
 use onepass_core::crypto::{DEV_KDF_FLOOR, KdfParams, SecretKey};
 use onepass_core::model::{
-    Address, FieldType, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, Provider,
-    new_item,
+    Address, FieldType, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule,
+    PasskeyCredential, Provider, new_item,
 };
 use onepass_core::repo::{DeviceState, Repository};
 use onepass_core::store::{MemoryStore, Record, RecordKind, RecordStore};
@@ -17,7 +18,7 @@ use onepass_core::vault::{Vault, VaultMeta};
 use onepass_core::{Error, Id};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use time::{Date, Month};
+use time::{Date, Month, OffsetDateTime};
 use zeroize::Zeroizing;
 
 use crate::config::HostError;
@@ -65,6 +66,18 @@ struct MethodDef {
     account_title: String,
 }
 
+/// A passkey of a login. Byte strings are unpadded base64url; the
+/// private key is the PKCS#8 DER of a P-256 key, as the vault stores it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PasskeyDef {
+    rp_id: String,
+    user_name: String,
+    user_handle: String,
+    credential_id: String,
+    private_key: Zeroizing<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ItemDef {
@@ -86,6 +99,8 @@ struct ItemDef {
     reprompt: bool,
     #[serde(default)]
     login_methods: Vec<MethodDef>,
+    #[serde(default)]
+    passkeys: Vec<PasskeyDef>,
 }
 
 fn bad(msg: impl Into<String>) -> HostError {
@@ -225,10 +240,44 @@ fn build_item(def: &ItemDef, vault: Id) -> Result<Item, HostError> {
             primary: item.urls.is_empty(),
         });
     }
+    if !def.passkeys.is_empty() {
+        if item.item_type != ItemType::Login {
+            return Err(bad(format!("{}: passkeys on a non login", def.title)));
+        }
+        for p in &def.passkeys {
+            add_passkey(&mut item, passkey(&def.title, p)?);
+        }
+        item.login_methods.push(LoginMethod::Passkey);
+    }
     item.archived = def.archived;
     item.hide_from_autofill = def.hide_from_autofill;
     item.reprompt = def.reprompt;
     Ok(item)
+}
+
+fn b64url(what: &str, s: &str) -> Result<Vec<u8>, HostError> {
+    data_encoding::BASE64URL_NOPAD
+        .decode(s.trim().as_bytes())
+        .map_err(|_| bad(format!("{what} must be unpadded base64url")))
+}
+
+/// A passkey of the fixture, refused unless its key signs (ES256).
+fn passkey(title: &str, def: &PasskeyDef) -> Result<PasskeyCredential, HostError> {
+    let what = |f: &str| format!("{title}: passkey {f}");
+    let cred = PasskeyCredential {
+        rp_id: def.rp_id.trim().to_ascii_lowercase(),
+        user_name: def.user_name.clone(),
+        user_handle: b64url(&what("user_handle"), &def.user_handle)?,
+        credential_id: b64url(&what("credential_id"), &def.credential_id)?,
+        private_key: Zeroizing::new(b64url(&what("private_key"), &def.private_key)?),
+        created_at: OffsetDateTime::UNIX_EPOCH,
+    };
+    if cred.rp_id.is_empty() || cred.credential_id.is_empty() || cred.user_handle.len() > 64 {
+        return Err(bad(what("is malformed")));
+    }
+    onepass_core::webauthn::public_key_cose(&cred)
+        .map_err(|_| bad(what("private_key is not a P-256 PKCS#8 key")))?;
+    Ok(cred)
 }
 
 /// Fast KDF parameters of the dev floor, with a fresh salt.
@@ -493,6 +542,7 @@ pub fn load_fixture_cached(path: &Path, cache: &Path) -> Result<FixtureVault, Ho
 mod tests {
     use super::*;
     use onepass_bridge::service::VaultAccess;
+    use std::path::PathBuf;
 
     fn e2e() -> std::path::PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/e2e.json")
@@ -559,6 +609,92 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&cache).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    /// A fixture of one login with the passkey `cred`.
+    fn passkey_fixture(dir: &Path, cred: &onepass_core::model::PasskeyCredential) -> PathBuf {
+        let b64 = |b: &[u8]| data_encoding::BASE64URL_NOPAD.encode(b);
+        let p = dir.join("passkeys.json");
+        let doc = serde_json::json!({
+            "vaults": [{"name": "Personnel"}],
+            "items": [{
+                "type": "login", "title": "Atlas passkey", "vault": "Personnel",
+                "urls": [{"url": "https://atlas-cloud.test", "rule": "domain"}],
+                "fields": {"username": "alex@atlas.dev"},
+                "passkeys": [{
+                    "rp_id": cred.rp_id,
+                    "user_name": cred.user_name,
+                    "user_handle": b64(&cred.user_handle),
+                    "credential_id": b64(&cred.credential_id),
+                    "private_key": b64(&cred.private_key),
+                }],
+            }],
+        });
+        std::fs::write(&p, serde_json::to_vec(&doc).unwrap()).unwrap();
+        p
+    }
+
+    #[test]
+    fn fixture_passkey_loads() {
+        let cred = onepass_core::webauthn::new_credential(
+            "atlas-cloud.test",
+            "alex@atlas.dev",
+            &[1, 2, 3],
+            time::OffsetDateTime::UNIX_EPOCH,
+        )
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut v = load_fixture(&passkey_fixture(dir.path(), &cred)).unwrap();
+        let items = v.items().unwrap();
+        let (_, item) = items
+            .iter()
+            .find(|(_, i)| i.title == "Atlas passkey")
+            .unwrap();
+        let got: Vec<_> = onepass_bridge::policy::passkeys(item).collect();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].rp_id, cred.rp_id);
+        assert_eq!(got[0].user_name, cred.user_name);
+        assert_eq!(got[0].user_handle, cred.user_handle);
+        assert_eq!(got[0].credential_id, cred.credential_id);
+        assert_eq!(*got[0].private_key, *cred.private_key);
+        assert!(item.login_methods.contains(&LoginMethod::Passkey));
+        // It signs.
+        onepass_core::webauthn::assertion(got[0], &[0u8; 32]).unwrap();
+    }
+
+    #[test]
+    fn fixture_passkey_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("f.json");
+        let item = |extra: serde_json::Value| {
+            let mut i = serde_json::json!({"type":"login","title":"x","vault":"Personnel"});
+            for (k, v) in extra.as_object().unwrap() {
+                i[k] = v.clone();
+            }
+            serde_json::json!({"vaults":[{"name":"Personnel"}],"items":[i]})
+        };
+        let key = |k: &str| {
+            serde_json::json!({"passkeys":[{"rp_id":"atlas-cloud.test","user_name":"a",
+                "user_handle":"AQ","credential_id":"AQID","private_key":k}]})
+        };
+        for doc in [
+            // Not a P-256 PKCS#8 key.
+            item(key("AQID")),
+            // Not base64url.
+            item(key("+/+/")),
+            // An unknown key of a passkey.
+            item(
+                serde_json::json!({"passkeys":[{"rp_id":"a.test","user_name":"a",
+                "user_handle":"AQ","credential_id":"AQ","private_key":"AQ","x":1}]}),
+            ),
+            // Passkeys on another item type.
+            serde_json::json!({"vaults":[{"name":"Personnel"}],"items":[{"type":"secure_note",
+                "title":"n","vault":"Personnel","passkeys":[{"rp_id":"a.test","user_name":"a",
+                "user_handle":"AQ","credential_id":"AQ","private_key":"AQ"}]}]}),
+        ] {
+            std::fs::write(&p, serde_json::to_vec(&doc).unwrap()).unwrap();
+            assert!(load_fixture(&p).is_err(), "{doc}");
+        }
     }
 
     #[test]

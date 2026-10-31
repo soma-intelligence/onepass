@@ -7,7 +7,10 @@
 use onepass_core::Id;
 use onepass_core::fill_plan::score::{Candidate, CandidateKind, MatchQuality as PlanQuality};
 use onepass_core::model::usage::last_used_on;
-use onepass_core::model::{Field, FieldValue, Item, ItemType, LoginMethod, MatchRule};
+use onepass_core::model::{
+    Field, FieldType, FieldValue, Item, ItemType, LoginMethod, MatchRule, PasskeyCredential,
+    Section,
+};
 use onepass_core::reference::otp_field_of;
 use onepass_core::totp::{code_at, parse_otpauth, seconds_remaining, totp_from_secret};
 use zeroize::Zeroizing;
@@ -165,6 +168,66 @@ fn fillable_text(item: &Item, id: &str) -> Option<String> {
         .filter(|f| f.autofill)
         .and_then(text_of)
         .map(str::to_owned)
+}
+
+/// Id of the repeatable passkey field of a login.
+pub const PASSKEYS: &str = "passkeys";
+
+/// Every passkey of an item, in field order.
+pub fn passkeys(item: &Item) -> impl Iterator<Item = &PasskeyCredential> {
+    item.sections
+        .iter()
+        .flat_map(|s| &s.fields)
+        .filter(|f| f.id == PASSKEYS)
+        .filter_map(|f| match &f.value {
+            FieldValue::Passkey(p) => Some(p),
+            _ => None,
+        })
+}
+
+/// Puts a passkey in the first empty `passkeys` field, or in a copy right
+/// after the last one (the field is repeatable); a login without the field
+/// gets one at the end of its first section. As the macOS AutoFill does.
+pub fn add_passkey(item: &mut Item, cred: PasskeyCredential) {
+    let mut last = None;
+    for (si, s) in item.sections.iter_mut().enumerate() {
+        for (fi, f) in s.fields.iter_mut().enumerate() {
+            if f.id == PASSKEYS && f.kind == FieldType::Passkey {
+                if f.value == FieldValue::Empty {
+                    f.value = FieldValue::Passkey(cred);
+                    return;
+                }
+                last = Some((si, fi));
+            }
+        }
+    }
+    let value = FieldValue::Passkey(cred);
+    if let Some((si, fi)) = last
+        && let Some(section) = item.sections.get_mut(si)
+        && let Some(field) = section.fields.get(fi)
+    {
+        let mut copy = field.clone();
+        copy.value = value;
+        section.fields.insert(fi + 1, copy);
+        return;
+    }
+    let field = Field {
+        id: PASSKEYS.to_owned(),
+        label: "Passkeys".to_owned(),
+        kind: FieldType::Passkey,
+        value,
+        required: false,
+        repeatable: true,
+        autofill: true,
+    };
+    match item.sections.first_mut() {
+        Some(section) => section.fields.push(field),
+        None => item.sections.push(Section {
+            id: "main".to_owned(),
+            label: "Connexion".to_owned(),
+            fields: vec![field],
+        }),
+    }
 }
 
 /// The identifier of a login: its `username`, else its `email`.

@@ -7,7 +7,8 @@ use onepass_bridge::{AppErrorCode, BridgeError, Result};
 use onepass_core::Id;
 use onepass_core::model::usage::SiteUsage;
 use onepass_core::model::{
-    Address, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, Provider, new_item,
+    Address, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PasskeyCredential,
+    Provider, new_item,
 };
 use time::{Date, Month, OffsetDateTime};
 use zeroize::Zeroizing;
@@ -328,6 +329,56 @@ impl FakeVault {
         let id = item.id;
         self.items.push(item);
         id
+    }
+
+    /// Give the item a fresh ES256 passkey for `rp_id`, in a copy of its
+    /// repeatable `passkeys` field: the credential, private key included.
+    pub fn add_passkey(
+        &mut self,
+        item_id: Id,
+        rp_id: &str,
+        user_name: &str,
+        user_handle: &[u8],
+    ) -> PasskeyCredential {
+        let cred = onepass_core::webauthn::new_credential(
+            rp_id,
+            user_name,
+            user_handle,
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .expect("passkey");
+        let item = self
+            .items
+            .iter_mut()
+            .find(|i| i.id == item_id)
+            .expect("item");
+        let field = item
+            .sections
+            .iter_mut()
+            .flat_map(|s| s.fields.iter_mut())
+            .find(|f| f.id == "passkeys")
+            .expect("passkeys field");
+        if field.value == FieldValue::Empty {
+            field.value = FieldValue::Passkey(cred.clone());
+        } else {
+            let mut copy = field.clone();
+            copy.value = FieldValue::Passkey(cred.clone());
+            item.sections[0].fields.push(copy);
+        }
+        cred
+    }
+
+    /// Every passkey of an item.
+    pub fn passkeys(&self, item_id: Id) -> Vec<PasskeyCredential> {
+        self.item(item_id)
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .filter_map(|f| match &f.value {
+                FieldValue::Passkey(p) => Some(p.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn item(&self, id: Id) -> &Item {

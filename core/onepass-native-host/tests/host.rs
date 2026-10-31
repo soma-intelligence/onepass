@@ -974,3 +974,131 @@ fn dev_host_refreshes_device_state_before_each_operation() {
         log_text(&env)
     );
 }
+
+/// Passkeys through the host binary: a fixture passkey lists without its
+/// key, signs an assertion whose client data the host built from the
+/// origin, and a new passkey is stored and signs in turn.
+#[test]
+fn passkey_list_get_create_round_trip() {
+    use aws_lc_rs::digest::{SHA256, digest};
+    use aws_lc_rs::signature::{ECDSA_P256_SHA256_ASN1, UnparsedPublicKey};
+    use data_encoding::BASE64URL_NOPAD as B64U;
+
+    let b64 = |b: &[u8]| B64U.encode(b);
+    let unb64 = |v: &Value| B64U.decode(v.as_str().expect("string").as_bytes()).unwrap();
+    let cred = onepass_core::webauthn::new_credential(
+        "atlas-cloud.test",
+        "alex@atlas.dev",
+        &[7, 7],
+        time::OffsetDateTime::UNIX_EPOCH,
+    )
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let fixture = dir.path().join("passkeys.json");
+    let doc = json!({
+        "vaults": [{"name": "Personnel"}],
+        "items": [{
+            "type": "login", "title": "Atlas passkey", "vault": "Personnel",
+            "urls": [{"url": ATLAS, "rule": "domain"}],
+            "fields": {"username": "alex@atlas.dev"},
+            "passkeys": [{
+                "rp_id": "atlas-cloud.test", "user_name": "alex@atlas.dev",
+                "user_handle": b64(&cred.user_handle),
+                "credential_id": b64(&cred.credential_id),
+                "private_key": b64(&cred.private_key),
+            }],
+        }],
+    });
+    fs::write(&fixture, serde_json::to_vec(&doc).unwrap()).unwrap();
+    let env = setup(
+        "auto",
+        json!({"source": {"kind": "fixture", "path": fixture}}),
+    );
+    let rec = pair(&env);
+    let (mut host, mut ch) = open_session(&env, &rec);
+
+    let list = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 1, "op": "passkey_list", "ctx": "passkey", "origin": ATLAS,
+               "rp_id": "atlas-cloud.test"}),
+    );
+    let pk = &list["ok"]["passkeys"][0];
+    assert_eq!(pk["title"], "Atlas passkey", "{list}");
+    assert_eq!(pk["credential_id"], b64(&cred.credential_id));
+    assert!(!list.to_string().contains(&b64(&cred.private_key)));
+
+    let challenge = [5u8; 32];
+    let get = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 2, "op": "passkey_get", "ctx": "passkey",
+               "origin": "https://login.atlas-cloud.test", "rp_id": "atlas-cloud.test",
+               "item_id": pk["item_id"], "credential_id": pk["credential_id"],
+               "challenge": b64(&challenge)}),
+    );
+    let ok = &get["ok"];
+    let cdj = unb64(&ok["client_data_json"]);
+    let cd: Value = serde_json::from_slice(&cdj).unwrap();
+    assert_eq!(cd["origin"], "https://login.atlas-cloud.test", "{get}");
+    assert_eq!(cd["type"], "webauthn.get");
+    assert_eq!(cd["challenge"], b64(&challenge));
+    let cose = onepass_core::webauthn::public_key_cose(&cred).unwrap();
+    let mut point = vec![0x04];
+    point.extend_from_slice(&cose[10..42]);
+    point.extend_from_slice(&cose[45..77]);
+    let mut msg = unb64(&ok["authenticator_data"]);
+    msg.extend_from_slice(digest(&SHA256, &cdj).as_ref());
+    UnparsedPublicKey::new(&ECDSA_P256_SHA256_ASN1, &point)
+        .verify(&msg, &unb64(&ok["signature"]))
+        .expect("assertion verifies");
+
+    // Another site's rp id: refused by the host.
+    let evil = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 3, "op": "passkey_get", "ctx": "passkey", "origin": ATLAS,
+               "rp_id": "evil.test", "item_id": pk["item_id"],
+               "credential_id": pk["credential_id"], "challenge": b64(&challenge)}),
+    );
+    assert_eq!(evil["err"]["code"], "origin_mismatch", "{evil}");
+
+    let create = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 4, "op": "passkey_create", "ctx": "passkey", "origin": ATLAS,
+               "rp_id": "atlas-cloud.test", "user_name": "new@atlas.dev",
+               "user_handle": b64(&[9, 9]), "challenge": b64(&challenge),
+               "exclude": [pk["credential_id"].as_str().unwrap()]}),
+    );
+    assert_eq!(create["err"]["code"], "excluded", "{create}");
+    let create = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 5, "op": "passkey_create", "ctx": "passkey", "origin": ATLAS,
+               "rp_id": "atlas-cloud.test", "user_name": "new@atlas.dev",
+               "user_handle": b64(&[9, 9]), "challenge": b64(&challenge), "exclude": []}),
+    );
+    let made = &create["ok"];
+    let spki = unb64(&made["public_key"]);
+    let get = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 6, "op": "passkey_get", "ctx": "chain", "origin": ATLAS,
+               "rp_id": "atlas-cloud.test", "item_id": made["item_id"],
+               "credential_id": made["credential_id"], "challenge": b64(&challenge)}),
+    );
+    let ok = &get["ok"];
+    let mut msg = unb64(&ok["authenticator_data"]);
+    msg.extend_from_slice(digest(&SHA256, &unb64(&ok["client_data_json"])).as_ref());
+    UnparsedPublicKey::new(&ECDSA_P256_SHA256_ASN1, &spki[26..])
+        .verify(&msg, &unb64(&ok["signature"]))
+        .expect("new passkey verifies");
+    assert_eq!(unb64(&ok["user_handle"]), [9, 9]);
+    assert!(host.wait().success());
+
+    let audit = fs::read_to_string(env.data.join("audit.log")).unwrap();
+    assert!(audit.contains("passkey_get"), "{audit}");
+    assert!(audit.contains("passkey_create"), "{audit}");
+    assert!(!audit.contains(&b64(&cred.private_key)));
+}

@@ -18,6 +18,8 @@ pub enum AppErrorCode {
     RateLimited,
     Invalid,
     Internal,
+    /// `passkey_create`: a credential of `exclude` is already stored.
+    Excluded,
 }
 
 impl AppErrorCode {
@@ -38,6 +40,7 @@ impl AppErrorCode {
             Self::RateLimited => "rate_limited",
             Self::Invalid => "invalid",
             Self::Internal => "internal",
+            Self::Excluded => "excluded",
         }
     }
 }

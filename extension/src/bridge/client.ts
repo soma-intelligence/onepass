@@ -26,7 +26,8 @@ export interface Transport {
 
 // ---- Application requests (mirror of onepass_bridge::api) ----
 
-export type Ctx = "popup" | "menu" | "overlay" | "save_prompt" | "chain";
+/** `passkey`: the passkey choice window. */
+export type Ctx = "popup" | "menu" | "overlay" | "save_prompt" | "chain" | "passkey";
 export type FillField = "username" | "password" | "totp";
 export type MatchRule = "domain" | "exact_host" | "exact_url" | "never";
 
@@ -58,6 +59,39 @@ export interface Address {
   postal_code: string;
   region: string;
   country: string;
+}
+
+/** A passkey as `passkey_list` gives it: no key, no user handle. `credential_id` is base64url. */
+export interface PasskeySummary {
+  item_id: string;
+  vault_id: string;
+  vault_name: string;
+  title: string;
+  user_name: string;
+  credential_id: string;
+}
+
+/** `passkey_get` reply: every value unpadded base64url; `client_data_json` built by the host from `origin`. */
+export interface PasskeyAssertion {
+  credential_id: string;
+  client_data_json: string;
+  authenticator_data: string;
+  signature: string;
+  user_handle: string;
+}
+
+/**
+ * `passkey_create` reply: values unpadded base64url but `item_id` and `public_key_algorithm`
+ * (always -7, ES256); `public_key` is the DER SubjectPublicKeyInfo.
+ */
+export interface PasskeyRegistration {
+  item_id: string;
+  credential_id: string;
+  client_data_json: string;
+  attestation_object: string;
+  authenticator_data: string;
+  public_key: string;
+  public_key_algorithm: number;
 }
 
 interface Ops {
@@ -145,6 +179,34 @@ interface Ops {
   note_fill: { req: NoteFillRequest; res: NoteFillResponse };
   /** Forget a site in every item's memory (popup only); `site` is a host or an https origin, reduced by the host. */
   forget_site: { req: { ctx: Ctx; site: string }; res: { items: number } };
+  /**
+   * Passkeys of `rp_id` for the browser's `origin` (ctx `passkey` or `chain`). The host checks
+   * `rp_id` against `origin` (host or registrable parent, never a public suffix).
+   */
+  passkey_list: { req: { ctx: Ctx; origin: string; rp_id: string }; res: { passkeys: PasskeySummary[] } };
+  /** An assertion (ctx `passkey` or `chain`); `credential_id` and `challenge` base64url. */
+  passkey_get: {
+    req: { ctx: Ctx; origin: string; rp_id: string; item_id: string; credential_id: string; challenge: string };
+    res: PasskeyAssertion;
+  };
+  /**
+   * A new passkey (ctx `passkey` only); `user_handle`, `challenge` and `exclude` ids base64url.
+   * Error `excluded` when a stored credential is in `exclude`. `vault_id`: vault of a new Login
+   * (first vault when left out).
+   */
+  passkey_create: {
+    req: {
+      ctx: Ctx;
+      origin: string;
+      rp_id: string;
+      user_name: string;
+      user_handle: string;
+      challenge: string;
+      exclude: string[];
+      vault_id?: string;
+    };
+    res: PasskeyRegistration;
+  };
 }
 
 export type Op = keyof Ops;
