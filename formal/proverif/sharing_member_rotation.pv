@@ -1,0 +1,121 @@
+(* formal-lib: rotation_core.pvl *)
+(* formal-lib: sharing_core.pvl *)
+(* OnePass formal model: a member of a shared vault rotates her account
+   identity (spec 2026-10-30-sharing-families-design.md section 12, attack
+   A11, founder decision 6). Rotation processes and the user tables:
+   rotation_core.pvl; sharing labels and the contact table:
+   sharing_core.pvl.
+
+   Run: Alice's account (rotation_core.pvl's `acct`) has the devices A
+   (her phone, honest), B (her lost iPad, the attacker's: device keys,
+   password, every secret of the identity before the rotation) and C.
+   Alice revokes B from A (rotation_core.pvl's Rotate, generation 1 of
+   her lineage). Bob, a manager of a vault Alice is a member of, pinned
+   Alice's genesis roster (devices A and B and their device signing keys)
+   when they verified each other face to face (spec 5.5; the private
+   table `contactDev`, filled by the setup only). The attacker, holding
+   B, freely forges rotations of Alice's lineage ("B revokes A", towards
+   an identity X of its own) with valid device and identity signatures.
+
+   Bob's device checks a rotation like a restored device checks a roster
+   (spec 5.5): the record is a child of the pinned head, signed by a
+   device of the pinned roster and by the new identity, and the params it
+   names are signed by that identity. This proves a device of Alice made
+   the rotation, not which one was honest (spec 12.1). So the old identity
+   is dropped at once and the new one is adopted only after the user's
+   confirmation gesture, never automatically (spec 12.3 C, ruling of the
+   core). Decision 6: the gesture depends on Alice's role in the vault.
+   - Read: the 6 digit rotation code. Alice reads the code her own
+     honest device shows (HKDF of the lineage hash of its rotation, spec
+     12.3 step 3); the manager types it; Bob's device compares it with the
+     code of the record it holds. Alice's honest device knows the hash of
+     its rotation: rotation_core.pvl's private table `heads`. The 20 bit
+     code is modeled as the hash itself (a forged record never matches);
+     the attacker passing as Alice on the call is out of scope (spec
+     12.3, last paragraph).
+   - Write, Manage: the QR in person. Alice's honest device shows its
+     current identity, Bob's device scans it: the identity is one an
+     honest rotation created, rotation_core.pvl's private table `kit`.
+   Once adopted, Bob writes the envelope of the vault key for the new
+   identity's KEM key (the IdentityUpdate body, spec 12.3 step 3).
+
+   Properties: Bob never adopts the attacker's identity, on either path,
+   and never adopts a rotation signed by the revoked device; the key he
+   wraps after adoption stays secret. *)
+
+(* Bob's device, and the identity the attacker would have him adopt. *)
+const bob_side: bitstring.
+free idk_x: skey.
+
+(* Bob's device adopted identity ip for account a / from the record of
+   device signer / after gesture `role` / and wrapped key k for ip. *)
+event AdoptIdentity(bitstring, bitstring, pkey).
+event AdoptFrom(bitstring, bitstring, pkey).
+event Confirmed(bitstring, bitstring, pkey).
+event EnvelopeSealed(bitstring, pkey, key).
+
+let Adopted(me: bitstring, signer: bitstring, ip: pkey, pkm: mlkem_pk,
+            pkx: x25519_pk) =
+  new k: key; new rm: seed; new rx: seed;
+  event AdoptIdentity(me, acct, ip);
+  event AdoptFrom(me, signer, ip);
+  event EnvelopeSealed(me, ip, k);
+  out(c, core_wrap_labeled(pkm, pkx, rm, rx, lbl_share_vk, env_ctx(g2, acct), k)).
+
+(* Bob's device reads a rotation of Alice's lineage, child of the head it
+   pinned, and adopts it after the gesture of Alice's role. *)
+let MemberFollow(me: bitstring, role: bitstring) =
+  in(c, (body: bitstring, sdev: bitstring, sig_id: bitstring, params: bitstring));
+  let rr_body(=acct, =h_genesis, signer: bitstring, ip: pkey, revoked: bitstring,
+              roster: bitstring, ph: bitstring) = body in
+  get contactDev(=me, =acct, =h_genesis, =signer, spub) in
+  if verify_dom(spub, dom_rotation, body, sdev) = true then
+  if verify_dom(ip, dom_rotation_id, body, sig_id) = true then
+  let (=ip, pmsg: bitstring, psig: bitstring) = params in
+  if h(params) = ph then
+  if verify_dom(ip, dom_account_params, pmsg, psig) = true then
+  let (=acct, salt: bitstring, spubn: pkey, pkm: mlkem_pk, pkx: x25519_pk) = pmsg in
+  if role = role_read then
+    (* Code: the record is the one Alice's honest device made. *)
+    (get heads(s_any, =h(body)) in
+     event Confirmed(me, role, ip);
+     Adopted(me, signer, ip, pkm, pkx))
+  else
+    (* QR in person: the identity Alice's honest device holds. *)
+    (get kit(=ip, skk) in
+     event Confirmed(me, role, ip);
+     Adopted(me, signer, ip, pkm, pkx)).
+
+(* Bob never adopts the attacker's identity X for Alice. *)
+query event(AdoptIdentity(bob_side, acct, pk(idk_x))).
+(* Every identity Bob adopts was introduced by an honest rotation. *)
+query d: bitstring, a: bitstring, ip: pkey, s: bitstring, r: bitstring,
+      ro: bitstring, k: key, ik: skey;
+  event(AdoptIdentity(d, a, ip)) ==> event(Rotated(s, ip, r, ro, k, ik)).
+(* Forged rotation and race: Bob never adopts a record of the revoked device. *)
+query ip: pkey; event(AdoptFrom(bob_side, devB, ip)).
+(* The vault key Bob wraps for the adopted identity stays secret. *)
+query d: bitstring, ip: pkey, k: key; event(EnvelopeSealed(d, ip, k)) && attacker(k).
+(* Sanity (expected false): Bob adopts Alice's honest rotation by the code
+   (Read) and by the QR (Write), from the record of device A. *)
+query ip: pkey; event(Confirmed(bob_side, role_read, ip)).
+query ip: pkey; event(Confirmed(bob_side, role_write, ip)).
+query ip: pkey; event(AdoptFrom(bob_side, devA, ip)).
+
+process
+  new dskA: skey; new dkmA: seed; new dkxA: seed;
+  new dskB: skey; new dkmB: seed; new dkxB: seed;
+  new dskC: skey; new dkmC: seed; new dkxC: seed;
+  out(c, (pk(dskA), kem_pk_m(dkmA), kem_pk_x(dkxA),
+          pk(dskB), kem_pk_m(dkmB), kem_pk_x(dkxB),
+          pk(dskC), kem_pk_m(dkmC), kem_pk_x(dkxC)));
+  (* B is the attacker's. *)
+  out(c, (dskB, dkmB, dkxB));
+  (* Bob's pins of Alice's genesis roster, from the face to face check. *)
+  insert contactDev(bob_side, acct, h_genesis, devA, pk(dskA));
+  insert contactDev(bob_side, acct, h_genesis, devB, pk(dskB));
+  let rosterAC = (ros_entry(devA, pk(dskA), kem_pk_m(dkmA), kem_pk_x(dkxA)),
+                  ros_entry(devC, pk(dskC), kem_pk_m(dkmC), kem_pk_x(dkxC))) in
+  ( Rotate(devA, dskA, h_genesis, devB, rosterAC)
+  | !MemberFollow(bob_side, role_read)
+  | !MemberFollow(bob_side, role_write) )
