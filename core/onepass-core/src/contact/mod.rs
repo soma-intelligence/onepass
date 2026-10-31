@@ -1,5 +1,5 @@
-//! Contacts (sharing spec 5): signed contact cards, account fingerprints,
-//! safety numbers and pair ids.
+//! Contacts (sharing spec 5): signed contact cards, the signed contact
+//! book, account fingerprints, safety numbers and pair ids.
 //!
 //! A contact card carries no new key: the signing and KEM keys of the
 //! account come from its params record, signed by the identity of the
@@ -11,9 +11,11 @@ use aws_lc_rs::digest::{self, SHA256, SHA512};
 
 use crate::Id;
 
+mod book;
 mod card;
 mod lineage;
 
+pub use book::{CONTACT_BOOK_DOMAIN, ContactAlert, ContactEntry, ContactLevel, ContactState};
 pub use card::{CardKeys, ContactCard, SignedContactCard};
 pub use lineage::{
     ForeignLineage, ForeignPin, LegacyAccepted, LegacyIntros, MAX_FOREIGN_COPIES,

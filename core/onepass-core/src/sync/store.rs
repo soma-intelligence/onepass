@@ -263,7 +263,7 @@ fn fetch_mode(conn: &Connection) -> Result<Option<u8>> {
 
 /// The kinds whose pending row keeps the `base` row it was built on as its
 /// `ancestor`, to tell when the server moved on: manifests, the restore
-/// epoch and the two signed lists.
+/// epoch and the signed lists (contact book included).
 fn keeps_ancestor(kind: RecordKind) -> bool {
     matches!(
         kind,
@@ -271,6 +271,7 @@ fn keeps_ancestor(kind: RecordKind) -> bool {
             | RecordKind::RestoreEpoch
             | RecordKind::DeviceList
             | RecordKind::VaultList
+            | RecordKind::ContactBook
     )
 }
 
@@ -344,7 +345,8 @@ fn held_epoch(conn: &Connection) -> Result<bool> {
     .map_err(store_err)
 }
 
-/// The signed lists (device list, vault list) whose pending row was not
+/// The signed lists (device list, vault list, contact book) whose pending
+/// row was not
 /// built on the current `base` row, as for `held_vaults`: the server list
 /// moved on, and the local one must be rebuilt over it (`Repository::rebase`)
 /// before any push.
@@ -354,13 +356,17 @@ fn held_lists(conn: &Connection) -> Result<BTreeSet<(RecordKind, Id)>> {
             "SELECT p.kind, p.id FROM pending p
              JOIN base b ON b.kind = p.kind AND b.id = p.id
              LEFT JOIN ancestor a ON a.kind = p.kind AND a.id = p.id
-             WHERE p.kind IN (?1, ?2) AND p.data IS NOT NULL
+             WHERE p.kind IN (?1, ?2, ?3) AND p.data IS NOT NULL
                AND (a.id IS NULL OR a.version != b.version)",
         )
         .map_err(store_err)?;
     let rows = stmt
         .query_map(
-            params![RecordKind::DeviceList.code(), RecordKind::VaultList.code()],
+            params![
+                RecordKind::DeviceList.code(),
+                RecordKind::VaultList.code(),
+                RecordKind::ContactBook.code()
+            ],
             |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
         )
         .map_err(store_err)?;
@@ -552,8 +558,8 @@ fn overwritten_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
 
 /// Phase 1 of a rotation (spec 7.1): the deliveries, the account records
 /// and lists under the new identity id `rid`, the lineage record. All new
-/// ids. The rank orders them: deliveries, params, keyset, lists, then the
-/// lineage record last.
+/// ids. The rank orders them: deliveries, params, keyset, lists (the
+/// contact book last of them), then the lineage record last.
 fn phase_one_rank(kind: RecordKind, id: Id, rid: Id) -> Option<u8> {
     match kind {
         RecordKind::KeyDelivery => Some(0),
@@ -561,7 +567,8 @@ fn phase_one_rank(kind: RecordKind, id: Id, rid: Id) -> Option<u8> {
         RecordKind::Keyset if id == rid => Some(2),
         RecordKind::DeviceList if id == rid => Some(3),
         RecordKind::VaultList if id == rid => Some(4),
-        RecordKind::Lineage => Some(5),
+        RecordKind::ContactBook if id == rid => Some(5),
+        RecordKind::Lineage => Some(6),
         _ => None,
     }
 }
@@ -1142,13 +1149,14 @@ impl SyncStore {
                 &format!(
                     "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
                      SELECT b.kind, b.id, b.version, b.data FROM base b
-                     WHERE b.kind IN (?1, ?2, ?3, ?4) AND {missing}"
+                     WHERE b.kind IN (?1, ?2, ?3, ?4, ?5) AND {missing}"
                 ),
                 params![
                     RecordKind::Manifest.code(),
                     RecordKind::RestoreEpoch.code(),
                     RecordKind::DeviceList.code(),
-                    RecordKind::VaultList.code()
+                    RecordKind::VaultList.code(),
+                    RecordKind::ContactBook.code()
                 ],
             )
             .map_err(store_err)?;
@@ -2608,7 +2616,10 @@ fn has_pending_manifest(conn: &Connection, vault: Id) -> Result<bool> {
 /// records are never deleted either (spec 6.3):
 /// `InvalidFormat("immutable record deletion")`.
 fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
-    if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+    if matches!(
+        kind,
+        RecordKind::DeviceList | RecordKind::VaultList | RecordKind::ContactBook
+    ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
     if kind.is_immutable() {
@@ -2659,8 +2670,8 @@ fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
 }
 
 /// A remote deletion `commit_remote` ignores: account params, keysets, the
-/// restore epoch and the signed device and vault lists (never deleted by a
-/// client), and the vault key, meta or manifest of a vault the device has
+/// restore epoch and the signed device and vault lists and contact book
+/// (never deleted by a client), and the vault key, meta or manifest of a vault the device has
 /// seen, unless the verified vault list marks that vault deleted
 /// (`deleted`, spec 4.5). A store that hides the epoch from a device with a
 /// fresh copy is caught by the repository (`EpochRollback`).
@@ -2678,7 +2689,8 @@ fn protected_from_remote_deletion(
         | RecordKind::Keyset
         | RecordKind::RestoreEpoch
         | RecordKind::DeviceList
-        | RecordKind::VaultList => true,
+        | RecordKind::VaultList
+        | RecordKind::ContactBook => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v) && !deleted.contains(&v))
         }
@@ -2771,7 +2783,8 @@ fn chain_state_in(conn: &Connection) -> Result<ChainState> {
 /// one stored by any process on the file), so that no pin goes back:
 /// - `params_epoch`: the larger;
 /// - each signed list seen: the larger `seq`; the same `seq` with another
-///   hash is a fork (`DeviceListRollback`, `VaultListRollback`), unless
+///   hash is a fork (`DeviceListRollback`, `VaultListRollback`,
+///   `ContactBookRollback`), unless
 ///   `force_lists` (a list rebase renumbered the lists in memory: the
 ///   memory ones stand, as for the vaults a manifest rebase forces);
 /// - `device_id`: set once, never changed: two different ids for this
@@ -2817,6 +2830,12 @@ pub(crate) fn merge_chain(
             IntegrityError::VaultListRollback,
         )?,
         device_id,
+        contact_book: seen(
+            mem.contact_book,
+            stored.contact_book,
+            force_lists,
+            IntegrityError::ContactBookRollback,
+        )?,
     })
 }
 
@@ -2892,7 +2911,10 @@ impl WriteTx<'_> {
 /// `RecordStore::evict` inside a transaction: the row leaves every layer
 /// and nothing is queued for the server.
 fn evict_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
-    if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+    if matches!(
+        kind,
+        RecordKind::DeviceList | RecordKind::VaultList | RecordKind::ContactBook
+    ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
     for table in ["base", "pending", "staging", "ancestor", "kept"] {
@@ -5110,18 +5132,21 @@ mod tests {
             device_list: seen_at(2, 1),
             vault_list: seen_at(5, 1),
             device_id: None,
+            contact_book: seen_at(7, 1),
         };
         let newer = ChainState {
             params_epoch: 2,
             device_list: seen_at(3, 2),
             vault_list: seen_at(4, 2),
             device_id: Some(id),
+            contact_book: seen_at(6, 2),
         };
         let merged = ChainState {
             params_epoch: 2,
             device_list: seen_at(3, 2),
             vault_list: seen_at(5, 1),
             device_id: Some(id),
+            contact_book: seen_at(7, 1),
         };
         // Whichever process persists, nothing goes back.
         assert_eq!(merge_chain(&older, &newer, false).unwrap(), merged);
@@ -5137,12 +5162,21 @@ mod tests {
         let stored = ChainState {
             device_list: seen_at(3, 1),
             vault_list: seen_at(3, 1),
+            contact_book: seen_at(3, 1),
             ..ChainState::default()
         };
         let vault_fork = ChainState {
             vault_list: seen_at(3, 2),
             ..stored.clone()
         };
+        let book_fork = ChainState {
+            contact_book: seen_at(3, 2),
+            ..stored.clone()
+        };
+        assert_eq!(
+            merge_chain(&book_fork, &stored, false),
+            Err(IntegrityError::ContactBookRollback.into())
+        );
         let device_fork = ChainState {
             device_list: seen_at(3, 2),
             ..stored.clone()
@@ -5188,6 +5222,7 @@ mod tests {
             device_list: seen_at(4, 1),
             vault_list: seen_at(6, 1),
             device_id: Some(id),
+            contact_book: seen_at(2, 1),
         };
         s.set_chain_state(&stored).unwrap();
         // A process that unlocked before those pins persists its own.
@@ -5196,6 +5231,7 @@ mod tests {
             device_list: seen_at(3, 9),
             vault_list: seen_at(5, 9),
             device_id: None,
+            contact_book: seen_at(1, 9),
         };
         let (_, chain) = s
             .merge_device_state(&DeviceState::default(), &stale, &[], false, false)
