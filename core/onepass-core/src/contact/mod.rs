@@ -13,11 +13,17 @@ use crate::Id;
 
 mod book;
 mod card;
+mod invite;
 mod lineage;
 mod session;
 
 pub use book::{CONTACT_BOOK_DOMAIN, ContactAlert, ContactEntry, ContactLevel, ContactState};
 pub use card::{CardKeys, ContactCard, SignedContactCard};
+pub use invite::{
+    CONTACT_INVITE_META_PREFIX, CONTACT_INVITE_TTL_SECS, CONTACT_LINK_PREFIX, ContactInvite,
+    InviteAnswer, InviteReply, MAX_INVITE_ANSWER_BYTES, MAX_INVITE_BLOB_BYTES, invite_transcript,
+    open_answer, open_reply, seal_answer, seal_reply,
+};
 pub use lineage::{
     ForeignLineage, ForeignPin, LegacyAccepted, LegacyIntros, MAX_FOREIGN_COPIES,
     accept_legacy_intros, follow_foreign, roster_at,
