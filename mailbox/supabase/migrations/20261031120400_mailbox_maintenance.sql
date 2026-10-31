@@ -9,8 +9,11 @@
 --   nonces seen more than 600 s ago (twice the 300 s clock skew);
 --   used tickets older than an hour (a ticket lives 900 s at most, so a
 --     purged one is expired anyway);
---   rendezvous frames written more than 120 s ago, sessions started more
---     than 600 s ago (their frames go with them);
+--   rendezvous frames written more than 120 s ago, and every frame of a
+--     session started more than 600 s ago; the session row itself after a
+--     day, so its id cannot start a second session in the meantime (ids are
+--     128 bit random values from the QR code, never reused by an honest
+--     client, and the client keeps its own 600 s deadline);
 --   rate windows by their length, which the row does not carry: a window
 --     start on neither an hour nor a day boundary is a minute window, purged
 --     after 2 minutes; one on an hour boundary but not a day boundary is an
@@ -47,7 +50,11 @@
 --     hour later. The caller deletes each object through the Storage API,
 --     then calls gc_done.
 --   gc_done(mailbox, sha): deletes the blob row if it is still taken and
---     unreferenced (an announce may have taken it back meanwhile).
+--     unreferenced. While a take is pending nobody can announce or commit
+--     the blob, so the row is the one taken; after the hour lease an
+--     announce may have taken it back, and gc_done leaves it alone. The
+--     caller must delete the object first, then call gc_done, within the
+--     lease.
 --   push_take(limit): removes up to limit mailboxes from the push queue,
 --     oldest first, and returns the push tokens to wake: the active
 --     credentials of each mailbox that is not frozen, without the one the
@@ -107,7 +114,11 @@ begin
     delete from onepass_mailbox.nonces where seen_at < p_now - interval '600 seconds';
     delete from onepass_mailbox.used_tickets where used_at < p_now - interval '1 hour';
     delete from onepass_mailbox.rdv_chunks where written_at < p_now - interval '120 seconds';
-    delete from onepass_mailbox.rdv_sessions where created_at < p_now - interval '600 seconds';
+    delete from onepass_mailbox.rdv_chunks c
+    using onepass_mailbox.rdv_sessions s
+    where c.session_id = s.session_id and s.created_at < p_now - interval '600 seconds';
+    -- The row outlives the session by a day, so its id cannot start another.
+    delete from onepass_mailbox.rdv_sessions where created_at < p_now - interval '1 day';
     delete from onepass_mailbox.rate r
     where r.window_start < p_now - interval '2 days'
        or (r.window_start < p_now - interval '2 minutes' and r.window_start <> date_trunc('hour', r.window_start, 'UTC'))
@@ -147,7 +158,14 @@ begin
         where m.id = per.mailbox_id;
     end if;
 
-    update onepass_mailbox.blobs set orphaned_at = p_now where refs = 0 and orphaned_at is null;
+    -- Skips rows a commit or announce holds (they lock in hash order): no
+    -- deadlock, and a skipped row is marked a minute later.
+    update onepass_mailbox.blobs b set orphaned_at = p_now
+    from (select x.mailbox_id, x.sha256 from onepass_mailbox.blobs x
+          where x.refs = 0 and x.orphaned_at is null
+          order by x.mailbox_id, x.sha256
+          for update skip locked) t
+    where b.mailbox_id = t.mailbox_id and b.sha256 = t.sha256;
 
     for v_day in select * from onepass_mailbox.wake_partitions_missing(p_now) loop
         raise warning 'onepass_mailbox maintenance: realtime.messages has no partition for % (UTC), wake-ups that day are lost; the Realtime service creates them', v_day;
