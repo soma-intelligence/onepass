@@ -472,6 +472,57 @@ describe("overlay offer", () => {
     expect(overlays(t)).toHaveLength(1);
   });
 
+  const googleOnly = (extra: Partial<PageAnalysis> = {}) => page(`${SITE}/login`, [], { providerButtons: [{ provider: "google", ref: "g1" }], ...extra });
+  const tokenOf = (t: T) => {
+    const url = (overlays(t).at(-1) as { url: string }).url;
+    return url.slice(url.indexOf("#") + 1);
+  };
+
+  it("sso_only_page_offers_overlay_for_linked_item", async () => {
+    const t = await setup();
+    // No sign-in form, just "Continue with Google"; it_02 signs in with Google.
+    await analyze(t, `${SITE}/login`, googleOnly());
+    expect(overlays(t).map((m) => m.opts)).toEqual([{ documentId: "doc-1" }]);
+    // The same buttons again: not offered twice in the document.
+    await analyze(t, `${SITE}/login`, googleOnly());
+    expect(overlays(t)).toHaveLength(1);
+    // The overlay offers the Google sign-in of it_02.
+    const token = tokenOf(t);
+    const init = (await t.ext.send({ type: "overlay_init", token }, uiSender(`overlay.html#${token}`, 7))) as {
+      ok: { accounts: { itemId: string; provider?: string }[] };
+    };
+    expect(init.ok.accounts.some((a) => a.itemId === "it_02" && a.provider === "google")).toBe(true);
+  });
+
+  it("sso_only_page_without_linked_item_no_overlay", async () => {
+    // The site's logins have no Google method: a Google-only page offers nothing.
+    const t = await setup(answerWith({ list_for_origin: (r) => ({ items: r.origin === SITE ? [summary("it_01")] : [] }) }));
+    await analyze(t, `${SITE}/login`, googleOnly());
+    expect(overlays(t)).toEqual([]);
+    // A button of another provider than the item's method: nothing either.
+    const u = await setup();
+    await analyze(u, `${SITE}/login`, page(`${SITE}/login`, [], { providerButtons: [{ provider: "apple", ref: "a1" }] }));
+    expect(overlays(u)).toEqual([]);
+    // Nor on a page of another site without logins.
+    await analyze(u, "https://other.test/login", page("https://other.test/login", [], { providerButtons: [{ provider: "google", ref: "g1" }] }), "doc-o");
+    expect(overlays(u)).toEqual([]);
+  });
+
+  it("chain_starts_with_provider_click", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, googleOnly());
+    const token = tokenOf(t);
+    const ui = uiSender(`overlay.html#${token}`, 7);
+    await t.ext.send({ type: "overlay_init", token }, ui);
+    expect(await t.ext.send({ type: "overlay_start", token, itemId: "it_02", provider: "google" }, ui)).toEqual({ ok: {} });
+    // First step: the click on the provider's button, pinned to the site's origin and document.
+    expect(toTab(t, "click")).toEqual([{ type: "click", origin: SITE, ref: "g1", opts: { documentId: "doc-1" } }]);
+    expect(toTab(t, "fill")).toEqual([]);
+    const v = await t.runner.state(7);
+    expect(v?.status).toBe("running");
+    expect(v?.steps[0]?.label).toContain("Google");
+  });
+
   it("not without logins for the site, nor without a sign-in form", async () => {
     const t = await setup();
     await analyze(t, "https://other.test/login", page("https://other.test/login", [loginForm]));

@@ -198,6 +198,23 @@ describe("provider chain (Google, two accounts)", () => {
     ]);
   });
 
+  it("chain_starts_with_provider_click", () => {
+    // A provider-only page (spec E1): no form, buttons of two providers.
+    const s = start(site, { provider: "google", providerAccount: account });
+    const btns = {
+      providerButtons: [
+        { provider: "apple" as const, ref: "ap1" },
+        { provider: "google" as const, ref: "g1" },
+      ],
+    };
+    const r = step(s, page([], btns), SITE, T0 + 100);
+    expect(r.actions).toEqual([{ type: "click", ref: "g1" }]);
+    expect(r.state.steps.map((x) => x.kind)).toEqual(["provider_click"]);
+    expect(chainView(r.state).steps[0]?.label).toBe("Clic sur « Continuer avec Google »");
+    // The same page reported again: no second click.
+    expect(step(r.state, page([], btns), SITE, T0 + 200).actions).toEqual([]);
+  });
+
   it("no chooser entry for the linked email hands off (account), naming the account", () => {
     let s = start(site, { provider: "google", providerAccount: account });
     s = step(s, page([], { providerButtons: [{ provider: "google", ref: "g1" }] }), SITE, T0 + 100).state;

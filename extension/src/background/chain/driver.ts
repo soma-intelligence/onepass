@@ -28,7 +28,9 @@
 // Also here, since it shares the same analyses: showing the overlay on a
 // recognized sign-in page of a site that has logins (once per sign-in form of
 // a top document, so a form built late is offered too, and a form in a frame
-// of the same origin), and on every page of a running chain.
+// of the same origin), on a page with only provider buttons when a login of
+// the site signs in with one of those providers (spec E1), and on every page
+// of a running chain.
 import type { Summary } from "../../bridge/client";
 import { parseOrigin } from "../../shared/domain";
 import type { BgToCs, FieldRole, FormInfo, PageAnalysis, ProviderId } from "../../shared/messages";
@@ -122,6 +124,16 @@ function signInShape(a: PageAnalysis): string | null {
   return forms.length === 0 ? null : JSON.stringify(forms.map((f) => [f.kind, f.fields.map((x) => x.role)]));
 }
 
+/**
+ * The providers whose sign-in buttons a page shows, when it has no sign-in
+ * form (spec E1: a provider-only page), as an offer shape; else null.
+ */
+function providerShape(a: PageAnalysis): { shape: string; providers: Set<ProviderId> } | null {
+  const providers = new Set(a.providerButtons.map((b) => b.provider));
+  if (providers.size === 0) return null;
+  return { shape: JSON.stringify(["providers", [...providers].sort()]), providers };
+}
+
 /** A form the chain can act on (machine.ts `decide`): sign-in or code. */
 function isChainForm(f: FormInfo): boolean {
   return f.fields.some((x) => x.role === "otp") || ((f.kind === "login" || f.kind === "otp") && f.fields.some((x) => SIGN_IN_ROLES.has(x.role)));
@@ -154,6 +166,11 @@ interface Acting {
 
 function canSignIn(it: Summary): boolean {
   return it.kind === "login" && (it.has_password || it.methods.length > 0);
+}
+
+/** The item signs in with one of `providers` (a sign-in method linked to it). */
+function signsInWith(it: Summary, providers: ReadonlySet<ProviderId>): boolean {
+  return it.kind === "login" && it.methods.some((m) => providers.has(m.provider));
 }
 
 export class ChainRunner implements ChainDriver {
@@ -526,10 +543,16 @@ export class ChainRunner implements ChainDriver {
    * once per sign-in form (a form built late, or the next step of the same
    * document); a re-render of a form already offered does not offer again,
    * and nothing is offered in a document where the user closed the overlay.
+   * Spec E1: a page with no sign-in form but buttons of known providers
+   * offers it too, when a login of the site signs in with one of them (the
+   * chain then starts with the click on that button).
    */
   private async offerOverlay(a: PageAnalysis, cs: CsContext): Promise<void> {
-    const shape = signInShape(a);
+    const form = signInShape(a);
+    const sso = form === null ? providerShape(a) : null;
+    const shape = form ?? sso?.shape ?? null;
     if (shape === null || parseOrigin(cs.origin)?.https !== true) return;
+    const offers = sso ? (it: Summary) => signsInWith(it, sso.providers) : canSignIn;
     const seen = this.seen(cs.tabId, cs.documentId ?? `${cs.origin}#${this.navs.get(cs.tabId) ?? 0}`);
     if (seen.closed || seen.shapes.has(shape) || seen.shapes.size >= MAX_OFFERS) return;
     seen.shapes.add(shape);
@@ -538,7 +561,7 @@ export class ChainRunner implements ChainDriver {
     let shown = true;
     try {
       const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "overlay", origin: cs.origin });
-      if (items.some(canSignIn)) shown = await this.showOverlay(cs);
+      if (items.some(offers)) shown = await this.showOverlay(cs);
     } catch {
       // Locked, unpaired, host missing: no overlay.
       shown = false;
