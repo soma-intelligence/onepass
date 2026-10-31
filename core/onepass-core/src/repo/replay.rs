@@ -81,6 +81,9 @@ pub struct ReplayReport {
     /// nothing to replay from: dropped, with the log's alert raised (the
     /// app offers "Réimporter depuis cet appareil").
     pub lost: usize,
+    /// The (vault, item) of each `lost` intent, also kept in the log
+    /// (`OwnWriteLog::lost`) until the user saw them (Task 17, G4).
+    pub lost_items: Vec<(Id, Id)>,
     /// Still waiting: the vault's new content is not on the device yet, or
     /// a rotation prompt makes the session read-only.
     pub waiting: usize,
@@ -123,7 +126,59 @@ pub(crate) fn meta_hash(sealed: &[u8]) -> [u8; 32] {
     out
 }
 
+impl ReplayReport {
+    fn lose(&mut self, vault: Id, item: Id) {
+        self.lost += 1;
+        self.lost_items.push((vault, item));
+    }
+
+    fn add(&mut self, r: ReplayReport) {
+        self.replayed += r.replayed;
+        self.present += r.present;
+        self.superseded += r.superseded;
+        self.lost += r.lost;
+        self.lost_items.extend(r.lost_items);
+        self.waiting += r.waiting;
+    }
+}
+
+/// The own-write alert of a device (spec 10.4, G4, Task 17): raised when
+/// an intent was dropped by the log's bounds or found no copy to replay
+/// from; `lost` names them, (vault, item).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OwnWriteAlert {
+    pub alert: bool,
+    pub lost: Vec<(Id, Id)>,
+}
+
 impl<S: RecordStore> Repository<S> {
+    /// The own-write alert (`OwnWriteAlert`). Nothing without a trust
+    /// state.
+    pub fn own_write_alert(&self) -> Result<OwnWriteAlert> {
+        Ok(
+            trust_of(&self.store)?.map_or_else(OwnWriteAlert::default, |t| OwnWriteAlert {
+                alert: t.own_writes.alert,
+                lost: t.own_writes.lost,
+            }),
+        )
+    }
+
+    /// The user saw the own-write alert: lowered, the lost intents
+    /// forgotten. Conditional on the trust state read (`Conflict`). A no-op
+    /// without a trust state or an alert.
+    pub fn clear_own_write_alert(&mut self) -> Result<()> {
+        let Some(trust) = trust_of(&self.store)? else {
+            return Ok(());
+        };
+        if !trust.own_writes.alert && trust.own_writes.lost.is_empty() {
+            return Ok(());
+        }
+        let mut next = trust.clone();
+        next.own_writes.clear_alert();
+        self.store
+            .put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next)
+    }
+
     /// Record the intent of an item write before it is made (spec 10.4):
     /// `item` of `vault`, based on `based_on`, writing the record whose
     /// hash is `wrote` (`None`: a deletion). A store without a trust
@@ -434,10 +489,7 @@ impl<S: RecordStore> Repository<S> {
             // pending meta of the identity left, which the replay settles).
             if !self.key_opens(vault)? {
                 if self.recreates(vault, &trust)? {
-                    let r = self.recreate_vault(vault, &intents)?;
-                    report.replayed += r.replayed;
-                    report.superseded += r.superseded;
-                    report.lost += r.lost;
+                    report.add(self.recreate_vault(vault, &intents)?);
                 } else {
                     report.waiting += intents.len();
                 }
@@ -450,23 +502,21 @@ impl<S: RecordStore> Repository<S> {
                 Some(old) => self.replay_vault(vault, old, &intents, heads.get(&vault)),
                 // The new content is here, the device's own copy is not
                 // (nothing retained it): nothing to replay from.
-                None => self.store.settle_replayed(vault).map(|()| ReplayReport {
-                    lost: intents.len(),
-                    ..ReplayReport::default()
+                None => self.store.settle_replayed(vault).map(|()| {
+                    let mut r = ReplayReport::default();
+                    for w in &intents {
+                        r.lose(vault, w.item);
+                    }
+                    r
                 }),
             }
             .and_then(|r| {
-                self.forget_replayed(vault, r.lost > 0)?;
+                self.forget_replayed(vault, &r.lost_items)?;
                 self.store.batch_commit()?;
                 Ok(r)
             });
             match done {
-                Ok(r) => {
-                    report.replayed += r.replayed;
-                    report.present += r.present;
-                    report.superseded += r.superseded;
-                    report.lost += r.lost;
-                }
+                Ok(r) => report.add(r),
                 Err(e) => {
                     let _ = self.store.batch_rollback();
                     match last_seen {
@@ -525,7 +575,7 @@ impl<S: RecordStore> Repository<S> {
         for w in intents.iter().filter(|w| w.item == w.vault) {
             match self.own_meta(&old, w) {
                 Some(m) => meta = m,
-                None => r.lost += 1,
+                None => r.lose(vault, w.item),
             }
         }
         let mut items = Vec::new();
@@ -534,7 +584,7 @@ impl<S: RecordStore> Repository<S> {
                 Ok(Some(item)) => items.push(item),
                 // A deletion in a vault that starts empty: nothing to do.
                 Ok(None) => r.superseded += 1,
-                Err(()) => r.lost += 1,
+                Err(()) => r.lose(vault, w.item),
             }
         }
         self.store.batch_begin()?;
@@ -546,7 +596,7 @@ impl<S: RecordStore> Repository<S> {
                 r.replayed += 1;
             }
             self.store.settle_replayed(vault)?;
-            self.forget_replayed(vault, r.lost > 0)?;
+            self.forget_replayed(vault, &r.lost_items)?;
             self.store.batch_commit()?;
             self.forget_vault(vault);
             Ok(r)
@@ -625,7 +675,7 @@ impl<S: RecordStore> Repository<S> {
                 if reflected(w) {
                     r.superseded += 1;
                 } else {
-                    r.lost += 1;
+                    r.lose(vault, w.item);
                 }
                 continue;
             };
@@ -652,7 +702,7 @@ impl<S: RecordStore> Repository<S> {
                 if reflected(w) {
                     r.superseded += 1;
                 } else {
-                    r.lost += 1;
+                    r.lose(vault, w.item);
                 }
                 continue;
             };
@@ -687,9 +737,10 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// The intents of `vault` leave the replay list (conditionally on the
-    /// trust state read, a few times at most); `lost`: some could not be
-    /// replayed, the log's alert is raised.
-    fn forget_replayed(&mut self, vault: Id, lost: bool) -> Result<()> {
+    /// trust state read, a few times at most); `lost`: the ones that could
+    /// not be replayed, named in the log, its alert raised (Task 17: they
+    /// stay named after the intents go).
+    fn forget_replayed(&mut self, vault: Id, lost: &[(Id, Id)]) -> Result<()> {
         for _ in 0..3 {
             let trust = trust_of(&self.store)?.ok_or(IntegrityError::WrongContext)?;
             let mut next = trust.clone();
@@ -697,7 +748,9 @@ impl<S: RecordStore> Repository<S> {
             if next.own_writes.replay.is_empty() {
                 next.own_writes.replay_heads.clear();
             }
-            next.own_writes.alert |= lost;
+            for (v, item) in lost {
+                next.own_writes.lose(*v, *item);
+            }
             match self
                 .store
                 .put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next)

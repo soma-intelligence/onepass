@@ -12,6 +12,7 @@ use time::{Duration, OffsetDateTime};
 
 use crate::convert::*;
 use crate::error::{OnePassError, invalid};
+use crate::rotation::FfiRemoteCommit;
 use crate::types::*;
 
 pub(crate) type Repo = onepass_core::repo::Repository<SyncStore>;
@@ -24,12 +25,40 @@ pub struct Session {
     inner: Mutex<Option<Repo>>,
 }
 
+/// The account id of the session. After a rotation the store holds one
+/// params record per identity (spec 6.6), keyed by identity id from
+/// generation 1: the id comes from the params the session opened.
 pub(crate) fn account_id_of(repo: &Repo) -> Result<Id, OnePassError> {
-    repo.store()
-        .list(RecordKind::AccountParams)?
-        .first()
-        .map(|r| r.id)
-        .ok_or(OnePassError::NotFound)
+    Ok(repo.account().params.account_id)
+}
+
+/// Whether the session is open on an identity the device left (another
+/// session or process followed a rotation): its writes would be refused
+/// (`Conflict` on persist, Task 8), so the app locks and unlocks again.
+fn identity_left(repo: &Repo) -> Result<bool, OnePassError> {
+    Ok(repo
+        .store()
+        .trust_state()?
+        .is_some_and(|t| t.identity_pub != repo.account().params.identity_pub))
+}
+
+/// A core refusal as the app shows it: a read-only session locked by a
+/// valid lineage record is `Orphaned` or `Quarantined`, not a rotation
+/// prompt (spec 8.1).
+pub(crate) fn refine(repo: &Repo, e: OnePassError) -> OnePassError {
+    use onepass_core::repo::LineageLock;
+    use onepass_core::trust::DeviceLineageState;
+    if e != OnePassError::ReadOnly {
+        return e;
+    }
+    let stored = repo.store().trust_state().ok().flatten().map(|t| t.state);
+    match (repo.pending_lock(), stored) {
+        (Some(LineageLock::Quarantine { .. }), _)
+        | (_, Some(DeviceLineageState::Quarantined { .. })) => OnePassError::Quarantined,
+        (Some(LineageLock::Orphaned { .. }), _)
+        | (_, Some(DeviceLineageState::Orphaned { .. })) => OnePassError::Orphaned,
+        _ => e,
+    }
 }
 
 impl Session {
@@ -52,18 +81,45 @@ impl Session {
 
     /// Run `f` on the unlocked repository. A `Conflict` is retried once. The
     /// device state is persisted after every success.
+    ///
+    /// Key rotation v2: a session of an identity the device left is
+    /// `IdentityLeft` before anything runs (never retried: the app locks and
+    /// unlocks again), and a read-only refusal of a locked device is
+    /// `Orphaned` or `Quarantined` (`refine`).
     pub(crate) fn with<R>(
         &self,
         mut f: impl FnMut(&mut Repo) -> Result<R, OnePassError>,
     ) -> Result<R, OnePassError> {
         let mut guard = self.guard();
         let repo = guard.as_mut().ok_or(OnePassError::Locked)?;
+        if identity_left(repo)? {
+            return Err(OnePassError::IdentityLeft);
+        }
         let out = match f(repo) {
-            Err(OnePassError::Conflict) => f(repo)?,
-            other => other?,
-        };
-        repo.persist_device_state()?;
+            Err(OnePassError::Conflict) if !identity_left(repo)? => f(repo),
+            Err(OnePassError::Conflict) => Err(OnePassError::IdentityLeft),
+            other => other,
+        }
+        .map_err(|e| refine(repo, e))?;
+        match repo.persist_device_state() {
+            Err(onepass_core::Error::Conflict) if identity_left(repo)? => {
+                Err(OnePassError::IdentityLeft)
+            }
+            other => Ok(other?),
+        }?;
         Ok(out)
+    }
+
+    /// Take the repository out (the session is locked afterwards): for the
+    /// calls that consume the session, a switch or a re-pair. `IdentityLeft`
+    /// on a session of an identity left (it stays open, locked by the app).
+    pub(crate) fn take(&self) -> Result<Repo, OnePassError> {
+        let mut guard = self.guard();
+        let repo = guard.as_ref().ok_or(OnePassError::Locked)?;
+        if identity_left(repo)? {
+            return Err(OnePassError::IdentityLeft);
+        }
+        guard.take().ok_or(OnePassError::Locked)
     }
 }
 
@@ -345,6 +401,23 @@ impl SyncStoreHandle {
     }
 }
 
+/// Settle each phase of this device's rotation whose writes are all
+/// confirmed (`SyncStore::push_rotation_phase`), up to `Current`.
+fn settle_rotation_phases(store: &mut SyncStore) -> Result<(), OnePassError> {
+    use onepass_core::sync::PhaseOutcome;
+    use onepass_core::trust::DeviceLineageState;
+    for _ in 0..3 {
+        let Some(DeviceLineageState::Rotating { phase }) = store.trust_state()?.map(|t| t.state)
+        else {
+            return Ok(());
+        };
+        if store.push_rotation_phase(phase)? == PhaseOutcome::Retry {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
 /// Every key of the handle lives under this prefix, so it can never reach
 /// the device state or any other key the core reserves.
 fn handle_key(key: &str) -> String {
@@ -357,9 +430,16 @@ fn kind_of(code: u8) -> Result<RecordKind, OnePassError> {
 
 #[uniffi::export]
 impl SyncStoreHandle {
+    /// The local writes to push now. Key rotation v2 (spec 7.1, 10.5): a
+    /// device pushing its own rotation pushes it phase after phase; each
+    /// call first settles the phases whose writes are all confirmed
+    /// (`mark_pushed`), so the push loop of the app (push what this
+    /// returns, confirm it, ask again until empty) carries the whole
+    /// rotation in order without knowing about phases.
     pub fn pending_changes(&self) -> Result<Vec<FfiRecordChange>, OnePassError> {
-        Ok(self
-            .guard()
+        let mut store = self.guard();
+        settle_rotation_phases(&mut store)?;
+        Ok(store
             .pending_changes()?
             .into_iter()
             .map(|c| FfiRecordChange {
@@ -393,13 +473,26 @@ impl SyncStoreHandle {
         Ok(self.guard().stage_remote(change)?)
     }
 
+    /// Commit the staged fetch and return the vaults held for a rebase.
+    /// The key rotation v2 contract runs here (Tasks 9, 12): the quarantine
+    /// clock at the system time, then the prompt and the lock are looked
+    /// for again. Prefer `commit_remote_checked`, which returns them.
     pub fn commit_remote(&self) -> Result<Vec<String>, OnePassError> {
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
         Ok(self
-            .guard()
-            .commit_remote()?
-            .into_iter()
-            .map(id_hex)
-            .collect())
+            .commit_remote_checked(u64::try_from(now).unwrap_or(0))?
+            .vaults)
+    }
+
+    /// Commit the staged fetch, then, with the app's clock `now` (Unix
+    /// seconds), run the quarantine clock and look for the rotation prompt
+    /// and the lock again (spec 8.2, 8.4): what the app shows next. An
+    /// `Erased` quarantine means the store is empty now: the app deletes
+    /// its Keychain items for the account.
+    pub fn commit_remote_checked(&self, now: u64) -> Result<FfiRemoteCommit, OnePassError> {
+        let mut store = self.guard();
+        let vaults = store.commit_remote()?;
+        crate::rotation::after_commit(&mut store, vaults, now)
     }
 
     pub fn server_meta(&self, kind: u8, id: String) -> Result<Option<Vec<u8>>, OnePassError> {

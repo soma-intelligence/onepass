@@ -631,6 +631,7 @@ fn ffi_revoke_and_detect() {
         .unwrap();
     assert_eq!(entry.name, "iPad du salon");
     assert!(entry.revoked_at.is_some());
+    assert!(entry.revoked);
     assert!(a.session.rename_device(n.device_id(), "x".into()).is_err());
 
     sync(&a.path, &dev.path);
@@ -984,4 +985,185 @@ fn pairing_code_kind_tells_the_codes_apart() {
         pairing_code_kind("https://example.com".into()),
         FfiPairingCodeKind::Unknown
     );
+}
+
+// ---- key rotation v2 (Task 17) ----------------------------------------------------
+
+use onepass_core::device_keys::{PqDeviceHalf, SoftwarePqHalf};
+
+/// The Secure Enclave stand-in: software keys.
+struct Half(SoftwarePqHalf);
+
+impl FfiPqDeviceHalf for Half {
+    fn mldsa_public(&self) -> Result<Vec<u8>, OnePassError> {
+        self.0.mldsa_public().map_err(|_| OnePassError::Crypto)
+    }
+    fn mlkem_public(&self) -> Result<Vec<u8>, OnePassError> {
+        self.0.mlkem_public().map_err(|_| OnePassError::Crypto)
+    }
+    fn mldsa_sign(&self, message: Vec<u8>) -> Result<Vec<u8>, OnePassError> {
+        self.0
+            .mldsa_sign(&message)
+            .map_err(|_| OnePassError::Crypto)
+    }
+    fn mlkem_decapsulate(&self, ciphertext: Vec<u8>) -> Result<Vec<u8>, OnePassError> {
+        Ok(self
+            .0
+            .mlkem_decapsulate(&ciphertext)
+            .map_err(|_| OnePassError::Crypto)?
+            .to_vec())
+    }
+}
+
+struct DeviceKeysV2 {
+    classical: Vec<u8>,
+    pq: Vec<u8>,
+}
+
+impl DeviceKeysV2 {
+    fn new() -> DeviceKeysV2 {
+        DeviceKeysV2 {
+            classical: generate_classical_device_keys().unwrap(),
+            pq: SoftwarePqHalf::generate().unwrap().to_bytes().to_vec(),
+        }
+    }
+    fn half(&self) -> Arc<dyn FfiPqDeviceHalf> {
+        Arc::new(Half(SoftwarePqHalf::from_bytes(&self.pq).unwrap()))
+    }
+}
+
+/// `approver_device` with device keys: a key rotation v2 account.
+fn approver_device_v2() -> (Device, DeviceKeysV2) {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(dir.path());
+    let keys = DeviceKeysV2::new();
+    let created = create_account_v2(
+        path.clone(),
+        PASSWORD.into(),
+        Some(FAST),
+        keys.classical.clone(),
+        keys.half(),
+        "Mac de Camille".into(),
+        FfiDeviceKind::Mac,
+        FfiDeviceMode::Personal,
+    )
+    .unwrap();
+    let vault_id = created.session.vaults().unwrap()[0].id.clone();
+    let d = Device {
+        _dir: dir,
+        path,
+        session: created.session,
+        secret_key: created.secret_key,
+        vault_id,
+    };
+    save_login(&d, &d.vault_id, "Messagerie exemple.fr", "pw-atlas-1");
+    push(&d.path);
+    (d, keys)
+}
+
+/// A v2 newcomer up to its import of the `FullV2`.
+fn granted_v2(
+    a: &Device,
+) -> (
+    Arc<PairingNewcomer>,
+    Arc<PairingApprover>,
+    DeviceKeysV2,
+    Newcomer,
+    FfiUnlocked,
+) {
+    let keys = DeviceKeysV2::new();
+    let n = PairingNewcomer::new(
+        "iPad de Camille".into(),
+        FfiDeviceKind::Tablet,
+        FfiDeviceMode::Personal,
+        now(),
+    )
+    .unwrap();
+    let ap = PairingApprover::begin(n.qr_text(), n.hello(), now()).unwrap();
+    n.on_key_exchange(ap.key_exchange(), now()).unwrap();
+    let f = n
+        .confirm_with_key(keys.classical.clone(), keys.half())
+        .unwrap();
+    assert_eq!(ap.on_frame(f).unwrap(), FfiPairingMessage::Confirmed);
+    let frame = ap
+        .seal_full_grant(
+            a.session.clone(),
+            a.secret_key.clone(),
+            FfiDeviceMode::Personal,
+            false,
+        )
+        .unwrap();
+    assert!(matches!(
+        n.open(frame).unwrap(),
+        FfiPairingMessage::FullGrant { .. }
+    ));
+    // A legacy import of a `FullV2` is refused: it needs the device key.
+    let dev = empty_device();
+    assert!(
+        n.import_snapshot(dev.path.clone(), PASSWORD.into())
+            .is_err()
+    );
+    let unlocked = n
+        .import_snapshot_v2(dev.path.clone(), PASSWORD.into())
+        .unwrap();
+    (n, ap, keys, dev, unlocked)
+}
+
+/// Spec 5.2 through the FFI: the newcomer confirms with its device key, the
+/// approver grants a `FullV2` (its trust snapshot), the newcomer pins it
+/// and acknowledges, the approver introduces it. Both rosters hold both.
+#[test]
+fn ffi_v2_pairing_pins_both_devices() {
+    let (a, a_keys) = approver_device_v2();
+    let (n, ap, keys, dev, unlocked) = granted_v2(&a);
+    assert_eq!(unlocked.session.item_summaries().unwrap().len(), 1);
+    assert_eq!(n.take_secret_key().unwrap(), a.secret_key);
+    let ack = n.seal_key_ack(keys.classical.clone(), keys.half()).unwrap();
+    assert_eq!(ap.on_frame(ack).unwrap(), FfiPairingMessage::Ack);
+    ap.introduce(a.session.clone(), a_keys.classical.clone(), a_keys.half())
+        .unwrap();
+    let mine: Vec<String> = a
+        .session
+        .roster()
+        .unwrap()
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
+    assert!(mine.contains(&n.device_id()));
+    let theirs = unlocked.session.roster().unwrap();
+    assert!(theirs.iter().any(|r| r.name == "Mac de Camille" && !r.tofu));
+    assert!(
+        theirs
+            .iter()
+            .any(|r| r.is_this_device && r.id == n.device_id())
+    );
+    assert!(a.session.pairing_incomplete().unwrap().is_empty());
+    sync(&a.path, &dev.path);
+    assert_eq!(
+        unlocked.session.lineage_status().unwrap().state,
+        FfiLineageState::Current
+    );
+    // A v2 device is removed by rotation only (spec 10.1).
+    assert!(a.session.revoke_device(n.device_id()).is_err());
+}
+
+/// "Appairage incomplet" (Task 13 ruling): granted, never acknowledged.
+/// The approver lists it until it cancels it (listed revoked, excluded).
+#[test]
+fn ffi_incomplete_pairing_is_listed_until_cancelled() {
+    let (a, _a_keys) = approver_device_v2();
+    let (n, _ap, _keys, _dev, _unlocked) = granted_v2(&a);
+    assert_eq!(a.session.pairing_incomplete().unwrap(), vec![n.device_id()]);
+    assert!(a.session.cancel_pairing("00".repeat(16)).is_err());
+    a.session.cancel_pairing(n.device_id()).unwrap();
+    assert!(a.session.pairing_incomplete().unwrap().is_empty());
+    let entry = a
+        .session
+        .devices()
+        .unwrap()
+        .into_iter()
+        .find(|d| d.id == n.device_id())
+        .unwrap();
+    assert!(entry.revoked);
+    assert!(entry.revoked_at.is_some_and(|t| t > 0));
 }

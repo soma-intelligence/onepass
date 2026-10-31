@@ -42,7 +42,11 @@ pub struct FfiDevice {
     pub added_at: i64,
     /// The device that approved it, `None` when it registered itself.
     pub added_by: Option<String>,
+    /// When it was revoked; `None` when it is not, or when the date is
+    /// unknown (key rotation v2 derives it from the lineage, Task 12 M2):
+    /// `revoked` tells.
     pub revoked_at: Option<i64>,
+    pub revoked: bool,
     pub is_this_device: bool,
 }
 
@@ -98,7 +102,8 @@ fn device_to_ffi(e: &DeviceEntry, me: Option<onepass_core::Id>) -> FfiDevice {
         mode: e.mode.into(),
         added_at: e.added_at,
         added_by: e.added_by.map(id_hex),
-        revoked_at: e.revoked_at,
+        revoked_at: e.revoked_at.filter(|at| *at != 0),
+        revoked: e.revoked_at.is_some(),
         is_this_device: Some(e.device_id) == me,
     }
 }
@@ -166,6 +171,11 @@ impl Session {
     /// Mark another device revoked. This device cannot revoke itself from
     /// the list (`Validation("device", "this device")`); revoking twice
     /// changes nothing; an unknown id is `NotFound`.
+    ///
+    /// Key rotation v2 (spec 10.1): on a device with device keys
+    /// (`FfiLineageStatus::removes_by_rotation`) "Retirer" is a rotation,
+    /// `rotate_keys` with the device in `revoke`; this call is refused
+    /// there (`Validation("device", "remove by rotation")`).
     pub fn revoke_device(&self, id: String) -> Result<(), OnePassError> {
         let id = parse_id(&id)?;
         self.with(|repo| {
@@ -183,6 +193,22 @@ impl Session {
     pub fn rename_device(&self, id: String, name: String) -> Result<(), OnePassError> {
         let id = parse_id(&id)?;
         self.with(|repo| Ok(repo.rename_device(id, &name)?))
+    }
+
+    /// "Appairage incomplet" (spec 5.2 as ruled, Task 13): devices listed
+    /// whose pairing stopped before their key was introduced. The app
+    /// offers to finish (pair it again) or remove it (`cancel_pairing`,
+    /// then `rotate_keys`). Sorted ids.
+    pub fn pairing_incomplete(&self) -> Result<Vec<String>, OnePassError> {
+        self.with(|repo| Ok(repo.pairing_incomplete()?.into_iter().map(id_hex).collect()))
+    }
+
+    /// Remove a device whose pairing is incomplete: listed revoked and
+    /// excluded here, in one transaction. It got the Secret Key with its
+    /// grant: the app follows with `rotate_keys` (reason `Rotate`).
+    pub fn cancel_pairing(&self, id: String) -> Result<(), OnePassError> {
+        let id = parse_id(&id)?;
+        self.with(|repo| Ok(repo.cancel_pairing(id)?))
     }
 
     /// Whether this device is revoked (on a device with key rotation v2
@@ -237,4 +263,36 @@ pub fn store_params_epoch(db_path: String) -> Result<u64, OnePassError> {
 pub fn pinned_params_epoch(db_path: String) -> Result<u64, OnePassError> {
     let store = SyncStore::open(Path::new(&db_path))?;
     Ok(store.chain_state()?.params_epoch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(revoked_at: Option<i64>) -> DeviceEntry {
+        DeviceEntry {
+            device_id: onepass_core::Id([1; 16]),
+            name: "iPad de Camille".into(),
+            kind: DeviceKind::Tablet,
+            mode: DeviceMode::Personal,
+            added_at: 1,
+            added_by: None,
+            revoked_at,
+        }
+    }
+
+    /// Task 12 M2: a revocation the lineage holds without a date (0) shows
+    /// as revoked, without a date.
+    #[test]
+    fn unknown_revocation_date_is_hidden() {
+        let d = device_to_ffi(&entry(Some(0)), None);
+        assert!(d.revoked);
+        assert_eq!(d.revoked_at, None);
+        let d = device_to_ffi(&entry(Some(1_700_000_000)), None);
+        assert!(d.revoked);
+        assert_eq!(d.revoked_at, Some(1_700_000_000));
+        let d = device_to_ffi(&entry(None), None);
+        assert!(!d.revoked);
+        assert_eq!(d.revoked_at, None);
+    }
 }

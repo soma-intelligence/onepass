@@ -13,8 +13,9 @@
 //! sorted and unique lists, bounded sizes and well-formed keys. Version 2
 //! added the own-write log (spec 10.4), version 3 the migration notes of
 //! spec 15 (`other_genesis`, `genesis_alert`, `rotate_now`, `conflicted`,
-//! `migration_listed`);
-//! versions 1 and 2 are refused (they never shipped).
+//! `migration_listed`), version 4 the lost intents of the own-write log
+//! (`OwnWriteLog::lost`, Task 17); versions 1 to 3 are refused (they never
+//! shipped).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,7 +30,7 @@ use crate::manifest::SeenManifest;
 use crate::{Error, Result};
 
 /// Layout version, the first byte of `TrustState::encode`.
-pub const TRUST_VERSION: u8 = 3;
+pub const TRUST_VERSION: u8 = 4;
 /// Most rotation records kept in `ignored`.
 pub const MAX_IGNORED: usize = 64;
 /// Last phase of a rotation (spec 8.1: phases 1 to 3).
@@ -106,6 +107,8 @@ pub enum DeviceLineageState {
 pub const MAX_OWN_WRITES: usize = 10_000;
 /// Intents older than this, in seconds, leave the own-write log (30 days).
 pub const OWN_WRITE_MAX_AGE_SECS: i64 = 30 * 86_400;
+/// Most lost intents named by the own-write log (`OwnWriteLog::lost`).
+pub const MAX_LOST_WRITES: usize = 1_000;
 
 /// One item intent this device wrote (spec 10.4): the item of `vault` it
 /// saved, deleted or moved, the manifest the write was based on, when
@@ -133,14 +136,19 @@ pub struct OwnWrite {
 /// every intent then counts as not reflected). Each list keeps at most
 /// `MAX_OWN_WRITES` intents, none older than `OWN_WRITE_MAX_AGE_SECS`;
 /// `alert` is raised when an intent that may still be needed was dropped
-/// for these bounds (the device keeps its local copy, the app offers
-/// "Réimporter depuis cet appareil").
+/// for these bounds, or the replay found no copy of its own to replay
+/// from. `lost` names those intents, (vault, item), sorted, unique, at most
+/// `MAX_LOST_WRITES` (Task 17, G4): the app lists them by name (an item
+/// whose vault id is its own id is the vault's name and look), offers
+/// "Réimporter depuis cet appareil" for the ones the device still shows,
+/// and clears the alert once the user saw it (`clear_alert`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OwnWriteLog {
     pub entries: Vec<OwnWrite>,
     pub replay: Vec<OwnWrite>,
     pub replay_heads: BTreeMap<Id, SeenManifest>,
     pub alert: bool,
+    pub lost: Vec<(Id, Id)>,
 }
 
 impl OwnWriteLog {
@@ -162,9 +170,25 @@ impl OwnWriteLog {
         let floor = now.saturating_sub(OWN_WRITE_MAX_AGE_SECS);
         let entries = bound(&mut self.entries, floor);
         let replay = bound(&mut self.replay, floor);
-        if replay || (entries && needed) {
-            self.alert = true;
+        for w in replay.iter().chain(entries.iter().filter(|_| needed)) {
+            self.lose(w.vault, w.item);
         }
+    }
+
+    /// An intent that will never be replayed (`lost`): named, alert raised.
+    pub fn lose(&mut self, vault: Id, item: Id) {
+        self.alert = true;
+        if let Err(at) = self.lost.binary_search(&(vault, item)) {
+            self.lost.insert(at, (vault, item));
+        }
+        let excess = self.lost.len().saturating_sub(MAX_LOST_WRITES);
+        self.lost.drain(..excess);
+    }
+
+    /// The user saw the alert: lowered, the lost intents forgotten.
+    pub fn clear_alert(&mut self) {
+        self.alert = false;
+        self.lost.clear();
     }
 
     /// The adoption of a new head (spec 10.4): the intents written so far
@@ -184,9 +208,9 @@ impl OwnWriteLog {
             self.replay.push(w);
         }
         let excess = self.replay.len().saturating_sub(MAX_OWN_WRITES);
-        if excess > 0 {
-            self.replay.drain(..excess);
-            self.alert = true;
+        let dropped: Vec<OwnWrite> = self.replay.drain(..excess).collect();
+        for w in dropped {
+            self.lose(w.vault, w.item);
         }
     }
 
@@ -204,17 +228,21 @@ impl OwnWriteLog {
             && self.replay.len() <= MAX_OWN_WRITES
             && unique(&self.entries)
             && unique(&self.replay)
+            && self.lost.len() <= MAX_LOST_WRITES
+            && self.lost.windows(2).all(|w| w[0] < w[1])
+            && (self.lost.is_empty() || self.alert)
     }
 }
 
 /// Drop from `l` the intents older than `floor`, then the oldest beyond
-/// `MAX_OWN_WRITES`. Whether any went.
-fn bound(l: &mut Vec<OwnWrite>, floor: i64) -> bool {
-    let before = l.len();
-    l.retain(|w| w.at >= floor);
+/// `MAX_OWN_WRITES`. The ones that went.
+fn bound(l: &mut Vec<OwnWrite>, floor: i64) -> Vec<OwnWrite> {
+    let (kept, mut gone): (Vec<OwnWrite>, Vec<OwnWrite>) =
+        std::mem::take(l).into_iter().partition(|w| w.at >= floor);
+    *l = kept;
     let excess = l.len().saturating_sub(MAX_OWN_WRITES);
-    l.drain(..excess);
-    l.len() != before
+    gone.extend(l.drain(..excess));
+    gone
 }
 
 /// See the module doc.
@@ -518,10 +546,12 @@ pub mod tests {
         trailing.push(0);
         assert_eq!(TrustState::decode(&trailing), bad);
         let mut version = good.clone();
-        version[0] = 4;
+        version[0] = 5;
         assert_eq!(TrustState::decode(&version), bad);
-        // Versions 1 (no own-write log) and 2 (no migration notes) never
-        // shipped.
+        // Versions 1 (no own-write log), 2 (no migration notes) and 3 (no
+        // lost intents) never shipped.
+        version[0] = 3;
+        assert_eq!(TrustState::decode(&version), bad);
         version[0] = 2;
         assert_eq!(TrustState::decode(&version), bad);
         version[0] = 1;
@@ -674,6 +704,47 @@ pub mod tests {
         assert_eq!(log.replay.len(), 2);
         assert!(log.replay_heads.is_empty());
         assert_eq!(log.replay_vaults(), BTreeSet::from([Id([1; 16])]));
+    }
+
+    /// Task 17 (carried from Task 10, G4): the intents that will never be
+    /// replayed are kept by (vault, item) so the app names them, sorted,
+    /// unique, bounded, and survive the adoption and the round trip.
+    #[test]
+    fn lost_intents_are_named() {
+        let mut log = OwnWriteLog::default();
+        log.lose(Id([1; 16]), Id([9; 16]));
+        log.lose(Id([1; 16]), Id([3; 16]));
+        log.lose(Id([1; 16]), Id([9; 16]));
+        assert!(log.alert);
+        assert_eq!(
+            log.lost,
+            vec![(Id([1; 16]), Id([3; 16])), (Id([1; 16]), Id([9; 16]))]
+        );
+        // Dropped from the replay list by the bounds: named too.
+        log.record(write(4, 10), false);
+        log.adopt(&BTreeMap::new());
+        log.prune(10 + OWN_WRITE_MAX_AGE_SECS + 1, false);
+        assert!(log.replay.is_empty());
+        assert!(log.lost.contains(&(Id([1; 16]), Id([4; 16]))));
+        let mut s = sample();
+        s.own_writes = log;
+        let back = TrustState::decode(&s.encode()).unwrap();
+        assert_eq!(back.own_writes, s.own_writes);
+        // Unsorted or duplicated lost pairs are refused.
+        let mut bad = s.clone();
+        bad.own_writes.lost.reverse();
+        assert!(TrustState::decode(&bad.encode()).is_err());
+        let mut bad = s.clone();
+        bad.own_writes.lost.push(bad.own_writes.lost[0]);
+        assert!(TrustState::decode(&bad.encode()).is_err());
+        // Bounded: the smallest pairs go first.
+        let mut log = OwnWriteLog::default();
+        for i in 0..=MAX_LOST_WRITES {
+            log.lose(Id([2; 16]), Id((i as u128).to_be_bytes()));
+        }
+        assert_eq!(log.lost.len(), MAX_LOST_WRITES);
+        log.clear_alert();
+        assert!(!log.alert && log.lost.is_empty());
     }
 
     #[test]
