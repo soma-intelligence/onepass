@@ -36,6 +36,10 @@ pub const CONTACT_CARD_FORMAT: u8 = 1;
 pub const MAX_CONTACT_NAME_CHARS: usize = 64;
 /// Groups of a safety number.
 pub const SAFETY_GROUPS: usize = 12;
+/// Most intros a card carries under one record of its lineage: each one
+/// adds a device to that record's roster, which holds at most
+/// `lineage::MAX_ROSTER` devices.
+pub const MAX_CARD_INTROS_PER_RECORD: usize = crate::lineage::MAX_ROSTER;
 
 fn sha256(parts: &[&[u8]]) -> [u8; 32] {
     let mut ctx = digest::Context::new(&SHA256);
@@ -75,7 +79,10 @@ pub fn safety_number(a: &[u8; 32], b: &[u8; 32]) -> [u32; SAFETY_GROUPS] {
 }
 
 /// Twelve groups of five digits, zero-padded, separated by one space.
+/// Meant for the output of `safety_number`, whose groups are below
+/// 100000; a larger group would print more than five digits.
 pub fn format_safety_number(n: &[u32; SAFETY_GROUPS]) -> String {
+    debug_assert!(n.iter().all(|g| *g < 100_000));
     n.iter()
         .map(|g| format!("{g:05}"))
         .collect::<Vec<_>>()
