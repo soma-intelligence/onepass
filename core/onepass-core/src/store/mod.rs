@@ -102,6 +102,29 @@ pub struct Record {
     pub data: Vec<u8>,
 }
 
+/// What a trust write requires of the stored trust state, checked inside
+/// its transaction (`Error::Conflict` otherwise).
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum TrustGuard<'a> {
+    /// Anything, or nothing.
+    Any,
+    /// Exactly this one, byte for byte.
+    Is(&'a TrustState),
+    /// None at all (the first trust write).
+    Absent,
+}
+
+impl TrustGuard<'_> {
+    /// Whether the stored encoding passes.
+    pub(crate) fn admits(&self, stored: Option<&[u8]>) -> bool {
+        match self {
+            TrustGuard::Any => true,
+            TrustGuard::Is(t) => stored == Some(t.encode().as_slice()),
+            TrustGuard::Absent => stored.is_none(),
+        }
+    }
+}
+
 /// A key-value store of records, keyed by `(kind, id)`. `put` replaces the
 /// record with the same key; `delete` of a missing record is not an error.
 pub trait RecordStore {
@@ -273,6 +296,24 @@ pub trait RecordStore {
         trust: &TrustState,
     ) -> Result<()> {
         let _ = (writes, deletes, chain, trust);
+        Err(Error::Store("trust state unsupported".into()))
+    }
+
+    /// The first trust state of this device (key rotation v2, spec 6.2,
+    /// 15: a genesis at creation, or the migration of a legacy device),
+    /// with `writes` (each conditional on its version), all or nothing,
+    /// only while no trust state is stored (`Error::Conflict` otherwise:
+    /// two migrations racing on one device never both write). `chain` is
+    /// merged with the stored chain state, never replaces it (the device
+    /// id and the lists accepted stay). A store that keeps no trust state
+    /// refuses and writes nothing.
+    fn put_first_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        let _ = (writes, chain, trust);
         Err(Error::Store("trust state unsupported".into()))
     }
 

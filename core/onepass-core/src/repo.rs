@@ -43,16 +43,21 @@ use aws_lc_rs::digest::{SHA256, digest};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::account::{Account, Auk, NewAccount, PinnedAccount, Rekeyed};
+use crate::account::{Account, AccountParams, Auk, NewAccount, PinnedAccount, Rekeyed};
 use crate::chain::ChainState;
-use crate::devices::{DeviceEntry, now, self_entry};
+use crate::device_keys::DeviceKeys;
+use crate::devices::{
+    DeviceEntry, DeviceKind, DeviceMode, Registration, check_mode, check_name, now, self_entry,
+};
 use crate::lists::{ListBody, list_record};
 use crate::vaultlist::VaultListEntry;
 use zeroize::Zeroizing;
 
 use crate::crypto::{Aad, BlobKind, KdfParams, SecretKey, seal};
 use crate::epoch::{EpochReason, RestoreEpoch, SignedRestoreEpoch};
-use crate::lineage::identity_id;
+use crate::lineage::{
+    GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, identity_id, sign_genesis,
+};
 use crate::manifest::{
     Manifest, ManifestEntry, SeenManifest, SignedManifest, check_records, manifest_hash,
     record_hash, sign_manifest, verify_manifest,
@@ -61,12 +66,13 @@ use crate::model::Item;
 use crate::model::events::EventKind;
 use crate::model::usage::SiteUsage;
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent, account_record_id};
-use crate::trust::TrustState;
+use crate::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
 pub mod follow;
 mod local;
+pub mod migrate;
 pub mod pairing;
 pub mod replay;
 pub mod rotate;
@@ -335,9 +341,9 @@ pub(crate) fn trust_of<S: RecordStore + ?Sized>(store: &S) -> Result<Option<Trus
 /// The account's params and keyset records. With a trust state, those of
 /// its identity (spec 6.6: under the account id for generation 0, the
 /// identity id from generation 1 on; `NotFound` if either is missing).
-/// Without one (a legacy device), the single params record of the store
-/// (`NotFound` if there is none, `InvalidFormat("account params")` if there
-/// are several).
+/// Without one (a legacy device), the single generation 0 params record of
+/// the store, the one whose id is the account id it names (`NotFound` if
+/// there is none, `InvalidFormat("account params")` if there are several).
 fn account_records<S: RecordStore>(store: &S) -> Result<(Record, Record)> {
     let params = match trust_of(store)? {
         Some(t) => {
@@ -350,7 +356,15 @@ fn account_records<S: RecordStore>(store: &S) -> Result<(Record, Record)> {
                 .ok_or(Error::NotFound)?
         }
         None => {
-            let mut found = store.list(RecordKind::AccountParams)?;
+            // Task 8, carried to Task 14: a legacy device that fetched a
+            // rotation before it migrated holds the new identity's params
+            // too (under its identity id); its own are generation 0's,
+            // under the account id the record names.
+            let mut found: Vec<Record> = store
+                .list(RecordKind::AccountParams)?
+                .into_iter()
+                .filter(|r| AccountParams::decode(&r.data).is_ok_and(|p| p.account_id == r.id))
+                .collect();
             match found.len() {
                 0 => return Err(Error::NotFound),
                 1 => found.remove(0),
@@ -435,6 +449,58 @@ fn newer_epoch(device_epoch: u64, stored: Option<&RestoreEpoch>) -> Result<bool>
     }
 }
 
+/// The genesis of a new account (spec 6.2) for `writes`, and the trust
+/// state of its creator: this device (`entry`, keys `keys`), alone in the
+/// roster, `Verified`, `Current`.
+fn genesis_trust(
+    account: &Account,
+    keys: &DeviceKeys,
+    entry: &DeviceEntry,
+    writes: &mut Vec<(Record, Option<u64>)>,
+) -> Result<TrustState> {
+    let me = keys.public(entry.device_id)?;
+    let creator = RosterEntry {
+        device_id: me.device_id,
+        sign_pub: me.sign_pub.clone(),
+        kem_pub: me.kem_pub.clone(),
+        name: entry.name.clone(),
+        kind: entry.kind,
+        mode: entry.mode,
+        introduced_by: None,
+    };
+    let body = GenesisBody {
+        format: LINEAGE_FORMAT,
+        account_id: account.params.account_id,
+        identity_pub: account.params.identity_pub.clone(),
+        creator: creator.clone(),
+        created_at: entry.added_at,
+    };
+    let genesis = LineageRecord::Genesis(sign_genesis(body, keys, &account.keyset().identity)?);
+    let head = LineageHead {
+        generation: 0,
+        hash: genesis.hash(),
+    };
+    writes.push((
+        Record {
+            id: genesis.record_id(),
+            kind: RecordKind::Lineage,
+            version: 0,
+            data: genesis.encode(),
+        },
+        None,
+    ));
+    let mut trust = TrustState::new(
+        account.params.account_id,
+        me,
+        head,
+        account.params.identity_pub.clone(),
+        vec![creator],
+        DeviceLineageState::Current,
+    );
+    trust.levels.insert(entry.device_id, TrustLevel::Verified);
+    Ok(trust)
+}
+
 fn personal() -> VaultMeta {
     VaultMeta {
         name: "Personnel".into(),
@@ -458,6 +524,43 @@ impl<S: RecordStore> Repository<S> {
         store: S,
         password: &str,
         kdf: KdfParams,
+    ) -> Result<(Repository<S>, SecretKey)> {
+        Self::create_with(store, password, kdf, None)
+    }
+
+    /// Key rotation v2 (spec 6.2, 15 step 6): `create_account`, and in the
+    /// same write the genesis of the account (`LineageRecord::Genesis`,
+    /// signed by `device_keys` and the new identity, this device its
+    /// creator with `name`, `kind` and `mode`, which also go in the device
+    /// list) and this device's first trust state: head the genesis, roster
+    /// this device alone, `Verified`, `Current`. Needs a store that keeps
+    /// the chain state (`InvalidFormat`, as `register_this_device`); the
+    /// name and mode are checked as there (`Validation`).
+    pub fn create_account_v2(
+        store: S,
+        password: &str,
+        kdf: KdfParams,
+        device_keys: &DeviceKeys,
+        name: &str,
+        kind: DeviceKind,
+        mode: DeviceMode,
+    ) -> Result<(Repository<S>, SecretKey)> {
+        check_name(name)?;
+        check_mode(mode)?;
+        if !store.persists_chain() {
+            return Err(Error::InvalidFormat(
+                "device registration needs a sync store",
+            ));
+        }
+        let me = Registration { name, kind, mode };
+        Self::create_with(store, password, kdf, Some((device_keys, &me)))
+    }
+
+    fn create_with(
+        store: S,
+        password: &str,
+        kdf: KdfParams,
+        v2: Option<(&DeviceKeys, &Registration<'_>)>,
     ) -> Result<(Repository<S>, SecretKey)> {
         if !store.list(RecordKind::AccountParams)?.is_empty() {
             return Err(Error::InvalidFormat("store already holds an account"));
@@ -500,8 +603,8 @@ impl<S: RecordStore> Repository<S> {
             lineage_lock: None,
         };
         let (manifest, seen) = repo.manifest_record(&vault, None, vec![])?;
-        let me = device_id.map(|d| self_entry(d, None, at));
-        let devices = ListBody::next(None, id, me.into_iter().collect())?;
+        let me = device_id.map(|d| self_entry(d, v2.map(|(_, r)| r), at));
+        let devices = ListBody::next(None, id, me.iter().cloned().collect())?;
         let vaults = ListBody::next(
             None,
             id,
@@ -528,9 +631,18 @@ impl<S: RecordStore> Repository<S> {
             record(RecordKind::VaultMeta, vault.id, meta_blob),
             record(RecordKind::VaultKey, vault.id, envelope),
         ];
-        let writes = writes.into_iter().map(|r| (r, None)).collect();
-        repo.store
-            .put_all_if_version_with_chain(writes, &repo.chain)?;
+        let mut writes: Vec<(Record, Option<u64>)> =
+            writes.into_iter().map(|r| (r, None)).collect();
+        match (v2, &me) {
+            (Some((keys, _)), Some(entry)) => {
+                let trust = genesis_trust(&repo.account, keys, entry, &mut writes)?;
+                repo.store
+                    .put_first_trust(writes, Some(repo.chain.clone()), &trust)?;
+            }
+            _ => repo
+                .store
+                .put_all_if_version_with_chain(writes, &repo.chain)?,
+        }
         repo.device.last_seen.insert(vault.id, seen);
         Ok((repo, secret_key))
     }
@@ -2434,13 +2546,29 @@ mod tests {
         ));
         let (repo, _) = fresh(MemoryStore::new());
         let mut store = repo.store;
-        let mut twin = store
+        let params = store
             .list(RecordKind::AccountParams)
             .unwrap()
             .pop()
             .unwrap();
-        twin.id = Id::new();
-        store.put(twin).unwrap();
+        // Params under an id that is not the account id they name are not
+        // generation 0 records (a rotation's identity-keyed ones, or junk):
+        // a device without a trust state reads past them (Task 14).
+        let mut stray = params.clone();
+        stray.id = Id::new();
+        store.put(stray).unwrap();
+        Repository::unlock(store.clone(), "pw", &n.secret_key, DeviceState::default()).unwrap();
+        // A second account's generation 0 params: refused.
+        let other = Account::create_with_params("pw", kdf()).unwrap();
+        let other_id = other.account.params.account_id;
+        store
+            .put(Record {
+                id: other_id,
+                kind: RecordKind::AccountParams,
+                version: 1,
+                data: other.params_record,
+            })
+            .unwrap();
         assert!(matches!(
             Repository::unlock(store, "pw", &n.secret_key, DeviceState::default()),
             Err(Error::InvalidFormat(_))

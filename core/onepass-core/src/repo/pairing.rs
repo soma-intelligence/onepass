@@ -30,17 +30,18 @@
 //!
 //! Where legacy intros live (spec 15, Task 14): in the same record kind,
 //! `RecordKind::DeviceIntro` (11), immutable, data =
-//! `SignedLegacyIntro::encode()`, version 0 (the genesis they attach to);
-//! the id is Task 14's to fix (proposed: `SHA-256("onepass/intro-id/v1" ||
+//! `SignedLegacyIntro::encode()`, version 0 (the genesis they attach to),
+//! id `lineage::legacy_intro_id` (`SHA-256("onepass/intro-id/v1" ||
 //! postcard(LegacyIntroBody))[..16]`, the intro-id prefix of spec 6.1, no
 //! new label). A reader tells the two apart by strict decoding: a
 //! record is an intro if it decodes as a `SignedIntro`, else a legacy intro
 //! if it decodes as a `SignedLegacyIntro` (the layouts differ, so one
 //! record never passes both strict decodings with valid key lengths; if it
 //! ever did, its signatures could verify under one form only). They are
-//! accepted against the genesis head, `Tofu`, by one function Task 14
-//! defines and the sharing branch calls (`contact::accept_legacy_intros`
-//! there). `accept_intros` here takes `SignedIntro`s only, and skips a kit
+//! accepted against the genesis head, `Tofu`, by the one rule
+//! `lineage::accept_legacy_intros` (applied by `crate::repo::migrate`; the
+//! sharing branch's `contact::accept_legacy_intros` calls it at merge).
+//! `accept_intros` here takes `SignedIntro`s only, and skips a kit
 //! self-intro (an intro with an identity signature, Task 15).
 
 use std::collections::BTreeMap;
@@ -79,11 +80,11 @@ fn public_of(e: &RosterEntry) -> DevicePublic {
     }
 }
 
-fn same_keys(e: &RosterEntry, p: &DevicePublic) -> bool {
+pub(crate) fn same_keys(e: &RosterEntry, p: &DevicePublic) -> bool {
     e.sign_pub == p.sign_pub && e.kem_pub == p.kem_pub
 }
 
-fn insert_sorted(roster: &mut Vec<RosterEntry>, e: RosterEntry) {
+pub(crate) fn insert_sorted(roster: &mut Vec<RosterEntry>, e: RosterEntry) {
     let at = roster.partition_point(|x| x.device_id < e.device_id);
     roster.insert(at, e);
 }

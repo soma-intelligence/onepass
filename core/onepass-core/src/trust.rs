@@ -11,8 +11,9 @@
 //! The encoding is `postcard`, versioned by the first field, decoded
 //! strictly: the whole buffer, a canonical re-encoding equal to the input,
 //! sorted and unique lists, bounded sizes and well-formed keys. Version 2
-//! added the own-write log (spec 10.4); version 1 is refused (it never
-//! shipped).
+//! added the own-write log (spec 10.4), version 3 the migration notes of
+//! spec 15 (`other_genesis`, `genesis_alert`, `rotate_now`, `conflicted`);
+//! versions 1 and 2 are refused (they never shipped).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -27,11 +28,13 @@ use crate::manifest::SeenManifest;
 use crate::{Error, Result};
 
 /// Layout version, the first byte of `TrustState::encode`.
-pub const TRUST_VERSION: u8 = 2;
+pub const TRUST_VERSION: u8 = 3;
 /// Most rotation records kept in `ignored`.
 pub const MAX_IGNORED: usize = 64;
 /// Last phase of a rotation (spec 8.1: phases 1 to 3).
 pub const MAX_ROTATION_PHASE: u8 = 3;
+/// Most genesis hashes kept in `other_genesis`.
+pub const MAX_OTHER_GENESIS: usize = 16;
 
 const BAD: Error = Error::InvalidFormat("trust state");
 
@@ -236,6 +239,23 @@ pub struct TrustState {
     pub retired: Vec<RetiredIdentity>,
     pub own_writes: OwnWriteLog,
     pub state: DeviceLineageState,
+    /// Spec 15.2: genesis records of this account, signed by the identity
+    /// of this device's own genesis, that are not that genesis. Never
+    /// followed. Sorted, unique, at most `MAX_OTHER_GENESIS`.
+    pub other_genesis: Vec<[u8; 32]>,
+    /// A hash joined `other_genesis` since the user last saw the alert
+    /// (`Repository::clear_genesis_alert`).
+    pub genesis_alert: bool,
+    /// Spec 15.5: the account-signed device list held a device revoked
+    /// under milestone 2b and no rotation followed, when this device
+    /// migrated. Shown once: "Un appareil retiré garde encore les clés de
+    /// ton compte. Fais tourner les clés maintenant."
+    /// (`Repository::clear_rotate_now_prompt`).
+    pub rotate_now: bool,
+    /// Spec 15.3: devices excluded because two legacy intros gave them two
+    /// keys. Always a subset of `excluded`; a verification
+    /// (`Repository::verify_device`) lifts it.
+    pub conflicted: BTreeSet<Id>,
 }
 
 impl TrustState {
@@ -263,6 +283,10 @@ impl TrustState {
             retired: Vec::new(),
             own_writes: OwnWriteLog::default(),
             state,
+            other_genesis: Vec::new(),
+            genesis_alert: false,
+            rotate_now: false,
+            conflicted: BTreeSet::new(),
         }
     }
 
@@ -305,6 +329,12 @@ impl TrustState {
         }
         let unique: BTreeSet<&[u8; 32]> = self.ignored.iter().collect();
         if unique.len() != self.ignored.len() {
+            return Err(BAD);
+        }
+        if self.other_genesis.len() > MAX_OTHER_GENESIS
+            || !self.other_genesis.windows(2).all(|w| w[0] < w[1])
+            || !self.conflicted.is_subset(&self.excluded)
+        {
             return Err(BAD);
         }
         for r in &self.retired {
@@ -427,6 +457,10 @@ pub mod tests {
             false,
         );
         s.own_writes.replay_heads.insert(Id([1; 16]), seen);
+        s.other_genesis = vec![[3; 32], [4; 32]];
+        s.genesis_alert = true;
+        s.rotate_now = true;
+        s.conflicted.insert(Id([6; 16]));
         s
     }
 
@@ -475,9 +509,12 @@ pub mod tests {
         trailing.push(0);
         assert_eq!(TrustState::decode(&trailing), bad);
         let mut version = good.clone();
-        version[0] = 3;
+        version[0] = 4;
         assert_eq!(TrustState::decode(&version), bad);
-        // Version 1 (no own-write log) never shipped.
+        // Versions 1 (no own-write log) and 2 (no migration notes) never
+        // shipped.
+        version[0] = 2;
+        assert_eq!(TrustState::decode(&version), bad);
         version[0] = 1;
         assert_eq!(TrustState::decode(&version), bad);
         version[0] = 0;
@@ -499,6 +536,19 @@ pub mod tests {
 
         let mut s = sample();
         s.ignored = vec![[1; 32], [1; 32]];
+        assert_eq!(TrustState::decode(&s.encode()), bad);
+
+        let mut s = sample();
+        s.other_genesis = vec![[4; 32], [3; 32]];
+        assert_eq!(TrustState::decode(&s.encode()), bad);
+
+        let mut s = sample();
+        s.other_genesis = (0..=MAX_OTHER_GENESIS as u8).map(|i| [i; 32]).collect();
+        assert_eq!(TrustState::decode(&s.encode()), bad);
+
+        // A conflicted device is always excluded too.
+        let mut s = sample();
+        s.conflicted.insert(Id([8; 16]));
         assert_eq!(TrustState::decode(&s.encode()), bad);
 
         for st in [
