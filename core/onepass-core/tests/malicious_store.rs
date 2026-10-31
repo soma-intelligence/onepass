@@ -673,3 +673,45 @@ fn truncate_blob() {
         IntegrityError::ManifestItemMismatch
     );
 }
+
+#[test]
+fn server_deletion_of_lineage_refused() {
+    use onepass_core::sync::{RemoteChange, SyncStore};
+
+    let change = |kind, id, version, data: Option<&[u8]>| RemoteChange {
+        kind,
+        id,
+        version,
+        data: data.map(<[u8]>::to_vec),
+        server_meta: None,
+    };
+    let mut s = SyncStore::open_in_memory().unwrap();
+    // Identity-keyed params use an id that is not the account id.
+    let rows = [
+        (RecordKind::Lineage, Id::new()),
+        (RecordKind::DeviceIntro, Id::new()),
+        (RecordKind::KeyDelivery, Id::new()),
+        (RecordKind::AccountParams, Id::new()),
+    ];
+    for (kind, id) in rows {
+        s.stage_remote(change(kind, id, 1, Some(b"kept"))).unwrap();
+    }
+    s.commit_remote().unwrap();
+    for (kind, id) in rows {
+        s.stage_remote(change(kind, id, 2, None)).unwrap();
+    }
+    s.commit_remote().unwrap();
+    for (kind, id) in rows {
+        assert_eq!(s.get(kind, id).unwrap().unwrap().data, b"kept");
+    }
+    // Refused and logged.
+    let logged: Vec<_> = s
+        .ignored_deletions()
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.kind, e.id))
+        .collect();
+    for row in rows {
+        assert!(logged.contains(&row));
+    }
+}

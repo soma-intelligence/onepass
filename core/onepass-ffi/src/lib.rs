@@ -16,6 +16,7 @@ mod error;
 mod hardening;
 mod import;
 mod pairing;
+mod rotation;
 mod rules;
 mod session;
 pub mod timeline;
@@ -46,6 +47,7 @@ use error::invalid;
 pub use hardening::*;
 pub use import::*;
 pub use pairing::*;
+pub use rotation::*;
 pub use rules::password_from_rules;
 pub use session::{Session, SyncStoreHandle};
 pub use travel::{FfiTravelPlanEntry, FfiTravelStatus};
@@ -80,8 +82,40 @@ pub(crate) fn create(
     })
 }
 
+/// Key rotation v2 (spec 6.2, 15 step 6): `create` with this device's
+/// keys, name, kind and mode, the genesis written with the account.
+pub(crate) fn create_v2(
+    db_path: &str,
+    password: &str,
+    kdf: KdfParams,
+    keys: &onepass_core::device_keys::DeviceKeys,
+    name: &str,
+    kind: onepass_core::devices::DeviceKind,
+    mode: onepass_core::devices::DeviceMode,
+) -> Result<FfiCreatedAccount, OnePassError> {
+    let store = open_store(db_path)?;
+    match store.account_state()? {
+        AccountState::Empty => {}
+        AccountState::Present => return Err(invalid("account exists")),
+        AccountState::PinnedButMissing => return Err(account_missing()),
+    }
+    let (mut repo, secret_key) =
+        Repository::create_account_v2(store, password, kdf, keys, name, kind, mode)?;
+    repo.persist_device_state()?;
+    let session = Session::new(repo)?;
+    Ok(FfiCreatedAccount {
+        account_id: session.account_id(),
+        secret_key: secret_key.to_display(),
+        session,
+    })
+}
+
 /// New account with the default (floor) Argon2id parameters. Refuses a
 /// store that already holds an account.
+///
+/// Legacy (before key rotation v2): the device has no device keys and
+/// must `migrate_to_v2` once. The apps create accounts with
+/// `create_account_v2`.
 #[uniffi::export]
 pub fn create_account(
     db_path: String,

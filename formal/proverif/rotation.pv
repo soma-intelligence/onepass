@@ -1,0 +1,121 @@
+(* formal-lib: rotation_core.pvl *)
+(* OnePass formal model: account key rotation anchored in device keys
+   (spec docs/superpowers/specs/2026-10-28-key-rotation-v2-design.md,
+   rulings R1 to R8). Declarations, Rotate, UseVault and the restore
+   processes: rotation_core.pvl.
+
+   Run: device A revokes device B and rotates (gen 1). Device C, which
+   saw nothing yet, trusts A and B at the genesis head: the attacker, who
+   holds B's device keys and every old account secret, freely builds and
+   signs its own rotation records (B revokes A, B rotates to an identity
+   of its own, B replays A's record with another delivery or keyset). C
+   follows only a record signed by a device it pinned, with a valid
+   identity signature, that the user confirms. After following, C may
+   rotate again (gen 2, nobody revoked), and A follows that.
+
+   Properties (spec section 10):
+   - secrecy against the revoked device of everything written under the
+     new keys, of the new Secret Key and of the new identity;
+   - authentication: a device adopts an identity only if an honest device
+     (one it pinned and has not revoked) introduced it;
+   - the forged rotation of the revoked device fails, on A (which revoked
+     B) and on C (which did not yet see the revocation): the A-revokes-B
+     against B-revokes-A race never ends with a device adopting the
+     attacker's identity;
+   - restore with the latest Emergency Kit pins only an honest roster;
+     with an outdated kit it does not (documented limit). *)
+
+(* ------------------------------------------------------------------ *)
+(* Follower: device `me`, at lineage head `head`, reads a rotation      *)
+(* record child of its head (spec 7.1 and 8.1).                         *)
+(* ------------------------------------------------------------------ *)
+let Follow(me: bitstring, dkm: seed, dkx: seed, dsk: skey, head: bitstring,
+           rotates: bool) =
+  in(c, (body: bitstring, sdev: bitstring, sid: bitstring, params: bitstring,
+         ks: bitstring, deliv: bitstring));
+  let rr_body(=acct, =head, signer: bitstring, ip: pkey, revoked: bitstring,
+              roster: bitstring, ph: bitstring) = body in
+  (* R2: the rotator is a device this device pinned and still trusts at
+     this head (pins never come from the storage). *)
+  get pinned(=me, =head, =signer, spub) in
+  if verify_dom(spub, dom_rotation, body, sdev) = true then
+  (* R3: proof of possession of the new identity over the same record. *)
+  if verify_dom(ip, dom_rotation_id, body, sid) = true then
+  (* A record revoking this device leads to quarantine (spec 8.4), not
+     modeled. *)
+  if revoked <> me then
+  (* R6: the user confirms the summary (signer name, revoked names). *)
+  get userDid(=signer, =revoked) in
+  let (km: seed, kx: seed, ssk: skey) =
+    open_rotation(me, dkm, dkx, body, ip, ph, params, ks, deliv) in
+  event Adopt(me, signer, ip);
+  ( UseVault(me, ip, km, kx, ssk)
+  | if rotates = true then Rotate(me, dsk, h(body), no_dev, roster) ).
+
+(* ------------------------------------------------------------------ *)
+(* Queries                                                             *)
+(* ------------------------------------------------------------------ *)
+
+(* R1 (secrecy after rotation): items written under the new keys, by the
+   rotator or by a follower, stay secret from the revoked device. *)
+query d: bitstring, m: bitstring; event(ItemSealedNew(d, m)) && attacker(m).
+(* The new Secret Key and the new identity key stay secret. *)
+query s: bitstring, ip: pkey, r: bitstring, ro: bitstring, k: key, ik: skey;
+  event(Rotated(s, ip, r, ro, k, ik)) && attacker(k).
+query s: bitstring, ip: pkey, r: bitstring, ro: bitstring, k: key, ik: skey;
+  event(Rotated(s, ip, r, ro, k, ik)) && attacker(ik).
+
+(* R2 (authentication): every identity a device adopts was introduced by
+   an honest rotation of the device named as its signer. *)
+query d: bitstring, s: bitstring, ip: pkey, r: bitstring, ro: bitstring, k: key, ik: skey;
+  event(Adopt(d, s, ip)) ==> event(Rotated(s, ip, r, ro, k, ik)).
+
+(* Forged rotation and race: no device ever adopts a rotation signed by
+   the revoked device, neither A (which revoked it) nor C (which had not
+   seen the revocation and still pinned B). *)
+query ip: pkey; event(Adopt(devA, devB, ip)).
+query ip: pkey; event(Adopt(devC, devB, ip)).
+
+(* A vault key a follower accepts is one an honest rotation created for
+   that identity and vault. *)
+query d: bitstring, ip: pkey, v: bitstring, k: key;
+  event(VaultAcceptedNew(d, ip, v, k)) ==> event(VaultCreatedNew(ip, v, k)).
+
+(* R7 (Emergency Kit): the latest kit pins only a roster an honest
+   rotation signed for that identity. *)
+query ip: pkey, ro: bitstring, s: bitstring, r: bitstring, k: key, ik: skey;
+  event(PinRoster(restore_new, ip, ro)) ==> event(Rotated(s, ip, r, ro, k, ik)).
+(* Documented limit (F-03, spec 11): an outdated kit holds the Secret Key
+   the revoked device knows, with the password it knows: a hostile
+   storage makes it pin the attacker's identity and roster. Expected
+   false. *)
+query ip: pkey, ro: bitstring, s: bitstring, r: bitstring, k: key, ik: skey;
+  event(PinRoster(restore_old, ip, ro)) ==> event(Rotated(s, ip, r, ro, k, ik)).
+
+(* Sanity (expected false): C follows A, A follows C's second rotation,
+   C accepts the new vault and writes in it, the latest kit restores. *)
+query ip: pkey; event(Adopt(devC, devA, ip)).
+query ip: pkey; event(Adopt(devA, devC, ip)).
+query ip: pkey, v: bitstring, k: key; event(VaultAcceptedNew(devC, ip, v, k)).
+query m: bitstring; event(ItemSealedNew(devC, m)).
+query ip: pkey, ro: bitstring; event(PinRoster(restore_new, ip, ro)).
+
+process
+  new dskA: skey; new dkmA: seed; new dkxA: seed;
+  new dskB: skey; new dkmB: seed; new dkxB: seed;
+  new dskC: skey; new dkmC: seed; new dkxC: seed;
+  (* Public device keys; B's secrets are the attacker's. *)
+  out(c, (pk(dskA), kem_pk_m(dkmA), kem_pk_x(dkxA),
+          pk(dskB), kem_pk_m(dkmB), kem_pk_x(dkxB),
+          pk(dskC), kem_pk_m(dkmC), kem_pk_x(dkxC)));
+  out(c, (dskB, dkmB, dkxB));
+  (* C's pins at the genesis head, from pairing: A and B. *)
+  insert pinned(devC, h_genesis, devA, pk(dskA));
+  insert pinned(devC, h_genesis, devB, pk(dskB));
+  let rosterAC = (ros_entry(devA, pk(dskA), kem_pk_m(dkmA), kem_pk_x(dkxA)),
+                  ros_entry(devC, pk(dskC), kem_pk_m(dkmC), kem_pk_x(dkxC))) in
+  ( Rotate(devA, dskA, h_genesis, devB, rosterAC)
+  | !Follow(devC, dkmC, dkxC, dskC, h_genesis, true)
+  | !(get heads(=devA, hd) in Follow(devA, dkmA, dkxA, dskA, hd, false))
+  | !RestoreKit
+  | !RestoreOldKit )

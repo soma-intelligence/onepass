@@ -8,6 +8,8 @@ pub use memory::MemoryStore;
 pub use sqlite::SqliteStore;
 
 use crate::chain::ChainState;
+use crate::crypto::IdentityVerifyingKey;
+use crate::trust::TrustState;
 use crate::{Error, Id, IntegrityError, Result};
 
 /// What a record holds. The numeric codes are the on-disk encoding: append
@@ -20,12 +22,21 @@ pub enum RecordKind {
     VaultMeta,
     Item,
     Manifest,
-    /// The account's signed restore epoch (one record, id = account id).
+    /// The account's signed restore epoch (one record per identity, id =
+    /// `account_record_id`).
     RestoreEpoch,
-    /// The signed device list, id = account id, version = its seq.
+    /// The signed device list, id = `account_record_id`, version = its seq.
     DeviceList,
-    /// The signed vault list, id = account id, version = its seq.
+    /// The signed vault list, id = `account_record_id`, version = its seq.
     VaultList,
+    /// A lineage record (genesis or rotation), id = `h[..16]`, version =
+    /// its generation. Immutable: written once, never deleted by a client,
+    /// remote deletions refused (spec 6.3).
+    Lineage,
+    /// A signed device intro, immutable (spec 6.4).
+    DeviceIntro,
+    /// A Secret Key delivery envelope, immutable (spec 6.5).
+    KeyDelivery,
 }
 
 impl RecordKind {
@@ -40,6 +51,9 @@ impl RecordKind {
             Self::RestoreEpoch => 7,
             Self::DeviceList => 8,
             Self::VaultList => 9,
+            Self::Lineage => 10,
+            Self::DeviceIntro => 11,
+            Self::KeyDelivery => 12,
         }
     }
 
@@ -54,9 +68,29 @@ impl RecordKind {
             7 => Self::RestoreEpoch,
             8 => Self::DeviceList,
             9 => Self::VaultList,
+            10 => Self::Lineage,
+            11 => Self::DeviceIntro,
+            12 => Self::KeyDelivery,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
+}
+
+impl RecordKind {
+    /// The kinds written once and never replaced or deleted (spec 6.3 to
+    /// 6.5): a second write under the same key is a conflict, and a
+    /// deletion coming from the server is refused.
+    pub fn is_immutable(self) -> bool {
+        matches!(self, Self::Lineage | Self::DeviceIntro | Self::KeyDelivery)
+    }
+}
+
+/// The id of the account records (`AccountParams`, `Keyset`, `RestoreEpoch`,
+/// `DeviceList`, `VaultList`) of an identity: the account id for generation
+/// 0 (`None`), `identity_id` of the identity key from generation 1 (spec
+/// 6.6).
+pub fn account_record_id(account_id: Id, identity: Option<&IdentityVerifyingKey>) -> Id {
+    identity.map_or(account_id, crate::lineage::identity_id)
 }
 
 /// A stored record. Only `id`, `kind` and the opaque `version` are in clear.
@@ -66,6 +100,29 @@ pub struct Record {
     pub kind: RecordKind,
     pub version: u64,
     pub data: Vec<u8>,
+}
+
+/// What a trust write requires of the stored trust state, checked inside
+/// its transaction (`Error::Conflict` otherwise).
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum TrustGuard<'a> {
+    /// Anything, or nothing.
+    Any,
+    /// Exactly this one, byte for byte.
+    Is(&'a TrustState),
+    /// None at all (the first trust write).
+    Absent,
+}
+
+impl TrustGuard<'_> {
+    /// Whether the stored encoding passes.
+    pub(crate) fn admits(&self, stored: Option<&[u8]>) -> bool {
+        match self {
+            TrustGuard::Any => true,
+            TrustGuard::Is(t) => stored == Some(t.encode().as_slice()),
+            TrustGuard::Absent => stored.is_none(),
+        }
+    }
 }
 
 /// A key-value store of records, keyed by `(kind, id)`. `put` replaces the
@@ -221,6 +278,235 @@ pub trait RecordStore {
         let _ = chain;
         self.put_all_if_version(writes)
     }
+
+    /// The local trust state of this device (key rotation v2, spec 5.3), if
+    /// one was saved. A store that keeps none refuses.
+    fn trust_state(&self) -> Result<Option<TrustState>> {
+        Err(Error::Store("trust state unsupported".into()))
+    }
+
+    /// `put_all_if_version_and_delete`, and the trust state (and `chain`,
+    /// on a store that persists it) in the same transaction: all or nothing.
+    /// A store that keeps no trust state refuses and writes nothing.
+    fn put_all_if_version_with_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        let _ = (writes, deletes, chain, trust);
+        Err(Error::Store("trust state unsupported".into()))
+    }
+
+    /// The first trust state of this device (key rotation v2, spec 6.2,
+    /// 15: a genesis at creation, or the migration of a legacy device),
+    /// with `writes` (each conditional on its version), all or nothing,
+    /// only while no trust state is stored (`Error::Conflict` otherwise:
+    /// two migrations racing on one device never both write). `chain` is
+    /// merged with the stored chain state, never replaces it (the device
+    /// id and the lists accepted stay). A store that keeps no trust state
+    /// refuses and writes nothing.
+    fn put_first_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        let _ = (writes, chain, trust);
+        Err(Error::Store("trust state unsupported".into()))
+    }
+
+    /// `put_all_if_version_with_trust`, conditional on the stored trust
+    /// state too: it is written only if the stored one is still `expected`
+    /// (the one the caller read before deciding), byte for byte. Otherwise
+    /// nothing is written and the error is `Error::Conflict`. Two writers
+    /// of the trust state (a rotation, a follow, a rejection) can then
+    /// never overwrite each other's decision. A store that keeps no trust
+    /// state refuses and writes nothing.
+    fn put_with_trust_cas(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        expected: &TrustState,
+        trust: &TrustState,
+    ) -> Result<()> {
+        let _ = (writes, deletes, chain, expected, trust);
+        Err(Error::Store("trust state unsupported".into()))
+    }
+
+    /// Erase everything this store holds for the device, in one
+    /// transaction: every record, pending write and sync state, the trust
+    /// state, the chain state and the device state. Only if the stored trust
+    /// state is still `expected` (`Error::Conflict` otherwise, nothing
+    /// erased). Irreversible: its only caller is the quarantine of key
+    /// rotation v2 (`crate::repo::follow::quarantine_tick` 7 days after a
+    /// valid lineage record revoked this device, or the user's "Effacer cet
+    /// appareil", spec 8.4, R8, O1). A store that keeps no trust state
+    /// refuses and erases nothing.
+    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+        let _ = expected;
+        Err(Error::Store("trust state unsupported".into()))
+    }
+
+    /// The local transaction of a rotation (spec 7.1 step 6): the writes,
+    /// the chain state of the new identity (it replaces the stored one) and
+    /// the trust state in state `Rotating { phase: 1 }`, conditional on the
+    /// stored trust state being `expected` (`put_with_trust_cas`), plus
+    /// what the push phases need (`rotation`), all or nothing. The default
+    /// is `put_with_trust_cas` (a store that pushes nothing has no phases
+    /// to drive).
+    fn put_rotation(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: ChainState,
+        expected: &TrustState,
+        trust: &TrustState,
+        rotation: &RotationPush,
+    ) -> Result<()> {
+        let _ = rotation;
+        self.put_with_trust_cas(writes, Vec::new(), Some(chain), expected, trust)
+    }
+
+    /// Whether this device holds a write of `(kind, id)` it has not pushed
+    /// yet (a store that pushes, `crate::sync::SyncStore`). The default
+    /// pushes nothing: `false`.
+    fn is_pending_write(&self, kind: RecordKind, id: Id) -> Result<bool> {
+        let _ = (kind, id);
+        Ok(false)
+    }
+
+    /// The vault key and vault meta rows of `vault` that a fetch replaced
+    /// with other bytes, as this device held them before (key rotation v2,
+    /// spec 9 and 10.4): a device that has not followed a rotation yet
+    /// still reads its own copy of a vault the rotation re-sealed, and the
+    /// replay of its own writes opens them with the retired keys. The
+    /// default keeps none.
+    fn retained_rows(&self, vault: Id) -> Result<Vec<Record>> {
+        let _ = vault;
+        Ok(Vec::new())
+    }
+
+    /// The own writes of `vault` were replayed under the identity this
+    /// device follows now (`crate::repo::replay`): drop the vault's pending
+    /// writes made under the identity it left (manifest, item records and
+    /// tombstones, vault key and meta), their ancestor, the kept rows and
+    /// the retained rows. The default keeps nothing, so it has nothing to
+    /// drop.
+    fn settle_replayed(&mut self, vault: Id) -> Result<()> {
+        let _ = vault;
+        Ok(())
+    }
+
+    /// Drop the retained rows of `vault` (`retained_rows`) and nothing
+    /// else. The default keeps none.
+    fn drop_retained(&mut self, vault: Id) -> Result<()> {
+        let _ = vault;
+        Ok(())
+    }
+
+    /// The local transaction of a follow (spec 7.2 step 3, Task 11): the
+    /// chain state and trust state of the new head, conditional on the
+    /// stored trust state being `expected` (`put_with_trust_cas`), the
+    /// retained rows of the own copies a switch keeps (`put_retained`), the
+    /// pending rows `drop_pending` dropped without a deletion being queued
+    /// (the phase-1 records of a rotation that lost before they went out),
+    /// and what a rotation being pushed needed forgotten, all or nothing.
+    ///
+    /// The default is for a store that pushes nothing: it keeps no pending
+    /// rows and no rotation push to forget. A row of `drop_pending` it
+    /// reports pending (`is_pending_write`) would be left behind, so the
+    /// default refuses then (`Error::Store`), nothing written: a store
+    /// with pending rows implements this. Otherwise it writes the trust
+    /// state (`put_with_trust_cas`), then the retained rows.
+    fn put_follow(
+        &mut self,
+        chain: ChainState,
+        expected: &TrustState,
+        trust: &TrustState,
+        retained: Vec<Record>,
+        drop_pending: Vec<(RecordKind, Id)>,
+    ) -> Result<()> {
+        for (kind, id) in drop_pending {
+            if self.is_pending_write(kind, id)? {
+                return Err(Error::Store("pending rows to drop unsupported".into()));
+            }
+        }
+        self.put_with_trust_cas(Vec::new(), Vec::new(), Some(chain), expected, trust)?;
+        if retained.is_empty() {
+            return Ok(());
+        }
+        self.put_retained(retained)
+    }
+
+    /// Replace retained rows (`retained_rows`) with `rows`, each a vault
+    /// key or vault meta row, by kind and id, and drop this device's
+    /// pending writes of those rows (key rotation v2, Task 11: a device
+    /// following a switch keeps its own copy of a vault, its vault key
+    /// wrapped again for the identity it follows, until its own writes are
+    /// replayed; the key and meta it wrote under the identity it left move
+    /// there and no longer hide the followed identity's). The default keeps
+    /// none, so it writes nothing.
+    fn put_retained(&mut self, rows: Vec<Record>) -> Result<()> {
+        let _ = rows;
+        Ok(())
+    }
+
+    /// Open a batch: every write until `batch_commit` or `batch_rollback`
+    /// lands in one transaction where the store can. The default writes as
+    /// it goes (no undo).
+    fn batch_begin(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn batch_commit(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn batch_rollback(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// What the push phases of a rotation need beyond its records (spec 7.1):
+/// the vaults it re-sealed (the `from_heads` keys, whose single-slot
+/// records phase 2 overwrites, R21) and the blob ids of the item records
+/// the `from_heads` manifests list (the only records phase 3 deletes,
+/// R23). Kept by the store until the rotation is pushed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RotationPush {
+    pub vaults: Vec<Id>,
+    pub collect: Vec<Id>,
+}
+
+const ROTATION_PUSH_VERSION: u8 = 1;
+
+impl RotationPush {
+    /// A version byte, then postcard; both lists sorted and unique.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = vec![ROTATION_PUSH_VERSION];
+        // Plain data (lists of ids): cannot fail.
+        out.extend(postcard::to_allocvec(self).expect("rotation push encodes"));
+        out
+    }
+
+    /// Decode what `encode` wrote: the whole buffer, a known version,
+    /// sorted unique lists (`InvalidFormat("rotation push")`).
+    pub fn decode(bytes: &[u8]) -> Result<RotationPush> {
+        let bad = Error::InvalidFormat("rotation push");
+        let Some((&ROTATION_PUSH_VERSION, body)) = bytes.split_first() else {
+            return Err(bad);
+        };
+        let Ok((push, [])) = postcard::take_from_bytes::<RotationPush>(body) else {
+            return Err(bad);
+        };
+        let sorted = |v: &[Id]| v.windows(2).all(|w| w[0] < w[1]);
+        if !sorted(&push.vaults) || !sorted(&push.collect) {
+            return Err(bad);
+        }
+        Ok(push)
+    }
 }
 
 /// What the repository reports to the store about one vault
@@ -316,6 +602,49 @@ pub(crate) fn exercise(store: &mut dyn RecordStore) {
 mod tests {
     use super::*;
 
+    fn rec(kind: RecordKind, id: Id, version: u64, data: &[u8]) -> Record {
+        Record {
+            id,
+            kind,
+            version,
+            data: data.to_vec(),
+        }
+    }
+
+    #[test]
+    fn lineage_put_twice_refused() {
+        for kind in [
+            RecordKind::Lineage,
+            RecordKind::DeviceIntro,
+            RecordKind::KeyDelivery,
+        ] {
+            assert!(kind.is_immutable());
+            let mut s = MemoryStore::default();
+            let id = Id::new();
+            s.put_if_version(rec(kind, id, 1, b"one"), None).unwrap();
+            assert_eq!(
+                s.put_if_version(rec(kind, id, 1, b"other"), None),
+                Err(Error::Conflict)
+            );
+            assert_eq!(s.get(kind, id).unwrap().unwrap().data, b"one");
+        }
+        assert!(!RecordKind::AccountParams.is_immutable());
+    }
+
+    #[test]
+    fn generation_zero_ids_unchanged() {
+        let a = Id::new();
+        assert_eq!(account_record_id(a, None), a);
+        let k = crate::crypto::IdentityKey::generate()
+            .unwrap()
+            .verifying_key();
+        assert_eq!(
+            account_record_id(a, Some(&k)),
+            crate::lineage::identity_id(&k)
+        );
+        assert_ne!(account_record_id(a, Some(&k)), a);
+    }
+
     #[test]
     fn kind_codes_roundtrip() {
         for kind in [
@@ -328,15 +657,21 @@ mod tests {
             RecordKind::RestoreEpoch,
             RecordKind::DeviceList,
             RecordKind::VaultList,
+            RecordKind::Lineage,
+            RecordKind::DeviceIntro,
+            RecordKind::KeyDelivery,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
+        assert_eq!(RecordKind::Lineage.code(), 10);
+        assert_eq!(RecordKind::DeviceIntro.code(), 11);
+        assert_eq!(RecordKind::KeyDelivery.code(), 12);
         // Frozen codes: the on-disk and CloudKit encoding.
         assert_eq!(RecordKind::RestoreEpoch.code(), 7);
         assert_eq!(RecordKind::DeviceList.code(), 8);
         assert_eq!(RecordKind::VaultList.code(), 9);
         assert_eq!(
-            RecordKind::from_code(10).unwrap_err(),
+            RecordKind::from_code(13).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
         assert_eq!(

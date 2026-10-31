@@ -484,3 +484,852 @@ fn snapshot_cap_enforced() {
     g.snapshot = over;
     assert!(a.seal_grant_at(Grant::Full(g), true, NOW + 8).is_err());
 }
+
+// ------------------------------------------------- pairing v2 (rotation v2)
+//
+// Key rotation v2, spec 5.2, 6.4, 7.4, 15, R16, ruling A9: device keys
+// exchanged and pinned inside the SAS channel. Devices are SyncStore files
+// of the two-device harness; their device keys and genesis trust state are
+// seeded here (the genesis at account creation is Task 14).
+
+mod common;
+
+use common::{Device, PASSWORD, Server, pull, sync};
+use onepass_core::device_keys::{DeviceKeys, DevicePublic};
+use onepass_core::devices::DeviceEntry;
+use onepass_core::lineage::{
+    GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, RotationReason, SignedIntro,
+    sign_genesis, verify_intro,
+};
+use onepass_core::pairing::{FullGrantV2, import_full_v2, snapshot_from_store};
+use onepass_core::repo::RotateRequest;
+use onepass_core::repo::follow::{follow_rotation, pending_rotation};
+use onepass_core::repo::pairing::repair_from_grant;
+use onepass_core::store::{Record, RecordKind, RecordStore};
+use onepass_core::sync::SyncStore;
+use onepass_core::trust::{LineageHead, TrustLevel, TrustState};
+
+struct Keys {
+    keys: DeviceKeys,
+    public: DevicePublic,
+}
+
+impl Keys {
+    fn new(id: Id) -> Keys {
+        let keys = DeviceKeys::generate_software().unwrap();
+        let public = keys.public(id).unwrap();
+        Keys { keys, public }
+    }
+
+    fn id(&self) -> Id {
+        self.public.device_id
+    }
+
+    fn entry(&self, name: &str) -> RosterEntry {
+        RosterEntry {
+            device_id: self.id(),
+            sign_pub: self.public.sign_pub.clone(),
+            kem_pub: self.public.kem_pub.clone(),
+            name: name.into(),
+            kind: DeviceKind::Phone,
+            mode: DeviceMode::Personal,
+            introduced_by: None,
+        }
+    }
+
+    fn info(&self, name: &str) -> DeviceInfo {
+        DeviceInfo {
+            device_id: self.id(),
+            name: name.into(),
+            kind: DeviceKind::Tablet,
+        }
+    }
+}
+
+/// A (the approver) on `server`, its genesis pinned with a roster of A, B
+/// and C (all verified, `Current`); `others` are B and C.
+struct V2 {
+    server: Server,
+    a: Device,
+    sk: SecretKey,
+    me: Keys,
+    others: Vec<Keys>,
+}
+
+fn v2() -> V2 {
+    let mut server = Server::default();
+    let (mut a, _b, sk, _items) = common::setup(&mut server, &[("alice", common::T0)]);
+    sync(&mut server, &mut a).unwrap();
+    let me = Keys::new(a.repo().chain().device_id.unwrap_or_else(Id::new));
+    let others: Vec<Keys> = (0..2).map(|_| Keys::new(Id::new())).collect();
+    let mut roster = vec![me.entry("iPhone")];
+    roster.extend(others.iter().zip(["iPad", "Mac"]).map(|(k, n)| k.entry(n)));
+    roster.sort_by_key(|e| e.device_id);
+    let account = a.repo().account();
+    let account_id = account.params.account_id;
+    let identity_pub = account.params.identity_pub.clone();
+    let genesis = LineageRecord::Genesis(
+        sign_genesis(
+            GenesisBody {
+                format: LINEAGE_FORMAT,
+                account_id,
+                identity_pub: identity_pub.clone(),
+                creator: me.entry("iPhone"),
+                created_at: common::T0,
+            },
+            &me.keys,
+            &account.keyset().identity,
+        )
+        .unwrap(),
+    );
+    let mut trust = TrustState::new(
+        account_id,
+        me.public.clone(),
+        LineageHead {
+            generation: 0,
+            hash: genesis.hash(),
+        },
+        identity_pub,
+        roster.clone(),
+        DeviceLineageState::Current,
+    );
+    for e in &roster {
+        trust.levels.insert(e.device_id, TrustLevel::Verified);
+    }
+    let record = Record {
+        id: genesis.record_id(),
+        kind: RecordKind::Lineage,
+        version: 0,
+        data: genesis.encode(),
+    };
+    a.repo()
+        .store_mut()
+        .put_all_if_version_with_trust(vec![(record, None)], vec![], None, &trust)
+        .unwrap();
+    sync(&mut server, &mut a).unwrap();
+    V2 {
+        server,
+        a,
+        sk,
+        me,
+        others,
+    }
+}
+
+use onepass_core::trust::DeviceLineageState;
+
+/// A device of the server's account whose trust state is A's, seen from
+/// `keys` (`edit` changes it before it is saved). Locked.
+fn follower(v: &mut V2, who: usize, edit: impl FnOnce(&mut TrustState)) -> Device {
+    let mut c = Device::empty();
+    pull(&v.server, &mut c);
+    c.unlock(&v.sk);
+    let mut trust = v.a.store().trust_state().unwrap().unwrap();
+    trust.me = v.others[who].public.clone();
+    edit(&mut trust);
+    c.repo()
+        .store_mut()
+        .put_all_if_version_with_trust(vec![], vec![], None, &trust)
+        .unwrap();
+    c.lock();
+    c
+}
+
+fn trust(dev: &Device) -> TrustState {
+    dev.store().trust_state().unwrap().unwrap()
+}
+
+/// A session up to the newcomer's `ConfirmedWithKey`, read by the
+/// approver: (newcomer, approver).
+fn confirmed_with_key(n_keys: &Keys, info: DeviceInfo) -> (Newcomer, Approver) {
+    let (mut n, qr, hello) = Newcomer::new(info, DeviceMode::Personal, NOW).unwrap();
+    let (mut a, kx, _, _, _) = Approver::begin(&qr.to_text(), &hello, NOW + 1).unwrap();
+    n.on_key_exchange(&kx, NOW + 2).unwrap();
+    let f = n.confirm_with_key(&n_keys.keys).unwrap();
+    let Message::ConfirmedWithKey { device, .. } = a.on_frame_at(&f, NOW + 3).unwrap() else {
+        panic!("expected ConfirmedWithKey");
+    };
+    assert_eq!(device, n_keys.public);
+    assert_eq!(a.newcomer_key(), Some(&n_keys.public));
+    (n, a)
+}
+
+/// The `FullV2` A grants: its synced rows, the Secret Key, its trust
+/// snapshot.
+fn grant_v2(a: &mut Device, sk: &SecretKey, device_id: Id) -> FullGrantV2 {
+    let repo = a.repo();
+    FullGrantV2 {
+        full: FullGrant {
+            account_id: repo.account().params.account_id,
+            secret_key: Zeroizing::new(sk.to_display()),
+            mode: DeviceMode::Personal,
+            device_id,
+            snapshot: snapshot_from_store(repo.store()).unwrap(),
+        },
+        trust: repo.trust_snapshot().unwrap(),
+        sync: None,
+        enroll: None,
+    }
+}
+
+/// A full v2 pairing of a new device `n` with A: listed and granted in one
+/// transaction, imported, acknowledged, introduced. Returns N's device.
+fn pair_new(v: &mut V2, n: &Keys) -> Device {
+    let (mut nc, mut ap, info, dev) = granted(v, n);
+    // Its acknowledgment carries the pop over the account id: A introduces.
+    let ack = nc.seal_key_ack_at(&n.keys, NOW + 6).unwrap();
+    assert!(matches!(
+        ap.on_frame_at(&ack, NOW + 6).unwrap(),
+        Message::ConfirmedWithKey { .. }
+    ));
+    let pop = ap.newcomer_account_pop().unwrap().clone();
+    let me_keys = &v.me.keys;
+    v.a.repo()
+        .introduce(&n.public, &info, DeviceMode::Personal, &pop, me_keys)
+        .unwrap();
+    dev
+}
+
+/// A pairing of `n` with A up to the newcomer's import of its `FullV2`
+/// (listed and granted by A, pinned and opened by N), before its key
+/// acknowledgment.
+fn granted(v: &mut V2, n: &Keys) -> (Newcomer, Approver, DeviceInfo, Device) {
+    let info = n.info("iPad de Camille");
+    let (mut nc, mut ap) = confirmed_with_key(n, info.clone());
+    let entry = DeviceEntry {
+        device_id: n.id(),
+        name: info.name.clone(),
+        kind: info.kind,
+        mode: DeviceMode::Personal,
+        added_at: NOW,
+        added_by: v.a.repo().this_device_id(),
+        revoked_at: None,
+    };
+    let sk = &v.sk;
+    let frame =
+        v.a.repo()
+            .add_device_then(entry, |repo| {
+                let grant = FullGrantV2 {
+                    full: FullGrant {
+                        account_id: repo.account().params.account_id,
+                        secret_key: Zeroizing::new(sk.to_display()),
+                        mode: DeviceMode::Personal,
+                        device_id: n.id(),
+                        snapshot: snapshot_from_store(repo.store())?,
+                    },
+                    trust: repo.trust_snapshot()?,
+                    sync: None,
+                    enroll: None,
+                };
+                ap.seal_grant_at(Grant::FullV2(grant), true, NOW + 4)
+            })
+            .unwrap();
+    let Message::Grant(Grant::FullV2(got)) = nc.open_at(&frame, NOW + 5).unwrap() else {
+        panic!("expected a FullV2");
+    };
+    // The newcomer imports it into its empty store and opens it.
+    let mut dev = Device::empty();
+    {
+        let mut store = SyncStore::open(&dev.path).unwrap();
+        import_full_v2(&mut store, &got, &n.public, &info).unwrap();
+    }
+    dev.unlock(&SecretKey::parse(&got.full.secret_key).unwrap());
+    dev.lock();
+    assert_self_pinned(&dev.store().trust_state().unwrap().unwrap());
+    (nc, ap, info, dev)
+}
+
+fn intros(store: &SyncStore) -> Vec<SignedIntro> {
+    store
+        .list(RecordKind::DeviceIntro)
+        .unwrap()
+        .iter()
+        .map(|r| SignedIntro::decode(&r.data).unwrap())
+        .collect()
+}
+
+#[test]
+fn confirmed_encoding_unchanged() {
+    // The legacy confirmation still pairs, byte for byte as before: the
+    // approver reads `Confirmed`, grants a `Full`, takes `Ack`.
+    let (mut n, mut a) = confirmed(DeviceMode::Personal);
+    assert_eq!(a.newcomer_key(), None);
+    let f = a
+        .seal_grant_at(Grant::Full(full_grant()), true, NOW + 8)
+        .unwrap();
+    assert!(matches!(
+        n.open_at(&f, NOW + 9).unwrap(),
+        Message::Grant(Grant::Full(_))
+    ));
+    let ack = n.seal_at(&Message::Ack, NOW + 10).unwrap();
+    assert_eq!(a.on_frame_at(&ack, NOW + 10).unwrap(), Message::Ack);
+}
+
+#[test]
+fn intro_written_with_grant_ack() {
+    let mut v = v2();
+    let n = Keys::new(Id::new());
+    let before = intros(&v.a.store()).len();
+    let _dev = pair_new(&mut v, &n);
+    // The device list lists N (written with the sealed grant)...
+    assert!(
+        v.a.repo()
+            .devices()
+            .unwrap()
+            .iter()
+            .any(|e| e.device_id == n.id())
+    );
+    // ...and the intro, signed by A under its head, with N in A's roster.
+    let t = trust(&v.a);
+    let all = intros(&v.a.store());
+    assert_eq!(all.len(), before + 1);
+    let i = all
+        .iter()
+        .find(|i| i.body.entry.device_id == n.id())
+        .unwrap();
+    assert_eq!(i.body.head, t.head.hash);
+    assert_eq!(i.body.introducer, v.me.id());
+    assert_eq!(i.body.entry.introduced_by, Some(v.me.id()));
+    verify_intro(i, &v.me.public.sign_pub).unwrap();
+    assert!(t.roster.iter().any(|e| e.device_id == n.id()));
+    assert_eq!(t.levels.get(&n.id()), Some(&TrustLevel::Verified));
+    // Pending for the server, with the rest of A's writes.
+    let outbox = common::outbox(&v.a);
+    assert!(
+        outbox
+            .iter()
+            .any(|(c, _)| c.kind == RecordKind::DeviceIntro)
+    );
+}
+
+#[test]
+fn snapshot_pinned() {
+    let mut v = v2();
+    let n = Keys::new(Id::new());
+    let dev = pair_new(&mut v, &n);
+    let mine = trust(&dev);
+    let theirs = trust(&v.a);
+    assert_eq!(mine.head, theirs.head);
+    assert_eq!(mine.roster, theirs.roster);
+    assert_eq!(mine.identity_pub, theirs.identity_pub);
+    assert_eq!(mine.me, n.public);
+    assert_eq!(mine.state, DeviceLineageState::Current);
+}
+
+#[test]
+fn intro_by_revoked_or_excluded_refused() {
+    let mut v = v2();
+    let mut c_ok = follower(&mut v, 1, |_| {});
+    let a_id = v.me.id();
+    let mut c_excl = follower(&mut v, 1, |t| {
+        t.excluded.insert(a_id);
+    });
+    let mut c_rev = follower(&mut v, 1, |t| t.add_revoked(&[a_id]));
+    let n = Keys::new(Id::new());
+    let _dev = pair_new(&mut v, &n);
+    sync(&mut v.server, &mut v.a).unwrap();
+    for c in [&mut c_ok, &mut c_excl, &mut c_rev] {
+        pull(&v.server, c);
+        c.unlock(&v.sk);
+        c.lock();
+    }
+    let has = |d: &Device| trust(d).roster.iter().any(|e| e.device_id == n.id());
+    assert!(has(&c_ok), "a valid intro joins the roster");
+    assert!(!has(&c_excl), "intro by an excluded device accepted");
+    assert!(!has(&c_rev), "intro by a revoked device accepted");
+
+    // The approver refuses to introduce a device it revoked or excluded.
+    let info = n.info("iPad");
+    let pop =
+        onepass_core::device_keys::sign_pop(&n.keys, &trust(&v.a).account_id.0, &n.public).unwrap();
+    let x = Keys::new(Id::new());
+    let mut excluded_a = trust(&v.a);
+    excluded_a.excluded.insert(x.id());
+    let t = trust(&v.a);
+    v.a.repo()
+        .store_mut()
+        .put_with_trust_cas(vec![], vec![], None, &t, &excluded_a)
+        .unwrap();
+    let xpop = onepass_core::device_keys::sign_pop(&x.keys, &t.account_id.0, &x.public).unwrap();
+    let r = v.a.repo().introduce(
+        &x.public,
+        &x.info("Mac"),
+        DeviceMode::Personal,
+        &xpop,
+        &v.me.keys,
+    );
+    assert!(matches!(r, Err(Error::Validation(_))), "{r:?}");
+    // A pop over another key fails, a known key is a no-op.
+    let r =
+        v.a.repo()
+            .introduce(&n.public, &info, DeviceMode::Personal, &xpop, &v.me.keys);
+    assert!(matches!(r, Err(Error::Integrity(_))), "{r:?}");
+    v.a.repo()
+        .introduce(&n.public, &info, DeviceMode::Personal, &pop, &v.me.keys)
+        .unwrap();
+}
+
+#[test]
+fn old_peer_pairs_legacy() {
+    let v = v2();
+    let n = ipad();
+    let (mut nc, qr, hello) = Newcomer::new(n.clone(), DeviceMode::Personal, NOW).unwrap();
+    let (mut ap, kx, _, _, _) = Approver::begin(&qr.to_text(), &hello, NOW + 1).unwrap();
+    nc.on_key_exchange(&kx, NOW + 2).unwrap();
+    let f = nc.confirm().unwrap();
+    assert_eq!(ap.on_frame_at(&f, NOW + 3).unwrap(), Message::Confirmed);
+    // A `FullV2` would not decode on an older newcomer: refused.
+    let mut a = v.a;
+    let v2grant = grant_v2(&mut a, &v.sk, n.device_id);
+    assert!(
+        ap.seal_grant_at(Grant::FullV2(v2grant), true, NOW + 4)
+            .is_err()
+    );
+    let entry = DeviceEntry {
+        device_id: n.device_id,
+        name: n.name.clone(),
+        kind: n.kind,
+        mode: DeviceMode::Personal,
+        added_at: NOW,
+        added_by: a.repo().this_device_id(),
+        revoked_at: None,
+    };
+    let sk = &v.sk;
+    let frame = a
+        .repo()
+        .add_device_then(entry, |repo| {
+            repo.mark_legacy_device(n.device_id)?;
+            let grant = FullGrant {
+                account_id: repo.account().params.account_id,
+                secret_key: Zeroizing::new(sk.to_display()),
+                mode: DeviceMode::Personal,
+                device_id: n.device_id,
+                snapshot: snapshot_from_store(repo.store())?,
+            };
+            ap.seal_grant_at(Grant::Full(grant), true, NOW + 4)
+        })
+        .unwrap();
+    assert!(matches!(
+        nc.open_at(&frame, NOW + 5).unwrap(),
+        Message::Grant(Grant::Full(_))
+    ));
+    let ack = nc.seal_at(&Message::Ack, NOW + 6).unwrap();
+    assert_eq!(ap.on_frame_at(&ack, NOW + 6).unwrap(), Message::Ack);
+    let t = trust(&a);
+    assert_eq!(t.levels.get(&n.device_id), Some(&TrustLevel::Tofu));
+    assert!(!t.roster.iter().any(|e| e.device_id == n.device_id));
+    assert!(intros(&a.store()).is_empty());
+}
+
+#[test]
+fn v2_session_refuses_downgrades() {
+    let v = v2();
+    // A public session pins no device key.
+    let (mut pn, _pa, _, _) = handshake(DeviceMode::Public);
+    assert!(pn.confirm_with_key(&Keys::new(Id::new()).keys).is_err());
+    let n = Keys::new(Id::new());
+    let (mut nc, mut ap) = confirmed_with_key(&n, n.info("iPad"));
+    // The approver must not send a legacy `Full` to a newcomer with a key...
+    assert!(
+        ap.seal_grant_at(Grant::Full(full_grant()), true, NOW + 4)
+            .is_err()
+    );
+    // ...nor take a legacy `Ack` for a `FullV2`.
+    let mut a = v.a;
+    let g = grant_v2(&mut a, &v.sk, n.id());
+    let f = ap.seal_grant_at(Grant::FullV2(g), true, NOW + 4).unwrap();
+    nc.open_at(&f, NOW + 5).unwrap();
+    assert!(nc.seal_at(&Message::Ack, NOW + 6).is_err());
+    // The key acknowledgment needs the confirmed key.
+    let other = Keys::new(n.id());
+    assert!(nc.seal_key_ack_at(&other.keys, NOW + 6).is_err());
+    let ack = nc.seal_key_ack_at(&n.keys, NOW + 6).unwrap();
+    ap.on_frame_at(&ack, NOW + 6).unwrap();
+    assert!(
+        nc.seal_key_ack_at(&n.keys, NOW + 7).is_err(),
+        "acknowledged twice"
+    );
+}
+
+#[test]
+fn repair_of_known_account_is_a_follow() {
+    let mut v = v2();
+    let mut c = follower(&mut v, 1, |_| {});
+    // C writes offline: its item never reaches the server.
+    c.unlock(&v.sk);
+    let vault = c.vault();
+    let offline = common::login(vault.id, "offline", common::T0 + 50);
+    c.save(&offline);
+    c.lock();
+    // A rotates (removing B) while C is away.
+    let new_sk = SecretKey::generate().unwrap();
+    let b = v.others[0].id();
+    let out =
+        v.a.repo()
+            .rotate(RotateRequest {
+                revoke: vec![b],
+                new_password: None,
+                password: PASSWORD,
+                secret_key: &v.sk,
+                new_secret_key: &new_sk,
+                device_keys: &v.me.keys,
+                reason: RotationReason::Revoke,
+                keep_tofu: &[],
+            })
+            .unwrap();
+    sync(&mut v.server, &mut v.a).unwrap();
+    // C re-pairs from A under its own id: the grant is applied as a follow.
+    let c_keys = &v.others[1];
+    let (mut nc, mut ap) = confirmed_with_key(c_keys, c_keys.info("Mac"));
+    let g = grant_v2(&mut v.a, &new_sk, c_keys.id());
+    let f = ap.seal_grant_at(Grant::FullV2(g), true, NOW + 4).unwrap();
+    let Message::Grant(Grant::FullV2(got)) = nc.open_at(&f, NOW + 5).unwrap() else {
+        panic!("expected a FullV2");
+    };
+    c.unlock(&v.sk);
+    let session = c.repo.take().unwrap();
+    let (repo, _auk, sk) = repair_from_grant(session, &got, PASSWORD, &c_keys.keys).unwrap();
+    assert_eq!(sk.to_display(), new_sk.to_display());
+    c.repo = Some(repo);
+    let t = trust(&c);
+    assert_self_pinned(&t);
+    assert_eq!(t.head.hash, out.head);
+    assert_eq!(t.identity_pub, trust(&v.a).identity_pub);
+    assert!(t.revoked.contains(&b));
+    // The local item stays and is replayed under the new keys: A sees it.
+    assert!(c.items().iter().any(|i| i.id == offline.id));
+    sync(&mut v.server, &mut c).unwrap();
+    sync(&mut v.server, &mut v.a).unwrap();
+    assert!(v.a.items().iter().any(|i| i.id == offline.id));
+    // The re-paired device opens with the new Secret Key only.
+    c.lock();
+    assert!(c.try_unlock(PASSWORD, &v.sk).is_err());
+    c.try_unlock(PASSWORD, &new_sk).unwrap();
+}
+
+#[test]
+fn reintro_after_adoption() {
+    let mut v = v2();
+    let mut c = follower(&mut v, 1, |_| {});
+    // C introduces X; A rotates before it sees the intro.
+    let x = Keys::new(Id::new());
+    c.unlock(&v.sk);
+    let account = trust(&c).account_id;
+    let pop = onepass_core::device_keys::sign_pop(&x.keys, &account.0, &x.public).unwrap();
+    let c_keys = &v.others[1].keys;
+    c.repo()
+        .introduce(
+            &x.public,
+            &x.info("Watch"),
+            DeviceMode::Personal,
+            &pop,
+            c_keys,
+        )
+        .unwrap();
+    assert!(trust(&c).roster.iter().any(|e| e.device_id == x.id()));
+    c.lock();
+    let new_sk = SecretKey::generate().unwrap();
+    let out =
+        v.a.repo()
+            .rotate(RotateRequest {
+                revoke: vec![v.others[0].id()],
+                new_password: None,
+                password: PASSWORD,
+                secret_key: &v.sk,
+                new_secret_key: &new_sk,
+                device_keys: &v.me.keys,
+                reason: RotationReason::Revoke,
+                keep_tofu: &[],
+            })
+            .unwrap();
+    sync(&mut v.server, &mut v.a).unwrap();
+    assert!(!trust(&v.a).roster.iter().any(|e| e.device_id == x.id()));
+    // C syncs (its intro goes out, A's rotation comes in) and follows.
+    common::push(&mut v.server, &c).unwrap();
+    pull(&v.server, &mut c);
+    assert!(pending_rotation(&c.store()).unwrap().is_some());
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, c_keys).unwrap();
+    c.repo = Some(repo);
+    // C introduced X again under the new head.
+    let t = trust(&c);
+    assert!(t.roster.iter().any(|e| e.device_id == x.id()));
+    let again = intros(&c.store());
+    assert!(
+        again
+            .iter()
+            .any(|i| i.body.entry.device_id == x.id() && i.body.head == out.head)
+    );
+    // A takes it: X joins A's roster at the new head.
+    sync(&mut v.server, &mut c).unwrap();
+    sync(&mut v.server, &mut v.a).unwrap();
+    v.a.lock();
+    v.a.unlock(&new_sk);
+    assert!(trust(&v.a).roster.iter().any(|e| e.device_id == x.id()));
+}
+
+#[test]
+fn tofu_level_carried() {
+    // A trusts B on first use only: N pins B as `Tofu` too (O7).
+    let mut v = v2();
+    let b = v.others[0].id();
+    let t = trust(&v.a);
+    let mut tofu = t.clone();
+    tofu.levels.insert(b, TrustLevel::Tofu);
+    v.a.repo()
+        .store_mut()
+        .put_with_trust_cas(vec![], vec![], None, &t, &tofu)
+        .unwrap();
+    let snap = v.a.repo().trust_snapshot().unwrap();
+    assert_eq!(snap.level(b), Some(TrustLevel::Tofu));
+    assert_eq!(snap.level(v.me.id()), Some(TrustLevel::Verified));
+    let n = Keys::new(Id::new());
+    let dev = pair_new(&mut v, &n);
+    let pinned = trust(&dev);
+    assert_eq!(pinned.levels.get(&b), Some(&TrustLevel::Tofu));
+    assert_eq!(pinned.levels.get(&v.me.id()), Some(&TrustLevel::Verified));
+    assert_eq!(pinned.levels.get(&n.id()), Some(&TrustLevel::Verified));
+}
+
+#[test]
+fn pairing_incomplete_until_intro_or_cancel() {
+    let mut v = v2();
+    // A device listed before key rotation v2 that this hand-seeded trust
+    // state never marked `Tofu` (the harness's second device; a real
+    // migration marks it, Task 14): the baseline.
+    let base = v.a.repo().pairing_incomplete().unwrap();
+    let with = |id: Id| {
+        let mut l = base.clone();
+        l.push(id);
+        l.sort();
+        l
+    };
+    // The session is cut after the grant, before the key acknowledgment.
+    let n = Keys::new(Id::new());
+    let (mut nc, mut ap, info, _dev) = granted(&mut v, &n);
+    assert_eq!(v.a.repo().pairing_incomplete().unwrap(), with(n.id()));
+    // Finishing (the acknowledgment, then the intro) clears it.
+    let ack = nc.seal_key_ack_at(&n.keys, NOW + 6).unwrap();
+    ap.on_frame_at(&ack, NOW + 6).unwrap();
+    let pop = ap.newcomer_account_pop().unwrap().clone();
+    let me_keys = &v.me.keys;
+    v.a.repo()
+        .introduce(&n.public, &info, DeviceMode::Personal, &pop, me_keys)
+        .unwrap();
+    assert_eq!(v.a.repo().pairing_incomplete().unwrap(), base);
+    // A pinned device is not cancelled: it leaves by rotation.
+    let r = v.a.repo().cancel_pairing(n.id());
+    assert!(matches!(r, Err(Error::Validation(_))), "{r:?}");
+
+    // Another cut session, then the user removes the device.
+    let m = Keys::new(Id::new());
+    let _ = granted(&mut v, &m);
+    assert_eq!(v.a.repo().pairing_incomplete().unwrap(), with(m.id()));
+    v.a.repo().cancel_pairing(m.id()).unwrap();
+    assert_eq!(v.a.repo().pairing_incomplete().unwrap(), base);
+    let listed = v.a.repo().devices().unwrap();
+    let e = listed.iter().find(|e| e.device_id == m.id()).unwrap();
+    assert!(e.revoked_at.is_some());
+}
+
+/// Task 13 review, carried to Task 14: `cancel_pairing` revokes the list
+/// entry and excludes the device in one transaction; a late intro of the
+/// cancelled device is refused, from this device and from another one.
+#[test]
+fn cancelled_pairing_refuses_a_late_intro() {
+    use onepass_core::device_keys::sign_pop;
+    use onepass_core::lineage::{IntroBody, sign_intro};
+
+    let mut v = v2();
+    let m = Keys::new(Id::new());
+    let (mut nc, mut ap, info, _dev) = granted(&mut v, &m);
+    let list_before = v.a.store().list(RecordKind::DeviceList).unwrap();
+    v.a.repo().cancel_pairing(m.id()).unwrap();
+    let t = trust(&v.a);
+    assert!(t.excluded.contains(&m.id()));
+    let listed = v.a.repo().devices().unwrap();
+    assert!(
+        listed
+            .iter()
+            .find(|e| e.device_id == m.id())
+            .unwrap()
+            .revoked_at
+            .is_some()
+    );
+    // One list write went with the exclusion.
+    let list_after = v.a.store().list(RecordKind::DeviceList).unwrap();
+    assert_eq!(list_after[0].version, list_before[0].version + 1);
+
+    // The session finishes late: its intro is refused here.
+    let ack = nc.seal_key_ack_at(&m.keys, NOW + 6).unwrap();
+    ap.on_frame_at(&ack, NOW + 6).unwrap();
+    let pop = ap.newcomer_account_pop().unwrap().clone();
+    let me_keys = &v.me.keys;
+    let r =
+        v.a.repo()
+            .introduce(&m.public, &info, DeviceMode::Personal, &pop, me_keys);
+    assert!(matches!(r, Err(Error::Validation(_))), "{r:?}");
+
+    // Another roster device introduces it: not accepted here either.
+    let b = &v.others[0];
+    let account_id = t.account_id;
+    let body = IntroBody {
+        format: LINEAGE_FORMAT,
+        account_id,
+        head: t.head.hash,
+        entry: RosterEntry {
+            introduced_by: Some(b.id()),
+            ..m.entry("iPad")
+        },
+        introducer: b.id(),
+        pop: sign_pop(&m.keys, &account_id.0, &m.public).unwrap(),
+    };
+    let signed = sign_intro(body, &b.keys, None).unwrap();
+    let record = Record {
+        id: onepass_core::lineage::intro_id(&signed.body),
+        kind: RecordKind::DeviceIntro,
+        version: t.head.generation,
+        data: signed.encode(),
+    };
+    v.a.repo().store_mut().put_if_version(record, None).unwrap();
+    v.a.repo().refresh_pending_rotation().unwrap();
+    assert!(!trust(&v.a).roster.iter().any(|e| e.device_id == m.id()));
+}
+
+#[test]
+fn approver_refusals() {
+    let mut v = v2();
+    let t = trust(&v.a);
+    // An approver waiting for the user or locked pins nobody.
+    for state in [
+        DeviceLineageState::Candidate {
+            children: vec![[4; 32]],
+            resume: None,
+        },
+        DeviceLineageState::Orphaned {
+            child: [4; 32],
+            rotator: v.others[0].id(),
+            resume: None,
+        },
+    ] {
+        let mut locked = t.clone();
+        locked.state = state;
+        v.a.repo()
+            .store_mut()
+            .put_with_trust_cas(vec![], vec![], None, &t, &locked)
+            .unwrap();
+        assert!(v.a.repo().trust_snapshot().is_err());
+        v.a.repo()
+            .store_mut()
+            .put_with_trust_cas(vec![], vec![], None, &locked, &t)
+            .unwrap();
+    }
+    // A revoked newcomer id is not introduced.
+    let x = Keys::new(Id::new());
+    let mut revoked = t.clone();
+    revoked.add_revoked(&[x.id()]);
+    v.a.repo()
+        .store_mut()
+        .put_with_trust_cas(vec![], vec![], None, &t, &revoked)
+        .unwrap();
+    let pop = onepass_core::device_keys::sign_pop(&x.keys, &t.account_id.0, &x.public).unwrap();
+    let me_keys = &v.me.keys;
+    let r = v.a.repo().introduce(
+        &x.public,
+        &x.info("Mac"),
+        DeviceMode::Personal,
+        &pop,
+        me_keys,
+    );
+    assert!(matches!(r, Err(Error::Validation(_))), "{r:?}");
+    // A `FullV2` listing the newcomer under another id than its Hello's.
+    let n = Keys::new(Id::new());
+    let (_nc, mut ap) = confirmed_with_key(&n, n.info("iPad"));
+    let g = grant_v2(&mut v.a, &v.sk, Id::new());
+    assert!(ap.seal_grant_at(Grant::FullV2(g), true, NOW + 4).is_err());
+}
+
+#[test]
+fn repair_from_rotating_drops_the_abandoned_rotation() {
+    let mut v = v2();
+    let mut c = follower(&mut v, 1, |_| {});
+    let c_keys = &v.others[1];
+    // C rotates offline: its phase 1 never goes out.
+    c.unlock(&v.sk);
+    let c_sk = SecretKey::generate().unwrap();
+    let mine = c
+        .repo()
+        .rotate(RotateRequest {
+            revoke: vec![v.others[0].id()],
+            new_password: None,
+            password: PASSWORD,
+            secret_key: &v.sk,
+            new_secret_key: &c_sk,
+            device_keys: &c_keys.keys,
+            reason: RotationReason::Revoke,
+            keep_tofu: &[],
+        })
+        .unwrap();
+    assert!(matches!(
+        trust(&c).state,
+        DeviceLineageState::Rotating { .. }
+    ));
+    // A rotates too, and syncs.
+    let a_sk = SecretKey::generate().unwrap();
+    let theirs =
+        v.a.repo()
+            .rotate(RotateRequest {
+                revoke: vec![v.others[0].id()],
+                new_password: None,
+                password: PASSWORD,
+                secret_key: &v.sk,
+                new_secret_key: &a_sk,
+                device_keys: &v.me.keys,
+                reason: RotationReason::Revoke,
+                keep_tofu: &[],
+            })
+            .unwrap();
+    sync(&mut v.server, &mut v.a).unwrap();
+    // C re-pairs from A, from its open session on its own rotation.
+    let (mut nc, mut ap) = confirmed_with_key(c_keys, c_keys.info("Mac"));
+    let g = grant_v2(&mut v.a, &a_sk, c_keys.id());
+    let f = ap.seal_grant_at(Grant::FullV2(g), true, NOW + 4).unwrap();
+    let Message::Grant(Grant::FullV2(got)) = nc.open_at(&f, NOW + 5).unwrap() else {
+        panic!("expected a FullV2");
+    };
+    let session = c.repo.take().unwrap();
+    let (repo, _, _) = repair_from_grant(session, &got, PASSWORD, &c_keys.keys).unwrap();
+    c.repo = Some(repo);
+    assert_eq!(trust(&c).head.hash, theirs.head);
+    assert_eq!(trust(&c).state, DeviceLineageState::Current);
+    // Nothing of the abandoned rotation is pushed.
+    let outbox = common::outbox(&c);
+    let mut lineage_id = [0u8; 16];
+    lineage_id.copy_from_slice(&mine.head[..16]);
+    assert!(
+        !outbox
+            .iter()
+            .any(|(ch, _)| ch.kind == RecordKind::Lineage && ch.id == Id(lineage_id))
+    );
+    assert!(
+        !outbox
+            .iter()
+            .any(|(ch, _)| ch.kind == RecordKind::KeyDelivery)
+    );
+    sync(&mut v.server, &mut c).unwrap();
+    assert!(v.server.live(RecordKind::Lineage, Id(lineage_id)).is_none());
+    // A, after its own sync, is on its head with no prompt.
+    sync(&mut v.server, &mut v.a).unwrap();
+    assert_eq!(pending_rotation(&v.a.store()).unwrap(), None);
+}
+
+/// Task 15 review concern 1: every trust-state constructor except a kit
+/// restore leaves the device in its own roster with its own keys (the
+/// pin every capability check reads, `repo::kit::check_pinned`).
+fn assert_self_pinned(t: &onepass_core::trust::TrustState) {
+    assert!(
+        t.roster.iter().any(|e| e.device_id == t.me.device_id
+            && e.sign_pub == t.me.sign_pub
+            && e.kem_pub == t.me.kem_pub),
+        "the device is pinned in its own roster"
+    );
+}

@@ -134,8 +134,11 @@ impl<S: RecordStore> Repository<S> {
     /// vault the upstream lacks or holds differently is
     /// `InvalidFormat("upstream does not hold the vault")`, and a vault
     /// that fails verification gives the core's error; in both cases the
-    /// device is left unchanged. `upstream` is only read.
+    /// device is left unchanged. `upstream` is only read. While a rotation
+    /// waits for the user it is `Error::ReadOnly` (R10), as are both exits.
     pub fn enter_travel<U: RecordStore>(&mut self, upstream: &U) -> Result<TravelState> {
+        // R10: no write while a rotation waits for the user.
+        self.writable()?;
         let local_items = self.store.list(RecordKind::Item)?;
         let mut plan: Vec<(Id, SeenManifest, Vec<Record>)> = Vec::new();
         for vault in self.vaults()? {
@@ -213,12 +216,24 @@ impl<S: RecordStore> Repository<S> {
     /// On failure, the records copied are deleted and the device state is
     /// restored: `state` stays valid for another attempt.
     pub fn exit_travel<U: RecordStore>(&mut self, upstream: &U, state: &TravelState) -> Result<()> {
+        // R10: no write while a rotation waits for the user.
+        self.writable()?;
+        // R19: a vault the head rotation covered starts again from its
+        // `from_heads` (R12), which the adoption put in the device state: a
+        // parked pin made under the identity left (sealed to a retired KEM
+        // key, signed by a retired key the revoked device also holds) never
+        // replaces it. If the device moved past `from_heads` since (it
+        // wrote the vault under the new identity), the pin is the device's.
+        let heads = self.head_from_heads()?;
         let mut todo = Vec::new();
         for (id, seen) in &state.parked {
             let present = self.store.get(RecordKind::VaultKey, *id)?.is_some();
+            let covered = heads
+                .get(id)
+                .is_some_and(|h| self.device.last_seen.get(id) == Some(h));
             todo.push(Restore {
                 id: *id,
-                parked: Some(seen.clone()),
+                parked: (!covered).then(|| seen.clone()),
                 copy: !present,
             });
         }
@@ -231,6 +246,8 @@ impl<S: RecordStore> Repository<S> {
     /// manifest would be accepted. Returns the restored vault ids, sorted.
     /// Same rollback on failure as `exit_travel`.
     pub fn exit_travel_unpinned<U: RecordStore>(&mut self, upstream: &U) -> Result<Vec<Id>> {
+        // R10: no write while a rotation waits for the user.
+        self.writable()?;
         let local: BTreeSet<Id> = self
             .store
             .list(RecordKind::VaultKey)?
@@ -434,7 +451,38 @@ impl<S: RecordStore> Repository<S> {
     /// other length, a body that does not verify under the account's local
     /// signature, non-zero padding, or a state that does not open is an
     /// error.
+    ///
+    /// R18/R19: a state made before a rotation also opens (retired KEM
+    /// secrets, retired signing keys). The revoked device holds those keys
+    /// and can forge such a file, so one that verifies only under a retired
+    /// key is trusted for nothing but what the rotation itself says: it is
+    /// refused (`Integrity(Signature)`) if it lists a vault outside the
+    /// head rotation's `from_heads` (a genuine one cannot: a parked vault
+    /// is covered by the rotator), and its pins are replaced by
+    /// `from_heads`. `reseal_travel_state` binds it to the new identity.
     pub fn open_travel_state(&self, bytes: &[u8]) -> Result<TravelState> {
+        let (mut state, retired_only) = self.open_travel_state_raw(bytes)?;
+        if retired_only {
+            let heads = self.head_from_heads()?;
+            for (id, seen) in &mut state.parked {
+                *seen = heads
+                    .get(id)
+                    .cloned()
+                    .ok_or(Error::Integrity(IntegrityError::Signature))?;
+            }
+        }
+        Ok(state)
+    }
+
+    /// Re-seal a state made before a rotation under the current identity
+    /// (the follower holds the genuine file when it adopts): the result is
+    /// signed and sealed with the current keys, so it no longer depends on
+    /// the retired ones. The pins are those `open_travel_state` returns.
+    pub fn reseal_travel_state(&self, bytes: &[u8]) -> Result<Vec<u8>> {
+        self.seal_travel_state(&self.open_travel_state(bytes)?)
+    }
+
+    fn open_travel_state_raw(&self, bytes: &[u8]) -> Result<(TravelState, bool)> {
         if bytes.len() != SEALED_TRAVEL_STATE_LEN {
             return Err(BAD);
         }
@@ -447,15 +495,30 @@ impl<S: RecordStore> Repository<S> {
         if padding.iter().any(|b| *b != 0) {
             return Err(BAD);
         }
-        self.verify_local(SIG_DOMAIN, body, &sig)?;
+        let mut retired_only = self.verify_local_or_retired(SIG_DOMAIN, body, &sig)?;
         let (envelope, blob): (Vec<u8>, Vec<u8>) = decode_exact(body)?;
         let account_id = self.account_id();
-        let key = unwrap_key(
-            &self.account.keyset().kem,
-            &envelope,
-            &kem_context(account_id),
-        )?;
+        let ctx = kem_context(account_id);
+        let keyset = self.account.keyset();
+        let mut first_err = None;
+        let mut found = None;
+        for (i, k) in std::iter::once(&keyset.kem)
+            .chain(&keyset.retired_kem)
+            .enumerate()
+        {
+            match unwrap_key(k, &envelope, &ctx) {
+                Ok(key) => {
+                    retired_only |= i > 0;
+                    found = Some(key);
+                    break;
+                }
+                Err(e) => {
+                    first_err.get_or_insert(e);
+                }
+            }
+        }
+        let key = found.ok_or_else(|| first_err.unwrap_or(BAD))?;
         let plain = open(&key, BlobKind::TravelState, &state_aad(account_id), &blob)?;
-        decode_exact(&plain)
+        Ok((decode_exact(&plain)?, retired_only))
     }
 }

@@ -498,6 +498,7 @@ fn contents(vaults: Vec<ArchivedVault>) -> Contents {
         created_at: 0,
         source_account: None,
         vaults,
+        made_before_rotation: false,
     }
 }
 

@@ -43,15 +43,21 @@ use aws_lc_rs::digest::{SHA256, digest};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::account::{Account, Auk, NewAccount, PinnedAccount, Rekeyed};
+use crate::account::{Account, AccountParams, Auk, NewAccount, PinnedAccount, Rekeyed};
 use crate::chain::ChainState;
-use crate::devices::{DeviceEntry, now, self_entry};
+use crate::device_keys::DeviceKeys;
+use crate::devices::{
+    DeviceEntry, DeviceKind, DeviceMode, Registration, check_mode, check_name, now, self_entry,
+};
 use crate::lists::{ListBody, list_record};
 use crate::vaultlist::VaultListEntry;
 use zeroize::Zeroizing;
 
 use crate::crypto::{Aad, BlobKind, KdfParams, SecretKey, seal};
 use crate::epoch::{EpochReason, RestoreEpoch, SignedRestoreEpoch};
+use crate::lineage::{
+    GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, identity_id, sign_genesis,
+};
 use crate::manifest::{
     Manifest, ManifestEntry, SeenManifest, SignedManifest, check_records, manifest_hash,
     record_hash, sign_manifest, verify_manifest,
@@ -59,12 +65,22 @@ use crate::manifest::{
 use crate::model::Item;
 use crate::model::events::EventKind;
 use crate::model::usage::SiteUsage;
-use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
+use crate::store::{Record, RecordKind, RecordStore, VaultEvent, account_record_id};
+use crate::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
+pub mod follow;
+pub mod kit;
 mod local;
+pub mod migrate;
+pub mod pairing;
+pub mod replay;
+pub mod rotate;
 pub mod travel;
+
+pub use follow::{LineageLock, PromptChoice, RotationPrompt};
+pub use rotate::{RotateRequest, RotationOutcome};
 
 /// What a device keeps between sessions: the account pinned at first
 /// unlock, the last manifest accepted for each vault, and the restore epoch
@@ -187,6 +203,21 @@ pub struct Repository<S: RecordStore> {
     /// the server's lists): a merging persist keeps the in-memory ones
     /// instead of refusing a fork with the stored ones.
     pub(crate) lists_forced: bool,
+    /// The id of the account records of the session's identity (spec
+    /// 6.6): params, keyset, restore epoch and lists. The account id for
+    /// generation 0, the identity id from generation 1 on.
+    pub(crate) records_id: Id,
+    /// A key rotation waits for the user's answer (spec 7.2, R10): the
+    /// session reads, every write is `Error::ReadOnly`. Found at unlock or
+    /// by `refresh_pending_rotation`.
+    pub(crate) pending: Option<RotationPrompt>,
+    /// What `pending` was computed from (`follow::lineage_mark`); `None`
+    /// before the first look.
+    pub(crate) lineage_mark: Option<[u8; 32]>,
+    /// A valid lineage record revokes or drops this device (spec 8.1,
+    /// Task 12), found with `pending`: nothing is written or pushed, and a
+    /// quarantined device reads nothing either.
+    pub(crate) lineage_lock: Option<LineageLock>,
 }
 
 /// A restore epoch record, verified, and the SHA-256 of its data.
@@ -298,19 +329,99 @@ pub fn split_item_record(data: &[u8]) -> Result<(Id, &[u8])> {
     Ok((Id(id), body))
 }
 
-/// The single account's params and keyset records (`NotFound` if there is
-/// none, `InvalidFormat("account params")` if there are several).
+/// The device's trust state, `None` on a store that keeps none (the store
+/// errors of one that does are errors).
+pub(crate) fn trust_of<S: RecordStore + ?Sized>(store: &S) -> Result<Option<TrustState>> {
+    match store.trust_state() {
+        Ok(t) => Ok(t),
+        Err(_) if !store.persists_chain() => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// The account's params and keyset records. With a trust state, those of
+/// its identity (spec 6.6: under the account id for generation 0, the
+/// identity id from generation 1 on; `NotFound` if either is missing).
+/// Without one (a legacy device), the single generation 0 params record of
+/// the store, the one whose id is the account id it names (`NotFound` if
+/// there is none, `InvalidFormat("account params")` if there are several).
 fn account_records<S: RecordStore>(store: &S) -> Result<(Record, Record)> {
-    let mut found = store.list(RecordKind::AccountParams)?;
-    let params = match found.len() {
-        0 => return Err(Error::NotFound),
-        1 => found.remove(0),
-        _ => return Err(Error::InvalidFormat("account params")),
+    let params = match trust_of(store)? {
+        Some(t) => {
+            let id = account_record_id(
+                t.account_id,
+                (t.head.generation > 0).then_some(&t.identity_pub),
+            );
+            store
+                .get(RecordKind::AccountParams, id)?
+                .ok_or(Error::NotFound)?
+        }
+        None => {
+            // Task 8, carried to Task 14: a legacy device that fetched a
+            // rotation before it migrated holds the new identity's params
+            // too (under its identity id); its own are generation 0's,
+            // under the account id the record names.
+            let mut found: Vec<Record> = store
+                .list(RecordKind::AccountParams)?
+                .into_iter()
+                .filter(|r| AccountParams::decode(&r.data).is_ok_and(|p| p.account_id == r.id))
+                .collect();
+            match found.len() {
+                0 => return Err(Error::NotFound),
+                1 => found.remove(0),
+                _ => return Err(Error::InvalidFormat("account params")),
+            }
+        }
     };
     let keyset = store
         .get(RecordKind::Keyset, params.id)?
         .ok_or(Error::NotFound)?;
     Ok((params, keyset))
+}
+
+/// A device state saved before a rotation committed (the session crashed
+/// in between) still pins the identity the trust state retired: the trust
+/// state is authoritative, so the pin moves to its identity (the KDF floor
+/// is kept) and the restore epoch of the left identity is forgotten
+/// (epochs are per identity, spec 10.2). The vaults the head rotation
+/// record names start again from its `from_heads` (R12), as after the
+/// rotation or the follow that moved the head. A pin of an identity the
+/// trust state never held is left alone: the unlock refuses it. Returns
+/// the vaults whose `last_seen` was replaced when the pin moved, `None`
+/// when it did not.
+fn reconcile_pin<S: RecordStore>(store: &S, device: &mut DeviceState) -> Result<Option<Vec<Id>>> {
+    let Some(trust) = trust_of(store)? else {
+        return Ok(None);
+    };
+    let Some(pin) = device.pinned.as_mut() else {
+        return Ok(None);
+    };
+    if pin.account_id != trust.account_id
+        || pin.identity_pub == trust.identity_pub
+        || !trust
+            .retired
+            .iter()
+            .any(|r| r.identity_pub == pin.identity_pub)
+    {
+        return Ok(None);
+    }
+    pin.identity_pub = trust.identity_pub.clone();
+    device.epoch = 0;
+    let mut replaced = Vec::new();
+    if let Some(rec) = store.get(
+        RecordKind::Lineage,
+        crate::lineage::record_id_of(&trust.head.hash),
+    )? && let Ok(r @ crate::lineage::LineageRecord::Rotation(_)) =
+        crate::lineage::LineageRecord::decode(&rec.data)
+        && r.hash() == trust.head.hash
+        && let crate::lineage::LineageRecord::Rotation(s) = r
+    {
+        for (v, head) in s.body.from_heads {
+            device.last_seen.insert(v, head);
+            replaced.push(v);
+        }
+    }
+    Ok(Some(replaced))
 }
 
 /// Manifests re-signed by epoch `e` start at seq `e * 2^32`, above every
@@ -339,6 +450,59 @@ fn newer_epoch(device_epoch: u64, stored: Option<&RestoreEpoch>) -> Result<bool>
     }
 }
 
+/// The genesis of a new account (spec 6.2) for `writes`, and the trust
+/// state of its creator: this device (`entry`, keys `keys`), alone in the
+/// roster, `Verified`, `Current`.
+fn genesis_trust(
+    account: &Account,
+    keys: &DeviceKeys,
+    entry: &DeviceEntry,
+    writes: &mut Vec<(Record, Option<u64>)>,
+) -> Result<TrustState> {
+    let me = keys.public(entry.device_id)?;
+    let creator = RosterEntry {
+        device_id: me.device_id,
+        sign_pub: me.sign_pub.clone(),
+        kem_pub: me.kem_pub.clone(),
+        name: entry.name.clone(),
+        kind: entry.kind,
+        mode: entry.mode,
+        introduced_by: None,
+    };
+    let body = GenesisBody {
+        format: LINEAGE_FORMAT,
+        account_id: account.params.account_id,
+        identity_pub: account.params.identity_pub.clone(),
+        creator: creator.clone(),
+        created_at: entry.added_at,
+    };
+    let genesis = LineageRecord::Genesis(sign_genesis(body, keys, &account.keyset().identity)?);
+    let head = LineageHead {
+        generation: 0,
+        hash: genesis.hash(),
+    };
+    writes.push((
+        Record {
+            id: genesis.record_id(),
+            kind: RecordKind::Lineage,
+            version: 0,
+            data: genesis.encode(),
+        },
+        None,
+    ));
+    let mut trust = TrustState::new(
+        account.params.account_id,
+        me,
+        head,
+        account.params.identity_pub.clone(),
+        vec![creator],
+        DeviceLineageState::Current,
+    );
+    trust.levels.insert(entry.device_id, TrustLevel::Verified);
+    trust.migration_listed.insert(entry.device_id);
+    Ok(trust)
+}
+
 fn personal() -> VaultMeta {
     VaultMeta {
         name: "Personnel".into(),
@@ -362,6 +526,43 @@ impl<S: RecordStore> Repository<S> {
         store: S,
         password: &str,
         kdf: KdfParams,
+    ) -> Result<(Repository<S>, SecretKey)> {
+        Self::create_with(store, password, kdf, None)
+    }
+
+    /// Key rotation v2 (spec 6.2, 15 step 6): `create_account`, and in the
+    /// same write the genesis of the account (`LineageRecord::Genesis`,
+    /// signed by `device_keys` and the new identity, this device its
+    /// creator with `name`, `kind` and `mode`, which also go in the device
+    /// list) and this device's first trust state: head the genesis, roster
+    /// this device alone, `Verified`, `Current`. Needs a store that keeps
+    /// the chain state (`InvalidFormat`, as `register_this_device`); the
+    /// name and mode are checked as there (`Validation`).
+    pub fn create_account_v2(
+        store: S,
+        password: &str,
+        kdf: KdfParams,
+        device_keys: &DeviceKeys,
+        name: &str,
+        kind: DeviceKind,
+        mode: DeviceMode,
+    ) -> Result<(Repository<S>, SecretKey)> {
+        check_name(name)?;
+        check_mode(mode)?;
+        if !store.persists_chain() {
+            return Err(Error::InvalidFormat(
+                "device registration needs a sync store",
+            ));
+        }
+        let me = Registration { name, kind, mode };
+        Self::create_with(store, password, kdf, Some((device_keys, &me)))
+    }
+
+    fn create_with(
+        store: S,
+        password: &str,
+        kdf: KdfParams,
+        v2: Option<(&DeviceKeys, &Registration<'_>)>,
     ) -> Result<(Repository<S>, SecretKey)> {
         if !store.list(RecordKind::AccountParams)?.is_empty() {
             return Err(Error::InvalidFormat("store already holds an account"));
@@ -398,10 +599,14 @@ impl<S: RecordStore> Repository<S> {
             chain,
             travel_parked: BTreeSet::new(),
             lists_forced: false,
+            records_id: id,
+            pending: None,
+            lineage_mark: None,
+            lineage_lock: None,
         };
         let (manifest, seen) = repo.manifest_record(&vault, None, vec![])?;
-        let me = device_id.map(|d| self_entry(d, None, at));
-        let devices = ListBody::next(None, id, me.into_iter().collect())?;
+        let me = device_id.map(|d| self_entry(d, v2.map(|(_, r)| r), at));
+        let devices = ListBody::next(None, id, me.iter().cloned().collect())?;
         let vaults = ListBody::next(
             None,
             id,
@@ -422,15 +627,24 @@ impl<S: RecordStore> Repository<S> {
         let writes = vec![
             record(RecordKind::AccountParams, id, params_record),
             record(RecordKind::Keyset, id, keyset_record),
-            list_record::<DeviceEntry>(&repo.account, devices)?,
-            list_record::<VaultListEntry>(&repo.account, vaults)?,
+            list_record::<DeviceEntry>(&repo.account, id, devices)?,
+            list_record::<VaultListEntry>(&repo.account, id, vaults)?,
             manifest,
             record(RecordKind::VaultMeta, vault.id, meta_blob),
             record(RecordKind::VaultKey, vault.id, envelope),
         ];
-        let writes = writes.into_iter().map(|r| (r, None)).collect();
-        repo.store
-            .put_all_if_version_with_chain(writes, &repo.chain)?;
+        let mut writes: Vec<(Record, Option<u64>)> =
+            writes.into_iter().map(|r| (r, None)).collect();
+        match (v2, &me) {
+            (Some((keys, _)), Some(entry)) => {
+                let trust = genesis_trust(&repo.account, keys, entry, &mut writes)?;
+                repo.store
+                    .put_first_trust(writes, Some(repo.chain.clone()), &trust)?;
+            }
+            _ => repo
+                .store
+                .put_all_if_version_with_chain(writes, &repo.chain)?,
+        }
         repo.device.last_seen.insert(vault.id, seen);
         Ok((repo, secret_key))
     }
@@ -459,10 +673,11 @@ impl<S: RecordStore> Repository<S> {
         store: S,
         password: &str,
         secret_key: &SecretKey,
-        device: DeviceState,
+        mut device: DeviceState,
     ) -> Result<(Repository<S>, Auk)> {
         let (params, keyset) = account_records(&store)?;
         let chain = store.chain_state()?;
+        let moved = reconcile_pin(&store, &mut device)?;
         let (account, auk) = Account::unlock_exporting_auk_at(
             password,
             secret_key,
@@ -472,15 +687,16 @@ impl<S: RecordStore> Repository<S> {
             chain.params_epoch,
         )?;
         Ok((
-            Self::finish_unlock(store, account, &params, device, chain)?,
+            Self::finish_unlock(store, account, &params, device, chain, moved)?,
             auk,
         ))
     }
 
     /// Like `unlock`, from an Account Unlock Key kept from an earlier one.
-    pub fn unlock_with_auk(store: S, auk: &Auk, device: DeviceState) -> Result<Repository<S>> {
+    pub fn unlock_with_auk(store: S, auk: &Auk, mut device: DeviceState) -> Result<Repository<S>> {
         let (params, keyset) = account_records(&store)?;
         let chain = store.chain_state()?;
+        let moved = reconcile_pin(&store, &mut device)?;
         let account = Account::unlock_with_auk_at(
             auk,
             &params.data,
@@ -488,7 +704,7 @@ impl<S: RecordStore> Repository<S> {
             device.pinned.as_ref(),
             chain.params_epoch,
         )?;
-        Self::finish_unlock(store, account, &params, device, chain)
+        Self::finish_unlock(store, account, &params, device, chain, moved)
     }
 
     fn finish_unlock(
@@ -497,8 +713,13 @@ impl<S: RecordStore> Repository<S> {
         params: &Record,
         mut device: DeviceState,
         mut chain: ChainState,
+        pin_moved: Option<Vec<Id>>,
     ) -> Result<Repository<S>> {
-        if account.params.account_id != params.id {
+        // Spec 6.6: the account id (generation 0) or the identity id of the
+        // records' own identity.
+        if params.id != account.params.account_id
+            && params.id != identity_id(&account.params.identity_pub)
+        {
             return Err(IntegrityError::WrongContext.into());
         }
         match &mut device.pinned {
@@ -506,17 +727,35 @@ impl<S: RecordStore> Repository<S> {
             Some(p) => p.raise_floor(&account.params.kdf),
         }
         chain.accept_params_epoch(account.params.epoch);
-        Ok(Repository {
+        let mut repo = Repository {
             store,
             account,
             device,
-            dropped: BTreeSet::new(),
-            epoch_rewound: false,
+            // A pin moved to the trust state's identity replaced the
+            // `last_seen` of the vaults the rotation names and dropped the
+            // left identity's epoch: the next persist keeps both.
+            dropped: pin_moved.iter().flatten().copied().collect(),
+            epoch_rewound: pin_moved.is_some(),
             epoch_cache: Mutex::new(None),
             chain,
             travel_parked: BTreeSet::new(),
             lists_forced: false,
-        })
+            records_id: params.id,
+            pending: None,
+            lineage_mark: None,
+            lineage_lock: None,
+        };
+        // K9: an unlock never follows a rotation; it reports a pending one,
+        // and the session is read-only until the user answers.
+        repo.refresh_pending_rotation()?;
+        // Spec 8.1, 8.4: a quarantined device stays locked (its answer is
+        // `follow::quarantine_resolve`); an orphaned one opens, read-only.
+        repo.readable()?;
+        // Spec 10.4: own writes of an identity left wait for a replay under
+        // the keys followed; each unlock tries again (best effort: the
+        // session opens whatever it finds).
+        let _ = repo.replay_own_writes();
+        Ok(repo)
     }
 
     /// Change the master password (spec 2b, 3.3). The current password and
@@ -543,10 +782,16 @@ impl<S: RecordStore> Repository<S> {
         secret_key: &SecretKey,
         new: &str,
     ) -> Result<Auk> {
-        let (params, keyset) = account_records(&self.store)?;
-        if params.id != self.account.params.account_id {
-            return Err(IntegrityError::WrongContext.into());
-        }
+        self.writable()?;
+        // The records of the session's identity (spec 7.3).
+        let params = self
+            .store
+            .get(RecordKind::AccountParams, self.records_id)?
+            .ok_or(Error::NotFound)?;
+        let keyset = self
+            .store
+            .get(RecordKind::Keyset, self.records_id)?
+            .ok_or(Error::NotFound)?;
         let (stored, _) = Account::unlock_exporting_auk_at(
             current,
             secret_key,
@@ -647,7 +892,11 @@ impl<S: RecordStore> Repository<S> {
     /// vault the vault list marks deleted is not expected either: the
     /// deletion wins over an epoch that still named the vault (issued
     /// before it reached the issuing device).
+    ///
+    /// A quarantined device reads nothing: `Validation("device")` (key
+    /// rotation v2, spec 8.4); `items` too.
     pub fn vaults(&self) -> Result<Vec<Vault>> {
+        self.readable()?;
         let stored = self.stored_epoch()?;
         let newer = self.epoch_rule(stored.as_ref())?;
         let known = match &stored {
@@ -691,8 +940,36 @@ impl<S: RecordStore> Repository<S> {
                 .store
                 .get(RecordKind::VaultMeta, key.id)?
                 .ok_or(Error::InvalidFormat("vault meta"))?;
-            let vault = Vault::open(&self.account, key.id, &key.data, &meta.data)?;
-            self.read_manifest(&vault, None)?;
+            let vault = match Vault::open(&self.account, key.id, &key.data, &meta.data) {
+                Ok(vault) => match self.read_manifest(&vault, None) {
+                    Ok(_) => vault,
+                    Err(Error::Integrity(e)) => {
+                        self.retained_vault(key.id)?.ok_or(Error::Integrity(e))?
+                    }
+                    Err(e) => return Err(e),
+                },
+                // Key rotation v2 (spec 9): a vault a known rotation
+                // re-sealed under keys this device has not followed yet is
+                // read from its own copy (`RecordStore::retained_rows`).
+                Err(Error::Integrity(e)) => match self.retained_vault(key.id)? {
+                    Some(v) => v,
+                    // Review I1 (R21): from generation 1 on, a vault key of
+                    // a foreign generation that the verified vault list does
+                    // not list live (a vault created under the identity
+                    // left, after `from_heads`) is not this identity's
+                    // vault: left alone, not opened. Its re-creation under
+                    // the new identity is Task 11.
+                    None if self.records_id != self.account.params.account_id
+                        && !entries
+                            .iter()
+                            .any(|l| l.vault_id == key.id && l.deleted_at.is_none()) =>
+                    {
+                        continue;
+                    }
+                    None => return Err(Error::Integrity(e)),
+                },
+                Err(e) => return Err(e),
+            };
             out.push(vault);
         }
         out.sort_by_key(|v| v.id);
@@ -710,7 +987,9 @@ impl<S: RecordStore> Repository<S> {
     /// of the same record (version and data) is cached.
     fn stored_epoch(&self) -> Result<Option<StoredEpoch>> {
         let id = self.account.params.account_id;
-        let Some(rec) = self.store.get(RecordKind::RestoreEpoch, id)? else {
+        // Epochs are per identity (spec 10.2): only the record of the
+        // session's identity counts.
+        let Some(rec) = self.store.get(RecordKind::RestoreEpoch, self.records_id)? else {
             return Ok(None);
         };
         let mut cache = self
@@ -815,6 +1094,7 @@ impl<S: RecordStore> Repository<S> {
     /// The manifests already re-signed when a later step fails are valid
     /// successors and stay.
     pub fn issue_restore_epoch(&mut self, reason: EpochReason) -> Result<RestoreEpoch> {
+        self.writable()?;
         let stored = self.sync_epoch()?.map(|e| e.epoch);
         let vaults = self.vaults()?;
         self.issue_epoch(reason, stored, vaults, false)
@@ -837,6 +1117,7 @@ impl<S: RecordStore> Repository<S> {
         vaults: Vec<Vault>,
         local: bool,
     ) -> Result<RestoreEpoch> {
+        self.writable()?;
         let epoch = self
             .device
             .epoch
@@ -876,7 +1157,7 @@ impl<S: RecordStore> Repository<S> {
         hash.copy_from_slice(digest(&SHA256, &data).as_ref());
         self.store.put_if_version(
             Record {
-                id: account_id,
+                id: self.records_id,
                 kind: RecordKind::RestoreEpoch,
                 version: epoch,
                 data,
@@ -910,7 +1191,11 @@ impl<S: RecordStore> Repository<S> {
     /// listed too; if the vaults do not verify, no list is created and the
     /// vault waits for adoption. A list changed by
     /// another writer meanwhile is `Error::Conflict`, and nothing is written.
+    /// A kit-restored device no device pinned yet signs no vault list:
+    /// `Validation("device")` (Task 15).
     pub fn create_vault(&mut self, meta: VaultMeta) -> Result<Vault> {
+        self.writable()?;
+        self.signs_lists()?;
         self.sync_epoch()?;
         if self.read_list::<VaultListEntry>()?.is_none() {
             // An account from before the lists: migrate on this first write.
@@ -919,6 +1204,14 @@ impl<S: RecordStore> Repository<S> {
         let list = self.read_list::<VaultListEntry>()?;
         let (vault, envelope, meta_blob) = Vault::create(&self.account, meta)?;
         let (manifest, seen) = self.manifest_record(&vault, None, vec![])?;
+        // Spec 10.4: the creation is this device's own meta write (a
+        // re-creation after a rotation takes it, never another device's).
+        self.log_own_write_seen(
+            vault.id,
+            vault.id,
+            seen.clone(),
+            Some(replay::meta_hash(&meta_blob)),
+        )?;
         let mut writes = vec![(manifest, None)];
         for (kind, data) in [
             (RecordKind::VaultMeta, meta_blob),
@@ -968,8 +1261,11 @@ impl<S: RecordStore> Repository<S> {
     /// longer returns or expects. The vault leaves `last_seen`. A list
     /// changed by another writer meanwhile is `Error::Conflict`, and nothing
     /// is written. On an account without a vault list (from before it), the
-    /// lists are first brought up to date.
+    /// lists are first brought up to date. Refused on a kit-restored
+    /// device no device pinned yet, as `create_vault`.
     pub fn delete_vault(&mut self, vault: &Vault) -> Result<()> {
+        self.writable()?;
+        self.signs_lists()?;
         if self.read_list::<VaultListEntry>()?.is_none() {
             self.maintain_lists(None)?;
         }
@@ -1052,6 +1348,7 @@ impl<S: RecordStore> Repository<S> {
     /// records' versions: two racing updates cannot both win, and a store
     /// cannot serve an older meta (its flags) under the newer manifest.
     pub fn update_vault_meta(&mut self, vault: &Vault, meta: VaultMeta) -> Result<Vault> {
+        self.writable()?;
         self.sync_epoch()?;
         let key = self
             .store
@@ -1082,6 +1379,9 @@ impl<S: RecordStore> Repository<S> {
         let m =
             Manifest::next(Some(&prev), vault.id, prev.entries.clone())?.with_meta(&updated.meta);
         let manifest = self.signed_manifest(&updated, &m)?;
+        // Spec 10.4: a meta intent is keyed by the vault id itself.
+        let sealed = replay::meta_hash(&blob);
+        self.log_own_write(vault.id, vault.id, &prev, Some(sealed))?;
         let meta_record = Record {
             id: vault.id,
             kind: RecordKind::VaultMeta,
@@ -1100,6 +1400,7 @@ impl<S: RecordStore> Repository<S> {
     /// against the last one seen and the records against the manifest. The
     /// manifest is then remembered as the last one seen.
     pub fn items(&mut self, vault: &Vault) -> Result<Vec<Item>> {
+        self.readable()?;
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Read)?;
         let items = loaded
@@ -1123,6 +1424,7 @@ impl<S: RecordStore> Repository<S> {
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
         let rec = vault.seal_item(&item, loaded.next_version(item.id)?)?;
+        self.log_own_write(vault.id, item.id, &loaded.manifest, Some(record_hash(&rec)))?;
         let old = loaded.listed(item.id).map(|(blob, _)| *blob);
         let written = self.put_item(vault.id, &rec)?;
         let mut entries = loaded.entries_without(item.id);
@@ -1229,6 +1531,7 @@ impl<S: RecordStore> Repository<S> {
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
         let (blob, _) = *loaded.listed(item_id).ok_or(Error::NotFound)?;
+        self.log_own_write(vault.id, item_id, &loaded.manifest, None)?;
         let entries = loaded.entries_without(item_id);
         self.commit_manifest(vault, &loaded.manifest, entries, None)?;
         self.delete_ignored(&loaded, item_id)?;
@@ -1269,6 +1572,8 @@ impl<S: RecordStore> Repository<S> {
         let (blob, rec) = src.listed(item_id).ok_or(Error::NotFound)?.clone();
         let dst = self.served(to, Use::Write)?;
         let moved = from.move_item(to, &rec, dst.next_version(item_id)?)?;
+        self.log_own_write(to.id, item_id, &dst.manifest, Some(record_hash(&moved)))?;
+        self.log_own_write(from.id, item_id, &src.manifest, None)?;
         let replaced = dst.listed(item_id).map(|(b, _)| *b);
         let written = self.put_item(to.id, &moved)?;
         let mut entries = dst.entries_without(item_id);
@@ -1322,6 +1627,17 @@ impl<S: RecordStore> Repository<S> {
     /// verified copy (a vault this device never read, or a copy that fails
     /// too) is an alert and the visible state's error.
     pub(crate) fn served(&mut self, vault: &Vault, use_: Use) -> Result<Loaded> {
+        if use_ != Use::Read {
+            self.writable()?;
+        }
+        // Key rotation v2 (spec 9): a vault re-sealed by a rotation this
+        // device has not followed is read from its own copy, as it was
+        // before, without touching the server state or the sync health.
+        if use_ == Use::Read && self.reads_own_copy(vault.id)? {
+            let kept = self.store.kept_rows(vault.id)?.unwrap_or_default();
+            let last = self.device.last_seen.get(&vault.id).cloned();
+            return Ok(self.local_copy_from(vault, &kept, last.as_ref())?.loaded);
+        }
         let cause = match self.load(vault) {
             Ok(loaded) => {
                 self.store.vault_event(vault.id, VaultEvent::Clean)?;
@@ -1377,7 +1693,19 @@ impl<S: RecordStore> Repository<S> {
             .device
             .last_seen
             .get(&vault.id)
+            .cloned()
             .ok_or(IntegrityError::ManifestRollback)?;
+        self.local_copy_from(vault, kept, Some(&last))
+    }
+
+    /// `local_copy` checked against `last` (`None`: a vault this device
+    /// never read, its copy accepted without history).
+    fn local_copy_from(
+        &self,
+        vault: &Vault,
+        kept: &[Record],
+        last: Option<&SeenManifest>,
+    ) -> Result<LocalCopy> {
         let of_vault = |r: &Record| {
             split_item_record(&r.data)
                 .ok()
@@ -1428,12 +1756,13 @@ impl<S: RecordStore> Repository<S> {
         &self,
         vault: &Vault,
         record: Record,
-        last: &SeenManifest,
+        last: Option<&SeenManifest>,
         visible: &[(Record, Option<ItemRecord>)],
         held: &[(Record, ItemRecord)],
     ) -> Result<LocalCopy> {
         let sm = SignedManifest::decode(&record.data)?;
-        let manifest = verify_manifest(vault, &self.account.params.signing_pub, &sm, Some(last))?;
+        let manifest = verify_manifest(vault, &self.account.params.signing_pub, &sm, last)?;
+        let foreign = self.tolerates_foreign(vault.id)?;
         let exact = |e: &ManifestEntry, i: &ItemRecord| {
             i.item_id == e.item_id && i.version == e.version && record_hash(i) == e.record_hash
         };
@@ -1458,6 +1787,11 @@ impl<S: RecordStore> Repository<S> {
         for (r, i) in visible.iter().filter(|(r, _)| !used.contains(&r.id)) {
             let opens = i.as_ref().is_some_and(|i| vault.open_item(i).is_ok());
             if !opens {
+                // R21: a record of a foreign key generation is left alone
+                // (never deleted by this copy).
+                if foreign && i.is_some() {
+                    continue;
+                }
                 return Err(IntegrityError::ManifestUnexpectedItem.into());
             }
             unlisted.push(r.id);
@@ -1543,6 +1877,19 @@ impl<S: RecordStore> Repository<S> {
             .into_iter()
             .partition(|(_, r)| current.contains(&r.item_id) && is_leftover(&manifest, r));
         ignored.extend(stale.iter().map(|(blob, r)| (*blob, r.item_id)));
+        // R21: from generation 1 on (or for a vault re-sealed by a rotation
+        // this device reads from its own copy), a record that matches no
+        // entry and does not open under the vault key belongs to a foreign
+        // key generation (the identity left, a sibling): left alone.
+        if self.tolerates_foreign(vault.id)? {
+            records.retain(|(_, r)| {
+                manifest.entries.iter().any(|e| {
+                    e.item_id == r.item_id
+                        && e.version == r.version
+                        && record_hash(r) == e.record_hash
+                }) || vault.open_item(r).is_ok()
+            });
+        }
         records.sort_by_key(|(_, r)| r.item_id);
         let plain: Vec<ItemRecord> = records.iter().map(|(_, r)| r.clone()).collect();
         check_records(&manifest, &plain)?;
@@ -1714,6 +2061,136 @@ fn interrupted_write(vault: &Vault, m: &Manifest, rec: &ItemRecord) -> bool {
         None => Some(1),
     };
     expected == Some(rec.version) && vault.open_item(rec).is_ok()
+}
+
+impl<S: RecordStore> Repository<S> {
+    /// The public signing keys of the identities this device left, from its
+    /// trust state (empty without one): the keys an archive or a Travel
+    /// state made before a rotation was signed with (R18).
+    pub(crate) fn retired_signers(&self) -> Result<Vec<crate::crypto::HybridVerifyingKey>> {
+        Ok(trust_of(&self.store)?
+            .map(|t| t.retired.into_iter().map(|r| r.sign_pub).collect())
+            .unwrap_or_default())
+    }
+
+    /// The manifests the head rotation of the trust state was made from
+    /// (`from_heads`, R12); empty without a trust state or when the head is
+    /// a genesis or not in the store.
+    pub(crate) fn head_from_heads(&self) -> Result<BTreeMap<Id, SeenManifest>> {
+        let Some(trust) = trust_of(&self.store)? else {
+            return Ok(BTreeMap::new());
+        };
+        let Some(rec) = self.store.get(
+            RecordKind::Lineage,
+            crate::lineage::record_id_of(&trust.head.hash),
+        )?
+        else {
+            return Ok(BTreeMap::new());
+        };
+        match crate::lineage::LineageRecord::decode(&rec.data) {
+            Ok(r) if r.hash() == trust.head.hash => match r {
+                crate::lineage::LineageRecord::Rotation(s) => Ok(s.body.from_heads),
+                crate::lineage::LineageRecord::Genesis(_) => Ok(BTreeMap::new()),
+            },
+            _ => Ok(BTreeMap::new()),
+        }
+    }
+
+    /// Open an account backup made by this account, also one made before a
+    /// key rotation (spec 10.7, R18): its KEM key opens through
+    /// `retired_kem` and its signature verifies under a retired signing key
+    /// of the trust state; `made_before_rotation` then tells the restore
+    /// screen to warn ("Sauvegarde faite avant le changement de clés"), as
+    /// the revoked device can forge such a file. A signature by no key this
+    /// device knows is refused as before.
+    pub fn open_archive(&self, bytes: &[u8]) -> Result<crate::archive::Contents> {
+        let retired = self.retired_signers()?;
+        crate::archive::open_retired(
+            bytes,
+            crate::archive::Unlock::Account(&self.account),
+            &retired,
+        )
+    }
+
+    /// Restore `contents` into the account: the missing vaults are created
+    /// with the archive's meta, every item absent from the account is
+    /// written as a new write under the current keys (so an archive of an
+    /// older identity brings no record of that identity back), the others
+    /// are skipped (`restore_plan`). Every item is validated before the
+    /// first write. Only vault content is written: never the account
+    /// records, the lists, the lineage, the intros, the deliveries or the
+    /// trust state (spec 10.7). While a rotation waits for the user it is
+    /// `Error::ReadOnly`. The caller issues the restore epoch afterwards.
+    pub fn restore_archive(
+        &mut self,
+        contents: &crate::archive::Contents,
+    ) -> Result<crate::archive::RestoreReport> {
+        let mut progress = crate::archive::RestoreProgress::default();
+        self.restore_archive_with(contents, &mut progress, &Ok)
+    }
+
+    /// `restore_archive` for a caller that retries after a conflict or
+    /// reports partial counts: `progress` remembers the vaults created
+    /// (archive id to account id, reused by a retry) and, on an error, how
+    /// many items were written, how many were planned, and which item
+    /// (1-based, in plan order) `prepare` refused, if any. `prepare` checks
+    /// or adjusts each item before the first write.
+    pub fn restore_archive_with(
+        &mut self,
+        contents: &crate::archive::Contents,
+        progress: &mut crate::archive::RestoreProgress,
+        prepare: &dyn Fn(Item) -> Result<Item>,
+    ) -> Result<crate::archive::RestoreReport> {
+        self.writable()?;
+        progress.restored = 0;
+        progress.total = 0;
+        progress.invalid = None;
+        let mut targets: std::collections::HashMap<Id, Vault> = std::collections::HashMap::new();
+        let mut existing = Vec::new();
+        for v in self.vaults()? {
+            let ids = self.items(&v)?.iter().map(|i| i.id).collect();
+            existing.push((v.id, ids));
+            targets.insert(v.id, v);
+        }
+        // A vault created by an earlier attempt stands for its archive id.
+        for (archive_id, id) in &progress.created {
+            if let Some(vault) = targets.remove(id) {
+                targets.insert(*archive_id, vault);
+            }
+        }
+        let plan = crate::archive::restore_plan(contents, &existing);
+        progress.total = u32::try_from(plan.writes.len()).unwrap_or(u32::MAX);
+        let mut writes = Vec::with_capacity(plan.writes.len());
+        for (i, (vault, item)) in plan.writes.into_iter().enumerate() {
+            match prepare(item) {
+                Ok(item) => writes.push((vault, item)),
+                Err(e) => {
+                    progress.invalid = u32::try_from(i + 1).ok();
+                    return Err(e);
+                }
+            }
+        }
+        for (archive_id, meta) in plan.new_vaults {
+            if progress.created.contains_key(&archive_id) {
+                continue;
+            }
+            let vault = self.create_vault(meta)?;
+            progress.created.insert(archive_id, vault.id);
+            targets.insert(archive_id, vault);
+        }
+        for (archive_id, mut item) in writes {
+            let target = targets.get(&archive_id).ok_or(Error::NotFound)?;
+            item.vault_id = target.id;
+            self.save_item(target, item)?;
+            progress.restored = progress.restored.saturating_add(1);
+        }
+        Ok(crate::archive::RestoreReport {
+            vaults_created: u32::try_from(progress.created.len()).unwrap_or(u32::MAX),
+            restored: progress.restored,
+            skipped: plan.skipped,
+            made_before_rotation: contents.made_before_rotation,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -2206,13 +2683,29 @@ mod tests {
         ));
         let (repo, _) = fresh(MemoryStore::new());
         let mut store = repo.store;
-        let mut twin = store
+        let params = store
             .list(RecordKind::AccountParams)
             .unwrap()
             .pop()
             .unwrap();
-        twin.id = Id::new();
-        store.put(twin).unwrap();
+        // Params under an id that is not the account id they name are not
+        // generation 0 records (a rotation's identity-keyed ones, or junk):
+        // a device without a trust state reads past them (Task 14).
+        let mut stray = params.clone();
+        stray.id = Id::new();
+        store.put(stray).unwrap();
+        Repository::unlock(store.clone(), "pw", &n.secret_key, DeviceState::default()).unwrap();
+        // A second account's generation 0 params: refused.
+        let other = Account::create_with_params("pw", kdf()).unwrap();
+        let other_id = other.account.params.account_id;
+        store
+            .put(Record {
+                id: other_id,
+                kind: RecordKind::AccountParams,
+                version: 1,
+                data: other.params_record,
+            })
+            .unwrap();
         assert!(matches!(
             Repository::unlock(store, "pw", &n.secret_key, DeviceState::default()),
             Err(Error::InvalidFormat(_))

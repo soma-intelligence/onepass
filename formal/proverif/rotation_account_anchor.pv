@@ -1,0 +1,53 @@
+(* formal-lib: rotation_core.pvl *)
+(* OnePass formal model, negative control of rotation.pv: the root cause
+   of the hold-outs of the first design (fix/key-rotation, rulings K2,
+   K4 and P1 to P3). The rotation record is authenticated by an ACCOUNT
+   key of the identity before the rotation (here its identity key,
+   id_old), not by a device key, and the user still confirms the summary
+   shown (rotator name, revoked names), which now comes from the record
+   itself since no device signature binds it.
+
+   The revoked device holds id_old (it held the whole keyset), so the
+   attacker signs a record that claims "A revoked B", with an identity,
+   a keyset and a Secret Key delivery of its own: the summary matches
+   what the user did, C confirms, and adopts the attacker's identity.
+   Expected: every property of rotation.pv about adoption fails. A trust
+   anchor the revoked device holds cannot tell a real rotation from a
+   forged one (spec section 3). *)
+
+(* The old identity key: the revoked device has it. *)
+free id_old: skey.
+
+let Follow(me: bitstring, dkm: seed, dkx: seed, head: bitstring) =
+  in(c, (body: bitstring, sdev: bitstring, sid: bitstring, params: bitstring,
+         ks: bitstring, deliv: bitstring));
+  let rr_body(=acct, =head, signer: bitstring, ip: pkey, revoked: bitstring,
+              roster: bitstring, ph: bitstring) = body in
+  (* The record is signed by the old account identity. *)
+  if verify_dom(pk(id_old), dom_rotation, body, sdev) = true then
+  if verify_dom(ip, dom_rotation_id, body, sid) = true then
+  if revoked <> me then
+  get userDid(=signer, =revoked) in
+  let (km: seed, kx: seed, ssk: skey) =
+    open_rotation(me, dkm, dkx, body, ip, ph, params, ks, deliv) in
+  event Adopt(me, signer, ip);
+  UseVault(me, ip, km, kx, ssk).
+
+(* Expected false: C adopts an identity A never introduced, believing A
+   did. *)
+query d: bitstring, s: bitstring, ip: pkey, r: bitstring, ro: bitstring, k: key, ik: skey;
+  event(Adopt(d, s, ip)) ==> event(Rotated(s, ip, r, ro, k, ik)).
+(* Expected false: what C writes afterwards reaches the attacker. *)
+query d: bitstring, m: bitstring; event(ItemSealedNew(d, m)) && attacker(m).
+(* Sanity (expected false): C follows A's honest rotation. *)
+query ip: pkey; event(Adopt(devC, devA, ip)).
+
+process
+  new dkmA: seed; new dkxA: seed;
+  new dkmC: seed; new dkxC: seed;
+  out(c, (kem_pk_m(dkmA), kem_pk_x(dkxA), kem_pk_m(dkmC), kem_pk_x(dkxC)));
+  let rosterAC = (ros_entry(devA, pk(id_old), kem_pk_m(dkmA), kem_pk_x(dkxA)),
+                  ros_entry(devC, pk(id_old), kem_pk_m(dkmC), kem_pk_x(dkxC))) in
+  (* A signs its record with the old account identity. *)
+  ( Rotate(devA, id_old, h_genesis, devB, rosterAC)
+  | !Follow(devC, dkmC, dkxC, h_genesis) )

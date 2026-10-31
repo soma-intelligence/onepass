@@ -20,8 +20,6 @@
     )
 )]
 
-use std::collections::HashMap;
-
 use onepass_core::Id;
 use onepass_core::archive::{
     self, ArchiveKind, ArchivedVault, CURRENT_SCHEMA, Contents, HeaderInfo, RestorePlan, Unlock,
@@ -30,7 +28,6 @@ use onepass_core::archive::{
 use onepass_core::epoch::EpochReason;
 use onepass_core::export::csv_plaintext;
 use onepass_core::model::{Item, ItemType};
-use onepass_core::vault::Vault;
 use zeroize::Zeroizing;
 
 use crate::convert::parse_id;
@@ -88,6 +85,10 @@ pub struct FfiRestoreSummary {
     pub skipped: u32,
     /// Opened by the account: its signature was verified.
     pub signature_verified: bool,
+    /// The archive was made before a key rotation (R18): its signature is
+    /// by a retired key, which the revoked device also holds. The restore
+    /// screen says "Sauvegarde faite avant le changement de clés".
+    pub made_before_rotation: bool,
     /// The restore epoch issued after the writes (`None` in a preview, or
     /// when issuing it failed: the items stay written, issue it again).
     pub epoch: Option<u64>,
@@ -148,7 +149,7 @@ fn open_for(
     }
     let account = repo.account();
     if header.account == Some(account.params.account_id) {
-        return Ok((archive::open(bytes, Unlock::Account(account))?, true));
+        return Ok((repo.open_archive(bytes)?, true));
     }
     if !header.passphrase {
         return Err(invalid("archive of another account"));
@@ -179,6 +180,7 @@ fn summary(contents: &Contents, plan: &RestorePlan, verified: bool) -> FfiRestor
         by_type: by_type(plan.writes.iter().map(|(_, i)| i)),
         skipped: plan.skipped,
         signature_verified: verified,
+        made_before_rotation: contents.made_before_rotation,
         epoch: None,
     }
 }
@@ -231,42 +233,17 @@ impl Session {
         };
         // `with` runs the closure again after a conflict: the plan is made
         // again then, so the items written by the first run are skipped and
-        // the vaults it created are reused.
-        let mut created: HashMap<Id, Id> = HashMap::new();
-        let mut vaults_created = 0usize;
+        // the vaults it created are reused (`progress`).
+        let mut progress = archive::RestoreProgress::default();
         self.with(|repo| {
             let plan = plan_for(repo, &contents)?;
             let mut done = summary(&contents, &plan, verified);
-            let mut plan = plan;
-            plan.new_vaults.retain(|(id, _)| !created.contains_key(id));
-            let writes = plan
-                .writes
-                .into_iter()
-                .map(|(v, item)| Ok((v, crate::validate_for_save(item)?)))
-                .collect::<Result<Vec<_>, OnePassError>>()?;
-            for (archive_id, meta) in plan.new_vaults {
-                let vault = repo.create_vault(meta)?;
-                created.insert(archive_id, vault.id);
-                vaults_created += 1;
-            }
-            let mut targets: HashMap<Id, Vault> =
-                repo.vaults()?.into_iter().map(|v| (v.id, v)).collect();
-            for (archive_id, id) in &created {
-                if let Some(vault) = targets.remove(id) {
-                    targets.insert(*archive_id, vault);
-                }
-            }
-            let mut written = 0usize;
-            for (archive_id, mut item) in writes {
-                let vault = targets
-                    .get(&archive_id)
-                    .ok_or_else(|| invalid("archive vault"))?;
-                item.vault_id = vault.id;
-                repo.save_item(vault, item)?;
-                written += 1;
-            }
-            done.items = count(written);
-            done.vaults_created = count(vaults_created);
+            drop(plan);
+            let report = repo.restore_archive_with(&contents, &mut progress, &|item| {
+                crate::validate_for_save(item)
+            })?;
+            done.items = report.restored;
+            done.vaults_created = report.vaults_created;
             done.epoch = repo
                 .issue_restore_epoch(EpochReason::Restore)
                 .ok()

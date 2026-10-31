@@ -23,9 +23,11 @@ use time::OffsetDateTime;
 
 use crate::chain::{ChainState, Seen};
 use crate::lists::{AccountList, MonotoneEntry, Stored};
-use crate::repo::Repository;
+use crate::repo::follow::{lineage_records, rotations};
+use crate::repo::{LineageLock, Repository, trust_of};
 use crate::store::{RecordKind, RecordStore};
 use crate::sync::SyncStore;
+use crate::trust::{DeviceLineageState, TrustLevel};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, Result, ValidationError};
 
@@ -169,7 +171,7 @@ fn revoked() -> Error {
 }
 
 /// A public session adds nothing to the list (architecture spec 4.10).
-fn check_mode(mode: DeviceMode) -> Result<()> {
+pub(crate) fn check_mode(mode: DeviceMode) -> Result<()> {
     match mode {
         DeviceMode::Public => Err(invalid("device mode", "public")),
         DeviceMode::Personal | DeviceMode::Shared => Ok(()),
@@ -206,6 +208,12 @@ impl<S: RecordStore> Repository<S> {
     /// state the device part is skipped (see the module doc). A device the
     /// list marks revoked writes nothing. The lists read are remembered as
     /// accepted (`ChainState`).
+    ///
+    /// Key rotation v2 (R10, spec 8.1; Task 9/10 concern 5, Task 12 M5): a
+    /// device that may not write (`Candidate`, `Quarantined`, `Orphaned`,
+    /// or a prompt or lock this session found, `Repository::writable`)
+    /// writes no list either: the lists are read, nothing is created,
+    /// registered or adopted.
     pub(crate) fn maintain_lists(&mut self, me: Option<&Registration<'_>>) -> Result<()> {
         let devices = self.read_list::<DeviceEntry>()?;
         let vault_list = self.read_list::<VaultListEntry>()?;
@@ -234,8 +242,23 @@ impl<S: RecordStore> Repository<S> {
             chain.device_id
         };
         let mine = my_id.and_then(|id| devices.as_ref().and_then(|d| d.body.entry(id)));
-        if mine.is_some_and(|e| e.revoked_at.is_some()) {
+        // Spec 10.1: with a trust state, only the lineage revokes.
+        let revoked = match trust_of(&self.store)? {
+            Some(_) => self.is_revoked_here()?,
+            None => mine.is_some_and(|e| e.revoked_at.is_some()),
+        };
+        if revoked {
             return Ok(());
+        }
+        // Task 15 (spec 7.5 step 5): a kit-restored device signs no list
+        // before a device pins it: no self-registration, no adoption.
+        if trust_of(&self.store)?.is_some_and(|t| crate::repo::kit::kit_unpinned(&t)) {
+            return Ok(());
+        }
+        match self.writable() {
+            Ok(()) => {}
+            Err(Error::ReadOnly) => return Ok(()),
+            Err(e) => return Err(e),
         }
         let at = now();
 
@@ -309,12 +332,45 @@ impl<S: RecordStore> Repository<S> {
 
     /// Every device of the account, sorted by id, revoked ones included,
     /// after bringing the lists up to date (`maintain_lists`).
+    ///
+    /// Key rotation v2 (spec 10.1): on a device with a trust state,
+    /// `revoked_at` is derived from the lineage. A device the lineage
+    /// revoked (`TrustState::revoked`) is revoked, at the time the list
+    /// gives (the rotator writes it, `rotate`), else at the earliest
+    /// `issued_at` of a stored rotation record revoking it; a revocation
+    /// only the account-signed list carries is not shown (any holder of the
+    /// account keys, a revoked device included, can sign that list), unless
+    /// this device excluded it too (`cancel_pairing`, "Ce n'était pas moi").
     pub fn devices(&mut self) -> Result<Vec<DeviceEntry>> {
         self.maintain_lists(None)?;
-        Ok(self
+        let mut entries = self
             .read_list::<DeviceEntry>()?
             .map(|d| d.body.entries)
-            .unwrap_or_default())
+            .unwrap_or_default();
+        if let Some(t) = trust_of(&self.store)? {
+            let records = lineage_records(&self.store)?;
+            let bodies = rotations(&records);
+            for e in &mut entries {
+                e.revoked_at = if t.revoked.contains(&e.device_id) {
+                    e.revoked_at
+                        .or_else(|| {
+                            bodies
+                                .values()
+                                .filter(|b| b.revoked.contains(&e.device_id))
+                                .map(|b| b.issued_at)
+                                .min()
+                        })
+                        .or(Some(0))
+                } else if t.excluded.contains(&e.device_id) {
+                    // A device the user removed here (`cancel_pairing`, or
+                    // distrusted): the list's revocation shows.
+                    e.revoked_at
+                } else {
+                    None
+                };
+            }
+        }
+        Ok(entries)
     }
 
     /// This device's id in the device list, once it has one.
@@ -336,6 +392,7 @@ impl<S: RecordStore> Repository<S> {
         kind: DeviceKind,
         mode: DeviceMode,
     ) -> Result<Id> {
+        self.writable()?;
         check_name(name)?;
         check_mode(mode)?;
         if !self.store.persists_chain() {
@@ -370,8 +427,13 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// Mark a device revoked (now). Revoking it again changes nothing. An
-    /// unknown id is `NotFound`.
+    /// unknown id is `NotFound`. Refused on a device with a trust state
+    /// (`Validation("device")`, key rotation v2 spec 10.1): there removing
+    /// a device is a rotation (`Repository::rotate`), never a list edit.
     pub fn revoke_device(&mut self, id: Id) -> Result<()> {
+        if trust_of(&self.store)?.is_some() {
+            return Err(invalid("device", "remove by rotation"));
+        }
         let at = now();
         self.edit_devices(|entries| {
             let e = entries
@@ -406,17 +468,94 @@ impl<S: RecordStore> Repository<S> {
         })
     }
 
-    /// Whether the device list marks this device revoked (spec 4.3). Brings
-    /// the lists up to date first. Not proof of an honest revocation: the
-    /// list is signed with the account's keys, which a revoked device holds
-    /// too, so the app locks the device and never erases it on this answer
-    /// alone (key rotation v2 spec, rule 8.4).
+    /// Key rotation v2 (Task 13, ruling on spec 5.2): the devices whose
+    /// pairing stopped between the grant and the newcomer's key
+    /// acknowledgment, "Appairage incomplet": listed in the device list and
+    /// not revoked there, but neither in this device's roster, nor revoked
+    /// or excluded along the lineage, nor trusted on first use (`Tofu`, a
+    /// legacy newcomer). They hold the Secret Key the grant carried, yet no
+    /// device pins their key. The app lets the user finish (a new pairing
+    /// session with that device ends in `introduce`) or remove the device
+    /// (`cancel_pairing`, then a rotation). Sorted. Empty without a trust
+    /// state. A device of a legacy account is `Tofu` from this device's
+    /// migration on (`Repository::migrate_to_v2`), so it never shows here.
+    pub fn pairing_incomplete(&mut self) -> Result<Vec<Id>> {
+        let Some(t) = trust_of(&self.store)? else {
+            return Ok(Vec::new());
+        };
+        let mut out: Vec<Id> = self
+            .devices()?
+            .into_iter()
+            .filter(|e| e.revoked_at.is_none())
+            .map(|e| e.device_id)
+            .filter(|id| {
+                *id != t.me.device_id
+                    && !t.roster.iter().any(|r| r.device_id == *id)
+                    && !t.revoked.contains(id)
+                    && !t.excluded.contains(id)
+                    && t.levels.get(id) != Some(&TrustLevel::Tofu)
+            })
+            .collect();
+        out.sort();
+        Ok(out)
+    }
+
+    /// Remove a device whose pairing is incomplete (`pairing_incomplete`):
+    /// its device list entry is marked revoked (now) and this device
+    /// excludes it (no intro of it is accepted here again, and `introduce`
+    /// refuses it), in one transaction conditional on the list version and
+    /// the trust state read (`Conflict`: neither is written). It got the
+    /// Secret Key with its grant, so the app follows this with a key
+    /// rotation (`Repository::rotate`, reason `Rotate`): the new roster
+    /// never held it. Any other id is `Validation("device")`: a pinned
+    /// device leaves by rotation only (spec 10.1).
+    pub fn cancel_pairing(&mut self, id: Id) -> Result<()> {
+        if !self.pairing_incomplete()?.contains(&id) {
+            return Err(invalid("device", "pairing not incomplete"));
+        }
+        self.writable()?;
+        if self.is_revoked_here()? {
+            return Err(revoked());
+        }
+        let current: Stored<DeviceEntry> = self.read_list()?.ok_or(Error::NotFound)?;
+        let mut entries = current.body.entries.clone();
+        entries
+            .iter_mut()
+            .find(|e| e.device_id == id)
+            .ok_or(Error::NotFound)?
+            .revoked_at = Some(now());
+        let (rec, expected, body) = self.list_write(Some(&current), entries)?;
+        let t = trust_of(&self.store)?.ok_or(Error::NotFound)?;
+        let mut next = t.clone();
+        next.excluded.insert(id);
+        self.store
+            .put_with_trust_cas(vec![(rec, expected)], Vec::new(), None, &t, &next)?;
+        DeviceEntry::set_seen(&mut self.chain, body.seen());
+        Ok(())
+    }
+
+    /// Whether this device is revoked. Brings the lists up to date first.
+    ///
+    /// On a device with a trust state (key rotation v2, spec 8.4, 10.1),
+    /// only the lineage answers: a valid lineage record revokes this device
+    /// (quarantined, found by this session or stored). The device list is
+    /// not asked: it is signed with the account's keys, which a revoked
+    /// device holds too. On a legacy device, whether the device list marks
+    /// it revoked (spec 4.3); not proof of an honest revocation, so the app
+    /// locks the device and never erases it on this answer. Nothing here
+    /// ever erases: the only erase is the quarantine's
+    /// (`crate::repo::follow::quarantine_tick`, `quarantine_resolve`).
     pub fn is_this_device_revoked(&mut self) -> Result<bool> {
         self.maintain_lists(None)?;
         self.is_revoked_here()
     }
 
     fn is_revoked_here(&self) -> Result<bool> {
+        if let Some(t) = trust_of(&self.store)? {
+            return Ok(t.revoked.contains(&t.me.device_id)
+                || matches!(t.state, DeviceLineageState::Quarantined { .. })
+                || matches!(self.lineage_lock, Some(LineageLock::Quarantine { .. })));
+        }
         let Some(me) = self.chain.device_id else {
             return Ok(false);
         };
@@ -433,6 +572,7 @@ impl<S: RecordStore> Repository<S> {
         &mut self,
         edit: impl FnOnce(&mut Vec<DeviceEntry>) -> Result<bool>,
     ) -> Result<()> {
+        self.writable()?;
         self.maintain_lists(None)?;
         if self.is_revoked_here()? {
             return Err(revoked());
@@ -564,6 +704,82 @@ mod tests {
             repo.vaults().unwrap_err(),
             Error::Integrity(IntegrityError::VaultListRollback)
         );
+    }
+
+    /// Task 9/10 concern 5, Task 12 M5: a device that may not write
+    /// (`Candidate`, `Quarantined`, `Orphaned`) creates, registers and
+    /// adopts nothing in the lists; a `Current` one does.
+    #[test]
+    fn no_list_writes_while_read_only() {
+        use crate::crypto::{IdentityKey, KdfParams, random_array};
+        use crate::device_keys::DeviceKeys;
+        use crate::store::MemoryStore;
+        use crate::trust::{LineageHead, TrustState};
+
+        let keys = DeviceKeys::generate_software().unwrap();
+        let identity = IdentityKey::generate().unwrap().verifying_key();
+        let states = [
+            DeviceLineageState::Candidate {
+                children: vec![[1; 32]],
+                resume: None,
+            },
+            DeviceLineageState::Quarantined {
+                by: [1; 32],
+                rotator: Id([2; 16]),
+                since: 1,
+                resume: None,
+            },
+            DeviceLineageState::Orphaned {
+                child: [1; 32],
+                rotator: Id([2; 16]),
+                resume: None,
+            },
+            DeviceLineageState::Current,
+        ];
+        for state in states {
+            let kdf = KdfParams {
+                m_kib: 8192,
+                t: 1,
+                p: 1,
+                salt: random_array().unwrap(),
+            };
+            let (mut repo, _) = Repository::create_account(MemoryStore::new(), "pw", kdf).unwrap();
+            let id = repo.account.params.account_id;
+            // An account from before milestone 2b: no vault list yet.
+            repo.store.delete(RecordKind::VaultList, id).unwrap();
+            repo.chain.vault_list = None;
+            let me = keys.public(Id::new()).unwrap();
+            // In its own roster (Task 15: a device outside it is a
+            // kit-restored one that signs no list).
+            let roster = vec![crate::lineage::RosterEntry {
+                device_id: me.device_id,
+                sign_pub: me.sign_pub.clone(),
+                kem_pub: me.kem_pub.clone(),
+                name: "iPhone".into(),
+                kind: DeviceKind::Phone,
+                mode: DeviceMode::Personal,
+                introduced_by: None,
+            }];
+            let trust = TrustState::new(
+                id,
+                me,
+                LineageHead {
+                    generation: 0,
+                    hash: [9; 32],
+                },
+                identity.clone(),
+                roster,
+                state.clone(),
+            );
+            repo.store
+                .put_all_if_version_with_trust(vec![], vec![], None, &trust)
+                .unwrap();
+            repo.lineage_mark = Some(crate::repo::follow::lineage_mark(&repo.store).unwrap());
+            let _ = repo.devices();
+            let _ = repo.vault_list();
+            let written = repo.store.get(RecordKind::VaultList, id).unwrap().is_some();
+            assert_eq!(written, state == DeviceLineageState::Current, "{state:?}");
+        }
     }
 
     #[test]

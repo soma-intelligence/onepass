@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::account::Account;
-use crate::crypto::{Aad, BlobKind, SymmetricKey, open, seal, unwrap_key, wrap_key};
+use crate::crypto::{
+    Aad, BlobKind, HybridKemSecret, SymmetricKey, open, seal, unwrap_key, wrap_key,
+};
 use crate::model::events::{EventKind, ItemTrailer};
 use crate::model::usage::UsageTrailer;
 use crate::model::{Item, validate};
@@ -157,7 +159,17 @@ impl Vault {
     /// Create a vault. Returns the vault, the key envelope for the account
     /// (KEM context `"vault:" || vault_id`) and the sealed meta blob.
     pub fn create(account: &Account, meta: VaultMeta) -> Result<(Vault, Vec<u8>, Vec<u8>)> {
-        let id = Id::new();
+        Self::create_with_id(account, Id::new(), meta)
+    }
+
+    /// `create` under an existing vault id: a fresh vault key for the vault
+    /// `id` (key rotation, spec 7.1 step 3), enveloped for `account` and
+    /// sealing `meta`.
+    pub(crate) fn create_with_id(
+        account: &Account,
+        id: Id,
+        meta: VaultMeta,
+    ) -> Result<(Vault, Vec<u8>, Vec<u8>)> {
         let key = SymmetricKey::generate()?;
         let envelope = wrap_key(&account.params.kem_pub, &key, &kem_context(id))?;
         let meta_blob = seal_meta(&key, id, &meta)?;
@@ -166,7 +178,18 @@ impl Vault {
 
     /// Open a vault from its stored envelope and meta blob.
     pub fn open(account: &Account, id: Id, key_envelope: &[u8], meta_blob: &[u8]) -> Result<Vault> {
-        let key = unwrap_key(&account.keyset().kem, key_envelope, &kem_context(id))?;
+        Vault::open_with_kem(&account.keyset().kem, id, key_envelope, meta_blob)
+    }
+
+    /// `open` with the KEM secret `kem` (a retired one, to read what a left
+    /// identity sealed: key rotation v2, spec 10.4).
+    pub(crate) fn open_with_kem(
+        kem: &HybridKemSecret,
+        id: Id,
+        key_envelope: &[u8],
+        meta_blob: &[u8],
+    ) -> Result<Vault> {
+        let key = unwrap_key(kem, key_envelope, &kem_context(id))?;
         let plain = open(&key, BlobKind::VaultMeta, &meta_aad(id), meta_blob)?;
         let meta: VaultMeta = match postcard::take_from_bytes(&plain) {
             Ok((meta, [])) => meta,
@@ -184,6 +207,17 @@ impl Vault {
     /// version is part of the sealed plaintext and checked again on open.
     pub fn seal_item(&self, item: &Item, version: u64) -> Result<ItemRecord> {
         validate(item)?;
+        if item.vault_id != self.id {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        let item_key = SymmetricKey::generate()?;
+        self.seal_with(&item_key, item, version)
+    }
+
+    /// Seal an item that was already stored (key rotation) under a fresh
+    /// item key, without validating it again: an item written under older
+    /// rules must not block the rotation. Its vault must be this one.
+    pub(crate) fn reseal_item(&self, item: &Item, version: u64) -> Result<ItemRecord> {
         if item.vault_id != self.id {
             return Err(IntegrityError::WrongContext.into());
         }

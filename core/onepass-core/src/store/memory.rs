@@ -3,11 +3,14 @@
 use std::collections::BTreeMap;
 
 use super::{Record, RecordKind, RecordStore};
+use crate::chain::ChainState;
+use crate::trust::TrustState;
 use crate::{Error, Id, Result};
 
 #[derive(Debug, Clone, Default)]
 pub struct MemoryStore {
     records: BTreeMap<(RecordKind, Id), Record>,
+    trust: Option<TrustState>,
 }
 
 impl MemoryStore {
@@ -48,11 +51,135 @@ impl RecordStore for MemoryStore {
         self.records.remove(&(kind, id));
         Ok(())
     }
+
+    fn trust_state(&self) -> Result<Option<TrustState>> {
+        Ok(self.trust.clone())
+    }
+
+    /// All or nothing: a version mismatch leaves records and trust as they
+    /// were. The chain state is not kept here (as in the default).
+    fn put_all_if_version_with_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        let _ = chain;
+        let mut records = self.records.clone();
+        for (r, expected) in writes {
+            if records.get(&(r.kind, r.id)).map(|c| c.version) != expected {
+                return Err(Error::Conflict);
+            }
+            records.insert((r.kind, r.id), r);
+        }
+        for key in deletes {
+            records.remove(&key);
+        }
+        self.records = records;
+        self.trust = Some(trust.clone());
+        Ok(())
+    }
+
+    /// `put_all_if_version_with_trust` if no trust state is stored.
+    fn put_first_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        if self.trust.is_some() {
+            return Err(Error::Conflict);
+        }
+        self.put_all_if_version_with_trust(writes, Vec::new(), chain, trust)
+    }
+
+    /// `put_all_if_version_with_trust` if the trust state is `expected`.
+    fn put_with_trust_cas(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        expected: &TrustState,
+        trust: &TrustState,
+    ) -> Result<()> {
+        if self.trust.as_ref() != Some(expected) {
+            return Err(Error::Conflict);
+        }
+        self.put_all_if_version_with_trust(writes, deletes, chain, trust)
+    }
+
+    /// Everything goes if the trust state is `expected`.
+    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+        if self.trust.as_ref() != Some(expected) {
+            return Err(Error::Conflict);
+        }
+        *self = MemoryStore::default();
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn erase_device_is_conditional_on_the_trust_state() {
+        let mut s = MemoryStore::new();
+        let rec = Record {
+            id: Id::new(),
+            kind: RecordKind::Item,
+            version: 1,
+            data: vec![1],
+        };
+        let trust = crate::trust::tests::sample();
+        s.put_all_if_version_with_trust(vec![(rec.clone(), None)], vec![], None, &trust)
+            .unwrap();
+        let mut other = trust.clone();
+        other.ignore([0xAB; 32]);
+        assert_eq!(s.erase_device(&other), Err(Error::Conflict));
+        assert_eq!(s.get(rec.kind, rec.id).unwrap(), Some(rec.clone()));
+        s.erase_device(&trust).unwrap();
+        assert_eq!(s.get(rec.kind, rec.id).unwrap(), None);
+        assert_eq!(s.trust_state().unwrap(), None);
+    }
+
+    #[test]
+    fn memory_trust_is_all_or_nothing() {
+        let mut s = MemoryStore::new();
+        assert_eq!(s.trust_state().unwrap(), None);
+        let a = Id::new();
+        let rec = |version, n| Record {
+            id: a,
+            kind: RecordKind::Item,
+            version,
+            data: vec![n],
+        };
+        let mut trust = crate::trust::tests::sample();
+        s.put_all_if_version_with_trust(vec![(rec(1, 1), None)], vec![], None, &trust)
+            .unwrap();
+        assert_eq!(s.trust_state().unwrap(), Some(trust.clone()));
+        let before = trust.clone();
+        trust.add_revoked(&[Id([0xEE; 16])]);
+        let r = s.put_all_if_version_with_trust(
+            vec![(rec(2, 2), Some(9))],
+            vec![(RecordKind::Item, a)],
+            None,
+            &trust,
+        );
+        assert_eq!(r, Err(Error::Conflict));
+        assert_eq!(s.trust_state().unwrap(), Some(before));
+        assert_eq!(s.get(RecordKind::Item, a).unwrap().unwrap().version, 1);
+
+        // Conditional on the stored trust state.
+        let stored = s.trust_state().unwrap().unwrap();
+        let r = s.put_with_trust_cas(vec![(rec(9, 1), None)], vec![], None, &trust, &trust);
+        assert_eq!(r, Err(Error::Conflict));
+        assert_eq!(s.trust_state().unwrap(), Some(stored.clone()));
+        s.put_with_trust_cas(vec![], vec![], None, &stored, &trust)
+            .unwrap();
+        assert_eq!(s.trust_state().unwrap(), Some(trust.clone()));
+    }
 
     #[test]
     fn memory_store_behaves() {
