@@ -1,0 +1,5 @@
+# Supabase CLI state
+.branches
+.temp
+# Written by mailbox/scripts/local-env.sh
+.env.local
