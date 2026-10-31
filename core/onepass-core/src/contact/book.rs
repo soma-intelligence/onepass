@@ -314,7 +314,7 @@ fn refused(field: &str, reason: &'static str) -> Error {
 /// The card's lineage, followed from its own genesis (`follow_foreign`),
 /// must lead to `card.head` under `card.identity_pub`, the genesis
 /// carrying both its signatures: `Integrity(Signature)` otherwise.
-fn check_card_lineage(card: &SignedContactCard) -> Result<()> {
+pub(super) fn check_card_lineage(card: &SignedContactCard) -> Result<()> {
     let c = &card.card;
     let bad = || Error::Integrity(IntegrityError::Signature);
     let Some(LineageRecord::Genesis(g)) = c.lineage.first() else {

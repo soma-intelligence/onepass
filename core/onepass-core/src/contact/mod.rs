@@ -14,12 +14,17 @@ use crate::Id;
 mod book;
 mod card;
 mod lineage;
+mod session;
 
 pub use book::{CONTACT_BOOK_DOMAIN, ContactAlert, ContactEntry, ContactLevel, ContactState};
 pub use card::{CardKeys, ContactCard, SignedContactCard};
 pub use lineage::{
     ForeignLineage, ForeignPin, LegacyAccepted, LegacyIntros, MAX_FOREIGN_COPIES,
     accept_legacy_intros, follow_foreign, roster_at,
+};
+pub use session::{
+    ContactHello, ContactInitiator, ContactMessage, ContactOutcome, ContactResponder,
+    MAX_CONTACT_HELLO_BYTES,
 };
 
 /// Signature domain of a `ContactCard`, by the identity key (spec 19.1).
