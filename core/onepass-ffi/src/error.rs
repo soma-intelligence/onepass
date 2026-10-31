@@ -57,6 +57,10 @@ pub(crate) fn integrity_kind(e: IntegrityError) -> &'static str {
         IntegrityError::ParamsRollback => "params_rollback",
         IntegrityError::DeviceListRollback => "device_list_rollback",
         IntegrityError::VaultListRollback => "vault_list_rollback",
+        IntegrityError::ContactBookRollback => "contact_book_rollback",
+        IntegrityError::MembershipRollback => "membership_rollback",
+        IntegrityError::MembershipFork => "membership_fork",
+        IntegrityError::FamilyRollback => "family_rollback",
     }
 }
 

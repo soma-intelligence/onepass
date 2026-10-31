@@ -27,6 +27,16 @@ pub enum IntegrityError {
     /// A vault list older than the one this device already accepted, a
     /// fork of it, or none where one was accepted.
     VaultListRollback,
+    /// A contact book older than the one this device already accepted, or
+    /// a fork of it.
+    ContactBookRollback,
+    /// A membership record older than the one this device already
+    /// accepted.
+    MembershipRollback,
+    /// Two different memberships at one sequence.
+    MembershipFork,
+    /// A family record older than the one this device already accepted.
+    FamilyRollback,
 }
 
 impl fmt::Display for IntegrityError {
@@ -48,6 +58,10 @@ impl fmt::Display for IntegrityError {
             Self::ParamsRollback => "account parameters rollback detected",
             Self::DeviceListRollback => "device list rollback detected",
             Self::VaultListRollback => "vault list rollback detected",
+            Self::ContactBookRollback => "contact book rollback detected",
+            Self::MembershipRollback => "membership rollback detected",
+            Self::MembershipFork => "membership fork detected",
+            Self::FamilyRollback => "family rollback detected",
         };
         f.write_str(s)
     }

@@ -715,3 +715,58 @@ fn server_deletion_of_lineage_refused() {
         assert!(logged.contains(&row));
     }
 }
+
+#[test]
+fn server_deletion_of_membership_family_lineage_refused() {
+    use onepass_core::sync::{RemoteChange, SyncStore};
+
+    let change = |kind, id, version, data: Option<&[u8]>| RemoteChange {
+        kind,
+        id,
+        version,
+        data: data.map(<[u8]>::to_vec),
+        server_meta: None,
+    };
+    let mut s = SyncStore::open_in_memory().unwrap();
+    let rows = [
+        (RecordKind::Membership, Id::new()),
+        (RecordKind::Family, Id::new()),
+        (RecordKind::MemberLineage, Id::new()),
+    ];
+    for (kind, id) in rows {
+        s.stage_remote(change(kind, id, 1, Some(b"kept"))).unwrap();
+    }
+    s.commit_remote().unwrap();
+    for (kind, id) in rows {
+        s.stage_remote(change(kind, id, 2, None)).unwrap();
+    }
+    s.commit_remote().unwrap();
+    for (kind, id) in rows {
+        assert_eq!(s.get(kind, id).unwrap().unwrap().data, b"kept");
+    }
+    let logged: Vec<_> = s
+        .ignored_deletions()
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.kind, e.id))
+        .collect();
+    for row in rows {
+        assert!(logged.contains(&row));
+    }
+}
+
+#[test]
+fn member_key_put_twice_refused() {
+    use onepass_core::sync::SyncStore;
+
+    let mut s = SyncStore::open_in_memory().unwrap();
+    let id = Id::new();
+    let rec = |data: &[u8]| Record {
+        id,
+        kind: RecordKind::MemberKey,
+        version: 1,
+        data: data.to_vec(),
+    };
+    s.put_if_version(rec(b"first"), None).unwrap();
+    assert_eq!(s.put_if_version(rec(b"second"), None), Err(Error::Conflict));
+}
