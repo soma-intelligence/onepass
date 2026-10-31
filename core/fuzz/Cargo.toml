@@ -166,3 +166,17 @@ path = "fuzz_targets/mailbox_message.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mailbox_signature_input"
+path = "fuzz_targets/mailbox_signature_input.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enroll_ticket"
+path = "fuzz_targets/enroll_ticket.rs"
+test = false
+doc = false
+bench = false

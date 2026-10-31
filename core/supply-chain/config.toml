@@ -485,6 +485,11 @@ criteria = "safe-to-deploy"
 version = "2.17.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.serde-wasm-bindgen]]
+version = "0.6.5"
+criteria = "safe-to-deploy"
+notes = "serde adapter of the WebAssembly build of onepass-mailbox-proto (feature wasm), run only inside the mailbox edge function (spec 2026-10-30-cross-platform-clients-design 4.6, 4.14). Not in any client binary. Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.serdect]]
 version = "0.4.3"
 criteria = "safe-to-deploy"

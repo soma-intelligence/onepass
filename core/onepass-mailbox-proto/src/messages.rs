@@ -46,6 +46,8 @@ pub enum ProtoError {
     Signature(&'static str),
     /// Clock skew (used by the layers above this crate).
     Skew,
+    /// Enroll ticket expired, or valid for longer than allowed.
+    Ticket(&'static str),
 }
 
 impl fmt::Display for ProtoError {
@@ -57,6 +59,7 @@ impl fmt::Display for ProtoError {
             Self::Unsorted(w) => write!(f, "not sorted or not unique: {w}"),
             Self::Signature(w) => write!(f, "bad signature: {w}"),
             Self::Skew => f.write_str("clock skew"),
+            Self::Ticket(w) => write!(f, "bad enroll ticket: {w}"),
         }
     }
 }
@@ -134,8 +137,12 @@ fn kind_ok(kind: u8) -> Result<(), ProtoError> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Body {
-    Inline(Vec<u8>),
-    Blob { sha256: Sha256, size: u32 },
+    Inline(#[serde(with = "crate::bytes::vec")] Vec<u8>),
+    Blob {
+        #[serde(with = "crate::bytes::fixed")]
+        sha256: Sha256,
+        size: u32,
+    },
 }
 
 impl Message for Body {
@@ -155,6 +162,7 @@ impl Message for Body {
 pub struct ServerRecord {
     pub seq: u64,
     pub kind: u8,
+    #[serde(with = "crate::bytes::fixed")]
     pub id: [u8; 16],
     pub version: u64,
     pub body: Option<Body>,
@@ -216,6 +224,7 @@ pub enum Op {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitOp {
     pub kind: u8,
+    #[serde(with = "crate::bytes::fixed")]
     pub id: [u8; 16],
     pub version: u64,
     pub op: Op,
@@ -262,6 +271,7 @@ impl Message for CommitRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConflictEntry {
     pub kind: u8,
+    #[serde(with = "crate::bytes::fixed")]
     pub id: [u8; 16],
     pub server: Option<ServerRecord>,
 }
@@ -304,8 +314,11 @@ impl Message for CommitResponse {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateMailbox {
+    #[serde(with = "crate::bytes::fixed")]
     pub public_key: [u8; 32],
+    #[serde(with = "crate::bytes::opt_vec")]
     pub invite: Option<Vec<u8>>,
+    #[serde(with = "crate::bytes::vec")]
     pub label: Vec<u8>,
 }
 
@@ -323,8 +336,10 @@ impl Message for CreateMailbox {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MailboxCreated {
+    #[serde(with = "crate::bytes::fixed")]
     pub mailbox_id: MailboxId,
     pub incarnation: u64,
+    #[serde(with = "crate::bytes::fixed")]
     pub wake_topic: [u8; 16],
 }
 
@@ -365,6 +380,7 @@ impl Message for Usage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MailboxInfo {
     pub incarnation: u64,
+    #[serde(with = "crate::bytes::fixed")]
     pub wake_topic: [u8; 16],
     pub min_cursor: u64,
     pub limits: Limits,
@@ -407,6 +423,7 @@ pub enum PushKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetPush {
     pub kind: PushKind,
+    #[serde(with = "crate::bytes::vec")]
     pub token: Vec<u8>,
 }
 
@@ -440,6 +457,7 @@ fn sorted_unique<T, K: Ord>(
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlobAnnounce {
+    #[serde(with = "crate::bytes::fixed_pairs")]
     pub blobs: Vec<(Sha256, u32)>,
 }
 
@@ -459,6 +477,7 @@ impl Message for BlobAnnounce {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlobUrls {
+    #[serde(with = "crate::bytes::fixed_pairs")]
     pub urls: Vec<(Sha256, Option<String>)>,
 }
 
@@ -482,6 +501,7 @@ impl Message for BlobUrls {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlobLookup {
+    #[serde(with = "crate::bytes::fixed_list")]
     pub blobs: Vec<Sha256>,
 }
 
