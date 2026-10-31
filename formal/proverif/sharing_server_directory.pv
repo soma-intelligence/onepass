@@ -21,13 +21,17 @@ process
   new skA: skey; new kmA: seed; new kxA: seed;
   new skB: skey; new kmB: seed; new kxB: seed;
   new skC: skey; new kmC: seed; new kxC: seed;
+  new skD: skey; new kmD: seed; new kxD: seed;
   out(c, (pk(skA), kem_pk_m(kmA), kem_pk_x(kxA),
           pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
-          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC)));
+          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC),
+          pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)));
   new k1: key; new k2: key;
   let eA = entry_alice(skA, kmA, kxA) in
-  ( (* The server's answer for "bob" and "carol", trusted as is. *)
-    (in(c, (sB: pkey, mB: mlkem_pk, xB: x25519_pk, sC: pkey, mC: mlkem_pk, xC: x25519_pk));
-     Owner(skA, eA, sB, mB, xB, lvl_verified, sC, mC, xC, lvl_link, k1, k2, true))
-  | MemberJoin(bob, skB, kmB, kxB, true, alice, pk(skA))
+  ( (* The server's answer for "bob", "carol" and "dave", trusted as is. *)
+    (in(c, (sB: pkey, mB: mlkem_pk, xB: x25519_pk, sC: pkey, mC: mlkem_pk, xC: x25519_pk,
+            sD: pkey, mD: mlkem_pk, xD: x25519_pk));
+     Owner(skA, eA, sB, mB, xB, lvl_verified, sC, mC, xC, lvl_verified,
+           sD, mD, xD, lvl_link, k1, k2, true))
+  | MemberJoin(true, bob, skB, kmB, kxB, true, alice, pk(skA))
   | (phase 1; out(c, (skC, kmC, kxC))) )

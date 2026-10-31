@@ -39,6 +39,11 @@
    Once adopted, Bob writes the envelope of the vault key for the new
    identity's KEM key (the IdentityUpdate body, spec 12.3 step 3).
 
+   Not modeled: the automatic drop of Alice's old identity once a valid
+   rotation is read (spec 12.3 step 1, S22), key_pending for a member
+   waiting for confirmation, sibling rotations (12.3 step 4), and the
+   members following the manager's IdentityUpdate body.
+
    Properties: Bob never adopts the attacker's identity, on either path,
    and never adopts a rotation signed by the revoked device; the key he
    wraps after adoption stays secret. *)
