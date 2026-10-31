@@ -1598,7 +1598,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass;
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator macosx";
@@ -1617,7 +1617,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "AutoFill/Support/OnePassAutoFill-macOS-CloudKit.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1627,7 +1627,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofill;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofill;
 				PRODUCT_NAME = OnePassAutoFill;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -1646,12 +1646,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Watch/Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp;
 				PRODUCT_NAME = OnePassWatch;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -1665,7 +1665,7 @@
 				CODE_SIGN_ENTITLEMENTS = Widgets/OnePassWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Widgets/Info.plist;
@@ -1674,7 +1674,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.widgets;
 				PRODUCT_NAME = OnePassWidgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1687,7 +1687,7 @@
 				"ARCHS[sdk=watchos*]" = arm64;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1697,7 +1697,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp.widgets;
 				PRODUCT_NAME = OnePassWatchWidgets;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -1711,14 +1711,14 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = OnePass;
@@ -1731,14 +1731,14 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofilluitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofilluitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = AutoFillHost;
@@ -1764,7 +1764,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass;
 				PRODUCT_NAME = OnePass;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = auto;
@@ -1828,12 +1828,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Watch/Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp;
 				PRODUCT_NAME = OnePassWatch;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -1849,7 +1849,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "AutoFill/Support/OnePassAutoFill-macOS.entitlements";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1859,7 +1859,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofill;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofill;
 				PRODUCT_NAME = OnePassAutoFill;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -1878,7 +1878,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1889,7 +1889,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				ONEPASS_SAFARI_DEV_HOST = NO;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.safari;
 				PRODUCT_NAME = OnePassSafari;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ONEPASS_CLOUDKIT";
@@ -1902,14 +1902,14 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = OnePass;
@@ -1922,7 +1922,7 @@
 				"ARCHS[sdk=watchos*]" = arm64;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1932,7 +1932,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp.widgets;
 				PRODUCT_NAME = OnePassWatchWidgets;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -1968,7 +1968,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Hôte AutoFill";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -1978,7 +1978,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofillhost;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofillhost;
 				PRODUCT_NAME = AutoFillHost;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -1993,7 +1993,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "AutoFill/Support/OnePassAutoFill-macOS.entitlements";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2003,7 +2003,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofill;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofill;
 				PRODUCT_NAME = OnePassAutoFill;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -2022,7 +2022,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2033,7 +2033,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				ONEPASS_SAFARI_DEV_HOST = NO;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.safari;
 				PRODUCT_NAME = OnePassSafari;
 				SDKROOT = macosx;
 			};
@@ -2098,8 +2098,8 @@
 				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
-				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
-				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
+				ONEPASS_APP_GROUP = group.me.quentincaron.onepass;
+				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.quentincaron.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
 				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				ONLY_ACTIVE_ARCH = YES;
@@ -2123,7 +2123,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2134,7 +2134,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				ONEPASS_SAFARI_DEV_HOST = NO;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.safari;
 				PRODUCT_NAME = OnePassSafari;
 				SDKROOT = macosx;
 			};
@@ -2146,7 +2146,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Hôte AutoFill";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -2156,7 +2156,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofillhost;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofillhost;
 				PRODUCT_NAME = AutoFillHost;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -2169,14 +2169,14 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = OnePass;
@@ -2189,7 +2189,7 @@
 				CODE_SIGN_ENTITLEMENTS = Widgets/OnePassWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Widgets/Info.plist;
@@ -2198,7 +2198,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.widgets;
 				PRODUCT_NAME = OnePassWidgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -2211,7 +2211,7 @@
 				"ARCHS[sdk=watchos*]" = arm64;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2221,7 +2221,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp.widgets;
 				PRODUCT_NAME = OnePassWatchWidgets;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -2235,14 +2235,14 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofilluitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofilluitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = AutoFillHost;
@@ -2268,7 +2268,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass;
 				PRODUCT_NAME = OnePass;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = auto;
@@ -2286,7 +2286,7 @@
 				CODE_SIGN_ENTITLEMENTS = Widgets/OnePassWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Widgets/Info.plist;
@@ -2295,7 +2295,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.widgets;
 				PRODUCT_NAME = OnePassWidgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -2308,7 +2308,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Hôte AutoFill";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -2318,7 +2318,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofillhost;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofillhost;
 				PRODUCT_NAME = AutoFillHost;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -2378,8 +2378,8 @@
 				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
-				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
+				ONEPASS_APP_GROUP = group.me.quentincaron.onepass;
+				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.quentincaron.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
 				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2402,12 +2402,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Watch/Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp;
 				PRODUCT_NAME = OnePassWatch;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -2421,14 +2421,14 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofilluitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofilluitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = AutoFillHost;
@@ -2488,8 +2488,8 @@
 				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
-				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
+				ONEPASS_APP_GROUP = group.me.quentincaron.onepass;
+				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.quentincaron.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
 				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2512,12 +2512,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Watch/Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp;
 				PRODUCT_NAME = OnePassWatch;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -2533,7 +2533,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2544,7 +2544,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				ONEPASS_SAFARI_DEV_HOST = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.safari;
 				PRODUCT_NAME = OnePassSafari;
 				SDKROOT = macosx;
 			};
@@ -2556,7 +2556,7 @@
 				"ARCHS[sdk=watchos*]" = arm64;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2566,7 +2566,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.watchkitapp.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.watchkitapp.widgets;
 				PRODUCT_NAME = OnePassWatchWidgets;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -2580,14 +2580,14 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofilluitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofilluitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = AutoFillHost;
@@ -2614,7 +2614,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass;
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator macosx";
@@ -2634,7 +2634,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "AutoFill/Support/OnePassAutoFill-macOS-CloudKit.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2644,7 +2644,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofill;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofill;
 				PRODUCT_NAME = OnePassAutoFill;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -2709,8 +2709,8 @@
 				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
-				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
+				ONEPASS_APP_GROUP = group.me.quentincaron.onepass;
+				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.quentincaron.onepass;
 				"ONEPASS_APP_GROUP[sdk=macosx*]" = "$(TeamIdentifierPrefix)me.somalabs.onepass";
 				ONEPASS_BROWSER_EXTENSIONS = "onepass@somalabs.me";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2731,7 +2731,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Hôte AutoFill";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -2741,7 +2741,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofillhost;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.autofillhost;
 				PRODUCT_NAME = AutoFillHost;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -2776,14 +2776,14 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = OnePass;
@@ -2796,7 +2796,7 @@
 				CODE_SIGN_ENTITLEMENTS = Widgets/OnePassWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = ABCDE12345;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Widgets/Info.plist;
@@ -2805,7 +2805,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.quentincaron.onepass.widgets;
 				PRODUCT_NAME = OnePassWidgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
