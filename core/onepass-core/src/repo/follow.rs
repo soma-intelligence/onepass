@@ -32,6 +32,15 @@
 //!   devices along the path from the divergence to the target, flags a
 //!   removal of a rotator of the device's own chain on the other branch,
 //!   and lists the removals to re-apply (`Repository::reapply`).
+//!
+//! Quarantine and exclusion (Task 12, spec 8.1, 8.2, 8.4, R8, O1): a valid
+//! lineage record that revokes this device locks it (no unlock, no read,
+//! no write, no push); one that does not list it makes it `Orphaned`
+//! (reads, no write, no push). `quarantine_tick` records the quarantine
+//! with the caller's clock and erases the store 7 days later;
+//! `quarantine_resolve` erases now or, with the password, answers "Ce
+//! n'était pas moi" (the signer excluded, back to `Current`), for an
+//! orphaned device too. Nothing else erases.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
@@ -276,12 +285,12 @@ fn path_to<'a>(
 /// counted as complete; the prompt it gives is shown with those choices
 /// marked `complete: false`. The resolver's own rule stands: nothing
 /// incomplete is ever adopted (`follow_rotation` fails on it).
-fn prompt_in<S: RecordStore + ?Sized>(
+fn look_in<S: RecordStore + ?Sized>(
     store: &S,
     trust: &TrustState,
     records: &[LineageRecord],
     complete: &Completeness,
-) -> Result<Option<(Prompt, RotationPrompt)>> {
+) -> Result<Look> {
     let p = match resolve(trust, records, complete) {
         Decision::Prompt(p) => p,
         Decision::Wait { unknown_parent } if unknown_parent.is_empty() => {
@@ -294,10 +303,22 @@ fn prompt_in<S: RecordStore + ?Sized>(
             }
             match resolve(trust, records, &assumed) {
                 Decision::Prompt(p) => p,
-                _ => return Ok(None),
+                _ => return Ok(Look::default()),
             }
         }
-        _ => return Ok(None),
+        Decision::Quarantine { by } => {
+            return Ok(Look {
+                prompt: None,
+                lock: Some(LineageLock::Quarantine { by }),
+            });
+        }
+        Decision::Orphaned { child } => {
+            return Ok(Look {
+                prompt: None,
+                lock: Some(LineageLock::Orphaned { child }),
+            });
+        }
+        _ => return Ok(Look::default()),
     };
     let bodies = rotations(records);
     let mut choices = Vec::with_capacity(p.children.len());
@@ -367,28 +388,48 @@ fn prompt_in<S: RecordStore + ?Sized>(
         cross_branch_revocation,
         reapply_names: reapply.iter().map(|id| local_name(trust, *id)).collect(),
     };
-    Ok(Some((p, shown)))
+    Ok(Look {
+        prompt: Some((p, shown)),
+        lock: None,
+    })
 }
 
-/// The prompt a device with this trust state shows now.
-fn prompt_for<S: RecordStore + ?Sized>(
-    store: &S,
-    trust: &TrustState,
-) -> Result<Option<(Prompt, RotationPrompt)>> {
+/// What a device with this trust state shows now: the lock its stored
+/// state records (a quarantine or an orphaned state stays until the user
+/// answers, whatever the server holds since), else the resolver's lock or
+/// prompt.
+pub(crate) fn look_for<S: RecordStore + ?Sized>(store: &S, trust: &TrustState) -> Result<Look> {
+    if let Some(lock) = LineageLock::stored(&trust.state) {
+        return Ok(Look {
+            prompt: None,
+            lock: Some(lock),
+        });
+    }
     let records = lineage_records(store)?;
     let complete = completeness(store, &records, trust.me.device_id)?;
-    prompt_in(store, trust, &records, &complete)
+    look_in(store, trust, &records, &complete)
 }
 
 /// The confirmation the device waits for (spec 7.2, 9), read without
 /// unlocking: `None` without a trust state (a legacy device), or when the
 /// resolver decides anything but a prompt (nothing new, waiting for a
-/// parent or a delivery, quarantine and orphaned: Task 12).
+/// parent or a delivery), or the device is locked (`lineage_lock`).
 pub fn pending_rotation(store: &dyn RecordStore) -> Result<Option<RotationPrompt>> {
     let Some(trust) = trust_of(store)? else {
         return Ok(None);
     };
-    Ok(prompt_for(store, &trust)?.map(|(_, shown)| shown))
+    Ok(look_for(store, &trust)?.prompt.map(|(_, shown)| shown))
+}
+
+/// The lock a valid lineage record puts on this device (spec 8.1, 8.4),
+/// read without unlocking: the stored `Quarantined` or `Orphaned` state, or
+/// the resolver's `Quarantine` or `Orphaned` decision before
+/// `quarantine_tick` records it. `None` without a trust state.
+pub fn lineage_lock(store: &dyn RecordStore) -> Result<Option<LineageLock>> {
+    let Some(trust) = trust_of(store)? else {
+        return Ok(None);
+    };
+    Ok(look_for(store, &trust)?.lock)
 }
 
 /// The prompt offering `choice` now, or `Validation("rotation")`.
@@ -720,6 +761,7 @@ fn follow_with<S: RecordStore>(
         records_id: rid,
         pending: None,
         lineage_mark: None,
+        lineage_lock: None,
     };
     let mut repo = repo;
     // Spec 10.4: replay this device's own writes under the new keys (best
@@ -804,10 +846,15 @@ pub fn reject_rotation(
     exclude_signer: bool,
 ) -> Result<()> {
     let trust = trust_of(&*store)?.ok_or_else(|| refused("device", "no device keys"))?;
+    // Task 12: a locked device answers with `quarantine_resolve`.
+    if LineageLock::stored(&trust.state).is_some() {
+        return Err(refused("rotation", "state"));
+    }
     let records = lineage_records(&*store)?;
     let complete = completeness(&*store, &records, trust.me.device_id)?;
     // Incomplete choices are offered too: "not me" never waits.
-    let offered = prompt_in(&*store, &trust, &records, &complete)?
+    let offered = look_in(&*store, &trust, &records, &complete)?
+        .prompt
         .is_some_and(|(p, _)| p.children.contains(&choice));
     if !offered {
         return Err(refused("rotation", "not offered"));
@@ -854,6 +901,215 @@ pub fn stored_params_epoch(store: &dyn RecordStore, pinned: Option<&PinnedAccoun
     Ok(AccountParams::decode_verified(&record.data, &identity)?.epoch)
 }
 
+/// Seconds between the first time this device reads a valid lineage
+/// record revoking it (`since`) and its erase (spec 8.4, R8, O1 ruled
+/// 2026-10-30).
+pub const QUARANTINE_ERASE_AFTER_SECS: u64 = 7 * 86_400;
+
+/// The lock a valid lineage record puts on this device (spec 8.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineageLock {
+    /// A valid record (`by`, its lineage hash) revokes this device: locked,
+    /// erased 7 days after `since` unless the user answers "Ce n'était pas
+    /// moi" (`quarantine_resolve`).
+    Quarantine { by: [u8; 32] },
+    /// A valid record (`child`) does not list this device: it reads, writes
+    /// nothing, pushes nothing, never erases.
+    Orphaned { child: [u8; 32] },
+}
+
+impl LineageLock {
+    /// The lock a stored state records.
+    pub(crate) fn stored(state: &DeviceLineageState) -> Option<LineageLock> {
+        match state {
+            DeviceLineageState::Quarantined { by, .. } => Some(LineageLock::Quarantine { by: *by }),
+            DeviceLineageState::Orphaned { child } => Some(LineageLock::Orphaned { child: *child }),
+            _ => None,
+        }
+    }
+
+    /// The lineage hash of the record that locks.
+    fn hash(self) -> [u8; 32] {
+        match self {
+            LineageLock::Quarantine { by } => by,
+            LineageLock::Orphaned { child } => child,
+        }
+    }
+}
+
+/// What the lineage asks of this device now: a prompt, or a lock (never
+/// both).
+#[derive(Default)]
+pub(crate) struct Look {
+    pub(crate) prompt: Option<(Prompt, RotationPrompt)>,
+    pub(crate) lock: Option<LineageLock>,
+}
+
+/// The refusal of a quarantined device: it is locked (spec 8.4).
+pub(crate) fn quarantined() -> Error {
+    refused("device", "quarantined")
+}
+
+/// The user's answer on the quarantine or orphaned screen (spec 8.2, 8.4,
+/// 9, Task 4 ruling).
+pub enum QuarantineChoice<'a> {
+    /// "Effacer cet appareil": erase now. Quarantine only.
+    Erase,
+    /// "Ce n'était pas moi": the master password and the Secret Key of the
+    /// identity the device is on (checked by an unlock, as `Repository::
+    /// unlock`), and the device state saved by the app.
+    NotMe {
+        password: &'a str,
+        secret_key: &'a SecretKey,
+        device: DeviceState,
+    },
+}
+
+/// What `quarantine_tick` found or did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuarantineTick {
+    /// No valid lineage record revokes this device (or it was erased
+    /// already: nothing is left to look at).
+    NotQuarantined,
+    /// Locked; erased at device time `erase_at` (Unix seconds) unless the
+    /// user answers first.
+    Waiting { erase_at: u64 },
+    /// The store was erased now (`RecordStore::erase_device`). The app
+    /// deletes what it keeps for the account outside the store (Keychain
+    /// items: Secret Key, Account Unlock Key, device keys).
+    Erased,
+}
+
+/// The quarantine clock (spec 8.4, R8, O1), with the caller's clock `now`
+/// (Unix seconds; the core never reads one): the app calls it at launch and
+/// on the quarantine screen. No password.
+///
+/// - A device whose trust state is not quarantined yet is quarantined when
+///   the resolver decides `Quarantine`, i.e. a valid lineage record
+///   (signed by a device pinned in the local roster, not revoked, excluded
+///   or ignored, and by the identity it names) revokes it: the state
+///   `Quarantined { by, since: now }` is written in one write, conditional
+///   on the trust state read (`Conflict`). Anything else (nothing, a
+///   prompt, an invalid or unverifiable record, the signed device list) is
+///   `NotQuarantined` and writes nothing, except a valid record that drops
+///   this device, recorded as `Orphaned` (it never erases).
+/// - Once quarantined, the state stays whatever the server holds since:
+///   only `quarantine_resolve` or the erase ends it. `since` is never
+///   moved.
+/// - The store is erased (`RecordStore::erase_device`, conditional on the
+///   trust state read) once `now - since` reaches
+///   `QUARANTINE_ERASE_AFTER_SECS`; a clock moved back only delays it
+///   (saturating arithmetic, never early). Otherwise `Waiting` with
+///   `erase_at = since + QUARANTINE_ERASE_AFTER_SECS` (saturating).
+pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<QuarantineTick> {
+    let Some(trust) = trust_of(&*store)? else {
+        return Ok(QuarantineTick::NotQuarantined);
+    };
+    let (trust, since) = match trust.state {
+        DeviceLineageState::Quarantined { since, .. } => (trust, since),
+        DeviceLineageState::Legacy => return Ok(QuarantineTick::NotQuarantined),
+        _ => {
+            let records = lineage_records(&*store)?;
+            let complete = completeness(&*store, &records, trust.me.device_id)?;
+            let state = match look_in(&*store, &trust, &records, &complete)?.lock {
+                Some(LineageLock::Quarantine { by }) => {
+                    DeviceLineageState::Quarantined { by, since: now }
+                }
+                Some(LineageLock::Orphaned { child }) => DeviceLineageState::Orphaned { child },
+                None => return Ok(QuarantineTick::NotQuarantined),
+            };
+            if state == trust.state {
+                return Ok(QuarantineTick::NotQuarantined);
+            }
+            let mut next = trust.clone();
+            next.state = state;
+            store.put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next)?;
+            if !matches!(next.state, DeviceLineageState::Quarantined { .. }) {
+                return Ok(QuarantineTick::NotQuarantined);
+            }
+            (next, now)
+        }
+    };
+    if now.saturating_sub(since) < QUARANTINE_ERASE_AFTER_SECS {
+        return Ok(QuarantineTick::Waiting {
+            erase_at: since.saturating_add(QUARANTINE_ERASE_AFTER_SECS),
+        });
+    }
+    store.erase_device(&trust)?;
+    Ok(QuarantineTick::Erased)
+}
+
+/// The user's answer on a locked device (spec 8.2, 8.4).
+///
+/// - `Erase` ("Effacer cet appareil"), on a quarantined device only (the
+///   stored state, or the resolver's `Quarantine` before the first tick):
+///   the store is erased now (`RecordStore::erase_device`, conditional on
+///   the trust state read); `None`.
+/// - `NotMe` ("Ce n'était pas moi"), on a quarantined or orphaned device:
+///   the password and Secret Key are checked by an unlock of the identity
+///   the device is on (a wrong password is `WrongPassword`, nothing
+///   written); then the record that locked joins `ignored`, its signer
+///   `excluded`, the state is `Current` again (one write, conditional on
+///   the trust state read: `Conflict`), and the session opens as after
+///   `Repository::unlock` (another pending record prompts or locks again
+///   there). The erase is cancelled.
+///
+/// Anything else is `Validation`: no trust state, a device not locked,
+/// `Erase` on an orphaned device (it never erases).
+pub fn quarantine_resolve<S: RecordStore>(
+    mut store: S,
+    choice: QuarantineChoice<'_>,
+) -> Result<Option<Repository<S>>> {
+    let trust = trust_of(&store)?.ok_or_else(|| refused("device", "no device keys"))?;
+    let lock = match LineageLock::stored(&trust.state) {
+        Some(lock) => lock,
+        None if trust.state == DeviceLineageState::Legacy => {
+            return Err(refused("device", "not locked"));
+        }
+        None => look_for(&store, &trust)?
+            .lock
+            .ok_or_else(|| refused("device", "not locked"))?,
+    };
+    match choice {
+        QuarantineChoice::Erase => {
+            if !matches!(lock, LineageLock::Quarantine { .. }) {
+                return Err(refused("device", "not quarantined"));
+            }
+            store.erase_device(&trust)?;
+            Ok(None)
+        }
+        QuarantineChoice::NotMe {
+            password,
+            secret_key,
+            mut device,
+        } => {
+            let (params, keyset) = super::account_records(&store)?;
+            let chain = store.chain_state()?;
+            let moved = super::reconcile_pin(&store, &mut device)?;
+            let (account, _auk) = Account::unlock_exporting_auk_at(
+                password,
+                secret_key,
+                &params.data,
+                &keyset.data,
+                device.pinned.as_ref(),
+                chain.params_epoch,
+            )?;
+            let h = lock.hash();
+            let records = lineage_records(&store)?;
+            let mut next = trust.clone();
+            if let Some(b) = rotations(&records).get(&h)
+                && b.rotator != trust.me.device_id
+            {
+                next.excluded.insert(b.rotator);
+            }
+            next.ignore(h);
+            next.state = DeviceLineageState::Current;
+            store.put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next)?;
+            Repository::finish_unlock(store, account, &params, device, chain, moved).map(Some)
+        }
+    }
+}
+
 impl<S: RecordStore> Repository<S> {
     /// The rotation prompt this session waits on (found at unlock or by
     /// `refresh_pending_rotation`): while there is one, every write is
@@ -862,24 +1118,49 @@ impl<S: RecordStore> Repository<S> {
         self.pending.as_ref()
     }
 
+    /// The lock a valid lineage record puts on this device, as this session
+    /// last saw it (`refresh_pending_rotation`).
+    pub fn pending_lock(&self) -> Option<LineageLock> {
+        self.lineage_lock
+    }
+
     /// Look for a rotation prompt again (after a sync), remember it for
     /// this session and record the device state (spec 8.2: `Current` to
     /// `Candidate` with the children to decide, and back to `Current` when
     /// none is left). The state write is conditional on the trust state
     /// read and best effort: the session stays read-only either way.
-    /// Other states (rotating, quarantined, orphaned) are left as they are.
+    ///
+    /// Task 12: a valid record that drops this device records `Orphaned`
+    /// (no clock needed); one that revokes it locks the session, and
+    /// `quarantine_tick` records `Quarantined` with the caller's clock. A
+    /// lock never goes back to `Current` here, whatever the server holds
+    /// since (only the user's answer, `quarantine_resolve`, does). Other
+    /// states (rotating with no switch, quarantined, orphaned) are left as
+    /// they are.
     pub fn refresh_pending_rotation(&mut self) -> Result<Option<RotationPrompt>> {
         let Some(trust) = trust_of(&self.store)? else {
             self.pending = None;
+            self.lineage_lock = None;
             return Ok(None);
         };
-        let found = prompt_for(&self.store, &trust)?;
-        let state = match (&trust.state, &found) {
-            (DeviceLineageState::Current, Some((p, _))) => Some(DeviceLineageState::Candidate {
-                children: p.children.clone(),
-                resume: None,
-            }),
-            (DeviceLineageState::Candidate { children, resume }, Some((p, _)))
+        let look = look_for(&self.store, &trust)?;
+        let found = look.prompt;
+        let state = match (&trust.state, &found, look.lock) {
+            (
+                DeviceLineageState::Current
+                | DeviceLineageState::Candidate { .. }
+                | DeviceLineageState::Rotating { .. },
+                _,
+                Some(LineageLock::Orphaned { child }),
+            ) => Some(DeviceLineageState::Orphaned { child }),
+            (_, _, Some(_)) => None,
+            (DeviceLineageState::Current, Some((p, _)), None) => {
+                Some(DeviceLineageState::Candidate {
+                    children: p.children.clone(),
+                    resume: None,
+                })
+            }
+            (DeviceLineageState::Candidate { children, resume }, Some((p, _)), None)
                 if *children != p.children =>
             {
                 Some(DeviceLineageState::Candidate {
@@ -889,14 +1170,14 @@ impl<S: RecordStore> Repository<S> {
             }
             // Review I1: nothing left to decide; a rotator whose winning
             // sibling went away resumes its own phases.
-            (DeviceLineageState::Candidate { resume, .. }, None) => {
+            (DeviceLineageState::Candidate { resume, .. }, None, None) => {
                 Some(resume.map_or(DeviceLineageState::Current, |phase| {
                     DeviceLineageState::Rotating { phase }
                 }))
             }
             // Spec 8.2: a sibling of the device's own rotation wins; the
             // push of its phases stops until the user answers.
-            (DeviceLineageState::Rotating { phase }, Some((p, _)))
+            (DeviceLineageState::Rotating { phase }, Some((p, _)), None)
                 if matches!(p.kind, PromptKind::Switch | PromptKind::Reapply) =>
             {
                 Some(DeviceLineageState::Candidate {
@@ -914,13 +1195,16 @@ impl<S: RecordStore> Repository<S> {
                 .put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next);
         }
         self.pending = found.map(|(_, shown)| shown);
+        self.lineage_lock = look.lock;
         self.lineage_mark = Some(lineage_mark(&self.store)?);
         Ok(self.pending.clone())
     }
 
-    /// `Error::ReadOnly` while a rotation prompt waits for the user: found
-    /// by this session, or recorded in the stored trust state (`Candidate`,
-    /// by any process on the device). Every write checks it first (R10).
+    /// `Error::ReadOnly` while a rotation prompt waits for the user, or a
+    /// valid lineage record locks this device: found by this session, or
+    /// recorded in the stored trust state (`Candidate`, `Quarantined`,
+    /// `Orphaned`, by any process on the device). Every write checks it
+    /// first (R10, spec 8.1).
     ///
     /// Review I1: when the lineage records, deliveries, account records or
     /// the trust state changed since the last look (a sync pulled a
@@ -931,13 +1215,31 @@ impl<S: RecordStore> Repository<S> {
         {
             self.refresh_pending_rotation()?;
         }
-        if self.pending.is_some() {
+        if self.pending.is_some() || self.lineage_lock.is_some() {
             return Err(Error::ReadOnly);
         }
         if let Some(t) = trust_of(&self.store)?
-            && matches!(t.state, DeviceLineageState::Candidate { .. })
+            && matches!(
+                t.state,
+                DeviceLineageState::Candidate { .. }
+                    | DeviceLineageState::Quarantined { .. }
+                    | DeviceLineageState::Orphaned { .. }
+            )
         {
             return Err(Error::ReadOnly);
+        }
+        Ok(())
+    }
+
+    /// `Validation("device", "quarantined")` on a quarantined device (spec
+    /// 8.1, 8.4: locked, its data stays encrypted until the erase or the
+    /// user's "Ce n'était pas moi"): found by this session, or recorded in
+    /// the stored trust state. An orphaned device reads.
+    pub(crate) fn readable(&self) -> Result<()> {
+        let stored = trust_of(&self.store)?
+            .is_some_and(|t| matches!(t.state, DeviceLineageState::Quarantined { .. }));
+        if stored || matches!(self.lineage_lock, Some(LineageLock::Quarantine { .. })) {
+            return Err(quarantined());
         }
         Ok(())
     }

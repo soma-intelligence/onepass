@@ -257,6 +257,29 @@ impl RecordStore for SqliteStore {
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
         delete_on(&self.conn, kind, id)
     }
+
+    /// Both tables emptied in one transaction, the trust row compared with
+    /// `expected` inside it; then the file is compacted (best effort), so
+    /// the rows do not linger in free pages or in the WAL.
+    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        let stored: Option<Vec<u8>> = tx
+            .query_row(
+                "SELECT value FROM meta WHERE key = ?1",
+                params![TRUST_KEY],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(store_err)?;
+        if stored != Some(expected.encode()) {
+            return Err(Error::Conflict);
+        }
+        tx.execute_batch("DELETE FROM records; DELETE FROM meta;")
+            .map_err(store_err)?;
+        tx.commit().map_err(store_err)?;
+        let _ = self.compact();
+        Ok(())
+    }
 }
 
 /// `delete` on a connection or an open transaction. A signed list record is

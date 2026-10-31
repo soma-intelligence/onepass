@@ -3520,3 +3520,479 @@ fn switch_drops_the_losers_unsent_phase_one() {
         ["alice", "bob", "carol"].map(String::from)
     );
 }
+
+// ------------------------------------------------- quarantine (Task 12)
+
+use onepass_core::repo::follow::{
+    QUARANTINE_ERASE_AFTER_SECS, QuarantineChoice, QuarantineTick, quarantine_resolve,
+    quarantine_tick,
+};
+
+/// Device time, in Unix seconds, when C first reads its own revocation.
+const T: u64 = 1_793_100_000;
+const Q: u64 = QUARANTINE_ERASE_AFTER_SECS;
+
+/// Fetch the changes after the cursor, each through `map` (dropped on
+/// `None`), stage them and commit at once.
+fn pull_mapped(
+    server: &Server,
+    dev: &mut Device,
+    map: impl Fn(RemoteChange) -> Option<RemoteChange>,
+) {
+    let (changes, cursor) = server.changes_since(dev.cursor);
+    let mut store = dev.store();
+    for c in changes.into_iter().filter_map(&map) {
+        store.stage_remote(c).unwrap();
+    }
+    store.commit_remote().unwrap();
+    dev.cursor = cursor;
+}
+
+/// A and C on one server; C (`edit` applied to its trust state) writes
+/// "dave" without pushing it; A rotates revoking C and pushes every phase;
+/// C fetches what `map` lets through, locked.
+fn c_revoked_with(
+    edit: impl FnOnce(&mut TrustState),
+    map: impl Fn(RemoteChange) -> Option<RemoteChange>,
+) -> (Server, Device, Device, Fixture, RotationOutcome) {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, edit);
+    c.unlock(&f.sk);
+    let v = c.vault();
+    c.save(&login(v.id, "dave", T0 + 50));
+    c.lock();
+    assert!(!outbox(&c).is_empty());
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[C].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull_mapped(&server, &mut c, map);
+    (server, a, c, f, out)
+}
+
+fn c_revoked() -> (Server, Device, Device, Fixture, RotationOutcome) {
+    c_revoked_with(|_| {}, Some)
+}
+
+fn records(dev: &Device) -> Vec<Record> {
+    snapshot(&dev.store()).records
+}
+
+/// A pending write nothing else holds back (an intro, a lineage kind that
+/// even a `Candidate` device pushes): it goes out unless the device itself
+/// is held.
+fn stray_write(dev: &Device) {
+    let rec = Record {
+        id: Id::new(),
+        kind: RecordKind::DeviceIntro,
+        version: 1,
+        data: vec![1, 2, 3],
+    };
+    dev.store().put(rec).unwrap();
+}
+
+fn tick(dev: &Device, now: u64) -> QuarantineTick {
+    quarantine_tick(&mut dev.store(), now).unwrap()
+}
+
+fn is_quarantine_refusal<T: std::fmt::Debug>(r: &Result<T>) -> bool {
+    matches!(r, Err(Error::Validation(v)) if v.reason == "quarantined")
+}
+
+fn not_me<'a>(dev: &Device, password: &'a str, sk: &'a SecretKey) -> QuarantineChoice<'a> {
+    QuarantineChoice::NotMe {
+        password,
+        secret_key: sk,
+        device: dev.store().device_state().unwrap(),
+    }
+}
+
+/// The store holds nothing: no record, no trust, chain or device state,
+/// nothing to push.
+fn assert_erased(dev: &Device) {
+    let store = dev.store();
+    assert_eq!(
+        snapshot(&store),
+        Snapshot {
+            records: vec![],
+            trust: None,
+            chain: ChainState::default().encode(),
+            outbox: vec![],
+        }
+    );
+    assert_eq!(store.account_state().unwrap(), AccountState::Empty);
+    assert_eq!(store.device_state().unwrap(), Default::default());
+}
+
+/// Spec 8.4: a valid child revoking C locks C at once (no unlock, nothing
+/// pushed), and the clock starts at the first tick, in the same write as
+/// the state. Nothing is erased before 7 days.
+#[test]
+fn self_revocation_locks_then_waits() {
+    let (_server, _a, mut c, f, out) = c_revoked();
+    stray_write(&c);
+    let before = records(&c);
+    assert_eq!(prompt_of(&c), None);
+    assert!(outbox(&c).is_empty(), "nothing goes out");
+    assert!(is_quarantine_refusal(&c.try_unlock(PASSWORD, &f.sk)));
+    assert_eq!(state(&c), DeviceLineageState::Current);
+
+    assert_eq!(tick(&c, T), QuarantineTick::Waiting { erase_at: T + Q });
+    assert_eq!(
+        state(&c),
+        DeviceLineageState::Quarantined {
+            by: out.head,
+            since: T
+        }
+    );
+    assert_eq!(records(&c), before);
+    assert_eq!(
+        tick(&c, T + Q - 1),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+    assert_eq!(records(&c), before);
+    assert!(outbox(&c).is_empty());
+    assert!(is_quarantine_refusal(&c.try_unlock(PASSWORD, &f.sk)));
+    // Following or rejecting is not offered from a quarantine.
+    let mut store = c.store();
+    assert!(is_validation(&reject_rotation(&mut store, out.head, true)));
+    let r = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).map(|_| ());
+    assert!(is_validation(&r));
+    assert_eq!(records(&c), before);
+}
+
+#[test]
+fn erased_after_seven_days() {
+    let (_server, _a, c, _f, _out) = c_revoked();
+    assert_eq!(tick(&c, T), QuarantineTick::Waiting { erase_at: T + Q });
+    assert_eq!(tick(&c, T + Q), QuarantineTick::Erased);
+    assert_erased(&c);
+    assert_eq!(tick(&c, T + Q + 1), QuarantineTick::NotQuarantined);
+}
+
+#[test]
+fn clock_moved_back_never_erases_early() {
+    let (_server, _a, c, _f, out) = c_revoked();
+    tick(&c, T);
+    let before = records(&c);
+    assert_eq!(
+        tick(&c, T - 86_400),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+    assert_eq!(tick(&c, 0), QuarantineTick::Waiting { erase_at: T + Q });
+    assert_eq!(records(&c), before);
+    assert_eq!(
+        state(&c),
+        DeviceLineageState::Quarantined {
+            by: out.head,
+            since: T
+        }
+    );
+}
+
+/// The erase date never moves: reading the record again, or the server
+/// withholding it afterwards, keeps `since`.
+#[test]
+fn since_is_kept_on_reread() {
+    let (mut server, _a, mut c, _f, out) = c_revoked();
+    tick(&c, T);
+    full_fetch(&server, &mut c);
+    assert_eq!(
+        tick(&c, T + 3 * 86_400),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+    let quarantined = DeviceLineageState::Quarantined {
+        by: out.head,
+        since: T,
+    };
+    assert_eq!(state(&c), quarantined);
+    // A hostile server now withholds the record: still quarantined, same
+    // date.
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&out.head[..16]);
+    server.forge_deletion(RecordKind::Lineage, Id(id));
+    full_fetch(&server, &mut c);
+    assert_eq!(
+        tick(&c, T + 4 * 86_400),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+    assert_eq!(state(&c), quarantined);
+    assert_eq!(tick(&c, T + Q), QuarantineTick::Erased);
+}
+
+#[test]
+fn not_me_cancels_erase() {
+    let (_server, _a, mut c, f, out) = c_revoked();
+    tick(&c, T);
+    let before = records(&c);
+    let repo = quarantine_resolve(c.store(), not_me(&c, PASSWORD, &f.sk))
+        .unwrap()
+        .expect("a session");
+    c.repo = Some(repo);
+    assert_eq!(state(&c), DeviceLineageState::Current);
+    assert_eq!(tick(&c, T + 30 * 86_400), QuarantineTick::NotQuarantined);
+    assert_eq!(records(&c), before);
+    let trust = c.store().trust_state().unwrap().unwrap();
+    assert!(trust.ignored.contains(&out.head));
+    c.lock();
+    c.unlock(&f.sk);
+    assert!(c.repo().pending_prompt().is_none());
+}
+
+#[test]
+fn not_me_excludes_signer() {
+    let (_server, _a, c, f, out) = c_revoked();
+    tick(&c, T);
+    let quarantined = state(&c);
+    let r = quarantine_resolve(c.store(), not_me(&c, NEW_PASSWORD, &f.sk));
+    assert!(matches!(r, Err(Error::WrongPassword)), "{:?}", r.err());
+    assert_eq!(state(&c), quarantined);
+    quarantine_resolve(c.store(), not_me(&c, PASSWORD, &f.sk))
+        .unwrap()
+        .unwrap();
+    let trust = c.store().trust_state().unwrap().unwrap();
+    assert_eq!(trust.state, DeviceLineageState::Current);
+    assert!(trust.excluded.contains(&f.me.id()));
+    assert_eq!(trust.ignored, vec![out.head]);
+    assert_eq!(trust.head.generation, 0);
+}
+
+/// G4: only a valid lineage record locks a device. A record whose identity
+/// signature is broken, or signed by a device C never pinned, leaves C
+/// `Current`, unlockable, and erases nothing whatever the clock says.
+#[test]
+fn invalid_record_never_quarantines() {
+    let broken = |mut ch: RemoteChange| {
+        if ch.kind == RecordKind::Lineage
+            && let Some(d) = ch.data.as_mut()
+            && matches!(LineageRecord::decode(d), Ok(LineageRecord::Rotation(_)))
+        {
+            *d.last_mut().unwrap() ^= 1;
+        }
+        Some(ch)
+    };
+    let (_s, _a, c1, f1, _o) = c_revoked_with(|_| {}, broken);
+    // A is not in C's roster.
+    let (_s, _a, c2, f2, _o) = c_revoked_with(
+        |t| {
+            let a = t
+                .roster
+                .iter()
+                .find(|e| e.name == "iPhone")
+                .unwrap()
+                .device_id;
+            t.roster.retain(|e| e.device_id != a);
+            t.levels.remove(&a);
+        },
+        Some,
+    );
+    for (mut c, f) in [(c1, f1), (c2, f2)] {
+        let before = records(&c);
+        assert_eq!(prompt_of(&c), None);
+        assert_eq!(tick(&c, T), QuarantineTick::NotQuarantined);
+        assert_eq!(tick(&c, T + 365 * 86_400), QuarantineTick::NotQuarantined);
+        assert_eq!(state(&c), DeviceLineageState::Current);
+        assert_eq!(records(&c), before);
+        let r = quarantine_resolve(c.store(), QuarantineChoice::Erase).map(|r| r.is_some());
+        assert!(is_validation(&r));
+        assert_eq!(records(&c), before);
+        c.try_unlock(PASSWORD, &f.sk).unwrap();
+    }
+}
+
+#[test]
+fn erase_now() {
+    let (_server, a, c, _f, _out) = c_revoked();
+    tick(&c, T);
+    assert!(
+        quarantine_resolve(c.store(), QuarantineChoice::Erase)
+            .unwrap()
+            .is_none()
+    );
+    assert_erased(&c);
+    assert_eq!(tick(&c, T + 1), QuarantineTick::NotQuarantined);
+    // Never on a device that is not quarantined.
+    let before = records(&a);
+    let r = quarantine_resolve(a.store(), QuarantineChoice::Erase).map(|r| r.is_some());
+    assert!(is_validation(&r));
+    assert_eq!(records(&a), before);
+}
+
+/// Port of `revoked_device_can_revoke_its_revoker` (spec 8.4, 10.1): B,
+/// revoked in the account-signed device list by A, revokes A there too.
+/// The list is signed with the account keys B holds, so A ignores it: not
+/// revoked, never quarantined, intact and writable.
+#[test]
+fn forged_device_list_never_erases() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut b = follower_with(&mut server, &a, &f, B, |_| {});
+    b.unlock(&f.sk);
+    let a_id = a.repo().this_device_id().unwrap();
+    let b_id = b
+        .repo()
+        .register_this_device("iPad", DeviceKind::Tablet, DeviceMode::Personal)
+        .unwrap();
+    sync(&mut server, &mut b).unwrap();
+    pull(&server, &mut a);
+    a.repo().revoke_device(b_id).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    // B, offline, revokes A in the list.
+    b.repo().revoke_device(a_id).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    pull(&server, &mut a);
+
+    assert!(!a.repo().is_this_device_revoked().unwrap());
+    let devices = a.repo().devices().unwrap();
+    assert_eq!(
+        devices
+            .iter()
+            .find(|e| e.device_id == a_id)
+            .unwrap()
+            .revoked_at,
+        None
+    );
+    assert_eq!(tick(&a, T + 365 * 86_400), QuarantineTick::NotQuarantined);
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    a.lock();
+    a.unlock(&f.sk);
+    let v = a.vault();
+    a.save(&login(v.id, "erin", T0 + 70));
+    assert_eq!(
+        users(&a.items()),
+        ["alice", "bob", "carol", "erin"].map(String::from)
+    );
+}
+
+/// Port of `zz4_revoked_device_fake_complete_rotation_beats_a`: A revokes
+/// B; B, offline, makes a complete rotation revoking A. On A it is signed
+/// by a revoked device: ignored, A never moves nor locks. On C, which has
+/// not seen A's record, it needs the user, who refuses it.
+#[test]
+fn zz4_on_a_and_on_c() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut b = follower_with(&mut server, &a, &f, B, |_| {});
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let a_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &a_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let ra = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    // B's rotation from the genesis, revoking A, phase 1 complete.
+    b.unlock(&f.sk);
+    let b_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &b_sk, vec![f.me.id()], RotationReason::Revoke);
+    req.device_keys = &f.others[B].keys;
+    let rb = b.repo.as_mut().unwrap().rotate(req).unwrap();
+    push_outbox(&mut server, &b).unwrap();
+
+    // On A: nothing.
+    pull(&server, &mut a);
+    assert_eq!(a.repo().refresh_pending_rotation().unwrap(), None);
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    assert_eq!(head_of(&a), ra.head);
+    assert_eq!(tick(&a, T + 365 * 86_400), QuarantineTick::NotQuarantined);
+    let v = a.vault();
+    a.save(&login(v.id, "erin", T0 + 70));
+
+    // On C, A's record withheld: a prompt naming B as the rotator.
+    let mut ra_id = [0u8; 16];
+    ra_id.copy_from_slice(&ra.head[..16]);
+    pull_mapped(&server, &mut c, |ch| {
+        (ch.kind != RecordKind::Lineage || ch.id != Id(ra_id)).then_some(ch)
+    });
+    let prompt = prompt_of(&c).expect("a prompt");
+    assert_eq!(prompt.kind, PromptKind::Single);
+    assert_eq!(prompt.choices[0].hash, rb.head);
+    assert_eq!(prompt.choices[0].rotator_name, "iPad");
+    assert_eq!(prompt.choices[0].revoked_names, vec!["iPhone".to_string()]);
+    assert_eq!(tick(&c, T), QuarantineTick::NotQuarantined);
+    let mut store = c.store();
+    reject_rotation(&mut store, rb.head, true).unwrap();
+    assert_eq!(state(&c), DeviceLineageState::Current);
+    assert!(
+        c.store()
+            .trust_state()
+            .unwrap()
+            .unwrap()
+            .excluded
+            .contains(&f.others[B].id())
+    );
+    // A's record arrives: that is the one C is asked about now.
+    full_fetch(&server, &mut c);
+    let prompt = prompt_of(&c).expect("a prompt");
+    assert_eq!(prompt.choices.len(), 1);
+    assert_eq!(prompt.choices[0].hash, ra.head);
+}
+
+/// Spec 8.1 and the Task 4 ruling: a valid child that does not list C
+/// makes it `Orphaned`: its data reads after unlock, nothing is written or
+/// pushed, nothing erases; "Ce n'était pas moi" with the password excludes
+/// the signer and returns to `Current`.
+#[test]
+fn orphaned_reads_only_until_not_me() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let v = c.vault();
+    c.save(&login(v.id, "dave", T0 + 50));
+    c.lock();
+    // A never pinned C.
+    let mut trust = a.store().trust_state().unwrap().unwrap();
+    trust.roster.retain(|e| e.device_id != f.others[C].id());
+    trust.levels.remove(&f.others[C].id());
+    a.repo()
+        .store_mut()
+        .put_all_if_version_with_trust(vec![], vec![], None, &trust)
+        .unwrap();
+    let new_sk = SecretKey::generate().unwrap();
+    let out = a
+        .repo
+        .as_mut()
+        .unwrap()
+        .rotate(request(&f, &new_sk, vec![], RotationReason::Rotate))
+        .unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+
+    assert_eq!(prompt_of(&c), None);
+    assert!(outbox(&c).is_empty(), "nothing goes out");
+    c.unlock(&f.sk);
+    assert_eq!(state(&c), DeviceLineageState::Orphaned { child: out.head });
+    assert_eq!(
+        users(&c.items()),
+        ["alice", "bob", "carol", "dave"].map(String::from)
+    );
+    let v = c.vault();
+    assert_eq!(
+        c.repo().save_item(&v, login(v.id, "eve", T0 + 80)).err(),
+        Some(Error::ReadOnly)
+    );
+    c.lock();
+    stray_write(&c);
+    assert!(outbox(&c).is_empty());
+    let before = records(&c);
+    assert_eq!(tick(&c, T + 365 * 86_400), QuarantineTick::NotQuarantined);
+    assert!(is_validation(
+        &quarantine_resolve(c.store(), QuarantineChoice::Erase).map(|r| r.is_some())
+    ));
+    let r = quarantine_resolve(c.store(), not_me(&c, NEW_PASSWORD, &f.sk));
+    assert!(matches!(r, Err(Error::WrongPassword)), "{:?}", r.err());
+    assert_eq!(records(&c), before);
+
+    let repo = quarantine_resolve(c.store(), not_me(&c, PASSWORD, &f.sk))
+        .unwrap()
+        .unwrap();
+    c.repo = Some(repo);
+    let trust = c.store().trust_state().unwrap().unwrap();
+    assert_eq!(trust.state, DeviceLineageState::Current);
+    assert!(trust.excluded.contains(&f.me.id()));
+    assert!(trust.ignored.contains(&out.head));
+    assert!(c.repo().pending_prompt().is_none());
+    assert_eq!(
+        users(&c.items()),
+        ["alice", "bob", "carol", "dave"].map(String::from)
+    );
+}

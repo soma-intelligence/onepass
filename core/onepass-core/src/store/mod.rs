@@ -295,6 +295,20 @@ pub trait RecordStore {
         Err(Error::Store("trust state unsupported".into()))
     }
 
+    /// Erase everything this store holds for the device, in one
+    /// transaction: every record, pending write and sync state, the trust
+    /// state, the chain state and the device state. Only if the stored trust
+    /// state is still `expected` (`Error::Conflict` otherwise, nothing
+    /// erased). Irreversible: its only caller is the quarantine of key
+    /// rotation v2 (`crate::repo::follow::quarantine_tick` 7 days after a
+    /// valid lineage record revoked this device, or the user's "Effacer cet
+    /// appareil", spec 8.4, R8, O1). A store that keeps no trust state
+    /// refuses and erases nothing.
+    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+        let _ = expected;
+        Err(Error::Store("trust state unsupported".into()))
+    }
+
     /// The local transaction of a rotation (spec 7.1 step 6): the writes,
     /// the chain state of the new identity (it replaces the stored one) and
     /// the trust state in state `Rotating { phase: 1 }`, conditional on the

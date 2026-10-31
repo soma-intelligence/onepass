@@ -23,9 +23,11 @@ use time::OffsetDateTime;
 
 use crate::chain::{ChainState, Seen};
 use crate::lists::{AccountList, MonotoneEntry, Stored};
-use crate::repo::Repository;
+use crate::repo::follow::{lineage_records, rotations};
+use crate::repo::{LineageLock, Repository, trust_of};
 use crate::store::{RecordKind, RecordStore};
 use crate::sync::SyncStore;
+use crate::trust::DeviceLineageState;
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, Result, ValidationError};
 
@@ -234,7 +236,12 @@ impl<S: RecordStore> Repository<S> {
             chain.device_id
         };
         let mine = my_id.and_then(|id| devices.as_ref().and_then(|d| d.body.entry(id)));
-        if mine.is_some_and(|e| e.revoked_at.is_some()) {
+        // Spec 10.1: with a trust state, only the lineage revokes.
+        let revoked = match trust_of(&self.store)? {
+            Some(_) => self.is_revoked_here()?,
+            None => mine.is_some_and(|e| e.revoked_at.is_some()),
+        };
+        if revoked {
             return Ok(());
         }
         let at = now();
@@ -309,12 +316,40 @@ impl<S: RecordStore> Repository<S> {
 
     /// Every device of the account, sorted by id, revoked ones included,
     /// after bringing the lists up to date (`maintain_lists`).
+    ///
+    /// Key rotation v2 (spec 10.1): on a device with a trust state,
+    /// `revoked_at` is derived from the lineage. A device the lineage
+    /// revoked (`TrustState::revoked`) is revoked, at the time the list
+    /// gives (the rotator writes it, `rotate`), else at the earliest
+    /// `issued_at` of a stored rotation record revoking it; a revocation
+    /// only the account-signed list carries is not shown (any holder of the
+    /// account keys, a revoked device included, can sign that list).
     pub fn devices(&mut self) -> Result<Vec<DeviceEntry>> {
         self.maintain_lists(None)?;
-        Ok(self
+        let mut entries = self
             .read_list::<DeviceEntry>()?
             .map(|d| d.body.entries)
-            .unwrap_or_default())
+            .unwrap_or_default();
+        if let Some(t) = trust_of(&self.store)? {
+            let records = lineage_records(&self.store)?;
+            let bodies = rotations(&records);
+            for e in &mut entries {
+                e.revoked_at = if t.revoked.contains(&e.device_id) {
+                    e.revoked_at
+                        .or_else(|| {
+                            bodies
+                                .values()
+                                .filter(|b| b.revoked.contains(&e.device_id))
+                                .map(|b| b.issued_at)
+                                .min()
+                        })
+                        .or(Some(0))
+                } else {
+                    None
+                };
+            }
+        }
+        Ok(entries)
     }
 
     /// This device's id in the device list, once it has one.
@@ -407,17 +442,28 @@ impl<S: RecordStore> Repository<S> {
         })
     }
 
-    /// Whether the device list marks this device revoked (spec 4.3). Brings
-    /// the lists up to date first. Not proof of an honest revocation: the
-    /// list is signed with the account's keys, which a revoked device holds
-    /// too, so the app locks the device and never erases it on this answer
-    /// alone (key rotation v2 spec, rule 8.4).
+    /// Whether this device is revoked. Brings the lists up to date first.
+    ///
+    /// On a device with a trust state (key rotation v2, spec 8.4, 10.1),
+    /// only the lineage answers: a valid lineage record revokes this device
+    /// (quarantined, found by this session or stored). The device list is
+    /// not asked: it is signed with the account's keys, which a revoked
+    /// device holds too. On a legacy device, whether the device list marks
+    /// it revoked (spec 4.3); not proof of an honest revocation, so the app
+    /// locks the device and never erases it on this answer. Nothing here
+    /// ever erases: the only erase is the quarantine's
+    /// (`crate::repo::follow::quarantine_tick`, `quarantine_resolve`).
     pub fn is_this_device_revoked(&mut self) -> Result<bool> {
         self.maintain_lists(None)?;
         self.is_revoked_here()
     }
 
     fn is_revoked_here(&self) -> Result<bool> {
+        if let Some(t) = trust_of(&self.store)? {
+            return Ok(t.revoked.contains(&t.me.device_id)
+                || matches!(t.state, DeviceLineageState::Quarantined { .. })
+                || matches!(self.lineage_lock, Some(LineageLock::Quarantine { .. })));
+        }
         let Some(me) = self.chain.device_id else {
             return Ok(false);
         };

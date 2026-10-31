@@ -185,8 +185,10 @@ impl Session {
         self.with(|repo| Ok(repo.rename_device(id, &name)?))
     }
 
-    /// Whether the device list marks this device revoked: the app then
-    /// erases the device.
+    /// Whether this device is revoked (on a device with key rotation v2
+    /// trust state, by a valid lineage record only; otherwise by the device
+    /// list). The app locks the device; it never erases on this answer
+    /// (only the quarantine erases, spec 8.4).
     pub fn is_this_device_revoked(&self) -> Result<bool, OnePassError> {
         self.with(|repo| Ok(repo.is_this_device_revoked()?))
     }
