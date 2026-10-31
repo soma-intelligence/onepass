@@ -8,6 +8,7 @@ pub use memory::MemoryStore;
 pub use sqlite::SqliteStore;
 
 use crate::chain::ChainState;
+use crate::crypto::IdentityVerifyingKey;
 use crate::trust::TrustState;
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -27,6 +28,14 @@ pub enum RecordKind {
     DeviceList,
     /// The signed vault list, id = account id, version = its seq.
     VaultList,
+    /// A lineage record (genesis or rotation), id = `h[..16]`, version =
+    /// its generation. Immutable: written once, never deleted by a client,
+    /// remote deletions refused (spec 6.3).
+    Lineage,
+    /// A signed device intro, immutable (spec 6.4).
+    DeviceIntro,
+    /// A Secret Key delivery envelope, immutable (spec 6.5).
+    KeyDelivery,
 }
 
 impl RecordKind {
@@ -41,6 +50,9 @@ impl RecordKind {
             Self::RestoreEpoch => 7,
             Self::DeviceList => 8,
             Self::VaultList => 9,
+            Self::Lineage => 10,
+            Self::DeviceIntro => 11,
+            Self::KeyDelivery => 12,
         }
     }
 
@@ -55,9 +67,29 @@ impl RecordKind {
             7 => Self::RestoreEpoch,
             8 => Self::DeviceList,
             9 => Self::VaultList,
+            10 => Self::Lineage,
+            11 => Self::DeviceIntro,
+            12 => Self::KeyDelivery,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
+}
+
+impl RecordKind {
+    /// The kinds written once and never replaced or deleted (spec 6.3 to
+    /// 6.5): a second write under the same key is a conflict, and a
+    /// deletion coming from the server is refused.
+    pub fn is_immutable(self) -> bool {
+        matches!(self, Self::Lineage | Self::DeviceIntro | Self::KeyDelivery)
+    }
+}
+
+/// The id of the account records (`AccountParams`, `Keyset`, `RestoreEpoch`,
+/// `DeviceList`, `VaultList`) of an identity: the account id for generation
+/// 0 (`None`), `identity_id` of the identity key from generation 1 (spec
+/// 6.6).
+pub fn account_record_id(account_id: Id, identity: Option<&IdentityVerifyingKey>) -> Id {
+    identity.map_or(account_id, crate::lineage::identity_id)
 }
 
 /// A stored record. Only `id`, `kind` and the opaque `version` are in clear.
@@ -337,6 +369,49 @@ pub(crate) fn exercise(store: &mut dyn RecordStore) {
 mod tests {
     use super::*;
 
+    fn rec(kind: RecordKind, id: Id, version: u64, data: &[u8]) -> Record {
+        Record {
+            id,
+            kind,
+            version,
+            data: data.to_vec(),
+        }
+    }
+
+    #[test]
+    fn lineage_put_twice_refused() {
+        for kind in [
+            RecordKind::Lineage,
+            RecordKind::DeviceIntro,
+            RecordKind::KeyDelivery,
+        ] {
+            assert!(kind.is_immutable());
+            let mut s = MemoryStore::default();
+            let id = Id::new();
+            s.put_if_version(rec(kind, id, 1, b"one"), None).unwrap();
+            assert_eq!(
+                s.put_if_version(rec(kind, id, 1, b"other"), None),
+                Err(Error::Conflict)
+            );
+            assert_eq!(s.get(kind, id).unwrap().unwrap().data, b"one");
+        }
+        assert!(!RecordKind::AccountParams.is_immutable());
+    }
+
+    #[test]
+    fn generation_zero_ids_unchanged() {
+        let a = Id::new();
+        assert_eq!(account_record_id(a, None), a);
+        let k = crate::crypto::IdentityKey::generate()
+            .unwrap()
+            .verifying_key();
+        assert_eq!(
+            account_record_id(a, Some(&k)),
+            crate::lineage::identity_id(&k)
+        );
+        assert_ne!(account_record_id(a, Some(&k)), a);
+    }
+
     #[test]
     fn kind_codes_roundtrip() {
         for kind in [
@@ -349,15 +424,21 @@ mod tests {
             RecordKind::RestoreEpoch,
             RecordKind::DeviceList,
             RecordKind::VaultList,
+            RecordKind::Lineage,
+            RecordKind::DeviceIntro,
+            RecordKind::KeyDelivery,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
+        assert_eq!(RecordKind::Lineage.code(), 10);
+        assert_eq!(RecordKind::DeviceIntro.code(), 11);
+        assert_eq!(RecordKind::KeyDelivery.code(), 12);
         // Frozen codes: the on-disk and CloudKit encoding.
         assert_eq!(RecordKind::RestoreEpoch.code(), 7);
         assert_eq!(RecordKind::DeviceList.code(), 8);
         assert_eq!(RecordKind::VaultList.code(), 9);
         assert_eq!(
-            RecordKind::from_code(10).unwrap_err(),
+            RecordKind::from_code(13).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
         assert_eq!(
