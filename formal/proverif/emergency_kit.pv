@@ -156,12 +156,14 @@ query v: bitstring, i: bitstring, m: bitstring;
     event(ItemSealed(acct_kit_pw, m)) || event(ItemSealed(restore_kit_pw, m)).
 
 (* Sanity (expected false): restore pins, lists a vault, reads and writes an
-   item; the kit-lost restore pins; the no-keyset device derives an AUK. *)
+   item; the kit-lost restore pins and writes an item (so its P17 query on
+   written items is not vacuous); the no-keyset device derives an AUK. *)
 query a: bitstring, i: pkey; event(Pinned(restore_main, a, i)).
 query s: pkey, v: bitstring, k: key; event(VaultAccepted(restore_main, s, v, k)).
 query v: bitstring, i: bitstring, m: bitstring; event(ItemRead(restore_main, v, i, m)).
 query v: bitstring, m: bitstring; event(ItemWritten(restore_main, v, m)).
 query a: bitstring, i: pkey; event(Pinned(restore_kit_lost, a, i)).
+query v: bitstring, m: bitstring; event(ItemWritten(restore_kit_lost, v, m)).
 query event(AukDerived(restore_no_keyset)).
 
 process

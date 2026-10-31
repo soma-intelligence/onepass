@@ -87,6 +87,7 @@
 | emergency_kit.pv | `not event(ItemRead(restore_main,v_42,i,m_14))` | false | false |
 | emergency_kit.pv | `not event(ItemWritten(restore_main,v_42,m_14))` | false | false |
 | emergency_kit.pv | `not event(Pinned(restore_kit_lost,a,i))` | false | false |
+| emergency_kit.pv | `not event(ItemWritten(restore_kit_lost,v_42,m_14))` | false | false |
 | emergency_kit.pv | `not event(AukDerived(restore_no_keyset))` | false | false |
 | manifest.pv | `event(Accept(d_3,v_84,n,mh_12,e)) ==> event(Signed(v_84,n,p,mh_12,e))` | true | true |
 | manifest.pv | `event(Accept(d_3,v_84,n,h1,e1))@i_6 && event(Accept(d_3,v_84,m_3,h2,e2))@j ==> i_6 > j \|\| m_3 ≥ n` | true | true |
