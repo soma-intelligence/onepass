@@ -42,7 +42,7 @@ use crate::lineage::{
     GenesisBody, LINEAGE_FORMAT, LegacyAnchor, LegacyIntroBody, LegacyIntros, LineageRecord,
     MAX_ROSTER, RosterEntry, Signed, SignedIntro, SignedLegacyIntro, accept_legacy_intros,
     body_bytes, legacy_intro_id, sign_genesis, sign_legacy_intro, verify_genesis,
-    verify_legacy_intro,
+    verify_legacy_intro, verify_rotation,
 };
 use crate::store::{Record, RecordKind, RecordStore};
 use crate::trust::{DeviceLineageState, LineageHead, MAX_OTHER_GENESIS, TrustLevel, TrustState};
@@ -524,6 +524,18 @@ impl<S: RecordStore> Repository<S> {
             );
             apply_legacy(&mut next, &out);
         }
+        // Fix round 2: on a lost lineage the device stops writing.
+        if matches!(
+            next.state,
+            DeviceLineageState::Current | DeviceLineageState::Candidate { .. }
+        ) && let Some((child, rotator)) = self.lost_lineage(&next, &records)?
+        {
+            next.state = DeviceLineageState::Orphaned {
+                child,
+                rotator,
+                resume: None,
+            };
+        }
         note_other_genesis(&mut next, &records);
         if next == trust {
             return Ok(trust);
@@ -565,8 +577,102 @@ impl<S: RecordStore> Repository<S> {
     /// The user saw the other-genesis alert: not shown again for the
     /// genesis records known now. Conditional on the trust state read
     /// (`Conflict`).
+    ///
+    /// Refused (`Validation("genesis")`) while this device is on a lost
+    /// lineage (`lost_lineage`): the alert stays until it re-pairs.
     pub fn clear_genesis_alert(&mut self) -> Result<()> {
+        if let Some(t) = trust_of(&self.store)?
+            && self
+                .lost_lineage(&t, &lineage_records(&self.store)?)?
+                .is_some()
+        {
+            return Err(refused("genesis", "lost lineage"));
+        }
         self.edit_trust(|t| t.genesis_alert = false)
+    }
+
+    /// Fix round 2 (spec 15 as amended): this device is at generation 0 on
+    /// a genesis that is not the winner (`winner`), and a valid rotation is
+    /// chained to the winner: a child of it signed by its creator or by a
+    /// device whose legacy intro under it is accepted (the keys from the
+    /// winner and those intros, never from the rotation), neither rejected
+    /// here (`ignored`) nor signed by an excluded device. Then the device
+    /// can never move to the winner by itself and its writes would only
+    /// pile up: it is `Orphaned` (read-only; exits by re-pair, "Ce n'était
+    /// pas moi" or the Emergency Kit, spec 8.2). The child and its rotator,
+    /// smallest hash first; `None` otherwise or when the device list does
+    /// not verify.
+    fn lost_lineage(
+        &self,
+        trust: &TrustState,
+        records: &[LineageRecord],
+    ) -> Result<Option<([u8; 32], Id)>> {
+        if trust.head.generation != 0
+            || self.records_id != trust.account_id
+            || self.account.params.identity_pub != trust.identity_pub
+        {
+            return Ok(None);
+        }
+        let Ok(Some(list)) = self.read_list::<DeviceEntry>() else {
+            return Ok(None);
+        };
+        let (listed, _) = split_list(&list.body.entries);
+        let eligible: BTreeSet<Id> = listed
+            .intersection(&trust.migration_listed)
+            .copied()
+            .collect();
+        let geneses = valid_geneses(records, trust.account_id, &trust.identity_pub);
+        let intros = stored_legacy_intros(&self.store)?;
+        let account_sign = &self.account.params.signing_pub;
+        let Some((w, g)) = winner(
+            &geneses,
+            &intros,
+            trust.account_id,
+            account_sign,
+            &eligible,
+            &trust.excluded,
+            &trust.me,
+        ) else {
+            return Ok(None);
+        };
+        if w == trust.head.hash {
+            return Ok(None);
+        }
+        let mut keys: BTreeMap<Id, HybridVerifyingKey> = BTreeMap::new();
+        keys.insert(g.body.creator.device_id, g.body.creator.sign_pub.clone());
+        let joined = accept_legacy_intros(
+            &intros,
+            &LegacyAnchor {
+                account_id: trust.account_id,
+                genesis_hash: w,
+                account_sign,
+                creator: g.body.creator.device_id,
+                listed: &eligible,
+            },
+        );
+        for e in joined.accepted {
+            keys.entry(e.device_id).or_insert(e.sign_pub);
+        }
+        let mut children: Vec<([u8; 32], Id)> = records
+            .iter()
+            .filter_map(|r| match r {
+                LineageRecord::Rotation(s)
+                    if s.body.parent == w
+                        && s.body.generation == 1
+                        && s.body.account_id == trust.account_id
+                        && !trust.ignored.contains(&r.hash())
+                        && !trust.excluded.contains(&s.body.rotator)
+                        && keys
+                            .get(&s.body.rotator)
+                            .is_some_and(|k| verify_rotation(s, k).is_ok()) =>
+                {
+                    Some((r.hash(), s.body.rotator))
+                }
+                _ => None,
+            })
+            .collect();
+        children.sort();
+        Ok(children.into_iter().next())
     }
 
     fn edit_trust(&mut self, edit: impl FnOnce(&mut TrustState)) -> Result<()> {
@@ -702,12 +808,14 @@ impl<S: RecordStore> Repository<S> {
     /// Concern 5 (spec 15, Task 17 UI): the devices of the account that
     /// have not migrated, as this device sees them: listed and not revoked
     /// in the device list, not this device, not in the roster, neither
-    /// revoked along the lineage nor excluded, and pinned `Tofu` with no
-    /// roster entry (listed when this device migrated, no accepted legacy
-    /// intro since). A rotation now leaves them out ("devra être
-    /// réappairé"): the rotation screen lists them before a generation 0
-    /// rotation, and after one they are the devices to re-pair. Sorted.
-    /// Empty without a trust state.
+    /// revoked along the lineage nor excluded, and not pinned `Verified`:
+    /// pending `Tofu` (listed when this device migrated, no accepted legacy
+    /// intro since) or with no level at all (listed after this device
+    /// migrated, no intro: a legacy pairing or one still incomplete, which
+    /// `pairing_incomplete` also names). A rotation now leaves them out
+    /// ("devra être réappairé"): the rotation screen lists them before a
+    /// generation 0 rotation, and after one they are the devices to
+    /// re-pair. Sorted. Empty without a trust state.
     pub fn unmigrated_devices(&self) -> Result<Vec<Id>> {
         let Some(t) = trust_of(&self.store)? else {
             return Ok(Vec::new());
@@ -723,7 +831,7 @@ impl<S: RecordStore> Repository<S> {
                     && !t.roster.iter().any(|e| e.device_id == *id)
                     && !t.revoked.contains(id)
                     && !t.excluded.contains(id)
-                    && t.levels.get(id) == Some(&TrustLevel::Tofu)
+                    && t.levels.get(id) != Some(&TrustLevel::Verified)
             })
             .collect())
     }
