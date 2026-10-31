@@ -1,8 +1,8 @@
 -- Schema-wide privilege guard. Every later migration is held to it: a
 -- function or table created in onepass_mailbox by the wrong role, or left
 -- open to PUBLIC, fails here. Extend the allowlists below when a migration
--- grants EXECUTE on purpose (Task 6: rdv_* for the api, the janitor's
--- functions). Entries are full signatures (regprocedure text), so a new
+-- grants EXECUTE on purpose (blobs and rdv_* for the api, the collector
+-- and push queue functions for the janitor). Entries are full signatures (regprocedure text), so a new
 -- overload of an allowed name is not allowed by accident.
 
 create temporary table t_allow (role text, signature text) on commit drop;
@@ -15,7 +15,16 @@ insert into t_allow (role, signature) values
     ('onepass_mailbox_api', 'onepass_mailbox.api_enroll(bytea,bytea,timestamp with time zone,bytea,bytea,bytea,timestamp with time zone,bytea,bytea)'),
     ('onepass_mailbox_api', 'onepass_mailbox.api_revoke_credential(bytea,bytea,timestamp with time zone,bytea,bytea)'),
     ('onepass_mailbox_api', 'onepass_mailbox.api_set_push(bytea,bytea,timestamp with time zone,bytea,smallint,bytea)'),
-    ('onepass_mailbox_api', 'onepass_mailbox.api_commit(bytea,bytea,timestamp with time zone,bytea,smallint[],bytea[],bigint[],smallint[],bigint[],bytea[],bytea[],integer[])');
+    ('onepass_mailbox_api', 'onepass_mailbox.api_commit(bytea,bytea,timestamp with time zone,bytea,smallint[],bytea[],bigint[],smallint[],bigint[],bytea[],bytea[],integer[])'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_blob_announce(bytea,bytea,timestamp with time zone,bytea,bytea[],integer[])'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_blob_lookup(bytea,bytea,timestamp with time zone,bytea,bytea[])'),
+    ('onepass_mailbox_api', 'onepass_mailbox.rdv_put(bytea,smallint,integer,bytea,bytea)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.rdv_get(bytea,smallint,integer,bytea)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.rdv_close(bytea,bytea)'),
+    ('onepass_mailbox_janitor', 'onepass_mailbox.gc_take(integer)'),
+    ('onepass_mailbox_janitor', 'onepass_mailbox.gc_done(bytea,bytea)'),
+    ('onepass_mailbox_janitor', 'onepass_mailbox.push_take(integer)'),
+    ('onepass_mailbox_janitor', 'onepass_mailbox.push_forget(bytea,bytea)');
 
 -- The allowlist names real functions (a typo would allow nothing and hide it).
 select onepass_test.ok(
@@ -84,6 +93,22 @@ select onepass_test.ok(
     (select bool_and(has_function_privilege('onepass_mailbox_api', w.signature::regprocedure, 'execute'))
      from t_allow w where w.role = 'onepass_mailbox_api'),
     'api_entry_points_are_granted');
+select onepass_test.ok(
+    (select bool_and(has_function_privilege('onepass_mailbox_janitor', w.signature::regprocedure, 'execute'))
+     from t_allow w where w.role = 'onepass_mailbox_janitor'),
+    'janitor_functions_are_granted');
+-- maintenance() runs as postgres (pg_cron), never through a login role.
+select onepass_test.ok(
+    (select bool_and(not has_function_privilege(r, 'onepass_mailbox.maintenance(timestamp with time zone)'::regprocedure, 'execute'))
+     from unnest(array['onepass_mailbox_api', 'onepass_mailbox_janitor', 'anon', 'authenticated', 'service_role']) r),
+    'maintenance_is_not_granted');
+-- Storage: the owner reads objects, nobody of ours writes them.
+select onepass_test.ok(
+    has_table_privilege('onepass_mailbox_owner', 'storage.objects', 'select')
+    and not has_table_privilege('onepass_mailbox_owner', 'storage.objects', 'insert,update,delete')
+    and not has_schema_privilege('onepass_mailbox_api', 'storage', 'usage')
+    and not has_schema_privilege('onepass_mailbox_janitor', 'storage', 'usage'),
+    'storage_is_read_only_for_the_owner');
 
 -- The guard bites: a function postgres creates here without the owner role
 -- is caught by the checks above.

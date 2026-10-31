@@ -64,6 +64,9 @@ create table storage.objects (
     metadata jsonb,
     created_at timestamptz not null default now()
 );
+-- Like the real one: one current object per name in a bucket without
+-- versioning, found by (bucket_id, name).
+create unique index objects_bucket_id_name_idx on storage.objects (bucket_id, name);
 alter table storage.buckets enable row level security;
 alter table storage.objects enable row level security;
 
@@ -109,6 +112,13 @@ as $$
     values (url, body, params, headers, timeout_milliseconds)
     returning id;
 $$;
+
+-- Supabase Vault: only the decrypted view the cron jobs read.
+create schema if not exists vault;
+create table vault.decrypted_secrets (
+    name text primary key,
+    decrypted_secret text
+);
 
 -- Test helpers. Every assertion prints `ok <name>` (as a notice the harness
 -- rewrites) or raises, which stops the run.

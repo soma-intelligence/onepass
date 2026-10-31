@@ -17,6 +17,10 @@
 # 3. commit_frozen_while_waiting_is_refused: a freeze that commits while a
 #    batch waits on the mailbox lock stops that batch (frozen is read again
 #    under the lock).
+# 4. purge_and_commit_serialize: maintenance purges a 90 day tombstone and
+#    holds its transaction; a batch that puts on the same key waits on the
+#    mailbox lock, then inserts a fresh row. The counters must match the
+#    rows (a batch that planned against the tombstone would count it twice).
 #
 # Prints `ok <name>` per check; exits non-zero on the first failure.
 set -euo pipefail
@@ -266,3 +270,56 @@ ok "$(val "select frozen and next_seq = $before + 1
                  and not exists (select 1 from onepass_mailbox.records where id = '\\x000000000000000000000000000000dd'::bytea)
            from onepass_mailbox.mailboxes")" \
     commit_frozen_while_waiting_is_refused
+
+# ------------------------------------------------------------- phase 4
+
+key4="'\\x000000000000000000000000000000ee'::bytea"
+q setup -o /dev/null <<SQL
+set onepass.maintenance = 'on';
+update onepass_mailbox.mailboxes set frozen = false;
+reset onepass.maintenance;
+select status from race.put($key4, null);
+select c.status
+from race.fixture f,
+     onepass_mailbox.api_commit(f.credential, extensions.gen_random_bytes(16), now(), f.mailbox,
+         array[1]::smallint[], array[$key4], array[2]::bigint[], array[2]::smallint[],
+         array[null]::bigint[], array[null]::bytea[], array[null]::bytea[], array[null]::integer[]) c;
+update onepass_mailbox.records set deleted_at = now() - interval '100 days' where id = $key4;
+SQL
+tomb="$(val "select seq from onepass_mailbox.records where id = $key4 and deleted")"
+
+q race-m4 -o /dev/null <<SQL &
+begin;
+select onepass_mailbox.maintenance();
+select pg_sleep(2);
+commit;
+SQL
+pid_m4=$!
+for _ in $(seq 1 100); do
+    [ "$(val "select count(*) from pg_stat_activity where application_name = 'race-m4' and query like '%pg_sleep%'")" = "1" ] && break
+    sleep 0.05
+done
+
+q race-b4 -At >"$tmp/b4.out" <<SQL &
+select status from race.put($key4, null);
+SQL
+pid_b4=$!
+waited=f
+for _ in $(seq 1 40); do
+    if [ "$(val "select count(*) from pg_stat_activity where application_name = 'race-b4' and wait_event_type = 'Lock'")" = "1" ]; then
+        waited=t
+        break
+    fi
+    sleep 0.05
+done
+ok "$waited" purge_race_batch_waits_behind_the_purge
+
+wait "$pid_m4"
+wait "$pid_b4"
+ok "$(grep -c '^ok$' "$tmp/b4.out" | sed 's/^1$/t/')" purge_race_batch_applies_after_the_purge
+ok "$(val "select m.bytes_used = (select sum(case when deleted then 128 else size end) from onepass_mailbox.records)
+                 and m.records_count = (select count(*) from onepass_mailbox.records)
+                 and m.min_cursor = $tomb
+                 and (select not deleted from onepass_mailbox.records where id = $key4)
+           from onepass_mailbox.mailboxes m")" \
+    purge_and_commit_serialize
