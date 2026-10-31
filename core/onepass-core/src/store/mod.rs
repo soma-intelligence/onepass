@@ -276,21 +276,50 @@ pub trait RecordStore {
         Err(Error::Store("trust state unsupported".into()))
     }
 
+    /// `put_all_if_version_with_trust`, conditional on the stored trust
+    /// state too: it is written only if the stored one is still `expected`
+    /// (the one the caller read before deciding), byte for byte. Otherwise
+    /// nothing is written and the error is `Error::Conflict`. Two writers
+    /// of the trust state (a rotation, a follow, a rejection) can then
+    /// never overwrite each other's decision. A store that keeps no trust
+    /// state refuses and writes nothing.
+    fn put_with_trust_cas(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        expected: &TrustState,
+        trust: &TrustState,
+    ) -> Result<()> {
+        let _ = (writes, deletes, chain, expected, trust);
+        Err(Error::Store("trust state unsupported".into()))
+    }
+
     /// The local transaction of a rotation (spec 7.1 step 6): the writes,
     /// the chain state of the new identity (it replaces the stored one) and
-    /// the trust state in state `Rotating { phase: 1 }`, plus what the push
-    /// phases need (`rotation`), all or nothing. The default is
-    /// `put_all_if_version_with_trust` (a store that pushes nothing has no
-    /// phases to drive).
+    /// the trust state in state `Rotating { phase: 1 }`, conditional on the
+    /// stored trust state being `expected` (`put_with_trust_cas`), plus
+    /// what the push phases need (`rotation`), all or nothing. The default
+    /// is `put_with_trust_cas` (a store that pushes nothing has no phases
+    /// to drive).
     fn put_rotation(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
         chain: ChainState,
+        expected: &TrustState,
         trust: &TrustState,
         rotation: &RotationPush,
     ) -> Result<()> {
         let _ = rotation;
-        self.put_all_if_version_with_trust(writes, Vec::new(), Some(chain), trust)
+        self.put_with_trust_cas(writes, Vec::new(), Some(chain), expected, trust)
+    }
+
+    /// Whether this device holds a write of `(kind, id)` it has not pushed
+    /// yet (a store that pushes, `crate::sync::SyncStore`). The default
+    /// pushes nothing: `false`.
+    fn is_pending_write(&self, kind: RecordKind, id: Id) -> Result<bool> {
+        let _ = (kind, id);
+        Ok(false)
     }
 }
 

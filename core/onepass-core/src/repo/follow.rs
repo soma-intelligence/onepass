@@ -1,0 +1,585 @@
+//! Key rotation v2 on a remaining device (spec 7.2, 9, R4, R5, R10, R12,
+//! K9): what the device asks the user, and the two answers.
+//!
+//! - `pending_rotation` reads the trust state and the lineage records,
+//!   without unlocking, runs the resolver (`lineage::resolve`) and turns a
+//!   `Prompt` into what the confirmation screen shows: for each choice,
+//!   the rotator's name and the names of the devices it removed, **from
+//!   the local roster** (never from the record), when it was issued, and
+//!   the rotation code. A choice is offered only once its delivery for
+//!   this device, its params and its keyset are present and hash-match.
+//! - `follow_rotation` ("C'est moi" and the master password): open this
+//!   device's Secret Key delivery with its device keys, open the new
+//!   identity's params and keyset with the password and that Secret Key,
+//!   then move to the new head in one local transaction (trust state and
+//!   chain state, conditional on the trust state read), and open a session
+//!   on the new identity whose vaults start from the rotation's
+//!   `from_heads` (R12). No Secret Key is typed (R4); a biometric-only
+//!   device follows with the password once (O5).
+//! - `reject_rotation` ("Ce n'était pas moi"): the record joins `ignored`,
+//!   its signer `excluded` on request, and the device is `Current` again.
+//!
+//! A normal unlock never follows (K9): it opens the identity the device
+//! is on, and when a prompt is pending the session is read-only
+//! (`Error::ReadOnly`, R10) and reports it (`Repository::pending_prompt`).
+//!
+//! Following a switch (`PromptKind::Switch` or `Reapply`, spec 8.5) is
+//! refused here: it lands with the re-application of Task 11. The prompt
+//! for it is built already, with the names along the path from the
+//! divergence to the target.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
+
+use aws_lc_rs::digest::{SHA256, digest};
+
+use super::{DeviceState, Repository, pin, trust_of};
+use crate::account::{Account, AccountParams, Auk, PinnedAccount};
+use crate::chain::ChainState;
+use crate::crypto::{KdfParams, SecretKey};
+use crate::device_keys::DeviceKeys;
+use crate::lineage::resolve::{Completeness, Decision, Prompt, PromptKind, resolve};
+use crate::lineage::{LineageRecord, RotationBody, delivery_id, identity_id, rotation_code};
+use crate::store::{RecordKind, RecordStore, account_record_id};
+use crate::trust::{DeviceLineageState, LineageHead, RetiredIdentity, TrustLevel, TrustState};
+use crate::{Error, Id, IntegrityError, Result, ValidationError};
+
+/// What the confirmation screen shows (spec 9). Names come from the local
+/// roster only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RotationPrompt {
+    pub kind: PromptKind,
+    /// One for `Single`, `Switch` and `Reapply`; every side of a `Mutual`.
+    pub choices: Vec<PromptChoice>,
+    /// The 6-digit rotation code of the only choice (O2: shown, comparing
+    /// it is not mandatory); `None` for a `Mutual` prompt.
+    pub code: Option<u32>,
+    /// A rotator of a choice is trusted on first use only (O7, spec 15):
+    /// "Cet appareil n'a pas été vérifié depuis la mise à jour."
+    pub tofu_signer: bool,
+    /// This device changed the master password and has not pushed it yet
+    /// (spec 7.3): the screen offers to apply it to the new keys.
+    pub pending_password_change: bool,
+}
+
+/// One record the user can confirm or reject.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptChoice {
+    /// The lineage hash to pass to `follow_rotation` or `reject_rotation`.
+    pub hash: [u8; 32],
+    /// The device that made the keys: for a switch, the rotator of the
+    /// first record past the divergence (the sibling that won).
+    pub rotator_name: String,
+    /// The devices it removed (for a switch, along the whole path to the
+    /// target), in record order, without repeats.
+    pub revoked_names: Vec<String>,
+    /// Informative, from the target record.
+    pub issued_at: i64,
+}
+
+fn refused(field: &str, reason: &'static str) -> Error {
+    ValidationError {
+        field: field.into(),
+        reason,
+    }
+    .into()
+}
+
+fn sha256(b: &[u8]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out.copy_from_slice(digest(&SHA256, b).as_ref());
+    out
+}
+
+/// Every lineage record of the store that decodes; the others are
+/// ignored (the resolver never sees them).
+fn lineage_records<S: RecordStore + ?Sized>(store: &S) -> Result<Vec<LineageRecord>> {
+    Ok(store
+        .list(RecordKind::Lineage)?
+        .iter()
+        .filter_map(|r| LineageRecord::decode(&r.data).ok())
+        .collect())
+}
+
+fn rotations(records: &[LineageRecord]) -> BTreeMap<[u8; 32], &RotationBody> {
+    records
+        .iter()
+        .filter_map(|r| match r {
+            LineageRecord::Rotation(s) => Some((r.hash(), &s.body)),
+            LineageRecord::Genesis(_) => None,
+        })
+        .collect()
+}
+
+/// Spec 7.2 "complete for me": this device's delivery, the params and the
+/// keyset of `body` are present and match the hashes it lists.
+fn complete_for<S: RecordStore + ?Sized>(
+    store: &S,
+    h: &[u8; 32],
+    body: &RotationBody,
+    me: Id,
+) -> Result<bool> {
+    let Some((_, want)) = body.deliveries.iter().find(|(id, _)| *id == me) else {
+        return Ok(false);
+    };
+    let matches = |kind, id, want: &[u8; 32]| -> Result<bool> {
+        Ok(store
+            .get(kind, id)?
+            .is_some_and(|r| sha256(&r.data) == *want))
+    };
+    let rid = identity_id(&body.identity_pub);
+    Ok(matches(RecordKind::KeyDelivery, delivery_id(h, me), want)?
+        && matches(RecordKind::AccountParams, rid, &body.params_hash)?
+        && matches(RecordKind::Keyset, rid, &body.keyset_hash)?)
+}
+
+fn completeness<S: RecordStore + ?Sized>(
+    store: &S,
+    records: &[LineageRecord],
+    me: Id,
+) -> Result<Completeness> {
+    let mut present = BTreeSet::new();
+    for (h, body) in rotations(records) {
+        if complete_for(store, &h, body, me)? {
+            present.insert(h);
+        }
+    }
+    Ok(Completeness { present })
+}
+
+/// The id of the account records of the trust state's identity (spec 6.6).
+fn current_records_id(trust: &TrustState) -> Id {
+    account_record_id(
+        trust.account_id,
+        (trust.head.generation > 0).then_some(&trust.identity_pub),
+    )
+}
+
+/// A local roster name, or the device id for a device this one never
+/// pinned (only possible along a switch path).
+fn local_name(trust: &TrustState, id: Id) -> String {
+    trust
+        .roster
+        .iter()
+        .find(|e| e.device_id == id)
+        .map_or_else(|| id.to_string(), |e| e.name.clone())
+}
+
+/// The records from the first one past this device's own chain down to
+/// `target` (only `target` for a child of the head).
+fn path_to<'a>(
+    trust: &TrustState,
+    bodies: &BTreeMap<[u8; 32], &'a RotationBody>,
+    target: [u8; 32],
+) -> Vec<&'a RotationBody> {
+    let mut own = BTreeSet::from([trust.head.hash]);
+    let mut h = trust.head.hash;
+    while let Some(b) = bodies.get(&h) {
+        own.insert(b.parent);
+        h = b.parent;
+    }
+    let mut path = Vec::new();
+    let mut h = target;
+    while let Some(b) = bodies.get(&h) {
+        path.push(*b);
+        if own.contains(&b.parent) || path.len() > bodies.len() {
+            break;
+        }
+        h = b.parent;
+    }
+    path.reverse();
+    path
+}
+
+/// The resolver's prompt and what the screen shows for it, or `None` for
+/// any other decision.
+fn prompt_in<S: RecordStore + ?Sized>(
+    store: &S,
+    trust: &TrustState,
+    records: &[LineageRecord],
+    complete: &Completeness,
+) -> Result<Option<(Prompt, RotationPrompt)>> {
+    let Decision::Prompt(p) = resolve(trust, records, complete) else {
+        return Ok(None);
+    };
+    let bodies = rotations(records);
+    let mut choices = Vec::with_capacity(p.children.len());
+    let mut tofu_signer = false;
+    for h in &p.children {
+        let Some(target) = bodies.get(h) else {
+            continue;
+        };
+        let path = path_to(trust, &bodies, *h);
+        let first = path.first().copied().unwrap_or(target);
+        let mut revoked = Vec::new();
+        for b in &path {
+            tofu_signer |= trust.levels.get(&b.rotator) == Some(&TrustLevel::Tofu);
+            for id in &b.revoked {
+                if !revoked.contains(id) {
+                    revoked.push(*id);
+                }
+            }
+        }
+        choices.push(PromptChoice {
+            hash: *h,
+            rotator_name: local_name(trust, first.rotator),
+            revoked_names: revoked.iter().map(|id| local_name(trust, *id)).collect(),
+            issued_at: target.issued_at,
+        });
+    }
+    let code = match p.children.as_slice() {
+        [h] if p.kind != PromptKind::Mutual => Some(rotation_code(h)),
+        _ => None,
+    };
+    let pending_password_change =
+        store.is_pending_write(RecordKind::AccountParams, current_records_id(trust))?;
+    let shown = RotationPrompt {
+        kind: p.kind,
+        choices,
+        code,
+        tofu_signer,
+        pending_password_change,
+    };
+    Ok(Some((p, shown)))
+}
+
+/// The prompt a device with this trust state shows now.
+fn prompt_for<S: RecordStore + ?Sized>(
+    store: &S,
+    trust: &TrustState,
+) -> Result<Option<(Prompt, RotationPrompt)>> {
+    let records = lineage_records(store)?;
+    let complete = completeness(store, &records, trust.me.device_id)?;
+    prompt_in(store, trust, &records, &complete)
+}
+
+/// The confirmation the device waits for (spec 7.2, 9), read without
+/// unlocking: `None` without a trust state (a legacy device), or when the
+/// resolver decides anything but a prompt (nothing new, waiting for a
+/// parent or a delivery, quarantine and orphaned: Task 12).
+pub fn pending_rotation(store: &dyn RecordStore) -> Result<Option<RotationPrompt>> {
+    let Some(trust) = trust_of(store)? else {
+        return Ok(None);
+    };
+    Ok(prompt_for(store, &trust)?.map(|(_, shown)| shown))
+}
+
+/// The prompt offering `choice` now, or `Validation("rotation")`.
+/// `choice` counts as complete for the resolver, so a delivery or record
+/// that does not match is reported by the checks that follow (typed
+/// errors) rather than as a choice not offered; nothing is adopted unless
+/// those checks pass.
+fn offered<S: RecordStore + ?Sized>(
+    store: &S,
+    trust: &TrustState,
+    records: &[LineageRecord],
+    choice: [u8; 32],
+) -> Result<Prompt> {
+    let mut complete = completeness(store, records, trust.me.device_id)?;
+    complete.present.insert(choice);
+    match resolve(trust, records, &complete) {
+        Decision::Prompt(p) if p.children.contains(&choice) => Ok(p),
+        _ => Err(refused("rotation", "not offered")),
+    }
+}
+
+/// Follow the rotation `choice` after "C'est moi" and the master password
+/// (spec 7.2 steps 1 to 4). Returns the session on the new identity, its
+/// Account Unlock Key (to enroll biometrics again) and the new Secret Key
+/// (to promote in the Keychain, and for the next unlock).
+///
+/// Refused, with nothing written:
+/// - no trust state, or `device_keys` other than the pinned ones:
+///   `Validation("device")`;
+/// - `choice` not offered by the resolver now, a record that does not
+///   list this device or revokes it, a switch (Task 11):
+///   `Validation("rotation")`;
+/// - this device's delivery, the params or the keyset missing:
+///   `NotFound`; one that does not match the hash the signed record lists
+///   (a substituted envelope is refused before any decapsulation):
+///   `Integrity(Signature)`; a roster that pins another key for a device
+///   this one pinned: `Integrity(WrongContext)`;
+/// - a wrong password: `WrongPassword`;
+/// - the trust state changed since it was read (another writer):
+///   `Conflict`; the commit failing: its error.
+///
+/// The transaction writes the trust state (new head, identity, roster,
+/// revoked, the left identity retired, `Current`) and the chain state of
+/// the new identity (params epoch, lists unseen). The device state is the
+/// caller's to persist (`persist_device_state`); until then a reopen
+/// moves the pin to the trust state's identity and starts the vaults from
+/// `from_heads` (`reconcile_pin`). Nothing fails after the commit.
+pub fn follow_rotation<S: RecordStore>(
+    mut store: S,
+    choice: [u8; 32],
+    password: &str,
+    device_keys: &DeviceKeys,
+) -> Result<(Repository<S>, Auk, SecretKey)> {
+    let trust = trust_of(&store)?.ok_or_else(|| refused("device", "no device keys"))?;
+    let me = trust.me.device_id;
+    if device_keys.public(me)? != trust.me {
+        return Err(refused("device", "other device keys"));
+    }
+    let records = lineage_records(&store)?;
+    let prompt = offered(&store, &trust, &records, choice)?;
+    if matches!(prompt.kind, PromptKind::Switch | PromptKind::Reapply) {
+        return Err(refused("rotation", "switch"));
+    }
+    let bodies = rotations(&records);
+    let body = *bodies
+        .get(&choice)
+        .ok_or_else(|| refused("rotation", "not offered"))?;
+    if body.revoked.contains(&me) || !body.roster.iter().any(|e| e.device_id == me) {
+        return Err(refused("rotation", "not for this device"));
+    }
+    // A roster may add devices (intros the rotator saw), never re-key one
+    // this device pinned.
+    for e in &body.roster {
+        if let Some(mine) = trust.roster.iter().find(|m| m.device_id == e.device_id)
+            && (mine.sign_pub != e.sign_pub || mine.kem_pub != e.kem_pub)
+        {
+            return Err(IntegrityError::WrongContext.into());
+        }
+    }
+
+    // Step 1: the Secret Key, from this device's delivery, its hash
+    // checked against the signed body before decapsulation.
+    let envelope = store
+        .get(RecordKind::KeyDelivery, delivery_id(&choice, me))?
+        .ok_or(Error::NotFound)?;
+    let secret_key = super::rotate::open_key_delivery(device_keys, body, me, &envelope.data)?;
+
+    // Step 2: the params and keyset of the new identity, hash-matched,
+    // verified under the identity the record names (G8), opened with the
+    // password.
+    let rid = identity_id(&body.identity_pub);
+    let params = store
+        .get(RecordKind::AccountParams, rid)?
+        .ok_or(Error::NotFound)?;
+    let keyset = store.get(RecordKind::Keyset, rid)?.ok_or(Error::NotFound)?;
+    if sha256(&params.data) != body.params_hash || sha256(&keyset.data) != body.keyset_hash {
+        return Err(IntegrityError::Signature.into());
+    }
+    // The KDF costs are bound by the signed record (params hash): no floor
+    // beyond the build's own.
+    let expected = PinnedAccount {
+        account_id: trust.account_id,
+        identity_pub: body.identity_pub.clone(),
+        kdf_floor: KdfParams {
+            m_kib: 0,
+            t: 0,
+            p: 0,
+            salt: [0; 32],
+        },
+    };
+    let (account, auk) = Account::unlock_exporting_auk_at(
+        password,
+        &secret_key,
+        &params.data,
+        &keyset.data,
+        Some(&expected),
+        0,
+    )?;
+
+    // The identity this device leaves (public data).
+    let current = store
+        .get(RecordKind::AccountParams, current_records_id(&trust))?
+        .ok_or(Error::NotFound)?;
+    let left = AccountParams::decode_verified(&current.data, &trust.identity_pub)?;
+
+    // Step 3: the new trust state.
+    let mut next = trust.clone();
+    next.head = LineageHead {
+        generation: body.generation,
+        hash: choice,
+    };
+    next.identity_pub = body.identity_pub.clone();
+    let rotator_level = trust
+        .levels
+        .get(&body.rotator)
+        .copied()
+        .unwrap_or(TrustLevel::Verified);
+    next.levels = body
+        .roster
+        .iter()
+        .map(|e| {
+            let level = trust.levels.get(&e.device_id).copied();
+            (e.device_id, level.unwrap_or(rotator_level))
+        })
+        .collect();
+    next.roster = body.roster.clone();
+    next.add_revoked(&body.revoked);
+    if prompt.kind == PromptKind::Mutual {
+        // Spec 8.3: keeping one side excludes the other signers.
+        for other in prompt.children.iter().filter(|h| **h != choice) {
+            if let Some(b) = bodies.get(other)
+                && b.rotator != me
+                && b.rotator != body.rotator
+            {
+                next.excluded.insert(b.rotator);
+            }
+            next.ignore(*other);
+        }
+    }
+    next.retired.push(RetiredIdentity {
+        identity_id: identity_id(&trust.identity_pub),
+        sign_pub: left.signing_pub,
+        identity_pub: trust.identity_pub.clone(),
+        generation: trust.head.generation,
+    });
+    next.state = DeviceLineageState::Current;
+    let chain = ChainState {
+        params_epoch: account.params.epoch,
+        device_list: None,
+        vault_list: None,
+        device_id: store.chain_state()?.device_id,
+    };
+    // Every vault a stored `last_seen` may name: the session's map replaces
+    // them on the next persist.
+    let mut dropped: BTreeSet<Id> = body.from_heads.keys().copied().collect();
+    dropped.extend(store.list(RecordKind::VaultKey)?.iter().map(|r| r.id));
+
+    store.put_with_trust_cas(Vec::new(), Vec::new(), Some(chain.clone()), &trust, &next)?;
+
+    // Committed: nothing below can fail. Step 4: the session on the new
+    // identity, its vaults from `from_heads` (R12).
+    let device = DeviceState {
+        pinned: Some(pin(&account)),
+        last_seen: body.from_heads.clone(),
+        epoch: 0,
+    };
+    let repo = Repository {
+        store,
+        account,
+        device,
+        dropped,
+        epoch_rewound: true,
+        epoch_cache: Mutex::new(None),
+        chain,
+        travel_parked: BTreeSet::new(),
+        lists_forced: true,
+        records_id: rid,
+        pending: None,
+    };
+    Ok((repo, auk, secret_key))
+}
+
+/// "Ce n'était pas moi" for `choice` (spec 8.2): the record joins
+/// `ignored`, its signer joins `excluded` when `exclude_signer`, and a
+/// `Candidate` device is `Current` again (another pending record prompts
+/// on the next check). `choice` must be offered now
+/// (`Validation("rotation")`); the trust state is written conditionally
+/// on the one read (`Conflict`).
+pub fn reject_rotation(
+    store: &mut dyn RecordStore,
+    choice: [u8; 32],
+    exclude_signer: bool,
+) -> Result<()> {
+    let trust = trust_of(&*store)?.ok_or_else(|| refused("device", "no device keys"))?;
+    let records = lineage_records(&*store)?;
+    let complete = completeness(&*store, &records, trust.me.device_id)?;
+    let offered = match resolve(&trust, &records, &complete) {
+        Decision::Prompt(p) => p.children.contains(&choice),
+        _ => false,
+    };
+    if !offered {
+        return Err(refused("rotation", "not offered"));
+    }
+    let bodies = rotations(&records);
+    let body = bodies
+        .get(&choice)
+        .ok_or_else(|| refused("rotation", "not offered"))?;
+    let mut next = trust.clone();
+    if exclude_signer && body.rotator != trust.me.device_id {
+        next.excluded.insert(body.rotator);
+    }
+    next.ignore(choice);
+    if matches!(next.state, DeviceLineageState::Candidate { .. }) {
+        next.state = DeviceLineageState::Current;
+    }
+    store.put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next)
+}
+
+/// The params epoch of the account records this device is on, without
+/// unlocking: the "password changed elsewhere" poll. With a trust state,
+/// the params of its identity (spec 6.6), verified under it: a rotation
+/// waiting for the user changes nothing here, and once followed the poll
+/// reads the new identity's params. Without one (a legacy device), the
+/// single params record, verified under `pinned`'s identity (or its own on
+/// a device that pinned nothing yet).
+pub fn stored_params_epoch(store: &dyn RecordStore, pinned: Option<&PinnedAccount>) -> Result<u64> {
+    if let Some(trust) = trust_of(store)? {
+        let rec = store
+            .get(RecordKind::AccountParams, current_records_id(&trust))?
+            .ok_or(Error::NotFound)?;
+        return Ok(AccountParams::decode_verified(&rec.data, &trust.identity_pub)?.epoch);
+    }
+    let params = store.list(RecordKind::AccountParams)?;
+    let record = params.first().ok_or(Error::NotFound)?;
+    let identity = match pinned {
+        Some(pin) => pin.identity_pub.clone(),
+        None => AccountParams::decode(&record.data)?.identity_pub,
+    };
+    Ok(AccountParams::decode_verified(&record.data, &identity)?.epoch)
+}
+
+impl<S: RecordStore> Repository<S> {
+    /// The rotation prompt this session waits on (found at unlock or by
+    /// `refresh_pending_rotation`): while there is one, every write is
+    /// `Error::ReadOnly` (R10).
+    pub fn pending_prompt(&self) -> Option<&RotationPrompt> {
+        self.pending.as_ref()
+    }
+
+    /// Look for a rotation prompt again (after a sync), remember it for
+    /// this session and record the device state (spec 8.2: `Current` to
+    /// `Candidate` with the children to decide, and back to `Current` when
+    /// none is left). The state write is conditional on the trust state
+    /// read and best effort: the session stays read-only either way.
+    /// Other states (rotating, quarantined, orphaned) are left as they are.
+    pub fn refresh_pending_rotation(&mut self) -> Result<Option<RotationPrompt>> {
+        let Some(trust) = trust_of(&self.store)? else {
+            self.pending = None;
+            return Ok(None);
+        };
+        let found = prompt_for(&self.store, &trust)?;
+        let state = match (&trust.state, &found) {
+            (DeviceLineageState::Current, Some((p, _))) => Some(DeviceLineageState::Candidate {
+                children: p.children.clone(),
+            }),
+            (DeviceLineageState::Candidate { children }, Some((p, _)))
+                if *children != p.children =>
+            {
+                Some(DeviceLineageState::Candidate {
+                    children: p.children.clone(),
+                })
+            }
+            (DeviceLineageState::Candidate { .. }, None) => Some(DeviceLineageState::Current),
+            _ => None,
+        };
+        if let Some(state) = state {
+            let mut next = trust.clone();
+            next.state = state;
+            let _ = self
+                .store
+                .put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next);
+        }
+        self.pending = found.map(|(_, shown)| shown);
+        Ok(self.pending.clone())
+    }
+
+    /// `Error::ReadOnly` while a rotation prompt waits for the user: found
+    /// by this session, or recorded in the stored trust state (`Candidate`,
+    /// by any process on the device). Every write checks it first (R10).
+    pub(crate) fn writable(&self) -> Result<()> {
+        if self.pending.is_some() {
+            return Err(Error::ReadOnly);
+        }
+        if let Some(t) = trust_of(&self.store)?
+            && matches!(t.state, DeviceLineageState::Candidate { .. })
+        {
+            return Err(Error::ReadOnly);
+        }
+        Ok(())
+    }
+}

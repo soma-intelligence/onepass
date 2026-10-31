@@ -534,9 +534,11 @@ impl<S: RecordStore> Repository<S> {
             collect,
         };
 
-        // Step 6: one local transaction, nothing deleted (R23).
+        // Step 6: one local transaction, nothing deleted (R23), conditional
+        // on the trust state read above: a follow or a rejection saved
+        // meanwhile (another connection) is a `Conflict`, nothing written.
         self.store
-            .put_rotation(writes, chain.clone(), &next, &push)?;
+            .put_rotation(writes, chain.clone(), &trust, &next, &push)?;
 
         // Committed: from here on nothing may fail (K12), or a caller
         // following the contract would discard the new Secret Key of an

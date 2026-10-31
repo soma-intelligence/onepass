@@ -78,6 +78,12 @@ impl From<Error> for OnePassError {
             Error::NotFound => Self::NotFound,
             Error::Conflict => Self::Conflict,
             Error::Store(_) => Self::Store,
+            // No FFI kind of its own yet (Task 17 adds `ReadOnly`): a
+            // refused input the apps already show.
+            Error::ReadOnly => Self::Validation {
+                field: "rotation".to_owned(),
+                reason: "read only".to_owned(),
+            },
         }
     }
 }

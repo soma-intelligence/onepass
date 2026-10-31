@@ -4,10 +4,8 @@
 
 use std::path::Path;
 
-use onepass_core::account::AccountParams;
 use onepass_core::crypto::SecretKey;
 use onepass_core::devices::{DeviceEntry, DeviceKind, DeviceMode};
-use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::SyncStore;
 use zeroize::Zeroizing;
 
@@ -221,13 +219,14 @@ impl Session {
 #[uniffi::export]
 pub fn store_params_epoch(db_path: String) -> Result<u64, OnePassError> {
     let store = SyncStore::open(Path::new(&db_path))?;
-    let params = store.list(RecordKind::AccountParams)?;
-    let record = params.first().ok_or(OnePassError::NotFound)?;
-    let identity = match store.device_state()?.pinned {
-        Some(pin) => pin.identity_pub,
-        None => AccountParams::decode(&record.data)?.identity_pub,
-    };
-    Ok(AccountParams::decode_verified(&record.data, &identity)?.epoch)
+    let pinned = store.device_state()?.pinned;
+    // With a trust state, the params of its identity (key rotation v2):
+    // a rotation waiting for the user is not an error here, and once
+    // followed the poll reads the new identity's params.
+    Ok(onepass_core::repo::follow::stored_params_epoch(
+        &store,
+        pinned.as_ref(),
+    )?)
 }
 
 /// The highest params epoch an unlock accepted on this device (0 before

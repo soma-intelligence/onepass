@@ -797,11 +797,15 @@ impl SyncStore {
 
     /// See `RecordStore::put_all_if_version_with_trust` and
     /// `RecordStore::put_rotation`.
+    /// `expected`: the trust state the caller read, compared byte for byte
+    /// with the stored one inside the transaction (`Conflict` otherwise,
+    /// nothing written).
     fn put_with_trust(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
         deletes: Vec<(RecordKind, Id)>,
         chain: Option<ChainState>,
+        expected: Option<&TrustState>,
         trust: &TrustState,
         rotation: Option<&RotationPush>,
     ) -> Result<()> {
@@ -809,6 +813,11 @@ impl SyncStore {
             check_size(&r.data)?;
         }
         let tx = self.write_tx()?;
+        if let Some(expected) = expected
+            && meta_in(&tx, TRUST_STATE_KEY)? != Some(expected.encode())
+        {
+            return Err(Error::Conflict);
+        }
         for (r, expected) in &writes {
             if effective_version(&tx, r.kind, r.id)? != *expected {
                 return Err(Error::Conflict);
@@ -3070,20 +3079,56 @@ impl RecordStore for SyncStore {
         chain: Option<ChainState>,
         trust: &TrustState,
     ) -> Result<()> {
-        self.put_with_trust(writes, deletes, chain, trust, None)
+        self.put_with_trust(writes, deletes, chain, None, trust, None)
     }
 
-    /// `put_all_if_version_with_trust` (the chain state replaces the
-    /// stored one, the identity changes), and `rotation` kept for the push
-    /// phases (`push_rotation_phase`), in one transaction.
+    /// `put_all_if_version_with_trust` if the stored trust state is
+    /// `expected`, in the same transaction.
+    fn put_with_trust_cas(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        expected: &TrustState,
+        trust: &TrustState,
+    ) -> Result<()> {
+        self.put_with_trust(writes, deletes, chain, Some(expected), trust, None)
+    }
+
+    /// `put_with_trust_cas` (the chain state replaces the stored one, the
+    /// identity changes), and `rotation` kept for the push phases
+    /// (`push_rotation_phase`), in one transaction.
     fn put_rotation(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
         chain: ChainState,
+        expected: &TrustState,
         trust: &TrustState,
         rotation: &RotationPush,
     ) -> Result<()> {
-        self.put_with_trust(writes, Vec::new(), Some(chain), trust, Some(rotation))
+        self.put_with_trust(
+            writes,
+            Vec::new(),
+            Some(chain),
+            Some(expected),
+            trust,
+            Some(rotation),
+        )
+    }
+
+    /// A pending row of `(kind, id)` that writes data (not a deletion).
+    fn is_pending_write(&self, kind: RecordKind, id: Id) -> Result<bool> {
+        self.read(|conn| {
+            let data: Option<Option<Vec<u8>>> = conn
+                .query_row(
+                    "SELECT data FROM pending WHERE kind = ?1 AND id = ?2",
+                    params![kind.code(), &id.0[..]],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(store_err)?;
+            Ok(matches!(data, Some(Some(_))))
+        })
     }
 
     /// The conditional writes and the deletions (as `delete`) in one
